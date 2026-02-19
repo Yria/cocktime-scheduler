@@ -70,7 +70,7 @@ export default function SessionMain({ initialPlayers, settings, onBack, onEnd }:
   const canGenerate = waiting.length >= 4 && courts.some(c => c.team === null)
 
   return (
-    <div className="min-h-[100dvh] bg-gray-50 flex flex-col max-w-sm mx-auto">
+    <div className="min-h-[100dvh] bg-[#ebebf0] flex flex-col max-w-sm mx-auto">
       {/* Header */}
       <div className="bg-white border-b border-gray-100 px-4 py-4 flex items-center gap-3">
         <button onClick={onBack} className="text-gray-500 text-xl leading-none">←</button>

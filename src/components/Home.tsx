@@ -64,7 +64,7 @@ export default function Home({ onStart }: Props) {
 	}
 
 	return (
-		<div className="min-h-[100dvh] bg-gray-50 flex flex-col items-center justify-center p-6">
+		<div className="min-h-[100dvh] bg-[#ebebf0] flex flex-col items-center justify-center p-6">
 			<div className="w-full max-w-sm">
 				<div className="text-center mb-10">
 					<img src="main.jpeg" />
