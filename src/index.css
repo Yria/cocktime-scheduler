@@ -2,5 +2,411 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 * {
-  -webkit-tap-highlight-color: transparent;
+	-webkit-tap-highlight-color: transparent;
+	font-family:
+		-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+		"Apple SD Gothic Neo", "Pretendard Variable", "Pretendard", sans-serif;
+	box-sizing: border-box;
+}
+
+/* ── iOS Liquid Design Tokens ───────────────────────────────── */
+:root {
+	/* System Colors */
+	--ios-blue: #007aff;
+	--ios-green: #34c759;
+	--ios-red: #ff3b30;
+	--ios-orange: #ff9500;
+	--ios-gray: #8e8e93;
+	--ios-indigo: #5856d6;
+
+	/* Glass & Materials (Light) */
+	--mat-thick: rgba(250, 250, 255, 0.75);
+	--mat-regular: rgba(255, 255, 255, 0.65);
+	--mat-thin: rgba(255, 255, 255, 0.45);
+	--mat-ultra-thin: rgba(255, 255, 255, 0.25);
+
+	--border-light: rgba(255, 255, 255, 0.4);
+	--shadow-gentle: 0 8px 32px rgba(0, 0, 0, 0.06);
+	--shadow-float:
+		0 12px 48px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.04);
+
+	--bg-gradient-1: #dbeafe; /* Blueish light */
+	--bg-gradient-2: #f3e8ff; /* Purpleish light */
+	--bg-gradient-3: #e0f2fe; /* Cyanish light */
+
+	--text-primary: #000000;
+	--text-secondary: rgba(60, 60, 67, 0.6);
+	--text-tertiary: rgba(60, 60, 67, 0.3);
+}
+
+.dark {
+	/* Glass & Materials (Dark) */
+	--mat-thick: rgba(30, 30, 35, 0.7);
+	--mat-regular: rgba(40, 40, 45, 0.6);
+	--mat-thin: rgba(50, 50, 55, 0.4);
+	--mat-ultra-thin: rgba(60, 60, 65, 0.25);
+
+	--border-light: rgba(255, 255, 255, 0.12);
+	--shadow-gentle: 0 8px 32px rgba(0, 0, 0, 0.4);
+	--shadow-float: 0 12px 48px rgba(0, 0, 0, 0.5);
+
+	--bg-gradient-1: #0f172a;
+	--bg-gradient-2: #1e1b4b;
+	--bg-gradient-3: #022c22;
+
+	--text-primary: #ffffff;
+	--text-secondary: rgba(235, 235, 245, 0.6);
+	--text-tertiary: rgba(235, 235, 245, 0.3);
+}
+
+/* ── Typography & Global ───────────────────────────────────── */
+body {
+	margin: 0;
+	background-color: var(--bg-gradient-1); /* Fallback */
+	color: var(--text-primary);
+	font-feature-settings: "ss01", "ss02", "cv01";
+}
+
+h1,
+h2,
+h3,
+h4,
+.title-font {
+	letter-spacing: -0.025em; /* Tracking tight */
+}
+
+/* ── Background: Liquid Mesh ───────────────────────────────── */
+.lq-bg {
+	width: 100vw;
+	min-height: 100dvh;
+	position: relative;
+	background:
+		radial-gradient(circle at 15% 15%, var(--bg-gradient-2), transparent 50%),
+		radial-gradient(circle at 85% 85%, var(--bg-gradient-3), transparent 50%),
+		radial-gradient(circle at 50% 50%, var(--bg-gradient-1), transparent 60%);
+	background-size: 200% 200%;
+	animation: liquidMove 20s ease infinite alternate;
+}
+
+@keyframes liquidMove {
+	0% {
+		background-position: 0% 0%;
+	}
+	100% {
+		background-position: 100% 100%;
+	}
+}
+
+/* ── Components: Glass Card ────────────────────────────────── */
+.glass {
+	background: var(--mat-regular);
+	backdrop-filter: blur(24px) saturate(140%);
+	-webkit-backdrop-filter: blur(24px) saturate(140%);
+	border: 1px solid var(--border-light);
+	box-shadow: var(--shadow-gentle);
+	border-radius: 28px; /* Super rounded */
+}
+
+.glass-sub {
+	background: var(--mat-thin);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	border: 1px solid var(--border-light);
+	border-radius: 20px;
+}
+
+.glass-item {
+	background: var(--mat-ultra-thin);
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
+	border: 1px solid var(--border-light);
+	border-radius: 16px;
+}
+
+/* ── Header & Bar ──────────────────────────────────────────── */
+.lq-header {
+	background: var(--mat-thick);
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px);
+	border-bottom: 0.5px solid var(--border-light);
+	position: sticky;
+	top: 0;
+	z-index: 50;
+}
+
+.lq-bar {
+	background: var(--mat-thick);
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px);
+	border-top: 0.5px solid var(--border-light);
+	padding-bottom: env(safe-area-inset-bottom, 20px);
+}
+
+/* ── Buttons (iOS Style) ───────────────────────────────────── */
+.btn-lq-primary {
+	background: var(--ios-blue);
+	color: white;
+	border: none;
+	border-radius: 99px; /* Pill */
+	font-weight: 600;
+	font-size: 17px;
+	box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+	transition:
+		transform 0.2s cubic-bezier(0.25, 1, 0.5, 1),
+		opacity 0.2s;
+}
+
+.btn-lq-primary:active:not(:disabled) {
+	transform: scale(0.96);
+	opacity: 0.9;
+}
+
+.btn-lq-primary:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+	box-shadow: none;
+	background: var(--ios-gray);
+}
+
+.btn-lq-secondary {
+	background: rgba(120, 120, 128, 0.12); /* System fills */
+	color: var(--ios-blue);
+	border: none;
+	border-radius: 99px;
+	font-weight: 600;
+	font-size: 15px;
+	transition: background 0.2s;
+}
+.dark .btn-lq-secondary {
+	background: rgba(120, 120, 128, 0.24);
+}
+.btn-lq-secondary:active:not(:disabled) {
+	opacity: 0.7;
+}
+
+.btn-lq-green {
+	background: var(--ios-green);
+	color: white;
+	border: none;
+	border-radius: 99px;
+	font-weight: 600;
+	box-shadow: 0 4px 12px rgba(52, 199, 89, 0.3);
+	transition: transform 0.2s;
+}
+.btn-lq-green:active:not(:disabled) {
+	transform: scale(0.96);
+}
+.btn-lq-green:disabled {
+	opacity: 0.4;
+	background: var(--ios-gray);
+	box-shadow: none;
+}
+
+.btn-lq-red {
+	background: var(--ios-red);
+	color: white;
+	border: none;
+	border-radius: 99px;
+	font-weight: 600;
+	box-shadow: 0 4px 12px rgba(255, 59, 48, 0.3);
+	transition: transform 0.2s;
+}
+.btn-lq-red:active {
+	transform: scale(0.96);
+}
+
+/* ── Badges ────────────────────────────────────────────────── */
+.badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 4px 10px;
+	border-radius: 6px;
+	font-size: 12px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+}
+
+.badge-mixed {
+	background: rgba(88, 86, 214, 0.15);
+	color: var(--ios-indigo);
+}
+.badge-men {
+	background: rgba(0, 122, 255, 0.15);
+	color: var(--ios-blue);
+}
+.badge-women {
+	background: rgba(255, 45, 85, 0.15);
+	color: #ff2d55;
+}
+.badge-blend {
+	background: rgba(255, 149, 0, 0.15);
+	color: var(--ios-orange);
+}
+.badge-ready {
+	background: rgba(52, 199, 89, 0.15);
+	color: var(--ios-green);
+}
+.badge-wait {
+	background: rgba(255, 204, 0, 0.15);
+	color: #ffcc00;
+}
+
+.dark .badge-mixed {
+	background: rgba(94, 92, 230, 0.3);
+	color: #bf5af2;
+}
+.dark .badge-men {
+	background: rgba(10, 132, 255, 0.3);
+	color: #5ac8fa;
+}
+.dark .badge-women {
+	background: rgba(255, 55, 95, 0.3);
+	color: #ff375f;
+}
+.dark .badge-blend {
+	background: rgba(255, 159, 10, 0.3);
+	color: #ff9f0a;
+}
+.dark .badge-ready {
+	background: rgba(48, 209, 88, 0.3);
+	color: #30d158;
+}
+.dark .badge-wait {
+	background: rgba(255, 214, 10, 0.3);
+	color: #ffd60a;
+}
+
+/* ── Chips ─────────────────────────────────────────────────── */
+.chip {
+	display: inline-flex;
+	align-items: center;
+	padding: 6px 12px;
+	border-radius: 99px;
+	font-size: 14px;
+	font-weight: 500;
+	background: var(--mat-thin);
+	border: 1px solid var(--border-light);
+	color: var(--text-primary);
+	transition: transform 0.1s;
+}
+.chip:active {
+	transform: scale(0.97);
+}
+
+.chip-on {
+	background: var(--ios-blue);
+	color: white;
+	border-color: transparent;
+	box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
+}
+
+.chip-amber {
+	background: rgba(255, 149, 0, 0.12);
+	color: var(--ios-orange);
+	border-color: rgba(255, 149, 0, 0.3);
+}
+
+/* ── Input ─────────────────────────────────────────────────── */
+.lq-input {
+	background: rgba(118, 118, 128, 0.12);
+	border: none;
+	border-radius: 10px;
+	padding: 12px 16px;
+	font-size: 17px;
+	color: var(--text-primary);
+	width: 100%;
+}
+.lq-input:focus {
+	outline: none;
+	background: rgba(118, 118, 128, 0.2);
+}
+.lq-input::placeholder {
+	color: var(--text-secondary);
+}
+
+/* ── Checkbox ──────────────────────────────────────────────── */
+.lq-check {
+	width: 24px;
+	height: 24px;
+	border-radius: 50%;
+	border: 1px solid var(--ios-gray);
+	background: transparent;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: all 0.2s;
+}
+.lq-check.checked {
+	background: var(--ios-blue);
+	border-color: var(--ios-blue);
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+	background-size: 60%;
+	background-repeat: no-repeat;
+	background-position: center;
+}
+
+/* ── Overlays ──────────────────────────────────────────────── */
+.lq-overlay {
+	background: rgba(0, 0, 0, 0.2);
+	backdrop-filter: blur(4px);
+	-webkit-backdrop-filter: blur(4px);
+}
+
+.lq-sheet {
+	background: var(--mat-thick);
+	backdrop-filter: blur(50px);
+	-webkit-backdrop-filter: blur(50px);
+	box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.12);
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────── */
+.no-sb::-webkit-scrollbar {
+	display: none;
+}
+.no-sb {
+	-ms-overflow-style: none;
+	scrollbar-width: none;
+}
+
+/* ── Court Accents (Glows) ────────────────────────────────── */
+.court-mixed {
+	box-shadow: 0 0 0 1px rgba(88, 86, 214, 0.3);
+}
+.court-men {
+	box-shadow: 0 0 0 1px rgba(0, 122, 255, 0.3);
+}
+.court-women {
+	box-shadow: 0 0 0 1px rgba(255, 45, 85, 0.3);
+}
+.court-blend {
+	box-shadow: 0 0 0 1px rgba(255, 149, 0, 0.3);
+}
+
+/* ── Text Utility ───────────────────────────────────────────── */
+.text-ios-blue {
+	color: var(--ios-blue);
+}
+.text-ios-red {
+	color: var(--ios-red);
+}
+.text-ios-green {
+	color: var(--ios-green);
+}
+.text-ios-orange {
+	color: var(--ios-orange);
+}
+
+/* ── Inline Badge ──────────────────────────────────────────── */
+.badge-inline {
+	padding: 2px 6px;
+	border-radius: 99px;
+	font-size: 11px;
+	font-weight: 700;
+	margin-left: 4px;
+}
+.badge-inline-amber {
+	background: rgba(255, 149, 0, 0.15);
+	color: var(--ios-orange);
 }

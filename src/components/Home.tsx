@@ -30,42 +30,88 @@ export default function Home({ onStart }: Props) {
 		}
 	}
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 초기화
 	useEffect(() => {
 		connect();
 	}, []);
 
 	return (
-		<div className="min-h-[100dvh] bg-[#ebebf0] dark:bg-[#1c1c1e] flex flex-col items-center justify-center p-6">
+		<div className="lq-bg min-h-[100dvh] flex flex-col items-center justify-center p-6">
 			<div className="w-full max-w-sm">
+				{/* Logo */}
 				<div className="text-center mb-10">
-					<img src="main.png" className="mix-blend-multiply dark:invert dark:mix-blend-screen mx-auto" />
-					<h1 className="text-2xl font-bold text-gray-800 dark:text-white">콕타임 팀매칭</h1>
+					<div className="relative inline-block mb-5">
+						<div
+							className="absolute inset-0 rounded-full blur-2xl opacity-30"
+							style={{
+								background: "radial-gradient(circle, #60b4ff, transparent)",
+							}}
+						/>
+						<img
+							src="main.png"
+							className="relative w-24 h-24 object-contain mix-blend-multiply dark:invert dark:mix-blend-screen"
+							alt="콕타임"
+						/>
+					</div>
+					<h1 className="text-[1.7rem] font-bold text-gray-900 dark:text-white tracking-tight">
+						콕타임 팀매칭
+					</h1>
+					<p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5 font-medium">
+						스마트 배드민턴 코트 배정
+					</p>
 				</div>
 
-				<div className="bg-white dark:bg-[#2c2c2e] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 mb-4 text-center">
+				{/* Status card */}
+				<div className="glass rounded-3xl px-5 py-4 mb-4 text-center">
 					{loading ? (
-						<p className="text-sm text-gray-400 dark:text-gray-500">시트 불러오는 중...</p>
+						<div className="flex items-center justify-center gap-2">
+							<div
+								className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin"
+								style={{
+									borderColor: "rgba(0,122,255,0.4)",
+									borderTopColor: "transparent",
+								}}
+							/>
+							<p className="text-sm text-gray-500 dark:text-gray-400 font-medium">
+								시트 불러오는 중…
+							</p>
+						</div>
 					) : connected ? (
-						<p className="text-sm text-green-600 dark:text-green-400 font-medium">
-							✓ 연동됨 ({players.length}명)
-						</p>
+						<div className="flex items-center justify-center gap-2">
+							<span
+								className="w-2 h-2 rounded-full flex-shrink-0"
+								style={{
+									background: "#28c750",
+									boxShadow: "0 0 6px rgba(40,199,80,0.7)",
+								}}
+							/>
+							<p className="text-sm font-semibold" style={{ color: "#28c750" }}>
+								연동됨 — {players.length}명
+							</p>
+						</div>
 					) : (
-						<p className="text-sm text-red-500 dark:text-red-400">{error}</p>
-					)}
-					{error && (
-						<button
-							onClick={() => connect()}
-							className="mt-3 text-sm text-blue-500 font-medium"
-						>
-							재시도
-						</button>
+						<div>
+							<p className="text-sm text-red-500 dark:text-red-400 font-medium">
+								{error}
+							</p>
+							<button
+								type="button"
+								onClick={() => connect()}
+								className="mt-3 text-sm font-semibold"
+								style={{ color: "#007aff" }}
+							>
+								재시도
+							</button>
+						</div>
 					)}
 				</div>
 
+				{/* CTA */}
 				<button
+					type="button"
 					onClick={() => connected && onStart(players, ENV_SCRIPT_URL)}
 					disabled={!connected}
-					className="w-full bg-blue-500 text-white rounded-2xl py-4 text-lg font-bold shadow-sm disabled:opacity-30 disabled:cursor-not-allowed"
+					className="btn-lq-primary w-full py-4 text-lg"
 				>
 					세션 시작
 				</button>
