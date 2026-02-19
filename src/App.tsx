@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { Player, SessionSettings } from './types'
 import Home from './components/Home'
 import SessionSetup from './components/SessionSetup'
@@ -12,6 +12,13 @@ interface SessionInit {
 }
 
 const SAVE_KEY = 'bmt_session_players'
+const APP_SESSION_KEY = 'bmt_app_session'
+
+interface AppSession {
+  allPlayers: Player[]
+  scriptUrl: string
+  sessionInit: SessionInit
+}
 
 function loadSavedNames(): Set<string> | null {
   try {
@@ -23,12 +30,33 @@ function loadSavedNames(): Set<string> | null {
   }
 }
 
+function loadAppSession(): AppSession | null {
+  try {
+    const raw = localStorage.getItem(APP_SESSION_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as AppSession
+  } catch {
+    return null
+  }
+}
+
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('home')
-  const [allPlayers, setAllPlayers] = useState<Player[]>([])
-  const [scriptUrl, setScriptUrl] = useState('')
-  const [savedNames, setSavedNames] = useState<Set<string> | null>(null)
-  const [sessionInit, setSessionInit] = useState<SessionInit | null>(null)
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const apply = (dark: boolean) => {
+      document.documentElement.classList.toggle('dark', dark)
+    }
+    apply(mq.matches)
+    const handler = (e: MediaQueryListEvent) => apply(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+
+  const [screen, setScreen] = useState<Screen>(() => loadAppSession() ? 'session' : 'home')
+  const [allPlayers, setAllPlayers] = useState<Player[]>(() => loadAppSession()?.allPlayers ?? [])
+  const [scriptUrl, setScriptUrl] = useState(() => loadAppSession()?.scriptUrl ?? '')
+  const [savedNames, setSavedNames] = useState<Set<string> | null>(() => loadAppSession() ? loadSavedNames() : null)
+  const [sessionInit, setSessionInit] = useState<SessionInit | null>(() => loadAppSession()?.sessionInit ?? null)
 
   function handleHomeStart(players: Player[], url: string) {
     setAllPlayers(players)
@@ -39,12 +67,15 @@ export default function App() {
 
   function handleSetupStart(selected: Player[], settings: SessionSettings) {
     localStorage.setItem(SAVE_KEY, JSON.stringify(selected.map(p => p.name)))
-    setSessionInit({ selected, settings })
+    const init = { selected, settings }
+    localStorage.setItem(APP_SESSION_KEY, JSON.stringify({ allPlayers, scriptUrl, sessionInit: init }))
+    setSessionInit(init)
     setScreen('session')
   }
 
   function handleSessionEnd() {
     localStorage.removeItem(SAVE_KEY)
+    localStorage.removeItem(APP_SESSION_KEY)
     setSavedNames(null)
     setSessionInit(null)
     setScreen('setup')

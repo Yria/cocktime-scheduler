@@ -35,22 +35,22 @@ export default function Home({ onStart }: Props) {
 	}, []);
 
 	return (
-		<div className="min-h-[100dvh] bg-[#ebebf0] flex flex-col items-center justify-center p-6">
+		<div className="min-h-[100dvh] bg-[#ebebf0] dark:bg-[#1c1c1e] flex flex-col items-center justify-center p-6">
 			<div className="w-full max-w-sm">
 				<div className="text-center mb-10">
-					<img src="main.jpeg" />
-					<h1 className="text-2xl font-bold text-gray-800">콕타임 팀매칭</h1>
+					<img src="main.png" className="mix-blend-multiply dark:invert dark:mix-blend-screen mx-auto" />
+					<h1 className="text-2xl font-bold text-gray-800 dark:text-white">콕타임 팀매칭</h1>
 				</div>
 
-				<div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4 text-center">
+				<div className="bg-white dark:bg-[#2c2c2e] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 mb-4 text-center">
 					{loading ? (
-						<p className="text-sm text-gray-400">시트 불러오는 중...</p>
+						<p className="text-sm text-gray-400 dark:text-gray-500">시트 불러오는 중...</p>
 					) : connected ? (
-						<p className="text-sm text-green-600 font-medium">
+						<p className="text-sm text-green-600 dark:text-green-400 font-medium">
 							✓ 연동됨 ({players.length}명)
 						</p>
 					) : (
-						<p className="text-sm text-red-500">{error}</p>
+						<p className="text-sm text-red-500 dark:text-red-400">{error}</p>
 					)}
 					{error && (
 						<button
