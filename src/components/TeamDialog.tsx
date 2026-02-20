@@ -40,7 +40,7 @@ export default function TeamDialog({
 					<div className="glass-sub rounded-2xl p-4">
 						{/* Team A */}
 						<div className="mb-3">
-							<p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">
+							<p className="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wide mb-2">
 								A팀
 							</p>
 							<div className="flex gap-2">
@@ -65,7 +65,7 @@ export default function TeamDialog({
 							<span
 								className="text-xs font-black tracking-widest px-3 py-1 rounded-full"
 								style={{
-									color: "var(--text-tertiary)",
+									color: "var(--text-secondary)",
 									background: "var(--mat-ultra-thin)",
 									borderColor: "var(--border-light)",
 								}}
@@ -76,7 +76,7 @@ export default function TeamDialog({
 
 						{/* Team B */}
 						<div className="mt-3">
-							<p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">
+							<p className="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wide mb-2">
 								B팀
 							</p>
 							<div className="flex gap-2">

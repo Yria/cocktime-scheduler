@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import {
+	Navigate,
+	Route,
+	Routes,
+	useLocation,
+	useNavigate,
+} from "react-router-dom";
 import Home from "./components/Home";
 import SessionMain from "./components/SessionMain";
 import SessionSetup from "./components/SessionSetup";
@@ -11,6 +17,7 @@ import {
 	type SessionStateData,
 	startSession,
 	supabase,
+	updateSessionInitData,
 } from "./lib/supabaseClient";
 import type { Player, SessionSettings } from "./types";
 
@@ -55,13 +62,22 @@ export default function App() {
 	const [initialStateData, setInitialStateData] =
 		useState<SessionStateData | null>(null);
 	const [sessionLoading, setSessionLoading] = useState(true);
+	const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
 
 	const currentPathRef = useRef(window.location.pathname);
+	const activeSessionIdRef = useRef<number | null>(null);
 
-	// pathname 변경 추적
+	const updateActiveSessionId = useCallback((id: number | null) => {
+		setActiveSessionId(id);
+		activeSessionIdRef.current = id;
+	}, []);
+
+	const location = useLocation();
+
+	// pathname 변경 추적 (location.pathname 기반)
 	useEffect(() => {
-		currentPathRef.current = window.location.pathname;
-	});
+		currentPathRef.current = location.pathname;
+	}, [location.pathname]);
 
 	// 마운트 시 Supabase에서 활성 세션 확인
 	useEffect(() => {
@@ -79,12 +95,17 @@ export default function App() {
 				setSessionInit({ selected, settings });
 				setSavedNames(loadSavedNames());
 				if (row.state_data) setInitialStateData(row.state_data);
-				navigate("/session", { replace: true });
+				updateActiveSessionId(row.id);
+
+				// 만약 이미 세션 설정 화면에 진입한 상태라면 방해(강제이동)하지 않음
+				if (!window.location.pathname.includes("/setup")) {
+					navigate("/session", { replace: true });
+				}
 			}
 			setSessionLoading(false);
 		}
 		checkActiveSession();
-	}, []); // eslint-disable-line react-hooks/exhaustive-deps
+	}, [navigate, updateActiveSessionId]);
 
 	// Realtime 구독: 다른 사용자가 세션 시작/종료 시 자동 전환
 	useEffect(() => {
@@ -93,20 +114,32 @@ export default function App() {
 			.on(
 				"postgres_changes",
 				{
-					event: "UPDATE",
+					event: "*",
 					schema: "public",
 					table: "sessions",
-					filter: "id=eq.1",
 				},
 				(payload) => {
 					const row = payload.new as SessionRow;
-					if (row.last_client_id === CLIENT_ID) return;
+					if (!row || !row.id) return;
+					if (row.last_client_id === CLIENT_ID) {
+						if (
+							row.is_active &&
+							row.id === activeSessionIdRef.current &&
+							row.state_data
+						) {
+							// Keep initialStateData fresh so if we remount SessionMain, we don't rollback
+							setInitialStateData(row.state_data);
+						}
+						return;
+					}
 
 					if (row.is_active && row.init_data) {
-						// 이미 세션 중이면 setSessionInit 호출 안 함 (무한루프 방지)
-						// SessionMain이 자체 Realtime 구독으로 state 동기화를 처리함
 						const isOnSession = currentPathRef.current.includes("/session");
 						if (!isOnSession) {
+							// 사용자가 의도적으로 /setup 화면으로 나간 경우 강제 복귀시키지 않음 (외부 업데이트 무시)
+							if (row.id === activeSessionIdRef.current) return;
+							if (currentPathRef.current.includes("/setup")) return;
+
 							const {
 								allPlayers: ap,
 								scriptUrl: su,
@@ -118,13 +151,27 @@ export default function App() {
 							setSessionInit({ selected, settings });
 							setSavedNames(loadSavedNames());
 							if (row.state_data) setInitialStateData(row.state_data);
+							updateActiveSessionId(row.id);
 							navigate("/session", { replace: true });
+						} else {
+							// 이미 /session 화면에 있다면
+							if (row.id === activeSessionIdRef.current) {
+								setAllPlayers(row.init_data.allPlayers);
+								setScriptUrl(row.init_data.scriptUrl);
+								setSessionInit({
+									selected: row.init_data.selected,
+									settings: row.init_data.settings,
+								});
+							}
 						}
 					} else if (!row.is_active) {
-						setSavedNames(null);
-						setSessionInit(null);
-						setInitialStateData(null);
-						navigate("/", { replace: true });
+						if (activeSessionIdRef.current === row.id) {
+							setSavedNames(null);
+							setSessionInit(null);
+							setInitialStateData(null);
+							updateActiveSessionId(null);
+							navigate("/", { replace: true });
+						}
 					}
 				},
 			)
@@ -133,7 +180,7 @@ export default function App() {
 		return () => {
 			supabase.removeChannel(channel);
 		};
-	}, []); // eslint-disable-line react-hooks/exhaustive-deps
+	}, [navigate, updateActiveSessionId]);
 
 	const handleHomeStart = useCallback(
 		(players: Player[], url: string) => {
@@ -158,34 +205,45 @@ export default function App() {
 				selected,
 				settings,
 			};
-			await startSession(initData, CLIENT_ID);
-
-			setInitialStateData(null);
-			setSessionInit({ selected, settings });
-			navigate("/session");
+			if (activeSessionIdRef.current) {
+				await updateSessionInitData(
+					activeSessionIdRef.current,
+					initData,
+					CLIENT_ID,
+				);
+				setSessionInit({ selected, settings });
+				navigate("/session");
+			} else {
+				const newSession = await startSession(initData, CLIENT_ID);
+				if (newSession) {
+					updateActiveSessionId(newSession.id);
+				}
+				setInitialStateData(null);
+				setSessionInit({ selected, settings });
+				navigate("/session");
+			}
 		},
-		[allPlayers, scriptUrl, navigate],
+		[allPlayers, scriptUrl, navigate, updateActiveSessionId],
 	);
 
 	const handleSessionEnd = useCallback(async () => {
-		await endSession(CLIENT_ID);
+		if (activeSessionIdRef.current) {
+			await endSession(activeSessionIdRef.current, CLIENT_ID);
+		}
 
 		localStorage.removeItem(SAVE_KEY);
 		setSavedNames(null);
 		setSessionInit(null);
 		setInitialStateData(null);
+		updateActiveSessionId(null);
 		navigate("/setup");
-	}, [navigate]);
+	}, [navigate, updateActiveSessionId]);
 
 	const handleUpdatePlayer = useCallback((updated: Player) => {
 		setAllPlayers((prev) =>
 			prev.map((p) => (p.id === updated.id ? updated : p)),
 		);
 	}, []);
-
-	const handleSetupBack = useCallback(() => {
-		navigate("/");
-	}, [navigate]);
 
 	const handleSessionBack = useCallback(() => {
 		navigate("/setup");
@@ -211,9 +269,11 @@ export default function App() {
 								players={allPlayers}
 								savedNames={savedNames}
 								scriptUrl={scriptUrl}
+								initialSelected={sessionInit?.selected}
+								initialSettings={sessionInit?.settings}
+								isUpdating={!!activeSessionId}
 								onUpdatePlayer={handleUpdatePlayer}
 								onStart={handleSetupStart}
-								onBack={handleSetupBack}
 							/>
 						) : (
 							<Navigate to="/" replace />
@@ -223,8 +283,9 @@ export default function App() {
 				<Route
 					path="/session"
 					element={
-						sessionInit ? (
+						sessionInit && activeSessionId ? (
 							<SessionMain
+								sessionId={activeSessionId}
 								initialPlayers={sessionInit.selected}
 								settings={sessionInit.settings}
 								initialStateData={initialStateData}

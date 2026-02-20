@@ -32,7 +32,7 @@ export default function ReservationModal({
 							reservingSelected.size < 2
 								? {
 										background: "var(--glass-sub)",
-										color: "#9ca3af",
+										color: "#6b7280",
 										border: "1px solid var(--glass-sub-border)",
 									}
 								: undefined
@@ -41,13 +41,13 @@ export default function ReservationModal({
 						{reservingSelected.size}/4
 					</span>
 				</div>
-				<p className="px-5 pb-4 text-sm text-gray-500 dark:text-gray-400">
+				<p className="px-5 pb-4 text-sm text-gray-600 dark:text-gray-300">
 					함께 플레이할 2~4명을 선택하세요
 				</p>
 
 				<div className="px-5 pb-4 max-h-56 overflow-y-auto no-sb">
 					{modalPlayers.length === 0 ? (
-						<p className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">
+						<p className="text-sm text-gray-500 dark:text-gray-300 text-center py-4">
 							선택 가능한 선수가 없습니다
 						</p>
 					) : (
@@ -97,7 +97,7 @@ export default function ReservationModal({
 					<button
 						type="button"
 						onClick={onCancel}
-						className="w-full py-3 text-sm text-gray-400 dark:text-gray-500 font-semibold"
+						className="w-full py-3 text-sm text-gray-500 dark:text-gray-300 font-semibold"
 					>
 						취소
 					</button>

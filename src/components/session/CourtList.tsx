@@ -1,22 +1,31 @@
 import type { Court } from "../../types";
 
-const GAME_TYPE_BADGE: Record<string, string> = {
-	혼복: "badge badge-mixed",
-	남복: "badge badge-men",
-	여복: "badge badge-women",
-	혼합: "badge badge-blend",
-};
-
-const GAME_TYPE_COURT: Record<string, string> = {
-	혼복: "court-mixed",
-	남복: "court-men",
-	여복: "court-women",
-	혼합: "court-blend",
-};
-
 interface CourtListProps {
 	courts: Court[];
 	onComplete: (courtId: number) => void;
+}
+
+function PlayerBadge({ player }: { player: { name: string; gender: string } }) {
+	return (
+		<div
+			style={{
+				display: "flex",
+				alignItems: "center",
+				gap: 4,
+				padding: "3px 10px",
+				background: player.gender === "F" ? "#fee2e2" : "#e0f2fe",
+				borderRadius: 14,
+				fontSize: 13,
+				color: player.gender === "F" ? "#991b1b" : "#075985",
+				fontWeight: 600,
+			}}
+		>
+			<span style={{ fontSize: 10 }}>
+				{player.gender === "F" ? "🔴" : "🔵"}
+			</span>
+			<span>{player.name}</span>
+		</div>
+	);
 }
 
 export default function CourtList({ courts, onComplete }: CourtListProps) {
@@ -25,76 +34,252 @@ export default function CourtList({ courts, onComplete }: CourtListProps) {
 			{courts.map((court) => (
 				<div
 					key={court.id}
-					className={`glass rounded-2xl overflow-hidden ${
-						court.team ? (GAME_TYPE_COURT[court.team.gameType] ?? "") : ""
-					}`}
+					style={{
+						background: "#ffffff",
+						borderRadius: 8,
+						border: "1px solid rgba(0,0,0,0.06)",
+						overflow: "hidden",
+					}}
 				>
-					{court.team ? (
-						<div className="p-4">
-							<div className="flex items-center justify-between mb-3">
-								<span className="font-bold text-gray-800 dark:text-white text-sm">
-									코트 {court.id}
-								</span>
-								<span className={GAME_TYPE_BADGE[court.team.gameType]}>
-									{court.team.gameType}
-								</span>
-							</div>
+					{/* Header row */}
+					<div
+						style={{
+							background: "rgba(241,245,249,1)",
+							padding: "12px 16px",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+						}}
+					>
+						<span style={{ fontSize: 14, fontWeight: 600, color: "#0f1724" }}>
+							{court.id}번 코트
+						</span>
+						{court.team ? (
+							<span
+								style={{
+									fontSize: 12,
+									fontWeight: 600,
+									color: "#166534",
+									background: "rgba(220,252,231,1)",
+									borderRadius: 4,
+									padding: "2px 8px",
+								}}
+							>
+								진행중
+							</span>
+						) : (
+							<span
+								style={{
+									fontSize: 12,
+									fontWeight: 600,
+									color: "#98a0ab",
+									background: "rgba(247,249,252,1)",
+									borderRadius: 4,
+									padding: "2px 8px",
+								}}
+							>
+								비어있음
+							</span>
+						)}
+					</div>
 
-							<div className="flex gap-3 items-center">
-								<div className="flex-1 space-y-1.5">
-									{court.team.teamA.map((p) => (
-										<div
-											key={p.id}
-											className="glass-item rounded-xl px-3 py-2 text-sm font-medium text-gray-800 dark:text-gray-100 flex items-center gap-1.5"
-										>
-											<span>{p.gender === "F" ? "🔴" : "🔵"}</span>
-											<span>{p.name}</span>
-										</div>
-									))}
+					{court.team ? (
+						<>
+							{/* Team info */}
+							<div style={{ padding: "16px 28px" }}>
+								{/* Team A */}
+								<div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+									<span
+										style={{
+											fontSize: 14,
+											fontWeight: 600,
+											color: "#0f1724",
+											width: 32,
+											flexShrink: 0,
+										}}
+									>
+										팀 A
+									</span>
+									<div
+										style={{
+											display: "flex",
+											flexWrap: "wrap",
+											gap: 6,
+											flex: 1,
+										}}
+									>
+										{court.team.teamA.map((player) => (
+											<PlayerBadge key={player.name} player={player} />
+										))}
+									</div>
 								</div>
 
-								<div className="flex-shrink-0 flex flex-col items-center">
-									<span
-										className="text-xs font-black tracking-widest px-2 py-0.5 rounded-md"
+								{/* VS divider */}
+								<div
+									style={{
+										display: "flex",
+										alignItems: "center",
+										margin: "12px 0",
+									}}
+								>
+									<div
 										style={{
-											color: "var(--text-tertiary)",
-											background: "var(--mat-ultra-thin)",
+											flex: 1,
+											height: 1,
+											background: "rgba(0,0,0,0.08)",
+										}}
+									/>
+									<span
+										style={{
+											fontSize: 12,
+											fontWeight: 700,
+											color: "#98a0ab",
+											padding: "0 8px",
 										}}
 									>
 										VS
 									</span>
+									<div
+										style={{
+											flex: 1,
+											height: 1,
+											background: "rgba(0,0,0,0.08)",
+										}}
+									/>
 								</div>
 
-								<div className="flex-1 space-y-1.5">
-									{court.team.teamB.map((p) => (
-										<div
-											key={p.id}
-											className="glass-item rounded-xl px-3 py-2 text-sm font-medium text-gray-800 dark:text-gray-100 flex items-center gap-1.5"
-										>
-											<span>{p.gender === "F" ? "🔴" : "🔵"}</span>
-											<span>{p.name}</span>
-										</div>
-									))}
+								{/* Team B */}
+								<div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+									<span
+										style={{
+											fontSize: 14,
+											fontWeight: 600,
+											color: "#0f1724",
+											width: 32,
+											flexShrink: 0,
+										}}
+									>
+										팀 B
+									</span>
+									<div
+										style={{
+											display: "flex",
+											flexWrap: "wrap",
+											gap: 6,
+											flex: 1,
+										}}
+									>
+										{court.team.teamB.map((player) => (
+											<PlayerBadge key={player.name} player={player} />
+										))}
+									</div>
 								</div>
 							</div>
 
-							<button
-								type="button"
-								onClick={() => onComplete(court.id)}
-								className="glass-item w-full mt-3 py-2.5 text-gray-600 dark:text-gray-300 rounded-xl text-sm font-semibold"
+							{/* Complete button */}
+							<div
+								style={{
+									borderTop: "1px solid rgba(0,0,0,0.06)",
+									padding: "12px 16px",
+								}}
 							>
-								경기 완료
-							</button>
-						</div>
+								<button
+									type="button"
+									onClick={() => onComplete(court.id)}
+									style={{
+										background: "#0b84ff",
+										color: "#fff",
+										borderRadius: 6,
+										padding: "7px 12px",
+										fontSize: 13,
+										fontWeight: 500,
+										border: "none",
+										cursor: "pointer",
+									}}
+								>
+									게임 완료
+								</button>
+							</div>
+						</>
 					) : (
-						<div className="p-4 flex items-center justify-between opacity-70">
-							<span className="font-bold text-gray-700 dark:text-gray-300 text-sm">
-								코트 {court.id}
-							</span>
-							<span className="text-xs text-gray-400 dark:text-gray-500 font-medium">
-								비어있음
-							</span>
-						</div>
+						<>
+							{/* Empty state */}
+							<div
+								style={{
+									padding: "20px",
+									display: "flex",
+									flexDirection: "column",
+									alignItems: "center",
+									justifyContent: "center",
+									gap: 7,
+									minHeight: 102,
+								}}
+							>
+								<svg
+									width="32"
+									height="32"
+									viewBox="0 0 32 32"
+									fill="none"
+									xmlns="http://www.w3.org/2000/svg"
+									aria-hidden="true"
+								>
+									<rect
+										x="4"
+										y="4"
+										width="24"
+										height="24"
+										rx="3"
+										stroke="#98a0ab"
+										strokeWidth="1.5"
+										fill="none"
+									/>
+									<line
+										x1="16"
+										y1="4"
+										x2="16"
+										y2="28"
+										stroke="#98a0ab"
+										strokeWidth="1.5"
+									/>
+									<line
+										x1="4"
+										y1="16"
+										x2="28"
+										y2="16"
+										stroke="#98a0ab"
+										strokeWidth="1.5"
+									/>
+								</svg>
+								<span style={{ fontSize: 15, color: "#98a0ab" }}>
+									대기중인 팀이 없습니다
+								</span>
+							</div>
+
+							{/* Placeholder button */}
+							<div
+								style={{
+									borderTop: "1px solid rgba(0,0,0,0.06)",
+									padding: "12px 16px",
+								}}
+							>
+								<button
+									type="button"
+									disabled
+									style={{
+										background: "#fff",
+										color: "rgba(16,16,16,0.3)",
+										borderRadius: 6,
+										padding: "7px 12px",
+										fontSize: 13,
+										fontWeight: 500,
+										border: "1px solid rgba(0,0,0,0.08)",
+										cursor: "not-allowed",
+									}}
+								>
+									배정 대기
+								</button>
+							</div>
+						</>
 					)}
 				</div>
 			))}

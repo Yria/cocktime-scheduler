@@ -3,28 +3,58 @@ export interface SessionHeaderProps {
 	onEndClick: () => void;
 }
 
-export default function SessionHeader({
-	onBack,
-	onEndClick,
-}: SessionHeaderProps) {
+export default function SessionHeader({ onBack, onEndClick }: SessionHeaderProps) {
 	return (
-		<div className="lq-header h-14 px-4 flex items-center gap-3 flex-shrink-0">
-			<button
-				type="button"
-				onClick={onBack}
-				className="w-8 h-8 flex items-center justify-center rounded-full glass-item text-gray-500 dark:text-gray-400"
-			>
-				‹
-			</button>
-			<h2 className="font-bold text-gray-800 dark:text-white text-lg tracking-tight flex-1">
-				코트 현황
-			</h2>
+		<div
+			className="flex-shrink-0 flex items-center justify-between px-4"
+			style={{
+				height: 60,
+				background: "#ffffff",
+				borderBottom: "0.5px solid rgba(0,0,0,0.08)",
+			}}
+		>
+			<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+				<button
+					type="button"
+					onClick={onBack}
+					style={{
+						width: 32,
+						height: 32,
+						borderRadius: "50%",
+						background: "rgba(241,245,249,1)",
+						border: "none",
+						cursor: "pointer",
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+						fontSize: 20,
+						color: "#64748b",
+						flexShrink: 0,
+					}}
+				>
+					‹
+				</button>
+				<span
+					className="font-bold tracking-tight"
+					style={{ fontSize: 18, color: "#0f1724" }}
+				>
+					콕타임
+				</span>
+			</div>
 			<button
 				type="button"
 				onClick={onEndClick}
-				className="badge badge-women px-3 py-1.5 text-xs rounded-[10px]"
+				style={{
+					fontSize: 13,
+					fontWeight: 500,
+					color: "#ef4444",
+					background: "none",
+					border: "none",
+					padding: "5px 8px",
+					cursor: "pointer",
+				}}
 			>
-				종료
+				세션 종료
 			</button>
 		</div>
 	);

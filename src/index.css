@@ -35,8 +35,8 @@
 	--bg-gradient-3: #e0f2fe; /* Cyanish light */
 
 	--text-primary: #000000;
-	--text-secondary: rgba(60, 60, 67, 0.6);
-	--text-tertiary: rgba(60, 60, 67, 0.3);
+	--text-secondary: rgba(60, 60, 67, 0.75);
+	--text-tertiary: rgba(60, 60, 67, 0.5);
 }
 
 .dark {
@@ -55,8 +55,8 @@
 	--bg-gradient-3: #022c22;
 
 	--text-primary: #ffffff;
-	--text-secondary: rgba(235, 235, 245, 0.6);
-	--text-tertiary: rgba(235, 235, 245, 0.3);
+	--text-secondary: rgba(235, 235, 245, 0.75);
+	--text-tertiary: rgba(235, 235, 245, 0.5);
 }
 
 /* ── Typography & Global ───────────────────────────────────── */
@@ -356,8 +356,8 @@ h4,
 
 .lq-sheet {
 	background: var(--mat-thick);
-	backdrop-filter: blur(50px);
-	-webkit-backdrop-filter: blur(50px);
+	backdrop-filter: blur(50px) saturate(180%);
+	-webkit-backdrop-filter: blur(50px) saturate(180%);
 	box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.12);
 }
 

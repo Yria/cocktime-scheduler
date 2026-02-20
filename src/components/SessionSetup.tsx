@@ -1,49 +1,29 @@
 import { useMemo, useState } from "react";
 import { OAUTH_AVAILABLE, requestAccessToken } from "../lib/googleAuth";
 import { updatePlayer, updatePlayerWithToken } from "../lib/sheetsApi";
-import type {
-	Gender,
-	Player,
-	PlayerSkills,
-	SessionSettings,
-	SkillLevel,
-} from "../types";
+import type { Gender, Player, PlayerSkills, SessionSettings } from "../types";
+import { EditModal } from "./setup/EditModal";
+import { GuestModal } from "./setup/GuestModal";
+import { PlayerRow } from "./setup/PlayerRow";
+import { DEFAULT_SKILLS } from "./setup/SkillButton";
 
 interface Props {
 	players: Player[];
 	savedNames: Set<string> | null;
 	scriptUrl: string;
+	initialSelected?: Player[];
+	initialSettings?: SessionSettings;
+	isUpdating?: boolean;
 	onUpdatePlayer: (player: Player) => void;
 	onStart: (selected: Player[], settings: SessionSettings) => void;
-	onBack: () => void;
 }
 
 type GenderFilter = "all" | "M" | "F";
 
-const SKILLS: (keyof PlayerSkills)[] = [
-	"클리어",
-	"스매시",
-	"로테이션",
-	"드랍",
-	"헤어핀",
-	"드라이브",
-	"백핸드",
-];
-const SKILL_LEVELS: SkillLevel[] = ["O", "V", "X"];
-const SKILL_LEVEL_LABEL: Record<SkillLevel, string> = {
-	O: "상",
-	V: "중",
-	X: "하",
-};
-
-const DEFAULT_SKILLS: PlayerSkills = {
-	클리어: "V",
-	스매시: "V",
-	로테이션: "V",
-	드랍: "V",
-	헤어핀: "V",
-	드라이브: "V",
-	백핸드: "V",
+const GENDER_FILTER_LABELS: Record<GenderFilter, string> = {
+	all: "전체",
+	M: "남자",
+	F: "여자",
 };
 
 const devSelectedNames = import.meta.env.VITE_DEV_SELECTED
@@ -54,70 +34,26 @@ const devSelectedNames = import.meta.env.VITE_DEV_SELECTED
 		)
 	: null;
 
-function SkillButton({
-	level,
-	active,
-	onClick,
-}: {
-	level: SkillLevel;
-	active: boolean;
-	onClick: () => void;
-}) {
-	const colorMap: Record<SkillLevel, string> = {
-		O: active ? "btn-skill-high" : "",
-		V: active ? "btn-skill-mid" : "",
-		X: active ? "btn-skill-low" : "",
-	};
-	return (
-		<button
-			type="button"
-			onClick={onClick}
-			className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
-				active ? colorMap[level] : "glass-item text-gray-500 dark:text-gray-400"
-			}`}
-			style={
-				active
-					? level === "O"
-						? {
-								background: "linear-gradient(175deg,#38de72 0%,#28c75e 100%)",
-								color: "#fff",
-								border: "1px solid rgba(20,148,58,0.28)",
-								boxShadow:
-									"0 3px 10px rgba(40,199,94,0.28),inset 0 1px 0 rgba(255,255,255,0.25)",
-							}
-						: level === "V"
-							? {
-									background: "linear-gradient(175deg,#ffd14a 0%,#f0b000 100%)",
-									color: "#fff",
-									border: "1px solid rgba(200,140,0,0.28)",
-									boxShadow:
-										"0 3px 10px rgba(240,176,0,0.28),inset 0 1px 0 rgba(255,255,255,0.25)",
-								}
-							: {
-									background: "rgba(110,110,130,0.32)",
-									color: "#fff",
-									border: "1px solid rgba(120,120,140,0.42)",
-									boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12)",
-								}
-					: undefined
-			}
-		>
-			{SKILL_LEVEL_LABEL[level]}
-		</button>
-	);
-}
-
 export default function SessionSetup({
 	players,
 	savedNames,
 	scriptUrl,
+	initialSelected,
+	initialSettings,
+	isUpdating,
 	onUpdatePlayer,
 	onStart,
-	onBack,
 }: Props) {
-	const [courtCount, setCourtCount] = useState(2);
-	const [singleWomanIds, setSingleWomanIds] = useState<Set<string>>(new Set());
+	const [courtCount, setCourtCount] = useState(
+		initialSettings?.courtCount ?? 2,
+	);
+	const [singleWomanIds, setSingleWomanIds] = useState<Set<string>>(
+		new Set(initialSettings?.singleWomanIds ?? []),
+	);
 	const [selected, setSelected] = useState<Set<string>>(() => {
+		if (initialSelected) {
+			return new Set(initialSelected.map((p) => p.id));
+		}
 		const namesToSelect = savedNames ?? devSelectedNames;
 		if (namesToSelect) {
 			return new Set(
@@ -129,13 +65,80 @@ export default function SessionSetup({
 	const [search, setSearch] = useState("");
 	const [genderFilter, setGenderFilter] = useState<GenderFilter>("all");
 
-	const [guests, setGuests] = useState<Player[]>([]);
+	// Guest state
+	const [guests, setGuests] = useState<Player[]>(() => {
+		if (initialSelected) {
+			return initialSelected.filter((p) => p.id.startsWith("guest-"));
+		}
+		return [];
+	});
 	const [showGuestModal, setShowGuestModal] = useState(false);
 	const [guestName, setGuestName] = useState("");
 	const [guestGender, setGuestGender] = useState<Gender>("M");
 	const [guestSkills, setGuestSkills] = useState<PlayerSkills>({
 		...DEFAULT_SKILLS,
 	});
+
+	// Edit state
+	const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
+	const [editGender, setEditGender] = useState<Gender>("M");
+	const [editSkills, setEditSkills] = useState<PlayerSkills>(
+		{} as PlayerSkills,
+	);
+	const [editSaving, setEditSaving] = useState(false);
+	const [editError, setEditError] = useState("");
+
+	const filtered = useMemo(() => {
+		return players.filter((p) => {
+			const matchName = p.name.includes(search);
+			const matchGender = genderFilter === "all" || p.gender === genderFilter;
+			return matchName && matchGender;
+		});
+	}, [players, search, genderFilter]);
+
+	const filteredGuests = useMemo(() => {
+		return guests.filter((p) => {
+			const matchName = p.name.includes(search);
+			const matchGender = genderFilter === "all" || p.gender === genderFilter;
+			return matchName && matchGender;
+		});
+	}, [guests, search, genderFilter]);
+
+	const allPlayers = useMemo(() => [...players, ...guests], [players, guests]);
+
+	const selectedFemales = useMemo(
+		() => allPlayers.filter((p) => p.gender === "F" && selected.has(p.id)),
+		[allPlayers, selected],
+	);
+
+	function togglePlayer(id: string) {
+		setSelected((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			return next;
+		});
+	}
+
+	function toggleAll() {
+		const allFilteredPlayers = [...filtered, ...filteredGuests];
+		const allSelected = allFilteredPlayers.every((p) => selected.has(p.id));
+		setSelected((prev) => {
+			const next = new Set(prev);
+			if (allSelected) allFilteredPlayers.forEach((p) => next.delete(p.id));
+			else allFilteredPlayers.forEach((p) => next.add(p.id));
+			return next;
+		});
+	}
+
+	function toggleSingleWoman(id: string) {
+		setSingleWomanIds((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			return next;
+		});
+	}
 
 	function openGuestModal() {
 		setGuestName("");
@@ -170,77 +173,6 @@ export default function SessionSetup({
 			const next = new Set(prev);
 			next.delete(id);
 			return next;
-		});
-	}
-
-	const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
-	const [editGender, setEditGender] = useState<Gender>("M");
-	const [editSkills, setEditSkills] = useState<PlayerSkills>(
-		{} as PlayerSkills,
-	);
-	const [editSaving, setEditSaving] = useState(false);
-	const [editError, setEditError] = useState("");
-
-	const filtered = useMemo(() => {
-		return players.filter((p) => {
-			const matchName = p.name.includes(search);
-			const matchGender = genderFilter === "all" || p.gender === genderFilter;
-			return matchName && matchGender;
-		});
-	}, [players, search, genderFilter]);
-
-	const filteredGuests = useMemo(() => {
-		return guests.filter((p) => {
-			const matchName = p.name.includes(search);
-			const matchGender = genderFilter === "all" || p.gender === genderFilter;
-			return matchName && matchGender;
-		});
-	}, [guests, search, genderFilter]);
-
-	function togglePlayer(id: string) {
-		setSelected((prev) => {
-			const next = new Set(prev);
-			if (next.has(id)) next.delete(id);
-			else next.add(id);
-			return next;
-		});
-	}
-
-	function toggleAll() {
-		const allFilteredPlayers = [...filtered, ...filteredGuests];
-		const allSelected = allFilteredPlayers.every((p) => selected.has(p.id));
-		setSelected((prev) => {
-			const next = new Set(prev);
-			if (allSelected) allFilteredPlayers.forEach((p) => next.delete(p.id));
-			else allFilteredPlayers.forEach((p) => next.add(p.id));
-			return next;
-		});
-	}
-
-	const allPlayers = useMemo(() => [...players, ...guests], [players, guests]);
-
-	const selectedFemales = useMemo(
-		() => allPlayers.filter((p) => p.gender === "F" && selected.has(p.id)),
-		[allPlayers, selected],
-	);
-
-	function toggleSingleWoman(id: string) {
-		setSingleWomanIds((prev) => {
-			const next = new Set(prev);
-			if (next.has(id)) next.delete(id);
-			else next.add(id);
-			return next;
-		});
-	}
-
-	function handleStart() {
-		const selectedPlayers = allPlayers.filter((p) => selected.has(p.id));
-		const validSingleWomanIds = selectedPlayers
-			.filter((p) => p.gender === "F" && singleWomanIds.has(p.id))
-			.map((p) => p.id);
-		onStart(selectedPlayers, {
-			courtCount,
-			singleWomanIds: validSingleWomanIds,
 		});
 	}
 
@@ -301,45 +233,98 @@ export default function SessionSetup({
 		}
 	}
 
+	function handleStart() {
+		const selectedPlayers = allPlayers.filter((p) => selected.has(p.id));
+		const validSingleWomanIds = selectedPlayers
+			.filter((p) => p.gender === "F" && singleWomanIds.has(p.id))
+			.map((p) => p.id);
+		onStart(selectedPlayers, {
+			courtCount,
+			singleWomanIds: validSingleWomanIds,
+		});
+	}
+
 	const selectedCount = allPlayers.filter((p) => selected.has(p.id)).length;
 	const allFilteredSelected =
 		[...filtered, ...filteredGuests].length > 0 &&
 		[...filtered, ...filteredGuests].every((p) => selected.has(p.id));
 
 	return (
-		<div className="lq-bg h-[100dvh] overflow-hidden flex flex-col md:max-w-sm md:mx-auto">
+		<div
+			className="h-[100dvh] overflow-hidden flex flex-col md:max-w-sm md:mx-auto"
+			style={{ background: "#fafbff" }}
+		>
 			{/* Header */}
-			<div className="lq-header h-14 px-4 flex items-center gap-3 flex-shrink-0">
-				<button
-					type="button"
-					onClick={onBack}
-					className="w-8 h-8 flex items-center justify-center rounded-full glass-item text-gray-500 dark:text-gray-400"
+			<div
+				className="flex-shrink-0 flex items-center px-4"
+				style={{
+					height: 60,
+					background: "#ffffff",
+					borderBottom: "0.5px solid rgba(0,0,0,0.08)",
+				}}
+			>
+				<span
+					className="font-bold tracking-tight"
+					style={{ fontSize: 17, color: "#0f1724" }}
 				>
-					‹
-				</button>
-				<h2 className="font-bold text-gray-800 dark:text-white text-lg tracking-tight flex-1">
 					세션 설정
-				</h2>
+				</span>
 			</div>
 
-			<div className="flex-1 min-h-0 overflow-y-auto no-sb p-4 flex flex-col gap-3">
+			<div
+				className="flex-1 min-h-0 overflow-y-auto no-sb"
+				style={{ padding: "16px 16px 0" }}
+			>
 				{/* Court count */}
-				<div className="glass rounded-2xl p-4 flex-shrink-0">
-					<p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
+				<div
+					style={{
+						background: "#ffffff",
+						borderRadius: 12,
+						border: "1px solid rgba(0,0,0,0.06)",
+						padding: 16,
+						marginBottom: 12,
+					}}
+				>
+					<p
+						style={{
+							fontSize: 11,
+							fontWeight: 600,
+							color: "#64748b",
+							textTransform: "uppercase",
+							letterSpacing: "0.06em",
+							marginBottom: 12,
+						}}
+					>
 						코트 수
 					</p>
-					<div className="flex gap-1 glass-sub rounded-xl p-1">
+					<div
+						style={{
+							display: "flex",
+							gap: 4,
+							background: "rgba(241,245,249,1)",
+							borderRadius: 10,
+							padding: 4,
+						}}
+					>
 						{[1, 2, 3, 4, 5, 6].map((n) => (
 							<button
 								type="button"
 								key={n}
 								onClick={() => setCourtCount(n)}
-								className={`flex-1 py-2 rounded-lg font-bold text-sm transition-all ${
-									courtCount === n
-										? "glass-item"
-										: "text-gray-400 dark:text-gray-500"
-								}`}
-								style={courtCount === n ? { color: "#007aff" } : undefined}
+								style={{
+									flex: 1,
+									padding: "8px 0",
+									borderRadius: 7,
+									fontSize: 14,
+									fontWeight: 700,
+									border: "none",
+									cursor: "pointer",
+									transition: "all 0.15s",
+									background: courtCount === n ? "#ffffff" : "transparent",
+									color: courtCount === n ? "#0b84ff" : "#98a0ab",
+									boxShadow:
+										courtCount === n ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
+								}}
 							>
 								{n}
 							</button>
@@ -349,32 +334,57 @@ export default function SessionSetup({
 
 				{/* Single woman */}
 				{selectedFemales.length > 0 && (
-					<div className="glass rounded-2xl p-4 flex-shrink-0">
-						<p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-0.5">
+					<div
+						style={{
+							background: "#ffffff",
+							borderRadius: 12,
+							border: "1px solid rgba(0,0,0,0.06)",
+							padding: 16,
+							marginBottom: 12,
+						}}
+					>
+						<p
+							style={{
+								fontSize: 11,
+								fontWeight: 600,
+								color: "#64748b",
+								textTransform: "uppercase",
+								letterSpacing: "0.06em",
+								marginBottom: 2,
+							}}
+						>
 							혼복 허용 여성
 						</p>
-						<p className="text-xs text-gray-400 dark:text-gray-500 mb-3">
+						<p style={{ fontSize: 12, color: "#98a0ab", marginBottom: 12 }}>
 							남3여1 구성에서 1인 배치 허용
 						</p>
-						<div className="flex flex-wrap gap-2">
+						<div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
 							{selectedFemales.map((p) => (
 								<button
 									type="button"
 									key={p.id}
 									onClick={() => toggleSingleWoman(p.id)}
-									className={`chip ${singleWomanIds.has(p.id) ? "" : ""}`}
-									style={
-										singleWomanIds.has(p.id)
+									style={{
+										padding: "6px 12px",
+										borderRadius: 99,
+										fontSize: 14,
+										fontWeight: 500,
+										border: "none",
+										cursor: "pointer",
+										transition: "all 0.15s",
+										...(singleWomanIds.has(p.id)
 											? {
-													background: "rgba(255,45,135,0.16)",
-													border: "1px solid rgba(255,45,135,0.42)",
+													background: "rgba(255,45,135,0.1)",
 													color: "#e8207a",
-													boxShadow: "0 2px 10px rgba(255,45,135,0.22)",
+													boxShadow: "0 2px 8px rgba(255,45,135,0.15)",
 												}
-											: undefined
-									}
+											: {
+													background: "rgba(241,245,249,1)",
+													color: "#64748b",
+												}),
+									}}
 								>
-									🔴 {p.name}
+									{singleWomanIds.has(p.id) ? "🔴" : "○"} {p.name}
 								</button>
 							))}
 						</div>
@@ -382,35 +392,63 @@ export default function SessionSetup({
 				)}
 
 				{/* Player list */}
-				<div className="glass rounded-2xl overflow-hidden flex flex-col">
-					<div className="px-4 pt-4 pb-2 flex-shrink-0">
-						<div className="flex items-center justify-between mb-3">
-							<p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-								참석자&nbsp;
-								<span style={{ color: "#007aff" }}>{selectedCount}</span>
-								&nbsp;/ {allPlayers.length}명
+				<div
+					style={{
+						background: "#ffffff",
+						borderRadius: 12,
+						border: "1px solid rgba(0,0,0,0.06)",
+						overflow: "hidden",
+						marginBottom: 16,
+					}}
+				>
+					<div style={{ padding: "14px 16px 10px" }}>
+						<div
+							style={{
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "space-between",
+								marginBottom: 10,
+							}}
+						>
+							<p style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>
+								참석자 <span style={{ color: "#0b84ff" }}>{selectedCount}</span>{" "}
+								/ {allPlayers.length}명
 								{guests.length > 0 && (
 									<span
-										className="text-xs font-medium ml-1.5"
-										style={{ color: "#ff8c00" }}
+										style={{ color: "#ff9500", fontWeight: 500, marginLeft: 6 }}
 									>
 										(게스트 {guests.length})
 									</span>
 								)}
 							</p>
-							<div className="flex items-center gap-3">
+							<div style={{ display: "flex", alignItems: "center", gap: 12 }}>
 								<button
 									type="button"
 									onClick={toggleAll}
-									className="text-xs font-semibold"
-									style={{ color: "#007aff" }}
+									style={{
+										fontSize: 13,
+										fontWeight: 600,
+										color: "#0b84ff",
+										background: "none",
+										border: "none",
+										cursor: "pointer",
+									}}
 								>
 									{allFilteredSelected ? "전체해제" : "전체선택"}
 								</button>
 								<button
 									type="button"
 									onClick={openGuestModal}
-									className="badge badge-blend px-3 py-1"
+									style={{
+										fontSize: 12,
+										fontWeight: 600,
+										color: "#ff9500",
+										background: "rgba(255,149,0,0.08)",
+										border: "1px solid rgba(255,149,0,0.2)",
+										borderRadius: 6,
+										padding: "4px 10px",
+										cursor: "pointer",
+									}}
 								>
 									+ 게스트
 								</button>
@@ -422,363 +460,133 @@ export default function SessionSetup({
 							value={search}
 							onChange={(e) => setSearch(e.target.value)}
 							placeholder="이름 검색…"
-							className="lq-input mb-2.5"
+							style={{
+								width: "100%",
+								background: "rgba(241,245,249,1)",
+								border: "none",
+								borderRadius: 10,
+								padding: "10px 14px",
+								fontSize: 15,
+								color: "#0f1724",
+								outline: "none",
+								marginBottom: 8,
+								boxSizing: "border-box",
+							}}
 						/>
 
-						<div className="flex gap-1.5 mb-1">
+						<div style={{ display: "flex", gap: 6 }}>
 							{(["all", "M", "F"] as GenderFilter[]).map((g) => (
 								<button
 									type="button"
 									key={g}
 									onClick={() => setGenderFilter(g)}
-									className={`chip py-1.5 text-xs rounded-xl ${genderFilter === g ? "chip-on" : ""}`}
-									style={
-										genderFilter === g
-											? { borderRadius: "10px" }
-											: { borderRadius: "10px" }
-									}
+									style={{
+										padding: "5px 12px",
+										borderRadius: 8,
+										fontSize: 13,
+										fontWeight: 500,
+										border: "none",
+										cursor: "pointer",
+										background:
+											genderFilter === g ? "#0b84ff" : "rgba(241,245,249,1)",
+										color: genderFilter === g ? "#fff" : "#64748b",
+										transition: "all 0.15s",
+									}}
 								>
-									{g === "all" ? "전체" : g === "M" ? "남자" : "여자"}
+									{GENDER_FILTER_LABELS[g]}
 								</button>
 							))}
 						</div>
 					</div>
 
-					<div
-						className="divide-y"
-						style={{ borderTop: "1px solid rgba(0,0,0,0.04)" }}
-					>
+					<div style={{ borderTop: "1px solid rgba(0,0,0,0.04)" }}>
 						{filtered.map((player) => (
-							<div
+							<PlayerRow
 								key={player.id}
-								className="lq-divider flex items-center px-4 py-3 gap-3"
-							>
-								<button
-									type="button"
-									onClick={() => togglePlayer(player.id)}
-									className="flex items-center gap-3 flex-1 text-left min-w-0"
-								>
-									<span
-										className={`lq-check ${selected.has(player.id) ? "checked" : ""}`}
-									>
-										{selected.has(player.id) && (
-											<span className="text-white text-xs font-bold">✓</span>
-										)}
-									</span>
-									<span className="text-lg flex-shrink-0">
-										{player.gender === "F" ? "🔴" : "🔵"}
-									</span>
-									<span className="font-medium text-gray-800 dark:text-gray-100 text-sm truncate">
-										{player.name}
-									</span>
-								</button>
-								<button
-									type="button"
-									onClick={(e) => openEdit(e, player)}
-									className="text-gray-300 dark:text-gray-600 flex-shrink-0 px-1 text-base"
-								>
-									✎
-								</button>
-							</div>
+								player={player}
+								selected={selected.has(player.id)}
+								onToggle={() => togglePlayer(player.id)}
+								onEdit={(e) => openEdit(e, player)}
+							/>
 						))}
-
 						{filteredGuests.map((guest) => (
-							<div
+							<PlayerRow
 								key={guest.id}
-								className="lq-divider flex items-center px-4 py-3 gap-3"
-								style={{ background: "rgba(255,140,0,0.04)" }}
-							>
-								<button
-									type="button"
-									onClick={() => togglePlayer(guest.id)}
-									className="flex items-center gap-3 flex-1 text-left min-w-0"
-								>
-									<span
-										className={`lq-check ${selected.has(guest.id) ? "checked" : ""}`}
-									>
-										{selected.has(guest.id) && (
-											<span className="text-white text-xs font-bold">✓</span>
-										)}
-									</span>
-									<span className="text-lg flex-shrink-0">
-										{guest.gender === "F" ? "🔴" : "🔵"}
-									</span>
-									<span className="font-medium text-gray-800 dark:text-gray-100 text-sm truncate">
-										{guest.name}
-									</span>
-									<span className="badge badge-blend flex-shrink-0">
-										게스트
-									</span>
-								</button>
-								<button
-									type="button"
-									onClick={(e) => openEdit(e, guest)}
-									className="text-gray-300 dark:text-gray-600 flex-shrink-0 px-1 text-base"
-								>
-									✎
-								</button>
-								<button
-									type="button"
-									onClick={() => removeGuest(guest.id)}
-									className="text-red-300 dark:text-red-700 flex-shrink-0 px-1 text-sm"
-								>
-									✕
-								</button>
-							</div>
+								player={guest}
+								selected={selected.has(guest.id)}
+								isGuest
+								onToggle={() => togglePlayer(guest.id)}
+								onEdit={(e) => openEdit(e, guest)}
+								onRemove={() => removeGuest(guest.id)}
+							/>
 						))}
 					</div>
 				</div>
 			</div>
 
 			{/* Bottom CTA */}
-			<div className="lq-bar p-4">
+			<div
+				className="flex-shrink-0"
+				style={{
+					background: "#ffffff",
+					borderTop: "0.5px solid rgba(0,0,0,0.08)",
+					padding: "12px 16px",
+					paddingBottom: "max(12px, env(safe-area-inset-bottom))",
+				}}
+			>
 				<button
 					type="button"
 					onClick={handleStart}
 					disabled={selectedCount < 4}
-					className="btn-lq-primary w-full py-4 text-lg"
+					style={{
+						width: "100%",
+						padding: "16px",
+						borderRadius: 12,
+						fontSize: 17,
+						fontWeight: 600,
+						color: "#fff",
+						background:
+							selectedCount >= 4 ? "#0b84ff" : "rgba(11,132,255,0.35)",
+						border: "none",
+						cursor: selectedCount >= 4 ? "pointer" : "not-allowed",
+						boxShadow:
+							selectedCount >= 4 ? "0 4px 16px rgba(11,132,255,0.25)" : "none",
+					}}
 				>
-					세션 시작 ({selectedCount}명)
+					{isUpdating ? "세션 업데이트" : "세션 시작"} ({selectedCount}명)
 				</button>
 			</div>
 
-			{/* Guest modal */}
 			{showGuestModal && (
-				<div className="fixed inset-0 lq-overlay flex items-end justify-center z-50 px-4 pb-6">
-					<div className="lq-sheet w-full max-w-sm rounded-3xl overflow-hidden max-h-[90dvh] flex flex-col">
-						<div className="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
-							<h3 className="font-bold text-gray-800 dark:text-white text-lg">
-								게스트 추가
-							</h3>
-							<button
-								type="button"
-								onClick={() => setShowGuestModal(false)}
-								className="w-8 h-8 flex items-center justify-center rounded-full glass-item text-gray-400 dark:text-gray-500 text-sm"
-							>
-								✕
-							</button>
-						</div>
-
-						<div className="no-sb overflow-y-auto px-5 pb-2 space-y-4">
-							<div>
-								<p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-									이름
-								</p>
-								<input
-									type="text"
-									value={guestName}
-									onChange={(e) => setGuestName(e.target.value)}
-									onKeyDown={(e) => e.key === "Enter" && addGuest()}
-									placeholder="게스트 이름 입력"
-									// biome-ignore lint/a11y/noAutofocus: Intended UX
-									autoFocus={true}
-									className="lq-input"
-								/>
-							</div>
-
-							<div>
-								<p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-									성별
-								</p>
-								<div className="flex gap-2">
-									{(["M", "F"] as Gender[]).map((g) => (
-										<button
-											type="button"
-											key={g}
-											onClick={() => setGuestGender(g)}
-											className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
-												guestGender === g
-													? "btn-lq-primary"
-													: "glass-item text-gray-600 dark:text-gray-300"
-											}`}
-										>
-											{g === "M" ? "🔵 남" : "🔴 여"}
-										</button>
-									))}
-								</div>
-							</div>
-
-							<div>
-								<p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-									스킬{" "}
-									<span className="font-normal normal-case">(기본값: 중)</span>
-								</p>
-								<div className="space-y-2">
-									{SKILLS.map((skill) => (
-										<div key={skill} className="flex items-center gap-3">
-											<span className="text-sm text-gray-600 dark:text-gray-300 w-16 flex-shrink-0">
-												{skill}
-											</span>
-											<div className="flex gap-1.5 flex-1">
-												{SKILL_LEVELS.map((level) => (
-													<SkillButton
-														key={level}
-														level={level}
-														active={guestSkills[skill] === level}
-														onClick={() =>
-															setGuestSkills((prev) => ({
-																...prev,
-																[skill]: level,
-															}))
-														}
-													/>
-												))}
-											</div>
-										</div>
-									))}
-								</div>
-							</div>
-						</div>
-
-						<div
-							className="px-5 py-4 flex gap-3 flex-shrink-0"
-							style={{ borderTop: "1px solid rgba(0,0,0,0.06)" }}
-						>
-							<button
-								type="button"
-								onClick={() => setShowGuestModal(false)}
-								className="btn-lq-secondary flex-1 py-3 text-sm"
-							>
-								취소
-							</button>
-							<button
-								type="button"
-								onClick={addGuest}
-								disabled={!guestName.trim()}
-								className="flex-1 py-3 rounded-[14px] text-sm font-bold text-white disabled:opacity-30"
-								style={{
-									background: "linear-gradient(175deg,#ffaa40 0%,#ff8c00 100%)",
-									border: "1px solid rgba(200,90,0,0.28)",
-									boxShadow:
-										"0 5px 18px rgba(255,140,0,0.32),inset 0 1px 0 rgba(255,255,255,0.28)",
-								}}
-							>
-								추가
-							</button>
-						</div>
-					</div>
-				</div>
+				<GuestModal
+					guestName={guestName}
+					guestGender={guestGender}
+					guestSkills={guestSkills}
+					onClose={() => setShowGuestModal(false)}
+					onAdd={addGuest}
+					onChangeName={setGuestName}
+					onChangeGender={setGuestGender}
+					onChangeSkill={(skill, level) =>
+						setGuestSkills((prev) => ({ ...prev, [skill]: level }))
+					}
+				/>
 			)}
 
-			{/* Edit modal */}
 			{editingPlayer && (
-				<div className="fixed inset-0 lq-overlay flex items-end justify-center z-50 px-4 pb-6">
-					<div className="lq-sheet w-full max-w-sm rounded-3xl overflow-hidden max-h-[90dvh] flex flex-col">
-						<div className="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
-							<div className="flex items-center gap-2">
-								<h3 className="font-bold text-gray-800 dark:text-white text-lg">
-									{editingPlayer.name}
-								</h3>
-								{editingPlayer.id.startsWith("guest-") && (
-									<span className="badge badge-blend">게스트</span>
-								)}
-							</div>
-							<button
-								type="button"
-								onClick={() => setEditingPlayer(null)}
-								className="w-8 h-8 flex items-center justify-center rounded-full glass-item text-gray-400 dark:text-gray-500 text-sm"
-							>
-								✕
-							</button>
-						</div>
-
-						<div className="no-sb overflow-y-auto px-5 pb-2 space-y-4">
-							<div>
-								<p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-									성별
-								</p>
-								<div className="flex gap-2">
-									{(["M", "F"] as Gender[]).map((g) => (
-										<button
-											type="button"
-											key={g}
-											onClick={() => setEditGender(g)}
-											className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
-												editGender === g
-													? "btn-lq-primary"
-													: "glass-item text-gray-600 dark:text-gray-300"
-											}`}
-										>
-											{g === "M" ? "🔵 남" : "🔴 여"}
-										</button>
-									))}
-								</div>
-							</div>
-
-							<div>
-								<p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-									스킬
-								</p>
-								<div className="space-y-2">
-									{SKILLS.map((skill) => (
-										<div key={skill} className="flex items-center gap-3">
-											<span className="text-sm text-gray-600 dark:text-gray-300 w-16 flex-shrink-0">
-												{skill}
-											</span>
-											<div className="flex gap-1.5 flex-1">
-												{SKILL_LEVELS.map((level) => (
-													<SkillButton
-														key={level}
-														level={level}
-														active={editSkills[skill] === level}
-														onClick={() =>
-															setEditSkills((prev) => ({
-																...prev,
-																[skill]: level,
-															}))
-														}
-													/>
-												))}
-											</div>
-										</div>
-									))}
-								</div>
-							</div>
-
-							{editError && (
-								<p className="text-red-500 dark:text-red-400 text-sm">
-									{editError}
-								</p>
-							)}
-							{!editingPlayer.id.startsWith("guest-") &&
-								(OAUTH_AVAILABLE ? (
-									<p className="text-xs text-gray-400 dark:text-gray-500">
-										저장 시 구글 로그인 팝업이 뜰 수 있습니다
-									</p>
-								) : !scriptUrl ? (
-									<p className="text-xs" style={{ color: "#ff8c00" }}>
-										저장 방법 미설정 — 시트에 반영되지 않습니다
-									</p>
-								) : null)}
-							{editingPlayer.id.startsWith("guest-") && (
-								<p className="text-xs" style={{ color: "#ff8c00" }}>
-									게스트는 세션 내에서만 유지됩니다
-								</p>
-							)}
-						</div>
-
-						<div
-							className="px-5 py-4 flex gap-3 flex-shrink-0"
-							style={{ borderTop: "1px solid rgba(0,0,0,0.06)" }}
-						>
-							<button
-								type="button"
-								onClick={() => setEditingPlayer(null)}
-								className="btn-lq-secondary flex-1 py-3 text-sm"
-							>
-								취소
-							</button>
-							<button
-								type="button"
-								onClick={handleSave}
-								disabled={editSaving}
-								className="btn-lq-primary flex-1 py-3 text-sm"
-							>
-								{editSaving ? "저장 중…" : "저장"}
-							</button>
-						</div>
-					</div>
-				</div>
+				<EditModal
+					player={editingPlayer}
+					editGender={editGender}
+					editSkills={editSkills}
+					editSaving={editSaving}
+					editError={editError}
+					scriptUrl={scriptUrl}
+					onClose={() => setEditingPlayer(null)}
+					onSave={handleSave}
+					onChangeGender={setEditGender}
+					onChangeSkill={(skill, level) =>
+						setEditSkills((prev) => ({ ...prev, [skill]: level }))
+					}
+				/>
 			)}
 		</div>
 	);
