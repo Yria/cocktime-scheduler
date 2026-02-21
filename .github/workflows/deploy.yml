@@ -35,6 +35,8 @@ jobs:
           VITE_SCRIPT_URL: ${{ secrets.VITE_SCRIPT_URL }}
           VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
           VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - uses: actions/upload-pages-artifact@v3
         with:
