@@ -1,5 +1,5 @@
 import type { Gender, PlayerSkills, SkillLevel } from "../../types";
-import { SKILLS, SKILL_LEVELS, SkillButton } from "./SkillButton";
+import { SKILL_LEVELS, SKILLS, SkillButton } from "./SkillButton";
 
 interface GuestModalProps {
 	guestName: string;
@@ -69,7 +69,8 @@ export function GuestModal({
 									onClick={() => onChangeGender(g)}
 									className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all"
 									style={{
-										background: guestGender === g ? "#0b84ff" : "var(--mat-ultra-thin)",
+										background:
+											guestGender === g ? "#0b84ff" : "var(--mat-ultra-thin)",
 										color: guestGender === g ? "#fff" : "var(--text-secondary)",
 									}}
 								>
@@ -81,8 +82,7 @@ export function GuestModal({
 
 					<div className="mb-2">
 						<p className="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wide mb-2">
-							스킬{" "}
-							<span className="font-normal normal-case">(기본값: 중)</span>
+							스킬 <span className="font-normal normal-case">(기본값: 중)</span>
 						</p>
 						<div className="flex flex-col gap-2">
 							{SKILLS.map((skill) => (
@@ -127,7 +127,9 @@ export function GuestModal({
 							background: guestName.trim()
 								? "linear-gradient(175deg,#ffaa40 0%,#ff8c00 100%)"
 								: "rgba(255,140,0,0.3)",
-							boxShadow: guestName.trim() ? "0 4px 14px rgba(255,140,0,0.3)" : "none",
+							boxShadow: guestName.trim()
+								? "0 4px 14px rgba(255,140,0,0.3)"
+								: "none",
 							cursor: guestName.trim() ? "pointer" : "not-allowed",
 						}}
 					>

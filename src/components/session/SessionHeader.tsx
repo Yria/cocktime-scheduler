@@ -3,7 +3,10 @@ export interface SessionHeaderProps {
 	onEndClick: () => void;
 }
 
-export default function SessionHeader({ onBack, onEndClick }: SessionHeaderProps) {
+export default function SessionHeader({
+	onBack,
+	onEndClick,
+}: SessionHeaderProps) {
 	return (
 		<div
 			className="flex-shrink-0 flex items-center justify-between px-4"

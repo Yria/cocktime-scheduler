@@ -4,7 +4,6 @@ import { updatePlayer, updatePlayerWithToken } from "../lib/sheetsApi";
 import type { Gender, Player, PlayerSkills, SessionSettings } from "../types";
 import { EditModal } from "./setup/EditModal";
 import { GuestModal } from "./setup/GuestModal";
-import { PlayerRow } from "./setup/PlayerRow";
 import { DEFAULT_SKILLS } from "./setup/SkillButton";
 
 interface Props {
@@ -18,13 +17,12 @@ interface Props {
 	onStart: (selected: Player[], settings: SessionSettings) => void;
 }
 
-type GenderFilter = "all" | "M" | "F";
-
-const GENDER_FILTER_LABELS: Record<GenderFilter, string> = {
-	all: "전체",
-	M: "남자",
-	F: "여자",
-};
+import { CourtCountSelector } from "./setup/CourtCountSelector";
+import {
+	type GenderFilter,
+	PlayerSelectionList,
+} from "./setup/PlayerSelectionList";
+import { SingleWomanSelector } from "./setup/SingleWomanSelector";
 
 const devSelectedNames = import.meta.env.VITE_DEV_SELECTED
 	? new Set(
@@ -265,254 +263,32 @@ export default function SessionSetup({
 				className="flex-1 min-h-0 overflow-y-auto no-sb"
 				style={{ padding: "16px 16px 0" }}
 			>
-				{/* Court count */}
-				<div
-					style={{
-						background: "#ffffff",
-						borderRadius: 12,
-						border: "1px solid rgba(0,0,0,0.06)",
-						padding: 16,
-						marginBottom: 12,
-					}}
-				>
-					<p
-						style={{
-							fontSize: 11,
-							fontWeight: 600,
-							color: "#64748b",
-							textTransform: "uppercase",
-							letterSpacing: "0.06em",
-							marginBottom: 12,
-						}}
-					>
-						코트 수
-					</p>
-					<div
-						style={{
-							display: "flex",
-							gap: 4,
-							background: "rgba(241,245,249,1)",
-							borderRadius: 10,
-							padding: 4,
-						}}
-					>
-						{[1, 2, 3, 4, 5, 6].map((n) => (
-							<button
-								type="button"
-								key={n}
-								onClick={() => setCourtCount(n)}
-								style={{
-									flex: 1,
-									padding: "8px 0",
-									borderRadius: 7,
-									fontSize: 14,
-									fontWeight: 700,
-									border: "none",
-									cursor: "pointer",
-									transition: "all 0.15s",
-									background: courtCount === n ? "#ffffff" : "transparent",
-									color: courtCount === n ? "#0b84ff" : "#98a0ab",
-									boxShadow:
-										courtCount === n ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
-								}}
-							>
-								{n}
-							</button>
-						))}
-					</div>
-				</div>
+				<CourtCountSelector courtCount={courtCount} onChange={setCourtCount} />
 
-				{/* Single woman */}
-				{selectedFemales.length > 0 && (
-					<div
-						style={{
-							background: "#ffffff",
-							borderRadius: 12,
-							border: "1px solid rgba(0,0,0,0.06)",
-							padding: 16,
-							marginBottom: 12,
-						}}
-					>
-						<p
-							style={{
-								fontSize: 11,
-								fontWeight: 600,
-								color: "#64748b",
-								textTransform: "uppercase",
-								letterSpacing: "0.06em",
-								marginBottom: 2,
-							}}
-						>
-							혼복 허용 여성
-						</p>
-						<p style={{ fontSize: 12, color: "#98a0ab", marginBottom: 12 }}>
-							남3여1 구성에서 1인 배치 허용
-						</p>
-						<div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-							{selectedFemales.map((p) => (
-								<button
-									type="button"
-									key={p.id}
-									onClick={() => toggleSingleWoman(p.id)}
-									style={{
-										padding: "6px 12px",
-										borderRadius: 99,
-										fontSize: 14,
-										fontWeight: 500,
-										border: "none",
-										cursor: "pointer",
-										transition: "all 0.15s",
-										...(singleWomanIds.has(p.id)
-											? {
-													background: "rgba(255,45,135,0.1)",
-													color: "#e8207a",
-													boxShadow: "0 2px 8px rgba(255,45,135,0.15)",
-												}
-											: {
-													background: "rgba(241,245,249,1)",
-													color: "#64748b",
-												}),
-									}}
-								>
-									{singleWomanIds.has(p.id) ? "🔴" : "○"} {p.name}
-								</button>
-							))}
-						</div>
-					</div>
-				)}
+				<SingleWomanSelector
+					selectedFemales={selectedFemales}
+					singleWomanIds={singleWomanIds}
+					onToggle={toggleSingleWoman}
+				/>
 
-				{/* Player list */}
-				<div
-					style={{
-						background: "#ffffff",
-						borderRadius: 12,
-						border: "1px solid rgba(0,0,0,0.06)",
-						overflow: "hidden",
-						marginBottom: 16,
-					}}
-				>
-					<div style={{ padding: "14px 16px 10px" }}>
-						<div
-							style={{
-								display: "flex",
-								alignItems: "center",
-								justifyContent: "space-between",
-								marginBottom: 10,
-							}}
-						>
-							<p style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>
-								참석자 <span style={{ color: "#0b84ff" }}>{selectedCount}</span>{" "}
-								/ {allPlayers.length}명
-								{guests.length > 0 && (
-									<span
-										style={{ color: "#ff9500", fontWeight: 500, marginLeft: 6 }}
-									>
-										(게스트 {guests.length})
-									</span>
-								)}
-							</p>
-							<div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-								<button
-									type="button"
-									onClick={toggleAll}
-									style={{
-										fontSize: 13,
-										fontWeight: 600,
-										color: "#0b84ff",
-										background: "none",
-										border: "none",
-										cursor: "pointer",
-									}}
-								>
-									{allFilteredSelected ? "전체해제" : "전체선택"}
-								</button>
-								<button
-									type="button"
-									onClick={openGuestModal}
-									style={{
-										fontSize: 12,
-										fontWeight: 600,
-										color: "#ff9500",
-										background: "rgba(255,149,0,0.08)",
-										border: "1px solid rgba(255,149,0,0.2)",
-										borderRadius: 6,
-										padding: "4px 10px",
-										cursor: "pointer",
-									}}
-								>
-									+ 게스트
-								</button>
-							</div>
-						</div>
-
-						<input
-							type="text"
-							value={search}
-							onChange={(e) => setSearch(e.target.value)}
-							onFocus={() => setSearch("")}
-							placeholder="이름 검색…"
-							style={{
-								width: "100%",
-								background: "rgba(241,245,249,1)",
-								border: "none",
-								borderRadius: 10,
-								padding: "10px 14px",
-								fontSize: 15,
-								color: "#0f1724",
-								outline: "none",
-								marginBottom: 8,
-								boxSizing: "border-box",
-							}}
-						/>
-
-						<div style={{ display: "flex", gap: 6 }}>
-							{(["all", "M", "F"] as GenderFilter[]).map((g) => (
-								<button
-									type="button"
-									key={g}
-									onClick={() => setGenderFilter(g)}
-									style={{
-										padding: "5px 12px",
-										borderRadius: 8,
-										fontSize: 13,
-										fontWeight: 500,
-										border: "none",
-										cursor: "pointer",
-										background:
-											genderFilter === g ? "#0b84ff" : "rgba(241,245,249,1)",
-										color: genderFilter === g ? "#fff" : "#64748b",
-										transition: "all 0.15s",
-									}}
-								>
-									{GENDER_FILTER_LABELS[g]}
-								</button>
-							))}
-						</div>
-					</div>
-
-					<div style={{ borderTop: "1px solid rgba(0,0,0,0.04)" }}>
-						{filtered.map((player) => (
-							<PlayerRow
-								key={player.id}
-								player={player}
-								selected={selected.has(player.id)}
-								onToggle={() => togglePlayer(player.id)}
-								onEdit={(e) => openEdit(e, player)}
-							/>
-						))}
-						{filteredGuests.map((guest) => (
-							<PlayerRow
-								key={guest.id}
-								player={guest}
-								selected={selected.has(guest.id)}
-								isGuest
-								onToggle={() => togglePlayer(guest.id)}
-								onEdit={(e) => openEdit(e, guest)}
-								onRemove={() => removeGuest(guest.id)}
-							/>
-						))}
-					</div>
-				</div>
+				<PlayerSelectionList
+					allPlayersLength={allPlayers.length}
+					selectedCount={selectedCount}
+					guestCount={guests.length}
+					allFilteredSelected={allFilteredSelected}
+					search={search}
+					setSearch={setSearch}
+					genderFilter={genderFilter}
+					setGenderFilter={setGenderFilter}
+					filtered={filtered}
+					filteredGuests={filteredGuests}
+					selected={selected}
+					toggleAll={toggleAll}
+					openGuestModal={openGuestModal}
+					togglePlayer={togglePlayer}
+					openEdit={openEdit}
+					removeGuest={removeGuest}
+				/>
 			</div>
 
 			{/* Bottom CTA */}

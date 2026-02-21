@@ -6,11 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { PairHistory, PlayerSkills, SessionPlayer } from "../types";
-import {
-	generateTeam,
-	pairingScore,
-	skillScore,
-} from "./teamGenerator";
+import { generateTeam, pairingScore, skillScore } from "./teamGenerator";
 
 // ─────────────────────────────────────────────
 // 테스트 헬퍼
@@ -249,7 +245,9 @@ describe("규칙 1.5 — 직전 혼복 참여자 배제", () => {
 		const lastMixedIds = [lastM1.id, lastM2.id];
 
 		logWaiting("초기", players);
-		console.log(`  직전혼복: ${[lastM1, lastM2].map((p) => p.name).join(", ")}`);
+		console.log(
+			`  직전혼복: ${[lastM1, lastM2].map((p) => p.name).join(", ")}`,
+		);
 
 		const team = generateTeam(players, {}, [], lastMixedIds);
 		logTeam("결과", team);
@@ -279,7 +277,9 @@ describe("규칙 1.5 — 직전 혼복 참여자 배제", () => {
 		const lastMixedIds = [lastW1.id, lastW2.id];
 
 		logWaiting("초기", players);
-		console.log(`  직전혼복: ${[lastW1, lastW2].map((p) => p.name).join(", ")}`);
+		console.log(
+			`  직전혼복: ${[lastW1, lastW2].map((p) => p.name).join(", ")}`,
+		);
 
 		const team = generateTeam(players, {}, [], lastMixedIds);
 		logTeam("결과", team);
@@ -337,7 +337,9 @@ describe("규칙 2 — 혼복 남자 실력 유사성", () => {
 		console.log(
 			`  스킬 점수 — 강남A:${skillScore(strongM).toFixed(1)} 중남B:${skillScore(midM).toFixed(1)} 약남C:${skillScore(weakM).toFixed(1)}`,
 		);
-		console.log("  기대: 강남A(3.0)+약남C(1.0) 차이=2.0 vs 강남A+중남B 차이=1.0 → 강남A+중남B 선택");
+		console.log(
+			"  기대: 강남A(3.0)+약남C(1.0) 차이=2.0 vs 강남A+중남B 차이=1.0 → 강남A+중남B 선택",
+		);
 
 		const team = generateTeam(players, {}, []);
 		logTeam("결과", team);
@@ -420,13 +422,15 @@ describe("규칙 3+4 — 파트너 실력 유사 + 팀 간 균형", () => {
 
 		console.log(
 			`  [강A,강B] vs [약C,약D] 점수: ${scoreEven.toFixed(2)}` +
-			`  (intra:${intraEven}×1.5=${(intraEven*1.5).toFixed(1)} + inter:${interEven}×0.5=${(interEven*0.5).toFixed(1)})`,
+				`  (intra:${intraEven}×1.5=${(intraEven * 1.5).toFixed(1)} + inter:${interEven}×0.5=${(interEven * 0.5).toFixed(1)})`,
 		);
 		console.log(
 			`  [강A,약C] vs [강B,약D] 점수: ${scoreMixed.toFixed(2)}` +
-			`  (intra:${intraMixed}×1.5=${(intraMixed*1.5).toFixed(1)} + inter:${interMixed}×0.5=${(interMixed*0.5).toFixed(1)})`,
+				`  (intra:${intraMixed}×1.5=${(intraMixed * 1.5).toFixed(1)} + inter:${interMixed}×0.5=${(interMixed * 0.5).toFixed(1)})`,
 		);
-		console.log(`  → 현재 가중치(intra:1.5 > inter:0.5)로 선택: ${scoreEven < scoreMixed ? "[강,강] vs [약,약]" : "[강,약] vs [강,약]"}`);
+		console.log(
+			`  → 현재 가중치(intra:1.5 > inter:0.5)로 선택: ${scoreEven < scoreMixed ? "[강,강] vs [약,약]" : "[강,약] vs [강,약]"}`,
+		);
 		console.log(
 			"  ⚠️  기획서 예시('강자+약자가 유리')와 반대 동작 — 가중치 조정 필요 시 TEAM_GENERATION_RULES.md의 intra:1.5/inter:0.5 값 변경",
 		);
@@ -500,7 +504,9 @@ describe("규칙 5 — 파트너 중복 최소화", () => {
 		const teamA = team!.teamA.map((p) => p.id);
 		const isM1InA = teamA.includes(m1.id);
 		const isM2InA = teamA.includes(m2.id);
-		console.log(`  남A와 남B가 같은 팀: ${isM1InA === isM2InA ? "YES ⚠️" : "NO ✅"}`);
+		console.log(
+			`  남A와 남B가 같은 팀: ${isM1InA === isM2InA ? "YES ⚠️" : "NO ✅"}`,
+		);
 		expect(isM1InA).not.toEqual(isM2InA);
 	});
 
@@ -520,9 +526,7 @@ describe("규칙 5 — 파트너 중복 최소화", () => {
 		logWaiting("초기", players);
 		console.log("  이전 파트너: 강A-약B");
 		console.log("  실력상 자연스러운 페어: 강A+약B vs 중C+중D (interDiff=0)");
-		console.log(
-			"  파트너 중복 패널티: 강A-약B 재결합 시 +10 → 회피 우선",
-		);
+		console.log("  파트너 중복 패널티: 강A-약B 재결합 시 +10 → 회피 우선");
 
 		const team = generateTeam(players, history, []);
 		logTeam("결과", team, history);
@@ -555,7 +559,9 @@ describe("규칙 7 — 혼복 우선배치 강제 적용", () => {
 		const players = [w1, forcedM, m2, m3, m4, m5];
 
 		logWaiting("초기", players);
-		console.log("  여자 1명뿐이므로 일반이면 남복 → forceMixed가 있어도 여자 1명이면 혼복 불가");
+		console.log(
+			"  여자 1명뿐이므로 일반이면 남복 → forceMixed가 있어도 여자 1명이면 혼복 불가",
+		);
 		console.log("  (혼복엔 여자 2명이 필요 — 강제도 불가)");
 
 		const team = generateTeam(players, {}, []);
@@ -586,7 +592,9 @@ describe("규칙 7 — 혼복 우선배치 강제 적용", () => {
 		const players = [w1, w2, forcedM, m2, m3, m4];
 
 		logWaiting("초기", players);
-		console.log("  강제남C는 gameCount=10이라 일반이면 후순위지만 forceMixed로 반드시 포함");
+		console.log(
+			"  강제남C는 gameCount=10이라 일반이면 후순위지만 forceMixed로 반드시 포함",
+		);
 
 		const team = generateTeam(players, {}, []);
 		logTeam("결과", team);
@@ -644,7 +652,9 @@ describe("규칙 7 — 혼복 우선배치 강제 적용", () => {
 		const lastMixedIds = [lastW1.id, lastW2.id];
 
 		logWaiting("초기", players);
-		console.log(`  직전혼복: ${[lastW1, lastW2].map((p) => p.name).join(", ")}`);
+		console.log(
+			`  직전혼복: ${[lastW1, lastW2].map((p) => p.name).join(", ")}`,
+		);
 		console.log("  기대: 강제남A 포함, 여자는 신규여D 우선 선발");
 
 		const team = generateTeam(players, {}, [], lastMixedIds);
@@ -653,7 +663,9 @@ describe("규칙 7 — 혼복 우선배치 강제 적용", () => {
 		expect(team?.gameType).toBe("혼복");
 		const selected = [...team!.teamA, ...team!.teamB];
 		const selectedIds = selected.map((p) => p.id);
-		const selectedWomen = selected.filter((p) => p.gender === "F").map((p) => p.name);
+		const selectedWomen = selected
+			.filter((p) => p.gender === "F")
+			.map((p) => p.name);
 
 		console.log(`  선발된 여자: ${selectedWomen.join(", ")}`);
 		console.log(
@@ -717,7 +729,7 @@ describe("종합 시뮬레이션 — 연속 경기", () => {
 			makePlayer("남F", "M", { skill: "V" }),
 		];
 
-		let history: PairHistory = {};
+		const history: PairHistory = {};
 		let lastMixedIds: string[] = [];
 		const playerMap = new Map(players.map((p) => [p.id, p]));
 

@@ -26,3 +26,8 @@
 ## #3
 **Action:** 세션 매칭 및 팀 생성 로직 데이터베이스 연동 및 기능 개선
 **Answer:** Supabase DB 구조 확립 및 문서화(migration.sql 등), 팀 생성 알고리즘 고도화 및 테스트 추가(teamGenerator.ts), 실시간 DB 연동을 위한 상태 관리 및 UI 수정(useSessionState.ts, SessionMain.tsx 등) 진행
+
+---
+## #4
+**Action:** 세션 설정 파일 분리 및 팀 생성/데이터베이스 로직 리팩토링
+**Answer:** SessionSetup 컴포넌트를 분리(CourtCountSelector, PlayerSelectionList 등)하여 구조를 개선. 팀 생성 알고리즘(teamGenerator) 규칙 수정 및 테스트 반영. 기존 Supabase 클라이언트 구조를 기능별(actions, api, broadcast 등)로 모듈화하여 확장성을 확보함.

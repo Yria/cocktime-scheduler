@@ -11,13 +11,13 @@ import SessionMain from "./components/SessionMain";
 import SessionSetup from "./components/SessionSetup";
 import { fetchPlayers } from "./lib/sheetsApi";
 import {
+	type ClientSessionState,
 	fetchActiveSession,
 	fetchSessionSnapshot,
+	type SessionRow,
 	snapshotToClientState,
 	startSession,
 	supabase,
-	type ClientSessionState,
-	type SessionRow,
 } from "./lib/supabaseClient";
 import type { Player, SessionSettings } from "./types";
 

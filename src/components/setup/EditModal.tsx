@@ -1,6 +1,6 @@
 import { OAUTH_AVAILABLE } from "../../lib/googleAuth";
 import type { Gender, Player, PlayerSkills, SkillLevel } from "../../types";
-import { SKILLS, SKILL_LEVELS, SkillButton } from "./SkillButton";
+import { SKILL_LEVELS, SKILLS, SkillButton } from "./SkillButton";
 
 interface EditModalProps {
 	player: Player;
@@ -69,7 +69,8 @@ export function EditModal({
 									onClick={() => onChangeGender(g)}
 									className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all"
 									style={{
-										background: editGender === g ? "#0b84ff" : "var(--mat-ultra-thin)",
+										background:
+											editGender === g ? "#0b84ff" : "var(--mat-ultra-thin)",
 										color: editGender === g ? "#fff" : "var(--text-secondary)",
 									}}
 								>

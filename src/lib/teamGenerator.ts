@@ -139,9 +139,7 @@ function selectMenForMixed(
 
 	for (let i = 0; i < eligible.length; i++) {
 		for (let j = i + 1; j < eligible.length; j++) {
-			const diff = Math.abs(
-				skillScore(eligible[i]) - skillScore(eligible[j]),
-			);
+			const diff = Math.abs(skillScore(eligible[i]) - skillScore(eligible[j]));
 			if (diff < bestDiff) {
 				bestDiff = diff;
 				bestPair = [eligible[i], eligible[j]];
@@ -238,7 +236,8 @@ function determineGameType(
  *     여자 선발 시 직전 혼복 출전자 후순위 (규칙 1.5)
  *     남자 선발은 selectMenForMixed (규칙 1·1.5·2)
  *  2) 여자 1명 + 혼합 불허 시 여자 제외하고 남자 4명
- *  3) 그 외 정렬된 순서대로 4명
+ *  3) 상위 규칙 편성 불가 시 여자 4명 이상이면 여복 (규칙 1.8)
+ *  4) 그 외 정렬된 순서대로 4명
  *
  * @param lastMixedPlayerIds 직전 혼복 경기에 출전한 SessionPlayer.id 목록 (규칙 1.5).
  *   호출자가 매칭 완료 후 갱신해서 전달해야 한다.
@@ -331,6 +330,11 @@ function selectFour(
 		return men.slice(0, 4);
 	}
 
+	// 상위 혼복·남복 규칙으로 편성 불가 + 여자 ≥ 4명 → 여자 4명 (여복)
+	if (women.length >= 4) {
+		return women.slice(0, 4);
+	}
+
 	// 그 외: 정렬된 순서대로 4명
 	if (candidates.length >= 4) return candidates.slice(0, 4);
 
@@ -346,16 +350,20 @@ function buildMixedTeams(
 	men: [SessionPlayer, SessionPlayer],
 	history: PairHistory,
 ): [[SessionPlayer, SessionPlayer], [SessionPlayer, SessionPlayer]] {
-	const optionA: [[SessionPlayer, SessionPlayer], [SessionPlayer, SessionPlayer]] =
-		[
-			[women[0], men[0]],
-			[women[1], men[1]],
-		];
-	const optionB: [[SessionPlayer, SessionPlayer], [SessionPlayer, SessionPlayer]] =
-		[
-			[women[0], men[1]],
-			[women[1], men[0]],
-		];
+	const optionA: [
+		[SessionPlayer, SessionPlayer],
+		[SessionPlayer, SessionPlayer],
+	] = [
+		[women[0], men[0]],
+		[women[1], men[1]],
+	];
+	const optionB: [
+		[SessionPlayer, SessionPlayer],
+		[SessionPlayer, SessionPlayer],
+	] = [
+		[women[0], men[1]],
+		[women[1], men[0]],
+	];
 
 	const scoreA = pairingScore(optionA[0], optionA[1], history);
 	const scoreB = pairingScore(optionB[0], optionB[1], history);
@@ -415,7 +423,12 @@ export function generateTeamWithGroup(
 ): GeneratedTeam | null {
 	if (groupPlayers.length === 4) {
 		return generateTeamFromPlayers(
-			groupPlayers as [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer],
+			groupPlayers as [
+				SessionPlayer,
+				SessionPlayer,
+				SessionPlayer,
+				SessionPlayer,
+			],
 			history,
 			singleWomanIds,
 		);

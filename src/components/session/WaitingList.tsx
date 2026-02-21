@@ -114,7 +114,9 @@ export default function WaitingList({
 							<button
 								type="button"
 								onClick={() => onToggleForceMixed(p.id)}
-								title={p.forceMixed ? "혼복 우선배치 해제" : "혼복 우선배치 지정"}
+								title={
+									p.forceMixed ? "혼복 우선배치 해제" : "혼복 우선배치 지정"
+								}
 								style={{
 									padding: "8px 8px 8px 4px",
 									fontSize: 12,
