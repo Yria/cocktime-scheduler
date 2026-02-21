@@ -1,39 +1,36 @@
-import { useEffect, useState } from "react";
-import { fetchPlayers } from "../lib/sheetsApi";
-import type { Player } from "../types";
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAppStore } from "../store/appStore";
 
 interface Props {
-	onStart: (players: Player[], scriptUrl: string) => void;
+	onStart: () => void;
 }
 
-const ENV_SHEET_ID = import.meta.env.VITE_SHEET_ID as string;
-const ENV_API_KEY = import.meta.env.VITE_API_KEY as string;
-const ENV_SCRIPT_URL = (import.meta.env.VITE_SCRIPT_URL as string) ?? "";
-
 export default function Home({ onStart }: Props) {
+	const navigate = useNavigate();
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
 	const [connected, setConnected] = useState(false);
-	const [players, setPlayers] = useState<Player[]>([]);
+	const players = useAppStore((s) => s.allPlayers);
+	const sessionMeta = useAppStore((s) => s.sessionMeta);
+	const fetchPlayersAction = useAppStore((s) => s.fetchPlayersAction);
 
-	async function connect() {
+	const connect = useCallback(async () => {
 		setLoading(true);
 		setError("");
 		try {
-			const data = await fetchPlayers(ENV_SHEET_ID, ENV_API_KEY);
-			setPlayers(data);
+			await fetchPlayersAction();
 			setConnected(true);
 		} catch (e) {
 			setError(e instanceof Error ? e.message : "연동 실패");
 		} finally {
 			setLoading(false);
 		}
-	}
+	}, [fetchPlayersAction]);
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: 초기화
 	useEffect(() => {
 		connect();
-	}, []);
+	}, [connect]);
 
 	return (
 		<div
@@ -132,7 +129,14 @@ export default function Home({ onStart }: Props) {
 				{/* CTA */}
 				<button
 					type="button"
-					onClick={() => connected && onStart(players, ENV_SCRIPT_URL)}
+					onClick={() => {
+						if (!connected) return;
+						if (sessionMeta) {
+							navigate("/session");
+						} else {
+							onStart();
+						}
+					}}
 					disabled={!connected}
 					style={{
 						width: "100%",
@@ -148,7 +152,7 @@ export default function Home({ onStart }: Props) {
 						transition: "opacity 0.2s",
 					}}
 				>
-					세션 시작
+					{sessionMeta ? "세션 이어하기" : "세션 시작"}
 				</button>
 			</div>
 

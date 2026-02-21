@@ -1,6 +1,7 @@
 import { OAUTH_AVAILABLE } from "../../lib/googleAuth";
+import { useAppStore } from "../../store/appStore";
 import type { Gender, Player, PlayerSkills, SkillLevel } from "../../types";
-import { SKILL_LEVELS, SKILLS, SkillButton } from "./SkillButton";
+import { SKILL_LEVELS, SkillButton, SKILLS } from "./SkillButton";
 
 interface EditModalProps {
 	player: Player;
@@ -8,7 +9,6 @@ interface EditModalProps {
 	editSkills: PlayerSkills;
 	editSaving: boolean;
 	editError: string;
-	scriptUrl: string;
 	onClose: () => void;
 	onSave: () => void;
 	onChangeGender: (gender: Gender) => void;
@@ -21,12 +21,12 @@ export function EditModal({
 	editSkills,
 	editSaving,
 	editError,
-	scriptUrl,
 	onClose,
 	onSave,
 	onChangeGender,
 	onChangeSkill,
 }: EditModalProps) {
+	const scriptUrl = useAppStore((s) => s.scriptUrl);
 	const isGuest = player.id.startsWith("guest-");
 
 	return (

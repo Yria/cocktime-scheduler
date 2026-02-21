@@ -42,7 +42,8 @@ export type BroadcastPayload =
 			event: "group_disbanded";
 			payload: { groupId: string; readyPlayers: SessionPlayer[] };
 	  }
-	| { event: "session_ended" };
+	| { event: "session_ended" }
+	| { event: "session_updated" };
 
 export function createBroadcastChannel(sessionId: number): RealtimeChannel {
 	return supabase.channel(`session-bc:${sessionId}`, {

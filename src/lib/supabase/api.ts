@@ -106,3 +106,97 @@ export async function startSession(
 		sessionPlayers: (playerRows as SessionPlayerRow[]).map(rowToSessionPlayer),
 	};
 }
+
+export async function updateSession(
+	sessionId: number,
+	courtCount: number,
+	players: Player[],
+	singleWomanIds: string[],
+): Promise<boolean> {
+	// 1. Update court_count in sessions table
+	const { error: sessionErr } = await supabase
+		.from("sessions")
+		.update({ court_count: courtCount })
+		.eq("id", sessionId);
+
+	if (sessionErr) {
+		console.error("updateSession error:", sessionErr);
+		return false;
+	}
+
+	// 2. Fetch existing session_players
+	const { data: existingPlayers, error: playersErr } = await supabase
+		.from("session_players")
+		.select("*")
+		.eq("session_id", sessionId);
+
+	if (playersErr || !existingPlayers) {
+		console.error("fetch session_players error:", playersErr);
+		return false;
+	}
+
+	const existingMap = new Map(existingPlayers.map((p) => [p.player_id, p]));
+	const newPlayerMap = new Map(players.map((p) => [p.id, p]));
+	const singleWomanIdSet = new Set(singleWomanIds);
+
+	const now = new Date().toISOString();
+
+	// find added
+	const playersToAdd = players
+		.filter((p) => !existingMap.has(p.id))
+		.map((p) => ({
+			session_id: sessionId,
+			player_id: p.id,
+			name: p.name,
+			gender: p.gender,
+			skills: p.skills,
+			allow_mixed_single: p.gender === "F" && singleWomanIdSet.has(p.id),
+			status: "waiting",
+			wait_since: now,
+		}));
+
+	if (playersToAdd.length > 0) {
+		await supabase.from("session_players").insert(playersToAdd);
+	}
+
+	// update existing or remove
+	const playersToRemoveIds: string[] = [];
+
+	for (const ep of existingPlayers) {
+		const newP = newPlayerMap.get(ep.player_id);
+		if (!newP) {
+			if (ep.status !== "playing") {
+				playersToRemoveIds.push(ep.id);
+			}
+		} else {
+			const allowedMixedSingle =
+				newP.gender === "F" && singleWomanIdSet.has(newP.id);
+			const changed =
+				ep.allow_mixed_single !== allowedMixedSingle ||
+				ep.name !== newP.name ||
+				ep.gender !== newP.gender ||
+				JSON.stringify(ep.skills) !== JSON.stringify(newP.skills);
+
+			if (changed) {
+				await supabase
+					.from("session_players")
+					.update({
+						name: newP.name,
+						gender: newP.gender,
+						skills: newP.skills,
+						allow_mixed_single: allowedMixedSingle,
+					})
+					.eq("id", ep.id);
+			}
+		}
+	}
+
+	if (playersToRemoveIds.length > 0) {
+		await supabase
+			.from("session_players")
+			.delete()
+			.in("id", playersToRemoveIds);
+	}
+
+	return true;
+}

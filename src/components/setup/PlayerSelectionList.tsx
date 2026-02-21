@@ -21,6 +21,7 @@ interface Props {
 	filtered: Player[];
 	filteredGuests: Player[];
 	selected: Set<string>;
+	nonRemovablePlayerIds?: Set<string>;
 	toggleAll: () => void;
 	openGuestModal: () => void;
 	togglePlayer: (id: string) => void;
@@ -40,6 +41,7 @@ export function PlayerSelectionList({
 	filtered,
 	filteredGuests,
 	selected,
+	nonRemovablePlayerIds,
 	toggleAll,
 	openGuestModal,
 	togglePlayer,
@@ -161,6 +163,7 @@ export function PlayerSelectionList({
 						key={player.id}
 						player={player}
 						selected={selected.has(player.id)}
+						disabled={nonRemovablePlayerIds?.has(player.id)}
 						onToggle={() => togglePlayer(player.id)}
 						onEdit={(e) => openEdit(e, player)}
 					/>
@@ -170,6 +173,7 @@ export function PlayerSelectionList({
 						key={guest.id}
 						player={guest}
 						selected={selected.has(guest.id)}
+						disabled={nonRemovablePlayerIds?.has(guest.id)}
 						isGuest
 						onToggle={() => togglePlayer(guest.id)}
 						onEdit={(e) => openEdit(e, guest)}

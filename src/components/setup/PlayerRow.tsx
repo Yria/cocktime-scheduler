@@ -4,6 +4,7 @@ interface PlayerRowProps {
 	player: Player;
 	selected: boolean;
 	isGuest?: boolean;
+	disabled?: boolean;
 	onToggle: () => void;
 	onEdit: (e: React.MouseEvent) => void;
 	onRemove?: () => void;
@@ -13,6 +14,7 @@ export function PlayerRow({
 	player,
 	selected,
 	isGuest,
+	disabled,
 	onToggle,
 	onEdit,
 	onRemove,
@@ -30,7 +32,8 @@ export function PlayerRow({
 		>
 			<button
 				type="button"
-				onClick={onToggle}
+				onClick={disabled ? undefined : onToggle}
+				disabled={disabled}
 				style={{
 					display: "flex",
 					alignItems: "center",
@@ -39,8 +42,9 @@ export function PlayerRow({
 					textAlign: "left",
 					background: "none",
 					border: "none",
-					cursor: "pointer",
+					cursor: disabled ? "not-allowed" : "pointer",
 					minWidth: 0,
+					opacity: disabled ? 0.5 : 1,
 				}}
 			>
 				<span

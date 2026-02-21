@@ -1,22 +1,14 @@
-import { useMemo, useState } from "react";
-import { OAUTH_AVAILABLE, requestAccessToken } from "../lib/googleAuth";
-import { updatePlayer, updatePlayerWithToken } from "../lib/sheetsApi";
+import { useEffect, useMemo, useState } from "react";
 import type { Gender, Player, PlayerSkills, SessionSettings } from "../types";
 import { EditModal } from "./setup/EditModal";
 import { GuestModal } from "./setup/GuestModal";
 import { DEFAULT_SKILLS } from "./setup/SkillButton";
 
 interface Props {
-	players: Player[];
-	savedNames: Set<string> | null;
-	scriptUrl: string;
-	isUpdating?: boolean;
-	initialCourtCount?: number;
-	initialSingleWomanIds?: string[];
-	onUpdatePlayer: (player: Player) => void;
 	onStart: (selected: Player[], settings: SessionSettings) => void;
 }
 
+import { useAppStore } from "../store/appStore";
 import { CourtCountSelector } from "./setup/CourtCountSelector";
 import {
 	type GenderFilter,
@@ -32,34 +24,90 @@ const devSelectedNames = import.meta.env.VITE_DEV_SELECTED
 		)
 	: null;
 
-export default function SessionSetup({
-	players,
-	savedNames,
-	scriptUrl,
-	isUpdating,
-	initialCourtCount,
-	initialSingleWomanIds,
-	onUpdatePlayer,
-	onStart,
-}: Props) {
-	const [courtCount, setCourtCount] = useState(initialCourtCount ?? 2);
-	const [singleWomanIds, setSingleWomanIds] = useState<Set<string>>(
-		() => new Set(initialSingleWomanIds ?? []),
-	);
-	const [selected, setSelected] = useState<Set<string>>(() => {
-		const namesToSelect = savedNames ?? devSelectedNames;
-		if (namesToSelect) {
-			return new Set(
-				players.filter((p) => namesToSelect.has(p.name)).map((p) => p.id),
-			);
+export default function SessionSetup({ onStart }: Props) {
+	const allStorePlayers = useAppStore((s) => s.allPlayers);
+	const savedNames = useAppStore((s) => s.savedNames);
+	const sessionMeta = useAppStore((s) => s.sessionMeta);
+	const updatePlayerAction = useAppStore((s) => s.updatePlayerAction);
+
+	const isUpdating = !!sessionMeta;
+
+	const players = useMemo(() => {
+		if (allStorePlayers.length > 0) return allStorePlayers;
+		if (!sessionMeta) return [];
+		const { waiting, resting, courts, reservedGroups } =
+			sessionMeta.initialState;
+		const playingPlayers = courts.flatMap((c) =>
+			c.match ? [...c.match.teamA, ...c.match.teamB] : [],
+		);
+		const reservedPlayers = reservedGroups.flatMap((g) => g.players);
+		const playerMap = new Map<string, Player>();
+		for (const sp of [
+			...waiting,
+			...resting,
+			...playingPlayers,
+			...reservedPlayers,
+		]) {
+			if (!playerMap.has(sp.playerId)) {
+				playerMap.set(sp.playerId, {
+					id: sp.playerId,
+					name: sp.name,
+					gender: sp.gender,
+					skills: sp.skills,
+				});
+			}
 		}
-		return new Set(players.map((p) => p.id));
-	});
+		return Array.from(playerMap.values());
+	}, [allStorePlayers, sessionMeta]);
+
+	const { nonRemovablePlayerIds, minCourtCount } = useMemo(() => {
+		let nonRemovablePlayerIds = new Set<string>();
+		let minCourtCount = 0;
+		if (sessionMeta) {
+			const { courts } = sessionMeta.initialState;
+			const playing = courts.flatMap((c) =>
+				c.match ? [...c.match.teamA, ...c.match.teamB] : [],
+			);
+			nonRemovablePlayerIds = new Set(playing.map((p) => p.playerId));
+			// 코트 수: 줄이기 불가, 늘리기만 가능
+			minCourtCount = sessionMeta.courtCount;
+		}
+		return { nonRemovablePlayerIds, minCourtCount };
+	}, [sessionMeta]);
+	const isSetupInitialized = useAppStore((s) => s.setupInitialized);
+	const setSetupInitialized = useAppStore((s) => s.setSetupInitialized);
+	const courtCount = useAppStore((s) => s.setupCourtCount);
+	const setCourtCount = useAppStore((s) => s.setSetupCourtCount);
+	const singleWomanIds = useAppStore((s) => s.setupSingleWomanIds);
+	const setSingleWomanIds = useAppStore((s) => s.setSetupSingleWomanIds);
+	const selected = useAppStore((s) => s.setupSelectedIds);
+	const setSelected = useAppStore((s) => s.setSetupSelectedIds);
+	const guests = useAppStore((s) => s.setupGuests);
+	const setGuests = useAppStore((s) => s.setSetupGuests);
+
 	const [search, setSearch] = useState("");
 	const [genderFilter, setGenderFilter] = useState<GenderFilter>("all");
 
+	useEffect(() => {
+		if (!isSetupInitialized && players.length > 0) {
+			const namesToSelect = savedNames ?? devSelectedNames;
+			const initialSelected = namesToSelect
+				? new Set(
+						players.filter((p) => namesToSelect.has(p.name)).map((p) => p.id),
+					)
+				: new Set(players.map((p) => p.id));
+			setSelected(initialSelected);
+			setSetupInitialized(true);
+		}
+	}, [
+		isSetupInitialized,
+		players,
+		savedNames,
+		setSelected,
+		setSetupInitialized,
+	]);
+
 	// Guest state
-	const [guests, setGuests] = useState<Player[]>([]);
 	const [showGuestModal, setShowGuestModal] = useState(false);
 	const [guestName, setGuestName] = useState("");
 	const [guestGender, setGuestGender] = useState<Gender>("M");
@@ -100,6 +148,7 @@ export default function SessionSetup({
 	);
 
 	function togglePlayer(id: string) {
+		if (nonRemovablePlayerIds?.has(id)) return;
 		setSelected((prev) => {
 			const next = new Set(prev);
 			if (next.has(id)) next.delete(id);
@@ -113,8 +162,15 @@ export default function SessionSetup({
 		const allSelected = allFilteredPlayers.every((p) => selected.has(p.id));
 		setSelected((prev) => {
 			const next = new Set(prev);
-			if (allSelected) allFilteredPlayers.forEach((p) => next.delete(p.id));
-			else allFilteredPlayers.forEach((p) => next.add(p.id));
+			if (allSelected) {
+				allFilteredPlayers.forEach((p) => {
+					if (!nonRemovablePlayerIds?.has(p.id)) {
+						next.delete(p.id);
+					}
+				});
+			} else {
+				allFilteredPlayers.forEach((p) => next.add(p.id));
+			}
 			return next;
 		});
 	}
@@ -188,27 +244,7 @@ export default function SessionSetup({
 		setEditSaving(true);
 		setEditError("");
 		try {
-			if (OAUTH_AVAILABLE) {
-				const token = await requestAccessToken();
-				await updatePlayerWithToken(
-					token,
-					editingPlayer.name,
-					editGender,
-					editSkills,
-				);
-			} else if (scriptUrl) {
-				await updatePlayer(
-					scriptUrl,
-					editingPlayer.name,
-					editGender,
-					editSkills,
-				);
-			} else {
-				throw new Error(
-					"저장 방법이 설정되지 않았습니다 (OAuth Client ID 또는 Script URL 필요)",
-				);
-			}
-			onUpdatePlayer({
+			await updatePlayerAction({
 				...editingPlayer,
 				gender: editGender,
 				skills: editSkills,
@@ -263,7 +299,11 @@ export default function SessionSetup({
 				className="flex-1 min-h-0 overflow-y-auto no-sb"
 				style={{ padding: "16px 16px 0" }}
 			>
-				<CourtCountSelector courtCount={courtCount} onChange={setCourtCount} />
+				<CourtCountSelector
+					courtCount={courtCount}
+					minCourtCount={minCourtCount}
+					onChange={setCourtCount}
+				/>
 
 				<SingleWomanSelector
 					selectedFemales={selectedFemales}
@@ -283,6 +323,7 @@ export default function SessionSetup({
 					filtered={filtered}
 					filteredGuests={filteredGuests}
 					selected={selected}
+					nonRemovablePlayerIds={nonRemovablePlayerIds}
 					toggleAll={toggleAll}
 					openGuestModal={openGuestModal}
 					togglePlayer={togglePlayer}
@@ -346,7 +387,6 @@ export default function SessionSetup({
 					editSkills={editSkills}
 					editSaving={editSaving}
 					editError={editError}
-					scriptUrl={scriptUrl}
 					onClose={() => setEditingPlayer(null)}
 					onSave={handleSave}
 					onChangeGender={setEditGender}

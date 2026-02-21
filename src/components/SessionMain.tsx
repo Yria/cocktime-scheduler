@@ -1,5 +1,4 @@
 import { useSessionState } from "../hooks/useSessionState";
-import type { ClientSessionState } from "../lib/supabaseClient";
 import CourtList from "./session/CourtList";
 import CourtsHeader from "./session/CourtsHeader";
 import EndSessionModal from "./session/EndSessionModal";
@@ -13,24 +12,11 @@ import WaitingList from "./session/WaitingList";
 import TeamDialog from "./TeamDialog";
 
 interface Props {
-	sessionId: number;
-	courtCount: number;
-	singleWomanIds: string[];
-	initialState: ClientSessionState;
-	clientId: string;
 	onBack: () => void;
 	onEnd: () => void;
 }
 
-export default function SessionMain({
-	sessionId,
-	courtCount,
-	singleWomanIds,
-	initialState,
-	clientId,
-	onBack,
-	onEnd,
-}: Props) {
+export default function SessionMain({ onBack, onEnd }: Props) {
 	const {
 		courts,
 		waiting,
@@ -62,11 +48,6 @@ export default function SessionMain({
 		playingCount,
 		totalCount,
 	} = useSessionState({
-		sessionId,
-		courtCount,
-		clientId,
-		initialState,
-		singleWomanIds,
 		onEnd,
 	});
 

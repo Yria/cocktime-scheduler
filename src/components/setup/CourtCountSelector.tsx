@@ -1,9 +1,14 @@
 interface Props {
 	courtCount: number;
+	minCourtCount?: number;
 	onChange: (n: number) => void;
 }
 
-export function CourtCountSelector({ courtCount, onChange }: Props) {
+export function CourtCountSelector({
+	courtCount,
+	minCourtCount = 0,
+	onChange,
+}: Props) {
 	return (
 		<div
 			style={{
@@ -40,6 +45,7 @@ export function CourtCountSelector({ courtCount, onChange }: Props) {
 						type="button"
 						key={n}
 						onClick={() => onChange(n)}
+						disabled={n < minCourtCount}
 						style={{
 							flex: 1,
 							padding: "8px 0",
@@ -47,10 +53,11 @@ export function CourtCountSelector({ courtCount, onChange }: Props) {
 							fontSize: 14,
 							fontWeight: 700,
 							border: "none",
-							cursor: "pointer",
+							cursor: n < minCourtCount ? "not-allowed" : "pointer",
 							transition: "all 0.15s",
 							background: courtCount === n ? "#ffffff" : "transparent",
 							color: courtCount === n ? "#0b84ff" : "#98a0ab",
+							opacity: n < minCourtCount ? 0.3 : 1,
 							boxShadow:
 								courtCount === n ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
 						}}
