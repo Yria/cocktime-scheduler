@@ -1,5 +1,6 @@
+import { SKILL_LEVELS, SKILLS } from "../../lib/constants";
 import type { Gender, PlayerSkills, SkillLevel } from "../../types";
-import { SKILL_LEVELS, SKILLS, SkillButton } from "./SkillButton";
+import { SkillButton } from "./SkillButton";
 
 interface GuestModalProps {
 	guestName: string;
@@ -74,7 +75,25 @@ export function GuestModal({
 										color: guestGender === g ? "#fff" : "var(--text-secondary)",
 									}}
 								>
-									{g === "M" ? "🔵 남" : "🔴 여"}
+									<span
+										style={{
+											display: "inline-flex",
+											alignItems: "center",
+											gap: 5,
+										}}
+									>
+										<span
+											style={{
+												width: 7,
+												height: 7,
+												borderRadius: "50%",
+												background: g === "M" ? "#007aff" : "#ff2d55",
+												display: "inline-block",
+												flexShrink: 0,
+											}}
+										/>
+										{g === "M" ? "남" : "여"}
+									</span>
 								</button>
 							))}
 						</div>

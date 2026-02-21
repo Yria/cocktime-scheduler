@@ -1,34 +1,16 @@
+import { memo } from "react";
 import type { Court } from "../../types";
+import PlayerBadge from "../shared/PlayerBadge";
 
 interface CourtListProps {
 	courts: Court[];
 	onComplete: (courtId: number) => void;
 }
 
-function PlayerBadge({ player }: { player: { name: string; gender: string } }) {
-	return (
-		<div
-			style={{
-				display: "flex",
-				alignItems: "center",
-				gap: 4,
-				padding: "3px 10px",
-				background: player.gender === "F" ? "#fee2e2" : "#e0f2fe",
-				borderRadius: 14,
-				fontSize: 13,
-				color: player.gender === "F" ? "#991b1b" : "#075985",
-				fontWeight: 600,
-			}}
-		>
-			<span style={{ fontSize: 10 }}>
-				{player.gender === "F" ? "🔴" : "🔵"}
-			</span>
-			<span>{player.name}</span>
-		</div>
-	);
-}
-
-export default function CourtList({ courts, onComplete }: CourtListProps) {
+const CourtList = memo(function CourtList({
+	courts,
+	onComplete,
+}: CourtListProps) {
 	return (
 		<>
 			{courts.map((court) => (
@@ -109,7 +91,11 @@ export default function CourtList({ courts, onComplete }: CourtListProps) {
 										}}
 									>
 										{court.match.teamA.map((player) => (
-											<PlayerBadge key={player.id} player={player} />
+											<PlayerBadge
+												key={player.id}
+												name={player.name}
+												gender={player.gender}
+											/>
 										))}
 									</div>
 								</div>
@@ -170,7 +156,11 @@ export default function CourtList({ courts, onComplete }: CourtListProps) {
 										}}
 									>
 										{court.match.teamB.map((player) => (
-											<PlayerBadge key={player.id} player={player} />
+											<PlayerBadge
+												key={player.id}
+												name={player.name}
+												gender={player.gender}
+											/>
 										))}
 									</div>
 								</div>
@@ -285,4 +275,6 @@ export default function CourtList({ courts, onComplete }: CourtListProps) {
 			))}
 		</>
 	);
-}
+});
+
+export default CourtList;

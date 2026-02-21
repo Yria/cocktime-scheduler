@@ -52,9 +52,17 @@ export default function TeamDialog({
 										<p className="font-bold text-gray-800 dark:text-white text-sm">
 											{p.name}
 										</p>
-										<p className="text-base mt-0.5">
-											{p.gender === "F" ? "🔴" : "🔵"}
-										</p>
+										<div className="flex justify-center mt-1.5">
+											<span
+												style={{
+													width: 8,
+													height: 8,
+													borderRadius: "50%",
+													background: p.gender === "F" ? "#ff2d55" : "#007aff",
+													display: "inline-block",
+												}}
+											/>
+										</div>
 									</div>
 								))}
 							</div>
@@ -88,9 +96,17 @@ export default function TeamDialog({
 										<p className="font-bold text-gray-800 dark:text-white text-sm">
 											{p.name}
 										</p>
-										<p className="text-base mt-0.5">
-											{p.gender === "F" ? "🔴" : "🔵"}
-										</p>
+										<div className="flex justify-center mt-1.5">
+											<span
+												style={{
+													width: 8,
+													height: 8,
+													borderRadius: "50%",
+													background: p.gender === "F" ? "#ff2d55" : "#007aff",
+													display: "inline-block",
+												}}
+											/>
+										</div>
 									</div>
 								))}
 							</div>

@@ -1,5 +1,12 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useAppStore } from "../store/appStore";
+import {
+	setPendingGroupId,
+	setPendingTeam,
+	setReservingSelected,
+	setShowEndConfirm,
+	setShowReserveModal,
+} from "../store/sessionSetters";
 import { useSessionStore } from "../store/sessionStore";
 
 export interface UseSessionStateProps {
@@ -24,15 +31,10 @@ export function useSessionState({ onEnd }: UseSessionStateProps) {
 	const resting = useSessionStore((s) => s.resting);
 	const reservedGroups = useSessionStore((s) => s.reservedGroups);
 	const pendingTeam = useSessionStore((s) => s.pendingTeam);
-	const setPendingTeam = useSessionStore((s) => s.setPendingTeam);
 	const pendingGroupId = useSessionStore((s) => s.pendingGroupId);
-	const setPendingGroupId = useSessionStore((s) => s.setPendingGroupId);
 	const showEndConfirm = useSessionStore((s) => s.showEndConfirm);
-	const setShowEndConfirm = useSessionStore((s) => s.setShowEndConfirm);
 	const showReserveModal = useSessionStore((s) => s.showReserveModal);
-	const setShowReserveModal = useSessionStore((s) => s.setShowReserveModal);
 	const reservingSelected = useSessionStore((s) => s.reservingSelected);
-	const setReservingSelected = useSessionStore((s) => s.setReservingSelected);
 
 	const handleGenerate = useSessionStore((s) => s.handleGenerate);
 	const handleAssignGroup = useSessionStore((s) => s.handleAssignGroup);
@@ -60,41 +62,58 @@ export function useSessionState({ onEnd }: UseSessionStateProps) {
 
 	// ── 파생 상태 ────────────────────────────────────────────────
 
-	const canGenerate =
-		waiting.length >= 4 && courts.some((c) => c.match === null);
+	const canGenerate = useMemo(
+		() => waiting.length >= 4 && courts.some((c) => c.match === null),
+		[waiting.length, courts],
+	);
 
-	const canReserve = (() => {
+	const canReserve = useMemo(() => {
 		const onCourtCount = courts.reduce((n, c) => n + (c.match ? 4 : 0), 0);
 		return waiting.length + onCourtCount >= 2;
-	})();
+	}, [waiting.length, courts]);
 
-	const reservedMemberIds = new Set(reservedGroups.flatMap((g) => g.memberIds));
-	const onCourtPlayers = courts.flatMap((c) =>
-		c.match ? [...c.match.teamA, ...c.match.teamB] : [],
+	const courtPlayerMap = useMemo(() => {
+		const map = new Map<string, number>();
+		courts.forEach((c) => {
+			if (c.match) {
+				[...c.match.teamA, ...c.match.teamB].forEach((p) =>
+					map.set(p.id, c.id),
+				);
+			}
+		});
+		return map;
+	}, [courts]);
+
+	const modalPlayers = useMemo(() => {
+		const reservedMemberIds = new Set(
+			reservedGroups.flatMap((g) => g.memberIds),
+		);
+		const onCourtPlayers = courts.flatMap((c) =>
+			c.match ? [...c.match.teamA, ...c.match.teamB] : [],
+		);
+		return [
+			...waiting.filter((p) => !reservedMemberIds.has(p.id)),
+			...onCourtPlayers.filter((p) => !reservedMemberIds.has(p.id)),
+		];
+	}, [waiting, courts, reservedGroups]);
+
+	const playingCount = useMemo(
+		() => courts.reduce((n, c) => n + (c.match ? 4 : 0), 0),
+		[courts],
 	);
-	const courtPlayerMap = new Map<string, number>();
-	courts.forEach((c) => {
-		if (c.match) {
-			[...c.match.teamA, ...c.match.teamB].forEach((p) =>
-				courtPlayerMap.set(p.id, c.id),
-			);
-		}
-	});
 
-	const modalPlayers = [
-		...waiting.filter((p) => !reservedMemberIds.has(p.id)),
-		...onCourtPlayers.filter((p) => !reservedMemberIds.has(p.id)),
-	];
-
-	const playingCount = courts.reduce((n, c) => n + (c.match ? 4 : 0), 0);
-	const reservedReadyCount = reservedGroups.reduce(
-		(n, g) => n + g.readyIds.length,
-		0,
+	const reservedReadyCount = useMemo(
+		() => reservedGroups.reduce((n, g) => n + g.readyIds.length, 0),
+		[reservedGroups],
 	);
+
 	const totalCount =
 		waiting.length + resting.length + playingCount + reservedReadyCount;
 
-	const handleEndSession = () => handleEndSessionAction(onEnd);
+	const handleEndSession = useCallback(
+		() => handleEndSessionAction(onEnd),
+		[handleEndSessionAction, onEnd],
+	);
 
 	return {
 		courts,

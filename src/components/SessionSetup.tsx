@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { DEFAULT_SKILLS } from "../lib/constants";
 import type { Gender, Player, PlayerSkills, SessionSettings } from "../types";
 import { EditModal } from "./setup/EditModal";
 import { GuestModal } from "./setup/GuestModal";
-import { DEFAULT_SKILLS } from "./setup/SkillButton";
 
 interface Props {
 	onStart: (selected: Player[], settings: SessionSettings) => void;
@@ -69,8 +69,7 @@ export default function SessionSetup({ onStart }: Props) {
 				c.match ? [...c.match.teamA, ...c.match.teamB] : [],
 			);
 			nonRemovablePlayerIds = new Set(playing.map((p) => p.playerId));
-			// 코트 수: 줄이기 불가, 늘리기만 가능
-			minCourtCount = sessionMeta.courtCount;
+			minCourtCount = 0;
 		}
 		return { nonRemovablePlayerIds, minCourtCount };
 	}, [sessionMeta]);

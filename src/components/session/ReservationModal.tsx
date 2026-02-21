@@ -71,8 +71,19 @@ export default function ReservationModal({
 														? "chip-amber"
 														: ""
 										}`}
+										style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
 									>
-										{p.gender === "F" ? "🔴" : "🔵"} {p.name}
+										<span
+											style={{
+												width: 7,
+												height: 7,
+												borderRadius: "50%",
+												background: p.gender === "F" ? "#ff2d55" : "#007aff",
+												flexShrink: 0,
+												display: "inline-block",
+											}}
+										/>
+										{p.name}
 										{courtId && !isSelected && (
 											<span className="badge-inline badge-inline-amber">
 												{courtId}번

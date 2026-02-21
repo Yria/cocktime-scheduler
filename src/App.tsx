@@ -7,8 +7,10 @@ import {
 	useNavigate,
 } from "react-router-dom";
 import Home from "./components/Home";
+import LogPage from "./components/LogPage";
 import SessionMain from "./components/SessionMain";
 import SessionSetup from "./components/SessionSetup";
+import { usePageVisibility } from "./hooks/usePageVisibility";
 import type { SessionRow } from "./lib/supabaseClient";
 import { useAppStore } from "./store/appStore";
 import type { Player, SessionSettings } from "./types";
@@ -87,6 +89,14 @@ export default function App() {
 		}
 		checkActiveSession();
 	}, [checkActiveSessionAction, navigate]);
+
+	// 페이지가 다시 활성화되었을 때(백그라운드 -> 포그라운드) 세션 동기화
+	const isVisible = usePageVisibility();
+	useEffect(() => {
+		if (isVisible) {
+			checkActiveSessionAction();
+		}
+	}, [isVisible, checkActiveSessionAction]);
 
 	// 다른 클라이언트의 세션 시작/종료 감지
 	const subscribeSessionWatch = useAppStore((s) => s.subscribeSessionWatch);
@@ -187,6 +197,7 @@ export default function App() {
 						)
 					}
 				/>
+				<Route path="/logs" element={<LogPage />} />
 				<Route path="*" element={<Navigate to="/" replace />} />
 			</Routes>
 		</div>

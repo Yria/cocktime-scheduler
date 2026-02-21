@@ -1,3 +1,5 @@
+import { useNavigate } from "react-router-dom";
+
 export interface SessionHeaderProps {
 	onBack: () => void;
 	onEndClick: () => void;
@@ -7,6 +9,8 @@ export default function SessionHeader({
 	onBack,
 	onEndClick,
 }: SessionHeaderProps) {
+	const navigate = useNavigate();
+
 	return (
 		<div
 			className="flex-shrink-0 flex items-center justify-between px-4"
@@ -44,21 +48,38 @@ export default function SessionHeader({
 					콕타임
 				</span>
 			</div>
-			<button
-				type="button"
-				onClick={onEndClick}
-				style={{
-					fontSize: 13,
-					fontWeight: 500,
-					color: "#ef4444",
-					background: "none",
-					border: "none",
-					padding: "5px 8px",
-					cursor: "pointer",
-				}}
-			>
-				세션 종료
-			</button>
+			<div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+				<button
+					type="button"
+					onClick={() => navigate("/logs")}
+					style={{
+						fontSize: 13,
+						fontWeight: 500,
+						color: "#64748b",
+						background: "none",
+						border: "none",
+						padding: "5px 8px",
+						cursor: "pointer",
+					}}
+				>
+					로그
+				</button>
+				<button
+					type="button"
+					onClick={onEndClick}
+					style={{
+						fontSize: 13,
+						fontWeight: 500,
+						color: "#ef4444",
+						background: "none",
+						border: "none",
+						padding: "5px 8px",
+						cursor: "pointer",
+					}}
+				>
+					세션 종료
+				</button>
+			</div>
 		</div>
 	);
 }

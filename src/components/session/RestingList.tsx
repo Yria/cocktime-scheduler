@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { SessionPlayer } from "../../types";
 
 interface RestingListProps {
@@ -5,11 +6,7 @@ interface RestingListProps {
 	onToggleResting: (playerId: string) => void;
 }
 
-function formatPlayer(player: SessionPlayer) {
-	return `${player.gender === "F" ? "🔴" : "🔵"} ${player.name}`;
-}
-
-export default function RestingList({
+const RestingList = memo(function RestingList({
 	resting,
 	onToggleResting,
 }: RestingListProps) {
@@ -27,37 +24,50 @@ export default function RestingList({
 				}}
 			>
 				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-					<svg
-						width="20"
-						height="20"
-						viewBox="0 0 20 20"
-						fill="none"
-						aria-hidden="true"
+					<div
+						style={{
+							width: 28,
+							height: 28,
+							borderRadius: 8,
+							background: "rgba(100,116,139,0.1)",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							flexShrink: 0,
+						}}
 					>
-						<circle
-							cx="10"
-							cy="10"
-							r="7.5"
-							stroke="#0f1724"
-							strokeWidth="1.5"
-						/>
-						<rect
-							x="7.5"
-							y="6"
-							width="1.8"
-							height="8"
-							rx="0.9"
-							fill="#0f1724"
-						/>
-						<rect
-							x="10.7"
-							y="6"
-							width="1.8"
-							height="8"
-							rx="0.9"
-							fill="#0f1724"
-						/>
-					</svg>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 20 20"
+							fill="none"
+							aria-hidden="true"
+						>
+							<circle
+								cx="10"
+								cy="10"
+								r="7.5"
+								stroke="#64748b"
+								strokeWidth="1.5"
+							/>
+							<rect
+								x="7.5"
+								y="6"
+								width="1.8"
+								height="8"
+								rx="0.9"
+								fill="#64748b"
+							/>
+							<rect
+								x="10.7"
+								y="6"
+								width="1.8"
+								height="8"
+								rx="0.9"
+								fill="#64748b"
+							/>
+						</svg>
+					</div>
 					<span style={{ fontSize: 16, fontWeight: 600, color: "#0f1724" }}>
 						휴식중
 					</span>
@@ -91,6 +101,9 @@ export default function RestingList({
 						type="button"
 						onClick={() => onToggleResting(p.id)}
 						style={{
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 6,
 							background: "rgba(241,245,249,1)",
 							border: "1px solid rgba(0,0,0,0.04)",
 							borderRadius: 12,
@@ -101,10 +114,22 @@ export default function RestingList({
 							cursor: "pointer",
 						}}
 					>
-						{formatPlayer(p)}
+						<span
+							style={{
+								width: 7,
+								height: 7,
+								borderRadius: "50%",
+								background: p.gender === "F" ? "#ff2d55" : "#007aff",
+								flexShrink: 0,
+								display: "inline-block",
+							}}
+						/>
+						{p.name}
 					</button>
 				))}
 			</div>
 		</div>
 	);
-}
+});
+
+export default RestingList;

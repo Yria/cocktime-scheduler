@@ -1,4 +1,5 @@
 import { useSessionState } from "../hooks/useSessionState";
+import { useAppStore } from "../store/appStore";
 import CourtList from "./session/CourtList";
 import CourtsHeader from "./session/CourtsHeader";
 import EndSessionModal from "./session/EndSessionModal";
@@ -16,7 +17,11 @@ interface Props {
 	onEnd: () => void;
 }
 
+const EMPTY_SINGLE_WOMAN_IDS: string[] = [];
+
 export default function SessionMain({ onBack, onEnd }: Props) {
+	const singleWomanIds =
+		useAppStore((s) => s.sessionMeta?.singleWomanIds) ?? EMPTY_SINGLE_WOMAN_IDS;
 	const {
 		courts,
 		waiting,
@@ -93,6 +98,7 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 
 				<WaitingList
 					waiting={waiting}
+					singleWomanIds={singleWomanIds}
 					onToggleResting={toggleResting}
 					onToggleForceMixed={toggleForceMixed}
 				/>

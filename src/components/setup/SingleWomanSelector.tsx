@@ -45,26 +45,45 @@ export function SingleWomanSelector({
 						key={p.id}
 						onClick={() => onToggle(p.id)}
 						style={{
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 6,
 							padding: "6px 12px",
-							borderRadius: 99,
+							borderRadius: 14,
 							fontSize: 14,
 							fontWeight: 500,
-							border: "none",
+							border: "1px solid",
 							cursor: "pointer",
 							transition: "all 0.15s",
 							...(singleWomanIds.has(p.id)
 								? {
-										background: "rgba(255,45,135,0.1)",
-										color: "#e8207a",
-										boxShadow: "0 2px 8px rgba(255,45,135,0.15)",
+										background: "rgba(255,149,0,0.07)",
+										borderColor: "rgba(255,149,0,0.35)",
+										color: "#0f1724",
+										boxShadow: "0 2px 8px rgba(255,149,0,0.1)",
 									}
 								: {
-										background: "rgba(241,245,249,1)",
-										color: "#64748b",
+										background: "rgba(255,255,255,0.72)",
+										backdropFilter: "blur(12px)",
+										WebkitBackdropFilter: "blur(12px)",
+										borderColor: "rgba(0,0,0,0.06)",
+										boxShadow:
+											"0 2px 8px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+										color: "#0f1724",
 									}),
 						}}
 					>
-						{singleWomanIds.has(p.id) ? "🔴" : "○"} {p.name}
+						<span
+							style={{
+								width: 7,
+								height: 7,
+								borderRadius: "50%",
+								background: "#ff2d55",
+								flexShrink: 0,
+								display: "inline-block",
+							}}
+						/>
+						{p.name}
 					</button>
 				))}
 			</div>

@@ -1,4 +1,4 @@
-import type { Player, SessionPlayer } from "../../types";
+import type { GameType, Gender, Player, SessionPlayer } from "../../types";
 import { supabase } from "./client";
 import { rowToSessionPlayer } from "./transformers";
 import type {
@@ -9,6 +9,16 @@ import type {
 	SessionRow,
 	SessionSnapshot,
 } from "./types";
+
+export interface MatchLogEntry {
+	id: string;
+	courtId: number;
+	gameType: GameType;
+	teamA: { name: string; gender: Gender }[];
+	teamB: { name: string; gender: Gender }[];
+	startedAt: string;
+	endedAt: string | null;
+}
 
 export async function fetchActiveSession(): Promise<SessionRow | null> {
 	const { data } = await supabase
@@ -113,18 +123,7 @@ export async function updateSession(
 	players: Player[],
 	singleWomanIds: string[],
 ): Promise<boolean> {
-	// 1. Update court_count in sessions table
-	const { error: sessionErr } = await supabase
-		.from("sessions")
-		.update({ court_count: courtCount })
-		.eq("id", sessionId);
-
-	if (sessionErr) {
-		console.error("updateSession error:", sessionErr);
-		return false;
-	}
-
-	// 2. Fetch existing session_players
+	// 1. Fetch existing session_players
 	const { data: existingPlayers, error: playersErr } = await supabase
 		.from("session_players")
 		.select("*")
@@ -141,7 +140,7 @@ export async function updateSession(
 
 	const now = new Date().toISOString();
 
-	// find added
+	// 추가할 플레이어
 	const playersToAdd = players
 		.filter((p) => !existingMap.has(p.id))
 		.map((p) => ({
@@ -155,11 +154,8 @@ export async function updateSession(
 			wait_since: now,
 		}));
 
-	if (playersToAdd.length > 0) {
-		await supabase.from("session_players").insert(playersToAdd);
-	}
-
-	// update existing or remove
+	// 변경된 플레이어만 upsert, 삭제할 플레이어 id 수집
+	const playersToUpsert: object[] = [];
 	const playersToRemoveIds: string[] = [];
 
 	for (const ep of existingPlayers) {
@@ -178,25 +174,147 @@ export async function updateSession(
 				JSON.stringify(ep.skills) !== JSON.stringify(newP.skills);
 
 			if (changed) {
-				await supabase
-					.from("session_players")
-					.update({
-						name: newP.name,
-						gender: newP.gender,
-						skills: newP.skills,
-						allow_mixed_single: allowedMixedSingle,
-					})
-					.eq("id", ep.id);
+				playersToUpsert.push({
+					...ep,
+					name: newP.name,
+					gender: newP.gender,
+					skills: newP.skills,
+					allow_mixed_single: allowedMixedSingle,
+				});
 			}
 		}
 	}
 
+	// add / upsert / delete 병렬 처리
+	const ops: PromiseLike<void>[] = [];
+	if (playersToAdd.length > 0) {
+		ops.push(
+			supabase
+				.from("session_players")
+				.insert(playersToAdd)
+				.then((res) => {
+					if (res.error)
+						console.error("session_players insert error:", res.error);
+				}),
+		);
+	}
+	if (playersToUpsert.length > 0) {
+		ops.push(
+			supabase
+				.from("session_players")
+				.upsert(playersToUpsert)
+				.then((res) => {
+					if (res.error)
+						console.error("session_players upsert error:", res.error);
+				}),
+		);
+	}
 	if (playersToRemoveIds.length > 0) {
-		await supabase
-			.from("session_players")
-			.delete()
-			.in("id", playersToRemoveIds);
+		ops.push(
+			supabase
+				.from("session_players")
+				.delete()
+				.in("id", playersToRemoveIds)
+				.then((res) => {
+					if (res.error)
+						console.error("session_players delete error:", res.error);
+				}),
+		);
+	}
+	await Promise.all(ops);
+
+	// 2. Update sessions table LAST — this triggers postgres_changes on other clients.
+	// All session_players changes must be complete before this fires so that
+	// other clients fetch a consistent snapshot when they receive the event.
+	const { error: sessionErr } = await supabase
+		.from("sessions")
+		.update({ court_count: courtCount })
+		.eq("id", sessionId);
+
+	if (sessionErr) {
+		console.error("updateSession error:", sessionErr);
+		return false;
 	}
 
 	return true;
+}
+
+export async function fetchAllSessions(): Promise<SessionRow[]> {
+	const { data } = await supabase
+		.from("sessions")
+		.select("*")
+		.order("started_at", { ascending: false })
+		.limit(30);
+	return (data ?? []) as SessionRow[];
+}
+
+export async function fetchMatchLogs(
+	sessionId: number,
+): Promise<MatchLogEntry[]> {
+	const [matchesRes, playersRes] = await Promise.all([
+		supabase
+			.from("matches")
+			.select("*")
+			.eq("session_id", sessionId)
+			.eq("status", "completed")
+			.order("ended_at", { ascending: false }),
+		supabase
+			.from("session_players")
+			.select("id, name, gender")
+			.eq("session_id", sessionId),
+	]);
+
+	const matches = (matchesRes.data ?? []) as MatchRow[];
+	const players = (playersRes.data ?? []) as {
+		id: string;
+		name: string;
+		gender: Gender;
+	}[];
+	const playerMap = new Map(players.map((p) => [p.id, p]));
+
+	return matches.map((m) => ({
+		id: m.id,
+		courtId: m.court_id,
+		gameType: m.game_type,
+		teamA: [m.team_a_p1, m.team_a_p2].map(
+			(id) => playerMap.get(id) ?? { name: "?", gender: "M" as Gender },
+		),
+		teamB: [m.team_b_p1, m.team_b_p2].map(
+			(id) => playerMap.get(id) ?? { name: "?", gender: "M" as Gender },
+		),
+		startedAt: m.started_at,
+		endedAt: m.ended_at,
+	}));
+}
+
+export async function fetchSessionPlayers(
+	sessionId: number,
+): Promise<{ name: string; gender: Gender; game_count: number }[]> {
+	const { data } = await supabase
+		.from("session_players")
+		.select("name, gender, game_count")
+		.eq("session_id", sessionId)
+		.order("name", { ascending: true });
+	return (data ?? []) as { name: string; gender: Gender; game_count: number }[];
+}
+
+export async function dbClearSessionLogs(sessionId: number): Promise<boolean> {
+	const [{ error: matchErr }, { error: playerErr }] = await Promise.all([
+		supabase
+			.from("matches")
+			.delete()
+			.eq("session_id", sessionId)
+			.eq("status", "completed"),
+		supabase
+			.from("session_players")
+			.update({ game_count: 0, mixed_count: 0 })
+			.eq("session_id", sessionId),
+	]);
+
+	if (matchErr) console.error("dbClearSessionLogs matches:", matchErr);
+	if (playerErr) console.error("dbClearSessionLogs players:", playerErr);
+
+	await supabase.from("pair_history").delete().eq("session_id", sessionId);
+
+	return !matchErr && !playerErr;
 }

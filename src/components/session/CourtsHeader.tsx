@@ -13,40 +13,53 @@ export default function CourtsHeader({ courtsCount }: Props) {
 			}}
 		>
 			<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-				<svg
-					width="20"
-					height="20"
-					viewBox="0 0 20 20"
-					fill="none"
-					aria-hidden="true"
+				<div
+					style={{
+						width: 28,
+						height: 28,
+						borderRadius: 8,
+						background: "rgba(52,199,89,0.1)",
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+						flexShrink: 0,
+					}}
 				>
-					<rect
-						x="2.5"
-						y="2.5"
-						width="15"
-						height="15"
-						rx="2"
-						stroke="#0f1724"
-						strokeWidth="1.5"
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 20 20"
 						fill="none"
-					/>
-					<line
-						x1="10"
-						y1="2.5"
-						x2="10"
-						y2="17.5"
-						stroke="#0f1724"
-						strokeWidth="1.5"
-					/>
-					<line
-						x1="2.5"
-						y1="10"
-						x2="17.5"
-						y2="10"
-						stroke="#0f1724"
-						strokeWidth="1.5"
-					/>
-				</svg>
+						aria-hidden="true"
+					>
+						<rect
+							x="2.5"
+							y="2.5"
+							width="15"
+							height="15"
+							rx="2"
+							stroke="#34c759"
+							strokeWidth="1.5"
+							fill="none"
+						/>
+						<line
+							x1="10"
+							y1="2.5"
+							x2="10"
+							y2="17.5"
+							stroke="#34c759"
+							strokeWidth="1.5"
+						/>
+						<line
+							x1="2.5"
+							y1="10"
+							x2="17.5"
+							y2="10"
+							stroke="#34c759"
+							strokeWidth="1.5"
+						/>
+					</svg>
+				</div>
 				<span style={{ fontSize: 16, fontWeight: 600, color: "#0f1724" }}>
 					코트 현황
 				</span>

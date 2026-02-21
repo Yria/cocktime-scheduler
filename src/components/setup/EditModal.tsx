@@ -1,7 +1,8 @@
+import { SKILL_LEVELS, SKILLS } from "../../lib/constants";
 import { OAUTH_AVAILABLE } from "../../lib/googleAuth";
 import { useAppStore } from "../../store/appStore";
 import type { Gender, Player, PlayerSkills, SkillLevel } from "../../types";
-import { SKILL_LEVELS, SkillButton, SKILLS } from "./SkillButton";
+import { SkillButton } from "./SkillButton";
 
 interface EditModalProps {
 	player: Player;
@@ -74,7 +75,25 @@ export function EditModal({
 										color: editGender === g ? "#fff" : "var(--text-secondary)",
 									}}
 								>
-									{g === "M" ? "🔵 남" : "🔴 여"}
+									<span
+										style={{
+											display: "inline-flex",
+											alignItems: "center",
+											gap: 5,
+										}}
+									>
+										<span
+											style={{
+												width: 7,
+												height: 7,
+												borderRadius: "50%",
+												background: g === "M" ? "#007aff" : "#ff2d55",
+												display: "inline-block",
+												flexShrink: 0,
+											}}
+										/>
+										{g === "M" ? "남" : "여"}
+									</span>
 								</button>
 							))}
 						</div>

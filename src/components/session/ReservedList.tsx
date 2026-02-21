@@ -1,4 +1,6 @@
+import { memo } from "react";
 import type { ReservedGroup } from "../../types";
+import PlayerBadge from "../shared/PlayerBadge";
 
 interface ReservedListProps {
 	reservedGroups: ReservedGroup[];
@@ -9,7 +11,7 @@ interface ReservedListProps {
 	onAssign: (groupId: string) => void;
 }
 
-export default function ReservedList({
+const ReservedList = memo(function ReservedList({
 	reservedGroups,
 	courtPlayerMap,
 	hasEmptyCourt,
@@ -31,50 +33,63 @@ export default function ReservedList({
 				}}
 			>
 				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-					<svg
-						width="20"
-						height="20"
-						viewBox="0 0 20 20"
-						fill="none"
-						aria-hidden="true"
+					<div
+						style={{
+							width: 28,
+							height: 28,
+							borderRadius: 8,
+							background: "rgba(88,86,214,0.1)",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							flexShrink: 0,
+						}}
 					>
-						<rect
-							x="3"
-							y="4"
-							width="14"
-							height="13"
-							rx="2"
-							stroke="#0f1724"
-							strokeWidth="1.5"
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 20 20"
 							fill="none"
-						/>
-						<line
-							x1="3"
-							y1="8"
-							x2="17"
-							y2="8"
-							stroke="#0f1724"
-							strokeWidth="1.5"
-						/>
-						<line
-							x1="7"
-							y1="2"
-							x2="7"
-							y2="6"
-							stroke="#0f1724"
-							strokeWidth="1.5"
-							strokeLinecap="round"
-						/>
-						<line
-							x1="13"
-							y1="2"
-							x2="13"
-							y2="6"
-							stroke="#0f1724"
-							strokeWidth="1.5"
-							strokeLinecap="round"
-						/>
-					</svg>
+							aria-hidden="true"
+						>
+							<rect
+								x="3"
+								y="4"
+								width="14"
+								height="13"
+								rx="2"
+								stroke="#5856d6"
+								strokeWidth="1.5"
+								fill="none"
+							/>
+							<line
+								x1="3"
+								y1="8"
+								x2="17"
+								y2="8"
+								stroke="#5856d6"
+								strokeWidth="1.5"
+							/>
+							<line
+								x1="7"
+								y1="2"
+								x2="7"
+								y2="6"
+								stroke="#5856d6"
+								strokeWidth="1.5"
+								strokeLinecap="round"
+							/>
+							<line
+								x1="13"
+								y1="2"
+								x2="13"
+								y2="6"
+								stroke="#5856d6"
+								strokeWidth="1.5"
+								strokeLinecap="round"
+							/>
+						</svg>
+					</div>
 					<span style={{ fontSize: 16, fontWeight: 600, color: "#0f1724" }}>
 						예약팀
 					</span>
@@ -177,36 +192,32 @@ export default function ReservedList({
 										const isReady = readySet.has(p.id);
 										const courtId = courtPlayerMap.get(p.id);
 										return (
-											<span
+											<div
 												key={p.id}
 												style={{
-													fontSize: 13,
-													fontWeight: 500,
-													color: isReady ? "#0f1724" : "#ff9500",
-													background: isReady
-														? "rgba(241,245,249,1)"
-														: "rgba(255,149,0,0.08)",
-													border: isReady
-														? "1px solid rgba(0,0,0,0.06)"
-														: "1px solid rgba(255,149,0,0.25)",
-													borderRadius: 8,
-													padding: "5px 10px",
+													display: "inline-flex",
+													alignItems: "center",
+													gap: 4,
+													opacity: isReady ? 1 : 0.65,
 												}}
 											>
-												{p.gender === "F" ? "🔴" : "🔵"} {p.name}
+												<PlayerBadge
+													name={p.name}
+													gender={p.gender}
+													size="sm"
+												/>
 												{!isReady && courtId && (
 													<span
 														style={{
 															fontSize: 10,
 															fontWeight: 700,
 															color: "#ff9500",
-															marginLeft: 4,
 														}}
 													>
 														{courtId}번
 													</span>
 												)}
-											</span>
+											</div>
 										);
 									})}
 								</div>
@@ -240,4 +251,6 @@ export default function ReservedList({
 			</div>
 		</div>
 	);
-}
+});
+
+export default ReservedList;

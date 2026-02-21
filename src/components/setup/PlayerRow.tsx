@@ -79,9 +79,16 @@ export function PlayerRow({
 						</svg>
 					)}
 				</span>
-				<span style={{ fontSize: 16, flexShrink: 0 }}>
-					{player.gender === "F" ? "🔴" : "🔵"}
-				</span>
+				<span
+					style={{
+						width: 9,
+						height: 9,
+						borderRadius: "50%",
+						background: player.gender === "F" ? "#ff2d55" : "#007aff",
+						flexShrink: 0,
+						display: "inline-block",
+					}}
+				/>
 				<span
 					style={{
 						fontSize: 14,

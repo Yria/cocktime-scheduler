@@ -154,6 +154,24 @@ export default function Home({ onStart }: Props) {
 				>
 					{sessionMeta ? "세션 이어하기" : "세션 시작"}
 				</button>
+
+				{/* Log link */}
+				<button
+					type="button"
+					onClick={() => navigate("/logs")}
+					style={{
+						background: "none",
+						border: "none",
+						fontSize: 13,
+						fontWeight: 500,
+						color: "#98a0ab",
+						cursor: "pointer",
+						padding: "4px 0",
+						alignSelf: "center",
+					}}
+				>
+					매치 로그 보기
+				</button>
 			</div>
 
 			<style>{`

@@ -46,32 +46,6 @@ export interface SessionState {
 	_channel: RealtimeChannel | null;
 	_metaChannel: RealtimeChannel | null;
 
-	// Setters
-	setCourts: (courts: Court[] | ((prev: Court[]) => Court[])) => void;
-	setWaiting: (
-		waiting: SessionPlayer[] | ((prev: SessionPlayer[]) => SessionPlayer[]),
-	) => void;
-	setResting: (
-		resting: SessionPlayer[] | ((prev: SessionPlayer[]) => SessionPlayer[]),
-	) => void;
-	setReservedGroups: (
-		groups: ReservedGroup[] | ((prev: ReservedGroup[]) => ReservedGroup[]),
-	) => void;
-	setPairHistory: (
-		history: PairHistory | ((prev: PairHistory) => PairHistory),
-	) => void;
-	setLastMixedPlayerIds: (
-		ids: string[] | ((prev: string[]) => string[]),
-	) => void;
-
-	setPendingTeam: (team: GeneratedTeam | null) => void;
-	setPendingGroupId: (groupId: string | null) => void;
-	setShowEndConfirm: (show: boolean) => void;
-	setShowReserveModal: (show: boolean) => void;
-	setReservingSelected: (
-		selected: Set<string> | ((prev: Set<string>) => Set<string>),
-	) => void;
-
 	initialize: (initial: ClientSessionState) => void;
 	reset: () => void;
 
@@ -111,49 +85,6 @@ const initialState = {
 
 export const useSessionStore = create<SessionState>((set, get) => ({
 	...initialState,
-
-	// ── Setters ─────────────────────────────────────────────
-	setCourts: (updater) =>
-		set((state) => ({
-			courts: typeof updater === "function" ? updater(state.courts) : updater,
-		})),
-	setWaiting: (updater) =>
-		set((state) => ({
-			waiting: typeof updater === "function" ? updater(state.waiting) : updater,
-		})),
-	setResting: (updater) =>
-		set((state) => ({
-			resting: typeof updater === "function" ? updater(state.resting) : updater,
-		})),
-	setReservedGroups: (updater) =>
-		set((state) => ({
-			reservedGroups:
-				typeof updater === "function" ? updater(state.reservedGroups) : updater,
-		})),
-	setPairHistory: (updater) =>
-		set((state) => ({
-			pairHistory:
-				typeof updater === "function" ? updater(state.pairHistory) : updater,
-		})),
-	setLastMixedPlayerIds: (updater) =>
-		set((state) => ({
-			lastMixedPlayerIds:
-				typeof updater === "function"
-					? updater(state.lastMixedPlayerIds)
-					: updater,
-		})),
-
-	setPendingTeam: (team) => set({ pendingTeam: team }),
-	setPendingGroupId: (groupId) => set({ pendingGroupId: groupId }),
-	setShowEndConfirm: (show) => set({ showEndConfirm: show }),
-	setShowReserveModal: (show) => set({ showReserveModal: show }),
-	setReservingSelected: (updater) =>
-		set((state) => ({
-			reservingSelected:
-				typeof updater === "function"
-					? updater(state.reservingSelected)
-					: updater,
-		})),
 
 	initialize: (initial) =>
 		set({

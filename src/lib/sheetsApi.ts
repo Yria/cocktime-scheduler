@@ -1,14 +1,6 @@
 import type { Gender, Player, PlayerSkills, SkillLevel } from "../types";
 
-const SKILLS: (keyof PlayerSkills)[] = [
-	"클리어",
-	"스매시",
-	"로테이션",
-	"드랍",
-	"헤어핀",
-	"드라이브",
-	"백핸드",
-];
+import { SKILLS } from "./constants";
 
 function parseSkillLevel(val: string): SkillLevel {
 	const v = val?.trim().toUpperCase();
