@@ -1,15 +1,13 @@
 /**
  * teamGenerator.ts
  *
- * 팀 생성 알고리즘. 규칙 상세는 TEAM_GENERATION_RULES.md 참고.
+ * 팀 생성 알고리즘. 규칙 상세는 docs/TEAM_GENERATION_RULES.md 참고.
  */
 import type {
-	GameCountHistory,
 	GameType,
 	GeneratedTeam,
-	MixedHistory,
 	PairHistory,
-	Player,
+	SessionPlayer,
 	SkillLevel,
 } from "../types";
 
@@ -20,19 +18,21 @@ import type {
 const SKILL_VALUES: Record<SkillLevel, number> = { O: 3, V: 2, X: 1 };
 
 /** 선수의 전체 스킬 평균 점수 (1.0 ~ 3.0) */
-export function skillScore(player: Player): number {
+export function skillScore(player: SessionPlayer): number {
 	const values = Object.values(player.skills) as SkillLevel[];
 	return values.reduce((sum, s) => sum + SKILL_VALUES[s], 0) / values.length;
 }
 
 // ─────────────────────────────────────────────
-// 파트너 중복 이력
+// 파트너 중복 이력 (단방향 체크 — recordHistory가 양방향 저장하므로 한쪽만 확인)
 // ─────────────────────────────────────────────
 
-function partnerCount(a: Player, b: Player, history: PairHistory): number {
-	return (
-		(history[a.id]?.has(b.id) ? 1 : 0) + (history[b.id]?.has(a.id) ? 1 : 0)
-	);
+function partnerCount(
+	a: SessionPlayer,
+	b: SessionPlayer,
+	history: PairHistory,
+): number {
+	return history[a.id]?.has(b.id) ? 1 : 0;
 }
 
 // ─────────────────────────────────────────────
@@ -40,15 +40,15 @@ function partnerCount(a: Player, b: Player, history: PairHistory): number {
 // ─────────────────────────────────────────────
 
 /**
- * 페어링 점수 계산.
+ * score = historyPenalty × 10 + intraDiff × 1.5 + interDiff × 0.5
  *
- * 규칙 3: 파트너끼리 실력이 비슷할수록 좋다 (intra_diff 최소화).
- * 규칙 4: 팀 간 실력 편차도 낮을수록 좋다 (inter_diff 최소화).
- * 파트너 중복 이력은 가장 높은 가중치로 기피.
+ * 규칙 3: 파트너 실력 유사성 (intraDiff, 가중치 1.5)
+ * 규칙 4: 팀 간 실력 균형 (interDiff, 가중치 0.5)
+ * 규칙 5: 파트너 중복 기피 (historyPenalty, 가중치 10)
  */
-function pairingScore(
-	teamA: [Player, Player],
-	teamB: [Player, Player],
+export function pairingScore(
+	teamA: [SessionPlayer, SessionPlayer],
+	teamB: [SessionPlayer, SessionPlayer],
 	history: PairHistory,
 ): number {
 	const sA0 = skillScore(teamA[0]),
@@ -56,11 +56,8 @@ function pairingScore(
 	const sB0 = skillScore(teamB[0]),
 		sB1 = skillScore(teamB[1]);
 
-	// 파트너 내 실력 차이 (규칙 3)
 	const intraDiff = Math.abs(sA0 - sA1) + Math.abs(sB0 - sB1);
-	// 팀 간 총 실력 차이 (규칙 4)
 	const interDiff = Math.abs(sA0 + sA1 - (sB0 + sB1));
-	// 파트너 중복 페널티 (최우선)
 	const historyPenalty =
 		partnerCount(teamA[0], teamA[1], history) +
 		partnerCount(teamB[0], teamB[1], history);
@@ -72,17 +69,16 @@ function pairingScore(
 // 최적 페어링 선택
 // ─────────────────────────────────────────────
 
-/**
- * 4명 중 3가지 페어링 조합을 평가해 최적 조합 반환.
- * 스킬 유사도(규칙 3·4)와 파트너 중복 이력을 모두 고려.
- */
 function bestPairing(
-	players: [Player, Player, Player, Player],
+	players: [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer],
 	history: PairHistory,
-): [[Player, Player], [Player, Player]] {
+): [[SessionPlayer, SessionPlayer], [SessionPlayer, SessionPlayer]] {
 	const [p0, p1, p2, p3] = players;
 
-	const combos: [[Player, Player], [Player, Player]][] = [
+	const combos: [
+		[SessionPlayer, SessionPlayer],
+		[SessionPlayer, SessionPlayer],
+	][] = [
 		[
 			[p0, p1],
 			[p2, p3],
@@ -112,36 +108,40 @@ function bestPairing(
 }
 
 // ─────────────────────────────────────────────
-// 혼복용 남자 선발 (규칙 1·2)
+// 혼복용 남자 선발 (규칙 1·1.5·2)
 // ─────────────────────────────────────────────
 
 /**
  * 혼복에 투입할 남자 2명 선발.
  *
- * 규칙 1: 혼복 출전이 적은 남자를 우선.
- * 규칙 2: 혼복 출전 횟수가 같다면 서로 실력이 비슷한 쌍 선택.
+ * 규칙 1:   mixedCount가 적은 남자를 우선.
+ * 규칙 1.5: 직전 혼복 출전자는 최하위 — 가용 남자 2명 미만 시 완화.
+ * 규칙 2:   동점이면 실력이 비슷한 쌍 선택.
  */
 function selectMenForMixed(
-	men: Player[],
-	mixedHistory: MixedHistory,
-): [Player, Player] {
+	men: SessionPlayer[],
+	lastMixedMenIds: string[] = [],
+): [SessionPlayer, SessionPlayer] {
 	if (men.length === 2) return [men[0], men[1]];
 
-	const mixCount = (p: Player) => mixedHistory[p.id] ?? 0;
+	// 규칙 1.5: 직전 혼복 출전자를 제외한 풀에서 먼저 탐색 (가용 부족 시 완화)
+	const preferred = men.filter((m) => !lastMixedMenIds.includes(m.id));
+	const pool = preferred.length >= 2 ? preferred : men;
 
-	// 혼복 출전 횟수 최솟값
-	const minMixed = Math.min(...men.map(mixCount));
-	// 최소 출전 + 1 이하까지 후보로 포함 (너무 적으면 range 확장)
-	let eligible = men.filter((m) => mixCount(m) <= minMixed + 1);
-	if (eligible.length < 2) eligible = men;
+	// 규칙 1: mixedCount 최솟값 기준 후보 추출
+	const minMixed = Math.min(...pool.map((m) => m.mixedCount));
+	let eligible = pool.filter((m) => m.mixedCount <= minMixed + 1);
+	if (eligible.length < 2) eligible = pool;
 
-	// 후보 중 실력 차이가 가장 작은 쌍 탐색
-	let bestPair: [Player, Player] = [eligible[0], eligible[1]];
+	// 규칙 2: 후보 중 실력 차이가 가장 작은 쌍 탐색
+	let bestPair: [SessionPlayer, SessionPlayer] = [eligible[0], eligible[1]];
 	let bestDiff = Math.abs(skillScore(eligible[0]) - skillScore(eligible[1]));
 
 	for (let i = 0; i < eligible.length; i++) {
 		for (let j = i + 1; j < eligible.length; j++) {
-			const diff = Math.abs(skillScore(eligible[i]) - skillScore(eligible[j]));
+			const diff = Math.abs(
+				skillScore(eligible[i]) - skillScore(eligible[j]),
+			);
 			if (diff < bestDiff) {
 				bestDiff = diff;
 				bestPair = [eligible[i], eligible[j]];
@@ -153,20 +153,74 @@ function selectMenForMixed(
 }
 
 // ─────────────────────────────────────────────
+// 규칙 1.5: 여자 후순위 정렬 헬퍼
+// ─────────────────────────────────────────────
+
+/**
+ * 직전 혼복 출전 여자를 후순위로 밀어 count명 반환.
+ * 가용 인원이 부족하면 완화 적용.
+ */
+function pickWomenPreferred(
+	women: SessionPlayer[],
+	lastMixedWomenIds: string[],
+	count: number,
+): SessionPlayer[] {
+	const preferred = women.filter((w) => !lastMixedWomenIds.includes(w.id));
+	const fallback = women.filter((w) => lastMixedWomenIds.includes(w.id));
+	return [...preferred, ...fallback].slice(0, count);
+}
+
+// ─────────────────────────────────────────────
+// 규칙 7 헬퍼: 강제 포함 남자 1명의 파트너 선발
+// ─────────────────────────────────────────────
+
+/**
+ * 강제 포함 남자의 파트너를 후보에서 선발.
+ * 규칙 1.5(직전 혼복 출전자 후순위) + 규칙 1+2(mixedCount + 실력 유사성) 적용.
+ */
+function pickPartnerForForcedMan(
+	forcedMan: SessionPlayer,
+	candidates: SessionPlayer[],
+	lastMixedMenIds: string[],
+): SessionPlayer {
+	const preferred = candidates.filter((m) => !lastMixedMenIds.includes(m.id));
+	const pool = preferred.length > 0 ? preferred : candidates;
+
+	const minMixed = Math.min(...pool.map((m) => m.mixedCount));
+	let eligible = pool.filter((m) => m.mixedCount <= minMixed + 1);
+	if (eligible.length === 0) eligible = pool;
+
+	let best = eligible[0];
+	let bestDiff = Math.abs(skillScore(forcedMan) - skillScore(eligible[0]));
+
+	for (const m of eligible.slice(1)) {
+		const diff = Math.abs(skillScore(forcedMan) - skillScore(m));
+		if (diff < bestDiff) {
+			bestDiff = diff;
+			best = m;
+		}
+	}
+
+	return best;
+}
+
+// ─────────────────────────────────────────────
 // 게임 타입 결정
 // ─────────────────────────────────────────────
 
 function determineGameType(
-	players: Player[],
+	players: SessionPlayer[],
 	singleWomanIds: string[],
 ): GameType {
 	const women = players.filter((p) => p.gender === "F");
 	if (women.length === 0) return "남복";
 	if (women.length === 4) return "여복";
 	if (women.length === 2) return "혼복";
-	// 여자 1명 또는 3명
-	if (women.length === 1)
-		return singleWomanIds.includes(women[0].id) ? "혼합" : "남복";
+	if (women.length === 1) {
+		const isSingleAllowed =
+			women[0].allowMixedSingle || singleWomanIds.includes(women[0].playerId);
+		return isSingleAllowed ? "혼합" : "남복";
+	}
 	return "남복";
 }
 
@@ -178,36 +232,100 @@ function determineGameType(
  * 대기열에서 다음 게임에 투입할 4명 선발.
  *
  * 우선순위:
- *  0) 전체 대기열을 경기 횟수 오름차순 정렬 → 경기 적게 한 사람 우선 (규칙 0)
- *  1) 혼복 가능(여 2 + 남 2)이면 혼복 우선 — 남자는 규칙 1·2로 선발
+ *  0) gameCount 오름차순 정렬 → 경기 적게 한 사람 우선 (규칙 0, stable sort)
+ *  7) forceMixed 선수가 있으면 혼복 강제 시도 — 여2+남2 미충족 시에도 (규칙 7)
+ *  1) 혼복 가능(여 2 + 남 2)이면 혼복 우선 (규칙 1)
+ *     여자 선발 시 직전 혼복 출전자 후순위 (규칙 1.5)
+ *     남자 선발은 selectMenForMixed (규칙 1·1.5·2)
  *  2) 여자 1명 + 혼합 불허 시 여자 제외하고 남자 4명
  *  3) 그 외 정렬된 순서대로 4명
+ *
+ * @param lastMixedPlayerIds 직전 혼복 경기에 출전한 SessionPlayer.id 목록 (규칙 1.5).
+ *   호출자가 매칭 완료 후 갱신해서 전달해야 한다.
  */
 function selectFour(
-	waiting: Player[],
-	mixedHistory: MixedHistory,
-	gameCountHistory: GameCountHistory,
+	waiting: SessionPlayer[],
 	singleWomanIds: string[],
-): Player[] | null {
-	// 경기 횟수 적은 순으로 정렬 (동점이면 기존 대기 순서 유지)
-	const sorted = [...waiting].sort(
-		(a, b) => (gameCountHistory[a.id] ?? 0) - (gameCountHistory[b.id] ?? 0),
+	lastMixedPlayerIds: string[] = [],
+): SessionPlayer[] | null {
+	// forceMixed 선수 분리 후, 나머지는 gameCount 오름차순 정렬 (규칙 0)
+	const forceMixed = waiting.filter((p) => p.forceMixed);
+	const others = waiting.filter((p) => !p.forceMixed);
+	const sorted = [...others].sort((a, b) => a.gameCount - b.gameCount);
+
+	// 규칙 1.5: 직전 혼복 출전 남자/여자 IDs (대기 중인 선수만)
+	const waitingIds = new Set(waiting.map((p) => p.id));
+	const lastMixedMenIds = lastMixedPlayerIds.filter(
+		(id) =>
+			waitingIds.has(id) && waiting.find((p) => p.id === id)?.gender === "M",
+	);
+	const lastMixedWomenIds = lastMixedPlayerIds.filter(
+		(id) =>
+			waitingIds.has(id) && waiting.find((p) => p.id === id)?.gender === "F",
 	);
 
-	const candidates = sorted.slice(0, Math.min(8, sorted.length));
+	// 규칙 7: forceMixed 선수가 있으면 혼복 강제 시도
+	if (forceMixed.length > 0) {
+		const forcedWomen = forceMixed.filter((p) => p.gender === "F");
+		const forcedMen = forceMixed.filter((p) => p.gender === "M");
+		const nonForcedWomen = sorted.filter((p) => p.gender === "F");
+		const nonForcedMen = sorted.filter((p) => p.gender === "M");
+
+		const womenNeeded = Math.max(0, 2 - forcedWomen.length);
+		const menNeeded = Math.max(0, 2 - forcedMen.length);
+
+		if (
+			nonForcedWomen.length >= womenNeeded &&
+			nonForcedMen.length >= menNeeded
+		) {
+			// 규칙 1.5 적용: 여자 추가 선발 시 직전 혼복 출전자 후순위
+			const addWomen = pickWomenPreferred(
+				nonForcedWomen,
+				lastMixedWomenIds,
+				womenNeeded,
+			);
+			const allWomen = [...forcedWomen, ...addWomen].slice(0, 2);
+
+			// 남자: 강제 포함 선수 반드시 포함
+			let selectedMen: [SessionPlayer, SessionPlayer];
+			if (forcedMen.length >= 2) {
+				// 강제 남자 2명 이상 → 그 중 최적 2명 (규칙 2, 1.5 완화)
+				selectedMen = selectMenForMixed(forcedMen, []);
+			} else if (forcedMen.length === 1) {
+				// 강제 남자 1명 + 비강제 남자 중 파트너 선발 (규칙 1·1.5·2)
+				const partner = pickPartnerForForcedMan(
+					forcedMen[0],
+					nonForcedMen,
+					lastMixedMenIds,
+				);
+				selectedMen = [forcedMen[0], partner];
+			} else {
+				// 강제 남자 없음 → 비강제 남자 중 선발 (규칙 1·1.5·2)
+				selectedMen = selectMenForMixed(nonForcedMen, lastMixedMenIds);
+			}
+
+			return [allWomen[0], allWomen[1], selectedMen[0], selectedMen[1]];
+		}
+		// 혼복 구성 불가 → 일반 로직으로 진행 (forceMixed는 ordered 앞에 배치)
+	}
+
+	const ordered = [...forceMixed, ...sorted];
+	const candidates = ordered.slice(0, Math.min(8, ordered.length));
 	const women = candidates.filter((p) => p.gender === "F");
 	const men = candidates.filter((p) => p.gender === "M");
 
-	// 혼복 우선
+	// 혼복 우선 (규칙 1·1.5·2)
 	if (women.length >= 2 && men.length >= 2) {
-		const selectedMen = selectMenForMixed(men, mixedHistory);
-		return [women[0], women[1], selectedMen[0], selectedMen[1]];
+		const selectedWomen = pickWomenPreferred(women, lastMixedWomenIds, 2);
+		const selectedMen = selectMenForMixed(men, lastMixedMenIds);
+		return [selectedWomen[0], selectedWomen[1], selectedMen[0], selectedMen[1]];
 	}
 
-	// 여자 1명이고 혼합 불허(해당 여자가 singleWomanIds에 없음) → 여자 제외 남자 4명
+	// 여자 1명이고 혼합 불허 → 여자 제외 남자 4명
 	if (
 		women.length === 1 &&
-		!singleWomanIds.includes(women[0].id) &&
+		!women[0].allowMixedSingle &&
+		!singleWomanIds.includes(women[0].playerId) &&
 		men.length >= 4
 	) {
 		return men.slice(0, 4);
@@ -223,24 +341,21 @@ function selectFour(
 // 혼복 팀 구성 (여+남 vs 여+남)
 // ─────────────────────────────────────────────
 
-/**
- * 혼복 구성: 각 팀에 여자 1명 + 남자 1명.
- * 남자끼리 실력 차이가 이미 최소화된 상태로 전달되므로
- * 여기서는 파트너 중복 이력을 기준으로 최적 매칭.
- */
 function buildMixedTeams(
-	women: Player[],
-	men: [Player, Player],
+	women: SessionPlayer[],
+	men: [SessionPlayer, SessionPlayer],
 	history: PairHistory,
-): [[Player, Player], [Player, Player]] {
-	const optionA: [[Player, Player], [Player, Player]] = [
-		[women[0], men[0]],
-		[women[1], men[1]],
-	];
-	const optionB: [[Player, Player], [Player, Player]] = [
-		[women[0], men[1]],
-		[women[1], men[0]],
-	];
+): [[SessionPlayer, SessionPlayer], [SessionPlayer, SessionPlayer]] {
+	const optionA: [[SessionPlayer, SessionPlayer], [SessionPlayer, SessionPlayer]] =
+		[
+			[women[0], men[0]],
+			[women[1], men[1]],
+		];
+	const optionB: [[SessionPlayer, SessionPlayer], [SessionPlayer, SessionPlayer]] =
+		[
+			[women[0], men[1]],
+			[women[1], men[0]],
+		];
 
 	const scoreA = pairingScore(optionA[0], optionA[1], history);
 	const scoreB = pairingScore(optionB[0], optionB[1], history);
@@ -252,32 +367,38 @@ function buildMixedTeams(
 // Public API
 // ─────────────────────────────────────────────
 
+/**
+ * @param lastMixedPlayerIds 직전 혼복 경기 출전자의 SessionPlayer.id 목록 (규칙 1.5).
+ *   코트 배정 완료 후 호출자가 갱신해서 전달한다.
+ */
 export function generateTeam(
-	waiting: Player[],
+	waiting: SessionPlayer[],
 	history: PairHistory,
-	mixedHistory: MixedHistory,
-	gameCountHistory: GameCountHistory,
 	singleWomanIds: string[],
+	lastMixedPlayerIds: string[] = [],
 ): GeneratedTeam | null {
 	if (waiting.length < 4) return null;
 
-	const selected = selectFour(
-		waiting,
-		mixedHistory,
-		gameCountHistory,
-		singleWomanIds,
-	);
+	const selected = selectFour(waiting, singleWomanIds, lastMixedPlayerIds);
 	if (!selected || selected.length < 4) return null;
 
-	const four = selected as [Player, Player, Player, Player];
+	const four = selected as [
+		SessionPlayer,
+		SessionPlayer,
+		SessionPlayer,
+		SessionPlayer,
+	];
 	const gameType = determineGameType(four, singleWomanIds);
 
-	let teamA: [Player, Player];
-	let teamB: [Player, Player];
+	let teamA: [SessionPlayer, SessionPlayer];
+	let teamB: [SessionPlayer, SessionPlayer];
 
 	if (gameType === "혼복") {
 		const women = four.filter((p) => p.gender === "F");
-		const men = four.filter((p) => p.gender === "M") as [Player, Player];
+		const men = four.filter((p) => p.gender === "M") as [
+			SessionPlayer,
+			SessionPlayer,
+		];
 		[teamA, teamB] = buildMixedTeams(women, men, history);
 	} else {
 		[teamA, teamB] = bestPairing(four, history);
@@ -287,15 +408,14 @@ export function generateTeam(
 }
 
 export function generateTeamWithGroup(
-	groupPlayers: Player[],
-	waiting: Player[],
+	groupPlayers: SessionPlayer[],
+	waiting: SessionPlayer[],
 	history: PairHistory,
-	gameCountHistory: GameCountHistory,
 	singleWomanIds: string[],
 ): GeneratedTeam | null {
 	if (groupPlayers.length === 4) {
 		return generateTeamFromPlayers(
-			groupPlayers as [Player, Player, Player, Player],
+			groupPlayers as [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer],
 			history,
 			singleWomanIds,
 		);
@@ -304,22 +424,24 @@ export function generateTeamWithGroup(
 	const need = 4 - groupPlayers.length;
 	if (waiting.length < need) return null;
 
-	// 경기 횟수 적은 순으로 정렬하여 부족한 인원 채우기
-	const sortedWaiting = [...waiting].sort(
-		(a, b) => (gameCountHistory[a.id] ?? 0) - (gameCountHistory[b.id] ?? 0),
-	);
+	const sortedWaiting = [...waiting].sort((a, b) => a.gameCount - b.gameCount);
 	const filled = sortedWaiting.slice(0, need);
-	const four = [...groupPlayers, ...filled] as [Player, Player, Player, Player];
+	const four = [...groupPlayers, ...filled] as [
+		SessionPlayer,
+		SessionPlayer,
+		SessionPlayer,
+		SessionPlayer,
+	];
 
-	// 예약인원이 2명일 경우, 무조건 두 명을 한 팀(A팀)으로 묶는다
 	if (groupPlayers.length === 2) {
-		const teamA: [Player, Player] = [groupPlayers[0], groupPlayers[1]];
-		const teamB: [Player, Player] = [filled[0], filled[1]];
+		const teamA: [SessionPlayer, SessionPlayer] = [
+			groupPlayers[0],
+			groupPlayers[1],
+		];
+		const teamB: [SessionPlayer, SessionPlayer] = [filled[0], filled[1]];
 
-		// 강제로 팀을 나눴으므로 gameType만 판별 (만약 남남/여여 라도 혼복 판별될 수 있으나, 일단 그대로 반환)
 		let gameType = determineGameType(four, singleWomanIds);
 
-		// 만약 혼복으로 판별되었으나, 1팀이 남남/여여라면 '혼합'으로 바꿔서 표시상 어색함을 줄임
 		if (gameType === "혼복") {
 			const isTeamAMixed =
 				teamA.some((p) => p.gender === "M") &&
@@ -330,24 +452,26 @@ export function generateTeamWithGroup(
 		}
 
 		return { teamA, teamB, gameType };
-	} else {
-		// 3명 예약인 경우 등은 기존 로직 활용
-		return generateTeamFromPlayers(four, history, singleWomanIds);
 	}
+
+	return generateTeamFromPlayers(four, history, singleWomanIds);
 }
 
 export function generateTeamFromPlayers(
-	players: [Player, Player, Player, Player],
+	players: [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer],
 	history: PairHistory,
 	singleWomanIds: string[],
 ): GeneratedTeam {
 	const gameType = determineGameType(players, singleWomanIds);
-	let teamA: [Player, Player];
-	let teamB: [Player, Player];
+	let teamA: [SessionPlayer, SessionPlayer];
+	let teamB: [SessionPlayer, SessionPlayer];
 
 	if (gameType === "혼복") {
 		const women = players.filter((p) => p.gender === "F");
-		const men = players.filter((p) => p.gender === "M") as [Player, Player];
+		const men = players.filter((p) => p.gender === "M") as [
+			SessionPlayer,
+			SessionPlayer,
+		];
 		[teamA, teamB] = buildMixedTeams(women, men, history);
 	} else {
 		[teamA, teamB] = bestPairing(players, history);
@@ -356,50 +480,22 @@ export function generateTeamFromPlayers(
 	return { teamA, teamB, gameType };
 }
 
+/**
+ * 코트 배정 시 PairHistory 업데이트 (클라이언트 상태용).
+ * DB pair_history upsert는 dbCompleteMatch에서 처리.
+ */
 export function recordHistory(
 	history: PairHistory,
 	team: GeneratedTeam,
 ): PairHistory {
 	const next = { ...history };
-	const pairs: [Player, Player][] = [team.teamA, team.teamB];
+	const pairs: [SessionPlayer, SessionPlayer][] = [team.teamA, team.teamB];
 
 	for (const [a, b] of pairs) {
 		if (!next[a.id]) next[a.id] = new Set();
 		if (!next[b.id]) next[b.id] = new Set();
 		next[a.id].add(b.id);
 		next[b.id].add(a.id);
-	}
-	return next;
-}
-
-/**
- * 경기 참여 횟수 업데이트. 팀 배정 시 반드시 호출.
- */
-export function recordGameCount(
-	gameCountHistory: GameCountHistory,
-	team: GeneratedTeam,
-): GameCountHistory {
-	const next = { ...gameCountHistory };
-	for (const p of [...team.teamA, ...team.teamB]) {
-		next[p.id] = (next[p.id] ?? 0) + 1;
-	}
-	return next;
-}
-
-/**
- * 혼복 게임 완료 시 혼복 출전 횟수 업데이트.
- * generateTeam 후 혼복이면 반드시 호출.
- */
-export function recordMixedHistory(
-	mixedHistory: MixedHistory,
-	team: GeneratedTeam,
-): MixedHistory {
-	if (team.gameType !== "혼복") return mixedHistory;
-	const next = { ...mixedHistory };
-	for (const p of [...team.teamA, ...team.teamB]) {
-		if (p.gender === "M") {
-			next[p.id] = (next[p.id] ?? 0) + 1;
-		}
 	}
 	return next;
 }

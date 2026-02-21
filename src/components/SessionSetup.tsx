@@ -11,9 +11,9 @@ interface Props {
 	players: Player[];
 	savedNames: Set<string> | null;
 	scriptUrl: string;
-	initialSelected?: Player[];
-	initialSettings?: SessionSettings;
 	isUpdating?: boolean;
+	initialCourtCount?: number;
+	initialSingleWomanIds?: string[];
 	onUpdatePlayer: (player: Player) => void;
 	onStart: (selected: Player[], settings: SessionSettings) => void;
 }
@@ -38,22 +38,17 @@ export default function SessionSetup({
 	players,
 	savedNames,
 	scriptUrl,
-	initialSelected,
-	initialSettings,
 	isUpdating,
+	initialCourtCount,
+	initialSingleWomanIds,
 	onUpdatePlayer,
 	onStart,
 }: Props) {
-	const [courtCount, setCourtCount] = useState(
-		initialSettings?.courtCount ?? 2,
-	);
+	const [courtCount, setCourtCount] = useState(initialCourtCount ?? 2);
 	const [singleWomanIds, setSingleWomanIds] = useState<Set<string>>(
-		new Set(initialSettings?.singleWomanIds ?? []),
+		() => new Set(initialSingleWomanIds ?? []),
 	);
 	const [selected, setSelected] = useState<Set<string>>(() => {
-		if (initialSelected) {
-			return new Set(initialSelected.map((p) => p.id));
-		}
 		const namesToSelect = savedNames ?? devSelectedNames;
 		if (namesToSelect) {
 			return new Set(
@@ -66,12 +61,7 @@ export default function SessionSetup({
 	const [genderFilter, setGenderFilter] = useState<GenderFilter>("all");
 
 	// Guest state
-	const [guests, setGuests] = useState<Player[]>(() => {
-		if (initialSelected) {
-			return initialSelected.filter((p) => p.id.startsWith("guest-"));
-		}
-		return [];
-	});
+	const [guests, setGuests] = useState<Player[]>([]);
 	const [showGuestModal, setShowGuestModal] = useState(false);
 	const [guestName, setGuestName] = useState("");
 	const [guestGender, setGuestGender] = useState<Gender>("M");
@@ -459,6 +449,7 @@ export default function SessionSetup({
 							type="text"
 							value={search}
 							onChange={(e) => setSearch(e.target.value)}
+							onFocus={() => setSearch("")}
 							placeholder="이름 검색…"
 							style={{
 								width: "100%",

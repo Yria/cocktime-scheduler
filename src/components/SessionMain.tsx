@@ -1,6 +1,5 @@
 import { useSessionState } from "../hooks/useSessionState";
-import type { SessionStateData } from "../lib/supabaseClient";
-import type { Player, SessionSettings } from "../types";
+import type { ClientSessionState } from "../lib/supabaseClient";
 import CourtList from "./session/CourtList";
 import CourtsHeader from "./session/CourtsHeader";
 import EndSessionModal from "./session/EndSessionModal";
@@ -14,162 +13,157 @@ import WaitingList from "./session/WaitingList";
 import TeamDialog from "./TeamDialog";
 
 interface Props {
-  initialPlayers: Player[];
-  settings: SessionSettings;
-  initialStateData: SessionStateData | null;
-  clientId: string;
-  sessionId: number;
-  onBack: () => void;
-  onEnd: () => void;
+	sessionId: number;
+	courtCount: number;
+	singleWomanIds: string[];
+	initialState: ClientSessionState;
+	clientId: string;
+	onBack: () => void;
+	onEnd: () => void;
 }
 
 export default function SessionMain({
-  initialPlayers,
-  settings,
-  initialStateData,
-  clientId,
-  sessionId,
-  onBack,
-  onEnd,
+	sessionId,
+	courtCount,
+	singleWomanIds,
+	initialState,
+	clientId,
+	onBack,
+	onEnd,
 }: Props) {
-  const {
-    courts,
-    waiting,
-    resting,
-    gameCountHistory,
-    pendingTeam,
-    setPendingTeam,
-    setPendingGroupId,
-    showEndConfirm,
-    setShowEndConfirm,
-    reservedGroups,
-    showReserveModal,
-    setShowReserveModal,
-    reservingSelected,
-    setReservingSelected,
-    toggleResting,
-    handleGenerate,
-    handleAssignGroup,
-    handleAssign,
-    handleComplete,
-    handleCreateReservation,
-    handleDisbandGroup,
-    toggleReservingPlayer,
-    canGenerate,
-    canReserve,
-    courtPlayerMap,
-    modalPlayers,
-    totalCount,
-  } = useSessionState({
-    initialPlayers,
-    settings,
-    initialStateData,
-    clientId,
-    sessionId,
-    onEnd,
-  });
+	const {
+		courts,
+		waiting,
+		resting,
+		pendingTeam,
+		setPendingTeam,
+		setPendingGroupId,
+		showEndConfirm,
+		setShowEndConfirm,
+		reservedGroups,
+		showReserveModal,
+		setShowReserveModal,
+		reservingSelected,
+		setReservingSelected,
+		toggleResting,
+		toggleForceMixed,
+		handleGenerate,
+		handleAssignGroup,
+		handleAssign,
+		handleComplete,
+		handleCreateReservation,
+		handleDisbandGroup,
+		handleEndSession,
+		toggleReservingPlayer,
+		canGenerate,
+		canReserve,
+		courtPlayerMap,
+		modalPlayers,
+		playingCount,
+		totalCount,
+	} = useSessionState({
+		sessionId,
+		courtCount,
+		clientId,
+		initialState,
+		singleWomanIds,
+		onEnd,
+	});
 
-  const playingCount = courts.reduce(
-    (n, c) => n + (c.team ? c.team.teamA.length + c.team.teamB.length : 0),
-    0
-  );
+	return (
+		<div
+			className="h-[100dvh] flex flex-col md:max-w-sm md:mx-auto"
+			style={{ background: "#fafbff" }}
+		>
+			<SessionHeader
+				onBack={onBack}
+				onEndClick={() => setShowEndConfirm(true)}
+			/>
 
-  return (
-    <div
-      className="h-[100dvh] flex flex-col md:max-w-sm md:mx-auto"
-      style={{ background: "#fafbff" }}
-    >
-      <SessionHeader
-        onBack={onBack}
-        onEndClick={() => setShowEndConfirm(true)}
-      />
+			<StatsSummary
+				totalCount={totalCount}
+				waitingCount={waiting.length}
+				playingCount={playingCount}
+				restingCount={resting.length}
+			/>
 
-      {/* Stats Summary */}
-      <StatsSummary
-        totalCount={totalCount}
-        waitingCount={waiting.length}
-        playingCount={playingCount}
-        restingCount={resting.length}
-      />
+			<div className="flex-1 overflow-y-auto no-sb">
+				<CourtsHeader courtsCount={courts.length} />
 
-      <div className="flex-1 overflow-y-auto no-sb">
-        {/* Courts Section */}
-        <CourtsHeader courtsCount={courts.length} />
+				<div
+					style={{
+						padding: "0 16px",
+						display: "flex",
+						flexDirection: "column",
+						gap: 16,
+					}}
+				>
+					<CourtList courts={courts} onComplete={handleComplete} />
+				</div>
 
-        <div
-          style={{
-            padding: "0 16px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 16,
-          }}
-        >
-          <CourtList courts={courts} onComplete={handleComplete} />
-        </div>
+				<ReservedList
+					reservedGroups={reservedGroups}
+					courtPlayerMap={courtPlayerMap}
+					hasEmptyCourt={courts.some((c) => c.match === null)}
+					waitingCount={waiting.length}
+					onDisband={handleDisbandGroup}
+					onAssign={handleAssignGroup}
+				/>
 
-        <ReservedList
-          reservedGroups={reservedGroups}
-          courtPlayerMap={courtPlayerMap}
-          hasEmptyCourt={courts.some((c) => c.team === null)}
-          waitingCount={waiting.length}
-          onDisband={handleDisbandGroup}
-          onAssign={handleAssignGroup}
-        />
+				<WaitingList
+					waiting={waiting}
+					onToggleResting={toggleResting}
+					onToggleForceMixed={toggleForceMixed}
+				/>
 
-        <WaitingList
-          waiting={waiting}
-          gameCountHistory={gameCountHistory}
-          onToggleResting={toggleResting}
-        />
+				<RestingList resting={resting} onToggleResting={toggleResting} />
 
-        <RestingList resting={resting} onToggleResting={toggleResting} />
+				<div style={{ height: 16 }} />
+			</div>
 
-        <div style={{ height: 16 }} />
-      </div>
+			<SessionControls
+				onGenerate={handleGenerate}
+				canGenerate={canGenerate}
+				onReserveClick={() => {
+					setReservingSelected(new Set());
+					setShowReserveModal(true);
+				}}
+				canReserve={canReserve}
+				waitingCount={waiting.length}
+			/>
 
-      <SessionControls
-        onGenerate={handleGenerate}
-        canGenerate={canGenerate}
-        onReserveClick={() => {
-          setReservingSelected(new Set());
-          setShowReserveModal(true);
-        }}
-        canReserve={canReserve}
-        waitingCount={waiting.length}
-      />
+			{pendingTeam && (
+				<TeamDialog
+					team={pendingTeam}
+					courts={courts}
+					onAssign={handleAssign}
+					onCancel={() => {
+						setPendingTeam(null);
+						setPendingGroupId(null);
+					}}
+				/>
+			)}
 
-      {pendingTeam && (
-        <TeamDialog
-          team={pendingTeam}
-          courts={courts}
-          onAssign={handleAssign}
-          onCancel={() => {
-            setPendingTeam(null);
-            setPendingGroupId(null);
-          }}
-        />
-      )}
+			{showReserveModal && (
+				<ReservationModal
+					modalPlayers={modalPlayers}
+					reservingSelected={reservingSelected}
+					courtPlayerMap={courtPlayerMap}
+					onTogglePlayer={toggleReservingPlayer}
+					onCreate={handleCreateReservation}
+					onCancel={() => {
+						setShowReserveModal(false);
+						setReservingSelected(new Set());
+					}}
+				/>
+			)}
 
-      {showReserveModal && (
-        <ReservationModal
-          modalPlayers={modalPlayers}
-          reservingSelected={reservingSelected}
-          courtPlayerMap={courtPlayerMap}
-          onTogglePlayer={toggleReservingPlayer}
-          onCreate={handleCreateReservation}
-          onCancel={() => {
-            setShowReserveModal(false);
-            setReservingSelected(new Set());
-          }}
-        />
-      )}
-
-      {showEndConfirm && (
-        <EndSessionModal
-          onConfirm={onEnd}
-          onCancel={() => setShowEndConfirm(false)}
-        />
-      )}
-    </div>
-  );
+			{showEndConfirm && (
+				<EndSessionModal
+					onConfirm={handleEndSession}
+					onCancel={() => setShowEndConfirm(false)}
+				/>
+			)}
+		</div>
+	);
 }

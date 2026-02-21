@@ -1,7 +1,7 @@
-import type { Player } from "../../types";
+import type { SessionPlayer } from "../../types";
 
 interface ReservationModalProps {
-	modalPlayers: Player[];
+	modalPlayers: SessionPlayer[];
 	reservingSelected: Set<string>;
 	courtPlayerMap: Map<string, number>;
 	onTogglePlayer: (playerId: string) => void;

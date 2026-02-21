@@ -54,7 +54,7 @@ export default function CourtList({ courts, onComplete }: CourtListProps) {
 						<span style={{ fontSize: 14, fontWeight: 600, color: "#0f1724" }}>
 							{court.id}번 코트
 						</span>
-						{court.team ? (
+						{court.match ? (
 							<span
 								style={{
 									fontSize: 12,
@@ -83,7 +83,7 @@ export default function CourtList({ courts, onComplete }: CourtListProps) {
 						)}
 					</div>
 
-					{court.team ? (
+					{court.match ? (
 						<>
 							{/* Team info */}
 							<div style={{ padding: "16px 28px" }}>
@@ -108,8 +108,8 @@ export default function CourtList({ courts, onComplete }: CourtListProps) {
 											flex: 1,
 										}}
 									>
-										{court.team.teamA.map((player) => (
-											<PlayerBadge key={player.name} player={player} />
+										{court.match.teamA.map((player) => (
+											<PlayerBadge key={player.id} player={player} />
 										))}
 									</div>
 								</div>
@@ -169,8 +169,8 @@ export default function CourtList({ courts, onComplete }: CourtListProps) {
 											flex: 1,
 										}}
 									>
-										{court.team.teamB.map((player) => (
-											<PlayerBadge key={player.name} player={player} />
+										{court.match.teamB.map((player) => (
+											<PlayerBadge key={player.id} player={player} />
 										))}
 									</div>
 								</div>

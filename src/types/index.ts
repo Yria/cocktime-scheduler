@@ -1,6 +1,7 @@
 export type SkillLevel = "O" | "V" | "X";
 export type Gender = "M" | "F";
 export type GameType = "혼복" | "남복" | "여복" | "혼합";
+export type PlayerStatus = "waiting" | "playing" | "resting" | "reserved";
 
 export interface PlayerSkills {
 	클리어: SkillLevel;
@@ -12,6 +13,7 @@ export interface PlayerSkills {
 	백핸드: SkillLevel;
 }
 
+/** 구글 시트에서 로드한 원본 선수 데이터 */
 export interface Player {
 	id: string;
 	name: string;
@@ -19,47 +21,56 @@ export interface Player {
 	skills: PlayerSkills;
 }
 
-export interface GeneratedTeam {
-	teamA: [Player, Player];
-	teamB: [Player, Player];
+/** 세션 내 참여 선수 (DB session_players 행) */
+export interface SessionPlayer {
+	id: string; // UUID (session_players.id)
+	playerId: string; // 원본 player_id (Player.id)
+	name: string;
+	gender: Gender;
+	skills: PlayerSkills;
+	allowMixedSingle: boolean;
+	status: PlayerStatus;
+	forceMixed: boolean;
+	gameCount: number;
+	mixedCount: number;
+	waitSince: string | null;
+}
+
+/** 코트 내 현재 경기 */
+export interface ActiveMatch {
+	id: string; // UUID (matches.id)
+	courtId: number;
 	gameType: GameType;
+	teamA: [SessionPlayer, SessionPlayer];
+	teamB: [SessionPlayer, SessionPlayer];
+	startedAt: string;
 }
 
 export interface Court {
 	id: number;
-	team: GeneratedTeam | null;
+	match: ActiveMatch | null;
 }
 
+/** 팀 구성 알고리즘 결과 */
+export interface GeneratedTeam {
+	teamA: [SessionPlayer, SessionPlayer];
+	teamB: [SessionPlayer, SessionPlayer];
+	gameType: GameType;
+}
+
+/** 파트너 이력 — session_players.id (UUID) 기반 */
 export interface PairHistory {
-	[playerId: string]: Set<string>;
-}
-
-/** 혼복 출전 횟수 추적 — 남자 선수의 혼복 경험 균등 분배에 사용 */
-export interface MixedHistory {
-	[playerId: string]: number;
-}
-
-/** 경기 참여 횟수 추적 — 전체 경기수 균등 분배에 사용 */
-export interface GameCountHistory {
-	[playerId: string]: number;
-}
-
-export interface SessionSettings {
-	courtCount: number;
-	singleWomanIds: string[];
+	[sessionPlayerId: string]: Set<string>;
 }
 
 export interface ReservedGroup {
 	id: string;
-	players: Player[]; // 2-4 pre-selected players (waiting or on-court)
-	readyIds: string[]; // player IDs currently in waiting (not on court)
+	memberIds: string[]; // session_players.id UUID[]
+	readyIds: string[]; // 현재 대기 완료된 session_players.id
+	players: SessionPlayer[]; // 클라이언트 편의용
 }
 
-export interface MatchRecord {
-	id: string;
-	courtId: number;
-	team: GeneratedTeam;
-	startTime: string;
-	endTime?: string;
-	status: "playing" | "completed";
+export interface SessionSettings {
+	courtCount: number;
+	singleWomanIds: string[]; // Player.id (구글 시트 기반), 세션 시작 시 사용
 }

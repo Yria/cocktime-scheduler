@@ -1,19 +1,15 @@
-import type { GameCountHistory, Player } from "../../types";
+import type { SessionPlayer } from "../../types";
 
 interface WaitingListProps {
-	waiting: Player[];
-	gameCountHistory: GameCountHistory;
+	waiting: SessionPlayer[];
 	onToggleResting: (playerId: string) => void;
-}
-
-function formatPlayer(player: Player) {
-	return `${player.gender === "F" ? "🔴" : "🔵"} ${player.name}`;
+	onToggleForceMixed: (playerId: string) => void;
 }
 
 export default function WaitingList({
 	waiting,
-	gameCountHistory,
 	onToggleResting,
+	onToggleForceMixed,
 }: WaitingListProps) {
 	return (
 		<div>
@@ -76,31 +72,63 @@ export default function WaitingList({
 					}}
 				>
 					{waiting.map((p) => (
-						<button
+						<div
 							key={p.id}
-							type="button"
-							onClick={() => onToggleResting(p.id)}
 							style={{
-								background: "#ffffff",
-								border: "1px solid rgba(0,0,0,0.08)",
-								borderRadius: 12,
-								padding: "8px 12px",
-								fontSize: 14,
-								fontWeight: 500,
-								color: "#0f1724",
-								cursor: "pointer",
 								display: "flex",
 								alignItems: "center",
-								gap: 4,
+								background: p.forceMixed ? "rgba(255,45,85,0.06)" : "#ffffff",
+								border: p.forceMixed
+									? "1px solid rgba(255,45,85,0.3)"
+									: "1px solid rgba(0,0,0,0.08)",
+								borderRadius: 12,
+								overflow: "hidden",
 							}}
 						>
-							{formatPlayer(p)}
-							{(gameCountHistory[p.id] ?? 0) > 0 && (
-								<span style={{ fontSize: 11, opacity: 0.35, marginLeft: 2 }}>
-									{gameCountHistory[p.id]}
-								</span>
-							)}
-						</button>
+							{/* 이름 + 게임수: 누르면 휴식 전환 */}
+							<button
+								type="button"
+								onClick={() => onToggleResting(p.id)}
+								style={{
+									padding: "8px 10px",
+									fontSize: 14,
+									fontWeight: 500,
+									color: "#0f1724",
+									cursor: "pointer",
+									background: "none",
+									border: "none",
+									display: "flex",
+									alignItems: "center",
+									gap: 4,
+								}}
+							>
+								{p.gender === "F" ? "🔴" : "🔵"} {p.name}
+								{p.gameCount > 0 && (
+									<span style={{ fontSize: 11, opacity: 0.35, marginLeft: 2 }}>
+										{p.gameCount}
+									</span>
+								)}
+							</button>
+
+							{/* 혼복 우선배치 토글 버튼 */}
+							<button
+								type="button"
+								onClick={() => onToggleForceMixed(p.id)}
+								title={p.forceMixed ? "혼복 우선배치 해제" : "혼복 우선배치 지정"}
+								style={{
+									padding: "8px 8px 8px 4px",
+									fontSize: 12,
+									cursor: "pointer",
+									background: "none",
+									border: "none",
+									color: p.forceMixed ? "#ff2d55" : "#c0c8d0",
+									fontWeight: 700,
+									lineHeight: 1,
+								}}
+							>
+								{p.forceMixed ? "★" : "☆"}
+							</button>
+						</div>
 					))}
 				</div>
 			)}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	Navigate,
 	Route,
@@ -9,26 +9,31 @@ import {
 import Home from "./components/Home";
 import SessionMain from "./components/SessionMain";
 import SessionSetup from "./components/SessionSetup";
+import { fetchPlayers } from "./lib/sheetsApi";
 import {
-	endSession,
-	fetchSession,
-	type SessionInitData,
-	type SessionRow,
-	type SessionStateData,
+	fetchActiveSession,
+	fetchSessionSnapshot,
+	snapshotToClientState,
 	startSession,
 	supabase,
-	updateSessionInitData,
+	type ClientSessionState,
+	type SessionRow,
 } from "./lib/supabaseClient";
 import type { Player, SessionSettings } from "./types";
 
-interface SessionInit {
-	selected: Player[];
-	settings: SessionSettings;
+interface SessionMeta {
+	sessionId: number;
+	courtCount: number;
+	singleWomanIds: string[];
+	initialState: ClientSessionState;
 }
 
 const SAVE_KEY = "bmt_session_players";
 
-// 탭마다 고유한 클라이언트 ID (무한루프 방지)
+const ENV_SHEET_ID = import.meta.env.VITE_SHEET_ID as string;
+const ENV_API_KEY = import.meta.env.VITE_API_KEY as string;
+const ENV_SCRIPT_URL = (import.meta.env.VITE_SCRIPT_URL as string) ?? "";
+
 const CLIENT_ID = crypto.randomUUID();
 
 function loadSavedNames(): Set<string> | null {
@@ -58,118 +63,90 @@ export default function App() {
 	const [allPlayers, setAllPlayers] = useState<Player[]>([]);
 	const [scriptUrl, setScriptUrl] = useState("");
 	const [savedNames, setSavedNames] = useState<Set<string> | null>(null);
-	const [sessionInit, setSessionInit] = useState<SessionInit | null>(null);
-	const [initialStateData, setInitialStateData] =
-		useState<SessionStateData | null>(null);
+	const [sessionMeta, setSessionMeta] = useState<SessionMeta | null>(null);
 	const [sessionLoading, setSessionLoading] = useState(true);
-	const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
 
+	const sessionMetaRef = useRef<SessionMeta | null>(null);
 	const currentPathRef = useRef(window.location.pathname);
-	const activeSessionIdRef = useRef<number | null>(null);
-
-	const updateActiveSessionId = useCallback((id: number | null) => {
-		setActiveSessionId(id);
-		activeSessionIdRef.current = id;
-	}, []);
-
 	const location = useLocation();
 
-	// pathname 변경 추적 (location.pathname 기반)
 	useEffect(() => {
 		currentPathRef.current = location.pathname;
 	}, [location.pathname]);
 
-	// 마운트 시 Supabase에서 활성 세션 확인
+	const updateSessionMeta = useCallback((meta: SessionMeta | null) => {
+		setSessionMeta(meta);
+		sessionMetaRef.current = meta;
+	}, []);
+
+	// snapshot 로드 → 상태 설정 → navigate (setup 화면이 아닌 경우)
+	const applySession = useCallback(
+		async (row: SessionRow) => {
+			const [snapshot, players] = await Promise.all([
+				fetchSessionSnapshot(row.id),
+				fetchPlayers(ENV_SHEET_ID, ENV_API_KEY).catch(() => [] as Player[]),
+			]);
+			if (!snapshot) return;
+			const initialState = snapshotToClientState(snapshot);
+			const singleWomanIds = snapshot.players
+				.filter((p) => p.allowMixedSingle)
+				.map((p) => p.playerId);
+
+			// 전체 플레이어 목록 + scriptUrl 복원
+			if (players.length > 0) {
+				setAllPlayers(players);
+				setScriptUrl(row.script_url ?? ENV_SCRIPT_URL);
+			}
+			// 세션 참여자 이름으로 savedNames 설정 → SessionSetup에서 해당 인원만 체크
+			setSavedNames(new Set(snapshot.players.map((p) => p.name)));
+
+			updateSessionMeta({
+				sessionId: row.id,
+				courtCount: row.court_count,
+				singleWomanIds,
+				initialState,
+			});
+			if (!currentPathRef.current.includes("/setup")) {
+				navigate("/session", { replace: true });
+			}
+		},
+		[navigate, updateSessionMeta, setAllPlayers, setScriptUrl, setSavedNames],
+	);
+
+	// 마운트 시 활성 세션 확인
 	useEffect(() => {
 		async function checkActiveSession() {
-			const row = await fetchSession();
-			if (row?.is_active && row.init_data) {
-				const {
-					allPlayers: ap,
-					scriptUrl: su,
-					selected,
-					settings,
-				} = row.init_data;
-				setAllPlayers(ap);
-				setScriptUrl(su);
-				setSessionInit({ selected, settings });
-				setSavedNames(loadSavedNames());
-				if (row.state_data) setInitialStateData(row.state_data);
-				updateActiveSessionId(row.id);
-
-				// 만약 이미 세션 설정 화면에 진입한 상태라면 방해(강제이동)하지 않음
-				if (!window.location.pathname.includes("/setup")) {
-					navigate("/session", { replace: true });
-				}
+			const row = await fetchActiveSession();
+			if (row?.is_active) {
+				await applySession(row);
 			}
 			setSessionLoading(false);
 		}
 		checkActiveSession();
-	}, [navigate, updateActiveSessionId]);
+	}, [applySession]);
 
-	// Realtime 구독: 다른 사용자가 세션 시작/종료 시 자동 전환
+	// 다른 클라이언트의 세션 시작/종료 감지
 	useEffect(() => {
 		const channel = supabase
-			.channel("app-session-changes")
+			.channel("app-session-watch")
 			.on(
 				"postgres_changes",
-				{
-					event: "*",
-					schema: "public",
-					table: "sessions",
-				},
-				(payload) => {
+				{ event: "*", schema: "public", table: "sessions" },
+				async (payload) => {
 					const row = payload.new as SessionRow;
 					if (!row || !row.id) return;
-					if (row.last_client_id === CLIENT_ID) {
-						if (
-							row.is_active &&
-							row.id === activeSessionIdRef.current &&
-							row.state_data
-						) {
-							// Keep initialStateData fresh so if we remount SessionMain, we don't rollback
-							setInitialStateData(row.state_data);
-						}
-						return;
-					}
 
-					if (row.is_active && row.init_data) {
-						const isOnSession = currentPathRef.current.includes("/session");
-						if (!isOnSession) {
-							// 사용자가 의도적으로 /setup 화면으로 나간 경우 강제 복귀시키지 않음 (외부 업데이트 무시)
-							if (row.id === activeSessionIdRef.current) return;
-							if (currentPathRef.current.includes("/setup")) return;
+					if (row.is_active) {
+						// 이미 이 세션을 보고 있으면 무시
+						if (row.id === sessionMetaRef.current?.sessionId) return;
+						// setup 화면에서 직접 설정 중이면 무시
+						if (currentPathRef.current.includes("/setup")) return;
 
-							const {
-								allPlayers: ap,
-								scriptUrl: su,
-								selected,
-								settings,
-							} = row.init_data;
-							setAllPlayers(ap);
-							setScriptUrl(su);
-							setSessionInit({ selected, settings });
-							setSavedNames(loadSavedNames());
-							if (row.state_data) setInitialStateData(row.state_data);
-							updateActiveSessionId(row.id);
-							navigate("/session", { replace: true });
-						} else {
-							// 이미 /session 화면에 있다면
-							if (row.id === activeSessionIdRef.current) {
-								setAllPlayers(row.init_data.allPlayers);
-								setScriptUrl(row.init_data.scriptUrl);
-								setSessionInit({
-									selected: row.init_data.selected,
-									settings: row.init_data.settings,
-								});
-							}
-						}
+						await applySession(row);
 					} else if (!row.is_active) {
-						if (activeSessionIdRef.current === row.id) {
+						if (sessionMetaRef.current?.sessionId === row.id) {
 							setSavedNames(null);
-							setSessionInit(null);
-							setInitialStateData(null);
-							updateActiveSessionId(null);
+							updateSessionMeta(null);
 							navigate("/", { replace: true });
 						}
 					}
@@ -180,7 +157,7 @@ export default function App() {
 		return () => {
 			supabase.removeChannel(channel);
 		};
-	}, [navigate, updateActiveSessionId]);
+	}, [navigate, updateSessionMeta, applySession]);
 
 	const handleHomeStart = useCallback(
 		(players: Player[], url: string) => {
@@ -199,45 +176,44 @@ export default function App() {
 				JSON.stringify(selected.map((p) => p.name)),
 			);
 
-			const initData: SessionInitData = {
-				allPlayers,
-				scriptUrl,
+			const result = await startSession(
+				settings.courtCount,
+				scriptUrl || null,
 				selected,
-				settings,
+				settings.singleWomanIds,
+			);
+			if (!result) return;
+
+			const { sessionId, sessionPlayers } = result;
+			const courts = Array.from({ length: settings.courtCount }, (_, i) => ({
+				id: i + 1,
+				match: null as null,
+			}));
+			const initialState: ClientSessionState = {
+				courts,
+				waiting: sessionPlayers,
+				resting: [],
+				reservedGroups: [],
+				pairHistory: {},
 			};
-			if (activeSessionIdRef.current) {
-				await updateSessionInitData(
-					activeSessionIdRef.current,
-					initData,
-					CLIENT_ID,
-				);
-				setSessionInit({ selected, settings });
-				navigate("/session");
-			} else {
-				const newSession = await startSession(initData, CLIENT_ID);
-				if (newSession) {
-					updateActiveSessionId(newSession.id);
-				}
-				setInitialStateData(null);
-				setSessionInit({ selected, settings });
-				navigate("/session");
-			}
+
+			updateSessionMeta({
+				sessionId,
+				courtCount: settings.courtCount,
+				singleWomanIds: settings.singleWomanIds,
+				initialState,
+			});
+			navigate("/session");
 		},
-		[allPlayers, scriptUrl, navigate, updateActiveSessionId],
+		[scriptUrl, navigate, updateSessionMeta],
 	);
 
-	const handleSessionEnd = useCallback(async () => {
-		if (activeSessionIdRef.current) {
-			await endSession(activeSessionIdRef.current, CLIENT_ID);
-		}
-
+	const handleSessionEnd = useCallback(() => {
 		localStorage.removeItem(SAVE_KEY);
 		setSavedNames(null);
-		setSessionInit(null);
-		setInitialStateData(null);
-		updateActiveSessionId(null);
+		updateSessionMeta(null);
 		navigate("/setup");
-	}, [navigate, updateActiveSessionId]);
+	}, [navigate, updateSessionMeta]);
 
 	const handleUpdatePlayer = useCallback((updated: Player) => {
 		setAllPlayers((prev) =>
@@ -248,6 +224,35 @@ export default function App() {
 	const handleSessionBack = useCallback(() => {
 		navigate("/setup");
 	}, [navigate]);
+
+	// 전체 목록(allPlayers)이 있으면 우선 사용, 없으면 세션 참여자로 fallback
+	const setupPlayers = useMemo(() => {
+		if (allPlayers.length > 0) return allPlayers;
+		if (!sessionMeta) return [];
+		const { waiting, resting, courts, reservedGroups } =
+			sessionMeta.initialState;
+		const playingPlayers = courts.flatMap((c) =>
+			c.match ? [...c.match.teamA, ...c.match.teamB] : [],
+		);
+		const reservedPlayers = reservedGroups.flatMap((g) => g.players);
+		const playerMap = new Map<string, Player>();
+		for (const sp of [
+			...waiting,
+			...resting,
+			...playingPlayers,
+			...reservedPlayers,
+		]) {
+			if (!playerMap.has(sp.playerId)) {
+				playerMap.set(sp.playerId, {
+					id: sp.playerId,
+					name: sp.name,
+					gender: sp.gender,
+					skills: sp.skills,
+				});
+			}
+		}
+		return Array.from(playerMap.values());
+	}, [allPlayers, sessionMeta]);
 
 	if (sessionLoading) {
 		return (
@@ -264,14 +269,14 @@ export default function App() {
 				<Route
 					path="/setup"
 					element={
-						allPlayers.length > 0 ? (
+						setupPlayers.length > 0 || !!sessionMeta ? (
 							<SessionSetup
-								players={allPlayers}
+								players={setupPlayers}
 								savedNames={savedNames}
 								scriptUrl={scriptUrl}
-								initialSelected={sessionInit?.selected}
-								initialSettings={sessionInit?.settings}
-								isUpdating={!!activeSessionId}
+								isUpdating={!!sessionMeta}
+								initialCourtCount={sessionMeta?.courtCount}
+								initialSingleWomanIds={sessionMeta?.singleWomanIds}
 								onUpdatePlayer={handleUpdatePlayer}
 								onStart={handleSetupStart}
 							/>
@@ -283,12 +288,12 @@ export default function App() {
 				<Route
 					path="/session"
 					element={
-						sessionInit && activeSessionId ? (
+						sessionMeta ? (
 							<SessionMain
-								sessionId={activeSessionId}
-								initialPlayers={sessionInit.selected}
-								settings={sessionInit.settings}
-								initialStateData={initialStateData}
+								sessionId={sessionMeta.sessionId}
+								courtCount={sessionMeta.courtCount}
+								singleWomanIds={sessionMeta.singleWomanIds}
+								initialState={sessionMeta.initialState}
 								clientId={CLIENT_ID}
 								onBack={handleSessionBack}
 								onEnd={handleSessionEnd}

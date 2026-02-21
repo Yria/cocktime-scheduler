@@ -21,3 +21,8 @@
 - 모바일(< 768px)은 전체 너비, PC(≥ 768px)는 384px 중앙 배치
 
 ---
+
+---
+## #3
+**Action:** 세션 매칭 및 팀 생성 로직 데이터베이스 연동 및 기능 개선
+**Answer:** Supabase DB 구조 확립 및 문서화(migration.sql 등), 팀 생성 알고리즘 고도화 및 테스트 추가(teamGenerator.ts), 실시간 DB 연동을 위한 상태 관리 및 UI 수정(useSessionState.ts, SessionMain.tsx 등) 진행

@@ -20,7 +20,7 @@ export default function TeamDialog({
 	onAssign,
 	onCancel,
 }: Props) {
-	const emptyCourts = courts.filter((c) => c.team === null);
+	const emptyCourts = courts.filter((c) => c.match === null);
 
 	return (
 		<div className="fixed inset-0 lq-overlay flex items-end justify-center z-50 px-4 pb-6">

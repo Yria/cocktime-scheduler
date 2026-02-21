@@ -1,11 +1,11 @@
-import type { Player } from "../../types";
+import type { SessionPlayer } from "../../types";
 
 interface RestingListProps {
-	resting: Player[];
+	resting: SessionPlayer[];
 	onToggleResting: (playerId: string) => void;
 }
 
-function formatPlayer(player: Player) {
+function formatPlayer(player: SessionPlayer) {
 	return `${player.gender === "F" ? "🔴" : "🔵"} ${player.name}`;
 }
 

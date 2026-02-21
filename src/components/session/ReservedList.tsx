@@ -102,8 +102,8 @@ export default function ReservedList({
 				}}
 			>
 				{reservedGroups.map((group) => {
-					const allReady = group.readyIds.length === group.players.length;
-					const needMore = 4 - group.players.length;
+					const allReady = group.readyIds.length === group.memberIds.length;
+					const needMore = 4 - group.memberIds.length;
 					const canAssign =
 						allReady && hasEmptyCourt && waitingCount >= needMore;
 					const readySet = new Set(group.readyIds);
@@ -134,11 +134,7 @@ export default function ReservedList({
 										style={{
 											fontSize: 12,
 											fontWeight: 600,
-											color: canAssign
-												? "#166534"
-												: allReady
-													? "#9a3412"
-													: "#9a3412",
+											color: canAssign ? "#166534" : "#9a3412",
 											background: canAssign
 												? "rgba(220,252,231,1)"
 												: "rgba(255,247,237,1)",
@@ -150,7 +146,7 @@ export default function ReservedList({
 											? canAssign
 												? "준비완료"
 												: `대기 인원 부족 (${waitingCount}/${needMore}명)`
-											: `${group.readyIds.length}/${group.players.length}명 대기중`}
+											: `${group.readyIds.length}/${group.memberIds.length}명 대기중`}
 									</span>
 									<button
 										type="button"
