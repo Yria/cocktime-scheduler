@@ -10,12 +10,12 @@ import {
 	dbUpdateSessionPlayer,
 	fetchActiveSession,
 	fetchSessionSnapshot,
-	type SessionRow,
 	sendBroadcast,
 	snapshotToClientState,
 	startSession,
 	supabase,
 	updateSession,
+	type SessionRow,
 } from "../lib/supabaseClient";
 import type { Player, SessionSettings } from "../types";
 import { useSessionStore } from "./sessionStore";
