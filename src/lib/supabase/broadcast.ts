@@ -35,6 +35,10 @@ export type BroadcastPayload =
 			payload: { player: SessionPlayer };
 	  }
 	| {
+			event: "player_updated";
+			payload: { player: SessionPlayer };
+	  }
+	| {
 			event: "group_reserved";
 			payload: { group: ReservedGroup; reservedPlayerIds: string[] };
 	  }
@@ -43,7 +47,15 @@ export type BroadcastPayload =
 			payload: { groupId: string; readyPlayers: SessionPlayer[] };
 	  }
 	| { event: "session_ended" }
-	| { event: "session_updated" };
+	| {
+			event: "session_updated";
+			payload: {
+				courtCount: number;
+				singleWomanIds: string[];
+				addedPlayers: SessionPlayer[];
+				removedPlayerIds: string[];
+			};
+	  };
 
 export function createBroadcastChannel(sessionId: number): RealtimeChannel {
 	return supabase.channel(`session-bc:${sessionId}`, {

@@ -61,6 +61,14 @@ export interface SessionState {
 	handleEndSession: (onEnd: () => void) => Promise<void>;
 	toggleReservingPlayer: (playerId: string) => void;
 
+	// Settings sync
+	syncSettings: (
+		courtCount: number,
+		singleWomanIds: string[],
+		addedPlayers: SessionPlayer[],
+		removedPlayerIds: string[],
+	) => void;
+
 	// Channel management
 	subscribe: (sessionId: number, onEnd: () => void) => void;
 	unsubscribe: () => void;
@@ -82,6 +90,34 @@ const initialState = {
 	_channel: null as RealtimeChannel | null,
 	_metaChannel: null as RealtimeChannel | null,
 };
+
+function adjustCourts(
+	courts: Court[],
+	targetCount: number,
+): ReturnType<typeof courts.map> {
+	const current = courts.length;
+	if (targetCount > current) {
+		const extra = Array.from({ length: targetCount - current }, (_, i) => ({
+			id: current + i + 1,
+			match: null as null,
+		}));
+		return [...courts, ...extra];
+	}
+	if (targetCount < current) {
+		let toRemove = current - targetCount;
+		return [...courts]
+			.reverse()
+			.filter((c) => {
+				if (!c.match && toRemove > 0) {
+					toRemove--;
+					return false;
+				}
+				return true;
+			})
+			.reverse();
+	}
+	return courts;
+}
 
 export const useSessionStore = create<SessionState>((set, get) => ({
 	...initialState,
@@ -146,38 +182,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const matchId = crypto.randomUUID();
 		const removedGroupId = pendingGroupId;
 
-		const allIds = new Set([
-			pendingTeam.teamA[0].id,
-			pendingTeam.teamA[1].id,
-			pendingTeam.teamB[0].id,
-			pendingTeam.teamB[1].id,
-		]);
-
-		set((state) => ({
-			courts: state.courts.map((c) =>
-				c.id === courtId
-					? {
-							...c,
-							match: {
-								id: matchId,
-								courtId,
-								gameType: pendingTeam.gameType,
-								teamA: pendingTeam.teamA,
-								teamB: pendingTeam.teamB,
-								startedAt: new Date().toISOString(),
-							},
-						}
-					: c,
-			),
-			waiting: state.waiting.filter((p) => !allIds.has(p.id)),
-			reservedGroups: removedGroupId
-				? state.reservedGroups.filter((g) => g.id !== removedGroupId)
-				: state.reservedGroups,
-			pairHistory: recordHistory(state.pairHistory, pendingTeam),
-			pendingTeam: null,
-			pendingGroupId: null,
-		}));
-
 		const ok = await dbAssignMatch(
 			sessionId,
 			matchId,
@@ -185,8 +189,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			courtId,
 			removedGroupId,
 		);
+
 		if (ok) {
-			sendBroadcast(_channel, {
+			const payload: BroadcastPayload = {
 				event: "match_started",
 				payload: {
 					matchId,
@@ -196,7 +201,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					teamB: pendingTeam.teamB,
 					removedGroupId,
 				},
-			});
+			};
+			get().applyBroadcast(payload, () => {});
+			sendBroadcast(_channel, payload);
+
+			set({ pendingTeam: null, pendingGroupId: null });
 		}
 	},
 
@@ -208,72 +217,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const sessionMeta = useAppStore.getState().sessionMeta;
 		const sessionId = sessionMeta?.sessionId ?? 0;
 		const match = court.match;
-		const reservedMemberIds = new Set(
-			reservedGroups.flatMap((g) => g.memberIds),
-		);
-		const allPlayers = [...match.teamA, ...match.teamB];
-		const toWaiting = allPlayers.filter((p) => !reservedMemberIds.has(p.id));
-		const toReservedBack = allPlayers.filter((p) =>
-			reservedMemberIds.has(p.id),
-		);
-		const isMixed = match.gameType === "혼복";
-		const now = new Date().toISOString();
-
-		const optimisticWaiting = toWaiting.map((p) => ({
-			...p,
-			status: "waiting" as const,
-			waitSince: now,
-			gameCount: p.gameCount + 1,
-			mixedCount: isMixed && p.gender === "M" ? p.mixedCount + 1 : p.mixedCount,
-		}));
-
-		const optimisticUpdatedPlayers: SessionPlayer[] = [...optimisticWaiting];
-		for (const p of toReservedBack) {
-			optimisticUpdatedPlayers.push({
-				...p,
-				gameCount: p.gameCount + 1,
-				mixedCount:
-					isMixed && p.gender === "M" ? p.mixedCount + 1 : p.mixedCount,
-			});
-		}
-
-		set((state) => {
-			const updMap = new Map(optimisticUpdatedPlayers.map((p) => [p.id, p]));
-			const newPairHistory = { ...state.pairHistory };
-			for (const pair of [match.teamA, match.teamB]) {
-				const [a, b] = pair;
-				if (!newPairHistory[a.id]) newPairHistory[a.id] = new Set();
-				if (!newPairHistory[b.id]) newPairHistory[b.id] = new Set();
-				newPairHistory[a.id].add(b.id);
-				newPairHistory[b.id].add(a.id);
-			}
-			return {
-				courts: state.courts.map((c) =>
-					c.id === courtId ? { ...c, match: null } : c,
-				),
-				waiting: [...state.waiting, ...optimisticWaiting],
-				reservedGroups: state.reservedGroups.map((g) => {
-					const backIds = toReservedBack
-						.filter((p) => g.memberIds.includes(p.id))
-						.map((p) => p.id);
-					if (backIds.length === 0) return g;
-					const newReadyIds = [...new Set([...g.readyIds, ...backIds])];
-					return {
-						...g,
-						readyIds: newReadyIds,
-						players: g.players.map((p) => updMap.get(p.id) ?? p),
-					};
-				}),
-				pairHistory: newPairHistory,
-				lastMixedPlayerIds: isMixed
-					? allPlayers.map((p) => p.id)
-					: state.lastMixedPlayerIds,
-			};
-		});
 
 		const result = await dbCompleteMatch(sessionId, match, reservedGroups);
 		if (result && _channel) {
-			sendBroadcast(_channel, {
+			const payload: BroadcastPayload = {
 				event: "match_completed",
 				payload: {
 					matchId: match.id,
@@ -284,7 +231,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					updatedPlayers: result.updatedPlayers,
 					groupUpdates: result.groupUpdates,
 				},
-			});
+			};
+			get().applyBroadcast(payload, () => {});
+			sendBroadcast(_channel, payload);
 		}
 	},
 
@@ -299,22 +248,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const updated = await dbToggleResting(player);
 		if (!updated) return;
 
-		if (player.status === "resting") {
-			set((state) => ({
-				resting: state.resting.filter((p) => p.id !== playerId),
-				waiting: [...state.waiting, updated],
-			}));
-		} else {
-			set((state) => ({
-				waiting: state.waiting.filter((p) => p.id !== playerId),
-				resting: [...state.resting, updated],
-			}));
-		}
-
-		sendBroadcast(_channel, {
+		const payload: BroadcastPayload = {
 			event: "player_status_changed",
 			payload: { player: updated },
-		});
+		};
+		get().applyBroadcast(payload, () => {});
+		sendBroadcast(_channel, payload);
 	},
 
 	toggleForceMixed: async (playerId: string) => {
@@ -326,14 +265,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const updated = await dbToggleForceMixed(player);
 		if (!updated) return;
 
-		set((state) => ({
-			waiting: state.waiting.map((p) => (p.id === playerId ? updated : p)),
-		}));
-
-		sendBroadcast(_channel, {
+		const payload: BroadcastPayload = {
 			event: "player_force_mixed_changed",
 			payload: { player: updated },
-		});
+		};
+		get().applyBroadcast(payload, () => {});
+		sendBroadcast(_channel, payload);
 	},
 
 	handleCreateReservation: () => {
@@ -361,20 +298,18 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			players,
 		};
 
-		set((state) => ({
-			reservedGroups: [...state.reservedGroups, group],
-			waiting: state.waiting.filter((p) => !reservingSelected.has(p.id)),
-			reservingSelected: new Set(),
-			showReserveModal: false,
-		}));
+		// First clear modal state locally to give immediate feedback
+		set({ reservingSelected: new Set(), showReserveModal: false });
 
 		dbCreateReservation(sessionId, groupId, players, readyIds).then((ok) => {
-			const ch = get()._channel;
-			if (ok && ch) {
-				sendBroadcast(ch, {
+			if (ok) {
+				const ch = get()._channel;
+				const payload: BroadcastPayload = {
 					event: "group_reserved",
 					payload: { group, reservedPlayerIds: readyIds },
-				});
+				};
+				get().applyBroadcast(payload, () => {});
+				if (ch) sendBroadcast(ch, payload);
 			}
 		});
 	},
@@ -389,17 +324,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			group.readyIds.includes(p.id),
 		);
 
-		set((state) => ({
-			waiting: [...state.waiting, ...readyPlayers],
-			reservedGroups: state.reservedGroups.filter((g) => g.id !== groupId),
-		}));
-
 		const ok = await dbDisbandGroup(group);
-		if (ok && _channel) {
-			sendBroadcast(_channel, {
+		if (ok) {
+			const payload: BroadcastPayload = {
 				event: "group_disbanded",
 				payload: { groupId, readyPlayers },
-			});
+			};
+			get().applyBroadcast(payload, () => {});
+			sendBroadcast(_channel, payload);
 		}
 	},
 
@@ -423,6 +355,26 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			}
 			return { reservingSelected: next };
 		});
+	},
+
+	// ── Settings sync ───────────────────────────────────────
+	syncSettings: (
+		courtCount,
+		singleWomanIds,
+		addedPlayers,
+		removedPlayerIds,
+	) => {
+		const { _channel } = get();
+
+		const payload: BroadcastPayload = {
+			event: "session_updated",
+			payload: { courtCount, singleWomanIds, addedPlayers, removedPlayerIds },
+		};
+		get().applyBroadcast(payload, () => {});
+
+		if (_channel) {
+			sendBroadcast(_channel, payload);
+		}
 	},
 
 	// ── Channel management ──────────────────────────────────
@@ -457,6 +409,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					reservedGroups: removedGroupId
 						? state.reservedGroups.filter((g) => g.id !== removedGroupId)
 						: state.reservedGroups,
+					pairHistory: recordHistory(state.pairHistory, {
+						teamA,
+						teamB,
+						gameType,
+					} as GeneratedTeam),
 				}));
 				break;
 			}
@@ -549,6 +506,35 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				break;
 			}
 
+			case "player_updated": {
+				const { player } = ev.payload;
+				set((state) => ({
+					waiting: state.waiting.map((p) => (p.id === player.id ? player : p)),
+					resting: state.resting.map((p) => (p.id === player.id ? player : p)),
+					courts: state.courts.map((c) =>
+						c.match
+							? {
+									...c,
+									match: {
+										...c.match,
+										teamA: c.match.teamA.map((p) =>
+											p.id === player.id ? player : p,
+										) as [SessionPlayer, SessionPlayer],
+										teamB: c.match.teamB.map((p) =>
+											p.id === player.id ? player : p,
+										) as [SessionPlayer, SessionPlayer],
+									},
+								}
+							: c,
+					),
+					reservedGroups: state.reservedGroups.map((g) => ({
+						...g,
+						players: g.players.map((p) => (p.id === player.id ? player : p)),
+					})),
+				}));
+				break;
+			}
+
 			case "group_reserved": {
 				const { group, reservedPlayerIds } = ev.payload;
 				set((state) => ({
@@ -576,6 +562,62 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				onEnd();
 				break;
 			}
+
+			case "session_updated": {
+				const { courtCount, singleWomanIds, addedPlayers, removedPlayerIds } =
+					ev.payload;
+				const removedSet = new Set(removedPlayerIds);
+
+				set((state) => ({
+					courts: adjustCourts(state.courts, courtCount) as Court[],
+					waiting: [
+						...state.waiting.filter((p) => !removedSet.has(p.playerId)),
+						...addedPlayers,
+					],
+					resting: state.resting.filter((p) => !removedSet.has(p.playerId)),
+				}));
+
+				const appStore = useAppStore.getState();
+				const appMeta = appStore.sessionMeta;
+				if (appMeta) {
+					appStore.setSessionMeta({ ...appMeta, courtCount, singleWomanIds });
+				}
+
+				// setup* 필드 동기화 (다른 클라이언트가 설정 화면으로 돌아올 때를 대비)
+				const { waiting, resting, courts, reservedGroups } = get();
+				const allSessionPlayerIds = new Set([
+					...waiting.map((p) => p.playerId),
+					...resting.map((p) => p.playerId),
+					...courts
+						.flatMap((c) =>
+							c.match ? [...c.match.teamA, ...c.match.teamB] : [],
+						)
+						.map((p) => p.playerId),
+					...reservedGroups.flatMap((g) => g.players).map((p) => p.playerId),
+				]);
+				const allPlayerIds = new Set(appStore.allPlayers.map((p) => p.id));
+				const removedGuestIds = new Set(
+					removedPlayerIds.filter((id) => !allPlayerIds.has(id)),
+				);
+				const newGuests = addedPlayers
+					.filter((p) => !allPlayerIds.has(p.playerId))
+					.map((p) => ({
+						id: p.playerId,
+						name: p.name,
+						gender: p.gender,
+						skills: p.skills,
+					}));
+				appStore.setSetupCourtCount(courtCount);
+				appStore.setSetupSingleWomanIds(new Set(singleWomanIds));
+				appStore.setSetupSelectedIds(allSessionPlayerIds);
+				if (newGuests.length > 0 || removedGuestIds.size > 0) {
+					appStore.setSetupGuests((prev) => [
+						...prev.filter((g) => !removedGuestIds.has(g.id)),
+						...newGuests,
+					]);
+				}
+				break;
+			}
 		}
 	},
 
@@ -589,8 +631,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			"match_completed",
 			"player_status_changed",
 			"player_force_mixed_changed",
+			"player_updated",
 			"group_reserved",
 			"group_disbanded",
+			"session_updated",
 		] as const;
 		for (const event of events) {
 			channel.on("broadcast", { event }, ({ payload }) =>

@@ -20,9 +20,8 @@ export function useSessionState({ onEnd }: UseSessionStateProps) {
 			"No session metadata found. Cannot use useSessionState without active session.",
 		);
 	}
-	const { sessionId, initialState } = sessionMeta;
+	const { sessionId } = sessionMeta;
 
-	const initialize = useSessionStore((s) => s.initialize);
 	const subscribe = useSessionStore((s) => s.subscribe);
 	const unsubscribe = useSessionStore((s) => s.unsubscribe);
 
@@ -48,10 +47,6 @@ export function useSessionState({ onEnd }: UseSessionStateProps) {
 	const handleDisbandGroup = useSessionStore((s) => s.handleDisbandGroup);
 	const handleEndSessionAction = useSessionStore((s) => s.handleEndSession);
 	const toggleReservingPlayer = useSessionStore((s) => s.toggleReservingPlayer);
-
-	useEffect(() => {
-		initialize(initialState);
-	}, [initialState, initialize]);
 
 	useEffect(() => {
 		subscribe(sessionId, onEnd);

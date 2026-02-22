@@ -398,6 +398,134 @@ describe("규칙 2 — 혼복 남자 실력 유사성", () => {
 });
 
 // ─────────────────────────────────────────────
+// 규칙 1.8: 여자복식(여복) fallback
+// ─────────────────────────────────────────────
+
+describe("규칙 1.8 — 여자복식(여복) fallback", () => {
+	it("상위 규칙으로 팀 구성이 불가능할 때 여자 4명으로 여복을 구성한다", () => {
+		console.log("\n▶ 규칙 1.8: 여복 fallback (남자 부족)");
+
+		// 여자 4명, 남자 1명 (혼복 불가, 남복 불가)
+		const players = [
+			makePlayer("여A", "F"),
+			makePlayer("여B", "F"),
+			makePlayer("여C", "F"),
+			makePlayer("여D", "F"),
+			makePlayer("남A", "M"),
+		];
+
+		logWaiting("초기", players);
+		const team = generateTeam(players, {}, []);
+		logTeam("결과", team);
+
+		expect(team?.gameType).toBe("여복");
+		const selectedGenders = [...team!.teamA, ...team!.teamB].map(
+			(p) => p.gender,
+		);
+		expect(selectedGenders.every((g) => g === "F")).toBe(true);
+	});
+
+	it("여복 구성 시에도 스코어 점수 기준으로 최적의 조합을 선발한다", () => {
+		console.log("\n▶ 규칙 1.8: 여복 최적 페어링");
+
+		const players = [
+			makePlayer("강여A", "F", { skill: "O" }), // 3.0
+			makePlayer("강여B", "F", { skill: "O" }), // 3.0
+			makePlayer("약여C", "F", { skill: "X" }), // 1.0
+			makePlayer("약여D", "F", { skill: "X" }), // 1.0
+		];
+
+		logWaiting("초기", players);
+		const team = generateTeam(players, {}, []);
+		logTeam("결과", team);
+
+		expect(team?.gameType).toBe("여복");
+		
+		const teamASkills = team!.teamA.map((p) => skillScore(p));
+		const teamBSkills = team!.teamB.map((p) => skillScore(p));
+		const isEven =
+			teamASkills[0] === teamASkills[1] && teamBSkills[0] === teamBSkills[1];
+		
+		// 현재 가중치에서는 [강,강] vs [약,약]이 선택됨 (intraDiff 최소화 우선)
+		expect(isEven).toBe(true);
+	});
+});
+
+// ─────────────────────────────────────────────
+// 규칙 2.5: 혼복 여자 실력 유사성
+// ─────────────────────────────────────────────
+
+describe("규칙 2.5 — 혼복 여자 실력 유사성", () => {
+	it("혼복에 투입할 여자 2명은 서로 실력이 비슷한 쌍을 우선 선택한다", () => {
+		console.log("\n▶ 규칙 2.5: 혼복 여자 실력 유사성");
+
+		// 실력: 강=O(3.0), 중=V(2.0), 약=X(1.0)
+		const strongW = makePlayer("강여A", "F", { skill: "O" }); // 3.0
+		const midW = makePlayer("중여B", "F", { skill: "V" }); // 2.0
+		const weakW = makePlayer("약여C", "F", { skill: "X" }); // 1.0
+		const m1 = makePlayer("남A", "M");
+		const m2 = makePlayer("남B", "M");
+
+		// 모두 gameCount=0 (동점)
+		const players = [strongW, midW, weakW, m1, m2];
+
+		logWaiting("초기", players);
+		console.log(
+			`  스킬 점수 — 강여A:${skillScore(strongW).toFixed(1)} 중여B:${skillScore(midW).toFixed(1)} 약여C:${skillScore(weakW).toFixed(1)}`,
+		);
+		console.log(
+			"  기대: 강여A(3.0)+약여C(1.0) 차이=2.0 vs 강여A+중여B 차이=1.0 → 강여A+중여B 선택",
+		);
+
+		const team = generateTeam(players, {}, []);
+		logTeam("결과", team);
+
+		expect(team?.gameType).toBe("혼복");
+		const selectedWomen = [...team!.teamA, ...team!.teamB]
+			.filter((p) => p.gender === "F")
+			.map((p) => p.name);
+		console.log(`  선발된 여자: ${selectedWomen.join(", ")}`);
+		
+		// 실력 차이 최소 쌍: 강여A(3.0) + 중여B(2.0) = 차이 1.0
+		// 중여B(2.0) + 약여C(1.0) = 차이 1.0 → 동점이지만 먼저 발견되는 쌍
+		expect(selectedWomen).not.toContain("약여C");
+	});
+
+	it("직전 혼복 출전자를 후순위 처리 후, 남은 후보 중 실력 차이가 가장 작은 쌍 선택", () => {
+		console.log("\n▶ 규칙 2.5: 직전 혼복 출전자 후순위 + 실력 유사성");
+
+		// 실력: 강=O(3.0), 중=V(2.0), 약=X(1.0)
+		const lastStrongW = makePlayer("직전강여A", "F", { skill: "O" }); // 3.0 (직전 혼복)
+		const midW1 = makePlayer("중여B", "F", { skill: "V" }); // 2.0
+		const midW2 = makePlayer("중여C", "F", { skill: "V" }); // 2.0
+		const weakW = makePlayer("약여D", "F", { skill: "X" }); // 1.0
+		const m1 = makePlayer("남A", "M");
+		const m2 = makePlayer("남B", "M");
+
+		const players = [lastStrongW, midW1, midW2, weakW, m1, m2];
+		const lastMixedIds = [lastStrongW.id];
+
+		logWaiting("초기", players);
+		console.log(`  직전혼복: ${lastStrongW.name}`);
+		console.log("  기대: 직전강여A 제외 후, 중여B+중여C (차이 0) 선택");
+
+		const team = generateTeam(players, {}, [], lastMixedIds);
+		logTeam("결과", team);
+
+		expect(team?.gameType).toBe("혼복");
+		const selectedWomen = [...team!.teamA, ...team!.teamB]
+			.filter((p) => p.gender === "F")
+			.map((p) => p.name);
+		console.log(`  선발된 여자: ${selectedWomen.join(", ")}`);
+		
+		expect(selectedWomen).toContain("중여B");
+		expect(selectedWomen).toContain("중여C");
+		expect(selectedWomen).not.toContain("직전강여A");
+		expect(selectedWomen).not.toContain("약여D");
+	});
+});
+
+// ─────────────────────────────────────────────
 // 규칙 3+4: 페어링 스코어 (파트너 실력 유사 + 팀 균형)
 // ─────────────────────────────────────────────
 

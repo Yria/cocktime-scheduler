@@ -1,6 +1,8 @@
 import type {
 	ActiveMatch,
+	Gender,
 	GeneratedTeam,
+	PlayerSkills,
 	ReservedGroup,
 	SessionPlayer,
 } from "../../types";
@@ -168,6 +170,25 @@ export async function dbCompleteMatch(
 	}
 
 	return { updatedPlayers, groupUpdates };
+}
+
+export async function dbUpdateSessionPlayer(
+	sessionPlayerId: string,
+	gender: Gender,
+	skills: PlayerSkills,
+): Promise<SessionPlayer | null> {
+	const { data, error } = await supabase
+		.from("session_players")
+		.update({ gender, skills })
+		.eq("id", sessionPlayerId)
+		.select()
+		.single();
+
+	if (error) {
+		console.error("dbUpdateSessionPlayer:", error);
+		return null;
+	}
+	return rowToSessionPlayer(data as SessionPlayerRow);
 }
 
 export async function dbToggleResting(

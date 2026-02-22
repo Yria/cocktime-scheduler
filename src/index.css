@@ -215,6 +215,71 @@ h4,
 	transform: scale(0.96);
 }
 
+.btn-lq-orange {
+	background: linear-gradient(175deg, #ffaa40 0%, #ff8c00 100%);
+	color: white;
+	border: none;
+	border-radius: 99px;
+	font-weight: 600;
+	box-shadow: 0 4px 14px rgba(255, 140, 0, 0.3);
+	transition:
+		transform 0.2s cubic-bezier(0.25, 1, 0.5, 1),
+		opacity 0.2s;
+}
+.btn-lq-orange:active:not(:disabled) {
+	transform: scale(0.96);
+}
+.btn-lq-orange:disabled {
+	background: rgba(255, 140, 0, 0.3);
+	box-shadow: none;
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.btn-lq-ghost {
+	background: transparent;
+	color: var(--text-tertiary);
+	border: none;
+	border-radius: 99px;
+	font-weight: 600;
+	transition: opacity 0.15s;
+}
+.btn-lq-ghost:active {
+	opacity: 0.6;
+}
+
+.btn-icon-close {
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 14px;
+	border: none;
+	background: var(--mat-ultra-thin);
+	color: var(--text-secondary);
+	flex-shrink: 0;
+	transition: opacity 0.15s;
+}
+.btn-icon-close:active {
+	opacity: 0.6;
+}
+
+.btn-toggle {
+	border: none;
+	border-radius: 12px;
+	font-size: 14px;
+	font-weight: 700;
+	transition: all 0.15s;
+	background: var(--mat-ultra-thin);
+	color: var(--text-secondary);
+}
+.btn-toggle-active {
+	background: var(--ios-blue);
+	color: white;
+}
+
 /* ── Badges ────────────────────────────────────────────────── */
 .badge {
 	display: inline-flex;

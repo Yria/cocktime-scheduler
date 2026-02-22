@@ -1,4 +1,10 @@
-import type { GameType, Gender, Player, SessionPlayer } from "../../types";
+import type {
+	GameType,
+	Gender,
+	Player,
+	PlayerSkills,
+	SessionPlayer,
+} from "../../types";
 import { supabase } from "./client";
 import { rowToSessionPlayer } from "./transformers";
 import type {
@@ -317,4 +323,71 @@ export async function dbClearSessionLogs(sessionId: number): Promise<boolean> {
 	await supabase.from("pair_history").delete().eq("session_id", sessionId);
 
 	return !matchErr && !playerErr;
+}
+
+// ── 충돌 감지용 서버 상태 조회 ──────────────────────────
+
+export interface ServerSessionSettings {
+	courtCount: number;
+	playerIds: string[]; // player_id 목록
+	playerNames: { playerId: string; name: string; gender: Gender }[];
+	singleWomanIds: string[]; // allow_mixed_single=true인 player_id 목록
+}
+
+export async function fetchSessionSettingsForConflictCheck(
+	sessionId: number,
+): Promise<ServerSessionSettings | null> {
+	const [sessionRes, playersRes] = await Promise.all([
+		supabase
+			.from("sessions")
+			.select("court_count")
+			.eq("id", sessionId)
+			.single(),
+		supabase
+			.from("session_players")
+			.select("player_id, name, gender, allow_mixed_single")
+			.eq("session_id", sessionId),
+	]);
+
+	if (!sessionRes.data || !playersRes.data) return null;
+
+	const players = playersRes.data as {
+		player_id: string;
+		name: string;
+		gender: Gender;
+		allow_mixed_single: boolean;
+	}[];
+
+	return {
+		courtCount: (sessionRes.data as { court_count: number }).court_count,
+		playerIds: players.map((p) => p.player_id),
+		playerNames: players.map((p) => ({
+			playerId: p.player_id,
+			name: p.name,
+			gender: p.gender,
+		})),
+		singleWomanIds: players
+			.filter((p) => p.allow_mixed_single)
+			.map((p) => p.player_id),
+	};
+}
+
+export interface ServerPlayerData {
+	gender: Gender;
+	skills: PlayerSkills;
+}
+
+export async function fetchSessionPlayerForConflictCheck(
+	sessionPlayerId: string,
+): Promise<ServerPlayerData | null> {
+	const { data, error } = await supabase
+		.from("session_players")
+		.select("gender, skills")
+		.eq("id", sessionPlayerId)
+		.single();
+
+	if (error || !data) return null;
+
+	const row = data as { gender: Gender; skills: PlayerSkills };
+	return { gender: row.gender, skills: row.skills };
 }

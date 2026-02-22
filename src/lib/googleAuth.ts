@@ -31,6 +31,59 @@ export const OAUTH_AVAILABLE = !!CLIENT_ID;
 let _client: GisTokenClient | null = null;
 let _cachedToken = "";
 let _tokenExpiry = 0;
+let _loadPromise: Promise<void> | null = null;
+
+function loadGoogleScript(): Promise<void> {
+	if (_loadPromise) return _loadPromise;
+
+	_loadPromise = new Promise((resolve, reject) => {
+		if (window.google?.accounts?.oauth2) {
+			resolve();
+			return;
+		}
+
+		const existingScript = document.querySelector(
+			'script[src="https://accounts.google.com/gsi/client"]',
+		) as HTMLScriptElement;
+
+		if (existingScript) {
+			// If it's already in the DOM but window.google is not available,
+			// it might be still loading or failed.
+			let attempts = 0;
+			const interval = setInterval(() => {
+				if (window.google?.accounts?.oauth2) {
+					clearInterval(interval);
+					resolve();
+				} else if (attempts >= 30) { // 3 seconds
+					clearInterval(interval);
+					reject(new Error("Google 로그인 라이브러리 로드 시간 초과. 광고 차단기를 확인해주세요."));
+				}
+				attempts++;
+			}, 100);
+
+			existingScript.addEventListener("error", () => {
+				clearInterval(interval);
+				reject(new Error("Google 로그인 라이브러리 로드 실패. 광고 차단기를 확인해주세요."));
+			});
+			return;
+		}
+
+		const script = document.createElement("script");
+		script.src = "https://accounts.google.com/gsi/client";
+		script.async = true;
+		script.defer = true;
+		script.onload = () => resolve();
+		script.onerror = () =>
+			reject(new Error("Google 로그인 라이브러리 로드 실패. 광고 차단기를 확인해주세요."));
+		document.head.appendChild(script);
+	});
+
+	_loadPromise.catch(() => {
+		_loadPromise = null;
+	});
+
+	return _loadPromise;
+}
 
 function ensureClient(): boolean {
 	if (_client) return true;
@@ -43,15 +96,17 @@ function ensureClient(): boolean {
 	return true;
 }
 
-export function requestAccessToken(): Promise<string> {
+export async function requestAccessToken(): Promise<string> {
+	if (_cachedToken && Date.now() < _tokenExpiry) {
+		return _cachedToken;
+	}
+
+	await loadGoogleScript();
+
 	return new Promise((resolve, reject) => {
-		if (_cachedToken && Date.now() < _tokenExpiry) {
-			resolve(_cachedToken);
-			return;
-		}
 		if (!ensureClient()) {
 			reject(
-				new Error("Google 로그인 라이브러리 로딩 중. 잠시 후 다시 시도하세요."),
+				new Error("Google 로그인 라이브러리 초기화 실패. 잠시 후 다시 시도하세요."),
 			);
 			return;
 		}

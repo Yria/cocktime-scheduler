@@ -7,16 +7,18 @@ import {
 	updatePlayerWithToken,
 } from "../lib/sheetsApi";
 import {
-	type ClientSessionState,
+	dbUpdateSessionPlayer,
 	fetchActiveSession,
 	fetchSessionSnapshot,
 	type SessionRow,
+	sendBroadcast,
 	snapshotToClientState,
 	startSession,
 	supabase,
 	updateSession,
 } from "../lib/supabaseClient";
 import type { Player, SessionSettings } from "../types";
+import { useSessionStore } from "./sessionStore";
 
 const ENV_SHEET_ID = import.meta.env.VITE_SHEET_ID as string;
 const ENV_API_KEY = import.meta.env.VITE_API_KEY as string;
@@ -26,7 +28,6 @@ export interface SessionMeta {
 	sessionId: number;
 	courtCount: number;
 	singleWomanIds: string[];
-	initialState: ClientSessionState;
 }
 
 interface AppState {
@@ -138,7 +139,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 				fetchPlayers(ENV_SHEET_ID, ENV_API_KEY).catch(() => [] as Player[]),
 			]);
 			if (!snapshot) return false;
-			const initialState = snapshotToClientState(snapshot);
+
+			const clientState = snapshotToClientState(snapshot);
 			const singleWomanIds = snapshot.players
 				.filter((p) => p.allowMixedSingle)
 				.map((p) => p.playerId);
@@ -150,19 +152,31 @@ export const useAppStore = create<AppState>((set, get) => ({
 				});
 			}
 
+			const loadedPlayerIdSet = new Set(players.map((p) => p.id));
+			const guests: Player[] = snapshot.players
+				.filter((p) => !loadedPlayerIdSet.has(p.playerId))
+				.map((p) => ({
+					id: p.playerId,
+					name: p.name,
+					gender: p.gender,
+					skills: p.skills,
+				}));
+
+			// sessionStore를 스냅샷으로 직접 초기화 (1회성, 이후에는 broadcast로만 업데이트)
+			useSessionStore.getState().initialize(clientState);
+
 			set({
 				savedNames: new Set(snapshot.players.map((p) => p.name)),
 				sessionMeta: {
 					sessionId: row.id,
 					courtCount: row.court_count,
 					singleWomanIds,
-					initialState,
 				},
-				// Sync remote settings to local setup state
 				setupInitialized: true,
 				setupCourtCount: row.court_count,
 				setupSingleWomanIds: new Set(singleWomanIds),
 				setupSelectedIds: new Set(snapshot.players.map((p) => p.playerId)),
+				setupGuests: guests,
 			});
 			return true;
 		} catch (e) {
@@ -184,7 +198,26 @@ export const useAppStore = create<AppState>((set, get) => ({
 		settings: SessionSettings,
 	) => {
 		const { scriptUrl, sessionMeta } = get();
+
 		if (sessionMeta) {
+			// 현재 sessionStore 상태에서 플레이어 ID 목록 수집
+			const { waiting, resting, courts, reservedGroups } =
+				useSessionStore.getState();
+			const currentPlayerIds = new Set([
+				...waiting.map((p) => p.playerId),
+				...resting.map((p) => p.playerId),
+				...courts
+					.flatMap((c) =>
+						c.match ? [...c.match.teamA, ...c.match.teamB] : [],
+					)
+					.map((p) => p.playerId),
+				...reservedGroups.flatMap((g) => g.players).map((p) => p.playerId),
+			]);
+			const selectedIdSet = new Set(selected.map((p) => p.id));
+			const removedPlayerIds = [...currentPlayerIds].filter(
+				(id) => !selectedIdSet.has(id),
+			);
+
 			const success = await updateSession(
 				sessionMeta.sessionId,
 				settings.courtCount,
@@ -193,21 +226,34 @@ export const useAppStore = create<AppState>((set, get) => ({
 			);
 			if (!success) return false;
 
+			// 추가된 플레이어는 DB에서 가져온 값 사용 (wait_since 등 서버 값 필요)
 			const snapshot = await fetchSessionSnapshot(sessionMeta.sessionId);
-			if (snapshot) {
-				const initialState = snapshotToClientState(snapshot);
-				set({
-					sessionMeta: {
-						sessionId: sessionMeta.sessionId,
-						courtCount: settings.courtCount,
-						singleWomanIds: settings.singleWomanIds,
-						initialState,
-					},
-					setupInitialized: true,
-					setupCourtCount: settings.courtCount,
-					setupSingleWomanIds: new Set(settings.singleWomanIds),
-				});
-			}
+			if (!snapshot) return false;
+
+			const clientState = snapshotToClientState(snapshot);
+			const addedPlayers = clientState.waiting.filter(
+				(p) => !currentPlayerIds.has(p.playerId),
+			);
+
+			// sessionStore에 설정 변경 반영 + broadcast로 다른 클라이언트에 전파
+			useSessionStore.getState().syncSettings(
+				settings.courtCount,
+				settings.singleWomanIds,
+				addedPlayers,
+				removedPlayerIds,
+			);
+
+			set({
+				sessionMeta: {
+					sessionId: sessionMeta.sessionId,
+					courtCount: settings.courtCount,
+					singleWomanIds: settings.singleWomanIds,
+				},
+				setupInitialized: true,
+				setupCourtCount: settings.courtCount,
+				setupSingleWomanIds: new Set(settings.singleWomanIds),
+				setupSelectedIds: new Set(snapshot.players.map((p) => p.playerId)),
+			});
 			return true;
 		}
 
@@ -224,39 +270,59 @@ export const useAppStore = create<AppState>((set, get) => ({
 			id: i + 1,
 			match: null as null,
 		}));
-		const initialState: ClientSessionState = {
+
+		// 새 세션의 초기 상태를 sessionStore에 직접 설정
+		useSessionStore.getState().initialize({
 			courts,
 			waiting: sessionPlayers,
 			resting: [],
 			reservedGroups: [],
 			pairHistory: {},
-		};
+		});
 
 		set({
 			sessionMeta: {
 				sessionId,
 				courtCount: settings.courtCount,
 				singleWomanIds: settings.singleWomanIds,
-				initialState,
 			},
 			setupInitialized: true,
 			setupCourtCount: settings.courtCount,
 			setupSingleWomanIds: new Set(settings.singleWomanIds),
+			setupSelectedIds: new Set(selected.map((p) => p.id)),
 		});
 		return true;
 	},
 
 	updatePlayerAction: async (player: Player) => {
-		const { scriptUrl, allPlayers } = get();
+		const { scriptUrl, sessionMeta } = get();
 		try {
 			if (OAUTH_AVAILABLE) {
-				const token = await requestAccessToken();
-				await updatePlayerWithToken(
-					token,
-					player.name,
-					player.gender,
-					player.skills,
-				);
+				try {
+					const token = await requestAccessToken();
+					await updatePlayerWithToken(
+						token,
+						player.name,
+						player.gender,
+						player.skills,
+					);
+				} catch (e) {
+					if (
+						scriptUrl &&
+						e instanceof Error &&
+						(e.message.includes("광고 차단기") || e.message.includes("초기화 실패"))
+					) {
+						console.warn("OAuth 실패, Script URL로 대체 시도:", e.message);
+						await updatePlayer(
+							scriptUrl,
+							player.name,
+							player.gender,
+							player.skills,
+						);
+					} else {
+						throw e;
+					}
+				}
 			} else if (scriptUrl) {
 				await updatePlayer(
 					scriptUrl,
@@ -269,9 +335,48 @@ export const useAppStore = create<AppState>((set, get) => ({
 					"저장 방법이 설정되지 않았습니다 (OAuth Client ID 또는 Script URL 필요)",
 				);
 			}
-			set({
-				allPlayers: allPlayers.map((p) => (p.id === player.id ? player : p)),
-			});
+
+			if (sessionMeta) {
+				// 세션 참가 중인 플레이어인지 확인
+				const { waiting, resting, courts } = useSessionStore.getState();
+				const sessionPlayer = [
+					...waiting,
+					...resting,
+					...courts.flatMap((c) =>
+						c.match ? [...c.match.teamA, ...c.match.teamB] : [],
+					),
+				].find((p) => p.playerId === player.id);
+
+				if (sessionPlayer) {
+					// session_players DB 업데이트 + broadcast
+					const updated = await dbUpdateSessionPlayer(
+						sessionPlayer.id,
+						player.gender,
+						player.skills,
+					);
+					if (updated) {
+						useSessionStore.getState().applyBroadcast(
+							{ event: "player_updated", payload: { player: updated } },
+							() => {},
+						);
+						const { _channel } = useSessionStore.getState();
+						if (_channel) {
+							sendBroadcast(_channel, {
+								event: "player_updated",
+								payload: { player: updated },
+							});
+						}
+					}
+					return true;
+				}
+			}
+
+			// 세션 미참가: allPlayers 캐시만 갱신
+			set((state) => ({
+				allPlayers: state.allPlayers.map((p) =>
+					p.id === player.id ? player : p,
+				),
+			}));
 			return true;
 		} catch (e) {
 			console.error("Failed to update player:", e);

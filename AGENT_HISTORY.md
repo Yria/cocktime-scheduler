@@ -94,3 +94,60 @@
 **Answer**: 브라우저 `visibilitychange` 이벤트를 감지하는 `usePageVisibility` 커스텀 훅을 신규 생성. 모바일 백그라운드 제어 등으로 Supabase 웹소켓 동기화가 끊기는 상황을 방지하기 위해, `App.tsx`에서 화면이 다시 켜졌을 때(`isVisible === true`) 활성 세션 정보(`checkActiveSessionAction`)를 강제로 다시 불러오도록 로직 보완.
 
 ---
+
+## #10
+
+**Prompt**: 두명이 동시에 셋팅화면 들어가서 수정할때 문제가 생길 수 있을거같은데... 구현해. 이때 서버의 값과 로컬에서 들고있는 값이 다르다면 서버에 저장된 값이 어떻게 저장되어있었는지 나한테 알려줬음 좋겠어.
+
+**Answer**: 낙관적 동시성 제어(OCC) 방식으로 두 가지 충돌 감지를 구현했습니다:
+- **세션 설정 충돌**: "세션 업데이트" 버튼 클릭 시 서버의 현재 상태(코트 수, 참가자 목록, 혼복 싱글 여성)를 fetch하여 내가 알고 있는 sessionMeta와 비교. 차이가 있으면 서버에 저장된 설정을 항목별로 보여주는 충돌 다이얼로그를 띄움. 덮어쓰기 또는 취소 선택 가능
+- **플레이어 스킬/성별 편집 충돌**: 편집 모달을 열 때 원본값(gender, skills)을 ref로 기록. 저장 시 서버에서 해당 플레이어의 현재 데이터를 가져와 원본과 비교. 다른 관리자가 이미 변경했으면 변경된 스킬을 항목별로 보여주는 충돌 다이얼로그 표시
+- 신규 파일: `SessionConflictDialog.tsx`, `PlayerConflictDialog.tsx`, `fetchSessionSettingsForConflictCheck`, `fetchSessionPlayerForConflictCheck`
+- TypeScript 컴파일 통과 확인
+
+---
+
+## #11
+
+**Prompt**: 현재 서버상태와 로컬상태의 비교를 updated_time 만으로 하고있는데 쿼리를 보니까 전체데이터를 가져와서 비교하더라고. 그럼 updated_time 말고 내가 변경하려는 데이터와 서버의 데이터를 비교해서 다를경우에 그 다른것만 다이얼로그에 노출하는걸로 하고싶어
+
+**Answer**: 충돌 비교 기준을 "내가 알고 있던 서버 상태 vs 서버 실제 상태"에서 "내가 저장하려는 값 vs 서버 현재값"으로 변경했습니다:
+- 세션 설정: 내가 설정한 courtCount, selectedPlayerIds, singleWomanIds를 서버와 직접 비교. 내가 보내려는 값과 서버가 이미 같으면 충돌 아님
+- 플레이어 편집: 모달 열 때 원본값 기록(editOriginalGender/Skills) 제거. 대신 내가 수정한 editGender/editSkills를 서버 현재값과 직접 비교
+- 다이얼로그 라벨을 "내 설정" vs "서버" 형식으로 명확화. 참가자 차이도 "서버에만 있음" / "내 설정에만 있음"으로 변경
+
+---
+
+## #12
+
+**Prompt**: @docs/TEAM_GENERATION_RULES.md 대로 @src/lib/teamGenerator.ts 가 구현됐는지 확인하고 수정해
+
+**Answer**: `selectMenForMixed` 함수에서 규칙 2 위반을 발견하고 수정했습니다.
+- **버그**: `eligible`(mixedCount ≤ minMixed+1) 전체에서 실력 차이 최솟값 쌍을 탐색하다가 minMixed 선수가 아닌 쌍이 선택되는 경우 발생 → 규칙 2 "mixedCount가 가장 적은 선수를 무조건 1명 이상 포함" 위반
+- **수정**: minMixed 선수들을 앵커로 고정하고, 각 앵커별로 최적 파트너를 탐색하여 전체 중 실력 차이 최솟값 쌍 선택
+- 전체 24개 테스트 통과 확인
+
+---
+
+## #13
+
+**Prompt**: 지금 말한 내용을 코드베이스 없이 문서로 작성해 @docs/TEAM_GENERATION_RULES.md 에 먼저 넣어줘
+
+**Answer**: `docs/TEAM_GENERATION_RULES.md`에 "혼복 남자 후보 풀 범위 (구현 유의사항)" 섹션을 추가했습니다.
+- 문제 배경: 후보 풀을 상위 N명으로 제한하면 여자 비중이 높을 때 남자 후보가 극소수로 줄어 특정 남자가 혼복 기회를 얻지 못하는 구조적 불균형 설명
+- 올바른 동작: 혼복 여부 판단·여자 선발은 상위 N명 기준, 남자 선발만 전체 대기열 대상으로 해야 규칙 1(mixedCount 균등)이 제대로 작동함을 명시
+- 코드 변경 없이 문서만 업데이트
+
+---
+
+## #14
+
+**Prompt**: hook.js:608  Failed to update player: Error: Google 로그인 라이브러리 로딩 중. 잠시 후 다시 시도하세요.
+    at googleAuth.ts:54:5
+
+**Answer**: Google Identity Services 라이브러리 로딩 지연 및 광고 차단기 차단 문제 해결:
+- `googleAuth.ts`에 `loadGoogleScript` 함수를 추가하여 스크립트 로딩 상태를 확인하고 대기하도록 개선
+- 스크립트 로드 실패(광고 차단기 등) 시 에러를 명확히 반환하도록 처리
+- `appStore.ts`의 `updatePlayerAction`에서 OAuth 초기화 실패 시 `scriptUrl`이 설정되어 있다면 이를 대체 수단(Fallback)으로 사용하도록 예외 처리 추가
+
+---

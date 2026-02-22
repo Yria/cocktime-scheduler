@@ -93,18 +93,20 @@ function bestPairing(
 		],
 	];
 
-	let best = combos[0];
+	let bestCombos: [[SessionPlayer, SessionPlayer], [SessionPlayer, SessionPlayer]][] = [];
 	let bestScore = Infinity;
 
 	for (const [teamA, teamB] of combos) {
 		const score = pairingScore(teamA, teamB, history);
 		if (score < bestScore) {
 			bestScore = score;
-			best = [teamA, teamB];
+			bestCombos = [[teamA, teamB]];
+		} else if (score === bestScore) {
+			bestCombos.push([teamA, teamB]);
 		}
 	}
 
-	return best;
+	return bestCombos[Math.floor(Math.random() * bestCombos.length)];
 }
 
 // ─────────────────────────────────────────────
@@ -128,26 +130,32 @@ function selectMenForMixed(
 	const preferred = men.filter((m) => !lastMixedMenIds.includes(m.id));
 	const pool = preferred.length >= 2 ? preferred : men;
 
-	// 규칙 1: mixedCount 최솟값 기준 후보 추출
-	const minMixed = Math.min(...pool.map((m) => m.mixedCount));
-	let eligible = pool.filter((m) => m.mixedCount <= minMixed + 1);
-	if (eligible.length < 2) eligible = pool;
+	// 규칙 2: mixedCount 합산과 실력 차이를 종합적으로 고려 (mixedCount 우선)
+	let bestPairs: [SessionPlayer, SessionPlayer][] = [];
+	let bestScore = Infinity;
 
-	// 규칙 2: 후보 중 실력 차이가 가장 작은 쌍 탐색
-	let bestPair: [SessionPlayer, SessionPlayer] = [eligible[0], eligible[1]];
-	let bestDiff = Math.abs(skillScore(eligible[0]) - skillScore(eligible[1]));
-
-	for (let i = 0; i < eligible.length; i++) {
-		for (let j = i + 1; j < eligible.length; j++) {
-			const diff = Math.abs(skillScore(eligible[i]) - skillScore(eligible[j]));
-			if (diff < bestDiff) {
-				bestDiff = diff;
-				bestPair = [eligible[i], eligible[j]];
+	for (let i = 0; i < pool.length; i++) {
+		for (let j = i + 1; j < pool.length; j++) {
+			const m1 = pool[i];
+			const m2 = pool[j];
+			
+			const mixedSum = m1.mixedCount + m2.mixedCount;
+			const diff = Math.abs(skillScore(m1) - skillScore(m2));
+			
+			// mixedCount 합산에 큰 가중치(10)를 두어 횟수가 적은 선수가 무조건 우선되도록 함
+			const score = mixedSum * 10 + diff;
+			
+			if (score < bestScore) {
+				bestScore = score;
+				bestPairs = [[m1, m2]];
+			} else if (score === bestScore) {
+				bestPairs.push([m1, m2]);
 			}
 		}
 	}
 
-	return bestPair;
+	// 동점인 쌍이 여러 개면 랜덤으로 하나 선택
+	return bestPairs[Math.floor(Math.random() * bestPairs.length)];
 }
 
 // ─────────────────────────────────────────────
@@ -165,7 +173,33 @@ function pickWomenPreferred(
 ): SessionPlayer[] {
 	const preferred = women.filter((w) => !lastMixedWomenIds.includes(w.id));
 	const fallback = women.filter((w) => lastMixedWomenIds.includes(w.id));
-	return [...preferred, ...fallback].slice(0, count);
+	const pool = [...preferred, ...fallback];
+
+	if (pool.length <= count) return pool;
+
+	// 규칙 2.5: 혼복 여자 2명 선발 시 실력 차이가 가장 작은 쌍 선택
+	if (count === 2) {
+		// 우선순위가 높은 그룹(preferred)에서 2명 이상이면 그 안에서 실력 유사성 고려
+		const targetPool = preferred.length >= 2 ? preferred : pool;
+		
+		let bestPairs: [SessionPlayer, SessionPlayer][] = [];
+		let bestDiff = Infinity;
+
+		for (let i = 0; i < targetPool.length; i++) {
+			for (let j = i + 1; j < targetPool.length; j++) {
+				const diff = Math.abs(skillScore(targetPool[i]) - skillScore(targetPool[j]));
+				if (diff < bestDiff) {
+					bestDiff = diff;
+					bestPairs = [[targetPool[i], targetPool[j]]];
+				} else if (diff === bestDiff) {
+					bestPairs.push([targetPool[i], targetPool[j]]);
+				}
+			}
+		}
+		return bestPairs[Math.floor(Math.random() * bestPairs.length)];
+	}
+
+	return pool.slice(0, count);
 }
 
 // ─────────────────────────────────────────────
@@ -184,22 +218,24 @@ function pickPartnerForForcedMan(
 	const preferred = candidates.filter((m) => !lastMixedMenIds.includes(m.id));
 	const pool = preferred.length > 0 ? preferred : candidates;
 
-	const minMixed = Math.min(...pool.map((m) => m.mixedCount));
-	let eligible = pool.filter((m) => m.mixedCount <= minMixed + 1);
-	if (eligible.length === 0) eligible = pool;
+	let bestCandidates: SessionPlayer[] = [];
+	let bestScore = Infinity;
 
-	let best = eligible[0];
-	let bestDiff = Math.abs(skillScore(forcedMan) - skillScore(eligible[0]));
-
-	for (const m of eligible.slice(1)) {
+	for (const m of pool) {
+		const mixedSum = forcedMan.mixedCount + m.mixedCount;
 		const diff = Math.abs(skillScore(forcedMan) - skillScore(m));
-		if (diff < bestDiff) {
-			bestDiff = diff;
-			best = m;
+		
+		const score = mixedSum * 10 + diff;
+		
+		if (score < bestScore) {
+			bestScore = score;
+			bestCandidates = [m];
+		} else if (score === bestScore) {
+			bestCandidates.push(m);
 		}
 	}
 
-	return best;
+	return bestCandidates[Math.floor(Math.random() * bestCandidates.length)];
 }
 
 // ─────────────────────────────────────────────
@@ -316,7 +352,9 @@ function selectFour(
 	// 혼복 우선 (규칙 1·1.5·2)
 	if (women.length >= 2 && men.length >= 2) {
 		const selectedWomen = pickWomenPreferred(women, lastMixedWomenIds, 2);
-		const selectedMen = selectMenForMixed(men, lastMixedMenIds);
+		// 남자 선발은 대기 중인 남자 전원 대상 (혼복 남자 참여 공정성 원칙)
+		const allWaitingMen = ordered.filter((p) => p.gender === "M");
+		const selectedMen = selectMenForMixed(allWaitingMen, lastMixedMenIds);
 		return [selectedWomen[0], selectedWomen[1], selectedMen[0], selectedMen[1]];
 	}
 
