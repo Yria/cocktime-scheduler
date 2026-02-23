@@ -20,9 +20,6 @@ import {
 import type { Player, SessionSettings } from "../types";
 import { useSessionStore } from "./sessionStore";
 
-const ENV_SHEET_ID = import.meta.env.VITE_SHEET_ID as string;
-const ENV_API_KEY = import.meta.env.VITE_API_KEY as string;
-const ENV_SCRIPT_URL = (import.meta.env.VITE_SCRIPT_URL as string) ?? "";
 
 export interface SessionMeta {
 	sessionId: number;
@@ -32,12 +29,10 @@ export interface SessionMeta {
 
 interface AppState {
 	allPlayers: Player[];
-	scriptUrl: string;
 	savedNames: Set<string> | null;
 	sessionMeta: SessionMeta | null;
 
 	setAllPlayers: (players: Player[]) => void;
-	setScriptUrl: (url: string) => void;
 	setSavedNames: (names: Set<string> | null) => void;
 	setSessionMeta: (meta: SessionMeta | null) => void;
 	clearSessionMeta: () => void;
@@ -80,13 +75,11 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set, get) => ({
 	allPlayers: [],
-	scriptUrl: "",
 	savedNames: null,
 	sessionMeta: null,
 	_sessionWatchChannel: null,
 
 	setAllPlayers: (players) => set({ allPlayers: players }),
-	setScriptUrl: (url) => set({ scriptUrl: url }),
 	setSavedNames: (names) => set({ savedNames: names }),
 	setSessionMeta: (meta) => set({ sessionMeta: meta }),
 	clearSessionMeta: () => set({ sessionMeta: null }),
@@ -128,15 +121,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 		}),
 
 	fetchPlayersAction: async () => {
-		const players = await fetchPlayers(ENV_SHEET_ID, ENV_API_KEY);
-		set({ allPlayers: players, scriptUrl: ENV_SCRIPT_URL });
+		const players = await fetchPlayers();
+		set({ allPlayers: players });
 	},
 
 	loadSessionAction: async (row: SessionRow) => {
 		try {
 			const [snapshot, players] = await Promise.all([
 				fetchSessionSnapshot(row.id),
-				fetchPlayers(ENV_SHEET_ID, ENV_API_KEY).catch(() => [] as Player[]),
+				fetchPlayers().catch(() => [] as Player[]),
 			]);
 			if (!snapshot) return false;
 
@@ -146,10 +139,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 				.map((p) => p.playerId);
 
 			if (players.length > 0) {
-				set({
-					allPlayers: players,
-					scriptUrl: row.script_url ?? ENV_SCRIPT_URL,
-				});
+				set({ allPlayers: players });
 			}
 
 			const loadedPlayerIdSet = new Set(players.map((p) => p.id));
@@ -197,7 +187,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 		selected: Player[],
 		settings: SessionSettings,
 	) => {
-		const { scriptUrl, sessionMeta } = get();
+		const { sessionMeta } = get();
 
 		if (sessionMeta) {
 			// 현재 sessionStore 상태에서 플레이어 ID 목록 수집
@@ -259,7 +249,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
 		const result = await startSession(
 			settings.courtCount,
-			scriptUrl || null,
+			null,
 			selected,
 			settings.singleWomanIds,
 		);
@@ -295,7 +285,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 	},
 
 	updatePlayerAction: async (player: Player) => {
-		const { scriptUrl, sessionMeta } = get();
+		const { sessionMeta } = get();
 		try {
 			if (OAUTH_AVAILABLE) {
 				try {
@@ -308,13 +298,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 					);
 				} catch (e) {
 					if (
-						scriptUrl &&
 						e instanceof Error &&
 						(e.message.includes("광고 차단기") || e.message.includes("초기화 실패"))
 					) {
-						console.warn("OAuth 실패, Script URL로 대체 시도:", e.message);
+						console.warn("OAuth 실패, Edge Function으로 대체 시도:", e.message);
 						await updatePlayer(
-							scriptUrl,
 							player.name,
 							player.gender,
 							player.skills,
@@ -323,16 +311,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 						throw e;
 					}
 				}
-			} else if (scriptUrl) {
+			} else {
 				await updatePlayer(
-					scriptUrl,
 					player.name,
 					player.gender,
 					player.skills,
-				);
-			} else {
-				throw new Error(
-					"저장 방법이 설정되지 않았습니다 (OAuth Client ID 또는 Script URL 필요)",
 				);
 			}
 

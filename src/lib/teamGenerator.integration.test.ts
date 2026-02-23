@@ -3,22 +3,13 @@ import type { SessionPlayer } from "../types";
 import { fetchPlayers } from "./sheetsApi";
 import { generateTeam, skillScore } from "./teamGenerator";
 
-// Vitest는 기본적으로 .env, .env.local 등의 환경 변수를 import.meta.env로 로드합니다.
-const SHEET_ID = import.meta.env.VITE_SHEET_ID;
-const API_KEY = import.meta.env.VITE_API_KEY;
-
 describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", () => {
 	it("시트에서 선수를 가져와서 팀을 정상적으로 생성한다", async () => {
-		// 환경 변수가 없으면 테스트 스킵 (CI 환경 등)
-		if (!SHEET_ID || !API_KEY) {
-			console.warn("VITE_SHEET_ID 또는 VITE_API_KEY가 없어 테스트를 스킵합니다.");
-			return;
-		}
 
 		console.log("\n▶ 실제 시트 데이터 연동 테스트 시작");
 
 		// 1. 시트에서 실제 선수 데이터 가져오기
-		const players = await fetchPlayers(SHEET_ID, API_KEY);
+		const players = await fetchPlayers();
 		expect(players.length).toBeGreaterThan(0);
 		console.log(`  ✅ 총 ${players.length}명의 선수를 시트에서 불러왔습니다.`);
 

@@ -1,6 +1,5 @@
 import { SKILL_LEVELS, SKILLS } from "../../lib/constants";
 import { OAUTH_AVAILABLE } from "../../lib/googleAuth";
-import { useAppStore } from "../../store/appStore";
 import type { Gender, Player, PlayerSkills, SkillLevel } from "../../types";
 import ModalSheet from "../common/ModalSheet";
 import { SkillButton } from "./SkillButton";
@@ -28,7 +27,6 @@ export function EditModal({
 	onChangeGender,
 	onChangeSkill,
 }: EditModalProps) {
-	const scriptUrl = useAppStore((s) => s.scriptUrl);
 	const isGuest = player.id.startsWith("guest-");
 
 	return (
@@ -121,16 +119,11 @@ export function EditModal({
 				{editError && (
 					<p className="text-sm text-red-400 mb-2">{editError}</p>
 				)}
-				{!isGuest &&
-					(OAUTH_AVAILABLE ? (
-						<p className="text-xs text-gray-500 dark:text-gray-300">
-							저장 시 구글 로그인 팝업이 뜰 수 있습니다
-						</p>
-					) : !scriptUrl ? (
-						<p className="text-xs" style={{ color: "#ff9500" }}>
-							저장 방법 미설정 — 시트에 반영되지 않습니다
-						</p>
-					) : null)}
+				{!isGuest && OAUTH_AVAILABLE && (
+					<p className="text-xs text-gray-500 dark:text-gray-300">
+						저장 시 구글 로그인 팝업이 뜰 수 있습니다
+					</p>
+				)}
 				{isGuest && (
 					<p className="text-xs" style={{ color: "#ff9500" }}>
 						게스트는 세션 내에서만 유지됩니다

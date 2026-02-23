@@ -151,3 +151,14 @@
 - `appStore.ts`의 `updatePlayerAction`에서 OAuth 초기화 실패 시 `scriptUrl`이 설정되어 있다면 이를 대체 수단(Fallback)으로 사용하도록 예외 처리 추가
 
 ---
+
+---
+## #15
+
+**Action**: Google Sheets API 호출 방식 프록시 전환 및 Supabase Edge Function 구현
+
+**Answer**: 클라이언트에서 직접 Google Sheets API를 호출하던 방식을 Supabase Edge Function을 통한 프록시 방식으로 전환했습니다.
+- supabase/functions/sheets: Google Sheets API 호출을 대행하는 Edge Function 구현
+- src/lib/sheetsApi.ts: supabase.functions.invoke를 사용하여 프록시 함수 호출하도록 수정
+- src/components/setup/EditModal.tsx & src/store/appStore.ts: 플레이어 정보 수정 기능 안정화 및 API 연동
+- 환경 설정 파일(.vscode/extensions.json, supabase/config.toml 등) 추가 및 테스트 코드 업데이트

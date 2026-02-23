@@ -1,6 +1,7 @@
 import type { Gender, Player, PlayerSkills, SkillLevel } from "../types";
 
 import { SKILLS } from "./constants";
+import { supabase } from "./supabase/client";
 
 function parseSkillLevel(val: string): SkillLevel {
 	const v = val?.trim().toUpperCase();
@@ -15,20 +16,11 @@ function parseGender(val: string): Gender {
 	return "M";
 }
 
-// fetchPlayers 호출 시 spreadsheetId를 캐싱해 OAuth write 함수에서 재사용
-let _spreadsheetId = "";
-
-export async function fetchPlayers(
-	spreadsheetId: string,
-	apiKey: string,
-): Promise<Player[]> {
-	_spreadsheetId = spreadsheetId;
-	const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/A:I?key=${apiKey}`;
-
-	const res = await fetch(url);
-	if (!res.ok) throw new Error(`시트 읽기 실패: ${res.status}`);
-
-	const data = await res.json();
+export async function fetchPlayers(): Promise<Player[]> {
+	const { data, error } = await supabase.functions.invoke("sheets", {
+		method: "GET",
+	});
+	if (error) throw new Error(`시트 읽기 실패: ${error.message}`);
 	const rows: string[][] = data.values ?? [];
 	if (rows.length < 2) return [];
 
@@ -51,9 +43,8 @@ export async function fetchPlayers(
 		}));
 }
 
-// Apps Script 경유 write (scriptUrl 사용)
+// Apps Script 경유 write (Edge Function 프록시)
 export async function updatePlayer(
-	scriptUrl: string,
 	playerName: string,
 	gender: Gender,
 	skills: PlayerSkills,
@@ -62,60 +53,35 @@ export async function updatePlayer(
 	for (const skill of SKILLS) {
 		columns[skill] = skills[skill];
 	}
-	const res = await fetch(scriptUrl, {
+	const { error } = await supabase.functions.invoke("sheets", {
 		method: "POST",
-		redirect: "follow",
-		body: JSON.stringify({ name: playerName, skills: columns }),
+		body: { name: playerName, skills: columns },
 	});
-	if (!res.ok) throw new Error(`수정 실패: ${res.status}`);
+	if (error) throw new Error(`수정 실패: ${error.message}`);
 }
 
-// OAuth Bearer 토큰으로 Sheets API 직접 write
+// OAuth Bearer 토큰으로 Sheets API 직접 write (Edge Function 프록시)
 export async function updatePlayerWithToken(
 	accessToken: string,
 	playerName: string,
 	gender: Gender,
 	skills: PlayerSkills,
 ): Promise<void> {
-	if (!_spreadsheetId) throw new Error("시트가 연결되지 않았습니다");
-
-	// 이름으로 행 번호 탐색 (A열만 읽기)
-	const findRes = await fetch(
-		`https://sheets.googleapis.com/v4/spreadsheets/${_spreadsheetId}/values/A:A`,
-		{ headers: { Authorization: `Bearer ${accessToken}` } },
-	);
-	if (!findRes.ok) throw new Error(`행 탐색 실패: ${findRes.status}`);
-	const findData = await findRes.json();
-	const nameCol: string[][] = findData.values ?? [];
-	const rowIndex = nameCol.findIndex(
-		(row, i) => i > 0 && row[0]?.trim() === playerName,
-	);
-	if (rowIndex === -1)
-		throw new Error(`선수를 찾을 수 없습니다: ${playerName}`);
-
-	const sheetRow = rowIndex + 1; // 1-based
 	const values = [
 		playerName,
 		gender,
-		skills["클리어"],
-		skills["스매시"],
-		skills["로테이션"],
-		skills["드랍"],
-		skills["헤어핀"],
-		skills["드라이브"],
-		skills["백핸드"],
+		skills.클리어,
+		skills.스매시,
+		skills.로테이션,
+		skills.드랍,
+		skills.헤어핀,
+		skills.드라이브,
+		skills.백핸드,
 	];
-
-	const updateRes = await fetch(
-		`https://sheets.googleapis.com/v4/spreadsheets/${_spreadsheetId}/values/A${sheetRow}:I${sheetRow}?valueInputOption=USER_ENTERED`,
-		{
-			method: "PUT",
-			headers: {
-				Authorization: `Bearer ${accessToken}`,
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({ values: [values] }),
-		},
-	);
-	if (!updateRes.ok) throw new Error(`수정 실패: ${updateRes.status}`);
+	const { error } = await supabase.functions.invoke("sheets", {
+		method: "PUT",
+		headers: { "X-Google-Token": accessToken },
+		body: { playerName, values },
+	});
+	if (error) throw new Error(`수정 실패: ${error.message}`);
 }
