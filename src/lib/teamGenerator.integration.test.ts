@@ -31,7 +31,7 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 			mixedCount: 0,
 			forceMixed: false,
 			allowMixedSingle: false,
-			waitSince: Date.now(),
+			waitSince: new Date().toISOString(),
 		}));
 
 		// 3. 테스트를 위해 특정 이름의 선수들만 추출
@@ -51,7 +51,7 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 		// 4. 코트 3개에 계속 팀을 뽑아서 출력 (비동기 종료 시뮬레이션)
 		const COURT_COUNT = 3;
 		const TARGET_MATCHES = 15; // 총 15경기 시뮬레이션 (기존 5라운드 * 3코트 분량)
-		let history: Record<string, Set<string>> = {};
+		const history: Record<string, Set<string>> = {};
 		let lastMixedPlayerIds: string[] = [];
 
 		let currentWaiting = [...testGroup];
@@ -108,7 +108,7 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 			const shuffled = playingCourts.sort(() => 0.5 - Math.random());
 			const finishingCourts = shuffled.slice(0, finishCount);
 
-			let nextMixedPlayerIds: string[] = [];
+			const nextMixedPlayerIds: string[] = [];
 
 			console.log(`\n  -- ${finishCount}개 코트 경기 종료 --`);
 			for (const { c: match, index } of finishingCourts) {
