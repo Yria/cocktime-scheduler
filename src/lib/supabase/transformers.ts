@@ -16,6 +16,7 @@ export function rowToSessionPlayer(row: SessionPlayerRow): SessionPlayer {
 		allowMixedSingle: row.allow_mixed_single,
 		status: row.status,
 		forceMixed: row.force_mixed,
+		forceHardGame: row.force_hard_game ?? false,
 		gameCount: row.game_count,
 		mixedCount: row.mixed_count,
 		waitSince: row.wait_since,

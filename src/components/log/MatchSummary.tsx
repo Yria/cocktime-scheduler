@@ -18,10 +18,8 @@ export default function MatchSummary({
 }: MatchSummaryProps) {
 	return (
 		<div
-			className="flex-shrink-0"
+			className="flex-shrink-0 bg-white dark:bg-[#1c1c1e] border-b border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
 			style={{
-				background: "#ffffff",
-				borderBottom: "0.5px solid rgba(0,0,0,0.06)",
 				padding: "12px 16px",
 				display: "flex",
 				flexDirection: "column",
@@ -30,7 +28,7 @@ export default function MatchSummary({
 		>
 			{/* Match count */}
 			<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-				<span style={{ fontSize: 12, color: "#98a0ab", fontWeight: 500 }}>
+				<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.5)]" style={{ fontSize: 12, fontWeight: 500 }}>
 					총 경기
 				</span>
 				<span
@@ -50,7 +48,7 @@ export default function MatchSummary({
 			{/* Participant list */}
 			{participants.length > 0 && (
 				<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-					<span style={{ fontSize: 12, color: "#98a0ab", fontWeight: 500 }}>
+					<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.5)]" style={{ fontSize: 12, fontWeight: 500 }}>
 						참가자 {participants.length}명
 					</span>
 					<div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>

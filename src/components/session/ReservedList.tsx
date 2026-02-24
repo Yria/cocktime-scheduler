@@ -90,7 +90,7 @@ const ReservedList = memo(function ReservedList({
 							/>
 						</svg>
 					</div>
-					<span style={{ fontSize: 16, fontWeight: 600, color: "#0f1724" }}>
+					<span className="text-[#0f1724] dark:text-white" style={{ fontSize: 16, fontWeight: 600 }}>
 						예약팀
 					</span>
 				</div>
@@ -127,7 +127,7 @@ const ReservedList = memo(function ReservedList({
 						<div
 							key={group.id}
 							style={{
-								background: "#ffffff",
+								// dark mode handled via className
 								borderRadius: 8,
 								border:
 									allReady && waitingCount >= needMore

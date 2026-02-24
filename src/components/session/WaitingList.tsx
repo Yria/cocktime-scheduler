@@ -6,6 +6,7 @@ interface WaitingListProps {
 	singleWomanIds: string[];
 	onToggleResting: (playerId: string) => void;
 	onToggleForceMixed: (playerId: string) => void;
+	onToggleForceHardGame: (playerId: string) => void;
 }
 
 const STYLES = `
@@ -30,10 +31,32 @@ const STYLES = `
   border-color: rgba(255,59,48,0.28);
   box-shadow: 0 2px 8px rgba(255,59,48,0.1);
 }
+.wl-chip.force-hard-game {
+  background: rgba(255,149,0,0.09);
+  border-color: rgba(255,149,0,0.38);
+  box-shadow: 0 2px 8px rgba(255,149,0,0.12);
+}
 .wl-chip.mixed-single {
   background: rgba(255,149,0,0.07);
   border-color: rgba(255,149,0,0.35);
   box-shadow: 0 2px 8px rgba(255,149,0,0.1);
+}
+.dark .wl-chip {
+  background: rgba(44,44,46,0.9);
+  border-color: rgba(255,255,255,0.12);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.dark .wl-chip.force-mixed {
+  background: rgba(255,59,48,0.15);
+  border-color: rgba(255,59,48,0.3);
+}
+.dark .wl-chip.force-hard-game {
+  background: rgba(255,149,0,0.18);
+  border-color: rgba(255,149,0,0.35);
+}
+.dark .wl-chip.mixed-single {
+  background: rgba(255,149,0,0.15);
+  border-color: rgba(255,149,0,0.3);
 }
 .wl-name-btn {
   padding: 7px 4px 7px 10px;
@@ -49,11 +72,14 @@ const STYLES = `
   letter-spacing: -0.01em;
   transition: opacity 0.1s;
 }
+.dark .wl-name-btn {
+  color: rgba(235,235,245,0.9);
+}
 .wl-name-btn:active {
   opacity: 0.55;
 }
 .wl-mixed-btn {
-  padding: 7px 9px 7px 2px;
+  padding: 7px 4px 7px 2px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -80,6 +106,10 @@ const STYLES = `
   color: #b06000;
   letter-spacing: 0.01em;
 }
+.dark .wl-game-badge {
+  background: rgba(255,149,0,0.2);
+  color: #ff9f0a;
+}
 `;
 
 const WaitingList = memo(function WaitingList({
@@ -87,6 +117,7 @@ const WaitingList = memo(function WaitingList({
 	singleWomanIds,
 	onToggleResting,
 	onToggleForceMixed,
+	onToggleForceHardGame,
 }: WaitingListProps) {
 	const countColor =
 		waiting.length >= 4
@@ -151,10 +182,10 @@ const WaitingList = memo(function WaitingList({
 						</svg>
 					</div>
 					<span
+						className="text-[#0f1724] dark:text-white"
 						style={{
 							fontSize: 16,
 							fontWeight: 600,
-							color: "#0f1724",
 							letterSpacing: "-0.01em",
 						}}
 					>
@@ -202,7 +233,7 @@ const WaitingList = memo(function WaitingList({
 						const isMixedSingle =
 							p.gender === "F" &&
 							(p.allowMixedSingle || singleWomanIds.includes(p.playerId));
-						const chipClass = `wl-chip${p.forceMixed ? " force-mixed" : isMixedSingle ? " mixed-single" : ""}`;
+						const chipClass = `wl-chip${p.forceMixed ? " force-mixed" : p.forceHardGame ? " force-hard-game" : isMixedSingle ? " mixed-single" : ""}`;
 						return (
 							<div key={p.id} className={chipClass}>
 								{/* 이름 + 게임수: 누르면 휴식 전환 */}
@@ -252,6 +283,34 @@ const WaitingList = memo(function WaitingList({
 										{/* 여자 실루엣 (치마 형태) */}
 										<circle cx="17" cy="7" r="3" />
 										<path d="M13 21l2-8h4l2 8Z" />
+									</svg>
+								</button>
+
+								{/* 빡겜 우선배치 토글 버튼 */}
+								<button
+									type="button"
+									onClick={() => onToggleForceHardGame(p.id)}
+									title={
+										p.forceHardGame ? "빡겜 우선배치 해제" : "빡겜 우선배치 지정"
+									}
+									className="wl-mixed-btn"
+									style={{
+										color: p.forceHardGame ? "#ff9500" : "#c8d0d8",
+									}}
+								>
+									<svg
+										width="16"
+										height="16"
+										viewBox="0 0 24 24"
+										fill={p.forceHardGame ? "currentColor" : "none"}
+										stroke="currentColor"
+										strokeWidth="1.8"
+										strokeLinecap="round"
+										strokeLinejoin="round"
+										aria-hidden="true"
+									>
+										{/* 불꽃 아이콘 (빡겜) */}
+										<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
 									</svg>
 								</button>
 							</div>

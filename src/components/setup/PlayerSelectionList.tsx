@@ -50,10 +50,9 @@ export function PlayerSelectionList({
 }: Props) {
 	return (
 		<div
+			className="bg-white dark:bg-[#1c1c1e] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
 			style={{
-				background: "#ffffff",
 				borderRadius: 12,
-				border: "1px solid rgba(0,0,0,0.06)",
 				overflow: "hidden",
 				marginBottom: 16,
 			}}
@@ -67,7 +66,7 @@ export function PlayerSelectionList({
 						marginBottom: 10,
 					}}
 				>
-					<p style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>
+					<p className="text-[#64748b] dark:text-[rgba(235,235,245,0.5)]" style={{ fontSize: 12, fontWeight: 600 }}>
 						참석자 <span style={{ color: "#0b84ff" }}>{selectedCount}</span> /{" "}
 						{allPlayersLength}명
 						{guestCount > 0 && (
@@ -118,14 +117,13 @@ export function PlayerSelectionList({
 					onChange={(e) => setSearch(e.target.value)}
 					onFocus={() => setSearch("")}
 					placeholder="이름 검색…"
+					className="bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.08)] text-[#0f1724] dark:text-white placeholder:text-[#94a3b8] dark:placeholder:text-[rgba(235,235,245,0.4)]"
 					style={{
 						width: "100%",
-						background: "rgba(241,245,249,1)",
 						border: "none",
 						borderRadius: 10,
 						padding: "10px 14px",
 						fontSize: 15,
-						color: "#0f1724",
 						outline: "none",
 						marginBottom: 8,
 						boxSizing: "border-box",
@@ -138,6 +136,11 @@ export function PlayerSelectionList({
 							type="button"
 							key={g}
 							onClick={() => setGenderFilter(g)}
+							className={
+								genderFilter === g
+									? "bg-[#0b84ff] text-white"
+									: "bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.08)] text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+							}
 							style={{
 								padding: "5px 12px",
 								borderRadius: 8,
@@ -145,9 +148,6 @@ export function PlayerSelectionList({
 								fontWeight: 500,
 								border: "none",
 								cursor: "pointer",
-								background:
-									genderFilter === g ? "#0b84ff" : "rgba(241,245,249,1)",
-								color: genderFilter === g ? "#fff" : "#64748b",
 								transition: "all 0.15s",
 							}}
 						>
@@ -157,7 +157,7 @@ export function PlayerSelectionList({
 				</div>
 			</div>
 
-			<div style={{ borderTop: "1px solid rgba(0,0,0,0.04)" }}>
+			<div className="border-t border-[rgba(0,0,0,0.04)] dark:border-[rgba(255,255,255,0.06)]">
 				{filtered.map((player) => (
 					<PlayerRow
 						key={player.id}

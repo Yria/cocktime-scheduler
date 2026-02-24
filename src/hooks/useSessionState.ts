@@ -41,6 +41,7 @@ export function useSessionState({ onEnd }: UseSessionStateProps) {
 	const handleComplete = useSessionStore((s) => s.handleComplete);
 	const toggleResting = useSessionStore((s) => s.toggleResting);
 	const toggleForceMixed = useSessionStore((s) => s.toggleForceMixed);
+	const toggleForceHardGame = useSessionStore((s) => s.toggleForceHardGame);
 	const handleCreateReservation = useSessionStore(
 		(s) => s.handleCreateReservation,
 	);
@@ -127,6 +128,7 @@ export function useSessionState({ onEnd }: UseSessionStateProps) {
 		setReservingSelected,
 		toggleResting,
 		toggleForceMixed,
+		toggleForceHardGame,
 		handleGenerate,
 		handleAssignGroup,
 		handleAssign,

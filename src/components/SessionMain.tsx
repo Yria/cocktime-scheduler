@@ -38,6 +38,7 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 		setReservingSelected,
 		toggleResting,
 		toggleForceMixed,
+		toggleForceHardGame,
 		handleGenerate,
 		handleAssignGroup,
 		handleAssign,
@@ -58,8 +59,8 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 
 	return (
 		<div
-			className="h-[100dvh] flex flex-col md:max-w-sm md:mx-auto"
-			style={{ background: "#fafbff" }}
+			className="md:max-w-sm md:mx-auto bg-[#fafbff] dark:bg-[#0f172a]"
+			style={{ minHeight: "100dvh" }}
 		>
 			<SessionHeader
 				onBack={onBack}
@@ -73,7 +74,7 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 				restingCount={resting.length}
 			/>
 
-			<div className="flex-1 overflow-y-auto no-sb">
+			<div>
 				<CourtsHeader courtsCount={courts.length} />
 
 				<div
@@ -101,11 +102,13 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 					singleWomanIds={singleWomanIds}
 					onToggleResting={toggleResting}
 					onToggleForceMixed={toggleForceMixed}
+				onToggleForceHardGame={toggleForceHardGame}
 				/>
 
 				<RestingList resting={resting} onToggleResting={toggleResting} />
 
-				<div style={{ height: 16 }} />
+				{/* 하단 고정 바 높이만큼 스페이서 */}
+				<div style={{ height: "calc(60px + max(12px, env(safe-area-inset-bottom)))" }} />
 			</div>
 
 			<SessionControls

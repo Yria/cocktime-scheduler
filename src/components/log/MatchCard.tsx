@@ -26,17 +26,16 @@ export default function MatchCard({
 	const typeConfig = GAME_TYPE_CONFIG[log.gameType];
 	return (
 		<div
+			className="bg-white dark:bg-[#1c1c1e] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
 			style={{
-				background: "#ffffff",
 				borderRadius: 8,
-				border: "1px solid rgba(0,0,0,0.06)",
 				overflow: "hidden",
 			}}
 		>
 			{/* Header row */}
 			<div
+				className="bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.06)]"
 				style={{
-					background: "rgba(241,245,249,1)",
 					padding: "12px 16px",
 					display: "flex",
 					alignItems: "center",
@@ -44,7 +43,7 @@ export default function MatchCard({
 				}}
 			>
 				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-					<span style={{ fontSize: 14, fontWeight: 600, color: "#0f1724" }}>
+					<span className="text-[#0f1724] dark:text-white" style={{ fontSize: 14, fontWeight: 600 }}>
 						#{index} · {log.courtId}번 코트
 					</span>
 					<span
@@ -60,7 +59,7 @@ export default function MatchCard({
 						{log.gameType}
 					</span>
 				</div>
-				<span style={{ fontSize: 12, color: "#98a0ab", fontWeight: 500 }}>
+				<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]" style={{ fontSize: 12, fontWeight: 500 }}>
 					{formatTime(log.startedAt)}
 					{log.endedAt ? ` → ${formatTime(log.endedAt)}` : ""}
 				</span>
@@ -71,10 +70,10 @@ export default function MatchCard({
 				{/* Team A */}
 				<div style={{ display: "flex", gap: 12, alignItems: "center" }}>
 					<span
+						className="text-[#0f1724] dark:text-white"
 						style={{
 							fontSize: 14,
 							fontWeight: 600,
-							color: "#0f1724",
 							width: 32,
 							flexShrink: 0,
 						}}
@@ -96,39 +95,27 @@ export default function MatchCard({
 						margin: "12px 0",
 					}}
 				>
-					<div
-						style={{
-							flex: 1,
-							height: 1,
-							background: "rgba(0,0,0,0.08)",
-						}}
-					/>
+					<div className="bg-[rgba(0,0,0,0.08)] dark:bg-[rgba(255,255,255,0.1)]" style={{ flex: 1, height: 1 }} />
 					<span
+						className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
 						style={{
 							fontSize: 12,
 							fontWeight: 700,
-							color: "#98a0ab",
 							padding: "0 8px",
 						}}
 					>
 						VS
 					</span>
-					<div
-						style={{
-							flex: 1,
-							height: 1,
-							background: "rgba(0,0,0,0.08)",
-						}}
-					/>
+					<div className="bg-[rgba(0,0,0,0.08)] dark:bg-[rgba(255,255,255,0.1)]" style={{ flex: 1, height: 1 }} />
 				</div>
 
 				{/* Team B */}
 				<div style={{ display: "flex", gap: 12, alignItems: "center" }}>
 					<span
+						className="text-[#0f1724] dark:text-white"
 						style={{
 							fontSize: 14,
 							fontWeight: 600,
-							color: "#0f1724",
 							width: 32,
 							flexShrink: 0,
 						}}

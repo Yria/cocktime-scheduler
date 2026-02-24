@@ -16,33 +16,31 @@ const CourtList = memo(function CourtList({
 			{courts.map((court) => (
 				<div
 					key={court.id}
+					className="bg-white dark:bg-[#1c1c1e] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
 					style={{
-						background: "#ffffff",
 						borderRadius: 8,
-						border: "1px solid rgba(0,0,0,0.06)",
 						overflow: "hidden",
 					}}
 				>
 					{/* Header row */}
 					<div
+						className="bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.06)]"
 						style={{
-							background: "rgba(241,245,249,1)",
 							padding: "12px 16px",
 							display: "flex",
 							alignItems: "center",
 							justifyContent: "space-between",
 						}}
 					>
-						<span style={{ fontSize: 14, fontWeight: 600, color: "#0f1724" }}>
+						<span className="text-[#0f1724] dark:text-white" style={{ fontSize: 14, fontWeight: 600 }}>
 							{court.id}번 코트
 						</span>
 						{court.match ? (
 							<span
+								className="text-[#166534] dark:text-[#30d158] bg-[rgba(220,252,231,1)] dark:bg-[rgba(48,209,88,0.15)]"
 								style={{
 									fontSize: 12,
 									fontWeight: 600,
-									color: "#166534",
-									background: "rgba(220,252,231,1)",
 									borderRadius: 4,
 									padding: "2px 8px",
 								}}
@@ -51,11 +49,10 @@ const CourtList = memo(function CourtList({
 							</span>
 						) : (
 							<span
+								className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)] bg-[rgba(247,249,252,1)] dark:bg-[rgba(255,255,255,0.06)]"
 								style={{
 									fontSize: 12,
 									fontWeight: 600,
-									color: "#98a0ab",
-									background: "rgba(247,249,252,1)",
 									borderRadius: 4,
 									padding: "2px 8px",
 								}}
@@ -72,10 +69,10 @@ const CourtList = memo(function CourtList({
 								{/* Team A */}
 								<div style={{ display: "flex", gap: 12, alignItems: "center" }}>
 									<span
+										className="text-[#0f1724] dark:text-white"
 										style={{
 											fontSize: 14,
 											fontWeight: 600,
-											color: "#0f1724",
 											width: 32,
 											flexShrink: 0,
 										}}
@@ -108,39 +105,27 @@ const CourtList = memo(function CourtList({
 										margin: "12px 0",
 									}}
 								>
-									<div
-										style={{
-											flex: 1,
-											height: 1,
-											background: "rgba(0,0,0,0.08)",
-										}}
-									/>
+									<div className="bg-[rgba(0,0,0,0.08)] dark:bg-[rgba(255,255,255,0.1)]" style={{ flex: 1, height: 1 }} />
 									<span
+										className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
 										style={{
 											fontSize: 12,
 											fontWeight: 700,
-											color: "#98a0ab",
 											padding: "0 8px",
 										}}
 									>
 										VS
 									</span>
-									<div
-										style={{
-											flex: 1,
-											height: 1,
-											background: "rgba(0,0,0,0.08)",
-										}}
-									/>
+									<div className="bg-[rgba(0,0,0,0.08)] dark:bg-[rgba(255,255,255,0.1)]" style={{ flex: 1, height: 1 }} />
 								</div>
 
 								{/* Team B */}
 								<div style={{ display: "flex", gap: 12, alignItems: "center" }}>
 									<span
+										className="text-[#0f1724] dark:text-white"
 										style={{
 											fontSize: 14,
 											fontWeight: 600,
-											color: "#0f1724",
 											width: 32,
 											flexShrink: 0,
 										}}
@@ -168,10 +153,8 @@ const CourtList = memo(function CourtList({
 
 							{/* Complete button */}
 							<div
-								style={{
-									borderTop: "1px solid rgba(0,0,0,0.06)",
-									padding: "12px 16px",
-								}}
+								className="border-t border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
+								style={{ padding: "12px 16px" }}
 							>
 								<button
 									type="button"
@@ -240,29 +223,25 @@ const CourtList = memo(function CourtList({
 										strokeWidth="1.5"
 									/>
 								</svg>
-								<span style={{ fontSize: 15, color: "#98a0ab" }}>
+								<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]" style={{ fontSize: 15 }}>
 									대기중인 팀이 없습니다
 								</span>
 							</div>
 
 							{/* Placeholder button */}
 							<div
-								style={{
-									borderTop: "1px solid rgba(0,0,0,0.06)",
-									padding: "12px 16px",
-								}}
+								className="border-t border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
+								style={{ padding: "12px 16px" }}
 							>
 								<button
 									type="button"
 									disabled
+									className="bg-white dark:bg-[rgba(255,255,255,0.06)] text-[rgba(16,16,16,0.3)] dark:text-[rgba(255,255,255,0.25)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.08)]"
 									style={{
-										background: "#fff",
-										color: "rgba(16,16,16,0.3)",
 										borderRadius: 6,
 										padding: "7px 12px",
 										fontSize: 13,
 										fontWeight: 500,
-										border: "1px solid rgba(0,0,0,0.08)",
 										cursor: "not-allowed",
 									}}
 								>

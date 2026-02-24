@@ -31,6 +31,7 @@ export interface SessionPlayer {
 	allowMixedSingle: boolean;
 	status: PlayerStatus;
 	forceMixed: boolean;
+	forceHardGame: boolean;
 	gameCount: number;
 	mixedCount: number;
 	waitSince: string | null;

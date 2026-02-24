@@ -24,17 +24,13 @@ export default function SessionSelector({
 }: SessionSelectorProps) {
 	return (
 		<div
-			className="flex-shrink-0 flex gap-2 overflow-x-auto no-sb"
-			style={{
-				background: "#ffffff",
-				borderBottom: "0.5px solid rgba(0,0,0,0.06)",
-				padding: "10px 16px",
-			}}
+			className="flex-shrink-0 flex gap-2 overflow-x-auto no-sb bg-white dark:bg-[#1c1c1e] border-b border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
+			style={{ padding: "10px 16px" }}
 		>
 			{loading ? (
-				<span style={{ fontSize: 13, color: "#98a0ab" }}>불러오는 중…</span>
+				<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]" style={{ fontSize: 13 }}>불러오는 중…</span>
 			) : sessions.length === 0 ? (
-				<span style={{ fontSize: 13, color: "#98a0ab" }}>
+				<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]" style={{ fontSize: 13 }}>
 					세션 기록이 없습니다
 				</span>
 			) : (
@@ -45,15 +41,17 @@ export default function SessionSelector({
 							key={s.id}
 							type="button"
 							onClick={() => setSelectedId(s.id)}
+							className={
+								isSelected
+									? "bg-[#0b84ff] text-white border-0"
+									: "bg-transparent text-[#64748b] dark:text-[rgba(235,235,245,0.6)] border border-[rgba(0,0,0,0.1)] dark:border-[rgba(255,255,255,0.15)]"
+							}
 							style={{
 								flexShrink: 0,
 								fontSize: 13,
 								fontWeight: isSelected ? 600 : 500,
 								padding: "5px 14px",
 								borderRadius: 20,
-								border: isSelected ? "none" : "1px solid rgba(0,0,0,0.1)",
-								background: isSelected ? "#0b84ff" : "transparent",
-								color: isSelected ? "#fff" : "#64748b",
 								cursor: "pointer",
 								display: "flex",
 								alignItems: "center",

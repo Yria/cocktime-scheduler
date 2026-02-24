@@ -34,35 +34,37 @@ export default function Home({ onStart }: Props) {
 
 	return (
 		<div
-			className="min-h-[100dvh] flex flex-col items-center justify-center p-6"
-			style={{ background: "#fafbff" }}
+			className="min-h-[100dvh] flex flex-col items-center justify-center bg-[#fafbff] dark:bg-[#0f172a]"
+			style={{
+				padding: "1.5rem",
+				paddingTop: "max(1.5rem, env(safe-area-inset-top))",
+				paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
+			}}
 		>
 			<div className="w-full max-w-sm flex flex-col gap-4">
 				{/* Logo */}
 				<div className="flex flex-col items-center mb-6">
 					<img
 						src="main.png"
-						className="w-20 h-20 object-contain mb-5"
-						style={{ filter: "drop-shadow(0 4px 12px rgba(11,132,255,0.15))" }}
+						className="w-20 h-20 object-contain mb-5 drop-shadow-[0_4px_12px_rgba(11,132,255,0.15)] dark:[filter:brightness(0)_invert(1)_drop-shadow(0_4px_16px_rgba(255,255,255,0.2))]"
 						alt="콕타임"
 					/>
 					<h1
-						className="font-bold tracking-tight"
-						style={{ fontSize: 28, color: "#0f1724", marginBottom: 6 }}
+						className="font-bold tracking-tight text-[#0f1724] dark:text-white"
+						style={{ fontSize: 28, marginBottom: 6 }}
 					>
 						콕타임 팀매칭
 					</h1>
-					<p style={{ fontSize: 14, color: "#64748b", fontWeight: 500 }}>
+					<p className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]" style={{ fontSize: 14, fontWeight: 500 }}>
 						스마트 배드민턴 코트 배정
 					</p>
 				</div>
 
 				{/* Status card */}
 				<div
+					className="bg-white dark:bg-[rgba(30,30,35,0.8)] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.1)]"
 					style={{
-						background: "#ffffff",
 						borderRadius: 12,
-						border: "1px solid rgba(0,0,0,0.06)",
 						padding: "16px 20px",
 						display: "flex",
 						alignItems: "center",
@@ -82,7 +84,7 @@ export default function Home({ onStart }: Props) {
 									animation: "spin 0.8s linear infinite",
 								}}
 							/>
-							<p style={{ fontSize: 14, color: "#64748b", fontWeight: 500 }}>
+							<p className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]" style={{ fontSize: 14, fontWeight: 500 }}>
 								시트 불러오는 중…
 							</p>
 						</div>
@@ -98,7 +100,7 @@ export default function Home({ onStart }: Props) {
 									flexShrink: 0,
 								}}
 							/>
-							<p style={{ fontSize: 14, fontWeight: 600, color: "#166534" }}>
+							<p className="text-[#166534] dark:text-[#30d158]" style={{ fontSize: 14, fontWeight: 600 }}>
 								연동됨 — {players.length}명
 							</p>
 						</div>
@@ -159,12 +161,12 @@ export default function Home({ onStart }: Props) {
 				<button
 					type="button"
 					onClick={() => navigate("/logs")}
+					className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
 					style={{
 						background: "none",
 						border: "none",
 						fontSize: 13,
 						fontWeight: 500,
-						color: "#98a0ab",
 						cursor: "pointer",
 						padding: "4px 0",
 						alignSelf: "center",

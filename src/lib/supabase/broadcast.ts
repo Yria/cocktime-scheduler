@@ -35,6 +35,10 @@ export type BroadcastPayload =
 			payload: { player: SessionPlayer };
 	  }
 	| {
+			event: "player_force_hard_game_changed";
+			payload: { player: SessionPlayer };
+	  }
+	| {
 			event: "player_updated";
 			payload: { player: SessionPlayer };
 	  }

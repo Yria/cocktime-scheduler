@@ -396,28 +396,29 @@ export default function SessionSetup({ onStart }: Props) {
 
 	return (
 		<div
-			className="h-[100dvh] overflow-hidden flex flex-col md:max-w-sm md:mx-auto"
-			style={{ background: "#fafbff" }}
+			className="md:max-w-sm md:mx-auto bg-[#fafbff] dark:bg-[#0f172a]"
+			style={{ minHeight: "100dvh" }}
 		>
 			{/* Header */}
 			<div
-				className="flex-shrink-0 flex items-center px-4"
+				className="flex items-center px-4 bg-white dark:bg-[#1c1c1e] border-b border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]"
 				style={{
-					height: 60,
-					background: "#ffffff",
-					borderBottom: "0.5px solid rgba(0,0,0,0.08)",
+					position: "sticky",
+					top: 0,
+					zIndex: 50,
+					height: "calc(60px + env(safe-area-inset-top))",
+					paddingTop: "env(safe-area-inset-top)",
 				}}
 			>
 				<span
-					className="font-bold tracking-tight"
-					style={{ fontSize: 17, color: "#0f1724" }}
+					className="font-bold tracking-tight text-[#0f1724] dark:text-white"
+					style={{ fontSize: 17 }}
 				>
 					세션 설정
 				</span>
 			</div>
 
 			<div
-				className="flex-1 min-h-0 overflow-y-auto no-sb"
 				style={{ padding: "16px 16px 0" }}
 			>
 				<CourtCountSelector
@@ -451,14 +452,20 @@ export default function SessionSetup({ onStart }: Props) {
 					openEdit={openEdit}
 					removeGuest={removeGuest}
 				/>
-			</div>
+				{/* 하단 고정 바 높이만큼 스페이서 */}
+			<div style={{ height: "calc(68px + max(12px, env(safe-area-inset-bottom)))" }} />
+		</div>
 
 			{/* Bottom CTA */}
 			<div
-				className="flex-shrink-0"
+				className="bg-white dark:bg-[#1c1c1e] border-t border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]"
 				style={{
-					background: "#ffffff",
-					borderTop: "0.5px solid rgba(0,0,0,0.08)",
+					position: "fixed",
+					bottom: 0,
+					left: "50%",
+					transform: "translateX(-50%)",
+					width: "100%",
+					maxWidth: 384,
 					padding: "12px 16px",
 					paddingBottom: "max(12px, env(safe-area-inset-bottom))",
 				}}

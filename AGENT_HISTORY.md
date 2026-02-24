@@ -153,6 +153,32 @@
 ---
 
 ---
+## #17
+
+**Prompt**: 현재 상황에서 하단 주소줄은 계속 커진상태로 있어. 다른 모바일페이지를 보면 스크롤하면 주소창이 작아지는데 아마 하단에 버튼이 있는 디자인을 하려고 해서 그런거같아. 이대로는 넓은 화면이 아쉬운데 좋은 방법이 있을까?
+
+**Answer**: body 스크롤 방식으로 전환하여 Safari 주소창이 스크롤 시 자동으로 접히도록 수정했습니다. 기존 레이아웃은 외부 div가 `h-[100dvh]`로 화면을 꽉 채우고 내부 div만 스크롤되는 구조여서 body가 스크롤되지 않아 Safari 주소창이 항상 펼쳐져 있었습니다.
+- `SessionMain.tsx`: `h-[100dvh] flex flex-col` 제거, 내부 스크롤 div 제거, 하단 고정 바 높이만큼 스페이서 추가
+- `SessionHeader.tsx`: `position: sticky; top: 0; z-index: 50` 추가
+- `SessionControls.tsx`: `position: fixed; bottom: 0; left: 0; right: 0` 추가
+- `SessionSetup.tsx`: 동일 패턴 (sticky 헤더, fixed 하단 CTA, 스페이서)
+- `LogPage.tsx`: `h-[100dvh] flex flex-col` 제거 + sticky 헤더
+- `LogList.tsx`: `flex-1 overflow-y-auto no-sb` 제거
+
+---
+## #16
+
+**Prompt**: 아이폰에서 보면 safearea 를 활용하지 못하는데 이 영역도 디스플레이에 활용해줘.
+
+**Answer**: iPhone safe area를 활용하도록 여러 파일을 수정했습니다.
+- `index.html`: viewport 메타 태그에 `viewport-fit=cover` 추가, `theme-color`, `apple-mobile-web-app-capable` 등 PWA 관련 메타 태그 추가
+- `index.css`: `.lq-header`에 `padding-top: env(safe-area-inset-top)` 추가, `body` 배경색을 `#fafbff`(페이지 컨테이너와 동일)로 설정하여 safe area가 분리된 느낌 없이 매끄럽게 연결되도록 처리
+- `SessionHeader.tsx`, `SessionSetup.tsx`, `LogPage.tsx`: 헤더 높이를 `calc(60px + env(safe-area-inset-top))`으로 확장하고 컨텐츠를 `paddingTop: env(safe-area-inset-top)` 으로 내려 status bar와 겹치지 않도록 조정
+- `Home.tsx`: 상하 safe area 패딩 적용
+- `LogList.tsx`: 하단 스크롤 영역에 bottom safe area 패딩 추가
+- 다크모드용 `.dark body { background-color: #0f172a }` 추가
+
+---
 ## #15
 
 **Action**: Google Sheets API 호출 방식 프록시 전환 및 Supabase Edge Function 구현
@@ -162,3 +188,39 @@
 - src/lib/sheetsApi.ts: supabase.functions.invoke를 사용하여 프록시 함수 호출하도록 수정
 - src/components/setup/EditModal.tsx & src/store/appStore.ts: 플레이어 정보 수정 기능 안정화 및 API 연동
 - 환경 설정 파일(.vscode/extensions.json, supabase/config.toml 등) 추가 및 테스트 코드 업데이트
+
+---
+
+## #18
+
+**Prompt**: 다크테마 만들수있나?
+
+**Answer**: 시스템 다크모드(prefers-color-scheme)를 따르는 방식으로 다크테마를 구현했습니다. App.tsx에 이미 OS 감지 코드와 CSS 변수가 준비되어 있었으나, 대부분의 컴포넌트가 인라인 스타일로 하드코딩된 색상을 사용해 다크모드가 동작하지 않는 상태였습니다. Tailwind `dark:` 클래스를 활용하여 다음 컴포넌트들을 수정했습니다:
+- 페이지 컨테이너: Home, SessionMain, LogPage, SessionSetup (배경색)
+- 헤더/바: SessionHeader, LogPage 헤더, SessionControls, SessionSetup 하단 바
+- 카드/리스트: StatsSummary, PlayerSelectionList, CourtList, ReservedList, RestingList, CourtCountSelector, SingleWomanSelector
+- 로그 컴포넌트: MatchCard, SessionSelector, MatchSummary, LogList
+- WaitingList의 `<style>` 태그에 `.dark` 오버라이드 규칙 추가
+- CourtsHeader, PlayerRow 텍스트 색상 적용
+
+---
+
+## #19
+
+**Prompt**: 세션페이지의 로그버튼을 세션설정 우상단으로 옮기고 원래 위치에 도움말 버튼을 넣고싶어.
+
+**Answer**: 버튼 위치 변경 및 Spotlight 온보딩 도움말 구현.
+- SessionHeader에서 로그 버튼 제거, `?` 아이콘 도움말 버튼 추가 (`onHelp` prop)
+- SessionSetup 헤더 우상단에 로그 버튼 추가
+- HelpOverlay 컴포넌트 신규 생성: 코트→대기명단→휴식→팀생성 순 Spotlight 온보딩
+- SessionMain에 섹션별 id 부여 및 showHelp 상태 추가
+
+---
+
+## #20
+
+**Prompt**: pc보기에서 하단 버튼 너비가 최대인 부분 고쳐줘
+
+**Answer**: SessionSetup과 SessionControls의 fixed 하단 바에서 `left: 0, right: 0` 대신 `left: 50%, transform: translateX(-50%), maxWidth: 384px`로 변경하여 PC 화면에서도 컨테이너 너비에 맞게 제한되도록 수정.
+
+---

@@ -28,6 +28,7 @@ export interface SessionPlayerRow {
 	allow_mixed_single: boolean;
 	status: PlayerStatus;
 	force_mixed: boolean;
+	force_hard_game: boolean;
 	game_count: number;
 	mixed_count: number;
 	wait_since: string | null;

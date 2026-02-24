@@ -268,6 +268,7 @@ function determineGameType(
  * 우선순위:
  *  0) gameCount 오름차순 정렬 → 경기 적게 한 사람 우선 (규칙 0, stable sort)
  *  7) forceMixed 선수가 있으면 혼복 강제 시도 — 여2+남2 미충족 시에도 (규칙 7)
+ *  8) forceHardGame 선수가 있으면 우선 선발 후, 나머지는 skillScore 내림차순 (규칙 8)
  *  1) 혼복 가능(여 2 + 남 2)이면 혼복 우선 (규칙 1)
  *     여자 선발 시 직전 혼복 출전자 후순위 (규칙 1.5)
  *     남자 선발은 selectMenForMixed (규칙 1·1.5·2)
@@ -283,10 +284,15 @@ function selectFour(
 	singleWomanIds: string[],
 	lastMixedPlayerIds: string[] = [],
 ): SessionPlayer[] | null {
-	// forceMixed 선수 분리 후, 나머지는 gameCount 오름차순 정렬 (규칙 0)
+	// forceMixed 선수 분리, forceHardGame 선수 분리, 나머지는 gameCount 오름차순 정렬 (규칙 0, 8)
 	const forceMixed = waiting.filter((p) => p.forceMixed);
-	const others = waiting.filter((p) => !p.forceMixed);
-	const sorted = [...others].sort((a, b) => a.gameCount - b.gameCount);
+	const forceHard = waiting.filter((p) => !p.forceMixed && p.forceHardGame);
+	const rest = waiting.filter((p) => !p.forceMixed && !p.forceHardGame);
+	// 규칙 8: forceHardGame 선수가 있으면 나머지를 skillScore 내림차순으로 정렬 (강자 우선)
+	const sorted =
+		forceHard.length > 0
+			? [...rest].sort((a, b) => skillScore(b) - skillScore(a))
+			: [...rest].sort((a, b) => a.gameCount - b.gameCount);
 
 	// 규칙 1.5: 직전 혼복 출전 남자/여자 IDs (대기 중인 선수만)
 	const waitingIds = new Set(waiting.map((p) => p.id));
@@ -303,8 +309,9 @@ function selectFour(
 	if (forceMixed.length > 0) {
 		const forcedWomen = forceMixed.filter((p) => p.gender === "F");
 		const forcedMen = forceMixed.filter((p) => p.gender === "M");
-		const nonForcedWomen = sorted.filter((p) => p.gender === "F");
-		const nonForcedMen = sorted.filter((p) => p.gender === "M");
+		const nonForced = [...forceHard, ...sorted];
+		const nonForcedWomen = nonForced.filter((p) => p.gender === "F");
+		const nonForcedMen = nonForced.filter((p) => p.gender === "M");
 
 		const womenNeeded = Math.max(0, 2 - forcedWomen.length);
 		const menNeeded = Math.max(0, 2 - forcedMen.length);
@@ -344,7 +351,7 @@ function selectFour(
 		// 혼복 구성 불가 → 일반 로직으로 진행 (forceMixed는 ordered 앞에 배치)
 	}
 
-	const ordered = [...forceMixed, ...sorted];
+	const ordered = [...forceMixed, ...forceHard, ...sorted];
 	const candidates = ordered.slice(0, Math.min(8, ordered.length));
 	const women = candidates.filter((p) => p.gender === "F");
 	const men = candidates.filter((p) => p.gender === "M");

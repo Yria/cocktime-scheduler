@@ -15,10 +15,14 @@ export default function SessionControls({
 }: SessionControlsProps) {
 	return (
 		<div
-			className="flex-shrink-0"
+			className="bg-white dark:bg-[#1c1c1e] border-t border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]"
 			style={{
-				background: "#ffffff",
-				borderTop: "0.5px solid rgba(0,0,0,0.08)",
+				position: "fixed",
+				bottom: 0,
+				left: "50%",
+				transform: "translateX(-50%)",
+				width: "100%",
+				maxWidth: 384,
 				padding: "12px 16px",
 				paddingBottom: "max(12px, env(safe-area-inset-bottom))",
 				display: "flex",
@@ -30,12 +34,13 @@ export default function SessionControls({
 				type="button"
 				onClick={onReserveClick}
 				disabled={!canReserve}
+				className={
+					canReserve
+						? "bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.1)] text-[#0f1724] dark:text-white"
+						: "bg-[rgba(241,245,249,0.5)] dark:bg-[rgba(255,255,255,0.05)] text-[rgba(15,23,36,0.3)] dark:text-[rgba(255,255,255,0.25)]"
+				}
 				style={{
 					flex: 1,
-					background: canReserve
-						? "rgba(241,245,249,1)"
-						: "rgba(241,245,249,0.5)",
-					color: canReserve ? "#0f1724" : "rgba(15,23,36,0.3)",
 					borderRadius: 8,
 					padding: "13px 6px",
 					fontSize: 15,
@@ -136,13 +141,13 @@ export default function SessionControls({
 
 			{!canGenerate && waitingCount < 4 && waitingCount > 0 && (
 				<p
+					className="text-[#64748b] dark:text-[rgba(235,235,245,0.5)]"
 					style={{
 						position: "absolute",
 						bottom: "calc(100% + 4px)",
 						left: "50%",
 						transform: "translateX(-50%)",
 						fontSize: 12,
-						color: "#64748b",
 						whiteSpace: "nowrap",
 					}}
 				>

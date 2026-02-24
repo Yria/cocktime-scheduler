@@ -8,7 +8,7 @@ interface LogListProps {
 
 export default function LogList({ logLoading, logs }: LogListProps) {
 	return (
-		<div className="flex-1 overflow-y-auto no-sb" style={{ padding: "16px" }}>
+		<div style={{ padding: "16px", paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
 			{logLoading ? (
 				<div
 					style={{

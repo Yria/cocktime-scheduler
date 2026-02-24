@@ -90,10 +90,10 @@ export function PlayerRow({
 					}}
 				/>
 				<span
+					className="text-[#0f1724] dark:text-white"
 					style={{
 						fontSize: 14,
 						fontWeight: 500,
-						color: "#0f1724",
 						overflow: "hidden",
 						textOverflow: "ellipsis",
 						whiteSpace: "nowrap",

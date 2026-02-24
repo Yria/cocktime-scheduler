@@ -60,18 +60,18 @@ export default function CourtsHeader({ courtsCount }: Props) {
 						/>
 					</svg>
 				</div>
-				<span style={{ fontSize: 16, fontWeight: 600, color: "#0f1724" }}>
+				<span className="text-[#0f1724] dark:text-white" style={{ fontSize: 16, fontWeight: 600 }}>
 					코트 현황
 				</span>
 			</div>
 			<div
+				className="bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.08)]"
 				style={{
-					background: "rgba(241,245,249,1)",
 					borderRadius: 99,
 					padding: "2px 8px",
 				}}
 			>
-				<span style={{ fontSize: 12, fontWeight: 600, color: "#0f1724" }}>
+				<span className="text-[#0f1724] dark:text-white" style={{ fontSize: 12, fontWeight: 600 }}>
 					{courtsCount} Courts
 				</span>
 			</div>

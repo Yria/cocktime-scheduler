@@ -62,9 +62,13 @@
 /* ── Typography & Global ───────────────────────────────────── */
 body {
 	margin: 0;
-	background-color: var(--bg-gradient-1); /* Fallback */
+	background-color: #fafbff; /* 페이지 컨테이너와 동일 — safe area/오버스크롤 일치 */
 	color: var(--text-primary);
 	font-feature-settings: "ss01", "ss02", "cv01";
+}
+
+.dark body {
+	background-color: #0f172a;
 }
 
 h1,
@@ -132,6 +136,7 @@ h4,
 	position: sticky;
 	top: 0;
 	z-index: 50;
+	padding-top: env(safe-area-inset-top);
 }
 
 .lq-bar {

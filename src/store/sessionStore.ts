@@ -9,6 +9,7 @@ import {
 	dbDisbandGroup,
 	dbEndSession,
 	dbToggleForceMixed,
+	dbToggleForceHardGame,
 	dbToggleResting,
 	sendBroadcast,
 	supabase,
@@ -56,6 +57,7 @@ export interface SessionState {
 	handleComplete: (courtId: number) => Promise<void>;
 	toggleResting: (playerId: string) => Promise<void>;
 	toggleForceMixed: (playerId: string) => Promise<void>;
+	toggleForceHardGame: (playerId: string) => Promise<void>;
 	handleCreateReservation: () => void;
 	handleDisbandGroup: (groupId: string) => Promise<void>;
 	handleEndSession: (onEnd: () => void) => Promise<void>;
@@ -267,6 +269,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
 		const payload: BroadcastPayload = {
 			event: "player_force_mixed_changed",
+			payload: { player: updated },
+		};
+		get().applyBroadcast(payload, () => {});
+		sendBroadcast(_channel, payload);
+	},
+
+	toggleForceHardGame: async (playerId: string) => {
+		const { waiting, _channel } = get();
+		if (!_channel) return;
+		const player = waiting.find((p) => p.id === playerId);
+		if (!player || player.status !== "waiting") return;
+
+		const updated = await dbToggleForceHardGame(player);
+		if (!updated) return;
+
+		const payload: BroadcastPayload = {
+			event: "player_force_hard_game_changed",
 			payload: { player: updated },
 		};
 		get().applyBroadcast(payload, () => {});
@@ -506,6 +525,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				break;
 			}
 
+			case "player_force_hard_game_changed": {
+				const { player } = ev.payload;
+				set((state) => ({
+					waiting: state.waiting.map((p) => (p.id === player.id ? player : p)),
+				}));
+				break;
+			}
+
 			case "player_updated": {
 				const { player } = ev.payload;
 				set((state) => ({
@@ -631,6 +658,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			"match_completed",
 			"player_status_changed",
 			"player_force_mixed_changed",
+			"player_force_hard_game_changed",
 			"player_updated",
 			"group_reserved",
 			"group_disbanded",

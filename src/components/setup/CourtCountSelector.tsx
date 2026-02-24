@@ -11,19 +11,18 @@ export function CourtCountSelector({
 }: Props) {
 	return (
 		<div
+			className="bg-white dark:bg-[#1c1c1e] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
 			style={{
-				background: "#ffffff",
 				borderRadius: 12,
-				border: "1px solid rgba(0,0,0,0.06)",
 				padding: 16,
 				marginBottom: 12,
 			}}
 		>
 			<p
+				className="text-[#64748b] dark:text-[rgba(235,235,245,0.5)]"
 				style={{
 					fontSize: 11,
 					fontWeight: 600,
-					color: "#64748b",
 					textTransform: "uppercase",
 					letterSpacing: "0.06em",
 					marginBottom: 12,
@@ -32,10 +31,10 @@ export function CourtCountSelector({
 				코트 수
 			</p>
 			<div
+				className="bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.08)]"
 				style={{
 					display: "flex",
 					gap: 4,
-					background: "rgba(241,245,249,1)",
 					borderRadius: 10,
 					padding: 4,
 				}}
@@ -46,6 +45,11 @@ export function CourtCountSelector({
 						key={n}
 						onClick={() => onChange(n)}
 						disabled={n < minCourtCount}
+						className={
+							courtCount === n
+								? "bg-white dark:bg-[#2c2c2e] text-[#0b84ff]"
+								: "bg-transparent text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+						}
 						style={{
 							flex: 1,
 							padding: "8px 0",
@@ -55,8 +59,6 @@ export function CourtCountSelector({
 							border: "none",
 							cursor: n < minCourtCount ? "not-allowed" : "pointer",
 							transition: "all 0.15s",
-							background: courtCount === n ? "#ffffff" : "transparent",
-							color: courtCount === n ? "#0b84ff" : "#98a0ab",
 							opacity: n < minCourtCount ? 0.3 : 1,
 							boxShadow:
 								courtCount === n ? "0 1px 4px rgba(0,0,0,0.08)" : "none",

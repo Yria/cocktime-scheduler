@@ -42,7 +42,7 @@ export async function dbAssignMatch(
 
 	const { error: pe } = await supabase
 		.from("session_players")
-		.update({ status: "playing", force_mixed: false })
+		.update({ status: "playing", force_mixed: false, force_hard_game: false })
 		.in("id", allIds);
 	if (pe) {
 		console.error("dbAssignMatch players:", pe);
@@ -225,6 +225,23 @@ export async function dbToggleForceMixed(
 
 	if (error) {
 		console.error("dbToggleForceMixed:", error);
+		return null;
+	}
+	return rowToSessionPlayer(data as SessionPlayerRow);
+}
+
+export async function dbToggleForceHardGame(
+	player: SessionPlayer,
+): Promise<SessionPlayer | null> {
+	const { data, error } = await supabase
+		.from("session_players")
+		.update({ force_hard_game: !player.forceHardGame })
+		.eq("id", player.id)
+		.select()
+		.single();
+
+	if (error) {
+		console.error("dbToggleForceHardGame:", error);
 		return null;
 	}
 	return rowToSessionPlayer(data as SessionPlayerRow);

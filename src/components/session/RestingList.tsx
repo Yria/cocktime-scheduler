@@ -68,16 +68,15 @@ const RestingList = memo(function RestingList({
 							/>
 						</svg>
 					</div>
-					<span style={{ fontSize: 16, fontWeight: 600, color: "#0f1724" }}>
+					<span className="text-[#0f1724] dark:text-white" style={{ fontSize: 16, fontWeight: 600 }}>
 						휴식중
 					</span>
 				</div>
 				<span
+					className="text-[#64748b] dark:text-[rgba(235,235,245,0.5)] bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.08)]"
 					style={{
 						fontSize: 12,
 						fontWeight: 600,
-						color: "#64748b",
-						background: "rgba(241,245,249,1)",
 						borderRadius: 99,
 						padding: "2px 8px",
 					}}
@@ -100,17 +99,15 @@ const RestingList = memo(function RestingList({
 						key={p.id}
 						type="button"
 						onClick={() => onToggleResting(p.id)}
+						className="bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.1)] text-[#98a0ab] dark:text-[rgba(235,235,245,0.75)] border border-[rgba(0,0,0,0.04)] dark:border-[rgba(255,255,255,0.08)]"
 						style={{
 							display: "inline-flex",
 							alignItems: "center",
 							gap: 6,
-							background: "rgba(241,245,249,1)",
-							border: "1px solid rgba(0,0,0,0.04)",
 							borderRadius: 12,
 							padding: "8px 12px",
 							fontSize: 14,
 							fontWeight: 500,
-							color: "#98a0ab",
 							cursor: "pointer",
 						}}
 					>
