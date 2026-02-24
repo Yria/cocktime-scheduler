@@ -397,7 +397,7 @@ export default function SessionSetup({ onStart }: Props) {
 	return (
 		<div
 			className="md:max-w-sm md:mx-auto bg-[#fafbff] dark:bg-[#0f172a]"
-			style={{ minHeight: "100dvh" }}
+			style={{ minHeight: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
 		>
 			{/* Header */}
 			<div
@@ -452,22 +452,26 @@ export default function SessionSetup({ onStart }: Props) {
 					openEdit={openEdit}
 					removeGuest={removeGuest}
 				/>
-				{/* 하단 고정 바 높이만큼 스페이서 */}
-			<div style={{ height: "calc(68px + max(12px, env(safe-area-inset-bottom)))" }} />
+				{/* 하단 floating 바 높이 스페이서 (safe area는 wrapper paddingBottom으로 처리) */}
+				<div style={{ height: "72px" }} />
 		</div>
 
 			{/* Bottom CTA */}
 			<div
-				className="bg-white dark:bg-[#1c1c1e] border-t border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]"
 				style={{
 					position: "fixed",
 					bottom: 0,
 					left: "50%",
 					transform: "translateX(-50%)",
-					width: "100%",
-					maxWidth: 384,
-					padding: "12px 16px",
-					paddingBottom: "max(12px, env(safe-area-inset-bottom))",
+					width: "var(--glass-bar-width)",
+					padding: "10px 16px",
+					background: "var(--lq-floating-bg)",
+					backdropFilter: "blur(20px) saturate(180%)",
+					WebkitBackdropFilter: "blur(20px) saturate(180%)",
+					border: "1px solid var(--lq-floating-border)",
+					borderRadius: 20,
+					boxShadow: "var(--lq-floating-shadow)",
+					zIndex: 50,
 				}}
 			>
 				<button

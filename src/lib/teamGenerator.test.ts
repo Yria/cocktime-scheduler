@@ -22,6 +22,7 @@ function makePlayer(
 		gameCount?: number;
 		mixedCount?: number;
 		forceMixed?: boolean;
+		forceHardGame?: boolean;
 		allowMixedSingle?: boolean;
 	} = {},
 ): SessionPlayer {
@@ -45,6 +46,7 @@ function makePlayer(
 		allowMixedSingle: opts.allowMixedSingle ?? false,
 		status: "waiting",
 		forceMixed: opts.forceMixed ?? false,
+		forceHardGame: opts.forceHardGame ?? false,
 		gameCount: opts.gameCount ?? 0,
 		mixedCount: opts.mixedCount ?? 0,
 		waitSince: null,

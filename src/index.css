@@ -62,13 +62,37 @@
 /* ── Typography & Global ───────────────────────────────────── */
 body {
 	margin: 0;
-	background-color: #fafbff; /* 페이지 컨테이너와 동일 — safe area/오버스크롤 일치 */
+	background-color: #fafbff;
 	color: var(--text-primary);
 	font-feature-settings: "ss01", "ss02", "cv01";
 }
 
 .dark body {
 	background-color: #0f172a;
+}
+
+/* PC(md+)에서는 body 배경을 다르게 — 모바일 뷰가 카드처럼 보이도록 */
+@media (min-width: 768px) {
+	body {
+		background-color: #c8d8ee;
+	}
+	.dark body {
+		background-color: #04060f;
+	}
+}
+
+/* ── Fixed bottom bar widths ───────────────────────────────── */
+/* full: 768px 미만 = 100vw / 768px 이상 = 384px (컨테이너와 동일) */
+/* glass: full에서 좌우 16px씩 뺀 값 (floating 덮개용) */
+:root {
+	--bottom-bar-width: 100vw;
+	--glass-bar-width: calc(100vw - 32px);
+}
+@media (min-width: 768px) {
+	:root {
+		--bottom-bar-width: 384px;
+		--glass-bar-width: 352px;
+	}
 }
 
 h1,
@@ -125,6 +149,28 @@ h4,
 	-webkit-backdrop-filter: blur(8px);
 	border: 1px solid var(--border-light);
 	border-radius: 16px;
+}
+
+/* ── Floating Bar (Liquid Glass) ───────────────────────────── */
+:root {
+	--lq-floating-bg: linear-gradient(
+		135deg,
+		rgba(255, 255, 255, 0.22),
+		rgba(255, 255, 255, 0.08)
+	);
+	--lq-floating-border: rgba(255, 255, 255, 0.28);
+	--lq-floating-shadow:
+		0 8px 32px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.dark {
+	--lq-floating-bg: linear-gradient(
+		135deg,
+		rgba(255, 255, 255, 0.12),
+		rgba(255, 255, 255, 0.04)
+	);
+	--lq-floating-border: rgba(255, 255, 255, 0.16);
+	--lq-floating-shadow:
+		0 8px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 /* ── Header & Bar ──────────────────────────────────────────── */
@@ -419,16 +465,34 @@ h4,
 
 /* ── Overlays ──────────────────────────────────────────────── */
 .lq-overlay {
-	background: rgba(0, 0, 0, 0.2);
-	backdrop-filter: blur(4px);
-	-webkit-backdrop-filter: blur(4px);
+	background: rgba(0, 0, 0, 0.25);
+	backdrop-filter: blur(8px) saturate(120%);
+	-webkit-backdrop-filter: blur(8px) saturate(120%);
 }
 
 .lq-sheet {
-	background: var(--mat-thick);
-	backdrop-filter: blur(50px) saturate(180%);
-	-webkit-backdrop-filter: blur(50px) saturate(180%);
-	box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.12);
+	background: linear-gradient(
+		160deg,
+		rgba(255, 255, 255, 0.82),
+		rgba(255, 255, 255, 0.65)
+	);
+	backdrop-filter: blur(40px) saturate(200%);
+	-webkit-backdrop-filter: blur(40px) saturate(200%);
+	border: 1px solid rgba(255, 255, 255, 0.45);
+	box-shadow:
+		0 -8px 40px rgba(0, 0, 0, 0.08),
+		inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.dark .lq-sheet {
+	background: linear-gradient(
+		160deg,
+		rgba(30, 30, 44, 0.72),
+		rgba(20, 20, 32, 0.62)
+	);
+	border: 1px solid rgba(255, 255, 255, 0.13);
+	box-shadow:
+		0 -8px 40px rgba(0, 0, 0, 0.5),
+		inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 /* ── Scrollbar ─────────────────────────────────────────────── */

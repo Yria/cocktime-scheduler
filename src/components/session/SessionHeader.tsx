@@ -13,7 +13,7 @@ export default function SessionHeader({
 
 	return (
 		<div
-			className="flex items-center justify-between px-4 bg-white dark:bg-[#1c1c1e] border-b border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]"
+			className="flex items-center justify-between px-4 bg-white dark:bg-[#1c1c1e] border-b border-[rgba(0,0,0,0.15)] dark:border-[rgba(255,255,255,0.18)]"
 			style={{
 				position: "sticky",
 				top: 0,

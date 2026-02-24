@@ -171,7 +171,7 @@ export default function App() {
 	}
 
 	return (
-		<div className="md:max-w-sm md:mx-auto">
+		<div className="md:max-w-sm md:mx-auto md:shadow-[0_0_80px_rgba(0,0,0,0.4)]">
 			<Routes>
 				<Route path="/" element={<Home onStart={handleHomeStart} />} />
 				<Route

@@ -21,6 +21,7 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 			gameCount: 0,
 			mixedCount: 0,
 			forceMixed: false,
+			forceHardGame: false,
 			allowMixedSingle: false,
 			waitSince: new Date().toISOString(),
 		}));

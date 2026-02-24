@@ -15,18 +15,22 @@ export default function SessionControls({
 }: SessionControlsProps) {
 	return (
 		<div
-			className="bg-white dark:bg-[#1c1c1e] border-t border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]"
 			style={{
 				position: "fixed",
 				bottom: 0,
 				left: "50%",
 				transform: "translateX(-50%)",
-				width: "100%",
-				maxWidth: 384,
-				padding: "12px 16px",
-				paddingBottom: "max(12px, env(safe-area-inset-bottom))",
+				width: "var(--glass-bar-width)",
+				padding: "10px 16px",
 				display: "flex",
-				gap: 12,
+				gap: 8,
+				background: "var(--lq-floating-bg)",
+				backdropFilter: "blur(20px) saturate(180%)",
+				WebkitBackdropFilter: "blur(20px) saturate(180%)",
+				border: "1px solid var(--lq-floating-border)",
+				borderRadius: 20,
+				boxShadow: "var(--lq-floating-shadow)",
+				zIndex: 50,
 			}}
 		>
 			{/* 예약 생성 */}
@@ -41,7 +45,7 @@ export default function SessionControls({
 				}
 				style={{
 					flex: 1,
-					borderRadius: 8,
+					borderRadius: 12,
 					padding: "13px 6px",
 					fontSize: 15,
 					fontWeight: 600,
@@ -70,32 +74,9 @@ export default function SessionControls({
 						strokeWidth="1.5"
 						fill="none"
 					/>
-					<line
-						x1="3"
-						y1="8"
-						x2="17"
-						y2="8"
-						stroke="currentColor"
-						strokeWidth="1.5"
-					/>
-					<line
-						x1="7"
-						y1="2"
-						x2="7"
-						y2="6"
-						stroke="currentColor"
-						strokeWidth="1.5"
-						strokeLinecap="round"
-					/>
-					<line
-						x1="13"
-						y1="2"
-						x2="13"
-						y2="6"
-						stroke="currentColor"
-						strokeWidth="1.5"
-						strokeLinecap="round"
-					/>
+					<line x1="3" y1="8" x2="17" y2="8" stroke="currentColor" strokeWidth="1.5" />
+					<line x1="7" y1="2" x2="7" y2="6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+					<line x1="13" y1="2" x2="13" y2="6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
 				</svg>
 				예약 생성
 			</button>
@@ -109,7 +90,7 @@ export default function SessionControls({
 					flex: 2,
 					background: canGenerate ? "#0b84ff" : "rgba(11,132,255,0.4)",
 					color: "#ffffff",
-					borderRadius: 8,
+					borderRadius: 12,
 					padding: "14px 6px",
 					fontSize: 15,
 					fontWeight: 600,

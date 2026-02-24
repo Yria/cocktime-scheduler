@@ -60,7 +60,7 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 	return (
 		<div
 			className="md:max-w-sm md:mx-auto bg-[#fafbff] dark:bg-[#0f172a]"
-			style={{ minHeight: "100dvh" }}
+			style={{ minHeight: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
 		>
 			<SessionHeader
 				onBack={onBack}
@@ -107,8 +107,8 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 
 				<RestingList resting={resting} onToggleResting={toggleResting} />
 
-				{/* 하단 고정 바 높이만큼 스페이서 */}
-				<div style={{ height: "calc(60px + max(12px, env(safe-area-inset-bottom)))" }} />
+				{/* 하단 floating 바 높이 스페이서 (safe area는 wrapper paddingBottom으로 처리) */}
+				<div style={{ height: "68px" }} />
 			</div>
 
 			<SessionControls
