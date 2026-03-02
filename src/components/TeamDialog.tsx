@@ -1,11 +1,16 @@
-import type { Court, GeneratedTeam } from "../types";
+import { useState } from "react";
+import type { Court, GeneratedTeam, PairHistory, SessionPlayer } from "../types";
 import ModalSheet from "./common/ModalSheet";
+import PlayerReplaceDialog from "./PlayerReplaceDialog";
 
 interface Props {
 	team: GeneratedTeam;
 	courts: Court[];
+	waiting: SessionPlayer[];
+	pairHistory: PairHistory;
 	onAssign: (courtId: number) => void;
 	onCancel: () => void;
+	onPlayerReplace: (oldPlayer: SessionPlayer, newPlayer: SessionPlayer) => void;
 }
 
 const GAME_TYPE_BADGE: Record<string, string> = {
@@ -18,13 +23,36 @@ const GAME_TYPE_BADGE: Record<string, string> = {
 export default function TeamDialog({
 	team,
 	courts,
+	waiting,
+	pairHistory,
 	onAssign,
 	onCancel,
+	onPlayerReplace,
 }: Props) {
 	const emptyCourts = courts.filter((c) => c.match === null);
+	const [selectedPlayer, setSelectedPlayer] = useState<SessionPlayer | null>(null);
+
+	// Get available players for replacement (exclude current team members)
+	const teamPlayerIds = new Set([
+		...team.teamA.map((p) => p.id),
+		...team.teamB.map((p) => p.id),
+	]);
+	const availablePlayers = waiting.filter((p) => !teamPlayerIds.has(p.id));
+
+	const handlePlayerClick = (player: SessionPlayer) => {
+		setSelectedPlayer(player);
+	};
+
+	const handleReplace = (newPlayer: SessionPlayer) => {
+		if (selectedPlayer) {
+			onPlayerReplace(selectedPlayer, newPlayer);
+			setSelectedPlayer(null);
+		}
+	};
 
 	return (
-		<ModalSheet position="bottom" onClose={onCancel}>
+		<>
+			<ModalSheet position="bottom" onClose={onCancel}>
 			{/* Header */}
 			<div className="flex items-center justify-between px-5 pt-5 pb-4">
 				<h3 className="font-bold text-gray-800 dark:text-white text-lg">
@@ -45,9 +73,11 @@ export default function TeamDialog({
 						</p>
 						<div className="flex gap-2">
 							{team.teamA.map((p) => (
-								<div
+								<button
+									type="button"
 									key={p.id}
-									className="flex-1 glass-item rounded-xl p-3 text-center"
+									onClick={() => handlePlayerClick(p)}
+									className="flex-1 glass-item rounded-xl p-3 text-center hover:bg-[rgba(0,0,0,0.02)] dark:hover:bg-[rgba(255,255,255,0.08)] transition-colors cursor-pointer"
 								>
 									<p className="font-bold text-gray-800 dark:text-white text-sm">
 										{p.name}
@@ -63,7 +93,7 @@ export default function TeamDialog({
 											}}
 										/>
 									</div>
-								</div>
+								</button>
 							))}
 						</div>
 					</div>
@@ -89,9 +119,11 @@ export default function TeamDialog({
 						</p>
 						<div className="flex gap-2">
 							{team.teamB.map((p) => (
-								<div
+								<button
+									type="button"
 									key={p.id}
-									className="flex-1 glass-item rounded-xl p-3 text-center"
+									onClick={() => handlePlayerClick(p)}
+									className="flex-1 glass-item rounded-xl p-3 text-center hover:bg-[rgba(0,0,0,0.02)] dark:hover:bg-[rgba(255,255,255,0.08)] transition-colors cursor-pointer"
 								>
 									<p className="font-bold text-gray-800 dark:text-white text-sm">
 										{p.name}
@@ -107,7 +139,7 @@ export default function TeamDialog({
 											}}
 										/>
 									</div>
-								</div>
+								</button>
 							))}
 						</div>
 					</div>
@@ -148,5 +180,16 @@ export default function TeamDialog({
 				</button>
 			</div>
 		</ModalSheet>
+
+			{selectedPlayer && (
+				<PlayerReplaceDialog
+					selectedPlayer={selectedPlayer}
+					availablePlayers={availablePlayers}
+					pairHistory={pairHistory}
+					onReplace={handleReplace}
+					onCancel={() => setSelectedPlayer(null)}
+				/>
+			)}
+		</>
 	);
 }

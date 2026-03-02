@@ -59,6 +59,10 @@ export type BroadcastPayload =
 				addedPlayers: SessionPlayer[];
 				removedPlayerIds: string[];
 			};
+	  }
+	| {
+			event: "session_refresh_required";
+			payload: Record<string, never>;
 	  };
 
 export function createBroadcastChannel(sessionId: number): RealtimeChannel {

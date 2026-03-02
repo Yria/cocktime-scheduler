@@ -1,12 +1,13 @@
 import type { Player } from "../../types";
 import { PlayerRow } from "./PlayerRow";
 
-export type GenderFilter = "all" | "M" | "F";
+export type GenderFilter = "all" | "M" | "F" | "selected";
 
 const GENDER_FILTER_LABELS: Record<GenderFilter, string> = {
 	all: "전체",
 	M: "남자",
 	F: "여자",
+	selected: "참여자",
 };
 
 interface Props {
@@ -130,8 +131,8 @@ export function PlayerSelectionList({
 					}}
 				/>
 
-				<div style={{ display: "flex", gap: 6 }}>
-					{(["all", "M", "F"] as GenderFilter[]).map((g) => (
+				<div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+					{(["all", "M", "F", "selected"] as GenderFilter[]).map((g) => (
 						<button
 							type="button"
 							key={g}

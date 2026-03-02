@@ -1,3 +1,4 @@
+import type { SessionPlayer } from "../types";
 import { useSessionState } from "../hooks/useSessionState";
 import { useAppStore } from "../store/appStore";
 import CourtList from "./session/CourtList";
@@ -53,9 +54,29 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 		modalPlayers,
 		playingCount,
 		totalCount,
+		pairHistory,
 	} = useSessionState({
 		onEnd,
 	});
+
+	const handlePlayerReplace = (oldPlayer: SessionPlayer, newPlayer: SessionPlayer) => {
+		if (!pendingTeam) return;
+
+		// Replace player in team
+		const newTeamA = pendingTeam.teamA.map((p) =>
+			p.id === oldPlayer.id ? newPlayer : p
+		) as [SessionPlayer, SessionPlayer];
+
+		const newTeamB = pendingTeam.teamB.map((p) =>
+			p.id === oldPlayer.id ? newPlayer : p
+		) as [SessionPlayer, SessionPlayer];
+
+		setPendingTeam({
+			...pendingTeam,
+			teamA: newTeamA,
+			teamB: newTeamB,
+		});
+	};
 
 	return (
 		<div
@@ -126,11 +147,14 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 				<TeamDialog
 					team={pendingTeam}
 					courts={courts}
+					waiting={waiting}
+					pairHistory={pairHistory}
 					onAssign={handleAssign}
 					onCancel={() => {
 						setPendingTeam(null);
 						setPendingGroupId(null);
 					}}
+					onPlayerReplace={handlePlayerReplace}
 				/>
 			)}
 

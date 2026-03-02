@@ -59,7 +59,6 @@ export async function dbAssignMatch(
 export async function dbCompleteMatch(
 	sessionId: number,
 	match: ActiveMatch,
-	reservedGroups: ReservedGroup[],
 ): Promise<{
 	updatedPlayers: SessionPlayer[];
 	groupUpdates: Array<{ groupId: string; readyIds: string[] }>;
@@ -67,13 +66,22 @@ export async function dbCompleteMatch(
 	const allPlayers = [...match.teamA, ...match.teamB];
 	const isMixed = match.gameType === "혼복";
 
-	// matches 완료 처리
-	const { error: me } = await supabase
+	// matches 완료 처리 (동시성 제어: status='playing'인 경우만 업데이트)
+	const { data: updated, error: me } = await supabase
 		.from("matches")
 		.update({ status: "completed", ended_at: new Date().toISOString() })
-		.eq("id", match.id);
+		.eq("id", match.id)
+		.eq("status", "playing") // 🔥 이미 완료된 경기는 차단
+		.select();
+
 	if (me) {
 		console.error("dbCompleteMatch matches:", me);
+		return null;
+	}
+
+	// 이미 다른 클라이언트가 완료 처리한 경우
+	if (!updated || updated.length === 0) {
+		console.warn("dbCompleteMatch: Match already completed by another client");
 		return null;
 	}
 
@@ -109,8 +117,15 @@ export async function dbCompleteMatch(
 		}
 	}
 
-	// 예약 그룹 소속 여부
-	const reservedMemberIds = new Set(reservedGroups.flatMap((g) => g.memberIds));
+	// 🔥 DB에서 최신 예약 그룹 조회 (메모리 상태가 아닌 실시간 DB 조회로 race condition 방지)
+	const { data: latestGroups } = await supabase
+		.from("reserved_groups")
+		.select("id, member_ids, ready_ids")
+		.eq("session_id", sessionId);
+
+	const reservedMemberIds = new Set(
+		(latestGroups || []).flatMap((g) => g.member_ids as string[]),
+	);
 	const toWaiting = allPlayers.filter((p) => !reservedMemberIds.has(p.id));
 	const toReservedBack = allPlayers.filter((p) => reservedMemberIds.has(p.id));
 
@@ -139,6 +154,7 @@ export async function dbCompleteMatch(
 	// 예약 그룹으로 복귀
 	for (const p of toReservedBack) {
 		const updates: Record<string, unknown> = {
+			status: "reserved", // 🔥 예약 그룹 소속이면 명시적으로 reserved 상태로 전환
 			game_count: p.gameCount + 1,
 		};
 		if (isMixed && p.gender === "M") {
@@ -153,19 +169,20 @@ export async function dbCompleteMatch(
 		if (data) updatedPlayers.push(rowToSessionPlayer(data as SessionPlayerRow));
 	}
 
-	// reserved_groups ready_ids 업데이트
+	// reserved_groups ready_ids 업데이트 (🔥 최신 DB 데이터 사용)
 	const groupUpdates: Array<{ groupId: string; readyIds: string[] }> = [];
-	for (const group of reservedGroups) {
+	for (const dbGroup of latestGroups || []) {
 		const backIds = toReservedBack
-			.filter((p) => group.memberIds.includes(p.id))
+			.filter((p) => (dbGroup.member_ids as string[]).includes(p.id))
 			.map((p) => p.id);
 		if (backIds.length > 0) {
-			const newReadyIds = [...new Set([...group.readyIds, ...backIds])];
+			const currentReadyIds = (dbGroup.ready_ids as string[]) || [];
+			const newReadyIds = [...new Set([...currentReadyIds, ...backIds])];
 			await supabase
 				.from("reserved_groups")
 				.update({ ready_ids: newReadyIds })
-				.eq("id", group.id);
-			groupUpdates.push({ groupId: group.id, readyIds: newReadyIds });
+				.eq("id", dbGroup.id);
+			groupUpdates.push({ groupId: dbGroup.id as string, readyIds: newReadyIds });
 		}
 	}
 

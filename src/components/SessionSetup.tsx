@@ -168,18 +168,20 @@ export default function SessionSetup({ onStart }: Props) {
 	const filtered = useMemo(() => {
 		return players.filter((p) => {
 			const matchName = p.name.includes(search);
-			const matchGender = genderFilter === "all" || p.gender === genderFilter;
-			return matchName && matchGender;
+			const matchGender = genderFilter === "all" || genderFilter === "selected" || p.gender === genderFilter;
+			const matchSelected = genderFilter !== "selected" || selected.has(p.id);
+			return matchName && matchGender && matchSelected;
 		});
-	}, [players, search, genderFilter]);
+	}, [players, search, genderFilter, selected]);
 
 	const filteredGuests = useMemo(() => {
 		return guests.filter((p) => {
 			const matchName = p.name.includes(search);
-			const matchGender = genderFilter === "all" || p.gender === genderFilter;
-			return matchName && matchGender;
+			const matchGender = genderFilter === "all" || genderFilter === "selected" || p.gender === genderFilter;
+			const matchSelected = genderFilter !== "selected" || selected.has(p.id);
+			return matchName && matchGender && matchSelected;
 		});
-	}, [guests, search, genderFilter]);
+	}, [guests, search, genderFilter, selected]);
 
 	const allPlayers = useMemo(() => [...players, ...guests], [players, guests]);
 
@@ -187,6 +189,20 @@ export default function SessionSetup({ onStart }: Props) {
 		() => allPlayers.filter((p) => p.gender === "F" && selected.has(p.id)),
 		[allPlayers, selected],
 	);
+
+	// selected Set을 allPlayers에 존재하는 ID로만 정리
+	useEffect(() => {
+		if (allPlayers.length === 0) return;
+		const validIds = new Set(allPlayers.map(p => p.id));
+		setSelected((prev) => {
+			const filtered = new Set([...prev].filter(id => validIds.has(id)));
+			// Set이 변경되지 않았으면 동일한 객체 반환 (무한 루프 방지)
+			if (filtered.size === prev.size && [...filtered].every(id => prev.has(id))) {
+				return prev;
+			}
+			return filtered;
+		});
+	}, [allPlayers, setSelected]);
 
 	function togglePlayer(id: string) {
 		if (nonRemovablePlayerIds?.has(id)) return;
@@ -340,6 +356,11 @@ export default function SessionSetup({ onStart }: Props) {
 
 	async function handleStart() {
 		const selectedPlayers = allPlayers.filter((p) => selected.has(p.id));
+
+		console.log(`[handleStart] allPlayers: ${allPlayers.length}명`);
+		console.log(`[handleStart] selected Set: ${selected.size}개`);
+		console.log(`[handleStart] selectedPlayers: ${selectedPlayers.length}명 - [${selectedPlayers.map(p => p.name).join(', ')}]`);
+
 		const validSingleWomanIds = selectedPlayers
 			.filter((p) => p.gender === "F" && singleWomanIds.has(p.id))
 			.map((p) => p.id);

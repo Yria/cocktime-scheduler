@@ -70,6 +70,7 @@ export interface SessionState {
 		addedPlayers: SessionPlayer[],
 		removedPlayerIds: string[],
 	) => void;
+	notifySessionRefresh: () => void;
 
 	// Channel management
 	subscribe: (sessionId: number, onEnd: () => void) => void;
@@ -204,7 +205,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					removedGroupId,
 				},
 			};
-			get().applyBroadcast(payload, () => {});
+			get().applyBroadcast(payload, () => { });
 			sendBroadcast(_channel, payload);
 
 			set({ pendingTeam: null, pendingGroupId: null });
@@ -212,7 +213,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 
 	handleComplete: async (courtId: number) => {
-		const { courts, reservedGroups, _channel } = get();
+		const { courts, _channel } = get();
 		const court = courts.find((c) => c.id === courtId);
 		if (!court?.match || !_channel) return;
 
@@ -220,7 +221,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const sessionId = sessionMeta?.sessionId ?? 0;
 		const match = court.match;
 
-		const result = await dbCompleteMatch(sessionId, match, reservedGroups);
+		const result = await dbCompleteMatch(sessionId, match);
 		if (result && _channel) {
 			const payload: BroadcastPayload = {
 				event: "match_completed",
@@ -234,8 +235,47 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					groupUpdates: result.groupUpdates,
 				},
 			};
-			get().applyBroadcast(payload, () => {});
+			get().applyBroadcast(payload, () => { });
 			sendBroadcast(_channel, payload);
+
+			// Auto-generate team after completing a match if possible
+			// Wait a bit for state to update
+			setTimeout(() => {
+				const state = get();
+				const canAutoGenerate = state.waiting.length >= 4 && state.courts.some((c) => c.match === null);
+				if (canAutoGenerate) {
+					const singleWomanIds = useAppStore.getState().sessionMeta?.singleWomanIds ?? [];
+					const team = generateTeam(
+						state.waiting,
+						state.pairHistory,
+						singleWomanIds,
+						state.lastMixedPlayerIds,
+					);
+					if (team) {
+						const newPlayerIds = [
+							team.teamA[0].id,
+							team.teamA[1].id,
+							team.teamB[0].id,
+							team.teamB[1].id,
+						].sort();
+
+						const matchPlayerIds = [
+							match.teamA[0].id,
+							match.teamA[1].id,
+							match.teamB[0].id,
+							match.teamB[1].id,
+						].sort();
+
+						const isSameMembers =
+							newPlayerIds.length === 4 &&
+							newPlayerIds.every((id, idx) => id === matchPlayerIds[idx]);
+
+						if (!isSameMembers) {
+							set({ pendingTeam: team, pendingGroupId: null });
+						}
+					}
+				}
+			}, 100);
 		}
 	},
 
@@ -254,7 +294,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			event: "player_status_changed",
 			payload: { player: updated },
 		};
-		get().applyBroadcast(payload, () => {});
+		get().applyBroadcast(payload, () => { });
 		sendBroadcast(_channel, payload);
 	},
 
@@ -271,7 +311,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			event: "player_force_mixed_changed",
 			payload: { player: updated },
 		};
-		get().applyBroadcast(payload, () => {});
+		get().applyBroadcast(payload, () => { });
 		sendBroadcast(_channel, payload);
 	},
 
@@ -288,7 +328,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			event: "player_force_hard_game_changed",
 			payload: { player: updated },
 		};
-		get().applyBroadcast(payload, () => {});
+		get().applyBroadcast(payload, () => { });
 		sendBroadcast(_channel, payload);
 	},
 
@@ -327,7 +367,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					event: "group_reserved",
 					payload: { group, reservedPlayerIds: readyIds },
 				};
-				get().applyBroadcast(payload, () => {});
+				get().applyBroadcast(payload, () => { });
 				if (ch) sendBroadcast(ch, payload);
 			}
 		});
@@ -349,7 +389,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				event: "group_disbanded",
 				payload: { groupId, readyPlayers },
 			};
-			get().applyBroadcast(payload, () => {});
+			get().applyBroadcast(payload, () => { });
 			sendBroadcast(_channel, payload);
 		}
 	},
@@ -389,9 +429,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			event: "session_updated",
 			payload: { courtCount, singleWomanIds, addedPlayers, removedPlayerIds },
 		};
-		get().applyBroadcast(payload, () => {});
+		get().applyBroadcast(payload, () => { });
 
 		if (_channel) {
+			sendBroadcast(_channel, payload);
+		}
+	},
+
+	notifySessionRefresh: () => {
+		const { _channel } = get();
+		if (_channel) {
+			const payload: BroadcastPayload = {
+				event: "session_refresh_required",
+				payload: {},
+			};
 			sendBroadcast(_channel, payload);
 		}
 	},
@@ -412,16 +463,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					courts: state.courts.map((c) =>
 						c.id === courtId
 							? {
-									...c,
-									match: {
-										id: matchId,
-										courtId,
-										gameType,
-										teamA,
-										teamB,
-										startedAt: new Date().toISOString(),
-									},
-								}
+								...c,
+								match: {
+									id: matchId,
+									courtId,
+									gameType,
+									teamA,
+									teamB,
+									startedAt: new Date().toISOString(),
+								},
+							}
 							: c,
 					),
 					waiting: state.waiting.filter((p) => !allIds.has(p.id)),
@@ -541,17 +592,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					courts: state.courts.map((c) =>
 						c.match
 							? {
-									...c,
-									match: {
-										...c.match,
-										teamA: c.match.teamA.map((p) =>
-											p.id === player.id ? player : p,
-										) as [SessionPlayer, SessionPlayer],
-										teamB: c.match.teamB.map((p) =>
-											p.id === player.id ? player : p,
-										) as [SessionPlayer, SessionPlayer],
-									},
-								}
+								...c,
+								match: {
+									...c.match,
+									teamA: c.match.teamA.map((p) =>
+										p.id === player.id ? player : p,
+									) as [SessionPlayer, SessionPlayer],
+									teamB: c.match.teamB.map((p) =>
+										p.id === player.id ? player : p,
+									) as [SessionPlayer, SessionPlayer],
+								},
+							}
 							: c,
 					),
 					reservedGroups: state.reservedGroups.map((g) => ({
@@ -590,10 +641,42 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				break;
 			}
 
+			case "session_refresh_required": {
+				// DB 상태를 다시 로드
+				const sessionMeta = useAppStore.getState().sessionMeta;
+				if (sessionMeta) {
+					console.log("[session_refresh_required] DB 상태 다시 로드 중...");
+					import("../lib/supabaseClient")
+						.then(({ fetchSessionSnapshot, snapshotToClientState }) =>
+							fetchSessionSnapshot(sessionMeta.sessionId).then((snapshot) => {
+								if (snapshot) {
+									const clientState = snapshotToClientState(snapshot);
+									get().initialize(clientState);
+									console.log(
+										`[session_refresh_required] 로드 완료 - waiting: ${clientState.waiting.length}명, resting: ${clientState.resting.length}명`,
+									);
+								}
+							}),
+						)
+						.catch((err) => console.error("Failed to refresh session:", err));
+				}
+				break;
+			}
+
 			case "session_updated": {
 				const { courtCount, singleWomanIds, addedPlayers, removedPlayerIds } =
 					ev.payload;
 				const removedSet = new Set(removedPlayerIds);
+
+				console.log("session_updated broadcast received:", {
+					courtCount,
+					singleWomanIdsCount: singleWomanIds.length,
+					addedPlayersCount: addedPlayers.length,
+					removedPlayerIdsCount: removedPlayerIds.length,
+					removedPlayerIds,
+					currentWaitingCount: get().waiting.length,
+					currentRestingCount: get().resting.length,
+				});
 
 				set((state) => ({
 					courts: adjustCourts(state.courts, courtCount) as Court[],

@@ -48,6 +48,7 @@ export function useSessionState({ onEnd }: UseSessionStateProps) {
 	const handleDisbandGroup = useSessionStore((s) => s.handleDisbandGroup);
 	const handleEndSessionAction = useSessionStore((s) => s.handleEndSession);
 	const toggleReservingPlayer = useSessionStore((s) => s.toggleReservingPlayer);
+	const pairHistory = useSessionStore((s) => s.pairHistory);
 
 	useEffect(() => {
 		subscribe(sessionId, onEnd);
@@ -144,5 +145,6 @@ export function useSessionState({ onEnd }: UseSessionStateProps) {
 		playingCount,
 		reservedReadyCount,
 		totalCount,
+		pairHistory,
 	};
 }

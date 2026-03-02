@@ -216,22 +216,19 @@ export const useAppStore = create<AppState>((set, get) => ({
 			);
 			if (!success) return false;
 
-			// 추가된 플레이어는 DB에서 가져온 값 사용 (wait_since 등 서버 값 필요)
+			// DB에서 최신 상태를 가져와서 전체 상태를 다시 초기화
 			const snapshot = await fetchSessionSnapshot(sessionMeta.sessionId);
 			if (!snapshot) return false;
 
 			const clientState = snapshotToClientState(snapshot);
-			const addedPlayers = clientState.waiting.filter(
-				(p) => !currentPlayerIds.has(p.playerId),
-			);
 
-			// sessionStore에 설정 변경 반영 + broadcast로 다른 클라이언트에 전파
-			useSessionStore.getState().syncSettings(
-				settings.courtCount,
-				settings.singleWomanIds,
-				addedPlayers,
-				removedPlayerIds,
-			);
+			console.log(`[updateSession] DB 상태 다시 로드 - waiting: ${clientState.waiting.length}명, resting: ${clientState.resting.length}명`);
+
+			// sessionStore를 DB 상태로 완전히 재초기화
+			useSessionStore.getState().initialize(clientState);
+
+			// 다른 클라이언트에게 "DB 다시 로드하라"는 신호만 전송
+			useSessionStore.getState().notifySessionRefresh();
 
 			set({
 				sessionMeta: {

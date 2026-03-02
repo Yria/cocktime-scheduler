@@ -167,8 +167,14 @@ export async function updateSession(
 	for (const ep of existingPlayers) {
 		const newP = newPlayerMap.get(ep.player_id);
 		if (!newP) {
+			// 새 목록에 없는 플레이어 → 삭제 대상
+			// 단, status가 playing이 아니어야 함
 			if (ep.status !== "playing") {
 				playersToRemoveIds.push(ep.id);
+			} else {
+				console.warn(
+					`Cannot remove player ${ep.name} (${ep.player_id}): currently playing`,
+				);
 			}
 		} else {
 			const allowedMixedSingle =
@@ -190,6 +196,14 @@ export async function updateSession(
 			}
 		}
 	}
+
+	const toRemoveDetails = existingPlayers
+		.filter((ep) => playersToRemoveIds.includes(ep.id))
+		.map((ep) => `${ep.name}(${ep.player_id}, status:${ep.status})`);
+	console.log(`[updateSession] 삭제 대상: ${playersToRemoveIds.length}명 - [${toRemoveDetails.join(', ')}]`);
+
+	// DB에 ON DELETE SET NULL이 설정되어 있으므로 매치 참조 체크 불필요
+	// 삭제 시 매치의 참조만 NULL이 되고 매치 기록은 보존됨
 
 	// add / upsert / delete 병렬 처리
 	const ops: PromiseLike<void>[] = [];
@@ -216,14 +230,26 @@ export async function updateSession(
 		);
 	}
 	if (playersToRemoveIds.length > 0) {
+		console.log(`[updateSession] 실제 삭제 시도: ${playersToRemoveIds.length}개`);
 		ops.push(
 			supabase
 				.from("session_players")
 				.delete()
 				.in("id", playersToRemoveIds)
 				.then((res) => {
-					if (res.error)
-						console.error("session_players delete error:", res.error);
+					if (res.error) {
+						console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+						console.error("❌ session_players 삭제 실패!");
+						console.error("에러 코드:", res.error.code);
+						console.error("에러 메시지:", res.error.message);
+						console.error("에러 상세:", res.error.details);
+						console.error("에러 힌트:", res.error.hint);
+						console.error("삭제 시도한 ID 수:", playersToRemoveIds.length);
+						console.error("삭제 시도한 ID 샘플:", playersToRemoveIds.slice(0, 3));
+						console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+					} else {
+						console.log(`✅ session_players ${playersToRemoveIds.length}개 삭제 성공`);
+					}
 				}),
 		);
 	}
