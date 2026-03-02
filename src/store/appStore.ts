@@ -190,24 +190,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 		const { sessionMeta } = get();
 
 		if (sessionMeta) {
-			// 현재 sessionStore 상태에서 플레이어 ID 목록 수집
-			const { waiting, resting, courts, reservedGroups } =
-				useSessionStore.getState();
-			const currentPlayerIds = new Set([
-				...waiting.map((p) => p.playerId),
-				...resting.map((p) => p.playerId),
-				...courts
-					.flatMap((c) =>
-						c.match ? [...c.match.teamA, ...c.match.teamB] : [],
-					)
-					.map((p) => p.playerId),
-				...reservedGroups.flatMap((g) => g.players).map((p) => p.playerId),
-			]);
-			const selectedIdSet = new Set(selected.map((p) => p.id));
-			const removedPlayerIds = [...currentPlayerIds].filter(
-				(id) => !selectedIdSet.has(id),
-			);
-
 			const success = await updateSession(
 				sessionMeta.sessionId,
 				settings.courtCount,
