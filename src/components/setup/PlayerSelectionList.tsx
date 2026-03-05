@@ -14,7 +14,6 @@ interface Props {
 	allPlayersLength: number;
 	selectedCount: number;
 	guestCount: number;
-	allFilteredSelected: boolean;
 	search: string;
 	setSearch: (s: string) => void;
 	genderFilter: GenderFilter;
@@ -34,7 +33,6 @@ export function PlayerSelectionList({
 	allPlayersLength,
 	selectedCount,
 	guestCount,
-	allFilteredSelected,
 	search,
 	setSearch,
 	genderFilter,
@@ -91,7 +89,7 @@ export function PlayerSelectionList({
 								cursor: "pointer",
 							}}
 						>
-							{allFilteredSelected ? "전체해제" : "전체선택"}
+							{selectedCount > 0 ? "전체 해제" : "전체선택"}
 						</button>
 						<button
 							type="button"

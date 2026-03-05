@@ -1,5 +1,5 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import type { GameType, ReservedGroup, SessionPlayer } from "../../types";
+import type { GameType, ReservedMatch, SessionPlayer } from "../../types";
 import { supabase } from "./client";
 
 export type BroadcastPayload =
@@ -24,6 +24,24 @@ export type BroadcastPayload =
 				teamB: [SessionPlayer, SessionPlayer];
 				updatedPlayers: SessionPlayer[];
 				groupUpdates: Array<{ groupId: string; readyIds: string[] }>;
+				promotedMatch?: ReservedMatch;
+			};
+	  }
+	| {
+			event: "team_reserved";
+			payload: {
+				matchId: string;
+				courtId: number;
+				gameType: GameType;
+				teamA: [SessionPlayer, SessionPlayer];
+				teamB: [SessionPlayer, SessionPlayer];
+			};
+	  }
+	| {
+			event: "reservation_cancelled";
+			payload: {
+				matchId: string;
+				courtId: number;
 			};
 	  }
 	| {
@@ -41,14 +59,6 @@ export type BroadcastPayload =
 	| {
 			event: "player_updated";
 			payload: { player: SessionPlayer };
-	  }
-	| {
-			event: "group_reserved";
-			payload: { group: ReservedGroup; reservedPlayerIds: string[] };
-	  }
-	| {
-			event: "group_disbanded";
-			payload: { groupId: string; readyPlayers: SessionPlayer[] };
 	  }
 	| { event: "session_ended" }
 	| {

@@ -1,3 +1,4 @@
+import { disassemble, getChoseong } from "es-hangul";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_SKILLS } from "../lib/constants";
 import {
@@ -25,24 +26,14 @@ import {
 } from "./setup/PlayerSelectionList";
 import { SingleWomanSelector } from "./setup/SingleWomanSelector";
 
-const devSelectedNames = import.meta.env.VITE_DEV_SELECTED
-	? new Set(
-			(import.meta.env.VITE_DEV_SELECTED as string)
-				.split(",")
-				.map((n) => n.trim()),
-		)
-	: null;
-
 export default function SessionSetup({ onStart }: Props) {
 	const allStorePlayers = useAppStore((s) => s.allPlayers);
-	const savedNames = useAppStore((s) => s.savedNames);
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
 	const updatePlayerAction = useAppStore((s) => s.updatePlayerAction);
 
 	const sessionCourts = useSessionStore((s) => s.courts);
 	const sessionWaiting = useSessionStore((s) => s.waiting);
 	const sessionResting = useSessionStore((s) => s.resting);
-	const sessionReservedGroups = useSessionStore((s) => s.reservedGroups);
 
 	const guests = useAppStore((s) => s.setupGuests);
 	const setGuests = useAppStore((s) => s.setSetupGuests);
@@ -56,13 +47,11 @@ export default function SessionSetup({ onStart }: Props) {
 		const playingPlayers = sessionCourts.flatMap((c) =>
 			c.match ? [...c.match.teamA, ...c.match.teamB] : [],
 		);
-		const reservedPlayers = sessionReservedGroups.flatMap((g) => g.players);
 		const playerMap = new Map<string, Player>();
 		for (const sp of [
 			...sessionWaiting,
 			...sessionResting,
 			...playingPlayers,
-			...reservedPlayers,
 		]) {
 			if (!playerMap.has(sp.playerId) && !guestIdSet.has(sp.playerId)) {
 				playerMap.set(sp.playerId, {
@@ -81,7 +70,6 @@ export default function SessionSetup({ onStart }: Props) {
 		sessionCourts,
 		sessionWaiting,
 		sessionResting,
-		sessionReservedGroups,
 	]);
 
 	const { nonRemovablePlayerIds, minCourtCount } = useMemo(() => {
@@ -95,36 +83,36 @@ export default function SessionSetup({ onStart }: Props) {
 		}
 		return { nonRemovablePlayerIds, minCourtCount };
 	}, [sessionMeta, sessionCourts]);
-	const isSetupInitialized = useAppStore((s) => s.setupInitialized);
-	const setSetupInitialized = useAppStore((s) => s.setSetupInitialized);
-	const courtCount = useAppStore((s) => s.setupCourtCount);
-	const setCourtCount = useAppStore((s) => s.setSetupCourtCount);
-	const singleWomanIds = useAppStore((s) => s.setupSingleWomanIds);
-	const setSingleWomanIds = useAppStore((s) => s.setSetupSingleWomanIds);
-	const selected = useAppStore((s) => s.setupSelectedIds);
-	const setSelected = useAppStore((s) => s.setSetupSelectedIds);
-
+	// 로컬 상태 (SessionSetup에서만 사용)
+	const [isSetupInitialized, setIsSetupInitialized] = useState(false);
+	const [courtCount, setCourtCount] = useState(2);
+	const [singleWomanIds, setSingleWomanIds] = useState<Set<string>>(new Set());
+	const [selected, setSelected] = useState<Set<string>>(new Set());
 	const [search, setSearch] = useState("");
 	const [genderFilter, setGenderFilter] = useState<GenderFilter>("all");
 
+	// 초기 선택 설정 (최초 1회만)
 	useEffect(() => {
 		if (!isSetupInitialized && players.length > 0) {
-			const namesToSelect = savedNames ?? devSelectedNames;
-			const initialSelected = namesToSelect
-				? new Set(
-						players.filter((p) => namesToSelect.has(p.name)).map((p) => p.id),
-					)
-				: new Set(players.map((p) => p.id));
-			setSelected(initialSelected);
-			setSetupInitialized(true);
+			if (sessionMeta) {
+				// 세션 업데이트 모드: 기존 세션 참가자 + 설정 복원
+				const sessionPlayerIds = new Set([
+					...sessionWaiting.map((p) => p.playerId),
+					...sessionResting.map((p) => p.playerId),
+					...sessionCourts.flatMap((c) =>
+						c.match ? [...c.match.teamA, ...c.match.teamB].map((p) => p.playerId) : [],
+					),
+				]);
+				setSelected(sessionPlayerIds);
+				setCourtCount(sessionMeta.courtCount);
+				setSingleWomanIds(new Set(sessionMeta.singleWomanIds));
+			} else {
+				setSelected(new Set());
+			}
+
+			setIsSetupInitialized(true);
 		}
-	}, [
-		isSetupInitialized,
-		players,
-		savedNames,
-		setSelected,
-		setSetupInitialized,
-	]);
+	}, [isSetupInitialized, players, sessionMeta, sessionWaiting, sessionResting, sessionCourts]);
 
 	// Guest state
 	const [showGuestModal, setShowGuestModal] = useState(false);
@@ -165,23 +153,38 @@ export default function SessionSetup({ onStart }: Props) {
 	} | null>(null);
 	const pendingSaveRef = useRef<(() => Promise<void>) | null>(null);
 
+	const matchesSearch = useCallback(
+		(name: string) => {
+			if (!search) return true;
+			if (name.includes(search)) return true;
+			// 초성 검색: 겹자음(ㄳ→ㄱㅅ) 분리 후 비교
+			const decomposed = disassemble(search);
+			const isAllChoseong = /^[ㄱ-ㅎ]+$/.test(decomposed);
+			if (isAllChoseong) {
+				return getChoseong(name).includes(decomposed);
+			}
+			return false;
+		},
+		[search],
+	);
+
 	const filtered = useMemo(() => {
 		return players.filter((p) => {
-			const matchName = p.name.includes(search);
+			const matchName = matchesSearch(p.name);
 			const matchGender = genderFilter === "all" || genderFilter === "selected" || p.gender === genderFilter;
 			const matchSelected = genderFilter !== "selected" || selected.has(p.id);
 			return matchName && matchGender && matchSelected;
 		});
-	}, [players, search, genderFilter, selected]);
+	}, [players, matchesSearch, genderFilter, selected]);
 
 	const filteredGuests = useMemo(() => {
 		return guests.filter((p) => {
-			const matchName = p.name.includes(search);
+			const matchName = matchesSearch(p.name);
 			const matchGender = genderFilter === "all" || genderFilter === "selected" || p.gender === genderFilter;
 			const matchSelected = genderFilter !== "selected" || selected.has(p.id);
 			return matchName && matchGender && matchSelected;
 		});
-	}, [guests, search, genderFilter, selected]);
+	}, [guests, matchesSearch, genderFilter, selected]);
 
 	const allPlayers = useMemo(() => [...players, ...guests], [players, guests]);
 
@@ -190,19 +193,19 @@ export default function SessionSetup({ onStart }: Props) {
 		[allPlayers, selected],
 	);
 
-	// selected Set을 allPlayers에 존재하는 ID로만 정리
+	// selected Set을 allPlayers에 존재하는 ID로만 정리 (플레이어 목록 변경 시)
 	useEffect(() => {
 		if (allPlayers.length === 0) return;
 		const validIds = new Set(allPlayers.map(p => p.id));
 		setSelected((prev) => {
 			const filtered = new Set([...prev].filter(id => validIds.has(id)));
-			// Set이 변경되지 않았으면 동일한 객체 반환 (무한 루프 방지)
-			if (filtered.size === prev.size && [...filtered].every(id => prev.has(id))) {
+			// 변경사항이 없으면 동일한 객체 반환
+			if (filtered.size === prev.size) {
 				return prev;
 			}
 			return filtered;
 		});
-	}, [allPlayers, setSelected]);
+	}, [allPlayers.length]); // length만 체크하여 플레이어 추가/삭제 시에만 실행
 
 	function togglePlayer(id: string) {
 		if (nonRemovablePlayerIds?.has(id)) return;
@@ -216,19 +219,24 @@ export default function SessionSetup({ onStart }: Props) {
 
 	function toggleAll() {
 		const allFilteredPlayers = [...filtered, ...filteredGuests];
-		const allSelected = allFilteredPlayers.every((p) => selected.has(p.id));
 		setSelected((prev) => {
-			const next = new Set(prev);
-			if (allSelected) {
-				allFilteredPlayers.forEach((p) => {
-					if (!nonRemovablePlayerIds?.has(p.id)) {
-						next.delete(p.id);
+			const hasAnySelected = prev.size > 0;
+
+			if (hasAnySelected) {
+				// 전체 해제: 모든 플레이어 해제 (제거 불가능한 플레이어 제외)
+				const next = new Set<string>();
+				allPlayers.forEach((p) => {
+					if (nonRemovablePlayerIds?.has(p.id)) {
+						next.add(p.id);
 					}
 				});
+				return next;
 			} else {
+				// 전체 선택: 현재 필터된 플레이어만 선택
+				const next = new Set(prev);
 				allFilteredPlayers.forEach((p) => next.add(p.id));
+				return next;
 			}
-			return next;
 		});
 	}
 
@@ -357,10 +365,6 @@ export default function SessionSetup({ onStart }: Props) {
 	async function handleStart() {
 		const selectedPlayers = allPlayers.filter((p) => selected.has(p.id));
 
-		console.log(`[handleStart] allPlayers: ${allPlayers.length}명`);
-		console.log(`[handleStart] selected Set: ${selected.size}개`);
-		console.log(`[handleStart] selectedPlayers: ${selectedPlayers.length}명 - [${selectedPlayers.map(p => p.name).join(', ')}]`);
-
 		const validSingleWomanIds = selectedPlayers
 			.filter((p) => p.gender === "F" && singleWomanIds.has(p.id))
 			.map((p) => p.id);
@@ -411,9 +415,6 @@ export default function SessionSetup({ onStart }: Props) {
 	}
 
 	const selectedCount = allPlayers.filter((p) => selected.has(p.id)).length;
-	const allFilteredSelected =
-		[...filtered, ...filteredGuests].length > 0 &&
-		[...filtered, ...filteredGuests].every((p) => selected.has(p.id));
 
 	return (
 		<div
@@ -458,7 +459,6 @@ export default function SessionSetup({ onStart }: Props) {
 					allPlayersLength={allPlayers.length}
 					selectedCount={selectedCount}
 					guestCount={guests.length}
-					allFilteredSelected={allFilteredSelected}
 					search={search}
 					setSearch={setSearch}
 					genderFilter={genderFilter}

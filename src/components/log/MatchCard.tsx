@@ -1,6 +1,14 @@
 import type { MatchLogEntry } from "../../lib/supabase/api";
-import type { GameType } from "../../types";
+import type { GameType, PlayerSkills, SkillLevel } from "../../types";
 import SharedPlayerBadge from "../shared/PlayerBadge";
+
+// teamGenerator.ts의 skillScore와 동일
+const SKILL_VALUES: Record<SkillLevel, number> = { O: 3, V: 2, X: 1 };
+function getSkillScore(skills?: PlayerSkills): number {
+	if (!skills) return 0;
+	const values = Object.values(skills) as SkillLevel[];
+	return values.reduce((sum, s) => sum + SKILL_VALUES[s], 0) / values.length;
+}
 
 const GAME_TYPE_CONFIG: Record<GameType, { bg: string; color: string }> = {
 	혼복: { bg: "#fce7f3", color: "#9d174d" },
@@ -82,7 +90,7 @@ export default function MatchCard({
 					</span>
 					<div style={{ display: "flex", flexWrap: "wrap", gap: 6, flex: 1 }}>
 						{log.teamA.map((p) => (
-							<SharedPlayerBadge key={p.name} name={p.name} gender={p.gender} />
+							<SharedPlayerBadge key={p.name} name={p.name} gender={p.gender} skillScore={getSkillScore(p.skills)} />
 						))}
 					</div>
 				</div>
@@ -124,7 +132,7 @@ export default function MatchCard({
 					</span>
 					<div style={{ display: "flex", flexWrap: "wrap", gap: 6, flex: 1 }}>
 						{log.teamB.map((p) => (
-							<SharedPlayerBadge key={p.name} name={p.name} gender={p.gender} />
+							<SharedPlayerBadge key={p.name} name={p.name} gender={p.gender} skillScore={getSkillScore(p.skills)} />
 						))}
 					</div>
 				</div>

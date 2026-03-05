@@ -1,4 +1,4 @@
-import type { Court, PairHistory, SessionPlayer } from "../../types";
+import type { Court, GeneratedTeam, PairHistory, SessionPlayer } from "../../types";
 import type {
 	ClientSessionState,
 	PairHistoryRow,
@@ -46,6 +46,7 @@ export function snapshotToClientState(
 	const courts: Court[] = Array.from({ length: courtCount }, (_, i) => ({
 		id: i + 1,
 		match: null,
+		reserved: null,
 	}));
 
 	for (const m of snapshot.matches) {
@@ -56,25 +57,26 @@ export function snapshotToClientState(
 		const p3 = playerMap.get(m.team_b_p1);
 		const p4 = playerMap.get(m.team_b_p2);
 		if (!p1 || !p2 || !p3 || !p4) continue;
-		court.match = {
-			id: m.id,
-			courtId: m.court_id,
-			gameType: m.game_type,
-			teamA: [p1, p2],
-			teamB: [p3, p4],
-			startedAt: m.started_at,
-		};
-	}
 
-	// Reserved groups
-	const reservedGroups = snapshot.reservedGroups.map((g) => ({
-		id: g.id,
-		memberIds: g.member_ids,
-		readyIds: g.ready_ids,
-		players: g.member_ids
-			.map((id) => playerMap.get(id))
-			.filter((p): p is SessionPlayer => !!p),
-	}));
+		if (m.status === "reserved") {
+			court.reserved = {
+				id: m.id,
+				courtId: m.court_id,
+				gameType: m.game_type,
+				teamA: [p1, p2],
+				teamB: [p3, p4],
+			};
+		} else {
+			court.match = {
+				id: m.id,
+				courtId: m.court_id,
+				gameType: m.game_type,
+				teamA: [p1, p2],
+				teamB: [p3, p4],
+				startedAt: m.started_at,
+			};
+		}
+	}
 
 	// Waiting / Resting by status
 	const waiting = snapshot.players.filter((p) => p.status === "waiting");
@@ -83,5 +85,20 @@ export function snapshotToClientState(
 	// PairHistory
 	const pairHistory = buildPairHistory(snapshot.pairHistory);
 
-	return { courts, waiting, resting, reservedGroups, pairHistory };
+	// Team candidates
+	const candidateTeams: GeneratedTeam[] = [];
+	for (const row of snapshot.teamCandidates) {
+		const p1 = playerMap.get(row.team_a_p1);
+		const p2 = playerMap.get(row.team_a_p2);
+		const p3 = playerMap.get(row.team_b_p1);
+		const p4 = playerMap.get(row.team_b_p2);
+		if (!p1 || !p2 || !p3 || !p4) continue;
+		candidateTeams.push({
+			teamA: [p1, p2],
+			teamB: [p3, p4],
+			gameType: row.game_type,
+		});
+	}
+
+	return { courts, waiting, resting, pairHistory, candidateTeams };
 }

@@ -10,7 +10,6 @@ import { rowToSessionPlayer } from "./transformers";
 import type {
 	MatchRow,
 	PairHistoryRow,
-	ReservedGroupRow,
 	SessionPlayerRow,
 	SessionRow,
 	SessionSnapshot,
@@ -20,8 +19,8 @@ export interface MatchLogEntry {
 	id: string;
 	courtId: number;
 	gameType: GameType;
-	teamA: { name: string; gender: Gender }[];
-	teamB: { name: string; gender: Gender }[];
+	teamA: { name: string; gender: Gender; skills?: PlayerSkills }[];
+	teamB: { name: string; gender: Gender; skills?: PlayerSkills }[];
 	startedAt: string;
 	endedAt: string | null;
 }
@@ -40,7 +39,7 @@ export async function fetchActiveSession(): Promise<SessionRow | null> {
 export async function fetchSessionSnapshot(
 	sessionId: number,
 ): Promise<SessionSnapshot | null> {
-	const [sessionRes, playersRes, matchesRes, pairHistRes, reservedRes] =
+	const [sessionRes, playersRes, matchesRes, pairHistRes, candidatesRes] =
 		await Promise.all([
 			supabase.from("sessions").select("*").eq("id", sessionId).single(),
 			supabase
@@ -53,9 +52,13 @@ export async function fetchSessionSnapshot(
 				.from("matches")
 				.select("*")
 				.eq("session_id", sessionId)
-				.eq("status", "playing"),
+				.in("status", ["playing", "reserved"]),
 			supabase.from("pair_history").select("*").eq("session_id", sessionId),
-			supabase.from("reserved_groups").select("*").eq("session_id", sessionId),
+			supabase
+				.from("team_candidates")
+				.select("*")
+				.eq("session_id", sessionId)
+				.order("queue_position", { ascending: true }),
 		]);
 
 	if (!sessionRes.data) return null;
@@ -67,7 +70,7 @@ export async function fetchSessionSnapshot(
 		),
 		matches: (matchesRes.data ?? []) as MatchRow[],
 		pairHistory: (pairHistRes.data ?? []) as PairHistoryRow[],
-		reservedGroups: (reservedRes.data ?? []) as ReservedGroupRow[],
+		teamCandidates: (candidatesRes.data ?? []) as TeamCandidateRow[],
 	};
 }
 
@@ -292,7 +295,7 @@ export async function fetchMatchLogs(
 			.order("ended_at", { ascending: false }),
 		supabase
 			.from("session_players")
-			.select("id, name, gender")
+			.select("id, name, gender, skills")
 			.eq("session_id", sessionId),
 	]);
 
@@ -301,6 +304,7 @@ export async function fetchMatchLogs(
 		id: string;
 		name: string;
 		gender: Gender;
+		skills: PlayerSkills;
 	}[];
 	const playerMap = new Map(players.map((p) => [p.id, p]));
 
@@ -321,13 +325,13 @@ export async function fetchMatchLogs(
 
 export async function fetchSessionPlayers(
 	sessionId: number,
-): Promise<{ name: string; gender: Gender; game_count: number }[]> {
+): Promise<{ name: string; gender: Gender; game_count: number; skills: PlayerSkills }[]> {
 	const { data } = await supabase
 		.from("session_players")
-		.select("name, gender, game_count")
+		.select("name, gender, game_count, skills")
 		.eq("session_id", sessionId)
 		.order("name", { ascending: true });
-	return (data ?? []) as { name: string; gender: Gender; game_count: number }[];
+	return (data ?? []) as { name: string; gender: Gender; game_count: number; skills: PlayerSkills }[];
 }
 
 export async function dbClearSessionLogs(sessionId: number): Promise<boolean> {
@@ -416,4 +420,133 @@ export async function fetchSessionPlayerForConflictCheck(
 
 	const row = data as { gender: Gender; skills: PlayerSkills };
 	return { gender: row.gender, skills: row.skills };
+}
+
+// ── Team Candidates API ──────────────────────────────────
+
+import type { GeneratedTeam } from "../../types";
+import type { TeamCandidateRow } from "./types";
+
+/**
+ * 세션의 팀 후보를 모두 삭제하고 새로운 후보들을 저장한다.
+ * @param sessionId 세션 ID
+ * @param candidates 생성된 팀 후보 목록
+ * @returns 성공 여부
+ */
+export async function dbSaveTeamCandidates(
+	sessionId: number,
+	candidates: GeneratedTeam[],
+): Promise<boolean> {
+	// 1. 기존 후보 모두 삭제
+	const { error: deleteError } = await supabase
+		.from("team_candidates")
+		.delete()
+		.eq("session_id", sessionId);
+
+	if (deleteError) {
+		console.error("Failed to delete old team candidates:", deleteError);
+		return false;
+	}
+
+	// 2. 새 후보 삽입
+	if (candidates.length === 0) return true;
+
+	const rows = candidates.map((team, index) => ({
+		session_id: sessionId,
+		queue_position: index,
+		game_type: team.gameType,
+		team_a_p1: team.teamA[0].id,
+		team_a_p2: team.teamA[1].id,
+		team_b_p1: team.teamB[0].id,
+		team_b_p2: team.teamB[1].id,
+	}));
+
+	const { error: insertError } = await supabase
+		.from("team_candidates")
+		.insert(rows);
+
+	if (insertError) {
+		console.error("Failed to insert team candidates:", insertError);
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * 세션의 팀 후보 목록을 조회한다.
+ * @param sessionId 세션 ID
+ * @param limit 조회할 최대 개수 (기본값: 전체)
+ * @returns 팀 후보 Row 목록 (queue_position 순)
+ */
+export async function dbFetchTeamCandidates(
+	sessionId: number,
+	limit?: number,
+): Promise<TeamCandidateRow[]> {
+	let query = supabase
+		.from("team_candidates")
+		.select("*")
+		.eq("session_id", sessionId)
+		.order("queue_position", { ascending: true });
+
+	if (limit) {
+		query = query.limit(limit);
+	}
+
+	const { data, error } = await query;
+
+	if (error) {
+		console.error("Failed to fetch team candidates:", error);
+		return [];
+	}
+
+	return (data ?? []) as TeamCandidateRow[];
+}
+
+/**
+ * 사용한 팀 후보를 삭제한다.
+ * @param candidateId 팀 후보 ID (UUID)
+ * @returns 성공 여부
+ */
+export async function dbDeleteTeamCandidate(
+	candidateId: string,
+): Promise<boolean> {
+	const { error } = await supabase
+		.from("team_candidates")
+		.delete()
+		.eq("id", candidateId);
+
+	if (error) {
+		console.error("Failed to delete team candidate:", error);
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * SessionPlayer 맵을 사용하여 TeamCandidateRow를 GeneratedTeam으로 변환한다.
+ * @param row TeamCandidateRow
+ * @param playerMap SessionPlayer 맵 (id -> SessionPlayer)
+ * @returns GeneratedTeam 또는 null (선수를 찾을 수 없는 경우)
+ */
+export function teamCandidateRowToGeneratedTeam(
+	row: TeamCandidateRow,
+	playerMap: Map<string, SessionPlayer>,
+): GeneratedTeam | null {
+	const p1 = playerMap.get(row.team_a_p1);
+	const p2 = playerMap.get(row.team_a_p2);
+	const p3 = playerMap.get(row.team_b_p1);
+	const p4 = playerMap.get(row.team_b_p2);
+
+	if (!p1 || !p2 || !p3 || !p4) {
+		console.warn(`Missing players for candidate ${row.id}`);
+		return null;
+	}
+
+	return {
+		teamA: [p1, p2],
+		teamB: [p3, p4],
+		gameType: row.game_type,
+	};
 }

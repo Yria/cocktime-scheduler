@@ -1,7 +1,7 @@
 export type SkillLevel = "O" | "V" | "X";
 export type Gender = "M" | "F";
 export type GameType = "혼복" | "남복" | "여복" | "혼합";
-export type PlayerStatus = "waiting" | "playing" | "resting" | "reserved";
+export type PlayerStatus = "waiting" | "playing" | "resting";
 
 export interface PlayerSkills {
 	클리어: SkillLevel;
@@ -47,9 +47,19 @@ export interface ActiveMatch {
 	startedAt: string;
 }
 
+/** 코트에 예약된 다음 경기 (startedAt 없음) */
+export interface ReservedMatch {
+	id: string; // UUID (matches.id)
+	courtId: number;
+	gameType: GameType;
+	teamA: [SessionPlayer, SessionPlayer];
+	teamB: [SessionPlayer, SessionPlayer];
+}
+
 export interface Court {
 	id: number;
 	match: ActiveMatch | null;
+	reserved: ReservedMatch | null;
 }
 
 /** 팀 구성 알고리즘 결과 */
@@ -62,13 +72,6 @@ export interface GeneratedTeam {
 /** 파트너 이력 — session_players.id (UUID) 기반 */
 export interface PairHistory {
 	[sessionPlayerId: string]: Set<string>;
-}
-
-export interface ReservedGroup {
-	id: string;
-	memberIds: string[]; // session_players.id UUID[]
-	readyIds: string[]; // 현재 대기 완료된 session_players.id
-	players: SessionPlayer[]; // 클라이언트 편의용
 }
 
 export interface SessionSettings {

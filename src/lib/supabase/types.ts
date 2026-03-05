@@ -5,7 +5,6 @@ import type {
 	PairHistory,
 	PlayerSkills,
 	PlayerStatus,
-	ReservedGroup,
 	SessionPlayer,
 } from "../../types";
 
@@ -44,7 +43,7 @@ export interface MatchRow {
 	team_a_p2: string;
 	team_b_p1: string;
 	team_b_p2: string;
-	status: "playing" | "completed";
+	status: "playing" | "reserved" | "completed";
 	started_at: string;
 	ended_at: string | null;
 }
@@ -56,11 +55,15 @@ export interface PairHistoryRow {
 	count: number;
 }
 
-export interface ReservedGroupRow {
+export interface TeamCandidateRow {
 	id: string;
 	session_id: number;
-	member_ids: string[];
-	ready_ids: string[];
+	queue_position: number;
+	game_type: GameType;
+	team_a_p1: string;
+	team_a_p2: string;
+	team_b_p1: string;
+	team_b_p2: string;
 	created_at: string;
 }
 
@@ -69,13 +72,13 @@ export interface SessionSnapshot {
 	players: SessionPlayer[];
 	matches: MatchRow[];
 	pairHistory: PairHistoryRow[];
-	reservedGroups: ReservedGroupRow[];
+	teamCandidates: TeamCandidateRow[];
 }
 
 export interface ClientSessionState {
 	courts: Court[];
 	waiting: SessionPlayer[];
 	resting: SessionPlayer[];
-	reservedGroups: ReservedGroup[];
 	pairHistory: PairHistory;
+	candidateTeams: import("../../types").GeneratedTeam[];
 }

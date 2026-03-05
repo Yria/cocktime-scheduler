@@ -1,9 +1,11 @@
 import { memo } from "react";
 import type { SessionPlayer } from "../../types";
+import { skillScore } from "../../lib/teamGenerator";
 
 interface WaitingListProps {
 	waiting: SessionPlayer[];
 	singleWomanIds: string[];
+	reservedPlayerCourtMap: Map<string, number>;
 	onToggleResting: (playerId: string) => void;
 	onToggleForceMixed: (playerId: string) => void;
 	onToggleForceHardGame: (playerId: string) => void;
@@ -21,6 +23,7 @@ const STYLES = `
   box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
   overflow: hidden;
   transition: transform 0.18s cubic-bezier(0.25,1,0.5,1), box-shadow 0.18s ease;
+  position: relative;
 }
 .wl-chip:hover {
   transform: translateY(-1px);
@@ -58,11 +61,20 @@ const STYLES = `
   background: rgba(255,149,0,0.15);
   border-color: rgba(255,149,0,0.3);
 }
+.wl-chip-gradient {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  border-radius: 14px;
+}
 .wl-name-btn {
   padding: 7px 4px 7px 10px;
   font-size: 14px;
-  font-weight: 500;
-  color: #0f1724;
+  font-weight: 600;
+  color: #1f2937;
   cursor: pointer;
   background: none;
   border: none;
@@ -71,9 +83,11 @@ const STYLES = `
   gap: 6px;
   letter-spacing: -0.01em;
   transition: opacity 0.1s;
+  position: relative;
+  z-index: 1;
 }
 .dark .wl-name-btn {
-  color: rgba(235,235,245,0.9);
+  color: rgba(255,255,255,0.95);
 }
 .wl-name-btn:active {
   opacity: 0.55;
@@ -87,6 +101,8 @@ const STYLES = `
   background: none;
   border: none;
   transition: transform 0.15s cubic-bezier(0.25,1,0.5,1), color 0.15s;
+  position: relative;
+  z-index: 1;
 }
 .wl-mixed-btn:active {
   transform: scale(0.8);
@@ -115,6 +131,7 @@ const STYLES = `
 const WaitingList = memo(function WaitingList({
 	waiting,
 	singleWomanIds,
+	reservedPlayerCourtMap,
 	onToggleResting,
 	onToggleForceMixed,
 	onToggleForceHardGame,
@@ -230,26 +247,69 @@ const WaitingList = memo(function WaitingList({
 					}}
 				>
 					{waiting.map((p) => {
+						const isReserved = reservedPlayerCourtMap.has(p.id);
+						const reservedCourtId = reservedPlayerCourtMap.get(p.id);
 						const isMixedSingle =
 							p.gender === "F" &&
 							(p.allowMixedSingle || singleWomanIds.includes(p.playerId));
 						const chipClass = `wl-chip${p.forceMixed ? " force-mixed" : p.forceHardGame ? " force-hard-game" : isMixedSingle ? " mixed-single" : ""}`;
+
+						// 스킬 스코어 기반 그라데이션 오버레이 (force 상태가 아닐 때만)
+						let gradientElement = null;
+						if (!p.forceMixed && !p.forceHardGame && !isMixedSingle) {
+							const score = skillScore(p);
+							const scorePercent = ((score - 1.0) / 2.0) * 100;
+
+							// 라이트모드: 프로그레스는 진하게, 배경은 매우 연하게
+							const lightBg = p.gender === "F" ? "#fef2f2" : "#f0f9ff";  // 매우 연한 배경
+							const lightProgress = p.gender === "F" ? "#ef4444" : "#0ea5e9";  // 진한 프로그레스
+
+							// 다크모드: 프로그레스는 진하게, 배경은 매우 어둡게
+							const darkBg = p.gender === "F" ? "#450a0a" : "#082f49";  // 매우 어두운 배경
+							const darkProgress = p.gender === "F" ? "#dc2626" : "#0284c7";  // 진한 프로그레스
+
+							const lightGradient = `linear-gradient(to right, ${lightProgress} 0%, ${lightProgress} ${scorePercent}%, ${lightBg} ${scorePercent}%, ${lightBg} 100%)`;
+							const darkGradient = `linear-gradient(to right, ${darkProgress} 0%, ${darkProgress} ${scorePercent}%, ${darkBg} ${scorePercent}%, ${darkBg} 100%)`;
+
+							gradientElement = (
+								<>
+									<div className="wl-chip-gradient dark:hidden" style={{ background: lightGradient }} />
+									<div className="wl-chip-gradient hidden dark:block" style={{ background: darkGradient }} />
+								</>
+							);
+						}
+
+						// 디버깅용 스코어 정보
+						const score = skillScore(p);
+						const scoreInfo = `스코어: ${score.toFixed(2)} / 3.0`;
+
 						return (
-							<div key={p.id} className={chipClass}>
+							<div key={p.id} className={chipClass} title={scoreInfo} style={isReserved ? { opacity: 0.55 } : undefined}>
+								{gradientElement}
 								{/* 이름 + 게임수: 누르면 휴식 전환 */}
 								<button
 									type="button"
-									onClick={() => onToggleResting(p.id)}
+									onClick={() => !isReserved && onToggleResting(p.id)}
 									className="wl-name-btn"
+									disabled={isReserved}
 								>
-									<span
-										className="wl-gender-dot"
-										style={{
-											background: p.gender === "F" ? "#ff2d55" : "#007aff",
-										}}
-									/>
 									{p.name}
-									{p.gameCount > 0 && (
+									{isReserved && reservedCourtId != null && (
+										<span
+											style={{
+												fontSize: 9,
+												fontWeight: 700,
+												color: "#fff",
+												background: "#0b84ff",
+												borderRadius: 99,
+												padding: "1px 5px",
+												marginLeft: 2,
+											}}
+										>
+											{reservedCourtId}번
+										</span>
+									)}
+									{!isReserved && p.gameCount > 0 && (
 										<span className="wl-game-badge">{p.gameCount}</span>
 									)}
 								</button>
@@ -258,6 +318,7 @@ const WaitingList = memo(function WaitingList({
 								<button
 									type="button"
 									onClick={() => onToggleForceMixed(p.id)}
+									disabled={isReserved}
 									title={
 										p.forceMixed ? "혼복 우선배치 해제" : "혼복 우선배치 지정"
 									}
@@ -290,6 +351,7 @@ const WaitingList = memo(function WaitingList({
 								<button
 									type="button"
 									onClick={() => onToggleForceHardGame(p.id)}
+									disabled={isReserved}
 									title={
 										p.forceHardGame ? "빡겜 우선배치 해제" : "빡겜 우선배치 지정"
 									}

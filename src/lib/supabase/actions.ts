@@ -3,7 +3,6 @@ import type {
 	Gender,
 	GeneratedTeam,
 	PlayerSkills,
-	ReservedGroup,
 	SessionPlayer,
 } from "../../types";
 import { supabase } from "./client";
@@ -15,7 +14,8 @@ export async function dbAssignMatch(
 	matchId: string,
 	team: GeneratedTeam,
 	courtId: number,
-	removedGroupId: string | null,
+	_removedGroupId: string | null,
+	usedCandidateId?: string | null,
 ): Promise<boolean> {
 	const allIds = [
 		team.teamA[0].id,
@@ -49,8 +49,93 @@ export async function dbAssignMatch(
 		return false;
 	}
 
-	if (removedGroupId) {
-		await supabase.from("reserved_groups").delete().eq("id", removedGroupId);
+	// 사용한 팀 후보 삭제
+	if (usedCandidateId) {
+		await supabase.from("team_candidates").delete().eq("id", usedCandidateId);
+	}
+
+	return true;
+}
+
+export async function dbReserveMatch(
+	sessionId: number,
+	matchId: string,
+	team: GeneratedTeam,
+	courtId: number,
+): Promise<boolean> {
+	// 동일 코트에 기존 예약이 있는지 확인
+	const { data: existing } = await supabase
+		.from("matches")
+		.select("id")
+		.eq("session_id", sessionId)
+		.eq("court_id", courtId)
+		.eq("status", "reserved")
+		.maybeSingle();
+
+	if (existing) {
+		console.error("dbReserveMatch: court already has a reservation");
+		return false;
+	}
+
+	const { error } = await supabase.from("matches").insert({
+		id: matchId,
+		session_id: sessionId,
+		court_id: courtId,
+		game_type: team.gameType,
+		team_a_p1: team.teamA[0].id,
+		team_a_p2: team.teamA[1].id,
+		team_b_p1: team.teamB[0].id,
+		team_b_p2: team.teamB[1].id,
+		status: "reserved",
+		started_at: new Date().toISOString(),
+	});
+
+	if (error) {
+		console.error("dbReserveMatch:", error.code, error.message, error.details, error.hint);
+		return false;
+	}
+
+	return true;
+}
+
+export async function dbCancelReservation(matchId: string): Promise<boolean> {
+	const { error } = await supabase
+		.from("matches")
+		.delete()
+		.eq("id", matchId)
+		.eq("status", "reserved");
+
+	if (error) {
+		console.error("dbCancelReservation:", error);
+		return false;
+	}
+
+	return true;
+}
+
+export async function dbPromoteReservation(
+	matchId: string,
+	playerIds: string[],
+): Promise<boolean> {
+	const { error: me } = await supabase
+		.from("matches")
+		.update({ status: "playing", started_at: new Date().toISOString() })
+		.eq("id", matchId)
+		.eq("status", "reserved");
+
+	if (me) {
+		console.error("dbPromoteReservation match:", me);
+		return false;
+	}
+
+	const { error: pe } = await supabase
+		.from("session_players")
+		.update({ status: "playing", force_mixed: false, force_hard_game: false })
+		.in("id", playerIds);
+
+	if (pe) {
+		console.error("dbPromoteReservation players:", pe);
+		return false;
 	}
 
 	return true;
@@ -71,7 +156,7 @@ export async function dbCompleteMatch(
 		.from("matches")
 		.update({ status: "completed", ended_at: new Date().toISOString() })
 		.eq("id", match.id)
-		.eq("status", "playing") // 🔥 이미 완료된 경기는 차단
+		.eq("status", "playing") // 이미 완료된 경기는 차단
 		.select();
 
 	if (me) {
@@ -117,23 +202,11 @@ export async function dbCompleteMatch(
 		}
 	}
 
-	// 🔥 DB에서 최신 예약 그룹 조회 (메모리 상태가 아닌 실시간 DB 조회로 race condition 방지)
-	const { data: latestGroups } = await supabase
-		.from("reserved_groups")
-		.select("id, member_ids, ready_ids")
-		.eq("session_id", sessionId);
-
-	const reservedMemberIds = new Set(
-		(latestGroups || []).flatMap((g) => g.member_ids as string[]),
-	);
-	const toWaiting = allPlayers.filter((p) => !reservedMemberIds.has(p.id));
-	const toReservedBack = allPlayers.filter((p) => reservedMemberIds.has(p.id));
-
+	// 모든 선수를 대기로 복귀
 	const now = new Date().toISOString();
 	const updatedPlayers: SessionPlayer[] = [];
 
-	// 대기로 복귀
-	for (const p of toWaiting) {
+	for (const p of allPlayers) {
 		const updates: Record<string, unknown> = {
 			status: "waiting",
 			wait_since: now,
@@ -151,42 +224,7 @@ export async function dbCompleteMatch(
 		if (data) updatedPlayers.push(rowToSessionPlayer(data as SessionPlayerRow));
 	}
 
-	// 예약 그룹으로 복귀
-	for (const p of toReservedBack) {
-		const updates: Record<string, unknown> = {
-			status: "reserved", // 🔥 예약 그룹 소속이면 명시적으로 reserved 상태로 전환
-			game_count: p.gameCount + 1,
-		};
-		if (isMixed && p.gender === "M") {
-			updates.mixed_count = p.mixedCount + 1;
-		}
-		const { data } = await supabase
-			.from("session_players")
-			.update(updates)
-			.eq("id", p.id)
-			.select()
-			.single();
-		if (data) updatedPlayers.push(rowToSessionPlayer(data as SessionPlayerRow));
-	}
-
-	// reserved_groups ready_ids 업데이트 (🔥 최신 DB 데이터 사용)
-	const groupUpdates: Array<{ groupId: string; readyIds: string[] }> = [];
-	for (const dbGroup of latestGroups || []) {
-		const backIds = toReservedBack
-			.filter((p) => (dbGroup.member_ids as string[]).includes(p.id))
-			.map((p) => p.id);
-		if (backIds.length > 0) {
-			const currentReadyIds = (dbGroup.ready_ids as string[]) || [];
-			const newReadyIds = [...new Set([...currentReadyIds, ...backIds])];
-			await supabase
-				.from("reserved_groups")
-				.update({ ready_ids: newReadyIds })
-				.eq("id", dbGroup.id);
-			groupUpdates.push({ groupId: dbGroup.id as string, readyIds: newReadyIds });
-		}
-	}
-
-	return { updatedPlayers, groupUpdates };
+	return { updatedPlayers, groupUpdates: [] };
 }
 
 export async function dbUpdateSessionPlayer(
@@ -262,56 +300,6 @@ export async function dbToggleForceHardGame(
 		return null;
 	}
 	return rowToSessionPlayer(data as SessionPlayerRow);
-}
-
-export async function dbCreateReservation(
-	sessionId: number,
-	groupId: string,
-	players: SessionPlayer[],
-	readyIds: string[],
-): Promise<boolean> {
-	const { error: re } = await supabase.from("reserved_groups").insert({
-		id: groupId,
-		session_id: sessionId,
-		member_ids: players.map((p) => p.id),
-		ready_ids: readyIds,
-	});
-	if (re) {
-		console.error("dbCreateReservation:", re);
-		return false;
-	}
-
-	const waitingIds = players
-		.filter((p) => readyIds.includes(p.id))
-		.map((p) => p.id);
-	if (waitingIds.length > 0) {
-		await supabase
-			.from("session_players")
-			.update({ status: "reserved" })
-			.in("id", waitingIds);
-	}
-
-	return true;
-}
-
-export async function dbDisbandGroup(group: ReservedGroup): Promise<boolean> {
-	if (group.readyIds.length > 0) {
-		const now = new Date().toISOString();
-		await supabase
-			.from("session_players")
-			.update({ status: "waiting", wait_since: now })
-			.in("id", group.readyIds);
-	}
-
-	const { error } = await supabase
-		.from("reserved_groups")
-		.delete()
-		.eq("id", group.id);
-	if (error) {
-		console.error("dbDisbandGroup:", error);
-		return false;
-	}
-	return true;
 }
 
 export async function dbEndSession(sessionId: number): Promise<void> {

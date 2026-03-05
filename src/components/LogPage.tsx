@@ -9,7 +9,7 @@ import {
 } from "../lib/supabase/api";
 import type { SessionRow } from "../lib/supabase/types";
 import { useAppStore } from "../store/appStore";
-import type { Gender } from "../types";
+import type { Gender, PlayerSkills } from "../types";
 import ClearConfirmModal from "./log/ClearConfirmModal";
 import LogList from "./log/LogList";
 import MatchSummary from "./log/MatchSummary";
@@ -24,7 +24,7 @@ export default function LogPage() {
 	const [selectedId, setSelectedId] = useState<number | null>(null);
 	const [logs, setLogs] = useState<MatchLogEntry[]>([]);
 	const [participants, setParticipants] = useState<
-		{ name: string; gender: Gender; game_count: number }[]
+		{ name: string; gender: Gender; game_count: number; skills: PlayerSkills }[]
 	>([]);
 	const [loading, setLoading] = useState(true);
 	const [logLoading, setLogLoading] = useState(false);

@@ -17,6 +17,11 @@ import {
 	updateSession,
 	type SessionRow,
 } from "../lib/supabaseClient";
+import { dbSaveTeamCandidates } from "../lib/supabase/api";
+import {
+	calculateTeamCandidateCount,
+	generateBulkTeamCandidates,
+} from "../lib/teamGenerator";
 import type { Player, SessionSettings } from "../types";
 import { useSessionStore } from "./sessionStore";
 
@@ -29,11 +34,9 @@ export interface SessionMeta {
 
 interface AppState {
 	allPlayers: Player[];
-	savedNames: Set<string> | null;
 	sessionMeta: SessionMeta | null;
 
 	setAllPlayers: (players: Player[]) => void;
-	setSavedNames: (names: Set<string> | null) => void;
 	setSessionMeta: (meta: SessionMeta | null) => void;
 	clearSessionMeta: () => void;
 
@@ -75,12 +78,10 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set, get) => ({
 	allPlayers: [],
-	savedNames: null,
 	sessionMeta: null,
 	_sessionWatchChannel: null,
 
 	setAllPlayers: (players) => set({ allPlayers: players }),
-	setSavedNames: (names) => set({ savedNames: names }),
 	setSessionMeta: (meta) => set({ sessionMeta: meta }),
 	clearSessionMeta: () => set({ sessionMeta: null }),
 
@@ -156,7 +157,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 			useSessionStore.getState().initialize(clientState);
 
 			set({
-				savedNames: new Set(snapshot.players.map((p) => p.name)),
 				sessionMeta: {
 					sessionId: row.id,
 					courtCount: row.court_count,
@@ -190,6 +190,25 @@ export const useAppStore = create<AppState>((set, get) => ({
 		const { sessionMeta } = get();
 
 		if (sessionMeta) {
+			// 참가자 변경 여부 확인 (팀 후보 재생성 여부 결정)
+			const currentPlayerIds = new Set(selected.map((p) => p.id));
+			const { waiting, resting, courts } = useSessionStore.getState();
+			const currentSessionPlayers = [
+				...waiting,
+				...resting,
+				...courts.flatMap((c) =>
+					c.match ? [...c.match.teamA, ...c.match.teamB] : [],
+				),
+			];
+			const previousPlayerIds = new Set(
+				currentSessionPlayers.map((p) => p.playerId),
+			);
+
+			const playersChanged =
+				currentPlayerIds.size !== previousPlayerIds.size ||
+				[...currentPlayerIds].some((id) => !previousPlayerIds.has(id)) ||
+				[...previousPlayerIds].some((id) => !currentPlayerIds.has(id));
+
 			const success = await updateSession(
 				sessionMeta.sessionId,
 				settings.courtCount,
@@ -204,7 +223,31 @@ export const useAppStore = create<AppState>((set, get) => ({
 
 			const clientState = snapshotToClientState(snapshot);
 
-			console.log(`[updateSession] DB 상태 다시 로드 - waiting: ${clientState.waiting.length}명, resting: ${clientState.resting.length}명`);
+			console.log(
+				`[updateSession] DB 상태 다시 로드 - waiting: ${clientState.waiting.length}명, resting: ${clientState.resting.length}명`,
+			);
+
+			// 참가자가 변경되었을 때만 팀 후보 재생성
+			if (playersChanged) {
+				console.log("[updateSession] 참가자 변경 감지 → 팀 후보 재생성");
+				const candidateCount = calculateTeamCandidateCount(settings.courtCount);
+				console.log(`[updateSession] 팀 후보 ${candidateCount}개 생성 중...`);
+				const teamCandidates = generateBulkTeamCandidates(
+					candidateCount,
+					snapshot.players,
+					settings.singleWomanIds,
+				);
+				console.log(
+					`[updateSession] 팀 후보 ${teamCandidates.length}개 생성 완료`,
+				);
+				await dbSaveTeamCandidates(sessionMeta.sessionId, teamCandidates);
+				console.log(`[updateSession] 팀 후보 DB 저장 완료`);
+				clientState.candidateTeams = teamCandidates;
+			} else {
+				console.log(
+					"[updateSession] 참가자 변경 없음 → 기존 팀 후보 유지",
+				);
+			}
 
 			// sessionStore를 DB 상태로 완전히 재초기화
 			useSessionStore.getState().initialize(clientState);
@@ -238,15 +281,28 @@ export const useAppStore = create<AppState>((set, get) => ({
 		const courts = Array.from({ length: settings.courtCount }, (_, i) => ({
 			id: i + 1,
 			match: null as null,
+			reserved: null as null,
 		}));
+
+		// 팀 후보 대량 생성 및 저장
+		const candidateCount = calculateTeamCandidateCount(settings.courtCount);
+		console.log(`[startSession] 팀 후보 ${candidateCount}개 생성 중...`);
+		const teamCandidates = generateBulkTeamCandidates(
+			candidateCount,
+			sessionPlayers,
+			settings.singleWomanIds,
+		);
+		console.log(`[startSession] 팀 후보 ${teamCandidates.length}개 생성 완료`);
+		await dbSaveTeamCandidates(sessionId, teamCandidates);
+		console.log(`[startSession] 팀 후보 DB 저장 완료`);
 
 		// 새 세션의 초기 상태를 sessionStore에 직접 설정
 		useSessionStore.getState().initialize({
 			courts,
 			waiting: sessionPlayers,
 			resting: [],
-			reservedGroups: [],
 			pairHistory: {},
+			candidateTeams: teamCandidates,
 		});
 
 		set({

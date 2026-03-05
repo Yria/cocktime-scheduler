@@ -1,8 +1,6 @@
 import type {
 	Court,
-	GeneratedTeam,
 	PairHistory,
-	ReservedGroup,
 	SessionPlayer,
 } from "../types";
 import { useSessionStore } from "./sessionStore";
@@ -26,14 +24,6 @@ export const setResting = (
 		resting: typeof updater === "function" ? updater(state.resting) : updater,
 	}));
 
-export const setReservedGroups = (
-	updater: ReservedGroup[] | ((prev: ReservedGroup[]) => ReservedGroup[]),
-) =>
-	useSessionStore.setState((state) => ({
-		reservedGroups:
-			typeof updater === "function" ? updater(state.reservedGroups) : updater,
-	}));
-
 export const setPairHistory = (
 	updater: PairHistory | ((prev: PairHistory) => PairHistory),
 ) =>
@@ -52,24 +42,17 @@ export const setLastMixedPlayerIds = (
 				: updater,
 	}));
 
-export const setPendingTeam = (team: GeneratedTeam | null) =>
-	useSessionStore.setState({ pendingTeam: team });
-
-export const setPendingGroupId = (groupId: string | null) =>
-	useSessionStore.setState({ pendingGroupId: groupId });
+export const setLastCoPlayers = (
+	updater:
+		| Record<string, string[]>
+		| ((prev: Record<string, string[]>) => Record<string, string[]>),
+) =>
+	useSessionStore.setState((state) => ({
+		lastCoPlayers:
+			typeof updater === "function"
+				? updater(state.lastCoPlayers)
+				: updater,
+	}));
 
 export const setShowEndConfirm = (show: boolean) =>
 	useSessionStore.setState({ showEndConfirm: show });
-
-export const setShowReserveModal = (show: boolean) =>
-	useSessionStore.setState({ showReserveModal: show });
-
-export const setReservingSelected = (
-	updater: Set<string> | ((prev: Set<string>) => Set<string>),
-) =>
-	useSessionStore.setState((state) => ({
-		reservingSelected:
-			typeof updater === "function"
-				? updater(state.reservingSelected)
-				: updater,
-	}));

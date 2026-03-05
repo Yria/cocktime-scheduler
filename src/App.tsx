@@ -13,19 +13,8 @@ import SessionSetup from "./components/SessionSetup";
 import { usePageVisibility } from "./hooks/usePageVisibility";
 import type { SessionRow } from "./lib/supabaseClient";
 import { useAppStore } from "./store/appStore";
+import { useSessionStore } from "./store/sessionStore";
 import type { Player, SessionSettings } from "./types";
-
-const SAVE_KEY = "bmt_session_players";
-
-function loadSavedNames(): Set<string> | null {
-	try {
-		const raw = localStorage.getItem(SAVE_KEY);
-		if (!raw) return null;
-		return new Set(JSON.parse(raw) as string[]);
-	} catch {
-		return null;
-	}
-}
 
 export default function App() {
 	const navigate = useNavigate();
@@ -42,7 +31,6 @@ export default function App() {
 	}, []);
 
 	const allPlayers = useAppStore((s) => s.allPlayers);
-	const setSavedNames = useAppStore((s) => s.setSavedNames);
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
 	const setSessionMeta = useAppStore((s) => s.setSessionMeta);
 	const loadSessionAction = useAppStore((s) => s.loadSessionAction);
@@ -112,8 +100,9 @@ export default function App() {
 			},
 			onSessionEnd: (endedSessionId) => {
 				if (sessionMetaRef.current === endedSessionId) {
-					setSavedNames(null);
 					setSessionMeta(null);
+					useSessionStore.getState().reset();
+					useAppStore.getState().resetSetupState();
 					navigate("/", { replace: true });
 				}
 			},
@@ -126,23 +115,16 @@ export default function App() {
 		navigate,
 		setSessionMeta,
 		applySession,
-		setSavedNames,
 		subscribeSessionWatch,
 		unsubscribeSessionWatch,
 	]);
 
 	const handleHomeStart = useCallback(() => {
-		setSavedNames(loadSavedNames());
 		navigate("/setup");
-	}, [navigate, setSavedNames]);
+	}, [navigate]);
 
 	const handleSetupStart = useCallback(
 		async (selected: Player[], settings: SessionSettings) => {
-			localStorage.setItem(
-				SAVE_KEY,
-				JSON.stringify(selected.map((p) => p.name)),
-			);
-
 			const success = await startOrUpdateSessionAction(selected, settings);
 			if (success) {
 				navigate("/session");
@@ -152,11 +134,11 @@ export default function App() {
 	);
 
 	const handleSessionEnd = useCallback(() => {
-		localStorage.removeItem(SAVE_KEY);
-		setSavedNames(null);
 		setSessionMeta(null);
+		useSessionStore.getState().reset();
+		useAppStore.getState().resetSetupState();
 		navigate("/setup");
-	}, [navigate, setSessionMeta, setSavedNames]);
+	}, [navigate, setSessionMeta]);
 
 	const handleSessionBack = useCallback(() => {
 		navigate("/setup");

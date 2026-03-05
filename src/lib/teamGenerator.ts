@@ -24,15 +24,78 @@ export function skillScore(player: SessionPlayer): number {
 }
 
 // ─────────────────────────────────────────────
-// 파트너 중복 이력 (단방향 체크 — recordHistory가 양방향 저장하므로 한쪽만 확인)
+// 직전 게임 동반자 겹침 (규칙 9)
 // ─────────────────────────────────────────────
 
-function partnerCount(
-	a: SessionPlayer,
-	b: SessionPlayer,
-	history: PairHistory,
+function coPlayerOverlap(
+	group: SessionPlayer[],
+	lastCoPlayers: Record<string, string[]>,
 ): number {
-	return history[a.id]?.has(b.id) ? 1 : 0;
+	let overlap = 0;
+	for (let i = 0; i < group.length; i++) {
+		const coPlayers = lastCoPlayers[group[i].id];
+		if (!coPlayers) continue;
+		for (let j = i + 1; j < group.length; j++) {
+			if (coPlayers.includes(group[j].id)) overlap++;
+		}
+	}
+	return overlap;
+}
+
+/**
+ * 후보(최대 8명)에서 C(n,4) 조합 중 동반자 겹침이 최소인 4명을 선택.
+ * 동점 시 원래 정렬순 우선 (첫 번째 조합 반환).
+ */
+function selectBestGroup(
+	candidates: SessionPlayer[],
+	lastCoPlayers: Record<string, string[]>,
+): SessionPlayer[] {
+	if (candidates.length <= 4 || Object.keys(lastCoPlayers).length === 0) {
+		return candidates.slice(0, 4);
+	}
+
+	const n = candidates.length;
+	let bestGroup: SessionPlayer[] = candidates.slice(0, 4);
+	let bestOverlap = coPlayerOverlap(bestGroup, lastCoPlayers);
+
+	if (bestOverlap === 0) return bestGroup;
+
+	for (let i = 0; i < n - 3; i++) {
+		for (let j = i + 1; j < n - 2; j++) {
+			for (let k = j + 1; k < n - 1; k++) {
+				for (let l = k + 1; l < n; l++) {
+					if (i === 0 && j === 1 && k === 2 && l === 3) continue; // already checked
+					const group = [candidates[i], candidates[j], candidates[k], candidates[l]];
+					const overlap = coPlayerOverlap(group, lastCoPlayers);
+					if (overlap < bestOverlap) {
+						bestOverlap = overlap;
+						bestGroup = group;
+						if (bestOverlap === 0) return bestGroup;
+					}
+				}
+			}
+		}
+	}
+
+	return bestGroup;
+}
+
+/**
+ * 직전 게임 동반자 기록 갱신 (모든 게임 타입 공통).
+ * 4명 각각에 대해 나머지 3명을 기록한다.
+ */
+export function updateLastCoPlayers(
+	lastCoPlayers: Record<string, string[]>,
+	team: GeneratedTeam,
+): Record<string, string[]> {
+	const allPlayers = [...team.teamA, ...team.teamB];
+	const next = { ...lastCoPlayers };
+	for (const player of allPlayers) {
+		next[player.id] = allPlayers
+			.filter((p) => p.id !== player.id)
+			.map((p) => p.id);
+	}
+	return next;
 }
 
 // ─────────────────────────────────────────────
@@ -40,16 +103,14 @@ function partnerCount(
 // ─────────────────────────────────────────────
 
 /**
- * score = historyPenalty × 10 + intraDiff × 1.5 + interDiff × 0.5
+ * score = intraDiff × 1.5 + interDiff × 0.5
  *
- * 규칙 3: 파트너 실력 유사성 (intraDiff, 가중치 1.5)
- * 규칙 4: 팀 간 실력 균형 (interDiff, 가중치 0.5)
- * 규칙 5: 파트너 중복 기피 (historyPenalty, 가중치 10)
+ * 규칙 10: 파트너 실력 유사성 (intraDiff, 가중치 1.5)
+ * 규칙 11: 팀 간 실력 균형 (interDiff, 가중치 0.5)
  */
 export function pairingScore(
 	teamA: [SessionPlayer, SessionPlayer],
 	teamB: [SessionPlayer, SessionPlayer],
-	history: PairHistory,
 ): number {
 	const sA0 = skillScore(teamA[0]),
 		sA1 = skillScore(teamA[1]);
@@ -58,11 +119,8 @@ export function pairingScore(
 
 	const intraDiff = Math.abs(sA0 - sA1) + Math.abs(sB0 - sB1);
 	const interDiff = Math.abs(sA0 + sA1 - (sB0 + sB1));
-	const historyPenalty =
-		partnerCount(teamA[0], teamA[1], history) +
-		partnerCount(teamB[0], teamB[1], history);
 
-	return historyPenalty * 10 + intraDiff * 1.5 + interDiff * 0.5;
+	return intraDiff * 1.5 + interDiff * 0.5;
 }
 
 // ─────────────────────────────────────────────
@@ -71,7 +129,6 @@ export function pairingScore(
 
 function bestPairing(
 	players: [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer],
-	history: PairHistory,
 ): [[SessionPlayer, SessionPlayer], [SessionPlayer, SessionPlayer]] {
 	const [p0, p1, p2, p3] = players;
 
@@ -97,7 +154,7 @@ function bestPairing(
 	let bestScore = Infinity;
 
 	for (const [teamA, teamB] of combos) {
-		const score = pairingScore(teamA, teamB, history);
+		const score = pairingScore(teamA, teamB);
 		if (score < bestScore) {
 			bestScore = score;
 			bestCombos = [[teamA, teamB]];
@@ -283,6 +340,7 @@ function selectFour(
 	waiting: SessionPlayer[],
 	singleWomanIds: string[],
 	lastMixedPlayerIds: string[] = [],
+	lastCoPlayers: Record<string, string[]> = {},
 ): SessionPlayer[] | null {
 	// forceMixed 선수 분리, forceHardGame 선수 분리, 나머지는 gameCount 오름차순 정렬 (규칙 0, 8)
 	const forceMixed = waiting.filter((p) => p.forceMixed);
@@ -365,23 +423,27 @@ function selectFour(
 		return [selectedWomen[0], selectedWomen[1], selectedMen[0], selectedMen[1]];
 	}
 
-	// 여자 1명이고 혼합 불허 → 여자 제외 남자 4명
+	// 여자 1명이고 혼합 불허 → 여자 제외 남자 4명 (규칙 9 적용)
 	if (
 		women.length === 1 &&
 		!women[0].allowMixedSingle &&
 		!singleWomanIds.includes(women[0].playerId) &&
 		men.length >= 4
 	) {
-		return men.slice(0, 4);
+		return selectBestGroup(men, lastCoPlayers);
 	}
 
-	// 상위 혼복·남복 규칙으로 편성 불가 + 여자 ≥ 4명 → 여자 4명 (여복)
+	// 상위 혼복·남복 규칙으로 편성 불가 + 여자 ≥ 4명 → 여자 4명 (여복, 규칙 1.8)
 	if (women.length >= 4) {
-		return women.slice(0, 4);
+		// 여자 중 gameCount 기준으로 정렬 후 규칙 9 적용
+		const sortedWomen = women
+			.slice()
+			.sort((a, b) => a.gameCount - b.gameCount);
+		return selectBestGroup(sortedWomen, lastCoPlayers);
 	}
 
-	// 그 외: 정렬된 순서대로 4명
-	if (candidates.length >= 4) return candidates.slice(0, 4);
+	// 그 외: 정렬된 순서대로 4명 (규칙 9 적용)
+	if (candidates.length >= 4) return selectBestGroup(candidates, lastCoPlayers);
 
 	return null;
 }
@@ -393,7 +455,6 @@ function selectFour(
 function buildMixedTeams(
 	women: SessionPlayer[],
 	men: [SessionPlayer, SessionPlayer],
-	history: PairHistory,
 ): [[SessionPlayer, SessionPlayer], [SessionPlayer, SessionPlayer]] {
 	const optionA: [
 		[SessionPlayer, SessionPlayer],
@@ -410,8 +471,8 @@ function buildMixedTeams(
 		[women[1], men[0]],
 	];
 
-	const scoreA = pairingScore(optionA[0], optionA[1], history);
-	const scoreB = pairingScore(optionB[0], optionB[1], history);
+	const scoreA = pairingScore(optionA[0], optionA[1]);
+	const scoreB = pairingScore(optionB[0], optionB[1]);
 
 	return scoreA <= scoreB ? optionA : optionB;
 }
@@ -421,18 +482,18 @@ function buildMixedTeams(
 // ─────────────────────────────────────────────
 
 /**
- * @param lastMixedPlayerIds 직전 혼복 경기 출전자의 SessionPlayer.id 목록 (규칙 1.5).
- *   코트 배정 완료 후 호출자가 갱신해서 전달한다.
+ * @param lastMixedPlayerIds 직전 혼복 경기 출전자의 SessionPlayer.id 목록 (규칙 5).
+ * @param lastCoPlayers 직전 게임 동반자 기록 (규칙 9).
  */
 export function generateTeam(
 	waiting: SessionPlayer[],
-	history: PairHistory,
 	singleWomanIds: string[],
-	lastMixedPlayerIds: string[] = [],
+	lastMixedPlayerIds?: string[],
+	lastCoPlayers?: Record<string, string[]>,
 ): GeneratedTeam | null {
 	if (waiting.length < 4) return null;
 
-	const selected = selectFour(waiting, singleWomanIds, lastMixedPlayerIds);
+	const selected = selectFour(waiting, singleWomanIds, lastMixedPlayerIds ?? [], lastCoPlayers ?? {});
 	if (!selected || selected.length < 4) return null;
 
 	const four = selected as [
@@ -452,87 +513,9 @@ export function generateTeam(
 			SessionPlayer,
 			SessionPlayer,
 		];
-		[teamA, teamB] = buildMixedTeams(women, men, history);
+		[teamA, teamB] = buildMixedTeams(women, men);
 	} else {
-		[teamA, teamB] = bestPairing(four, history);
-	}
-
-	return { teamA, teamB, gameType };
-}
-
-export function generateTeamWithGroup(
-	groupPlayers: SessionPlayer[],
-	waiting: SessionPlayer[],
-	history: PairHistory,
-	singleWomanIds: string[],
-): GeneratedTeam | null {
-	if (groupPlayers.length === 4) {
-		return generateTeamFromPlayers(
-			groupPlayers as [
-				SessionPlayer,
-				SessionPlayer,
-				SessionPlayer,
-				SessionPlayer,
-			],
-			history,
-			singleWomanIds,
-		);
-	}
-
-	const need = 4 - groupPlayers.length;
-	if (waiting.length < need) return null;
-
-	const sortedWaiting = [...waiting].sort((a, b) => a.gameCount - b.gameCount);
-	const filled = sortedWaiting.slice(0, need);
-	const four = [...groupPlayers, ...filled] as [
-		SessionPlayer,
-		SessionPlayer,
-		SessionPlayer,
-		SessionPlayer,
-	];
-
-	if (groupPlayers.length === 2) {
-		const teamA: [SessionPlayer, SessionPlayer] = [
-			groupPlayers[0],
-			groupPlayers[1],
-		];
-		const teamB: [SessionPlayer, SessionPlayer] = [filled[0], filled[1]];
-
-		let gameType = determineGameType(four, singleWomanIds);
-
-		if (gameType === "혼복") {
-			const isTeamAMixed =
-				teamA.some((p) => p.gender === "M") &&
-				teamA.some((p) => p.gender === "F");
-			if (!isTeamAMixed) {
-				gameType = "혼합";
-			}
-		}
-
-		return { teamA, teamB, gameType };
-	}
-
-	return generateTeamFromPlayers(four, history, singleWomanIds);
-}
-
-export function generateTeamFromPlayers(
-	players: [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer],
-	history: PairHistory,
-	singleWomanIds: string[],
-): GeneratedTeam {
-	const gameType = determineGameType(players, singleWomanIds);
-	let teamA: [SessionPlayer, SessionPlayer];
-	let teamB: [SessionPlayer, SessionPlayer];
-
-	if (gameType === "혼복") {
-		const women = players.filter((p) => p.gender === "F");
-		const men = players.filter((p) => p.gender === "M") as [
-			SessionPlayer,
-			SessionPlayer,
-		];
-		[teamA, teamB] = buildMixedTeams(women, men, history);
-	} else {
-		[teamA, teamB] = bestPairing(players, history);
+		[teamA, teamB] = bestPairing(four);
 	}
 
 	return { teamA, teamB, gameType };
@@ -546,7 +529,11 @@ export function recordHistory(
 	history: PairHistory,
 	team: GeneratedTeam,
 ): PairHistory {
-	const next = { ...history };
+	// Deep-clone Sets to avoid mutating existing state
+	const next: PairHistory = {};
+	for (const key of Object.keys(history)) {
+		next[key] = new Set(history[key]);
+	}
 	const pairs: [SessionPlayer, SessionPlayer][] = [team.teamA, team.teamB];
 
 	for (const [a, b] of pairs) {
@@ -556,4 +543,119 @@ export function recordHistory(
 		next[b.id].add(a.id);
 	}
 	return next;
+}
+
+/**
+ * 세션 시간과 코트 수를 고려하여 생성할 팀 후보 개수를 계산한다.
+ *
+ * @param courtCount 코트 수
+ * @param sessionDurationMinutes 세션 예상 시간(분). 기본값 180분(3시간)
+ * @param avgMatchDurationMinutes 경기당 평균 시간(분). 기본값 12분
+ * @param bufferRatio 여유분 비율. 기본값 0.5 (50%)
+ * @returns 생성할 팀 후보 개수
+ */
+export function calculateTeamCandidateCount(
+	courtCount: number,
+	sessionDurationMinutes = 180,
+	avgMatchDurationMinutes = 12,
+	bufferRatio = 0.5,
+): number {
+	// 코트당 경기 수 계산
+	const matchesPerCourt = Math.floor(sessionDurationMinutes / avgMatchDurationMinutes);
+	// 총 필요 팀 수
+	const totalNeeded = matchesPerCourt * courtCount;
+	// 여유분 포함
+	const withBuffer = Math.ceil(totalNeeded * (1 + bufferRatio));
+
+	return withBuffer;
+}
+
+/**
+ * 세션용 팀 후보를 대량으로 생성한다.
+ * 선수가 부족해지면 앞에서 사용한 선수를 다시 풀에 넣어 계속 생성한다.
+ *
+ * @param targetCount 생성할 팀 개수
+ * @param players 전체 선수 목록
+ * @param singleWomanIds 혼합 가능한 여자 선수 ID 목록
+ * @param lastMixedPlayerIds 직전 혼복 경기 출전자 ID 목록
+ * @param lastCoPlayers 직전 게임 동반자 기록 (규칙 9)
+ * @returns 생성된 후보 팀 목록
+ */
+export function generateBulkTeamCandidates(
+	targetCount: number,
+	players: SessionPlayer[],
+	singleWomanIds: string[],
+	lastMixedPlayerIds?: string[],
+	lastCoPlayers?: Record<string, string[]>,
+): GeneratedTeam[] {
+	const candidates: GeneratedTeam[] = [];
+	const seenGroups = new Set<string>(); // 동일 4명 중복 방지
+	let availablePlayers = [...players];
+	let usedPlayers: SessionPlayer[] = [];
+	let currentLastMixed = lastMixedPlayerIds ?? [];
+	let currentLastCoPlayers = lastCoPlayers ?? {};
+	let consecutiveSkips = 0;
+
+	for (let i = 0; i < targetCount; i++) {
+		// 선수가 4명 미만이면 사용한 선수들을 다시 풀에 추가
+		if (availablePlayers.length < 4) {
+			availablePlayers = [...availablePlayers, ...usedPlayers];
+			usedPlayers = [];
+
+			// 선수가 여전히 4명 미만이면 종료
+			if (availablePlayers.length < 4) break;
+		}
+
+		const team = generateTeam(
+			availablePlayers,
+			singleWomanIds,
+			currentLastMixed,
+			currentLastCoPlayers,
+		);
+
+		if (!team) {
+			// 생성 실패 시 사용한 선수들을 다시 풀에 추가하고 재시도
+			if (usedPlayers.length > 0) {
+				availablePlayers = [...availablePlayers, ...usedPlayers];
+				usedPlayers = [];
+				continue;
+			}
+			break;
+		}
+
+		// 동일 4명 중복 체크
+		const groupKey = [...team.teamA, ...team.teamB]
+			.map((p) => p.id)
+			.sort()
+			.join(",");
+		if (seenGroups.has(groupKey)) {
+			consecutiveSkips++;
+			// 연속 스킵이 많으면 더 이상 새 조합이 나오지 않는 것 → 종료
+			if (consecutiveSkips > players.length) break;
+			continue;
+		}
+		seenGroups.add(groupKey);
+		consecutiveSkips = 0;
+
+		candidates.push(team);
+
+		// lastCoPlayers 업데이트 (다음 팀 생성 시 동반자 회피)
+		currentLastCoPlayers = updateLastCoPlayers(currentLastCoPlayers, team);
+
+		// lastMixed 업데이트 (혼복이면 해당 선수들 기록)
+		if (team.gameType === "혼복") {
+			currentLastMixed = [...team.teamA, ...team.teamB].map((p) => p.id);
+		}
+
+		// 생성된 팀의 선수들을 사용한 선수 목록으로 이동
+		const teamPlayerIds = new Set([
+			...team.teamA.map((p) => p.id),
+			...team.teamB.map((p) => p.id),
+		]);
+		const teamPlayers = availablePlayers.filter((p) => teamPlayerIds.has(p.id));
+		availablePlayers = availablePlayers.filter((p) => !teamPlayerIds.has(p.id));
+		usedPlayers.push(...teamPlayers);
+	}
+
+	return candidates;
 }

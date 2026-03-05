@@ -43,8 +43,8 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 		// 4. 코트 3개에 계속 팀을 뽑아서 출력 (비동기 종료 시뮬레이션)
 		const COURT_COUNT = 3;
 		const TARGET_MATCHES = 15; // 총 15경기 시뮬레이션 (기존 5라운드 * 3코트 분량)
-		const history: Record<string, Set<string>> = {};
 		let lastMixedPlayerIds: string[] = [];
+		let lastCoPlayers: Record<string, string[]> = {};
 
 		let currentWaiting = [...testGroup];
 		const courts: (ReturnType<typeof generateTeam> | null)[] = Array(COURT_COUNT).fill(null);
@@ -67,7 +67,7 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 						continue;
 					}
 
-					const team = generateTeam(currentWaiting, history, [], lastMixedPlayerIds);
+					const team = generateTeam(currentWaiting, [], lastMixedPlayerIds, lastCoPlayers);
 					
 					if (!team) {
 						console.log(`  [코트 ${i + 1}] 팀 생성 실패 (조건 불충족) - 배정 대기`);
@@ -123,12 +123,12 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 					}
 				}
 
-				// 2. 파트너 이력 업데이트
-				for (const [a, b] of [match.teamA, match.teamB]) {
-					if (!history[a.id]) history[a.id] = new Set();
-					if (!history[b.id]) history[b.id] = new Set();
-					history[a.id].add(b.id);
-					history[b.id].add(a.id);
+				// 2. lastCoPlayers 업데이트
+				const allMatchPlayers = [...match.teamA, ...match.teamB];
+				for (const player of allMatchPlayers) {
+					lastCoPlayers[player.id] = allMatchPlayers
+						.filter(p => p.id !== player.id)
+						.map(p => p.id);
 				}
 
 				// 3. 직전 혼복 출전자 기록
