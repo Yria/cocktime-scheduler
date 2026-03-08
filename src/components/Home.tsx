@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAppStore } from "../store/appStore";
+import { appActions, useAppStore } from "../store/appStore";
 
 interface Props {
 	onStart: () => void;
@@ -13,20 +13,18 @@ export default function Home({ onStart }: Props) {
 	const [connected, setConnected] = useState(false);
 	const players = useAppStore((s) => s.allPlayers);
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
-	const fetchPlayersAction = useAppStore((s) => s.fetchPlayersAction);
-
 	const connect = useCallback(async () => {
 		setLoading(true);
 		setError("");
 		try {
-			await fetchPlayersAction();
+			await appActions.fetchPlayers();
 			setConnected(true);
 		} catch (e) {
 			setError(e instanceof Error ? e.message : "연동 실패");
 		} finally {
 			setLoading(false);
 		}
-	}, [fetchPlayersAction]);
+	}, []);
 
 	useEffect(() => {
 		connect();

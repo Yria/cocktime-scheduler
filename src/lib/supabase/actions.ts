@@ -14,8 +14,6 @@ export async function dbAssignMatch(
 	matchId: string,
 	team: GeneratedTeam,
 	courtId: number,
-	_removedGroupId: string | null,
-	usedCandidateId?: string | null,
 ): Promise<boolean> {
 	const allIds = [
 		team.teamA[0].id,
@@ -49,95 +47,6 @@ export async function dbAssignMatch(
 		return false;
 	}
 
-	// 사용한 팀 후보 삭제
-	if (usedCandidateId) {
-		await supabase.from("team_candidates").delete().eq("id", usedCandidateId);
-	}
-
-	return true;
-}
-
-export async function dbReserveMatch(
-	sessionId: number,
-	matchId: string,
-	team: GeneratedTeam,
-	courtId: number,
-): Promise<boolean> {
-	// 동일 코트에 기존 예약이 있는지 확인
-	const { data: existing } = await supabase
-		.from("matches")
-		.select("id")
-		.eq("session_id", sessionId)
-		.eq("court_id", courtId)
-		.eq("status", "reserved")
-		.maybeSingle();
-
-	if (existing) {
-		console.error("dbReserveMatch: court already has a reservation");
-		return false;
-	}
-
-	const { error } = await supabase.from("matches").insert({
-		id: matchId,
-		session_id: sessionId,
-		court_id: courtId,
-		game_type: team.gameType,
-		team_a_p1: team.teamA[0].id,
-		team_a_p2: team.teamA[1].id,
-		team_b_p1: team.teamB[0].id,
-		team_b_p2: team.teamB[1].id,
-		status: "reserved",
-		started_at: new Date().toISOString(),
-	});
-
-	if (error) {
-		console.error("dbReserveMatch:", error.code, error.message, error.details, error.hint);
-		return false;
-	}
-
-	return true;
-}
-
-export async function dbCancelReservation(matchId: string): Promise<boolean> {
-	const { error } = await supabase
-		.from("matches")
-		.delete()
-		.eq("id", matchId)
-		.eq("status", "reserved");
-
-	if (error) {
-		console.error("dbCancelReservation:", error);
-		return false;
-	}
-
-	return true;
-}
-
-export async function dbPromoteReservation(
-	matchId: string,
-	playerIds: string[],
-): Promise<boolean> {
-	const { error: me } = await supabase
-		.from("matches")
-		.update({ status: "playing", started_at: new Date().toISOString() })
-		.eq("id", matchId)
-		.eq("status", "reserved");
-
-	if (me) {
-		console.error("dbPromoteReservation match:", me);
-		return false;
-	}
-
-	const { error: pe } = await supabase
-		.from("session_players")
-		.update({ status: "playing", force_mixed: false, force_hard_game: false })
-		.in("id", playerIds);
-
-	if (pe) {
-		console.error("dbPromoteReservation players:", pe);
-		return false;
-	}
-
 	return true;
 }
 
@@ -146,7 +55,6 @@ export async function dbCompleteMatch(
 	match: ActiveMatch,
 ): Promise<{
 	updatedPlayers: SessionPlayer[];
-	groupUpdates: Array<{ groupId: string; readyIds: string[] }>;
 } | null> {
 	const allPlayers = [...match.teamA, ...match.teamB];
 	const isMixed = match.gameType === "혼복";
@@ -224,7 +132,7 @@ export async function dbCompleteMatch(
 		if (data) updatedPlayers.push(rowToSessionPlayer(data as SessionPlayerRow));
 	}
 
-	return { updatedPlayers, groupUpdates: [] };
+	return { updatedPlayers };
 }
 
 export async function dbUpdateSessionPlayer(

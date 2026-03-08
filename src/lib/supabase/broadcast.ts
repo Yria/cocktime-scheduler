@@ -1,5 +1,5 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import type { GameType, ReservedMatch, SessionPlayer } from "../../types";
+import type { GameType, GeneratedTeam, SessionPlayer } from "../../types";
 import { supabase } from "./client";
 
 export type BroadcastPayload =
@@ -11,7 +11,6 @@ export type BroadcastPayload =
 				gameType: GameType;
 				teamA: [SessionPlayer, SessionPlayer];
 				teamB: [SessionPlayer, SessionPlayer];
-				removedGroupId: string | null;
 			};
 	  }
 	| {
@@ -23,25 +22,6 @@ export type BroadcastPayload =
 				teamA: [SessionPlayer, SessionPlayer];
 				teamB: [SessionPlayer, SessionPlayer];
 				updatedPlayers: SessionPlayer[];
-				groupUpdates: Array<{ groupId: string; readyIds: string[] }>;
-				promotedMatch?: ReservedMatch;
-			};
-	  }
-	| {
-			event: "team_reserved";
-			payload: {
-				matchId: string;
-				courtId: number;
-				gameType: GameType;
-				teamA: [SessionPlayer, SessionPlayer];
-				teamB: [SessionPlayer, SessionPlayer];
-			};
-	  }
-	| {
-			event: "reservation_cancelled";
-			payload: {
-				matchId: string;
-				courtId: number;
 			};
 	  }
 	| {
@@ -62,17 +42,12 @@ export type BroadcastPayload =
 	  }
 	| { event: "session_ended" }
 	| {
-			event: "session_updated";
-			payload: {
-				courtCount: number;
-				singleWomanIds: string[];
-				addedPlayers: SessionPlayer[];
-				removedPlayerIds: string[];
-			};
-	  }
-	| {
 			event: "session_refresh_required";
 			payload: Record<string, never>;
+	  }
+	| {
+			event: "candidates_updated";
+			payload: { candidates: GeneratedTeam[] };
 	  };
 
 export function createBroadcastChannel(sessionId: number): RealtimeChannel {

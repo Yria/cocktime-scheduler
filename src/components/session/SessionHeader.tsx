@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 
-export interface SessionHeaderProps {
+interface SessionHeaderProps {
 	onBack: () => void;
 	onEndClick: () => void;
 }

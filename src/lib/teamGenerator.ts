@@ -9,6 +9,7 @@ import type {
 	PairHistory,
 	SessionPlayer,
 	SkillLevel,
+	TeamStrategy,
 } from "../types";
 
 // ─────────────────────────────────────────────
@@ -195,13 +196,13 @@ function selectMenForMixed(
 		for (let j = i + 1; j < pool.length; j++) {
 			const m1 = pool[i];
 			const m2 = pool[j];
-			
+
 			const mixedSum = m1.mixedCount + m2.mixedCount;
 			const diff = Math.abs(skillScore(m1) - skillScore(m2));
-			
+
 			// mixedCount 합산에 큰 가중치(10)를 두어 횟수가 적은 선수가 무조건 우선되도록 함
 			const score = mixedSum * 10 + diff;
-			
+
 			if (score < bestScore) {
 				bestScore = score;
 				bestPairs = [[m1, m2]];
@@ -238,7 +239,7 @@ function pickWomenPreferred(
 	if (count === 2) {
 		// 우선순위가 높은 그룹(preferred)에서 2명 이상이면 그 안에서 실력 유사성 고려
 		const targetPool = preferred.length >= 2 ? preferred : pool;
-		
+
 		let bestPairs: [SessionPlayer, SessionPlayer][] = [];
 		let bestDiff = Infinity;
 
@@ -281,9 +282,9 @@ function pickPartnerForForcedMan(
 	for (const m of pool) {
 		const mixedSum = forcedMan.mixedCount + m.mixedCount;
 		const diff = Math.abs(skillScore(forcedMan) - skillScore(m));
-		
+
 		const score = mixedSum * 10 + diff;
-		
+
 		if (score < bestScore) {
 			bestScore = score;
 			bestCandidates = [m];
@@ -316,32 +317,20 @@ function determineGameType(
 }
 
 // ─────────────────────────────────────────────
-// 대기열에서 4명 선발
+// 대기열에서 4명 선발 (기본 전략: 게임수 균등)
 // ─────────────────────────────────────────────
 
-/**
- * 대기열에서 다음 게임에 투입할 4명 선발.
- *
- * 우선순위:
- *  0) gameCount 오름차순 정렬 → 경기 적게 한 사람 우선 (규칙 0, stable sort)
- *  7) forceMixed 선수가 있으면 혼복 강제 시도 — 여2+남2 미충족 시에도 (규칙 7)
- *  8) forceHardGame 선수가 있으면 우선 선발 후, 나머지는 skillScore 내림차순 (규칙 8)
- *  1) 혼복 가능(여 2 + 남 2)이면 혼복 우선 (규칙 1)
- *     여자 선발 시 직전 혼복 출전자 후순위 (규칙 1.5)
- *     남자 선발은 selectMenForMixed (규칙 1·1.5·2)
- *  2) 여자 1명 + 혼합 불허 시 여자 제외하고 남자 4명
- *  3) 상위 규칙 편성 불가 시 여자 4명 이상이면 여복 (규칙 1.8)
- *  4) 그 외 정렬된 순서대로 4명
- *
- * @param lastMixedPlayerIds 직전 혼복 경기에 출전한 SessionPlayer.id 목록 (규칙 1.5).
- *   호출자가 매칭 완료 후 갱신해서 전달해야 한다.
- */
+interface SelectFourResult {
+	players: SessionPlayer[];
+	reason: string;
+}
+
 function selectFour(
 	waiting: SessionPlayer[],
 	singleWomanIds: string[],
 	lastMixedPlayerIds: string[] = [],
 	lastCoPlayers: Record<string, string[]> = {},
-): SessionPlayer[] | null {
+): SelectFourResult | null {
 	// forceMixed 선수 분리, forceHardGame 선수 분리, 나머지는 gameCount 오름차순 정렬 (규칙 0, 8)
 	const forceMixed = waiting.filter((p) => p.forceMixed);
 	const forceHard = waiting.filter((p) => !p.forceMixed && p.forceHardGame);
@@ -389,10 +378,8 @@ function selectFour(
 			// 남자: 강제 포함 선수 반드시 포함
 			let selectedMen: [SessionPlayer, SessionPlayer];
 			if (forcedMen.length >= 2) {
-				// 강제 남자 2명 이상 → 그 중 최적 2명 (규칙 2, 1.5 완화)
 				selectedMen = selectMenForMixed(forcedMen, []);
 			} else if (forcedMen.length === 1) {
-				// 강제 남자 1명 + 비강제 남자 중 파트너 선발 (규칙 1·1.5·2)
 				const partner = pickPartnerForForcedMan(
 					forcedMen[0],
 					nonForcedMen,
@@ -400,13 +387,11 @@ function selectFour(
 				);
 				selectedMen = [forcedMen[0], partner];
 			} else {
-				// 강제 남자 없음 → 비강제 남자 중 선발 (규칙 1·1.5·2)
 				selectedMen = selectMenForMixed(nonForcedMen, lastMixedMenIds);
 			}
 
-			return [allWomen[0], allWomen[1], selectedMen[0], selectedMen[1]];
+			return { players: [allWomen[0], allWomen[1], selectedMen[0], selectedMen[1]], reason: "혼복 강제배치" };
 		}
-		// 혼복 구성 불가 → 일반 로직으로 진행 (forceMixed는 ordered 앞에 배치)
 	}
 
 	const ordered = [...forceMixed, ...forceHard, ...sorted];
@@ -417,10 +402,9 @@ function selectFour(
 	// 혼복 우선 (규칙 1·1.5·2)
 	if (women.length >= 2 && men.length >= 2) {
 		const selectedWomen = pickWomenPreferred(women, lastMixedWomenIds, 2);
-		// 남자 선발은 대기 중인 남자 전원 대상 (혼복 남자 참여 공정성 원칙)
 		const allWaitingMen = ordered.filter((p) => p.gender === "M");
 		const selectedMen = selectMenForMixed(allWaitingMen, lastMixedMenIds);
-		return [selectedWomen[0], selectedWomen[1], selectedMen[0], selectedMen[1]];
+		return { players: [selectedWomen[0], selectedWomen[1], selectedMen[0], selectedMen[1]], reason: "혼복 우선" };
 	}
 
 	// 여자 1명이고 혼합 불허 → 여자 제외 남자 4명 (규칙 9 적용)
@@ -430,22 +414,57 @@ function selectFour(
 		!singleWomanIds.includes(women[0].playerId) &&
 		men.length >= 4
 	) {
-		return selectBestGroup(men, lastCoPlayers);
+		return { players: selectBestGroup(men, lastCoPlayers), reason: forceHard.length > 0 ? "빡겜 우선배치" : "게임수 균등" };
 	}
 
 	// 상위 혼복·남복 규칙으로 편성 불가 + 여자 ≥ 4명 → 여자 4명 (여복, 규칙 1.8)
 	if (women.length >= 4) {
-		// 여자 중 gameCount 기준으로 정렬 후 규칙 9 적용
 		const sortedWomen = women
 			.slice()
 			.sort((a, b) => a.gameCount - b.gameCount);
-		return selectBestGroup(sortedWomen, lastCoPlayers);
+		return { players: selectBestGroup(sortedWomen, lastCoPlayers), reason: "여복 편성" };
 	}
 
 	// 그 외: 정렬된 순서대로 4명 (규칙 9 적용)
-	if (candidates.length >= 4) return selectBestGroup(candidates, lastCoPlayers);
+	if (candidates.length >= 4) {
+		return { players: selectBestGroup(candidates, lastCoPlayers), reason: forceHard.length > 0 ? "빡겜 우선배치" : "게임수 균등" };
+	}
 
 	return null;
+}
+
+// ─────────────────────────────────────────────
+// 4명 → GeneratedTeam 빌드 (공통 헬퍼)
+// ─────────────────────────────────────────────
+
+function buildTeamFromFour(
+	four: [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer],
+	singleWomanIds: string[],
+	reason: string,
+	strategy?: TeamStrategy,
+): GeneratedTeam {
+	const gameType = determineGameType(four, singleWomanIds);
+
+	let teamA: [SessionPlayer, SessionPlayer];
+	let teamB: [SessionPlayer, SessionPlayer];
+
+	if (gameType === "혼복") {
+		const women = four.filter((p) => p.gender === "F");
+		const men = four.filter((p) => p.gender === "M") as [
+			SessionPlayer,
+			SessionPlayer,
+		];
+		[teamA, teamB] = buildMixedTeams(women, men);
+	} else {
+		[teamA, teamB] = bestPairing(four);
+	}
+
+	// 실력 균형 점수 계산 (낮을수록 좋음)
+	const score = pairingScore(teamA, teamB);
+	const balanceNote = score === 0 ? "실력 균형 최적" : score <= 1 ? "실력 균형 양호" : "";
+	const fullReason = balanceNote ? `${reason} · ${balanceNote}` : reason;
+
+	return { teamA, teamB, gameType, reason: fullReason, strategy };
 }
 
 // ─────────────────────────────────────────────
@@ -478,6 +497,228 @@ function buildMixedTeams(
 }
 
 // ─────────────────────────────────────────────
+// 전략별 4명 선발 함수
+// ─────────────────────────────────────────────
+
+/** C(n,4) 조합 열거 헬퍼. cap 개수 제한 (성능 보호). */
+function* combinations4(
+	arr: SessionPlayer[],
+	cap = 20,
+): Generator<[SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer]> {
+	const n = Math.min(arr.length, cap);
+	for (let i = 0; i < n - 3; i++) {
+		for (let j = i + 1; j < n - 2; j++) {
+			for (let k = j + 1; k < n - 1; k++) {
+				for (let l = k + 1; l < n; l++) {
+					yield [arr[i], arr[j], arr[k], arr[l]];
+				}
+			}
+		}
+	}
+}
+
+/**
+ * 전략 2: 동반자 회피
+ * 전체 대기열에서 lastCoPlayers 겹침이 최소인 4명 조합을 탐색.
+ */
+function selectFourCoPlayerAvoidance(
+	waiting: SessionPlayer[],
+	lastCoPlayers: Record<string, string[]>,
+): SelectFourResult | null {
+	if (waiting.length < 4) return null;
+	if (Object.keys(lastCoPlayers).length === 0) {
+		// 동반자 기록이 없으면 기본 정렬 후 상위 4명
+		const sorted = [...waiting].sort((a, b) => a.gameCount - b.gameCount);
+		return { players: sorted.slice(0, 4), reason: "동반자 회피" };
+	}
+
+	// 동반자 연결이 적은 선수를 우선 배치하여 탐색 범위 축소
+	const sorted = [...waiting].sort((a, b) => {
+		const aConns = (lastCoPlayers[a.id] ?? []).filter((id) => waiting.some((p) => p.id === id)).length;
+		const bConns = (lastCoPlayers[b.id] ?? []).filter((id) => waiting.some((p) => p.id === id)).length;
+		return aConns - bConns;
+	});
+
+	let bestGroup: SessionPlayer[] = sorted.slice(0, 4);
+	let bestOverlap = coPlayerOverlap(bestGroup, lastCoPlayers);
+
+	if (bestOverlap === 0) return { players: bestGroup, reason: "동반자 회피" };
+
+	for (const group of combinations4(sorted)) {
+		const overlap = coPlayerOverlap(group, lastCoPlayers);
+		if (overlap < bestOverlap) {
+			bestOverlap = overlap;
+			bestGroup = [...group];
+			if (bestOverlap === 0) break;
+		}
+	}
+
+	return { players: bestGroup, reason: "동반자 회피" };
+}
+
+/**
+ * 전략 3: 새 조합 우선
+ * pairHistory에서 한 번도 같이 한 적 없는 사람들끼리 우선 매칭.
+ * 4명 중 6쌍의 "과거 동반 횟수"를 최소화.
+ */
+function selectFourNewCombination(
+	waiting: SessionPlayer[],
+	pairHistory: PairHistory,
+): SelectFourResult | null {
+	if (waiting.length < 4) return null;
+
+	// pairHistory 기록이 적은 선수(다양한 상대와 덜 만남)를 우선 탐색
+	const sorted = [...waiting].sort((a, b) => {
+		const aSize = pairHistory[a.id]?.size ?? 0;
+		const bSize = pairHistory[b.id]?.size ?? 0;
+		return aSize - bSize;
+	});
+
+	/** 4명 그룹 내 6쌍 중 과거에 같이 한 쌍 수 */
+	function historyOverlap(group: SessionPlayer[]): number {
+		let count = 0;
+		for (let i = 0; i < group.length; i++) {
+			const partners = pairHistory[group[i].id];
+			if (!partners) continue;
+			for (let j = i + 1; j < group.length; j++) {
+				if (partners.has(group[j].id)) count++;
+			}
+		}
+		return count;
+	}
+
+	let bestGroup: SessionPlayer[] = sorted.slice(0, 4);
+	let bestOverlap = historyOverlap(bestGroup);
+
+	if (bestOverlap === 0) return { players: bestGroup, reason: "새 조합 우선" };
+
+	for (const group of combinations4(sorted)) {
+		const overlap = historyOverlap(group);
+		if (overlap < bestOverlap) {
+			bestOverlap = overlap;
+			bestGroup = [...group];
+			if (bestOverlap === 0) break;
+		}
+	}
+
+	return { players: bestGroup, reason: "새 조합 우선" };
+}
+
+/**
+ * 전략 4: 혼복 참여 균등
+ * mixedCount가 가장 적은 남자를 강제 포함하여 혼복 편성.
+ * 혼복이 불가능하면 null 반환.
+ */
+function selectFourMixedCountBalanced(
+	waiting: SessionPlayer[],
+	lastMixedPlayerIds: string[],
+): SelectFourResult | null {
+	const women = waiting.filter((p) => p.gender === "F");
+	const men = waiting.filter((p) => p.gender === "M");
+
+	if (women.length < 2 || men.length < 2) return null;
+
+	// mixedCount 가장 적은 남자 2명 선발
+	const sortedMen = [...men].sort((a, b) => a.mixedCount - b.mixedCount);
+	const selectedMen = selectMenForMixed(sortedMen, []);
+
+	// 여자: 직전 혼복 출전자 후순위
+	const lastMixedWomenIds = lastMixedPlayerIds.filter(
+		(id) => women.some((w) => w.id === id),
+	);
+	const selectedWomen = pickWomenPreferred(women, lastMixedWomenIds, 2);
+
+	if (selectedWomen.length < 2) return null;
+
+	return {
+		players: [selectedWomen[0], selectedWomen[1], selectedMen[0], selectedMen[1]],
+		reason: "혼복 참여 균등",
+	};
+}
+
+/**
+ * 전략 5: 실력 균형 최적
+ * 4명의 skillScore 분산(max-min)이 최소인 조합을 탐색.
+ */
+function selectFourSkillBalanced(
+	waiting: SessionPlayer[],
+): SelectFourResult | null {
+	if (waiting.length < 4) return null;
+
+	// skillScore 기준 정렬 → 인접한 4명이 분산 최소
+	const sorted = [...waiting].sort((a, b) => skillScore(a) - skillScore(b));
+
+	let bestGroup: SessionPlayer[] = sorted.slice(0, 4);
+	let bestRange = skillScore(bestGroup[3]) - skillScore(bestGroup[0]);
+
+	if (bestRange === 0) return { players: bestGroup, reason: "실력 균형 최적" };
+
+	// 정렬된 상태에서 슬라이딩 윈도우로 최소 range 탐색
+	for (let i = 1; i <= sorted.length - 4; i++) {
+		const group = sorted.slice(i, i + 4);
+		const range = skillScore(group[3]) - skillScore(group[0]);
+		if (range < bestRange) {
+			bestRange = range;
+			bestGroup = group;
+			if (bestRange === 0) break;
+		}
+	}
+
+	return { players: bestGroup, reason: "실력 균형 최적" };
+}
+
+/**
+ * 전략 6: 랜덤 셔플
+ * 대기열을 무작위로 섞은 뒤 상위 4명 선발.
+ */
+function selectFourRandomShuffle(
+	waiting: SessionPlayer[],
+): SelectFourResult | null {
+	if (waiting.length < 4) return null;
+
+	// Fisher-Yates shuffle
+	const shuffled = [...waiting];
+	for (let i = shuffled.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+	}
+
+	return { players: shuffled.slice(0, 4), reason: "랜덤 셔플" };
+}
+
+// ─────────────────────────────────────────────
+// 전략 디스패처
+// ─────────────────────────────────────────────
+
+interface StrategyContext {
+	waiting: SessionPlayer[];
+	singleWomanIds: string[];
+	lastMixedPlayerIds: string[];
+	lastCoPlayers: Record<string, string[]>;
+	pairHistory: PairHistory;
+}
+
+function selectFourByStrategy(
+	strategy: TeamStrategy,
+	ctx: StrategyContext,
+): SelectFourResult | null {
+	switch (strategy) {
+		case "gameCountBalanced":
+			return selectFour(ctx.waiting, ctx.singleWomanIds, ctx.lastMixedPlayerIds, ctx.lastCoPlayers);
+		case "coPlayerAvoidance":
+			return selectFourCoPlayerAvoidance(ctx.waiting, ctx.lastCoPlayers);
+		case "newCombination":
+			return selectFourNewCombination(ctx.waiting, ctx.pairHistory);
+		case "mixedCountBalanced":
+			return selectFourMixedCountBalanced(ctx.waiting, ctx.lastMixedPlayerIds);
+		case "skillBalanced":
+			return selectFourSkillBalanced(ctx.waiting);
+		case "randomShuffle":
+			return selectFourRandomShuffle(ctx.waiting);
+	}
+}
+
+// ─────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────
 
@@ -493,32 +734,15 @@ export function generateTeam(
 ): GeneratedTeam | null {
 	if (waiting.length < 4) return null;
 
-	const selected = selectFour(waiting, singleWomanIds, lastMixedPlayerIds ?? [], lastCoPlayers ?? {});
-	if (!selected || selected.length < 4) return null;
+	const result = selectFour(waiting, singleWomanIds, lastMixedPlayerIds ?? [], lastCoPlayers ?? {});
+	if (!result || result.players.length < 4) return null;
 
-	const four = selected as [
-		SessionPlayer,
-		SessionPlayer,
-		SessionPlayer,
-		SessionPlayer,
-	];
-	const gameType = determineGameType(four, singleWomanIds);
-
-	let teamA: [SessionPlayer, SessionPlayer];
-	let teamB: [SessionPlayer, SessionPlayer];
-
-	if (gameType === "혼복") {
-		const women = four.filter((p) => p.gender === "F");
-		const men = four.filter((p) => p.gender === "M") as [
-			SessionPlayer,
-			SessionPlayer,
-		];
-		[teamA, teamB] = buildMixedTeams(women, men);
-	} else {
-		[teamA, teamB] = bestPairing(four);
-	}
-
-	return { teamA, teamB, gameType };
+	return buildTeamFromFour(
+		result.players as [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer],
+		singleWomanIds,
+		result.reason,
+		"gameCountBalanced",
+	);
 }
 
 /**
@@ -545,30 +769,15 @@ export function recordHistory(
 	return next;
 }
 
-/**
- * 세션 시간과 코트 수를 고려하여 생성할 팀 후보 개수를 계산한다.
- *
- * @param courtCount 코트 수
- * @param sessionDurationMinutes 세션 예상 시간(분). 기본값 180분(3시간)
- * @param avgMatchDurationMinutes 경기당 평균 시간(분). 기본값 12분
- * @param bufferRatio 여유분 비율. 기본값 0.5 (50%)
- * @returns 생성할 팀 후보 개수
- */
-export function calculateTeamCandidateCount(
-	courtCount: number,
-	sessionDurationMinutes = 180,
-	avgMatchDurationMinutes = 12,
-	bufferRatio = 0.5,
-): number {
-	// 코트당 경기 수 계산
-	const matchesPerCourt = Math.floor(sessionDurationMinutes / avgMatchDurationMinutes);
-	// 총 필요 팀 수
-	const totalNeeded = matchesPerCourt * courtCount;
-	// 여유분 포함
-	const withBuffer = Math.ceil(totalNeeded * (1 + bufferRatio));
-
-	return withBuffer;
-}
+/** 다양한 전략으로 후보를 생성할 때 사용하는 전략 순서 */
+const DIVERSE_STRATEGIES: TeamStrategy[] = [
+	"gameCountBalanced",
+	"coPlayerAvoidance",
+	"newCombination",
+	"mixedCountBalanced",
+	"skillBalanced",
+	"randomShuffle",
+];
 
 /**
  * 세션용 팀 후보를 대량으로 생성한다.
@@ -579,7 +788,9 @@ export function calculateTeamCandidateCount(
  * @param singleWomanIds 혼합 가능한 여자 선수 ID 목록
  * @param lastMixedPlayerIds 직전 혼복 경기 출전자 ID 목록
  * @param lastCoPlayers 직전 게임 동반자 기록 (규칙 9)
- * @returns 생성된 후보 팀 목록
+ * @param pairHistory 파트너 이력 (전략 3: 새 조합 우선에 사용)
+ * @param existingCandidates 유지할 기존 후보 (보충 모드: 중복 방지 및 선수 사용 추적)
+ * @returns 생성된 후보 팀 목록 (기존 후보 미포함, 새로 생성된 것만)
  */
 export function generateBulkTeamCandidates(
 	targetCount: number,
@@ -587,74 +798,115 @@ export function generateBulkTeamCandidates(
 	singleWomanIds: string[],
 	lastMixedPlayerIds?: string[],
 	lastCoPlayers?: Record<string, string[]>,
+	pairHistory?: PairHistory,
+	existingCandidates?: GeneratedTeam[],
 ): GeneratedTeam[] {
 	const candidates: GeneratedTeam[] = [];
 	const seenGroups = new Set<string>(); // 동일 4명 중복 방지
-	let availablePlayers = [...players];
-	let usedPlayers: SessionPlayer[] = [];
-	let currentLastMixed = lastMixedPlayerIds ?? [];
-	let currentLastCoPlayers = lastCoPlayers ?? {};
-	let consecutiveSkips = 0;
+	const usedPlayerIds = new Set<string>(); // 이미 후보에 뽑힌 선수 ID
 
-	for (let i = 0; i < targetCount; i++) {
-		// 선수가 4명 미만이면 사용한 선수들을 다시 풀에 추가
-		if (availablePlayers.length < 4) {
-			availablePlayers = [...availablePlayers, ...usedPlayers];
-			usedPlayers = [];
-
-			// 선수가 여전히 4명 미만이면 종료
-			if (availablePlayers.length < 4) break;
+	/** 후보 생성 후 사용된 선수 기록 */
+	function trackUsage(team: GeneratedTeam) {
+		for (const p of [...team.teamA, ...team.teamB]) {
+			usedPlayerIds.add(p.id);
 		}
+	}
 
-		const team = generateTeam(
-			availablePlayers,
-			singleWomanIds,
-			currentLastMixed,
-			currentLastCoPlayers,
-		);
+	// 기존 후보에서 중복 방지 및 선수 사용 추적 초기화
+	if (existingCandidates) {
+		for (const team of existingCandidates) {
+			const groupKey = [...team.teamA, ...team.teamB]
+				.map((p) => p.id)
+				.sort()
+				.join(",");
+			seenGroups.add(groupKey);
+			trackUsage(team);
+		}
+	}
 
-		if (!team) {
-			// 생성 실패 시 사용한 선수들을 다시 풀에 추가하고 재시도
-			if (usedPlayers.length > 0) {
-				availablePlayers = [...availablePlayers, ...usedPlayers];
-				usedPlayers = [];
-				continue;
-			}
+	/**
+	 * 아직 아무 후보에도 안 뽑힌 선수만으로 축소된 풀 반환.
+	 * 4명 미만이면 null (전체 풀로 폴백 필요).
+	 */
+	function getUnusedPool(): SessionPlayer[] | null {
+		const unused = players.filter((p) => !usedPlayerIds.has(p.id));
+		return unused.length >= 4 ? unused : null;
+	}
+
+	if (players.length < 4) {
+		return candidates;
+	}
+
+	// 각 전략을 순회하며 후보 생성
+	const strategies = DIVERSE_STRATEGIES.slice(0, targetCount);
+	while (strategies.length < targetCount) {
+		strategies.push("randomShuffle");
+	}
+
+	const baseMixedIds = lastMixedPlayerIds ?? [];
+	const baseCoPlayers = lastCoPlayers ?? {};
+	const basePairHistory = pairHistory ?? {};
+
+	for (let i = 0; i < strategies.length; i++) {
+		const strategy = strategies[i];
+
+		// 1차: 아직 안 뽑힌 선수만으로 시도 → 2차: 전체 풀로 폴백
+		const unusedPool = getUnusedPool();
+		const pools = unusedPool ? [unusedPool, players] : [players];
+		let generated = false;
+
+		for (const pool of pools) {
+			const ctx: StrategyContext = {
+				waiting: pool,
+				singleWomanIds,
+				lastMixedPlayerIds: baseMixedIds,
+				lastCoPlayers: baseCoPlayers,
+				pairHistory: basePairHistory,
+			};
+
+			const result = selectFourByStrategy(strategy, ctx);
+			if (!result || result.players.length < 4) continue;
+
+			const groupKey = result.players.map((p) => p.id).sort().join(",");
+			if (seenGroups.has(groupKey)) continue;
+
+			seenGroups.add(groupKey);
+			const team = buildTeamFromFour(
+				result.players as [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer],
+				singleWomanIds,
+				result.reason,
+				strategy,
+			);
+			candidates.push(team);
+			trackUsage(team);
+			generated = true;
+
 			break;
 		}
 
-		// 동일 4명 중복 체크
-		const groupKey = [...team.teamA, ...team.teamB]
-			.map((p) => p.id)
-			.sort()
-			.join(",");
-		if (seenGroups.has(groupKey)) {
-			consecutiveSkips++;
-			// 연속 스킵이 많으면 더 이상 새 조합이 나오지 않는 것 → 종료
-			if (consecutiveSkips > players.length) break;
-			continue;
+		if (!generated) {
+			// 모든 풀에서 실패 → 랜덤 셔플로 대체
+			if (strategy !== "randomShuffle") {
+				const fallbackPool = unusedPool ?? players;
+				for (let retry = 0; retry < 3; retry++) {
+					const fallback = selectFourRandomShuffle(fallbackPool);
+					if (!fallback || fallback.players.length < 4) break;
+					const fbKey = fallback.players.map((p) => p.id).sort().join(",");
+					if (!seenGroups.has(fbKey)) {
+						seenGroups.add(fbKey);
+						const team = buildTeamFromFour(
+							fallback.players as [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer],
+							singleWomanIds,
+							fallback.reason,
+							"randomShuffle",
+						);
+						candidates.push(team);
+						trackUsage(team);
+						break;
+					}
+				}
+			}
 		}
-		seenGroups.add(groupKey);
-		consecutiveSkips = 0;
-
-		candidates.push(team);
-
-		// lastCoPlayers 업데이트 (다음 팀 생성 시 동반자 회피)
-		currentLastCoPlayers = updateLastCoPlayers(currentLastCoPlayers, team);
-
-		// lastMixed 업데이트 (혼복이면 해당 선수들 기록)
-		if (team.gameType === "혼복") {
-			currentLastMixed = [...team.teamA, ...team.teamB].map((p) => p.id);
-		}
-
-		// 생성된 팀의 선수들을 사용한 선수 목록으로 이동
-		const teamPlayerIds = new Set([
-			...team.teamA.map((p) => p.id),
-			...team.teamB.map((p) => p.id),
-		]);
-		const teamPlayers = availablePlayers.filter((p) => teamPlayerIds.has(p.id));
-		availablePlayers = availablePlayers.filter((p) => !teamPlayerIds.has(p.id));
-		usedPlayers.push(...teamPlayers);
 	}
 
 	return candidates;

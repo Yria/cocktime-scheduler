@@ -4,18 +4,15 @@ import {
 	type BroadcastPayload,
 	createBroadcastChannel,
 	dbAssignMatch,
-	dbCancelReservation,
 	dbCompleteMatch,
 	dbEndSession,
-	dbPromoteReservation,
-	dbReserveMatch,
 	dbToggleForceMixed,
 	dbToggleForceHardGame,
 	dbToggleResting,
 	sendBroadcast,
 	supabase,
 } from "../lib/supabase";
-import type { ClientSessionState } from "../lib/supabaseClient";
+import type { ClientSessionState } from "../lib/supabase";
 import {
 	recordHistory,
 } from "../lib/teamGenerator";
@@ -23,7 +20,6 @@ import type {
 	Court,
 	GeneratedTeam,
 	PairHistory,
-	ReservedMatch,
 	SessionPlayer,
 } from "../types";
 import { useAppStore } from "./appStore";
@@ -37,7 +33,6 @@ export interface SessionState {
 	lastCoPlayers: Record<string, string[]>;
 
 	candidateTeams: GeneratedTeam[];
-	candidateIds: string[]; // team_candidates.id (UUID) 배열
 	showEndConfirm: boolean;
 
 	// Internal channel reference (not reactive)
@@ -48,23 +43,15 @@ export interface SessionState {
 	reset: () => void;
 
 	// DB Actions
-	setCandidateTeams: (teams: GeneratedTeam[], ids?: string[]) => void;
+	setCandidateTeams: (teams: GeneratedTeam[]) => void;
 	updateCandidateTeam: (index: number, updatedTeam: GeneratedTeam) => void;
-	handleReserveOrAssign: (team: GeneratedTeam, courtId: number) => Promise<void>;
-	handleCancelReservation: (courtId: number) => Promise<void>;
+	handleAssign: (team: GeneratedTeam, courtId: number) => Promise<void>;
 	handleComplete: (courtId: number) => Promise<void>;
 	toggleResting: (playerId: string) => Promise<void>;
 	toggleForceMixed: (playerId: string) => Promise<void>;
 	toggleForceHardGame: (playerId: string) => Promise<void>;
 	handleEndSession: (onEnd: () => void) => Promise<void>;
 
-	// Settings sync
-	syncSettings: (
-		courtCount: number,
-		singleWomanIds: string[],
-		addedPlayers: SessionPlayer[],
-		removedPlayerIds: string[],
-	) => void;
 	notifySessionRefresh: () => void;
 
 	// Channel management
@@ -81,47 +68,15 @@ const initialState = {
 	lastMixedPlayerIds: [] as string[],
 	lastCoPlayers: {} as Record<string, string[]>,
 	candidateTeams: [] as GeneratedTeam[],
-	candidateIds: [] as string[],
 	showEndConfirm: false,
 	_channel: null as RealtimeChannel | null,
 	_metaChannel: null as RealtimeChannel | null,
 };
 
-function adjustCourts(
-	courts: Court[],
-	targetCount: number,
-): ReturnType<typeof courts.map> {
-	const current = courts.length;
-	if (targetCount > current) {
-		const extra = Array.from({ length: targetCount - current }, (_, i) => ({
-			id: current + i + 1,
-			match: null as null,
-			reserved: null as null,
-		}));
-		return [...courts, ...extra];
-	}
-	if (targetCount < current) {
-		let toRemove = current - targetCount;
-		return [...courts]
-			.reverse()
-			.filter((c) => {
-				if (!c.match && !c.reserved && toRemove > 0) {
-					toRemove--;
-					return false;
-				}
-				return true;
-			})
-			.reverse();
-	}
-	return courts;
-}
-
 export const useSessionStore = create<SessionState>((set, get) => ({
 	...initialState,
 
 	initialize: (initial) => {
-		const cs = initial.courts.map((c) => `${c.id}(m=${c.match ? "Y" : "N"},r=${c.reserved ? "Y" : "N"})`).join(" ");
-		console.log(`[store] initialize courts=[${cs}] waiting=${initial.waiting.length} resting=${initial.resting.length} candidates=${initial.candidateTeams.length}`);
 		set({
 			...initialState,
 			_channel: get()._channel,
@@ -139,8 +94,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 
 	// ── DB Actions ──────────────────────────────────────────
-	setCandidateTeams: (teams: GeneratedTeam[], ids?: string[]) => {
-		set({ candidateTeams: teams, candidateIds: ids ?? [] });
+	setCandidateTeams: (teams: GeneratedTeam[]) => {
+		set({ candidateTeams: teams });
 	},
 
 	updateCandidateTeam: (index: number, updatedTeam: GeneratedTeam) => {
@@ -149,56 +104,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		}));
 	},
 
-	handleReserveOrAssign: async (team: GeneratedTeam, courtId: number) => {
+	handleAssign: async (team: GeneratedTeam, courtId: number) => {
 		const { courts, _channel } = get();
-		if (!_channel) { console.warn("[store] handleReserveOrAssign: no channel"); return; }
+		if (!_channel) { return; }
 
 		const court = courts.find((c) => c.id === courtId);
-		if (!court) { console.warn("[store] handleReserveOrAssign: court not found", courtId); return; }
+		if (!court || court.match) { return; }
 
 		const sessionMeta = useAppStore.getState().sessionMeta;
 		const sessionId = sessionMeta?.sessionId ?? 0;
 		const matchId = crypto.randomUUID();
 
-		const names = [...team.teamA, ...team.teamB].map((p) => p.name).join(",");
-		console.log(`[store] handleReserveOrAssign court=${courtId} hasMatch=${!!court.match} hasReserved=${!!court.reserved} players=[${names}]`);
+		const ok = await dbAssignMatch(
+			sessionId,
+			matchId,
+			team,
+			courtId,
+		);
 
-		if (!court.match) {
-			// 빈 코트 → 직접 배정
-			const ok = await dbAssignMatch(
-				sessionId,
-				matchId,
-				team,
-				courtId,
-				null,
-			);
-
-			if (ok) {
-				console.log(`[store] assign OK → match_started court=${courtId}`);
-				const payload: BroadcastPayload = {
-					event: "match_started",
-					payload: {
-						matchId,
-						courtId,
-						gameType: team.gameType,
-						teamA: team.teamA,
-						teamB: team.teamB,
-						removedGroupId: null,
-					},
-				};
-				get().applyBroadcast(payload, () => { });
-				sendBroadcast(_channel, payload);
-			} else {
-				console.error(`[store] assign FAILED court=${courtId}`);
-			}
-		} else {
-			// 게임 중인 코트 → 예약
-			if (court.reserved) { console.warn("[store] court already reserved", courtId); return; }
-
-			// 옵티미스틱: UI 먼저 업데이트
-			console.log(`[store] reserve optimistic court=${courtId}`);
-			const reservePayload: BroadcastPayload = {
-				event: "team_reserved",
+		if (ok) {
+			const payload: BroadcastPayload = {
+				event: "match_started",
 				payload: {
 					matchId,
 					courtId,
@@ -207,60 +133,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					teamB: team.teamB,
 				},
 			};
-			get().applyBroadcast(reservePayload, () => { });
-
-			const ok = await dbReserveMatch(sessionId, matchId, team, courtId);
-
-			if (ok) {
-				console.log(`[store] reserve DB OK court=${courtId}`);
-				sendBroadcast(_channel, reservePayload);
-			} else {
-				console.error(`[store] reserve DB FAILED → rollback court=${courtId}`);
-				// DB 실패 → 롤백
-				get().applyBroadcast(
-					{ event: "reservation_cancelled", payload: { matchId, courtId } },
-					() => { },
-				);
-			}
-		}
-	},
-
-	handleCancelReservation: async (courtId: number) => {
-		const { courts, _channel } = get();
-		if (!_channel) return;
-
-		const court = courts.find((c) => c.id === courtId);
-		if (!court?.reserved) return;
-
-		const matchId = court.reserved.id;
-		const savedReservation = court.reserved;
-
-		// 옵티미스틱: UI 먼저 업데이트
-		const cancelPayload: BroadcastPayload = {
-			event: "reservation_cancelled",
-			payload: { matchId, courtId },
-		};
-		get().applyBroadcast(cancelPayload, () => { });
-
-		const ok = await dbCancelReservation(matchId);
-
-		if (ok) {
-			sendBroadcast(_channel, cancelPayload);
+			get().applyBroadcast(payload, () => { });
+			sendBroadcast(_channel, payload);
 		} else {
-			// DB 실패 → 롤백 (예약 복원)
-			get().applyBroadcast(
-				{
-					event: "team_reserved",
-					payload: {
-						matchId: savedReservation.id,
-						courtId,
-						gameType: savedReservation.gameType,
-						teamA: savedReservation.teamA,
-						teamB: savedReservation.teamB,
-					},
-				},
-				() => { },
-			);
+			console.error(`[store] assign FAILED court=${courtId}`);
 		}
 	},
 
@@ -272,30 +148,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const sessionMeta = useAppStore.getState().sessionMeta;
 		const sessionId = sessionMeta?.sessionId ?? 0;
 		const match = court.match;
-		const reservation = court.reserved;
-
-		console.log(`[store] handleComplete court=${courtId} hasReservation=${!!reservation}`);
 
 		const result = await dbCompleteMatch(sessionId, match);
 		if (!result) { console.error(`[store] handleComplete dbCompleteMatch FAILED court=${courtId}`); return; }
-
-		console.log(`[store] handleComplete DB OK, updatedPlayers=${result.updatedPlayers.map((p) => p.name).join(",")}`);
-
-		// 예약이 있으면 자동 승격
-		let promotedMatch: ReservedMatch | undefined;
-		if (reservation) {
-			const reservedPlayerIds = [
-				reservation.teamA[0].id,
-				reservation.teamA[1].id,
-				reservation.teamB[0].id,
-				reservation.teamB[1].id,
-			];
-			const promoted = await dbPromoteReservation(reservation.id, reservedPlayerIds);
-			console.log(`[store] promote reservation ${promoted ? "OK" : "FAILED"} court=${courtId}`);
-			if (promoted) {
-				promotedMatch = reservation;
-			}
-		}
 
 		const payload: BroadcastPayload = {
 			event: "match_completed",
@@ -306,8 +161,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				teamA: match.teamA,
 				teamB: match.teamB,
 				updatedPlayers: result.updatedPlayers,
-				groupUpdates: result.groupUpdates,
-				promotedMatch,
 			},
 		};
 		get().applyBroadcast(payload, () => { });
@@ -377,26 +230,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		onEnd();
 	},
 
-	// ── Settings sync ───────────────────────────────────────
-	syncSettings: (
-		courtCount,
-		singleWomanIds,
-		addedPlayers,
-		removedPlayerIds,
-	) => {
-		const { _channel } = get();
-
-		const payload: BroadcastPayload = {
-			event: "session_updated",
-			payload: { courtCount, singleWomanIds, addedPlayers, removedPlayerIds },
-		};
-		get().applyBroadcast(payload, () => { });
-
-		if (_channel) {
-			sendBroadcast(_channel, payload);
-		}
-	},
-
 	notifySessionRefresh: () => {
 		const { _channel } = get();
 		if (_channel) {
@@ -410,11 +243,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
 	// ── Channel management ──────────────────────────────────
 	applyBroadcast: (ev: BroadcastPayload, onEnd: () => void) => {
-		const before = get();
-		const cs = before.courts.map((c) => `${c.id}(m=${c.match?.id.slice(0, 4) ?? "-"},r=${c.reserved?.id.slice(0, 4) ?? "-"})`).join(" ");
-		const ws = before.waiting.map((p) => p.name).join(",");
-		console.log(`[broadcast] ${ev.event} | courts=[${cs}] waiting=[${ws}] candidates=${before.candidateTeams.length}`);
-
 		switch (ev.event) {
 			case "match_started": {
 				const { matchId, courtId, gameType, teamA, teamB } =
@@ -458,40 +286,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				break;
 			}
 
-			case "team_reserved": {
-				const { matchId, courtId, gameType, teamA, teamB } = ev.payload;
-				// candidateTeams는 제거하지 않음 — SessionMain의 visibleCandidates가
-				// reservedPlayerIds로 필터링하므로 UI에서 자동 숨김.
-				// 예약 취소 시 자연스럽게 다시 표시됨.
-				set((state) => ({
-					courts: state.courts.map((c) =>
-						c.id === courtId
-							? {
-								...c,
-								reserved: {
-									id: matchId,
-									courtId,
-									gameType,
-									teamA,
-									teamB,
-								},
-							}
-							: c,
-					),
-				}));
-				break;
-			}
-
-			case "reservation_cancelled": {
-				const { courtId } = ev.payload;
-				set((state) => ({
-					courts: state.courts.map((c) =>
-						c.id === courtId ? { ...c, reserved: null } : c,
-					),
-				}));
-				break;
-			}
-
 			case "match_completed": {
 				const {
 					courtId,
@@ -499,7 +293,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					teamA,
 					teamB,
 					updatedPlayers,
-					promotedMatch,
 				} = ev.payload;
 				const updatedMap = new Map(
 					updatedPlayers.map((p: SessionPlayer) => [p.id, p]),
@@ -507,16 +300,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				const toWaiting = updatedPlayers.filter(
 					(p: SessionPlayer) => p.status === "waiting",
 				);
-
-				// 승격된 예약이 있으면 해당 선수들은 waiting에서 제거
-				const promotedIds = promotedMatch
-					? new Set([
-						promotedMatch.teamA[0].id,
-						promotedMatch.teamA[1].id,
-						promotedMatch.teamB[0].id,
-						promotedMatch.teamB[1].id,
-					])
-					: new Set<string>();
 
 				set((state) => {
 					// Deep-clone Sets to avoid mutating existing state
@@ -540,25 +323,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 							(p: SessionPlayer) =>
 								!state.waiting.some((pp) => pp.id === p.id),
 						),
-					].filter((p) => !promotedIds.has(p.id));
+					];
 
 					return {
 						courts: state.courts.map((c) => {
 							if (c.id !== courtId) return c;
-							if (promotedMatch) {
-								return {
-									...c,
-									match: {
-										id: promotedMatch.id,
-										courtId: promotedMatch.courtId,
-										gameType: promotedMatch.gameType,
-										teamA: promotedMatch.teamA,
-										teamB: promotedMatch.teamB,
-										startedAt: new Date().toISOString(),
-									},
-									reserved: null,
-								};
-							}
 							return { ...c, match: null };
 						}),
 						waiting: newWaiting,
@@ -652,16 +421,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				// DB 상태를 다시 로드
 				const sessionMeta = useAppStore.getState().sessionMeta;
 				if (sessionMeta) {
-					console.log("[session_refresh_required] DB 상태 다시 로드 중...");
-					import("../lib/supabaseClient")
+					import("../lib/supabase")
 						.then(({ fetchSessionSnapshot, snapshotToClientState }) =>
 							fetchSessionSnapshot(sessionMeta.sessionId).then((snapshot) => {
 								if (snapshot) {
 									const clientState = snapshotToClientState(snapshot);
 									get().initialize(clientState);
-									console.log(
-										`[session_refresh_required] 로드 완료 - waiting: ${clientState.waiting.length}명, resting: ${clientState.resting.length}명`,
-									);
 								}
 							}),
 						)
@@ -670,60 +435,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				break;
 			}
 
-			case "session_updated": {
-				const { courtCount, singleWomanIds, addedPlayers, removedPlayerIds } =
-					ev.payload;
-				const removedSet = new Set(removedPlayerIds);
+			case "candidates_updated": {
+			const { candidates: newCandidates } = ev.payload;
+			set({ candidateTeams: newCandidates });
+			break;
+		}
 
-				set((state) => ({
-					courts: adjustCourts(state.courts, courtCount) as Court[],
-					waiting: [
-						...state.waiting.filter((p) => !removedSet.has(p.playerId)),
-						...addedPlayers,
-					],
-					resting: state.resting.filter((p) => !removedSet.has(p.playerId)),
-				}));
-
-				const appStore = useAppStore.getState();
-				const appMeta = appStore.sessionMeta;
-				if (appMeta) {
-					appStore.setSessionMeta({ ...appMeta, courtCount, singleWomanIds });
-				}
-
-				// setup* 필드 동기화 (다른 클라이언트가 설정 화면으로 돌아올 때를 대비)
-				const { waiting, resting, courts } = get();
-				const allSessionPlayerIds = new Set([
-					...waiting.map((p) => p.playerId),
-					...resting.map((p) => p.playerId),
-					...courts
-						.flatMap((c) =>
-							c.match ? [...c.match.teamA, ...c.match.teamB] : [],
-						)
-						.map((p) => p.playerId),
-				]);
-				const allPlayerIds = new Set(appStore.allPlayers.map((p) => p.id));
-				const removedGuestIds = new Set(
-					removedPlayerIds.filter((id) => !allPlayerIds.has(id)),
-				);
-				const newGuests = addedPlayers
-					.filter((p) => !allPlayerIds.has(p.playerId))
-					.map((p) => ({
-						id: p.playerId,
-						name: p.name,
-						gender: p.gender,
-						skills: p.skills,
-					}));
-				appStore.setSetupCourtCount(courtCount);
-				appStore.setSetupSingleWomanIds(new Set(singleWomanIds));
-				appStore.setSetupSelectedIds(allSessionPlayerIds);
-				if (newGuests.length > 0 || removedGuestIds.size > 0) {
-					appStore.setSetupGuests((prev) => [
-						...prev.filter((g) => !removedGuestIds.has(g.id)),
-						...newGuests,
-					]);
-				}
-				break;
-			}
 		}
 	},
 
@@ -735,13 +452,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const events = [
 			"match_started",
 			"match_completed",
-			"team_reserved",
-			"reservation_cancelled",
 			"player_status_changed",
 			"player_force_mixed_changed",
 			"player_force_hard_game_changed",
 			"player_updated",
-			"session_updated",
+			"candidates_updated",
 			"session_refresh_required",
 		] as const;
 		for (const event of events) {

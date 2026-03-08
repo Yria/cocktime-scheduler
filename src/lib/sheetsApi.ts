@@ -16,31 +16,58 @@ function parseGender(val: string): Gender {
 	return "M";
 }
 
-export async function fetchPlayers(): Promise<Player[]> {
-	const { data, error } = await supabase.functions.invoke("sheets", {
-		method: "GET",
-	});
-	if (error) throw new Error(`시트 읽기 실패: ${error.message}`);
-	const rows: string[][] = data.values ?? [];
-	if (rows.length < 2) return [];
+let _fetchPromise: Promise<Player[]> | null = null;
+let _cachedPlayers: Player[] | null = null;
+let _cacheTime = 0;
+const CACHE_TTL = 5_000;
 
-	return rows
-		.slice(1)
-		.filter((row) => row[0]?.trim())
-		.map((row, idx) => ({
-			id: `player-${idx}`,
-			name: row[0].trim(),
-			gender: parseGender(row[1]),
-			skills: {
-				클리어: parseSkillLevel(row[2]),
-				스매시: parseSkillLevel(row[3]),
-				로테이션: parseSkillLevel(row[4]),
-				드랍: parseSkillLevel(row[5]),
-				헤어핀: parseSkillLevel(row[6]),
-				드라이브: parseSkillLevel(row[7]),
-				백핸드: parseSkillLevel(row[8]),
-			} satisfies PlayerSkills,
-		}));
+export async function fetchPlayers(): Promise<Player[]> {
+	const now = Date.now();
+	if (_cachedPlayers && now - _cacheTime < CACHE_TTL) {
+		return _cachedPlayers;
+	}
+	if (_fetchPromise) {
+		return _fetchPromise;
+	}
+
+	_fetchPromise = (async () => {
+		const { data, error } = await supabase.functions.invoke("sheets", {
+			method: "GET",
+		});
+		if (error) throw new Error(`시트 읽기 실패: ${error.message}`);
+		const rows: string[][] = data.values ?? [];
+		if (rows.length < 2) return [];
+
+		return rows
+			.slice(1)
+			.filter((row) => row[0]?.trim())
+			.map((row, idx) => ({
+				id: `player-${idx}`,
+				name: row[0].trim(),
+				gender: parseGender(row[1]),
+				skills: {
+					클리어: parseSkillLevel(row[2]),
+					스매시: parseSkillLevel(row[3]),
+					로테이션: parseSkillLevel(row[4]),
+					드랍: parseSkillLevel(row[5]),
+					헤어핀: parseSkillLevel(row[6]),
+					드라이브: parseSkillLevel(row[7]),
+					백핸드: parseSkillLevel(row[8]),
+				} satisfies PlayerSkills,
+			}));
+	})();
+
+	try {
+		const result = await _fetchPromise;
+		_cachedPlayers = result;
+		_cacheTime = Date.now();
+		return result;
+	} catch (e) {
+		console.error(`[fetchPlayers] FETCH ERROR`, e);
+		throw e;
+	} finally {
+		_fetchPromise = null;
+	}
 }
 
 // Apps Script 경유 write (Edge Function 프록시)
@@ -58,6 +85,7 @@ export async function updatePlayer(
 		body: { name: playerName, skills: columns },
 	});
 	if (error) throw new Error(`수정 실패: ${error.message}`);
+	_cachedPlayers = null; // invalidate cache
 }
 
 // OAuth Bearer 토큰으로 Sheets API 직접 write (Edge Function 프록시)
@@ -84,4 +112,5 @@ export async function updatePlayerWithToken(
 		body: { playerName, values },
 	});
 	if (error) throw new Error(`수정 실패: ${error.message}`);
+	_cachedPlayers = null; // invalidate cache
 }

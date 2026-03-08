@@ -8,7 +8,7 @@ import {
 	type MatchLogEntry,
 } from "../lib/supabase/api";
 import type { SessionRow } from "../lib/supabase/types";
-import { useAppStore } from "../store/appStore";
+import { appActions, useAppStore } from "../store/appStore";
 import type { Gender, PlayerSkills } from "../types";
 import ClearConfirmModal from "./log/ClearConfirmModal";
 import LogList from "./log/LogList";
@@ -18,7 +18,6 @@ import SessionSelector from "./log/SessionSelector";
 export default function LogPage() {
 	const navigate = useNavigate();
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
-	const loadSessionAction = useAppStore((s) => s.loadSessionAction);
 
 	const [sessions, setSessions] = useState<SessionRow[]>([]);
 	const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -80,11 +79,11 @@ export default function LogPage() {
 		if (ok) {
 			setLogs([]);
 			const row = sessionsRef.current.find((s) => s.id === selectedId);
-			if (row) await loadSessionAction(row);
+			if (row) await appActions.loadSession(row);
 		}
 		setClearing(false);
 		setShowClearConfirm(false);
-	}, [selectedId, loadSessionAction]);
+	}, [selectedId]);
 
 	return (
 		<div

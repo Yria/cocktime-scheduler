@@ -11,13 +11,15 @@ import LogPage from "./components/LogPage";
 import SessionMain from "./components/SessionMain";
 import SessionSetup from "./components/SessionSetup";
 import { usePageVisibility } from "./hooks/usePageVisibility";
-import type { SessionRow } from "./lib/supabaseClient";
-import { useAppStore } from "./store/appStore";
+import type { SessionRow } from "./lib/supabase";
+import { appActions, useAppStore } from "./store/appStore";
 import { useSessionStore } from "./store/sessionStore";
 import type { Player, SessionSettings } from "./types";
 
 export default function App() {
 	const navigate = useNavigate();
+	const navRef = useRef(navigate);
+	navRef.current = navigate;
 
 	useEffect(() => {
 		const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -32,14 +34,6 @@ export default function App() {
 
 	const allPlayers = useAppStore((s) => s.allPlayers);
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
-	const setSessionMeta = useAppStore((s) => s.setSessionMeta);
-	const loadSessionAction = useAppStore((s) => s.loadSessionAction);
-	const checkActiveSessionAction = useAppStore(
-		(s) => s.checkActiveSessionAction,
-	);
-	const startOrUpdateSessionAction = useAppStore(
-		(s) => s.startOrUpdateSessionAction,
-	);
 
 	const [sessionLoading, setSessionLoading] = useState(true);
 
@@ -58,91 +52,84 @@ export default function App() {
 	// snapshot 로드 → 상태 설정 → navigate (setup 화면이 아닌 경우)
 	const applySession = useCallback(
 		async (row: SessionRow) => {
-			const success = await loadSessionAction(row);
+			const success = await appActions.loadSession(row);
 			if (success && !currentPathRef.current.includes("/setup")) {
-				navigate("/session", { replace: true });
+				navRef.current("/session", { replace: true });
 			}
 		},
-		[navigate, loadSessionAction],
+		[],
 	);
 
 	// 마운트 시 활성 세션 확인 → 홈(/)에서만 세션 페이지로 자동 이동
 	useEffect(() => {
-		async function checkActiveSession() {
-			const hasActive = await checkActiveSessionAction();
+		async function check() {
+			const hasActive = await appActions.checkActiveSession();
 			if (hasActive && currentPathRef.current === "/") {
-				navigate("/session", { replace: true });
+				navRef.current("/session", { replace: true });
 			}
 			setSessionLoading(false);
 		}
-		checkActiveSession();
-	}, [checkActiveSessionAction, navigate]);
+		check();
+	}, []);
 
 	// 페이지가 다시 활성화되었을 때(백그라운드 -> 포그라운드) 세션 동기화
 	const isVisible = usePageVisibility();
+	const wasVisibleRef = useRef(true);
 	useEffect(() => {
-		if (isVisible) {
-			checkActiveSessionAction();
+		if (isVisible && !wasVisibleRef.current) {
+			appActions.checkActiveSession();
 		}
-	}, [isVisible, checkActiveSessionAction]);
+		wasVisibleRef.current = isVisible;
+	}, [isVisible]);
 
 	// 다른 클라이언트의 세션 시작/종료 감지
-	const subscribeSessionWatch = useAppStore((s) => s.subscribeSessionWatch);
-	const unsubscribeSessionWatch = useAppStore((s) => s.unsubscribeSessionWatch);
-
 	useEffect(() => {
-		subscribeSessionWatch({
+		appActions.subscribeSessionWatch({
 			onSessionStart: async (row) => {
-				// setup 화면에서 직접 설정 중이면 무시 (본인이 업데이트 중)
 				if (currentPathRef.current.includes("/setup")) return;
-				// 같은 세션이든 다른 세션이든 활성 세션 데이터 리로드
+				if (sessionMetaRef.current === row.id) return;
+				if (useAppStore.getState().sessionMeta?.sessionId === row.id) return;
 				await applySession(row);
 			},
 			onSessionEnd: (endedSessionId) => {
 				if (sessionMetaRef.current === endedSessionId) {
-					setSessionMeta(null);
+					appActions.setSessionMeta(null);
 					useSessionStore.getState().reset();
-					useAppStore.getState().resetSetupState();
-					navigate("/", { replace: true });
+					appActions.resetSetupState();
+					navRef.current("/", { replace: true });
 				}
 			},
 		});
 
 		return () => {
-			unsubscribeSessionWatch();
+			appActions.unsubscribeSessionWatch();
 		};
-	}, [
-		navigate,
-		setSessionMeta,
-		applySession,
-		subscribeSessionWatch,
-		unsubscribeSessionWatch,
-	]);
+	}, [applySession]);
 
 	const handleHomeStart = useCallback(() => {
-		navigate("/setup");
-	}, [navigate]);
+		navRef.current("/setup");
+	}, []);
 
 	const handleSetupStart = useCallback(
 		async (selected: Player[], settings: SessionSettings) => {
-			const success = await startOrUpdateSessionAction(selected, settings);
+			const success = await appActions.startOrUpdateSession(selected, settings);
 			if (success) {
-				navigate("/session");
+				navRef.current("/session");
 			}
 		},
-		[navigate, startOrUpdateSessionAction],
+		[],
 	);
 
 	const handleSessionEnd = useCallback(() => {
-		setSessionMeta(null);
+		appActions.setSessionMeta(null);
 		useSessionStore.getState().reset();
-		useAppStore.getState().resetSetupState();
-		navigate("/setup");
-	}, [navigate, setSessionMeta]);
+		appActions.resetSetupState();
+		navRef.current("/setup");
+	}, []);
 
 	const handleSessionBack = useCallback(() => {
-		navigate("/setup");
-	}, [navigate]);
+		navRef.current("/setup");
+	}, []);
 
 	if (sessionLoading) {
 		return (

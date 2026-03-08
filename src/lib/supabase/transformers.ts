@@ -1,9 +1,10 @@
-import type { Court, GeneratedTeam, PairHistory, SessionPlayer } from "../../types";
+import type { Court, GeneratedTeam, GameType, PairHistory, SessionPlayer, TeamStrategy } from "../../types";
 import type {
 	ClientSessionState,
 	PairHistoryRow,
 	SessionPlayerRow,
 	SessionSnapshot,
+	TeamCandidateRow,
 } from "./types";
 
 export function rowToSessionPlayer(row: SessionPlayerRow): SessionPlayer {
@@ -23,7 +24,7 @@ export function rowToSessionPlayer(row: SessionPlayerRow): SessionPlayer {
 	};
 }
 
-export function buildPairHistory(rows: PairHistoryRow[]): PairHistory {
+function buildPairHistory(rows: PairHistoryRow[]): PairHistory {
 	const history: PairHistory = {};
 	for (const row of rows) {
 		if (!history[row.player_a]) history[row.player_a] = new Set();
@@ -36,6 +37,28 @@ export function buildPairHistory(rows: PairHistoryRow[]): PairHistory {
 	return history;
 }
 
+function buildTeamCandidates(
+	rows: TeamCandidateRow[],
+	playerMap: Map<string, SessionPlayer>,
+): GeneratedTeam[] {
+	const teams: GeneratedTeam[] = [];
+	for (const row of rows) {
+		const p1 = playerMap.get(row.team_a_p1);
+		const p2 = playerMap.get(row.team_a_p2);
+		const p3 = playerMap.get(row.team_b_p1);
+		const p4 = playerMap.get(row.team_b_p2);
+		if (!p1 || !p2 || !p3 || !p4) continue;
+		teams.push({
+			teamA: [p1, p2],
+			teamB: [p3, p4],
+			gameType: row.game_type as GameType,
+			reason: row.reason ?? undefined,
+			strategy: (row.strategy as TeamStrategy) ?? undefined,
+		});
+	}
+	return teams;
+}
+
 export function snapshotToClientState(
 	snapshot: SessionSnapshot,
 ): ClientSessionState {
@@ -46,7 +69,6 @@ export function snapshotToClientState(
 	const courts: Court[] = Array.from({ length: courtCount }, (_, i) => ({
 		id: i + 1,
 		match: null,
-		reserved: null,
 	}));
 
 	for (const m of snapshot.matches) {
@@ -58,24 +80,14 @@ export function snapshotToClientState(
 		const p4 = playerMap.get(m.team_b_p2);
 		if (!p1 || !p2 || !p3 || !p4) continue;
 
-		if (m.status === "reserved") {
-			court.reserved = {
-				id: m.id,
-				courtId: m.court_id,
-				gameType: m.game_type,
-				teamA: [p1, p2],
-				teamB: [p3, p4],
-			};
-		} else {
-			court.match = {
-				id: m.id,
-				courtId: m.court_id,
-				gameType: m.game_type,
-				teamA: [p1, p2],
-				teamB: [p3, p4],
-				startedAt: m.started_at,
-			};
-		}
+		court.match = {
+			id: m.id,
+			courtId: m.court_id,
+			gameType: m.game_type,
+			teamA: [p1, p2],
+			teamB: [p3, p4],
+			startedAt: m.started_at,
+		};
 	}
 
 	// Waiting / Resting by status
@@ -85,20 +97,8 @@ export function snapshotToClientState(
 	// PairHistory
 	const pairHistory = buildPairHistory(snapshot.pairHistory);
 
-	// Team candidates
-	const candidateTeams: GeneratedTeam[] = [];
-	for (const row of snapshot.teamCandidates) {
-		const p1 = playerMap.get(row.team_a_p1);
-		const p2 = playerMap.get(row.team_a_p2);
-		const p3 = playerMap.get(row.team_b_p1);
-		const p4 = playerMap.get(row.team_b_p2);
-		if (!p1 || !p2 || !p3 || !p4) continue;
-		candidateTeams.push({
-			teamA: [p1, p2],
-			teamB: [p3, p4],
-			gameType: row.game_type,
-		});
-	}
+	// Team candidates: DB에서 로드
+	const candidateTeams = buildTeamCandidates(snapshot.teamCandidates, playerMap);
 
 	return { courts, waiting, resting, pairHistory, candidateTeams };
 }

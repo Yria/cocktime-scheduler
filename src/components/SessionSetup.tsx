@@ -1,13 +1,9 @@
-import { disassemble, getChoseong } from "es-hangul";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DEFAULT_SKILLS } from "../lib/constants";
+import { useRef, useState } from "react";
 import {
-	fetchSessionPlayerForConflictCheck,
 	fetchSessionSettingsForConflictCheck,
-	type ServerPlayerData,
 	type ServerSessionSettings,
 } from "../lib/supabase";
-import type { Gender, Player, PlayerSkills, SessionSettings } from "../types";
+import type { Player, SessionSettings } from "../types";
 import { EditModal } from "./setup/EditModal";
 import { GuestModal } from "./setup/GuestModal";
 import { PlayerConflictDialog } from "./setup/PlayerConflictDialog";
@@ -18,120 +14,78 @@ interface Props {
 }
 
 import { useAppStore } from "../store/appStore";
-import { useSessionStore } from "../store/sessionStore";
+import { useSetupPlayers } from "../hooks/useSetupPlayers";
+import { useGuestManager } from "../hooks/useGuestManager";
+import { usePlayerEditor } from "../hooks/usePlayerEditor";
 import { CourtCountSelector } from "./setup/CourtCountSelector";
 import {
-	type GenderFilter,
 	PlayerSelectionList,
 } from "./setup/PlayerSelectionList";
 import { SingleWomanSelector } from "./setup/SingleWomanSelector";
 
 export default function SessionSetup({ onStart }: Props) {
-	const allStorePlayers = useAppStore((s) => s.allPlayers);
-	const sessionMeta = useAppStore((s) => s.sessionMeta);
-	const updatePlayerAction = useAppStore((s) => s.updatePlayerAction);
-
-	const sessionCourts = useSessionStore((s) => s.courts);
-	const sessionWaiting = useSessionStore((s) => s.waiting);
-	const sessionResting = useSessionStore((s) => s.resting);
-
 	const guests = useAppStore((s) => s.setupGuests);
-	const setGuests = useAppStore((s) => s.setSetupGuests);
 
-	const isUpdating = !!sessionMeta;
-
-	const players = useMemo(() => {
-		if (allStorePlayers.length > 0) return allStorePlayers;
-		if (!sessionMeta) return [];
-		const guestIdSet = new Set(guests.map((g) => g.id));
-		const playingPlayers = sessionCourts.flatMap((c) =>
-			c.match ? [...c.match.teamA, ...c.match.teamB] : [],
-		);
-		const playerMap = new Map<string, Player>();
-		for (const sp of [
-			...sessionWaiting,
-			...sessionResting,
-			...playingPlayers,
-		]) {
-			if (!playerMap.has(sp.playerId) && !guestIdSet.has(sp.playerId)) {
-				playerMap.set(sp.playerId, {
-					id: sp.playerId,
-					name: sp.name,
-					gender: sp.gender,
-					skills: sp.skills,
-				});
-			}
-		}
-		return Array.from(playerMap.values());
-	}, [
-		allStorePlayers,
-		sessionMeta,
-		guests,
-		sessionCourts,
-		sessionWaiting,
-		sessionResting,
-	]);
-
-	const { nonRemovablePlayerIds, minCourtCount } = useMemo(() => {
-		let nonRemovablePlayerIds = new Set<string>();
-		const minCourtCount = 0;
-		if (sessionMeta) {
-			const playing = sessionCourts.flatMap((c) =>
-				c.match ? [...c.match.teamA, ...c.match.teamB] : [],
-			);
-			nonRemovablePlayerIds = new Set(playing.map((p) => p.playerId));
-		}
-		return { nonRemovablePlayerIds, minCourtCount };
-	}, [sessionMeta, sessionCourts]);
-	// 로컬 상태 (SessionSetup에서만 사용)
-	const [isSetupInitialized, setIsSetupInitialized] = useState(false);
 	const [courtCount, setCourtCount] = useState(2);
 	const [singleWomanIds, setSingleWomanIds] = useState<Set<string>>(new Set());
-	const [selected, setSelected] = useState<Set<string>>(new Set());
-	const [search, setSearch] = useState("");
-	const [genderFilter, setGenderFilter] = useState<GenderFilter>("all");
 
-	// 초기 선택 설정 (최초 1회만)
-	useEffect(() => {
-		if (!isSetupInitialized && players.length > 0) {
-			if (sessionMeta) {
-				// 세션 업데이트 모드: 기존 세션 참가자 + 설정 복원
-				const sessionPlayerIds = new Set([
-					...sessionWaiting.map((p) => p.playerId),
-					...sessionResting.map((p) => p.playerId),
-					...sessionCourts.flatMap((c) =>
-						c.match ? [...c.match.teamA, ...c.match.teamB].map((p) => p.playerId) : [],
-					),
-				]);
-				setSelected(sessionPlayerIds);
-				setCourtCount(sessionMeta.courtCount);
-				setSingleWomanIds(new Set(sessionMeta.singleWomanIds));
-			} else {
-				setSelected(new Set());
-			}
+	const {
+		allPlayers,
+		isUpdating,
+		nonRemovablePlayerIds,
+		selected,
+		setSelected,
+		search,
+		setSearch,
+		genderFilter,
+		setGenderFilter,
+		filtered,
+		filteredGuests,
+		selectedCount,
+		togglePlayer,
+		toggleAll,
+		sessionMeta,
+	} = useSetupPlayers(guests);
 
-			setIsSetupInitialized(true);
-		}
-	}, [isSetupInitialized, players, sessionMeta, sessionWaiting, sessionResting, sessionCourts]);
+	// 초기 코트수/혼복싱글 복원 (세션 업데이트 모드)
+	const [initialized, setInitialized] = useState(false);
+	if (!initialized && sessionMeta && allPlayers.length > 0) {
+		setCourtCount(sessionMeta.courtCount);
+		setSingleWomanIds(new Set(sessionMeta.singleWomanIds));
+		setInitialized(true);
+	}
 
-	// Guest state
-	const [showGuestModal, setShowGuestModal] = useState(false);
-	const [guestName, setGuestName] = useState("");
-	const [guestGender, setGuestGender] = useState<Gender>("M");
-	const [guestSkills, setGuestSkills] = useState<PlayerSkills>({
-		...DEFAULT_SKILLS,
-	});
+	const {
+		showGuestModal,
+		setShowGuestModal,
+		guestName,
+		setGuestName,
+		guestGender,
+		setGuestGender,
+		guestSkills,
+		setGuestSkills,
+		openGuestModal,
+		addGuest,
+		removeGuest,
+	} = useGuestManager(setSelected, setSingleWomanIds);
 
-	// Edit state
-	const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
-	const [editGender, setEditGender] = useState<Gender>("M");
-	const [editSkills, setEditSkills] = useState<PlayerSkills>(
-		{} as PlayerSkills,
-	);
-	const [editSaving, setEditSaving] = useState(false);
-	const [editError, setEditError] = useState("");
+	const {
+		editingPlayer,
+		setEditingPlayer,
+		editGender,
+		setEditGender,
+		editSkills,
+		setEditSkills,
+		editSaving,
+		editError,
+		openEdit,
+		handleSave,
+		playerConflict,
+		resolvePlayerConflict,
+		cancelPlayerConflict,
+	} = usePlayerEditor(sessionMeta);
 
-	// ── 충돌 감지 state ────────────────────────────────
+	// ── 세션 설정 충돌 감지 ────────────────────────────────
 	const [sessionConflict, setSessionConflict] =
 		useState<ServerSessionSettings | null>(null);
 	const [sessionConflictLocalSnapshot, setSessionConflictLocalSnapshot] =
@@ -145,101 +99,6 @@ export default function SessionSetup({ onStart }: Props) {
 		settings: SessionSettings;
 	} | null>(null);
 
-	const [playerConflict, setPlayerConflict] = useState<{
-		playerName: string;
-		server: ServerPlayerData;
-		localGender: Gender;
-		localSkills: PlayerSkills;
-	} | null>(null);
-	const pendingSaveRef = useRef<(() => Promise<void>) | null>(null);
-
-	const matchesSearch = useCallback(
-		(name: string) => {
-			if (!search) return true;
-			if (name.includes(search)) return true;
-			// 초성 검색: 겹자음(ㄳ→ㄱㅅ) 분리 후 비교
-			const decomposed = disassemble(search);
-			const isAllChoseong = /^[ㄱ-ㅎ]+$/.test(decomposed);
-			if (isAllChoseong) {
-				return getChoseong(name).includes(decomposed);
-			}
-			return false;
-		},
-		[search],
-	);
-
-	const filtered = useMemo(() => {
-		return players.filter((p) => {
-			const matchName = matchesSearch(p.name);
-			const matchGender = genderFilter === "all" || genderFilter === "selected" || p.gender === genderFilter;
-			const matchSelected = genderFilter !== "selected" || selected.has(p.id);
-			return matchName && matchGender && matchSelected;
-		});
-	}, [players, matchesSearch, genderFilter, selected]);
-
-	const filteredGuests = useMemo(() => {
-		return guests.filter((p) => {
-			const matchName = matchesSearch(p.name);
-			const matchGender = genderFilter === "all" || genderFilter === "selected" || p.gender === genderFilter;
-			const matchSelected = genderFilter !== "selected" || selected.has(p.id);
-			return matchName && matchGender && matchSelected;
-		});
-	}, [guests, matchesSearch, genderFilter, selected]);
-
-	const allPlayers = useMemo(() => [...players, ...guests], [players, guests]);
-
-	const selectedFemales = useMemo(
-		() => allPlayers.filter((p) => p.gender === "F" && selected.has(p.id)),
-		[allPlayers, selected],
-	);
-
-	// selected Set을 allPlayers에 존재하는 ID로만 정리 (플레이어 목록 변경 시)
-	useEffect(() => {
-		if (allPlayers.length === 0) return;
-		const validIds = new Set(allPlayers.map(p => p.id));
-		setSelected((prev) => {
-			const filtered = new Set([...prev].filter(id => validIds.has(id)));
-			// 변경사항이 없으면 동일한 객체 반환
-			if (filtered.size === prev.size) {
-				return prev;
-			}
-			return filtered;
-		});
-	}, [allPlayers.length]); // length만 체크하여 플레이어 추가/삭제 시에만 실행
-
-	function togglePlayer(id: string) {
-		if (nonRemovablePlayerIds?.has(id)) return;
-		setSelected((prev) => {
-			const next = new Set(prev);
-			if (next.has(id)) next.delete(id);
-			else next.add(id);
-			return next;
-		});
-	}
-
-	function toggleAll() {
-		const allFilteredPlayers = [...filtered, ...filteredGuests];
-		setSelected((prev) => {
-			const hasAnySelected = prev.size > 0;
-
-			if (hasAnySelected) {
-				// 전체 해제: 모든 플레이어 해제 (제거 불가능한 플레이어 제외)
-				const next = new Set<string>();
-				allPlayers.forEach((p) => {
-					if (nonRemovablePlayerIds?.has(p.id)) {
-						next.add(p.id);
-					}
-				});
-				return next;
-			} else {
-				// 전체 선택: 현재 필터된 플레이어만 선택
-				const next = new Set(prev);
-				allFilteredPlayers.forEach((p) => next.add(p.id));
-				return next;
-			}
-		});
-	}
-
 	function toggleSingleWoman(id: string) {
 		setSingleWomanIds((prev) => {
 			const next = new Set(prev);
@@ -249,118 +108,9 @@ export default function SessionSetup({ onStart }: Props) {
 		});
 	}
 
-	function openGuestModal() {
-		setGuestName("");
-		setGuestGender("M");
-		setGuestSkills({ ...DEFAULT_SKILLS });
-		setShowGuestModal(true);
-	}
-
-	function addGuest() {
-		const name = guestName.trim();
-		if (!name) return;
-		const id = `guest-${Date.now()}`;
-		const newGuest: Player = {
-			id,
-			name,
-			gender: guestGender,
-			skills: { ...guestSkills },
-		};
-		setGuests((prev) => [...prev, newGuest]);
-		setSelected((prev) => new Set([...prev, id]));
-		setShowGuestModal(false);
-	}
-
-	function removeGuest(id: string) {
-		setGuests((prev) => prev.filter((g) => g.id !== id));
-		setSelected((prev) => {
-			const next = new Set(prev);
-			next.delete(id);
-			return next;
-		});
-		setSingleWomanIds((prev) => {
-			const next = new Set(prev);
-			next.delete(id);
-			return next;
-		});
-	}
-
-	function openEdit(e: React.MouseEvent, player: Player) {
-		e.stopPropagation();
-		setEditingPlayer(player);
-		setEditGender(player.gender);
-		setEditSkills({ ...player.skills });
-		setEditError("");
-	}
-
-	const doPlayerSave = useCallback(async () => {
-		if (!editingPlayer) return;
-		setEditSaving(true);
-		setEditError("");
-		try {
-			await updatePlayerAction({
-				...editingPlayer,
-				gender: editGender,
-				skills: editSkills,
-			});
-			setEditingPlayer(null);
-		} catch (e) {
-			setEditError(e instanceof Error ? e.message : "저장 실패");
-		} finally {
-			setEditSaving(false);
-		}
-	}, [editingPlayer, editGender, editSkills, updatePlayerAction]);
-
-	async function handleSave() {
-		if (!editingPlayer) return;
-		if (editingPlayer.id.startsWith("guest-")) {
-			setGuests((prev) =>
-				prev.map((g) =>
-					g.id === editingPlayer.id
-						? { ...g, gender: editGender, skills: { ...editSkills } }
-						: g,
-				),
-			);
-			setEditingPlayer(null);
-			return;
-		}
-
-		// 세션 내 플레이어이면 서버 충돌 감지
-		if (sessionMeta) {
-			const { waiting, resting, courts } = useSessionStore.getState();
-			const sessionPlayer = [
-				...waiting,
-				...resting,
-				...courts.flatMap((c) =>
-					c.match ? [...c.match.teamA, ...c.match.teamB] : [],
-				),
-			].find((p) => p.playerId === editingPlayer.id);
-
-			if (sessionPlayer) {
-				const serverData = await fetchSessionPlayerForConflictCheck(
-					sessionPlayer.id,
-				);
-				if (serverData) {
-					// 내가 저장하려는 값과 서버 현재값이 다르면 → 충돌
-					const genderChanged = serverData.gender !== editGender;
-					const skillsChanged =
-						JSON.stringify(serverData.skills) !== JSON.stringify(editSkills);
-					if (genderChanged || skillsChanged) {
-						setPlayerConflict({
-							playerName: editingPlayer.name,
-							server: serverData,
-							localGender: editGender,
-							localSkills: { ...editSkills },
-						});
-						pendingSaveRef.current = doPlayerSave;
-						return;
-					}
-				}
-			}
-		}
-
-		await doPlayerSave();
-	}
+	const selectedFemales = allPlayers.filter(
+		(p) => p.gender === "F" && selected.has(p.id),
+	);
 
 	async function handleStart() {
 		const selectedPlayers = allPlayers.filter((p) => selected.has(p.id));
@@ -373,16 +123,13 @@ export default function SessionSetup({ onStart }: Props) {
 			singleWomanIds: validSingleWomanIds,
 		};
 
-		// 기존 세션 업데이트인 경우: 내가 저장하려는 값 vs 서버 현재값 비교
 		if (isUpdating && sessionMeta) {
 			const serverState = await fetchSessionSettingsForConflictCheck(
 				sessionMeta.sessionId,
 			);
 			if (serverState) {
-				// 내가 저장하려는 courtCount vs 서버
 				const courtDiff = settings.courtCount !== serverState.courtCount;
 
-				// 내가 저장하려는 참가자 목록 vs 서버
 				const myPlayerIds = new Set(selectedPlayers.map((p) => p.id));
 				const serverPlayerIdSet = new Set(serverState.playerIds);
 				const playerDiff =
@@ -390,7 +137,6 @@ export default function SessionSetup({ onStart }: Props) {
 					[...myPlayerIds].some((id) => !serverPlayerIdSet.has(id)) ||
 					[...serverPlayerIdSet].some((id) => !myPlayerIds.has(id));
 
-				// 내가 저장하려는 혼복 싱글 여성 vs 서버
 				const mySingleSet = new Set(settings.singleWomanIds);
 				const serverSingleSet = new Set(serverState.singleWomanIds);
 				const singleDiff =
@@ -413,8 +159,6 @@ export default function SessionSetup({ onStart }: Props) {
 
 		onStart(selectedPlayers, settings);
 	}
-
-	const selectedCount = allPlayers.filter((p) => selected.has(p.id)).length;
 
 	return (
 		<div
@@ -440,12 +184,10 @@ export default function SessionSetup({ onStart }: Props) {
 				</span>
 			</div>
 
-			<div
-				style={{ padding: "16px 16px 0" }}
-			>
+			<div style={{ padding: "16px 16px 0" }}>
 				<CourtCountSelector
 					courtCount={courtCount}
-					minCourtCount={minCourtCount}
+
 					onChange={setCourtCount}
 				/>
 
@@ -473,9 +215,9 @@ export default function SessionSetup({ onStart }: Props) {
 					openEdit={openEdit}
 					removeGuest={removeGuest}
 				/>
-				{/* 하단 floating 바 높이 스페이서 (safe area는 wrapper paddingBottom으로 처리) */}
+				{/* 하단 floating 바 높이 스페이서 */}
 				<div style={{ height: "72px" }} />
-		</div>
+			</div>
 
 			{/* Bottom CTA */}
 			<div
@@ -582,19 +324,8 @@ export default function SessionSetup({ onStart }: Props) {
 					serverSkills={playerConflict.server.skills}
 					localGender={playerConflict.localGender}
 					localSkills={playerConflict.localSkills}
-					onForceOverwrite={() => {
-						setPlayerConflict(null);
-						if (pendingSaveRef.current) {
-							const save = pendingSaveRef.current;
-							pendingSaveRef.current = null;
-							save();
-						}
-					}}
-					onCancel={() => {
-						setPlayerConflict(null);
-						pendingSaveRef.current = null;
-						setEditingPlayer(null);
-					}}
+					onForceOverwrite={resolvePlayerConflict}
+					onCancel={cancelPlayerConflict}
 				/>
 			)}
 		</div>

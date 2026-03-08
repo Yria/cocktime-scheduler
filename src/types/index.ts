@@ -3,6 +3,15 @@ export type Gender = "M" | "F";
 export type GameType = "혼복" | "남복" | "여복" | "혼합";
 export type PlayerStatus = "waiting" | "playing" | "resting";
 
+/** 팀 후보 생성 전략 */
+export type TeamStrategy =
+	| "gameCountBalanced"   // 게임수 균등 (기본)
+	| "coPlayerAvoidance"   // 동반자 회피
+	| "newCombination"      // 새 조합 우선
+	| "mixedCountBalanced"  // 혼복 참여 균등
+	| "skillBalanced"       // 실력 균형 최적
+	| "randomShuffle";      // 랜덤 셔플
+
 export interface PlayerSkills {
 	클리어: SkillLevel;
 	스매시: SkillLevel;
@@ -47,19 +56,9 @@ export interface ActiveMatch {
 	startedAt: string;
 }
 
-/** 코트에 예약된 다음 경기 (startedAt 없음) */
-export interface ReservedMatch {
-	id: string; // UUID (matches.id)
-	courtId: number;
-	gameType: GameType;
-	teamA: [SessionPlayer, SessionPlayer];
-	teamB: [SessionPlayer, SessionPlayer];
-}
-
 export interface Court {
 	id: number;
 	match: ActiveMatch | null;
-	reserved: ReservedMatch | null;
 }
 
 /** 팀 구성 알고리즘 결과 */
@@ -67,6 +66,8 @@ export interface GeneratedTeam {
 	teamA: [SessionPlayer, SessionPlayer];
 	teamB: [SessionPlayer, SessionPlayer];
 	gameType: GameType;
+	reason?: string;
+	strategy?: TeamStrategy;
 }
 
 /** 파트너 이력 — session_players.id (UUID) 기반 */

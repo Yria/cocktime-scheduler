@@ -1,6 +1,6 @@
 import ModalSheet from "../common/ModalSheet";
 
-export interface EndSessionModalProps {
+interface EndSessionModalProps {
 	onConfirm: () => void;
 	onCancel: () => void;
 }

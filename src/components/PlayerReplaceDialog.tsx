@@ -2,12 +2,13 @@ import { useMemo } from "react";
 import type { PairHistory, SessionPlayer } from "../types";
 import ModalSheet from "./common/ModalSheet";
 import PlayerBadge from "./shared/PlayerBadge";
+import PlayerGenderGroup from "./shared/PlayerGenderGroup";
 import { skillScore } from "../lib/teamGenerator";
 
 interface Props {
 	selectedPlayer: SessionPlayer;
-	currentTeam: SessionPlayer[]; // The team that contains the selected player
-	opponentTeam: SessionPlayer[]; // The opposing team
+	currentTeam: SessionPlayer[];
+	opponentTeam: SessionPlayer[];
 	availablePlayers: SessionPlayer[];
 	pairHistory: PairHistory;
 	onReplace: (newPlayer: SessionPlayer) => void;
@@ -23,18 +24,15 @@ export default function PlayerReplaceDialog({
 	onReplace,
 	onCancel,
 }: Props) {
-	// Calculate match history counts for each available player vs selected player
 	const { maleGroups, femaleGroups } = useMemo(() => {
 		const playersData = availablePlayers.map((player) => {
 			const matchCount = pairHistory[selectedPlayer.id]?.has(player.id) ? 1 : 0;
 			return { player, matchCount };
 		});
 
-		// Group by gender
 		const males = playersData.filter((p) => p.player.gender === "M");
 		const females = playersData.filter((p) => p.player.gender === "F");
 
-		// Sort each group by: 1) match count (fewer first), 2) game count (fewer first)
 		const sortFn = (a: typeof playersData[0], b: typeof playersData[0]) => {
 			if (a.matchCount !== b.matchCount) return a.matchCount - b.matchCount;
 			return a.player.gameCount - b.player.gameCount;
@@ -60,38 +58,22 @@ export default function PlayerReplaceDialog({
 				</p>
 			</div>
 
-			{/* Current Team Display - CourtList style */}
+			{/* Current Team Display */}
 			<div className="px-5 pt-4 pb-3">
 				<div
 					className="bg-white dark:bg-[#1c1c1e] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
-					style={{
-						borderRadius: 8,
-						overflow: "hidden",
-					}}
+					style={{ borderRadius: 8, overflow: "hidden" }}
 				>
-					{/* Team info */}
 					<div style={{ padding: "16px 20px" }}>
 						{/* Current Team (Team A) */}
 						<div style={{ display: "flex", gap: 12, alignItems: "center" }}>
 							<span
 								className="text-[#0f1724] dark:text-white"
-								style={{
-									fontSize: 14,
-									fontWeight: 600,
-									width: 32,
-									flexShrink: 0,
-								}}
+								style={{ fontSize: 14, fontWeight: 600, width: 32, flexShrink: 0 }}
 							>
 								팀 A
 							</span>
-							<div
-								style={{
-									display: "flex",
-									flexWrap: "wrap",
-									gap: 6,
-									flex: 1,
-								}}
-							>
+							<div style={{ display: "flex", flexWrap: "wrap", gap: 6, flex: 1 }}>
 								{currentTeam.map((player) => (
 									<div
 										key={player.id}
@@ -130,21 +112,11 @@ export default function PlayerReplaceDialog({
 						</div>
 
 						{/* VS divider */}
-						<div
-							style={{
-								display: "flex",
-								alignItems: "center",
-								margin: "12px 0",
-							}}
-						>
+						<div style={{ display: "flex", alignItems: "center", margin: "12px 0" }}>
 							<div className="bg-[rgba(0,0,0,0.08)] dark:bg-[rgba(255,255,255,0.1)]" style={{ flex: 1, height: 1 }} />
 							<span
 								className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-								style={{
-									fontSize: 12,
-									fontWeight: 700,
-									padding: "0 8px",
-								}}
+								style={{ fontSize: 12, fontWeight: 700, padding: "0 8px" }}
 							>
 								VS
 							</span>
@@ -155,23 +127,11 @@ export default function PlayerReplaceDialog({
 						<div style={{ display: "flex", gap: 12, alignItems: "center" }}>
 							<span
 								className="text-[#0f1724] dark:text-white"
-								style={{
-									fontSize: 14,
-									fontWeight: 600,
-									width: 32,
-									flexShrink: 0,
-								}}
+								style={{ fontSize: 14, fontWeight: 600, width: 32, flexShrink: 0 }}
 							>
 								팀 B
 							</span>
-							<div
-								style={{
-									display: "flex",
-									flexWrap: "wrap",
-									gap: 6,
-									flex: 1,
-								}}
-							>
+							<div style={{ display: "flex", flexWrap: "wrap", gap: 6, flex: 1 }}>
 								{opponentTeam.map((player) => (
 									<PlayerBadge
 										key={player.id}
@@ -186,7 +146,7 @@ export default function PlayerReplaceDialog({
 				</div>
 			</div>
 
-			{/* Available players - using PlayerBadge */}
+			{/* Available players */}
 			<div className="px-5 py-2 max-h-[40vh] overflow-y-auto">
 				{totalPlayers === 0 ? (
 					<div className="text-center py-8">
@@ -196,159 +156,18 @@ export default function PlayerReplaceDialog({
 					</div>
 				) : (
 					<div className="space-y-4">
-						{/* Male players section */}
-						{maleGroups.length > 0 && (
-							<div>
-								<div className="flex items-center gap-2 mb-3">
-									<span
-										style={{
-											width: 10,
-											height: 10,
-											borderRadius: "50%",
-											background: "#007aff",
-											display: "inline-block",
-										}}
-									/>
-									<h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-										남성 ({maleGroups.length})
-									</h4>
-								</div>
-								<div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-									{maleGroups.map(({ player, matchCount }) => (
-										<button
-											key={player.id}
-											type="button"
-											onClick={() => onReplace(player)}
-											className="glass-item hover:bg-[rgba(0,0,0,0.02)] dark:hover:bg-[rgba(255,255,255,0.08)] transition-colors"
-											style={{
-												border: "none",
-												background: "transparent",
-												cursor: "pointer",
-												padding: 0,
-												position: "relative",
-											}}
-										>
-											<div style={{ position: "relative" }}>
-												<PlayerBadge
-													name={player.name}
-													gender={player.gender}
-													skillScore={skillScore(player)}
-												/>
-												{matchCount > 0 && (
-													<div
-														style={{
-															position: "absolute",
-															top: -6,
-															right: -6,
-															fontSize: 9,
-															fontWeight: 700,
-															color: "#ff3b30",
-															background: "#fff",
-															borderRadius: "50%",
-															width: 16,
-															height: 16,
-															display: "flex",
-															alignItems: "center",
-															justifyContent: "center",
-															border: "1.5px solid #ff3b30",
-														}}
-													>
-														{matchCount}
-													</div>
-												)}
-											</div>
-											<div
-												style={{
-													fontSize: 10,
-													color: "#98a0ab",
-													marginTop: 4,
-													fontWeight: 500,
-												}}
-											>
-												경기 {player.gameCount}회
-											</div>
-										</button>
-									))}
-								</div>
-							</div>
-						)}
-
-						{/* Female players section */}
-						{femaleGroups.length > 0 && (
-							<div>
-								<div className="flex items-center gap-2 mb-3">
-									<span
-										style={{
-											width: 10,
-											height: 10,
-											borderRadius: "50%",
-											background: "#ff2d55",
-											display: "inline-block",
-										}}
-									/>
-									<h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-										여성 ({femaleGroups.length})
-									</h4>
-								</div>
-								<div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-									{femaleGroups.map(({ player, matchCount }) => (
-										<button
-											key={player.id}
-											type="button"
-											onClick={() => onReplace(player)}
-											className="glass-item hover:bg-[rgba(0,0,0,0.02)] dark:hover:bg-[rgba(255,255,255,0.08)] transition-colors"
-											style={{
-												border: "none",
-												background: "transparent",
-												cursor: "pointer",
-												padding: 0,
-												position: "relative",
-											}}
-										>
-											<div style={{ position: "relative" }}>
-												<PlayerBadge
-													name={player.name}
-													gender={player.gender}
-													skillScore={skillScore(player)}
-												/>
-												{matchCount > 0 && (
-													<div
-														style={{
-															position: "absolute",
-															top: -6,
-															right: -6,
-															fontSize: 9,
-															fontWeight: 700,
-															color: "#ff3b30",
-															background: "#fff",
-															borderRadius: "50%",
-															width: 16,
-															height: 16,
-															display: "flex",
-															alignItems: "center",
-															justifyContent: "center",
-															border: "1.5px solid #ff3b30",
-														}}
-													>
-														{matchCount}
-													</div>
-												)}
-											</div>
-											<div
-												style={{
-													fontSize: 10,
-													color: "#98a0ab",
-													marginTop: 4,
-													fontWeight: 500,
-												}}
-											>
-												경기 {player.gameCount}회
-											</div>
-										</button>
-									))}
-								</div>
-							</div>
-						)}
+						<PlayerGenderGroup
+							label="남성"
+							dotColor="#007aff"
+							players={maleGroups}
+							onReplace={onReplace}
+						/>
+						<PlayerGenderGroup
+							label="여성"
+							dotColor="#ff2d55"
+							players={femaleGroups}
+							onReplace={onReplace}
+						/>
 					</div>
 				)}
 			</div>

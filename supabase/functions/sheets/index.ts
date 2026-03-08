@@ -10,6 +10,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-google-token",
 };
 
+// GET 캐시: 60초 TTL (Google Sheets API rate limit 방지)
+let cachedData: string | null = null;
+let cacheExpiry = 0;
+const CACHE_TTL_MS = 60_000;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -17,12 +22,23 @@ Deno.serve(async (req) => {
 
   try {
     if (req.method === "GET") {
+      const now = Date.now();
+      if (cachedData && now < cacheExpiry) {
+        return new Response(cachedData, {
+          headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "HIT" },
+        });
+      }
+
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/A:I?key=${API_KEY}`;
       const res = await fetch(url);
       const data = await res.json();
       if (!res.ok) throw new Error(`시트 읽기 실패: ${res.status}`);
-      return new Response(JSON.stringify(data), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+
+      cachedData = JSON.stringify(data);
+      cacheExpiry = now + CACHE_TTL_MS;
+
+      return new Response(cachedData, {
+        headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "MISS" },
       });
     }
 
@@ -34,6 +50,7 @@ Deno.serve(async (req) => {
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`수정 실패: ${res.status}`);
+      cachedData = null; // 수정 후 캐시 무효화
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -70,6 +87,7 @@ Deno.serve(async (req) => {
         },
       );
       if (!updateRes.ok) throw new Error(`수정 실패: ${updateRes.status}`);
+      cachedData = null; // 수정 후 캐시 무효화
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

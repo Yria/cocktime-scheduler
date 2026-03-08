@@ -6,20 +6,11 @@ import { skillScore } from "../../lib/teamGenerator";
 interface CourtListProps {
 	courts: Court[];
 	onComplete: (courtId: number) => void;
-	onCancelReservation: (courtId: number) => void;
 }
-
-const GAME_TYPE_COLOR: Record<string, { bg: string; text: string }> = {
-	혼복: { bg: "rgba(175,82,222,0.1)", text: "#af52de" },
-	남복: { bg: "rgba(0,122,255,0.1)", text: "#007aff" },
-	여복: { bg: "rgba(255,45,85,0.1)", text: "#ff2d55" },
-	혼합: { bg: "rgba(255,149,0,0.1)", text: "#ff9500" },
-};
 
 const CourtList = memo(function CourtList({
 	courts,
 	onComplete,
-	onCancelReservation,
 }: CourtListProps) {
 	return (
 		<>
@@ -162,77 +153,6 @@ const CourtList = memo(function CourtList({
 									</div>
 								</div>
 							</div>
-
-							{/* Reservation section */}
-							{court.reserved && (
-								<div
-									className="border-t border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
-									style={{ padding: "10px 16px" }}
-								>
-									<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-										<div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-											<span style={{ fontSize: 11, fontWeight: 700, color: "#0b84ff" }}>
-												다음
-											</span>
-											{(() => {
-												const style = GAME_TYPE_COLOR[court.reserved.gameType];
-												return (
-													<span
-														style={{
-															fontSize: 9,
-															fontWeight: 600,
-															color: style.text,
-															background: style.bg,
-															borderRadius: 3,
-															padding: "1px 5px",
-														}}
-													>
-														{court.reserved.gameType}
-													</span>
-												);
-											})()}
-										</div>
-										<button
-											type="button"
-											onClick={() => onCancelReservation(court.id)}
-											style={{
-												fontSize: 10,
-												fontWeight: 600,
-												color: "#ff3b30",
-												background: "rgba(255,59,48,0.08)",
-												border: "none",
-												borderRadius: 4,
-												padding: "2px 8px",
-												cursor: "pointer",
-											}}
-										>
-											취소
-										</button>
-									</div>
-									<div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-										<div style={{ display: "flex", gap: 3 }}>
-											{court.reserved.teamA.map((p) => (
-												<PlayerBadge key={p.id} name={p.name} gender={p.gender} skillScore={skillScore(p)} />
-											))}
-										</div>
-										<span
-											style={{
-												fontSize: 8,
-												fontWeight: 700,
-												color: "var(--text-secondary, #98a0ab)",
-												padding: "0 3px",
-											}}
-										>
-											VS
-										</span>
-										<div style={{ display: "flex", gap: 3 }}>
-											{court.reserved.teamB.map((p) => (
-												<PlayerBadge key={p.id} name={p.name} gender={p.gender} skillScore={skillScore(p)} />
-											))}
-										</div>
-									</div>
-								</div>
-							)}
 
 							{/* Complete button */}
 							<div

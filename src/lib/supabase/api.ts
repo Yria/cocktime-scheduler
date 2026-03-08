@@ -52,7 +52,7 @@ export async function fetchSessionSnapshot(
 				.from("matches")
 				.select("*")
 				.eq("session_id", sessionId)
-				.in("status", ["playing", "reserved"]),
+				.eq("status", "playing"),
 			supabase.from("pair_history").select("*").eq("session_id", sessionId),
 			supabase
 				.from("team_candidates")
@@ -70,13 +70,12 @@ export async function fetchSessionSnapshot(
 		),
 		matches: (matchesRes.data ?? []) as MatchRow[],
 		pairHistory: (pairHistRes.data ?? []) as PairHistoryRow[],
-		teamCandidates: (candidatesRes.data ?? []) as TeamCandidateRow[],
+		teamCandidates: (candidatesRes.data ?? []) as import("./types").TeamCandidateRow[],
 	};
 }
 
 export async function startSession(
 	courtCount: number,
-	scriptUrl: string | null,
 	players: Player[],
 	singleWomanIds: string[],
 ): Promise<{ sessionId: number; sessionPlayers: SessionPlayer[] } | null> {
@@ -88,7 +87,7 @@ export async function startSession(
 
 	const { data: session, error } = await supabase
 		.from("sessions")
-		.insert({ court_count: courtCount, script_url: scriptUrl })
+		.insert({ court_count: courtCount })
 		.select()
 		.single();
 
@@ -174,10 +173,6 @@ export async function updateSession(
 			// 단, status가 playing이 아니어야 함
 			if (ep.status !== "playing") {
 				playersToRemoveIds.push(ep.id);
-			} else {
-				console.warn(
-					`Cannot remove player ${ep.name} (${ep.player_id}): currently playing`,
-				);
 			}
 		} else {
 			const allowedMixedSingle =
@@ -199,11 +194,6 @@ export async function updateSession(
 			}
 		}
 	}
-
-	const toRemoveDetails = existingPlayers
-		.filter((ep) => playersToRemoveIds.includes(ep.id))
-		.map((ep) => `${ep.name}(${ep.player_id}, status:${ep.status})`);
-	console.log(`[updateSession] 삭제 대상: ${playersToRemoveIds.length}명 - [${toRemoveDetails.join(', ')}]`);
 
 	// DB에 ON DELETE SET NULL이 설정되어 있으므로 매치 참조 체크 불필요
 	// 삭제 시 매치의 참조만 NULL이 되고 매치 기록은 보존됨
@@ -233,7 +223,6 @@ export async function updateSession(
 		);
 	}
 	if (playersToRemoveIds.length > 0) {
-		console.log(`[updateSession] 실제 삭제 시도: ${playersToRemoveIds.length}개`);
 		ops.push(
 			supabase
 				.from("session_players")
@@ -250,8 +239,6 @@ export async function updateSession(
 						console.error("삭제 시도한 ID 수:", playersToRemoveIds.length);
 						console.error("삭제 시도한 ID 샘플:", playersToRemoveIds.slice(0, 3));
 						console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-					} else {
-						console.log(`✅ session_players ${playersToRemoveIds.length}개 삭제 성공`);
 					}
 				}),
 		);
@@ -425,7 +412,6 @@ export async function fetchSessionPlayerForConflictCheck(
 // ── Team Candidates API ──────────────────────────────────
 
 import type { GeneratedTeam } from "../../types";
-import type { TeamCandidateRow } from "./types";
 
 /**
  * 세션의 팀 후보를 모두 삭제하고 새로운 후보들을 저장한다.
@@ -459,6 +445,9 @@ export async function dbSaveTeamCandidates(
 		team_a_p2: team.teamA[1].id,
 		team_b_p1: team.teamB[0].id,
 		team_b_p2: team.teamB[1].id,
+		reason: team.reason ?? null,
+		strategy: team.strategy ?? null,
+		is_new: false,
 	}));
 
 	const { error: insertError } = await supabase
@@ -473,80 +462,3 @@ export async function dbSaveTeamCandidates(
 	return true;
 }
 
-/**
- * 세션의 팀 후보 목록을 조회한다.
- * @param sessionId 세션 ID
- * @param limit 조회할 최대 개수 (기본값: 전체)
- * @returns 팀 후보 Row 목록 (queue_position 순)
- */
-export async function dbFetchTeamCandidates(
-	sessionId: number,
-	limit?: number,
-): Promise<TeamCandidateRow[]> {
-	let query = supabase
-		.from("team_candidates")
-		.select("*")
-		.eq("session_id", sessionId)
-		.order("queue_position", { ascending: true });
-
-	if (limit) {
-		query = query.limit(limit);
-	}
-
-	const { data, error } = await query;
-
-	if (error) {
-		console.error("Failed to fetch team candidates:", error);
-		return [];
-	}
-
-	return (data ?? []) as TeamCandidateRow[];
-}
-
-/**
- * 사용한 팀 후보를 삭제한다.
- * @param candidateId 팀 후보 ID (UUID)
- * @returns 성공 여부
- */
-export async function dbDeleteTeamCandidate(
-	candidateId: string,
-): Promise<boolean> {
-	const { error } = await supabase
-		.from("team_candidates")
-		.delete()
-		.eq("id", candidateId);
-
-	if (error) {
-		console.error("Failed to delete team candidate:", error);
-		return false;
-	}
-
-	return true;
-}
-
-/**
- * SessionPlayer 맵을 사용하여 TeamCandidateRow를 GeneratedTeam으로 변환한다.
- * @param row TeamCandidateRow
- * @param playerMap SessionPlayer 맵 (id -> SessionPlayer)
- * @returns GeneratedTeam 또는 null (선수를 찾을 수 없는 경우)
- */
-export function teamCandidateRowToGeneratedTeam(
-	row: TeamCandidateRow,
-	playerMap: Map<string, SessionPlayer>,
-): GeneratedTeam | null {
-	const p1 = playerMap.get(row.team_a_p1);
-	const p2 = playerMap.get(row.team_a_p2);
-	const p3 = playerMap.get(row.team_b_p1);
-	const p4 = playerMap.get(row.team_b_p2);
-
-	if (!p1 || !p2 || !p3 || !p4) {
-		console.warn(`Missing players for candidate ${row.id}`);
-		return null;
-	}
-
-	return {
-		teamA: [p1, p2],
-		teamB: [p3, p4],
-		gameType: row.game_type,
-	};
-}

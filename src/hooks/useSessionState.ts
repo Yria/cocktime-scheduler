@@ -5,7 +5,7 @@ import {
 } from "../store/sessionSetters";
 import { useSessionStore } from "../store/sessionStore";
 
-export interface UseSessionStateProps {
+interface UseSessionStateProps {
 	onEnd: () => void;
 }
 
@@ -26,8 +26,7 @@ export function useSessionState({ onEnd }: UseSessionStateProps) {
 	const resting = useSessionStore((s) => s.resting);
 	const showEndConfirm = useSessionStore((s) => s.showEndConfirm);
 
-	const handleReserveOrAssign = useSessionStore((s) => s.handleReserveOrAssign);
-	const handleCancelReservation = useSessionStore((s) => s.handleCancelReservation);
+	const handleAssign = useSessionStore((s) => s.handleAssign);
 	const handleComplete = useSessionStore((s) => s.handleComplete);
 	const toggleResting = useSessionStore((s) => s.toggleResting);
 	const toggleForceMixed = useSessionStore((s) => s.toggleForceMixed);
@@ -73,8 +72,7 @@ export function useSessionState({ onEnd }: UseSessionStateProps) {
 		toggleResting,
 		toggleForceMixed,
 		toggleForceHardGame,
-		handleReserveOrAssign,
-		handleCancelReservation,
+		handleAssign,
 		handleComplete,
 		handleEndSession,
 		playingCount,

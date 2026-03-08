@@ -12,7 +12,6 @@ export interface SessionRow {
 	id: number;
 	is_active: boolean;
 	court_count: number;
-	script_url: string | null;
 	started_at: string;
 	ended_at: string | null;
 }
@@ -43,7 +42,7 @@ export interface MatchRow {
 	team_a_p2: string;
 	team_b_p1: string;
 	team_b_p2: string;
-	status: "playing" | "reserved" | "completed";
+	status: "playing" | "completed";
 	started_at: string;
 	ended_at: string | null;
 }
@@ -64,7 +63,9 @@ export interface TeamCandidateRow {
 	team_a_p2: string;
 	team_b_p1: string;
 	team_b_p2: string;
-	created_at: string;
+	reason: string | null;
+	strategy: string | null;
+	is_new: boolean;
 }
 
 export interface SessionSnapshot {
