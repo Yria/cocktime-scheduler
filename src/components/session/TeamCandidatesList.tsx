@@ -7,8 +7,11 @@ interface TeamCandidatesListProps {
 	candidates: GeneratedTeam[];
 	courts: Court[];
 	waiting: SessionPlayer[];
+	waitingCount: number;
+	unavailableIds: Set<string>;
 	pairHistory: PairHistory;
 	onAssign: (candidateIndex: number, courtId: number) => void;
+	onQueue: (candidateIndex: number) => void;
 	onPlayerReplace: (candidateIndex: number, oldPlayer: SessionPlayer, newPlayer: SessionPlayer) => void;
 	onRefresh: () => void;
 }
@@ -17,8 +20,11 @@ const TeamCandidatesList = memo(function TeamCandidatesList({
 	candidates,
 	courts,
 	waiting,
+	waitingCount,
+	unavailableIds,
 	pairHistory,
 	onAssign,
+	onQueue,
 	onPlayerReplace,
 	onRefresh,
 }: TeamCandidatesListProps) {
@@ -159,7 +165,7 @@ const TeamCandidatesList = memo(function TeamCandidatesList({
 					</div>
 				</div>
 
-				{candidates.length > 0 && (
+				{candidates.length > 0 ? (
 					<div
 						style={{
 							padding: "0 16px",
@@ -174,12 +180,28 @@ const TeamCandidatesList = memo(function TeamCandidatesList({
 								team={team}
 								index={index}
 								emptyCourtId={emptyCourtId}
+								unavailableIds={unavailableIds}
 								onAssign={onAssign}
+								onQueue={onQueue}
 								onPlayerClick={handlePlayerClick}
 							/>
 						))}
 					</div>
-				)}
+				) : waitingCount > 0 && waitingCount < 4 ? (
+					<p
+						style={{
+							margin: "0 16px 12px",
+							padding: "6px 11px",
+							fontSize: 12,
+							fontWeight: 600,
+							color: "#ff3b30",
+							background: "rgba(255,59,48,0.07)",
+							borderRadius: 10,
+						}}
+					>
+						{4 - waitingCount}명 더 필요
+					</p>
+				) : null}
 			</div>
 
 			{replacingPlayer && (() => {

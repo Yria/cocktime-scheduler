@@ -14,7 +14,9 @@ interface TeamCandidateCardProps {
 	team: GeneratedTeam;
 	index: number;
 	emptyCourtId: number | null;
+	unavailableIds: Set<string>;
 	onAssign: (index: number, courtId: number) => void;
+	onQueue: (index: number) => void;
 	onPlayerClick: (index: number, player: SessionPlayer, e: React.MouseEvent) => void;
 }
 
@@ -22,39 +24,49 @@ const TeamCandidateCard = memo(function TeamCandidateCard({
 	team,
 	index,
 	emptyCourtId,
+	unavailableIds,
 	onAssign,
+	onQueue,
 	onPlayerClick,
 }: TeamCandidateCardProps) {
 	const gameTypeStyle = GAME_TYPE_COLOR[team.gameType];
+	const allPlayers = [...team.teamA, ...team.teamB];
+	const hasUnavailable = allPlayers.some((p) => unavailableIds.has(p.id));
 
-	const renderPlayer = (player: SessionPlayer) => (
-		<div
-			key={player.id}
-			onClick={(e) => onPlayerClick(index, player, e)}
-			onKeyDown={(e) => {
-				if (e.key === "Enter" || e.key === " ") {
-					e.preventDefault();
-					onPlayerClick(index, player, e as any);
-				}
-			}}
-			role="button"
-			tabIndex={0}
-			style={{ cursor: "pointer" }}
-		>
-			<PlayerBadge
-				name={player.name}
-				gender={player.gender}
-				skillScore={skillScore(player)}
-			/>
-		</div>
-	);
+	const renderPlayer = (player: SessionPlayer) => {
+		const isUnavailable = unavailableIds.has(player.id);
+		return (
+			<div
+				key={player.id}
+				onClick={(e) => !isUnavailable && onPlayerClick(index, player, e)}
+				onKeyDown={(e) => {
+					if (!isUnavailable && (e.key === "Enter" || e.key === " ")) {
+						e.preventDefault();
+						onPlayerClick(index, player, e as any);
+					}
+				}}
+				role="button"
+				tabIndex={isUnavailable ? -1 : 0}
+				style={{ cursor: isUnavailable ? "default" : "pointer" }}
+			>
+				<PlayerBadge
+					name={player.name}
+					gender={player.gender}
+					skillScore={skillScore(player)}
+					isUnavailable={isUnavailable}
+				/>
+			</div>
+		);
+	};
 
 	return (
 		<div>
 			<div
 				style={{
 					borderRadius: 8,
-					border: "1px solid rgba(0,122,255,0.2)",
+					border: hasUnavailable
+						? "1px solid rgba(142,142,147,0.2)"
+						: "1px solid rgba(0,122,255,0.2)",
 					overflow: "hidden",
 				}}
 			>
@@ -84,18 +96,34 @@ const TeamCandidateCard = memo(function TeamCandidateCard({
 								</span>
 							)}
 						</div>
-						<span
-							style={{
-								fontSize: 10,
-								fontWeight: 600,
-								color: gameTypeStyle.text,
-								background: gameTypeStyle.bg,
-								borderRadius: 3,
-								padding: "1px 6px",
-							}}
-						>
-							{team.gameType}
-						</span>
+						<div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+							{hasUnavailable && (
+								<span
+									style={{
+										fontSize: 9,
+										fontWeight: 600,
+										color: "#8e8e93",
+										background: "rgba(142,142,147,0.1)",
+										borderRadius: 3,
+										padding: "1px 5px",
+									}}
+								>
+									경기중 포함
+								</span>
+							)}
+							<span
+								style={{
+									fontSize: 10,
+									fontWeight: 600,
+									color: gameTypeStyle.text,
+									background: gameTypeStyle.bg,
+									borderRadius: 3,
+									padding: "1px 6px",
+								}}
+							>
+								{team.gameType}
+							</span>
+						</div>
 					</div>
 
 					{/* Teams in one row */}
@@ -125,18 +153,55 @@ const TeamCandidateCard = memo(function TeamCandidateCard({
 					</div>
 				</div>
 
-				{/* Assign button */}
-				{emptyCourtId != null && (
-					<div
-						style={{
-							padding: "0 12px 8px 12px",
-							borderTop: "1px solid rgba(0,0,0,0.06)",
-							paddingTop: 8,
-						}}
-					>
+				{/* Assign / Queue buttons */}
+				<div
+					style={{
+						padding: "0 12px 8px 12px",
+						borderTop: "1px solid rgba(0,0,0,0.06)",
+						paddingTop: 8,
+					}}
+				>
+					{!hasUnavailable && emptyCourtId != null ? (
+						<div style={{ display: "flex", gap: 6 }}>
+							<button
+								type="button"
+								onClick={() => onAssign(index, emptyCourtId)}
+								style={{
+									flex: 1,
+									padding: "6px 10px",
+									borderRadius: 5,
+									fontSize: 11,
+									fontWeight: 600,
+									border: "none",
+									cursor: "pointer",
+									background: "#34c759",
+									color: "#fff",
+								}}
+							>
+								배정
+							</button>
+							<button
+								type="button"
+								onClick={() => onQueue(index)}
+								style={{
+									flex: 1,
+									padding: "6px 10px",
+									borderRadius: 5,
+									fontSize: 11,
+									fontWeight: 600,
+									border: "none",
+									cursor: "pointer",
+									background: "#ff9500",
+									color: "#fff",
+								}}
+							>
+								대기열 추가
+							</button>
+						</div>
+					) : (
 						<button
 							type="button"
-							onClick={() => onAssign(index, emptyCourtId)}
+							onClick={() => onQueue(index)}
 							style={{
 								width: "100%",
 								padding: "6px 10px",
@@ -145,14 +210,14 @@ const TeamCandidateCard = memo(function TeamCandidateCard({
 								fontWeight: 600,
 								border: "none",
 								cursor: "pointer",
-								background: "#34c759",
+								background: "#ff9500",
 								color: "#fff",
 							}}
 						>
-							배정
+							대기열 추가
 						</button>
-					</div>
-				)}
+					)}
+				</div>
 			</div>
 		</div>
 	);

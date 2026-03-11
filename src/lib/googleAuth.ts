@@ -28,10 +28,30 @@ declare global {
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 export const OAUTH_AVAILABLE = !!CLIENT_ID;
 
+const TOKEN_STORAGE_KEY = "gis_token";
+const EXPIRY_STORAGE_KEY = "gis_token_expiry";
+
 let _client: GisTokenClient | null = null;
-let _cachedToken = "";
-let _tokenExpiry = 0;
 let _loadPromise: Promise<void> | null = null;
+
+function getCachedToken(): { token: string; expiry: number } {
+	try {
+		const token = sessionStorage.getItem(TOKEN_STORAGE_KEY) ?? "";
+		const expiry = Number(sessionStorage.getItem(EXPIRY_STORAGE_KEY)) || 0;
+		return { token, expiry };
+	} catch {
+		return { token: "", expiry: 0 };
+	}
+}
+
+function setCachedToken(token: string, expiry: number) {
+	try {
+		sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+		sessionStorage.setItem(EXPIRY_STORAGE_KEY, String(expiry));
+	} catch {
+		// sessionStorage 사용 불가 시 무시
+	}
+}
 
 function loadGoogleScript(): Promise<void> {
 	if (_loadPromise) return _loadPromise;
@@ -97,8 +117,9 @@ function ensureClient(): boolean {
 }
 
 export async function requestAccessToken(): Promise<string> {
-	if (_cachedToken && Date.now() < _tokenExpiry) {
-		return _cachedToken;
+	const cached = getCachedToken();
+	if (cached.token && Date.now() < cached.expiry) {
+		return cached.token;
 	}
 
 	await loadGoogleScript();
@@ -115,10 +136,10 @@ export async function requestAccessToken(): Promise<string> {
 				reject(new Error(response.error));
 				return;
 			}
-			_cachedToken = response.access_token;
-			_tokenExpiry = Date.now() + (response.expires_in - 60) * 1000;
+			const expiry = Date.now() + (response.expires_in - 60) * 1000;
+			setCachedToken(response.access_token, expiry);
 			resolve(response.access_token);
 		};
-		_client!.requestAccessToken({ prompt: _cachedToken ? "" : undefined });
+		_client!.requestAccessToken({ prompt: cached.token ? "" : undefined });
 	});
 }

@@ -114,6 +114,15 @@ export function PlayerSelectionList({
 					type="text"
 					value={search}
 					onChange={(e) => setSearch(e.target.value)}
+					onKeyDown={(e) => {
+						if (e.key === "Enter") {
+							const all = [...filtered, ...filteredGuests];
+							if (all.length === 1) {
+								togglePlayer(all[0].id);
+								setSearch("");
+							}
+						}
+					}}
 					onFocus={() => setSearch("")}
 					placeholder="이름 검색…"
 					className="bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.08)] text-[#0f1724] dark:text-white placeholder:text-[#94a3b8] dark:placeholder:text-[rgba(235,235,245,0.4)]"

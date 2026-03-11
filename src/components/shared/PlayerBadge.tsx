@@ -5,6 +5,7 @@ interface PlayerBadgeProps {
 	gender: Gender | string;
 	size?: "sm" | "md";
 	skillScore?: number; // 1.0 ~ 3.0
+	isUnavailable?: boolean; // 경기중/대기열 등 현재 배정 불가
 }
 
 export default function PlayerBadge({
@@ -12,6 +13,7 @@ export default function PlayerBadge({
 	gender,
 	size = "md",
 	skillScore,
+	isUnavailable = false,
 }: PlayerBadgeProps) {
 	const isF = gender === "F";
 	const fontSize = size === "sm" ? 12 : 13;
@@ -35,15 +37,22 @@ export default function PlayerBadge({
 				alignItems: "center",
 				gap: 5,
 				padding,
-				background,
+				background: isUnavailable ? "rgba(142,142,147,0.12)" : background,
 				borderRadius: 14,
 				fontSize,
-				color: isF ? "#991b1b" : "#075985",
+				color: isUnavailable ? "#8e8e93" : (isF ? "#991b1b" : "#075985"),
 				fontWeight: 600,
 				position: "relative",
 				overflow: "hidden",
+				border: isUnavailable ? "1px dashed rgba(142,142,147,0.4)" : undefined,
+				opacity: isUnavailable ? 0.7 : 1,
 			}}
 		>
+			{isUnavailable && (
+				<span style={{ fontSize: 9, lineHeight: 1, position: "relative", zIndex: 1 }}>
+					&#9679;
+				</span>
+			)}
 			<span style={{ position: "relative", zIndex: 1 }}>
 				{name}
 			</span>

@@ -412,22 +412,21 @@ export async function fetchSessionPlayerForConflictCheck(
 // ── Team Candidates API ──────────────────────────────────
 
 import type { GeneratedTeam } from "../../types";
+import { QUEUE_POSITION_OFFSET } from "./transformers";
 
 /**
- * 세션의 팀 후보를 모두 삭제하고 새로운 후보들을 저장한다.
- * @param sessionId 세션 ID
- * @param candidates 생성된 팀 후보 목록
- * @returns 성공 여부
+ * 세션의 팀 후보를 삭제하고 새로운 후보들을 저장한다 (큐 아이템은 보존).
  */
 export async function dbSaveTeamCandidates(
 	sessionId: number,
 	candidates: GeneratedTeam[],
 ): Promise<boolean> {
-	// 1. 기존 후보 모두 삭제
+	// 1. 기존 후보만 삭제 (큐 아이템 보존)
 	const { error: deleteError } = await supabase
 		.from("team_candidates")
 		.delete()
-		.eq("session_id", sessionId);
+		.eq("session_id", sessionId)
+		.lt("queue_position", QUEUE_POSITION_OFFSET);
 
 	if (deleteError) {
 		console.error("Failed to delete old team candidates:", deleteError);
@@ -456,6 +455,51 @@ export async function dbSaveTeamCandidates(
 
 	if (insertError) {
 		console.error("Failed to insert team candidates:", insertError);
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * 매치 큐를 삭제하고 새로운 큐 아이템을 저장한다 (팀 후보는 보존).
+ */
+export async function dbSaveMatchQueue(
+	sessionId: number,
+	queue: GeneratedTeam[],
+): Promise<boolean> {
+	const { error: deleteError } = await supabase
+		.from("team_candidates")
+		.delete()
+		.eq("session_id", sessionId)
+		.gte("queue_position", QUEUE_POSITION_OFFSET);
+
+	if (deleteError) {
+		console.error("Failed to delete old match queue:", deleteError);
+		return false;
+	}
+
+	if (queue.length === 0) return true;
+
+	const rows = queue.map((team, index) => ({
+		session_id: sessionId,
+		queue_position: QUEUE_POSITION_OFFSET + index,
+		game_type: team.gameType,
+		team_a_p1: team.teamA[0].id,
+		team_a_p2: team.teamA[1].id,
+		team_b_p1: team.teamB[0].id,
+		team_b_p2: team.teamB[1].id,
+		reason: team.reason ?? null,
+		strategy: team.strategy ?? null,
+		is_new: false,
+	}));
+
+	const { error: insertError } = await supabase
+		.from("team_candidates")
+		.insert(rows);
+
+	if (insertError) {
+		console.error("Failed to insert match queue:", insertError);
 		return false;
 	}
 

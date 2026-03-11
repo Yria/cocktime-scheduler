@@ -26,8 +26,12 @@ export function useSessionState({ onEnd }: UseSessionStateProps) {
 	const resting = useSessionStore((s) => s.resting);
 	const showEndConfirm = useSessionStore((s) => s.showEndConfirm);
 
+	const matchQueue = useSessionStore((s) => s.matchQueue);
 	const handleAssign = useSessionStore((s) => s.handleAssign);
 	const handleComplete = useSessionStore((s) => s.handleComplete);
+	const handleAddToQueue = useSessionStore((s) => s.handleAddToQueue);
+	const handleRemoveFromQueue = useSessionStore((s) => s.handleRemoveFromQueue);
+	const handleAssignFromQueue = useSessionStore((s) => s.handleAssignFromQueue);
 	const toggleResting = useSessionStore((s) => s.toggleResting);
 	const toggleForceMixed = useSessionStore((s) => s.toggleForceMixed);
 	const toggleForceHardGame = useSessionStore((s) => s.toggleForceHardGame);
@@ -53,7 +57,12 @@ export function useSessionState({ onEnd }: UseSessionStateProps) {
 		[courts],
 	);
 
-	const totalCount = waiting.length + resting.length + playingCount;
+	const queuedCount = useMemo(
+		() => matchQueue.length * 4,
+		[matchQueue],
+	);
+
+	const totalCount = waiting.length + resting.length + playingCount + queuedCount;
 
 	const handleEndSession = useCallback(
 		() => handleEndSessionAction(onEnd),
@@ -64,6 +73,7 @@ export function useSessionState({ onEnd }: UseSessionStateProps) {
 		courts,
 		waiting,
 		resting,
+		matchQueue,
 		candidateTeams,
 		setCandidateTeams,
 		updateCandidateTeam,
@@ -74,8 +84,12 @@ export function useSessionState({ onEnd }: UseSessionStateProps) {
 		toggleForceHardGame,
 		handleAssign,
 		handleComplete,
+		handleAddToQueue,
+		handleRemoveFromQueue,
+		handleAssignFromQueue,
 		handleEndSession,
 		playingCount,
+		queuedCount,
 		totalCount,
 		pairHistory,
 		lastMixedPlayerIds,

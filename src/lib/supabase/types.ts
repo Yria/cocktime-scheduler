@@ -82,4 +82,5 @@ export interface ClientSessionState {
 	resting: SessionPlayer[];
 	pairHistory: PairHistory;
 	candidateTeams: import("../../types").GeneratedTeam[];
+	matchQueue: import("../../types").GeneratedTeam[];
 }

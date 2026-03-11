@@ -263,21 +263,6 @@ const WaitingList = memo(function WaitingList({
 				</div>
 			)}
 
-			{waiting.length > 0 && waiting.length < 4 && (
-				<p
-					style={{
-						margin: "0 16px 12px",
-						padding: "6px 11px",
-						fontSize: 12,
-						fontWeight: 600,
-						color: "#ff3b30",
-						background: "rgba(255,59,48,0.07)",
-						borderRadius: 10,
-					}}
-				>
-					{4 - waiting.length}명 더 필요
-				</p>
-			)}
 		</div>
 	);
 });

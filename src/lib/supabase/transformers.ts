@@ -59,6 +59,9 @@ function buildTeamCandidates(
 	return teams;
 }
 
+/** queue_position 이 이 값 이상이면 매치 큐 아이템 */
+export const QUEUE_POSITION_OFFSET = 100;
+
 export function snapshotToClientState(
 	snapshot: SessionSnapshot,
 ): ClientSessionState {
@@ -90,15 +93,27 @@ export function snapshotToClientState(
 		};
 	}
 
-	// Waiting / Resting by status
-	const waiting = snapshot.players.filter((p) => p.status === "waiting");
-	const resting = snapshot.players.filter((p) => p.status === "resting");
-
 	// PairHistory
 	const pairHistory = buildPairHistory(snapshot.pairHistory);
 
-	// Team candidates: DB에서 로드
-	const candidateTeams = buildTeamCandidates(snapshot.teamCandidates, playerMap);
+	// Team candidates vs match queue: split by queue_position
+	const candidateRows = snapshot.teamCandidates.filter(
+		(r) => r.queue_position < QUEUE_POSITION_OFFSET,
+	);
+	const queueRows = snapshot.teamCandidates.filter(
+		(r) => r.queue_position >= QUEUE_POSITION_OFFSET,
+	);
+	const candidateTeams = buildTeamCandidates(candidateRows, playerMap);
+	const matchQueue = buildTeamCandidates(queueRows, playerMap);
 
-	return { courts, waiting, resting, pairHistory, candidateTeams };
+	// 큐에 예약된 선수 ID (waiting에서 제외 — 큐는 예약 데이터이므로 DB status는 변경하지 않음)
+	const queuedPlayerIds = new Set(
+		matchQueue.flatMap((t) => [...t.teamA, ...t.teamB].map((p) => p.id)),
+	);
+
+	// Waiting / Resting by status (큐 멤버 제외)
+	const waiting = snapshot.players.filter((p) => p.status === "waiting" && !queuedPlayerIds.has(p.id));
+	const resting = snapshot.players.filter((p) => p.status === "resting");
+
+	return { courts, waiting, resting, pairHistory, candidateTeams, matchQueue };
 }

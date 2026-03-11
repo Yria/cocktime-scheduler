@@ -6,6 +6,7 @@ import {
 	dbAssignMatch,
 	dbCompleteMatch,
 	dbEndSession,
+	dbSaveMatchQueue,
 	dbToggleForceMixed,
 	dbToggleForceHardGame,
 	dbToggleResting,
@@ -33,6 +34,7 @@ export interface SessionState {
 	lastCoPlayers: Record<string, string[]>;
 
 	candidateTeams: GeneratedTeam[];
+	matchQueue: GeneratedTeam[];
 	showEndConfirm: boolean;
 
 	// Internal channel reference (not reactive)
@@ -47,6 +49,9 @@ export interface SessionState {
 	updateCandidateTeam: (index: number, updatedTeam: GeneratedTeam) => void;
 	handleAssign: (team: GeneratedTeam, courtId: number) => Promise<void>;
 	handleComplete: (courtId: number) => Promise<void>;
+	handleAddToQueue: (team: GeneratedTeam) => Promise<void>;
+	handleRemoveFromQueue: (index: number) => Promise<void>;
+	handleAssignFromQueue: (queueIndex: number) => Promise<void>;
 	toggleResting: (playerId: string) => Promise<void>;
 	toggleForceMixed: (playerId: string) => Promise<void>;
 	toggleForceHardGame: (playerId: string) => Promise<void>;
@@ -68,6 +73,7 @@ const initialState = {
 	lastMixedPlayerIds: [] as string[],
 	lastCoPlayers: {} as Record<string, string[]>,
 	candidateTeams: [] as GeneratedTeam[],
+	matchQueue: [] as GeneratedTeam[],
 	showEndConfirm: false,
 	_channel: null as RealtimeChannel | null,
 	_metaChannel: null as RealtimeChannel | null,
@@ -86,6 +92,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			resting: initial.resting,
 			pairHistory: initial.pairHistory,
 			candidateTeams: initial.candidateTeams,
+			matchQueue: initial.matchQueue,
 		});
 	},
 	reset: () => {
@@ -161,6 +168,105 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				teamA: match.teamA,
 				teamB: match.teamB,
 				updatedPlayers: result.updatedPlayers,
+			},
+		};
+		get().applyBroadcast(payload, () => { });
+		sendBroadcast(_channel, payload);
+	},
+
+	handleAddToQueue: async (team: GeneratedTeam) => {
+		const { matchQueue, _channel } = get();
+		if (!_channel) return;
+
+		const sessionMeta = useAppStore.getState().sessionMeta;
+		const sessionId = sessionMeta?.sessionId ?? 0;
+
+		// 선수 status는 변경하지 않음 (큐는 예약 데이터일 뿐)
+		const newQueue = [...matchQueue, team];
+
+		// DB: 큐 저장
+		await dbSaveMatchQueue(sessionId, newQueue);
+
+		// 로컬 + 브로드캐스트
+		const payload: BroadcastPayload = {
+			event: "queue_updated",
+			payload: { queue: newQueue },
+		};
+		get().applyBroadcast(payload, () => { });
+		sendBroadcast(_channel, payload);
+	},
+
+	handleRemoveFromQueue: async (index: number) => {
+		const { matchQueue, courts, _channel } = get();
+		if (!_channel) return;
+
+		const sessionMeta = useAppStore.getState().sessionMeta;
+		const sessionId = sessionMeta?.sessionId ?? 0;
+
+		const team = matchQueue[index];
+		if (!team) return;
+
+		const newQueue = matchQueue.filter((_, i) => i !== index);
+
+		// DB: 큐 저장 (선수 status는 변경하지 않음)
+		await dbSaveMatchQueue(sessionId, newQueue);
+
+		// 경기중이 아닌 선수만 waiting으로 복귀 (playing 선수는 경기 종료 시 자연 복귀)
+		const playingIds = new Set(
+			courts.flatMap((c) => (c.match ? [...c.match.teamA, ...c.match.teamB].map((p) => p.id) : [])),
+		);
+		const restoredPlayers: SessionPlayer[] = [...team.teamA, ...team.teamB]
+			.filter((p) => !playingIds.has(p.id))
+			.map((p) => ({
+				...p,
+				status: "waiting" as const,
+				waitSince: p.waitSince ?? new Date().toISOString(),
+			}));
+
+		const payload: BroadcastPayload = {
+			event: "queue_updated",
+			payload: { queue: newQueue, restoredPlayers },
+		};
+		get().applyBroadcast(payload, () => { });
+		sendBroadcast(_channel, payload);
+	},
+
+	handleAssignFromQueue: async (queueIndex: number) => {
+		const { matchQueue, courts, _channel } = get();
+		if (!_channel) return;
+
+		const team = matchQueue[queueIndex];
+		if (!team) return;
+
+		const court = courts.find((c) => !c.match);
+		if (!court) return;
+
+		// 큐 팀의 모든 선수가 코트에 없는지 확인 (playing 멤버가 있으면 배정 차단)
+		const playingIds = new Set(
+			courts.flatMap((c) => (c.match ? [...c.match.teamA, ...c.match.teamB].map((p) => p.id) : [])),
+		);
+		const allAvailable = [...team.teamA, ...team.teamB].every((p) => !playingIds.has(p.id));
+		if (!allAvailable) return;
+
+		const sessionMeta = useAppStore.getState().sessionMeta;
+		const sessionId = sessionMeta?.sessionId ?? 0;
+		const matchId = crypto.randomUUID();
+
+		const ok = await dbAssignMatch(sessionId, matchId, team, court.id);
+		if (!ok) return;
+
+		// 큐에서 제거 후 DB 저장
+		const newQueue = matchQueue.filter((_, i) => i !== queueIndex);
+		await dbSaveMatchQueue(sessionId, newQueue);
+
+		const payload: BroadcastPayload = {
+			event: "match_started",
+			payload: {
+				matchId,
+				courtId: court.id,
+				gameType: team.gameType,
+				teamA: team.teamA,
+				teamB: team.teamB,
 			},
 		};
 		get().applyBroadcast(payload, () => { });
@@ -270,6 +376,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 							: c,
 					),
 					waiting: state.waiting.filter((p) => !allIds.has(p.id)),
+					// 큐에서도 해당 팀 제거
+					matchQueue: state.matchQueue.filter((team) => {
+						const teamIds = [...team.teamA, ...team.teamB].map((p) => p.id);
+						return !teamIds.every((id) => allIds.has(id));
+					}),
 					pairHistory: recordHistory(state.pairHistory, {
 						teamA,
 						teamB,
@@ -317,11 +428,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 						newPairHistory[b.id].add(a.id);
 					}
 
+					// 큐에 예약된 선수 ID (waiting에 추가하지 않음)
+					const queuedIds = new Set(
+						state.matchQueue.flatMap((t: GeneratedTeam) =>
+							[...t.teamA, ...t.teamB].map((p: SessionPlayer) => p.id),
+						),
+					);
+
 					const newWaiting = [
 						...state.waiting.map((p) => updatedMap.get(p.id) ?? p),
 						...toWaiting.filter(
 							(p: SessionPlayer) =>
-								!state.waiting.some((pp) => pp.id === p.id),
+								!state.waiting.some((pp) => pp.id === p.id) &&
+								!queuedIds.has(p.id),
 						),
 					];
 
@@ -435,11 +554,30 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				break;
 			}
 
+			case "queue_updated": {
+				const { queue, restoredPlayers } = ev.payload;
+				const queuedPlayerIds = new Set(
+					queue.flatMap((t: GeneratedTeam) =>
+						[...t.teamA, ...t.teamB].map((p: SessionPlayer) => p.id),
+					),
+				);
+				set((state) => ({
+					matchQueue: queue,
+					waiting: [
+						...state.waiting.filter((p) => !queuedPlayerIds.has(p.id)),
+						...(restoredPlayers ?? []).filter(
+							(rp: SessionPlayer) => !state.waiting.some((w) => w.id === rp.id),
+						),
+					],
+				}));
+				break;
+			}
+
 			case "candidates_updated": {
-			const { candidates: newCandidates } = ev.payload;
-			set({ candidateTeams: newCandidates });
-			break;
-		}
+				const { candidates: newCandidates } = ev.payload;
+				set({ candidateTeams: newCandidates });
+				break;
+			}
 
 		}
 	},
@@ -457,6 +595,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			"player_force_hard_game_changed",
 			"player_updated",
 			"candidates_updated",
+			"queue_updated",
 			"session_refresh_required",
 		] as const;
 		for (const event of events) {

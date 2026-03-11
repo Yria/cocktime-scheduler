@@ -18,26 +18,24 @@ export function SingleWomanSelector({
 			className="bg-white dark:bg-[#1c1c1e] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
 			style={{
 				borderRadius: 12,
-				padding: 16,
+				padding: "10px 16px",
 				marginBottom: 12,
 			}}
 		>
-			<p
-				className="text-[#64748b] dark:text-[rgba(235,235,245,0.5)]"
-				style={{
-					fontSize: 11,
-					fontWeight: 600,
-					textTransform: "uppercase",
-					letterSpacing: "0.06em",
-					marginBottom: 2,
-				}}
-			>
-				혼복 허용 여성
-			</p>
-			<p className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]" style={{ fontSize: 12, marginBottom: 12 }}>
-				남3여1 구성에서 1인 배치 허용
-			</p>
-			<div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+			<div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+				<p
+					className="text-[#64748b] dark:text-[rgba(235,235,245,0.5)]"
+					style={{
+						fontSize: 11,
+						fontWeight: 600,
+						textTransform: "uppercase",
+						letterSpacing: "0.06em",
+						margin: 0,
+						whiteSpace: "nowrap",
+					}}
+				>
+					혼복 허용 여성
+				</p>
 				{selectedFemales.map((p) => {
 					const isOn = singleWomanIds.has(p.id);
 					return (
@@ -54,9 +52,9 @@ export function SingleWomanSelector({
 								display: "inline-flex",
 								alignItems: "center",
 								gap: 6,
-								padding: "6px 12px",
-								borderRadius: 14,
-								fontSize: 14,
+								padding: "4px 10px",
+								borderRadius: 12,
+								fontSize: 13,
 								fontWeight: 500,
 								border: "1px solid",
 								cursor: "pointer",

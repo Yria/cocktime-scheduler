@@ -300,11 +300,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 							});
 						}
 					}
-					return true;
 				}
 			}
 
-			// 세션 미참가: allPlayers 캐시만 갱신
+			// allPlayers 캐시 갱신 (세션 참가 여부 무관)
 			set((state) => ({
 				allPlayers: state.allPlayers.map((p) =>
 					p.id === player.id ? player : p,

@@ -2,6 +2,7 @@ interface Props {
 	totalCount: number;
 	waitingCount: number;
 	playingCount: number;
+	queuedCount: number;
 	restingCount: number;
 }
 
@@ -9,6 +10,7 @@ export default function StatsSummary({
 	totalCount,
 	waitingCount,
 	playingCount,
+	queuedCount,
 	restingCount,
 }: Props) {
 	return (
@@ -67,6 +69,25 @@ export default function StatsSummary({
 					{playingCount}
 				</span>
 			</div>
+			{queuedCount > 0 && (
+				<div
+					className="bg-[rgba(255,247,237,1)] dark:bg-[rgba(255,149,0,0.15)]"
+					style={{
+						borderRadius: 12,
+						padding: "5px 12px",
+						display: "flex",
+						gap: 6,
+						flexShrink: 0,
+					}}
+				>
+					<span className="text-[#9a3412] dark:text-[#ff9f0a]" style={{ fontSize: 13, fontWeight: 500 }}>
+						대기열
+					</span>
+					<span className="text-[#9a3412] dark:text-[#ff9f0a]" style={{ fontSize: 13, fontWeight: 700 }}>
+						{queuedCount}
+					</span>
+				</div>
+			)}
 			<div
 				className="bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.08)]"
 				style={{

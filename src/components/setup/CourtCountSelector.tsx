@@ -12,8 +12,11 @@ export function CourtCountSelector({
 			className="bg-white dark:bg-[#1c1c1e] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
 			style={{
 				borderRadius: 12,
-				padding: 16,
+				padding: "10px 16px",
 				marginBottom: 12,
+				display: "flex",
+				alignItems: "center",
+				gap: 14,
 			}}
 		>
 			<p
@@ -23,7 +26,8 @@ export function CourtCountSelector({
 					fontWeight: 600,
 					textTransform: "uppercase",
 					letterSpacing: "0.06em",
-					marginBottom: 12,
+					whiteSpace: "nowrap",
+					margin: 0,
 				}}
 			>
 				코트 수
@@ -35,6 +39,7 @@ export function CourtCountSelector({
 					gap: 4,
 					borderRadius: 10,
 					padding: 4,
+					flex: 1,
 				}}
 			>
 				{[1, 2, 3, 4, 5, 6].map((n) => (

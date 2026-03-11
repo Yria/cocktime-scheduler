@@ -48,6 +48,10 @@ export type BroadcastPayload =
 	| {
 			event: "candidates_updated";
 			payload: { candidates: GeneratedTeam[] };
+	  }
+	| {
+			event: "queue_updated";
+			payload: { queue: GeneratedTeam[]; restoredPlayers?: SessionPlayer[] };
 	  };
 
 export function createBroadcastChannel(sessionId: number): RealtimeChannel {

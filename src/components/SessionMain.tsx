@@ -4,6 +4,7 @@ import { useAppStore } from "../store/appStore";
 import CourtList from "./session/CourtList";
 import CourtsHeader from "./session/CourtsHeader";
 import EndSessionModal from "./session/EndSessionModal";
+import MatchQueue from "./session/MatchQueue";
 import RestingList from "./session/RestingList";
 import SessionHeader from "./session/SessionHeader";
 import StatsSummary from "./session/StatsSummary";
@@ -25,6 +26,7 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 		courts,
 		waiting,
 		resting,
+		matchQueue,
 		candidateTeams,
 		setCandidateTeams,
 		updateCandidateTeam,
@@ -35,8 +37,12 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 		toggleForceHardGame,
 		handleAssign,
 		handleComplete,
+		handleAddToQueue,
+		handleRemoveFromQueue,
+		handleAssignFromQueue,
 		handleEndSession,
 		playingCount,
+		queuedCount,
 		totalCount,
 		pairHistory,
 		lastMixedPlayerIds,
@@ -45,12 +51,16 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 
 	const {
 		visibleCandidates,
+		unavailableIds,
 		handleRefreshCandidates,
 		handleCandidatePlayerReplace,
 		handleAssignCandidate,
+		handleQueueCandidate,
 	} = useTeamCandidates({
 		sessionId,
 		waiting,
+		courts,
+		matchQueue,
 		singleWomanIds,
 		lastMixedPlayerIds,
 		lastCoPlayers,
@@ -59,6 +69,7 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 		setCandidateTeams,
 		updateCandidateTeam,
 		handleAssign,
+		handleAddToQueue,
 	});
 
 	return (
@@ -75,6 +86,7 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 				totalCount={totalCount}
 				waitingCount={waiting.length}
 				playingCount={playingCount}
+				queuedCount={queuedCount}
 				restingCount={resting.length}
 			/>
 
@@ -95,12 +107,22 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 					/>
 				</div>
 
+				<MatchQueue
+					queue={matchQueue}
+					courts={courts}
+					onAssignFromQueue={handleAssignFromQueue}
+					onRemoveFromQueue={handleRemoveFromQueue}
+				/>
+
 				<TeamCandidatesList
 					candidates={visibleCandidates}
 					courts={courts}
 					waiting={waiting}
+					waitingCount={waiting.length}
+					unavailableIds={unavailableIds}
 					pairHistory={pairHistory}
 					onAssign={handleAssignCandidate}
+					onQueue={handleQueueCandidate}
 					onPlayerReplace={handleCandidatePlayerReplace}
 					onRefresh={handleRefreshCandidates}
 				/>
