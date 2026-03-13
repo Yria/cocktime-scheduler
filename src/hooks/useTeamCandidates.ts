@@ -73,11 +73,6 @@ export function useTeamCandidates({
 		[generationPool],
 	);
 
-	const waitingIds = useMemo(
-		() => new Set(waiting.map((p) => p.id)),
-		[waiting],
-	);
-
 	// 배정 불가 선수 ID (경기중 + 대기열)
 	const unavailableIds = useMemo(
 		() => new Set([...playingPlayers, ...queuedPlayers].map((p) => p.id)),

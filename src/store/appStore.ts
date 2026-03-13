@@ -223,6 +223,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 			resting: [],
 			pairHistory: {},
 			candidateTeams: [],
+			matchQueue: [],
 		});
 
 		set({
