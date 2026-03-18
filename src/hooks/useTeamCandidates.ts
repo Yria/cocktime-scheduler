@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Court, GeneratedTeam, PairHistory, SessionPlayer } from "../types";
+import type { TeamStrategy } from "../types";
 import { useSessionStore } from "../store/sessionStore";
 import { dbSaveTeamCandidates } from "../lib/supabase/api";
 import { sendBroadcast } from "../lib/supabase/broadcast";
@@ -21,6 +22,7 @@ interface UseTeamCandidatesParams {
 	updateCandidateTeam: (index: number, team: GeneratedTeam) => void;
 	handleAssign: (team: GeneratedTeam, courtId: number) => void;
 	handleAddToQueue: (team: GeneratedTeam) => void;
+	strategyFilter: TeamStrategy | null;
 }
 
 export function useTeamCandidates({
@@ -37,6 +39,7 @@ export function useTeamCandidates({
 	updateCandidateTeam,
 	handleAssign,
 	handleAddToQueue,
+	strategyFilter,
 }: UseTeamCandidatesParams) {
 	// 경기중 선수 목록
 	const playingPlayers = useMemo(
@@ -56,15 +59,13 @@ export function useTeamCandidates({
 		[matchQueue],
 	);
 
-	// 대기 인원 부족 시에만 경기중 선수를 생성 풀에 포함, 큐 멤버는 항상 제외
-	const needExpand = waiting.length < 4;
-
+	// 항상 경기중 선수를 생성 풀에 포함 (경기중 = 곧 가용), 큐 멤버는 제외
 	const generationPool = useMemo(
 		() => {
-			const base = needExpand ? [...waiting, ...playingPlayers] : waiting;
+			const base = [...waiting, ...playingPlayers];
 			return base.filter((p) => !queueMemberIds.has(p.id));
 		},
-		[waiting, playingPlayers, needExpand, queueMemberIds],
+		[waiting, playingPlayers, queueMemberIds],
 	);
 
 	// 표시 필터 풀: 생성 풀만 (queued 선수 제외 → 재생성 트리거)
@@ -153,16 +154,28 @@ export function useTeamCandidates({
 			lastCoPlayers,
 			pairHistory,
 			existingValid,
+			strategyFilter ?? undefined,
 		);
 
 		const allCandidates = [...existingValid, ...newCandidates];
 		saveCandidates(allCandidates);
-	}, [generationPool, candidateTeams, allPoolIds, singleWomanIds, lastMixedPlayerIds, lastCoPlayers, pairHistory, saveCandidates]);
+	}, [generationPool, candidateTeams, allPoolIds, singleWomanIds, lastMixedPlayerIds, lastCoPlayers, pairHistory, saveCandidates, strategyFilter]);
 
 	/** 수동 새로고침: 전체 재생성 */
 	const handleRefreshCandidates = useCallback(() => {
 		supplementCandidates(true);
 	}, [supplementCandidates]);
+
+	// 전략 필터 변경 시 전체 재생성
+	const prevStrategyRef = useRef<TeamStrategy | null>(strategyFilter);
+	useEffect(() => {
+		if (prevStrategyRef.current !== strategyFilter) {
+			prevStrategyRef.current = strategyFilter;
+			if (generationPool.length >= 4) {
+				supplementCandidates(true);
+			}
+		}
+	}, [strategyFilter, generationPool, supplementCandidates]);
 
 	// 자동 보충: 유효 후보 부족 시 또는 풀 변경 시
 	const prevPoolIdsRef = useRef("");

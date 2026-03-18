@@ -128,7 +128,7 @@ export function pairingScore(
 // 최적 페어링 선택
 // ─────────────────────────────────────────────
 
-function bestPairing(
+export function bestPairing(
 	players: [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer],
 ): [[SessionPlayer, SessionPlayer], [SessionPlayer, SessionPlayer]] {
 	const [p0, p1, p2, p3] = players;
@@ -300,7 +300,7 @@ function pickPartnerForForcedMan(
 // 게임 타입 결정
 // ─────────────────────────────────────────────
 
-function determineGameType(
+export function determineGameType(
 	players: SessionPlayer[],
 	singleWomanIds: string[],
 ): GameType {
@@ -800,6 +800,7 @@ export function generateBulkTeamCandidates(
 	lastCoPlayers?: Record<string, string[]>,
 	pairHistory?: PairHistory,
 	existingCandidates?: GeneratedTeam[],
+	strategyFilter?: TeamStrategy,
 ): GeneratedTeam[] {
 	const candidates: GeneratedTeam[] = [];
 	const seenGroups = new Set<string>(); // 동일 4명 중복 방지
@@ -838,9 +839,14 @@ export function generateBulkTeamCandidates(
 	}
 
 	// 각 전략을 순회하며 후보 생성
-	const strategies = DIVERSE_STRATEGIES.slice(0, targetCount);
-	while (strategies.length < targetCount) {
-		strategies.push("randomShuffle");
+	let strategies: TeamStrategy[];
+	if (strategyFilter) {
+		strategies = Array(targetCount).fill(strategyFilter);
+	} else {
+		strategies = DIVERSE_STRATEGIES.slice(0, targetCount);
+		while (strategies.length < targetCount) {
+			strategies.push("randomShuffle");
+		}
 	}
 
 	const baseMixedIds = lastMixedPlayerIds ?? [];

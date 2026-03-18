@@ -8,6 +8,16 @@ interface PlayerBadgeProps {
 	isUnavailable?: boolean; // 경기중/대기열 등 현재 배정 불가
 }
 
+const PLAYING_STYLE = `
+@keyframes badge-glow {
+  0%, 100% { box-shadow: inset 0 0 4px rgba(50,50,80,0.1); }
+  50% { box-shadow: inset 0 0 40px 8px rgba(50,50,80,0.9); }
+}
+.badge-playing {
+  animation: badge-glow 1.2s ease-in-out infinite;
+}
+`;
+
 export default function PlayerBadge({
 	name,
 	gender,
@@ -19,10 +29,8 @@ export default function PlayerBadge({
 	const fontSize = size === "sm" ? 12 : 13;
 	const padding = size === "sm" ? "3px 9px" : "4px 10px";
 
-	// 스킬 스코어를 퍼센트로 변환 (1.0 ~ 3.0 → 0% ~ 100%)
 	const scorePercent = skillScore ? ((skillScore - 1.0) / 2.0) * 100 : 0;
 
-	// 배경색 설정 (그라데이션)
 	const baseColorLight = isF ? "#fee2e2" : "#e0f2fe";
 	const baseColorDark = isF ? "#fca5a5" : "#7dd3fc";
 
@@ -31,31 +39,28 @@ export default function PlayerBadge({
 		: (isF ? "#fee2e2" : "#e0f2fe");
 
 	return (
-		<div
-			style={{
-				display: "inline-flex",
-				alignItems: "center",
-				gap: 5,
-				padding,
-				background: isUnavailable ? "rgba(142,142,147,0.12)" : background,
-				borderRadius: 14,
-				fontSize,
-				color: isUnavailable ? "#8e8e93" : (isF ? "#991b1b" : "#075985"),
-				fontWeight: 600,
-				position: "relative",
-				overflow: "hidden",
-				border: isUnavailable ? "1px dashed rgba(142,142,147,0.4)" : undefined,
-				opacity: isUnavailable ? 0.7 : 1,
-			}}
-		>
-			{isUnavailable && (
-				<span style={{ fontSize: 9, lineHeight: 1, position: "relative", zIndex: 1 }}>
-					&#9679;
+		<>
+			{isUnavailable && <style>{PLAYING_STYLE}</style>}
+			<div
+				className={isUnavailable ? "badge-playing" : undefined}
+				style={{
+					display: "inline-flex",
+					alignItems: "center",
+					padding,
+					background,
+					borderRadius: 14,
+					fontSize,
+					color: isF ? "#991b1b" : "#075985",
+					fontWeight: 600,
+					position: "relative",
+					overflow: "hidden",
+					border: undefined,
+				}}
+			>
+				<span style={{ position: "relative", zIndex: 1 }}>
+					{name}
 				</span>
-			)}
-			<span style={{ position: "relative", zIndex: 1 }}>
-				{name}
-			</span>
-		</div>
+			</div>
+		</>
 	);
 }

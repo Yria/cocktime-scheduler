@@ -1,7 +1,18 @@
 import { memo, useState } from "react";
-import type { Court, GeneratedTeam, PairHistory, SessionPlayer } from "../../types";
+import type { Court, GeneratedTeam, PairHistory, SessionPlayer, TeamStrategy } from "../../types";
 import PlayerReplaceDialog from "../PlayerReplaceDialog";
+import ManualMatchDialog from "./ManualMatchDialog";
 import TeamCandidateCard from "./TeamCandidateCard";
+
+const STRATEGY_OPTIONS: { value: TeamStrategy | null; label: string }[] = [
+	{ value: null, label: "전체" },
+	{ value: "gameCountBalanced", label: "경기수 균등" },
+	{ value: "coPlayerAvoidance", label: "동반자 회피" },
+	{ value: "newCombination", label: "새 조합" },
+	{ value: "mixedCountBalanced", label: "혼복 우선" },
+	{ value: "skillBalanced", label: "실력 균형" },
+	{ value: "randomShuffle", label: "랜덤" },
+];
 
 interface TeamCandidatesListProps {
 	candidates: GeneratedTeam[];
@@ -10,8 +21,13 @@ interface TeamCandidatesListProps {
 	waitingCount: number;
 	unavailableIds: Set<string>;
 	pairHistory: PairHistory;
+	playingPlayers?: SessionPlayer[];
+	singleWomanIds: string[];
+	strategyFilter: TeamStrategy | null;
+	onStrategyChange: (strategy: TeamStrategy | null) => void;
 	onAssign: (candidateIndex: number, courtId: number) => void;
 	onQueue: (candidateIndex: number) => void;
+	onAddManualToQueue: (team: GeneratedTeam) => void;
 	onPlayerReplace: (candidateIndex: number, oldPlayer: SessionPlayer, newPlayer: SessionPlayer) => void;
 	onRefresh: () => void;
 }
@@ -23,12 +39,18 @@ const TeamCandidatesList = memo(function TeamCandidatesList({
 	waitingCount,
 	unavailableIds,
 	pairHistory,
+	playingPlayers = [],
+	singleWomanIds,
+	strategyFilter,
+	onStrategyChange,
 	onAssign,
 	onQueue,
+	onAddManualToQueue,
 	onPlayerReplace,
 	onRefresh,
 }: TeamCandidatesListProps) {
 	const [replacingPlayer, setReplacingPlayer] = useState<{ candidateIndex: number; player: SessionPlayer } | null>(null);
+	const [showManualMatch, setShowManualMatch] = useState(false);
 
 	const handlePlayerClick = (candidateIndex: number, player: SessionPlayer, e: React.MouseEvent) => {
 		e.stopPropagation();
@@ -48,7 +70,13 @@ const TeamCandidatesList = memo(function TeamCandidatesList({
 			...team.teamA.map((p) => p.id),
 			...team.teamB.map((p) => p.id),
 		]);
-		return waiting.filter((p) => !teamPlayerIds.has(p.id));
+		const allPlayers = [...waiting, ...playingPlayers];
+		const seen = new Set<string>();
+		return allPlayers.filter((p) => {
+			if (teamPlayerIds.has(p.id) || seen.has(p.id)) return false;
+			seen.add(p.id);
+			return true;
+		});
 	};
 
 	const getPlayerTeams = (candidateIndex: number, player: SessionPlayer) => {
@@ -68,6 +96,10 @@ const TeamCandidatesList = memo(function TeamCandidatesList({
 
 	const emptyCourtId = getEmptyCourt();
 
+	const handleManualConfirm = (team: GeneratedTeam) => {
+		onAddManualToQueue(team);
+		setShowManualMatch(false);
+	};
 
 	return (
 		<>
@@ -115,18 +147,22 @@ const TeamCandidatesList = memo(function TeamCandidatesList({
 						</span>
 					</div>
 					<div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-						<span
+						<button
+							type="button"
+							onClick={() => setShowManualMatch(true)}
 							style={{
 								fontSize: 11,
 								fontWeight: 600,
-								color: "#0b84ff",
-								background: "rgba(11,132,255,0.1)",
+								color: "#ff9500",
+								background: "rgba(255,149,0,0.1)",
 								borderRadius: 99,
-								padding: "2px 7px",
+								padding: "4px 10px",
+								border: "none",
+								cursor: "pointer",
 							}}
 						>
-							{candidates.length}팀
-						</span>
+							수동매칭
+						</button>
 						<button
 							type="button"
 							onClick={onRefresh}
@@ -163,6 +199,46 @@ const TeamCandidatesList = memo(function TeamCandidatesList({
 							</svg>
 						</button>
 					</div>
+				</div>
+
+				{/* Strategy filter chips */}
+				<div
+					style={{
+						padding: "0 16px 10px",
+						display: "flex",
+						gap: 5,
+						overflowX: "auto",
+						overflowY: "hidden",
+						WebkitOverflowScrolling: "touch",
+						flexWrap: "nowrap",
+						touchAction: "pan-x",
+					}}
+					className="no-sb"
+				>
+					{STRATEGY_OPTIONS.map(({ value, label }) => {
+						const active = strategyFilter === value;
+						return (
+							<button
+								key={label}
+								type="button"
+								onClick={() => onStrategyChange(value)}
+								style={{
+									fontSize: 11,
+									fontWeight: 600,
+									padding: "5px 12px",
+									borderRadius: 99,
+									border: "none",
+									cursor: "pointer",
+									flexShrink: 0,
+									transition: "all 0.15s",
+									background: active ? "#0b84ff" : "rgba(0,0,0,0.04)",
+									color: active ? "#fff" : "#8e8e93",
+								}}
+							>
+								{label}
+							</button>
+						);
+					})}
 				</div>
 
 				{candidates.length > 0 ? (
@@ -216,11 +292,24 @@ const TeamCandidatesList = memo(function TeamCandidatesList({
 						opponentTeam={opponentTeam}
 						availablePlayers={getAvailablePlayers(replacingPlayer.candidateIndex)}
 						pairHistory={pairHistory}
+						unavailableIds={unavailableIds}
 						onReplace={handleReplace}
 						onCancel={() => setReplacingPlayer(null)}
 					/>
 				);
 			})()}
+
+			{showManualMatch && (
+				<ManualMatchDialog
+					waiting={waiting}
+					playingPlayers={playingPlayers}
+					unavailableIds={unavailableIds}
+					pairHistory={pairHistory}
+					singleWomanIds={singleWomanIds}
+					onConfirm={handleManualConfirm}
+					onCancel={() => setShowManualMatch(false)}
+				/>
+			)}
 		</>
 	);
 });

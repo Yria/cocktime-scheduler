@@ -38,16 +38,16 @@ const TeamCandidateCard = memo(function TeamCandidateCard({
 		return (
 			<div
 				key={player.id}
-				onClick={(e) => !isUnavailable && onPlayerClick(index, player, e)}
+				onClick={(e) => onPlayerClick(index, player, e)}
 				onKeyDown={(e) => {
-					if (!isUnavailable && (e.key === "Enter" || e.key === " ")) {
+					if (e.key === "Enter" || e.key === " ") {
 						e.preventDefault();
 						onPlayerClick(index, player, e as any);
 					}
 				}}
 				role="button"
-				tabIndex={isUnavailable ? -1 : 0}
-				style={{ cursor: isUnavailable ? "default" : "pointer" }}
+				tabIndex={0}
+				style={{ cursor: "pointer" }}
 			>
 				<PlayerBadge
 					name={player.name}

@@ -6,8 +6,6 @@ interface WaitingListProps {
 	waiting: SessionPlayer[];
 	singleWomanIds: string[];
 	onToggleResting: (playerId: string) => void;
-	onToggleForceMixed: (playerId: string) => void;
-	onToggleForceHardGame: (playerId: string) => void;
 }
 
 const STYLES = `
@@ -28,16 +26,6 @@ const STYLES = `
   transform: translateY(-1px);
   box-shadow: 0 6px 18px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.06);
 }
-.wl-chip.force-mixed {
-  background: rgba(255,59,48,0.08);
-  border-color: rgba(255,59,48,0.28);
-  box-shadow: 0 2px 8px rgba(255,59,48,0.1);
-}
-.wl-chip.force-hard-game {
-  background: rgba(255,149,0,0.09);
-  border-color: rgba(255,149,0,0.38);
-  box-shadow: 0 2px 8px rgba(255,149,0,0.12);
-}
 .wl-chip.mixed-single {
   background: rgba(255,149,0,0.07);
   border-color: rgba(255,149,0,0.35);
@@ -47,14 +35,6 @@ const STYLES = `
   background: rgba(44,44,46,0.9);
   border-color: rgba(255,255,255,0.12);
   box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-}
-.dark .wl-chip.force-mixed {
-  background: rgba(255,59,48,0.15);
-  border-color: rgba(255,59,48,0.3);
-}
-.dark .wl-chip.force-hard-game {
-  background: rgba(255,149,0,0.18);
-  border-color: rgba(255,149,0,0.35);
 }
 .dark .wl-chip.mixed-single {
   background: rgba(255,149,0,0.15);
@@ -91,21 +71,6 @@ const STYLES = `
 .wl-name-btn:active {
   opacity: 0.55;
 }
-.wl-mixed-btn {
-  padding: 7px 4px 7px 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  background: none;
-  border: none;
-  transition: transform 0.15s cubic-bezier(0.25,1,0.5,1), color 0.15s;
-  position: relative;
-  z-index: 1;
-}
-.wl-mixed-btn:active {
-  transform: scale(0.8);
-}
 .wl-gender-dot {
   width: 7px;
   height: 7px;
@@ -131,8 +96,6 @@ const WaitingList = memo(function WaitingList({
 	waiting,
 	singleWomanIds,
 	onToggleResting,
-	onToggleForceMixed,
-	onToggleForceHardGame,
 }: WaitingListProps) {
 	const countColor =
 		waiting.length >= 4
@@ -255,8 +218,6 @@ const WaitingList = memo(function WaitingList({
 								player={p}
 								isMixedSingle={isMixedSingle}
 								onToggleResting={onToggleResting}
-								onToggleForceMixed={onToggleForceMixed}
-								onToggleForceHardGame={onToggleForceHardGame}
 							/>
 						);
 					})}

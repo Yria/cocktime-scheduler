@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import type { PairHistory, SessionPlayer } from "../types";
 import ModalSheet from "./common/ModalSheet";
 import PlayerBadge from "./shared/PlayerBadge";
-import PlayerGenderGroup from "./shared/PlayerGenderGroup";
 import { skillScore } from "../lib/teamGenerator";
 
 interface Props {
@@ -11,6 +10,7 @@ interface Props {
 	opponentTeam: SessionPlayer[];
 	availablePlayers: SessionPlayer[];
 	pairHistory: PairHistory;
+	unavailableIds: Set<string>;
 	onReplace: (newPlayer: SessionPlayer) => void;
 	onCancel: () => void;
 }
@@ -21,30 +21,53 @@ export default function PlayerReplaceDialog({
 	opponentTeam,
 	availablePlayers,
 	pairHistory,
+	unavailableIds,
 	onReplace,
 	onCancel,
 }: Props) {
-	const { maleGroups, femaleGroups } = useMemo(() => {
-		const playersData = availablePlayers.map((player) => {
-			const matchCount = pairHistory[selectedPlayer.id]?.has(player.id) ? 1 : 0;
-			return { player, matchCount };
-		});
+	const rankedPlayers = useMemo(() => {
+		// 교체 대상의 파트너 (같은 팀의 다른 사람)
+		const partner = currentTeam.find((p) => p.id !== selectedPlayer.id);
+		const replacedScore = skillScore(selectedPlayer);
+		const partnerScore = partner ? skillScore(partner) : replacedScore;
+		const opponentAvgScore =
+			opponentTeam.reduce((sum, p) => sum + skillScore(p), 0) / opponentTeam.length;
 
-		const males = playersData.filter((p) => p.player.gender === "M");
-		const females = playersData.filter((p) => p.player.gender === "F");
+		// 전체 팀 밸런스 목표: (partner + replacement) ≈ opponentTotal
+		const opponentTotal = opponentTeam.reduce((sum, p) => sum + skillScore(p), 0);
 
-		const sortFn = (a: typeof playersData[0], b: typeof playersData[0]) => {
-			if (a.matchCount !== b.matchCount) return a.matchCount - b.matchCount;
-			return a.player.gameCount - b.player.gameCount;
-		};
+		return availablePlayers
+			.map((player) => {
+				const score = skillScore(player);
+				const isPlaying = unavailableIds.has(player.id);
 
-		return {
-			maleGroups: males.sort(sortFn),
-			femaleGroups: females.sort(sortFn),
-		};
-	}, [availablePlayers, pairHistory, selectedPlayer.id]);
+				// 1. 스킬 적합도: 교체 후 팀 합이 상대 팀 합에 가까울수록 좋음
+				const teamTotal = partnerScore + score;
+				const balanceDiff = Math.abs(teamTotal - opponentTotal);
 
-	const totalPlayers = maleGroups.length + femaleGroups.length;
+				// 2. 페어 히스토리: 파트너와 같이 한 적 없을수록 좋음
+				const partnerPairCount = partner && pairHistory[partner.id]?.has(player.id) ? 1 : 0;
+				const opponentPairCount = opponentTeam.reduce(
+					(n, op) => n + (pairHistory[op.id]?.has(player.id) ? 1 : 0),
+					0,
+				);
+
+				// 3. 경기수: 적을수록 우선
+				const gameCount = player.gameCount;
+
+				// 종합 점수 (낮을수록 좋음)
+				// 밸런스 차이 * 10 + 페어 중복 * 5 + 경기수 * 1 + 경기중 패널티 * 3
+				const fitness =
+					balanceDiff * 10 +
+					partnerPairCount * 5 +
+					opponentPairCount * 2 +
+					gameCount * 1 +
+					(isPlaying ? 3 : 0);
+
+				return { player, fitness, isPlaying, balanceDiff };
+			})
+			.sort((a, b) => a.fitness - b.fitness);
+	}, [availablePlayers, selectedPlayer, currentTeam, opponentTeam, pairHistory, unavailableIds]);
 
 	return (
 		<ModalSheet position="bottom" onClose={onCancel}>
@@ -146,28 +169,84 @@ export default function PlayerReplaceDialog({
 				</div>
 			</div>
 
-			{/* Available players */}
+			{/* Available players — sorted by fitness */}
 			<div className="px-5 py-2 max-h-[40vh] overflow-y-auto">
-				{totalPlayers === 0 ? (
+				{rankedPlayers.length === 0 ? (
 					<div className="text-center py-8">
 						<p className="text-gray-500 dark:text-gray-400">
 							교체 가능한 선수가 없습니다
 						</p>
 					</div>
 				) : (
-					<div className="space-y-4">
-						<PlayerGenderGroup
-							label="남성"
-							dotColor="#007aff"
-							players={maleGroups}
-							onReplace={onReplace}
-						/>
-						<PlayerGenderGroup
-							label="여성"
-							dotColor="#ff2d55"
-							players={femaleGroups}
-							onReplace={onReplace}
-						/>
+					<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+						{rankedPlayers.map(({ player, isPlaying }) => (
+							<button
+								key={player.id}
+								type="button"
+								onClick={() => onReplace(player)}
+								className="hover:bg-[rgba(0,0,0,0.03)] dark:hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+								style={{
+									display: "flex",
+									alignItems: "center",
+									gap: 10,
+									padding: "8px 10px",
+									borderRadius: 8,
+									border: "none",
+									background: "transparent",
+									cursor: "pointer",
+									width: "100%",
+									textAlign: "left",
+								}}
+							>
+								<PlayerBadge
+									name={player.name}
+									gender={player.gender}
+									skillScore={skillScore(player)}
+								/>
+
+								{/* 경기수 */}
+								<span
+									style={{
+										fontSize: 11,
+										fontWeight: 500,
+										color: "#98a0ab",
+									}}
+								>
+									{player.gameCount}회
+								</span>
+
+								<span style={{ flex: 1 }} />
+
+								{/* 상태 표시 */}
+								{isPlaying ? (
+									<span
+										style={{
+											fontSize: 10,
+											fontWeight: 600,
+											color: "#34c759",
+											background: "rgba(52,199,89,0.1)",
+											borderRadius: 4,
+											padding: "2px 7px",
+										}}
+									>
+										경기중
+									</span>
+								) : (
+									<span
+										style={{
+											fontSize: 10,
+											fontWeight: 600,
+											color: "#0b84ff",
+											background: "rgba(11,132,255,0.1)",
+											borderRadius: 4,
+											padding: "2px 7px",
+										}}
+									>
+										대기
+									</span>
+								)}
+							</button>
+						))}
 					</div>
 				)}
 			</div>

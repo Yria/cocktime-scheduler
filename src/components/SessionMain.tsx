@@ -1,13 +1,13 @@
+import { useMemo, useState } from "react";
 import { useSessionState } from "../hooks/useSessionState";
 import { useTeamCandidates } from "../hooks/useTeamCandidates";
 import { useAppStore } from "../store/appStore";
-import CourtList from "./session/CourtList";
-import CourtsHeader from "./session/CourtsHeader";
+import type { TeamStrategy } from "../types";
+import CompactCourtBar from "./session/CompactCourtBar";
 import EndSessionModal from "./session/EndSessionModal";
 import MatchQueue from "./session/MatchQueue";
 import RestingList from "./session/RestingList";
 import SessionHeader from "./session/SessionHeader";
-import StatsSummary from "./session/StatsSummary";
 import TeamCandidatesList from "./session/TeamCandidatesList";
 import WaitingList from "./session/WaitingList";
 
@@ -22,6 +22,8 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 	const sessionId = useAppStore((s) => s.sessionMeta?.sessionId) ?? 0;
 	const singleWomanIds =
 		useAppStore((s) => s.sessionMeta?.singleWomanIds) ?? EMPTY_SINGLE_WOMAN_IDS;
+	const [strategyFilter, setStrategyFilter] = useState<TeamStrategy | null>(null);
+
 	const {
 		courts,
 		waiting,
@@ -33,8 +35,6 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 		showEndConfirm,
 		setShowEndConfirm,
 		toggleResting,
-		toggleForceMixed,
-		toggleForceHardGame,
 		handleAssign,
 		handleComplete,
 		handleAddToQueue,
@@ -48,6 +48,11 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 		lastMixedPlayerIds,
 		lastCoPlayers,
 	} = useSessionState({ onEnd });
+
+	const playingPlayers = useMemo(
+		() => courts.flatMap((c) => (c.match ? [...c.match.teamA, ...c.match.teamB] : [])),
+		[courts],
+	);
 
 	const {
 		visibleCandidates,
@@ -70,6 +75,7 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 		updateCandidateTeam,
 		handleAssign,
 		handleAddToQueue,
+		strategyFilter,
 	});
 
 	return (
@@ -77,36 +83,23 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 			className="md:max-w-sm md:mx-auto bg-[#fafbff] dark:bg-[#0f172a]"
 			style={{ minHeight: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
 		>
-			<SessionHeader
-				onBack={onBack}
-				onEndClick={() => setShowEndConfirm(true)}
-			/>
+			{/* ── Sticky area: Header + Compact Court Bar ── */}
+			<div
+				style={{ position: "sticky", top: 0, zIndex: 50 }}
+			>
+				<SessionHeader
+					onBack={onBack}
+					onEndClick={() => setShowEndConfirm(true)}
+				/>
 
-			<StatsSummary
-				totalCount={totalCount}
-				waitingCount={waiting.length}
-				playingCount={playingCount}
-				queuedCount={queuedCount}
-				restingCount={resting.length}
-			/>
+				<CompactCourtBar
+					courts={courts}
+					onComplete={handleComplete}
+				/>
+			</div>
 
+			{/* ── Scroll area ── */}
 			<div>
-				<CourtsHeader courtsCount={courts.length} />
-
-				<div
-					style={{
-						padding: "0 16px",
-						display: "flex",
-						flexDirection: "column",
-						gap: 16,
-					}}
-				>
-					<CourtList
-						courts={courts}
-						onComplete={handleComplete}
-					/>
-				</div>
-
 				<MatchQueue
 					queue={matchQueue}
 					courts={courts}
@@ -121,8 +114,13 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 					waitingCount={waiting.length}
 					unavailableIds={unavailableIds}
 					pairHistory={pairHistory}
+					playingPlayers={playingPlayers}
+					singleWomanIds={singleWomanIds}
+					strategyFilter={strategyFilter}
+					onStrategyChange={setStrategyFilter}
 					onAssign={handleAssignCandidate}
 					onQueue={handleQueueCandidate}
+					onAddManualToQueue={handleAddToQueue}
 					onPlayerReplace={handleCandidatePlayerReplace}
 					onRefresh={handleRefreshCandidates}
 				/>
@@ -131,8 +129,6 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 					waiting={waiting}
 					singleWomanIds={singleWomanIds}
 					onToggleResting={toggleResting}
-					onToggleForceMixed={toggleForceMixed}
-					onToggleForceHardGame={toggleForceHardGame}
 				/>
 
 				<RestingList resting={resting} onToggleResting={toggleResting} />
