@@ -1,7 +1,11 @@
 import { memo, useMemo } from "react";
-import type { Court, GeneratedTeam, SessionPlayer } from "../../types";
-import PlayerBadge from "../shared/PlayerBadge";
-import { skillScore } from "../../lib/teamGenerator";
+import type { SessionPlayer } from "../../types";
+import { useSessionStore } from "../../store/sessionStore";
+import { usePlayerReplace } from "../../hooks/usePlayerReplace";
+import ClickablePlayerBadge from "../shared/ClickablePlayerBadge";
+import PlayerReplaceDialog from "../PlayerReplaceDialog";
+import SectionHeader from "../shared/SectionHeader";
+import { getPlayingPlayers, getUnavailableIds } from "../../lib/sessionUtils";
 
 const GAME_TYPE_COLOR: Record<string, { bg: string; text: string }> = {
 	혼복: { bg: "rgba(175,82,222,0.1)", text: "#af52de" },
@@ -10,90 +14,88 @@ const GAME_TYPE_COLOR: Record<string, { bg: string; text: string }> = {
 	혼합: { bg: "rgba(255,149,0,0.1)", text: "#ff9500" },
 };
 
-interface MatchQueueProps {
-	queue: GeneratedTeam[];
-	courts: Court[];
-	onAssignFromQueue: (queueIndex: number) => void;
-	onRemoveFromQueue: (queueIndex: number) => void;
-}
-
-const MatchQueue = memo(function MatchQueue({
-	queue,
-	courts,
-	onAssignFromQueue,
-	onRemoveFromQueue,
-}: MatchQueueProps) {
-	if (queue.length === 0) return null;
+const MatchQueue = memo(function MatchQueue() {
+	const queue = useSessionStore((s) => s.matchQueue);
+	const courts = useSessionStore((s) => s.courts);
+	const sessionPlayers = useSessionStore((s) => s.sessionPlayers);
+	const waitingIds = useSessionStore((s) => s.waitingIds);
+	const pairHistory = useSessionStore((s) => s.pairHistory);
+	const onAssignFromQueue = useSessionStore((s) => s.handleAssignFromQueue);
+	const onRemoveFromQueue = useSessionStore((s) => s.handleRemoveFromQueue);
+	const onReplaceInQueue = useSessionStore((s) => s.handleReplaceInQueue);
 
 	const hasEmptyCourt = courts.some((c) => !c.match);
 
-	// 경기중 선수 ID 집합
-	const playingIds = useMemo(
-		() => new Set(
-			courts.flatMap((c) => (c.match ? [...c.match.teamA, ...c.match.teamB].map((p) => p.id) : [])),
-		),
-		[courts],
+	// waiting 선수 목록 (Map에서 파생)
+	const waiting = useMemo(
+		() => waitingIds.map((id) => sessionPlayers.get(id)).filter((p): p is SessionPlayer => p !== undefined),
+		[waitingIds, sessionPlayers],
 	);
 
+	// 경기중 선수 목록
+	const playingPlayers = useMemo(
+		() => getPlayingPlayers(courts, sessionPlayers),
+		[courts, sessionPlayers],
+	);
+	const playingIds = useMemo(
+		() => new Set(playingPlayers.map((p) => p.id)),
+		[playingPlayers],
+	);
+
+	// 대기열 전체 선수 목록
+	const queuedPlayers = useMemo(
+		() =>
+			queue
+				.flatMap((t) => [...t.teamA, ...t.teamB])
+				.map((id) => sessionPlayers.get(id))
+				.filter((p): p is SessionPlayer => p !== undefined),
+		[queue, sessionPlayers],
+	);
+
+	// 배정 불가 선수 ID (경기중 + 대기열)
+	const unavailableIds = useMemo(
+		() => getUnavailableIds(playingPlayers, queuedPlayers),
+		[playingPlayers, queuedPlayers],
+	);
+
+	const { handlePlayerClick, replaceDialogProps } = usePlayerReplace({
+		teams: queue,
+		sessionPlayers,
+		waiting,
+		playingPlayers,
+		pairHistory,
+		unavailableIds,
+		onReplace: onReplaceInQueue,
+	});
+
+	if (queue.length === 0) return null;
+
 	return (
+		<>
 		<div>
-			{/* Section header */}
-			<div
-				style={{
-					padding: "16px 16px 10px 16px",
-					display: "flex",
-					alignItems: "center",
-					justifyContent: "space-between",
-				}}
-			>
-				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-					<div
+			<SectionHeader
+				icon={
+					<svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+						<path d="M4 6h12M4 10h12M4 14h8" stroke="#ff9500" strokeWidth="1.5" strokeLinecap="round" />
+					</svg>
+				}
+				iconBg="rgba(255,149,0,0.1)"
+				title="대기열"
+				badge={
+					<span
 						style={{
-							width: 24,
-							height: 24,
-							borderRadius: 6,
+							fontSize: 11,
+							fontWeight: 600,
+							color: "#ff9500",
 							background: "rgba(255,149,0,0.1)",
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "center",
-							flexShrink: 0,
+							borderRadius: 99,
+							padding: "2px 7px",
 						}}
 					>
-						<svg
-							width="14"
-							height="14"
-							viewBox="0 0 20 20"
-							fill="none"
-							aria-hidden="true"
-						>
-							<path
-								d="M4 6h12M4 10h12M4 14h8"
-								stroke="#ff9500"
-								strokeWidth="1.5"
-								strokeLinecap="round"
-							/>
-						</svg>
-					</div>
-					<span
-						className="text-[#0f1724] dark:text-white"
-						style={{ fontSize: 15, fontWeight: 600 }}
-					>
-						대기열
+						{queue.length}팀
 					</span>
-				</div>
-				<span
-					style={{
-						fontSize: 11,
-						fontWeight: 600,
-						color: "#ff9500",
-						background: "rgba(255,149,0,0.1)",
-						borderRadius: 99,
-						padding: "2px 7px",
-					}}
-				>
-					{queue.length}팀
-				</span>
-			</div>
+				}
+			/>
 
 			<div
 				style={{
@@ -105,19 +107,22 @@ const MatchQueue = memo(function MatchQueue({
 			>
 				{queue.map((team, index) => {
 					const gameTypeStyle = GAME_TYPE_COLOR[team.gameType];
-					const allPlayers = [...team.teamA, ...team.teamB];
-					const hasPlayingMember = allPlayers.some((p) => playingIds.has(p.id));
+					const allIds = [...team.teamA, ...team.teamB];
+					const hasPlayingMember = allIds.some((id) => playingIds.has(id));
 					const canAssign = hasEmptyCourt && !hasPlayingMember;
 
-					const renderPlayer = (player: SessionPlayer) => (
-						<PlayerBadge
-							key={player.id}
-							name={player.name}
-							gender={player.gender}
-							skillScore={skillScore(player)}
-							isUnavailable={playingIds.has(player.id)}
-						/>
-					);
+					const renderPlayer = (id: string) => {
+						const player = sessionPlayers.get(id);
+						if (!player) return null;
+						return (
+							<ClickablePlayerBadge
+								key={player.id}
+								player={player}
+								onClick={(e) => handlePlayerClick(index, player, e)}
+								isUnavailable={playingIds.has(player.id)}
+							/>
+						);
+					};
 
 					return (
 						<div
@@ -260,6 +265,9 @@ const MatchQueue = memo(function MatchQueue({
 				})}
 			</div>
 		</div>
+
+		{replaceDialogProps && <PlayerReplaceDialog {...replaceDialogProps} />}
+		</>
 	);
 });
 

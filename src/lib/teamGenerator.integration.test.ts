@@ -28,14 +28,14 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 
 		// 3. 테스트를 위해 특정 이름의 선수들만 추출
 		const targetNames = [
-			"정원준", "오상진", "전준형", "홍예린", "황준기", 
-			"우창형", "김재완", "김선예", "임동환", "김명재", 
-			"백준우", "진명현", "최양회", "심상욱", "양지현", 
+			"정원준", "오상진", "전준형", "홍예린", "황준기",
+			"우창형", "김재완", "김선예", "임동환", "김명재",
+			"백준우", "진명현", "최양회", "심상욱", "양지현",
 			"권진희", "손형일", "송유현"
 		];
-		
+
 		const testGroup = waitingPlayers.filter((p) => targetNames.includes(p.name));
-		
+
 		console.log(
 			`  ✅ 테스트 대상 ${testGroup.length}명: ${testGroup.map((p) => `${p.name}(${p.gender}, ${skillScore(p).toFixed(1)})`).join(", ")}`,
 		);
@@ -45,6 +45,8 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 		const TARGET_MATCHES = 15; // 총 15경기 시뮬레이션 (기존 5라운드 * 3코트 분량)
 		let lastMixedPlayerIds: string[] = [];
 		let lastCoPlayers: Record<string, string[]> = {};
+		// teamA/B는 이제 [string, string] — ID lookup용 Map
+		const testGroupMap = new Map(testGroup.map((p) => [p.id, p]));
 
 		let currentWaiting = [...testGroup];
 		const courts: (ReturnType<typeof generateTeam> | null)[] = Array(COURT_COUNT).fill(null);
@@ -68,7 +70,7 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 					}
 
 					const team = generateTeam(currentWaiting, [], lastMixedPlayerIds, lastCoPlayers);
-					
+
 					if (!team) {
 						console.log(`  [코트 ${i + 1}] 팀 생성 실패 (조건 불충족) - 배정 대기`);
 						continue;
@@ -76,13 +78,13 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 
 					courts[i] = team;
 
-					// 매칭된 선수들을 대기열에서 제거
-					const selectedIds = [...team.teamA, ...team.teamB].map(p => p.id);
+					// teamA/B는 이제 [string, string] — ID 직접 사용
+					const selectedIds = [...team.teamA, ...team.teamB];
 					currentWaiting = currentWaiting.filter(p => !selectedIds.includes(p.id));
 
 					console.log(`  ▶ [코트 ${i + 1} IN] 게임 타입: ${team.gameType}`);
-					console.log(`    팀 A: ${team.teamA.map((p) => `${p.name}(${p.gender}, ${skillScore(p).toFixed(1)})`).join(" + ")}`);
-					console.log(`    팀 B: ${team.teamB.map((p) => `${p.name}(${p.gender}, ${skillScore(p).toFixed(1)})`).join(" + ")}`);
+					console.log(`    팀 A: ${team.teamA.map((id) => { const p = testGroupMap.get(id)!; return `${p.name}(${p.gender}, ${skillScore(p).toFixed(1)})`; }).join(" + ")}`);
+					console.log(`    팀 B: ${team.teamB.map((id) => { const p = testGroupMap.get(id)!; return `${p.name}(${p.gender}, ${skillScore(p).toFixed(1)})`; }).join(" + ")}`);
 				}
 			}
 
@@ -95,7 +97,7 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 
 			// 종료할 코트 개수 랜덤 결정 (1개 ~ 현재 돌아가고 있는 코트 수)
 			const finishCount = Math.floor(Math.random() * playingCourts.length) + 1;
-			
+
 			// 배열 섞어서 종료할 코트 선택
 			const shuffled = playingCourts.sort(() => 0.5 - Math.random());
 			const finishingCourts = shuffled.slice(0, finishCount);
@@ -105,14 +107,15 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 			console.log(`\n  -- ${finishCount}개 코트 경기 종료 --`);
 			for (const { c: match, index } of finishingCourts) {
 				if (!match) continue;
-				
+
 				console.log(`  ◀ [코트 ${index + 1} OUT] ${match.gameType} 종료`);
-				
-				const players = [...match.teamA, ...match.teamB];
-				
+
+				// teamA/B는 [string, string] — ID 직접 사용
+				const matchPlayerIds = [...match.teamA, ...match.teamB];
+
 				// 1. 경기 수 증가 및 대기열 복귀
-				for (const p of players) {
-					const playerInGroup = testGroup.find(tp => tp.id === p.id);
+				for (const id of matchPlayerIds) {
+					const playerInGroup = testGroupMap.get(id);
 					if (playerInGroup) {
 						playerInGroup.gameCount += 1;
 						if (match.gameType === "혼복") {
@@ -124,16 +127,13 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 				}
 
 				// 2. lastCoPlayers 업데이트
-				const allMatchPlayers = [...match.teamA, ...match.teamB];
-				for (const player of allMatchPlayers) {
-					lastCoPlayers[player.id] = allMatchPlayers
-						.filter(p => p.id !== player.id)
-						.map(p => p.id);
+				for (const playerId of matchPlayerIds) {
+					lastCoPlayers[playerId] = matchPlayerIds.filter(id => id !== playerId);
 				}
 
 				// 3. 직전 혼복 출전자 기록
 				if (match.gameType === "혼복") {
-					nextMixedPlayerIds.push(...players.map(p => p.id));
+					nextMixedPlayerIds.push(...matchPlayerIds);
 				}
 
 				// 코트 비우기
@@ -160,12 +160,12 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 		console.log(`  [모든 라운드 종료 후 최종 선수 상태 요약]`);
 		console.log(`==================================================`);
 		const sortedByGameCount = [...testGroup].sort((a, b) => a.gameCount - b.gameCount);
-		
+
 		// 경기 수 통계
 		const gameCounts = sortedByGameCount.map(p => p.gameCount);
 		const minGameCount = Math.min(...gameCounts);
 		const maxGameCount = Math.max(...gameCounts);
-		
+
 		// 혼복 수 통계 (남녀 모두)
 		const mixedCounts = sortedByGameCount.map(p => p.mixedCount);
 		const minMixedCount = Math.min(...mixedCounts);
@@ -176,11 +176,11 @@ describe("실제 구글 시트 데이터 기반 팀 생성 통합 테스트", ()
 				let flags = "";
 				if (p.gameCount === maxGameCount && maxGameCount > minGameCount) flags += " 🔺경기많음";
 				if (p.gameCount === minGameCount && maxGameCount > minGameCount) flags += " 🔻경기적음";
-				
+
 				// 남녀 모두 혼복 통계 표시
 				if (p.mixedCount === maxMixedCount && maxMixedCount > minMixedCount) flags += " 🔺혼복많음";
 				if (p.mixedCount === minMixedCount && maxMixedCount > minMixedCount) flags += " 🔻혼복적음";
-				
+
 				return `${p.name}(경기:${p.gameCount}, 혼복:${p.mixedCount}${flags})`;
 			}).join("\n    ")}`
 		);

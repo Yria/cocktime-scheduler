@@ -21,7 +21,6 @@ import {
 import type { Player, SessionSettings } from "../types";
 import { useSessionStore } from "./sessionStore";
 
-
 export interface SessionMeta {
 	sessionId: number;
 	courtCount: number;
@@ -150,16 +149,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 		if (sessionMeta) {
 			// 참가자 변경 여부 확인 (팀 후보 재생성 여부 결정)
 			const currentPlayerIds = new Set(selected.map((p) => p.id));
-			const { waiting, resting, courts } = useSessionStore.getState();
-			const currentSessionPlayers = [
-				...waiting,
-				...resting,
-				...courts.flatMap((c) =>
-					c.match ? [...c.match.teamA, ...c.match.teamB] : [],
-				),
-			];
+			const { sessionPlayers } = useSessionStore.getState();
 			const previousPlayerIds = new Set(
-				currentSessionPlayers.map((p) => p.playerId),
+				[...sessionPlayers.values()].map((p) => p.playerId),
 			);
 
 			const playersChanged =
@@ -219,8 +211,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 		// 새 세션의 초기 상태를 sessionStore에 직접 설정 (팀 후보는 SessionMain에서 자동 생성됨)
 		useSessionStore.getState().initialize({
 			courts,
-			waiting: sessionPlayers,
-			resting: [],
+			players: sessionPlayers,
+			waitingIds: sessionPlayers.map((p) => p.id),
+			restingIds: [],
 			pairHistory: {},
 			candidateTeams: [],
 			matchQueue: [],
@@ -251,35 +244,24 @@ export const useAppStore = create<AppState>((set, get) => ({
 				} catch (e) {
 					if (
 						e instanceof Error &&
-						(e.message.includes("광고 차단기") || e.message.includes("초기화 실패"))
+						(e.message.includes("광고 차단기") ||
+							e.message.includes("초기화 실패"))
 					) {
-							await updatePlayer(
-							player.name,
-							player.gender,
-							player.skills,
-						);
+						await updatePlayer(player.name, player.gender, player.skills);
 					} else {
 						throw e;
 					}
 				}
 			} else {
-				await updatePlayer(
-					player.name,
-					player.gender,
-					player.skills,
-				);
+				await updatePlayer(player.name, player.gender, player.skills);
 			}
 
 			if (sessionMeta) {
 				// 세션 참가 중인 플레이어인지 확인
-				const { waiting, resting, courts } = useSessionStore.getState();
-				const sessionPlayer = [
-					...waiting,
-					...resting,
-					...courts.flatMap((c) =>
-						c.match ? [...c.match.teamA, ...c.match.teamB] : [],
-					),
-				].find((p) => p.playerId === player.id);
+				const { sessionPlayers } = useSessionStore.getState();
+				const sessionPlayer = Array.from(sessionPlayers.values()).find(
+					(p) => p.playerId === player.id,
+				);
 
 				if (sessionPlayer) {
 					// session_players DB 업데이트 + broadcast
@@ -289,10 +271,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 						player.skills,
 					);
 					if (updated) {
-						useSessionStore.getState().applyBroadcast(
-							{ event: "player_updated", payload: { player: updated } },
-							() => {},
-						);
+						useSessionStore
+							.getState()
+							.applyBroadcast(
+								{ event: "player_updated", payload: { player: updated } },
+								() => {},
+							);
 						const { _channel } = useSessionStore.getState();
 						if (_channel) {
 							sendBroadcast(_channel, {
@@ -353,24 +337,24 @@ export const useAppStore = create<AppState>((set, get) => ({
 
 export const appActions = {
 	fetchPlayers: () => useAppStore.getState().fetchPlayersAction(),
-	loadSession: (row: SessionRow) => useAppStore.getState().loadSessionAction(row),
+	loadSession: (row: SessionRow) =>
+		useAppStore.getState().loadSessionAction(row),
 	checkActiveSession: () => useAppStore.getState().checkActiveSessionAction(),
 	startOrUpdateSession: (
 		selected: Player[],
 		settings: { courtCount: number; singleWomanIds: string[] },
 	) => useAppStore.getState().startOrUpdateSessionAction(selected, settings),
-	updatePlayer: (player: Player) => useAppStore.getState().updatePlayerAction(player),
+	updatePlayer: (player: Player) =>
+		useAppStore.getState().updatePlayerAction(player),
 	subscribeSessionWatch: (callbacks: {
 		onSessionStart: (row: SessionRow) => Promise<void>;
 		onSessionEnd: (sessionId: number) => void;
 	}) => useAppStore.getState().subscribeSessionWatch(callbacks),
-	unsubscribeSessionWatch: () => useAppStore.getState().unsubscribeSessionWatch(),
-	setSessionMeta: (
-		meta: SessionMeta | null,
-	) => useAppStore.setState({ sessionMeta: meta }),
-	setSetupGuests: (
-		updater: Player[] | ((prev: Player[]) => Player[]),
-	) =>
+	unsubscribeSessionWatch: () =>
+		useAppStore.getState().unsubscribeSessionWatch(),
+	setSessionMeta: (meta: SessionMeta | null) =>
+		useAppStore.setState({ sessionMeta: meta }),
+	setSetupGuests: (updater: Player[] | ((prev: Player[]) => Player[])) =>
 		useAppStore.setState((state) => ({
 			setupGuests:
 				typeof updater === "function" ? updater(state.setupGuests) : updater,

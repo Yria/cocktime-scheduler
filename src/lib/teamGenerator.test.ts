@@ -53,23 +53,43 @@ function makePlayer(
 	};
 }
 
+/** SessionPlayer 배열에서 id→객체 Map 생성 */
+function makePlayerMap(players: SessionPlayer[]): Map<string, SessionPlayer> {
+	return new Map(players.map((p) => [p.id, p]));
+}
+
+/** GeneratedTeam의 ID 튜플을 SessionPlayer 튜플로 변환 */
+function resolvePair(
+	ids: [string, string],
+	map: Map<string, SessionPlayer>,
+): [SessionPlayer, SessionPlayer] {
+	return [map.get(ids[0])!, map.get(ids[1])!];
+}
+
 function logTeam(
 	label: string,
 	team: ReturnType<typeof generateTeam>,
+	playerMap?: Map<string, SessionPlayer>,
 ) {
 	if (!team) {
 		console.log(`  [${label}] 팀 생성 실패 (null)`);
 		return;
 	}
+	if (!playerMap) {
+		console.log(`  [${label}] 게임타입: ${team.gameType} (teamA: ${team.teamA.join(", ")})`);
+		return;
+	}
 	const fmt = (p: SessionPlayer) =>
 		`${p.name}(스킬:${skillScore(p).toFixed(1)} 경기:${p.gameCount} 혼복:${p.mixedCount})`;
-	const [a, b] = team.teamA;
-	const [c, d] = team.teamB;
+	const [a, b] = resolvePair(team.teamA, playerMap);
+	const [c, d] = resolvePair(team.teamB, playerMap);
+	const teamAPlayers = resolvePair(team.teamA, playerMap);
+	const teamBPlayers = resolvePair(team.teamB, playerMap);
 	console.log(`  [${label}] 게임타입: ${team.gameType}`);
 	console.log(`    팀A: ${fmt(a)} + ${fmt(b)}`);
 	console.log(`    팀B: ${fmt(c)} + ${fmt(d)}`);
 	console.log(
-		`    페어링점수: ${pairingScore(team.teamA, team.teamB).toFixed(2)}`,
+		`    페어링점수: ${pairingScore(teamAPlayers, teamBPlayers).toFixed(2)}`,
 	);
 }
 
@@ -112,7 +132,8 @@ describe("규칙 0 — 경기 횟수 균등 분배", () => {
 
 		expect(team).not.toBeNull();
 		// 경기수 0,1,2,3인 남F,남C,남D,남B 선발
-		const selected = [...team!.teamA, ...team!.teamB].map((p) => p.name);
+		const pm = makePlayerMap(players);
+		const selected = [...team!.teamA, ...team!.teamB].map((id) => pm.get(id)!.name);
 		console.log(`  선발: ${selected.join(", ")}`);
 		expect(selected).toContain("남F");
 		expect(selected).toContain("남C");
@@ -137,7 +158,8 @@ describe("규칙 0 — 경기 횟수 균등 분배", () => {
 		logTeam("결과", team);
 
 		expect(team).not.toBeNull();
-		const selected = [...team!.teamA, ...team!.teamB].map((p) => p.name);
+		const pm = makePlayerMap(players);
+		const selected = [...team!.teamA, ...team!.teamB].map((id) => pm.get(id)!.name);
 		console.log(`  선발: ${selected.join(", ")}`);
 		// 동점(gameCount=2)인 앞 4명이 선발되어야 함
 		expect(selected).toContain("먼저A");
@@ -169,8 +191,9 @@ describe("규칙 1 — 혼복 우선", () => {
 
 		expect(team?.gameType).toBe("혼복");
 		// 각 팀이 여+남으로 구성
+		const pm = makePlayerMap(players);
 		for (const t of [team!.teamA, team!.teamB]) {
-			const genders = t.map((p) => p.gender);
+			const genders = t.map((id) => pm.get(id)!.gender);
 			expect(genders).toContain("F");
 			expect(genders).toContain("M");
 		}
@@ -241,7 +264,9 @@ describe("규칙 1.5 — 직전 혼복 참여자 배제", () => {
 		logTeam("결과", team);
 
 		expect(team?.gameType).toBe("혼복");
+		const pm = makePlayerMap(players);
 		const selectedMen = [...team!.teamA, ...team!.teamB]
+			.map((id) => pm.get(id)!)
 			.filter((p) => p.gender === "M")
 			.map((p) => p.name);
 		console.log(`  선발된 남자: ${selectedMen.join(", ")}`);
@@ -273,7 +298,9 @@ describe("규칙 1.5 — 직전 혼복 참여자 배제", () => {
 		logTeam("결과", team);
 
 		expect(team?.gameType).toBe("혼복");
+		const pm = makePlayerMap(players);
 		const selectedWomen = [...team!.teamA, ...team!.teamB]
+			.map((id) => pm.get(id)!)
 			.filter((p) => p.gender === "F")
 			.map((p) => p.name);
 		console.log(`  선발된 여자: ${selectedWomen.join(", ")}`);
@@ -333,7 +360,9 @@ describe("규칙 2 — 혼복 남자 실력 유사성", () => {
 		logTeam("결과", team);
 
 		expect(team?.gameType).toBe("혼복");
+		const pm = makePlayerMap(players);
 		const selectedMen = [...team!.teamA, ...team!.teamB]
+			.map((id) => pm.get(id)!)
 			.filter((p) => p.gender === "M")
 			.map((p) => p.name);
 		console.log(`  선발된 남자: ${selectedMen.join(", ")}`);
@@ -375,7 +404,9 @@ describe("규칙 2 — 혼복 남자 실력 유사성", () => {
 		const team = generateTeam(players, []);
 		logTeam("결과", team);
 
+		const pm = makePlayerMap(players);
 		const selectedMen = [...team!.teamA, ...team!.teamB]
+			.map((id) => pm.get(id)!)
 			.filter((p) => p.gender === "M")
 			.map((p) => p.name);
 		console.log(`  선발된 남자: ${selectedMen.join(", ")}`);
@@ -407,8 +438,9 @@ describe("규칙 1.8 — 여자복식(여복) fallback", () => {
 		logTeam("결과", team);
 
 		expect(team?.gameType).toBe("여복");
+		const pm = makePlayerMap(players);
 		const selectedGenders = [...team!.teamA, ...team!.teamB].map(
-			(p) => p.gender,
+			(id) => pm.get(id)!.gender,
 		);
 		expect(selectedGenders.every((g) => g === "F")).toBe(true);
 	});
@@ -428,12 +460,12 @@ describe("규칙 1.8 — 여자복식(여복) fallback", () => {
 		logTeam("결과", team);
 
 		expect(team?.gameType).toBe("여복");
-		
-		const teamASkills = team!.teamA.map((p) => skillScore(p));
-		const teamBSkills = team!.teamB.map((p) => skillScore(p));
+		const pm = makePlayerMap(players);
+		const teamASkills = team!.teamA.map((id) => skillScore(pm.get(id)!));
+		const teamBSkills = team!.teamB.map((id) => skillScore(pm.get(id)!));
 		const isEven =
 			teamASkills[0] === teamASkills[1] && teamBSkills[0] === teamBSkills[1];
-		
+
 		// 현재 가중치에서는 [강,강] vs [약,약]이 선택됨 (intraDiff 최소화 우선)
 		expect(isEven).toBe(true);
 	});
@@ -469,11 +501,13 @@ describe("규칙 2.5 — 혼복 여자 실력 유사성", () => {
 		logTeam("결과", team);
 
 		expect(team?.gameType).toBe("혼복");
+		const pm = makePlayerMap(players);
 		const selectedWomen = [...team!.teamA, ...team!.teamB]
+			.map((id) => pm.get(id)!)
 			.filter((p) => p.gender === "F")
 			.map((p) => p.name);
 		console.log(`  선발된 여자: ${selectedWomen.join(", ")}`);
-		
+
 		// 실력 차이 최소 쌍: 강여A(3.0) + 중여B(2.0) = 차이 1.0
 		// 중여B(2.0) + 약여C(1.0) = 차이 1.0 → 동점이지만 먼저 발견되는 쌍
 		expect(selectedWomen).not.toContain("약여C");
@@ -501,11 +535,13 @@ describe("규칙 2.5 — 혼복 여자 실력 유사성", () => {
 		logTeam("결과", team);
 
 		expect(team?.gameType).toBe("혼복");
+		const pm = makePlayerMap(players);
 		const selectedWomen = [...team!.teamA, ...team!.teamB]
+			.map((id) => pm.get(id)!)
 			.filter((p) => p.gender === "F")
 			.map((p) => p.name);
 		console.log(`  선발된 여자: ${selectedWomen.join(", ")}`);
-		
+
 		expect(selectedWomen).toContain("중여B");
 		expect(selectedWomen).toContain("중여C");
 		expect(selectedWomen).not.toContain("직전강여A");
@@ -570,12 +606,13 @@ describe("규칙 3+4 — 파트너 실력 유사 + 팀 간 균형", () => {
 		const team = generateTeam(players, []);
 		logTeam("결과", team);
 
-		const teamANames = team!.teamA.map((p) => p.name).sort();
-		const teamBNames = team!.teamB.map((p) => p.name).sort();
+		const pm = makePlayerMap(players);
+		const teamANames = team!.teamA.map((id) => pm.get(id)!.name).sort();
+		const teamBNames = team!.teamB.map((id) => pm.get(id)!.name).sort();
 		console.log(`  팀A: ${teamANames.join("+")}  팀B: ${teamBNames.join("+")}`);
 
-		const teamASkills = team!.teamA.map((p) => skillScore(p));
-		const teamBSkills = team!.teamB.map((p) => skillScore(p));
+		const teamASkills = team!.teamA.map((id) => skillScore(pm.get(id)!));
+		const teamBSkills = team!.teamB.map((id) => skillScore(pm.get(id)!));
 		const isEven =
 			teamASkills[0] === teamASkills[1] && teamBSkills[0] === teamBSkills[1];
 		const isMixed =
@@ -654,7 +691,7 @@ describe("규칙 7 — 혼복 우선배치 강제 적용", () => {
 		logTeam("결과", team);
 
 		expect(team?.gameType).toBe("혼복");
-		const selectedIds = [...team!.teamA, ...team!.teamB].map((p) => p.id);
+		const selectedIds = [...team!.teamA, ...team!.teamB];
 		console.log(
 			`  강제남C 선발 여부: ${selectedIds.includes(forcedM.id) ? "✅ 포함" : "❌ 미포함"}`,
 		);
@@ -682,7 +719,7 @@ describe("규칙 7 — 혼복 우선배치 강제 적용", () => {
 		logTeam("결과", team);
 
 		expect(team?.gameType).toBe("혼복");
-		const selectedIds = [...team!.teamA, ...team!.teamB].map((p) => p.id);
+		const selectedIds = [...team!.teamA, ...team!.teamB];
 		console.log(
 			`  강제여A 선발 여부: ${selectedIds.includes(forcedW.id) ? "✅ 포함" : "❌ 미포함"}`,
 		);
@@ -715,9 +752,10 @@ describe("규칙 7 — 혼복 우선배치 강제 적용", () => {
 		logTeam("결과", team);
 
 		expect(team?.gameType).toBe("혼복");
-		const selected = [...team!.teamA, ...team!.teamB];
-		const selectedIds = selected.map((p) => p.id);
-		const selectedWomen = selected
+		const pm = makePlayerMap(players);
+		const selectedIds = [...team!.teamA, ...team!.teamB];
+		const selectedWomen = selectedIds
+			.map((id) => pm.get(id)!)
 			.filter((p) => p.gender === "F")
 			.map((p) => p.name);
 
@@ -753,9 +791,10 @@ describe("혼복 팀 편성 — 스킬 균형", () => {
 		expect(team?.gameType).toBe("혼복");
 
 		// 각 팀이 여+남 구성
+		const pm = makePlayerMap([w1, w2, m1, m2]);
 		for (const t of [team!.teamA, team!.teamB]) {
-			expect(t.some((p) => p.gender === "F")).toBe(true);
-			expect(t.some((p) => p.gender === "M")).toBe(true);
+			expect(t.some((id) => pm.get(id)!.gender === "F")).toBe(true);
+			expect(t.some((id) => pm.get(id)!.gender === "M")).toBe(true);
 		}
 	});
 });
@@ -793,8 +832,9 @@ describe("규칙 9 — 직전 게임 동반자 회피", () => {
 		logTeam("결과", team);
 
 		expect(team).not.toBeNull();
-		const selected = [...team!.teamA, ...team!.teamB].map((p) => p.id);
-		console.log(`  선발: ${[...team!.teamA, ...team!.teamB].map((p) => p.name).join(", ")}`);
+		const selected = [...team!.teamA, ...team!.teamB];
+		const pm = makePlayerMap(players);
+		console.log(`  선발: ${selected.map((id) => pm.get(id)!.name).join(", ")}`);
 
 		// 직전 4명(m1~m4)이 모두 다시 선발되면 안 됨 — 최소 m5 또는 m6이 포함되어야 함
 		const prevGroupCount = [m1, m2, m3, m4].filter((p) =>
@@ -865,23 +905,23 @@ describe("종합 시뮬레이션 — 연속 경기", () => {
 				break;
 			}
 
-			logTeam(`라운드 ${round}`, team);
+			logTeam(`라운드 ${round}`, team, playerMap);
 
 			// lastCoPlayers 업데이트
 			lastCoPlayers = updateLastCoPlayers(lastCoPlayers, team);
 
 			// gameCount 증가
-			for (const p of [...team.teamA, ...team.teamB]) {
-				const player = playerMap.get(p.id)!;
+			for (const id of [...team.teamA, ...team.teamB]) {
+				const player = playerMap.get(id)!;
 				player.gameCount += 1;
-				if (team.gameType === "혼복" && p.gender === "M") {
+				if (team.gameType === "혼복" && player.gender === "M") {
 					player.mixedCount += 1;
 				}
 			}
 
 			// 직전 혼복 출전자 갱신
 			if (team.gameType === "혼복") {
-				lastMixedIds = [...team.teamA, ...team.teamB].map((p) => p.id);
+				lastMixedIds = [...team.teamA, ...team.teamB];
 			} else {
 				lastMixedIds = [];
 			}

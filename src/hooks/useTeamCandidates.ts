@@ -1,62 +1,61 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { Court, GeneratedTeam, PairHistory, SessionPlayer } from "../types";
-import type { TeamStrategy } from "../types";
+import type { GeneratedTeam, SessionPlayer, TeamStrategy } from "../types";
+import { useAppStore } from "../store/appStore";
 import { useSessionStore } from "../store/sessionStore";
 import { dbSaveTeamCandidates } from "../lib/supabase/api";
 import { sendBroadcast } from "../lib/supabase/broadcast";
 import { generateBulkTeamCandidates } from "../lib/teamGenerator";
+import { getPlayingPlayers, getUnavailableIds } from "../lib/sessionUtils";
 
 const TARGET_CANDIDATE_COUNT = 5;
 
 interface UseTeamCandidatesParams {
-	sessionId: number;
-	waiting: SessionPlayer[];
-	courts: Court[];
-	matchQueue: GeneratedTeam[];
-	singleWomanIds: string[];
-	lastMixedPlayerIds: string[];
-	lastCoPlayers: Record<string, string[]>;
-	pairHistory: PairHistory;
-	candidateTeams: GeneratedTeam[];
-	setCandidateTeams: (teams: GeneratedTeam[]) => void;
-	updateCandidateTeam: (index: number, team: GeneratedTeam) => void;
-	handleAssign: (team: GeneratedTeam, courtId: number) => void;
-	handleAddToQueue: (team: GeneratedTeam) => void;
 	strategyFilter: TeamStrategy | null;
 }
 
-export function useTeamCandidates({
-	sessionId,
-	waiting,
-	courts,
-	matchQueue,
-	singleWomanIds,
-	lastMixedPlayerIds,
-	lastCoPlayers,
-	pairHistory,
-	candidateTeams,
-	setCandidateTeams,
-	updateCandidateTeam,
-	handleAssign,
-	handleAddToQueue,
-	strategyFilter,
-}: UseTeamCandidatesParams) {
+export function useTeamCandidates({ strategyFilter }: UseTeamCandidatesParams) {
+	const sessionId = useAppStore((s) => s.sessionMeta?.sessionId) ?? 0;
+	const singleWomanIds = useAppStore((s) => s.sessionMeta?.singleWomanIds) ?? EMPTY_SINGLE_WOMAN_IDS;
+
+	const sessionPlayers = useSessionStore((s) => s.sessionPlayers);
+	const waitingIds = useSessionStore((s) => s.waitingIds);
+	const courts = useSessionStore((s) => s.courts);
+	const matchQueue = useSessionStore((s) => s.matchQueue);
+	const pairHistory = useSessionStore((s) => s.pairHistory);
+	const candidateTeams = useSessionStore((s) => s.candidateTeams);
+	const setCandidateTeams = useSessionStore((s) => s.setCandidateTeams);
+	const updateCandidateTeam = useSessionStore((s) => s.updateCandidateTeam);
+	const handleAssign = useSessionStore((s) => s.handleAssign);
+	const handleAddToQueue = useSessionStore((s) => s.handleAddToQueue);
+	const lastMixedPlayerIds = useSessionStore((s) => s.lastMixedPlayerIds);
+	const lastCoPlayers = useSessionStore((s) => s.lastCoPlayers);
+
+	// waiting 선수 목록 (Map에서 파생)
+	const waiting = useMemo(
+		() => waitingIds.map((id) => sessionPlayers.get(id)).filter((p): p is SessionPlayer => p !== undefined),
+		[waitingIds, sessionPlayers],
+	);
+
 	// 경기중 선수 목록
 	const playingPlayers = useMemo(
-		() => courts.flatMap((c) => (c.match ? [...c.match.teamA, ...c.match.teamB] : [])),
-		[courts],
+		() => getPlayingPlayers(courts, sessionPlayers),
+		[courts, sessionPlayers],
 	);
 
 	// 대기열 선수 ID (큐 예약된 선수 — 생성 풀에서 제외)
 	const queueMemberIds = useMemo(
-		() => new Set(matchQueue.flatMap((t) => [...t.teamA, ...t.teamB]).map((p) => p.id)),
+		() => new Set(matchQueue.flatMap((t) => [...t.teamA, ...t.teamB])),
 		[matchQueue],
 	);
 
 	// 대기열 선수 목록 (unavailableIds 용)
 	const queuedPlayers = useMemo(
-		() => matchQueue.flatMap((t) => [...t.teamA, ...t.teamB]),
-		[matchQueue],
+		() =>
+			matchQueue
+				.flatMap((t) => [...t.teamA, ...t.teamB])
+				.map((id) => sessionPlayers.get(id))
+				.filter((p): p is SessionPlayer => p !== undefined),
+		[matchQueue, sessionPlayers],
 	);
 
 	// 항상 경기중 선수를 생성 풀에 포함 (경기중 = 곧 가용), 큐 멤버는 제외
@@ -76,39 +75,29 @@ export function useTeamCandidates({
 
 	// 배정 불가 선수 ID (경기중 + 대기열)
 	const unavailableIds = useMemo(
-		() => new Set([...playingPlayers, ...queuedPlayers].map((p) => p.id)),
+		() => getUnavailableIds(playingPlayers, queuedPlayers),
 		[playingPlayers, queuedPlayers],
 	);
 
-	// 표시용 후보: 전체 풀에 존재하는 선수로 구성된 팀 (최대 5개)
-	const { visibleCandidates, originalIndices } = useMemo(() => {
-		const filtered: { team: typeof candidateTeams[number]; origIdx: number }[] = [];
+	// 표시용 후보 + 표시 가능 수: 단일 순회로 계산
+	const { visibleCandidates, visibleCount, originalIndices } = useMemo(() => {
+		const limited: { team: typeof candidateTeams[number]; origIdx: number }[] = [];
+		let count = 0;
 		for (let i = 0; i < candidateTeams.length; i++) {
 			const team = candidateTeams[i];
-			const players = [...team.teamA, ...team.teamB];
-			if (players.every((p) => allPoolIds.has(p.id))) {
-				filtered.push({ team, origIdx: i });
-			}
-		}
-		const limited = filtered.slice(0, TARGET_CANDIDATE_COUNT);
-
-		return {
-			visibleCandidates: limited.map((f) => f.team),
-			originalIndices: limited.map((f) => f.origIdx),
-		};
-	}, [candidateTeams, allPoolIds]);
-
-	// 표시 가능한 후보 수 (보충 트리거용)
-	const visibleCount = useMemo(() => {
-		let count = 0;
-		for (const team of candidateTeams) {
-			const players = [...team.teamA, ...team.teamB];
-			if (players.every((p) => allPoolIds.has(p.id))) {
+			if (team.teamA.every((id) => allPoolIds.has(id)) && team.teamB.every((id) => allPoolIds.has(id))) {
 				count++;
+				if (limited.length < TARGET_CANDIDATE_COUNT) {
+					limited.push({ team, origIdx: i });
+				}
 				if (count >= TARGET_CANDIDATE_COUNT) break;
 			}
 		}
-		return count;
+		return {
+			visibleCandidates: limited.map((f) => f.team),
+			visibleCount: count,
+			originalIndices: limited.map((f) => f.origIdx),
+		};
 	}, [candidateTeams, allPoolIds]);
 
 	/** 후보 저장 + DB 반영 + 브로드캐스트 */
@@ -138,10 +127,9 @@ export function useTeamCandidates({
 
 		const existingValid = forceRefresh
 			? []
-			: candidateTeams.filter((team) => {
-				const players = [...team.teamA, ...team.teamB];
-				return players.every((p) => allPoolIds.has(p.id));
-			});
+			: candidateTeams.filter((team) =>
+				[...team.teamA, ...team.teamB].every((id) => allPoolIds.has(id)),
+			);
 
 		const need = TARGET_CANDIDATE_COUNT - existingValid.length;
 		if (need <= 0) return;
@@ -198,18 +186,11 @@ export function useTeamCandidates({
 		const team = candidateTeams[origIndex];
 		if (!team) return;
 
-		const newTeamA = team.teamA.map((p) =>
-			p.id === oldPlayer.id ? newPlayer : p,
-		) as [SessionPlayer, SessionPlayer];
-
-		const newTeamB = team.teamB.map((p) =>
-			p.id === oldPlayer.id ? newPlayer : p,
-		) as [SessionPlayer, SessionPlayer];
-
+		const replaceId = (id: string) => (id === oldPlayer.id ? newPlayer.id : id);
 		updateCandidateTeam(origIndex, {
 			...team,
-			teamA: newTeamA,
-			teamB: newTeamB,
+			teamA: team.teamA.map(replaceId) as [string, string],
+			teamB: team.teamB.map(replaceId) as [string, string],
 		});
 	};
 
@@ -236,9 +217,16 @@ export function useTeamCandidates({
 	return {
 		visibleCandidates,
 		unavailableIds,
+		playingPlayers,
+		waiting,
+		courts,
+		pairHistory,
+		handleAddToQueue,
 		handleRefreshCandidates,
 		handleCandidatePlayerReplace,
 		handleAssignCandidate,
 		handleQueueCandidate,
 	};
 }
+
+const EMPTY_SINGLE_WOMAN_IDS: string[] = [];

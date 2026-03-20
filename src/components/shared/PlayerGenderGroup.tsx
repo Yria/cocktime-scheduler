@@ -1,6 +1,5 @@
 import type { SessionPlayer } from "../../types";
-import PlayerBadge from "./PlayerBadge";
-import { skillScore } from "../../lib/teamGenerator";
+import ClickablePlayerBadge from "./ClickablePlayerBadge";
 
 interface PlayerGenderGroupProps {
 	label: string;
@@ -35,26 +34,13 @@ export default function PlayerGenderGroup({
 			</div>
 			<div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
 				{players.map(({ player, matchCount }) => (
-					<button
+					<ClickablePlayerBadge
 						key={player.id}
-						type="button"
+						player={player}
 						onClick={() => onReplace(player)}
 						className="glass-item hover:bg-[rgba(0,0,0,0.02)] dark:hover:bg-[rgba(255,255,255,0.08)] transition-colors"
-						style={{
-							border: "none",
-							background: "transparent",
-							cursor: "pointer",
-							padding: 0,
-							position: "relative",
-						}}
-					>
-						<div style={{ position: "relative" }}>
-							<PlayerBadge
-								name={player.name}
-								gender={player.gender}
-								skillScore={skillScore(player)}
-							/>
-							{matchCount > 0 && (
+						overlay={
+							matchCount > 0 ? (
 								<div
 									style={{
 										position: "absolute",
@@ -75,19 +61,14 @@ export default function PlayerGenderGroup({
 								>
 									{matchCount}
 								</div>
-							)}
-						</div>
-						<div
-							style={{
-								fontSize: 10,
-								color: "#98a0ab",
-								marginTop: 4,
-								fontWeight: 500,
-							}}
-						>
-							경기 {player.gameCount}회
-						</div>
-					</button>
+							) : undefined
+						}
+						caption={
+							<div style={{ fontSize: 10, color: "#98a0ab", marginTop: 4, fontWeight: 500 }}>
+								경기 {player.gameCount}회
+							</div>
+						}
+					/>
 				))}
 			</div>
 		</div>

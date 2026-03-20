@@ -78,8 +78,9 @@ export interface SessionSnapshot {
 
 export interface ClientSessionState {
 	courts: Court[];
-	waiting: SessionPlayer[];
-	resting: SessionPlayer[];
+	players: SessionPlayer[];
+	waitingIds: string[];
+	restingIds: string[];
 	pairHistory: PairHistory;
 	candidateTeams: import("../../types").GeneratedTeam[];
 	matchQueue: import("../../types").GeneratedTeam[];

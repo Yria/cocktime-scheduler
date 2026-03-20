@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
 import { disassemble, getChoseong } from "es-hangul";
-import type { Player } from "../types";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GenderFilter } from "../components/setup/PlayerSelectionList";
 import { useAppStore } from "../store/appStore";
 import { useSessionStore } from "../store/sessionStore";
+import type { Player } from "../types";
 
 /**
  * SessionSetup에서 플레이어 목록 파생, 필터링, 선택 관리를 담당하는 훅
@@ -12,9 +12,7 @@ export function useSetupPlayers(guests: Player[]) {
 	const allStorePlayers = useAppStore((s) => s.allPlayers);
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
 
-	const sessionCourts = useSessionStore((s) => s.courts);
-	const sessionWaiting = useSessionStore((s) => s.waiting);
-	const sessionResting = useSessionStore((s) => s.resting);
+	const sessionPlayers = useSessionStore((s) => s.sessionPlayers);
 
 	const isUpdating = !!sessionMeta;
 
@@ -23,15 +21,10 @@ export function useSetupPlayers(guests: Player[]) {
 		if (allStorePlayers.length > 0) return allStorePlayers;
 		if (!sessionMeta) return [];
 		const guestIdSet = new Set(guests.map((g) => g.id));
-		const playingPlayers = sessionCourts.flatMap((c) =>
-			c.match ? [...c.match.teamA, ...c.match.teamB] : [],
-		);
 		const playerMap = new Map<string, Player>();
-		for (const sp of [
-			...sessionWaiting,
-			...sessionResting,
-			...playingPlayers,
-		]) {
+
+		// sessionPlayers Map이 전체 참가자의 단일 소스
+		for (const sp of sessionPlayers.values()) {
 			if (!playerMap.has(sp.playerId) && !guestIdSet.has(sp.playerId)) {
 				playerMap.set(sp.playerId, {
 					id: sp.playerId,
@@ -46,19 +39,18 @@ export function useSetupPlayers(guests: Player[]) {
 		allStorePlayers,
 		sessionMeta,
 		guests,
-		sessionCourts,
-		sessionWaiting,
-		sessionResting,
+		sessionPlayers,
 	]);
 
 	// 제거 불가능한 플레이어 (현재 경기 중)
 	const nonRemovablePlayerIds = useMemo(() => {
 		if (!sessionMeta) return new Set<string>();
-		const playing = sessionCourts.flatMap((c) =>
-			c.match ? [...c.match.teamA, ...c.match.teamB] : [],
-		);
-		return new Set(playing.map((p) => p.playerId));
-	}, [sessionMeta, sessionCourts]);
+		const ids = new Set<string>();
+		for (const p of sessionPlayers.values()) {
+			if (p.status === "playing") ids.add(p.playerId);
+		}
+		return ids;
+	}, [sessionMeta, sessionPlayers]);
 
 	// 선택 상태
 	const [isSetupInitialized, setIsSetupInitialized] = useState(false);
@@ -70,20 +62,17 @@ export function useSetupPlayers(guests: Player[]) {
 	useEffect(() => {
 		if (!isSetupInitialized && players.length > 0) {
 			if (sessionMeta) {
-				const sessionPlayerIds = new Set([
-					...sessionWaiting.map((p) => p.playerId),
-					...sessionResting.map((p) => p.playerId),
-					...sessionCourts.flatMap((c) =>
-						c.match ? [...c.match.teamA, ...c.match.teamB].map((p) => p.playerId) : [],
-					),
-				]);
+				// sessionPlayers Map이 단일 소스 — 전체 참가자의 playerId를 선택 상태로 설정
+				const sessionPlayerIds = new Set(
+					[...sessionPlayers.values()].map((p) => p.playerId),
+				);
 				setSelected(sessionPlayerIds);
 			} else {
 				setSelected(new Set());
 			}
 			setIsSetupInitialized(true);
 		}
-	}, [isSetupInitialized, players, sessionMeta, sessionWaiting, sessionResting, sessionCourts]);
+	}, [isSetupInitialized, players, sessionMeta, sessionPlayers]);
 
 	const allPlayers = useMemo(() => [...players, ...guests], [players, guests]);
 

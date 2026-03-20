@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import type { PairHistory, SessionPlayer } from "../types";
+import { rankReplaceCandidates } from "../lib/sessionUtils";
 import ModalSheet from "./common/ModalSheet";
 import PlayerBadge from "./shared/PlayerBadge";
+import PlayerPickerList, { type PlayerPickerItem, type PlayerPickerSortOption } from "./shared/PlayerPickerList";
 import { skillScore } from "../lib/teamGenerator";
 
 interface Props {
@@ -15,6 +17,14 @@ interface Props {
 	onCancel: () => void;
 }
 
+const SORT_OPTIONS: PlayerPickerSortOption[] = [
+	{ value: "fitness", label: "적합도" },
+	{ value: "waitTime", label: "대기시간" },
+	{ value: "gameCount", label: "경기수" },
+];
+
+const FILTER_SHOW_THRESHOLD = 5;
+
 export default function PlayerReplaceDialog({
 	selectedPlayer,
 	currentTeam,
@@ -25,48 +35,16 @@ export default function PlayerReplaceDialog({
 	onReplace,
 	onCancel,
 }: Props) {
-	const rankedPlayers = useMemo(() => {
-		// 교체 대상의 파트너 (같은 팀의 다른 사람)
-		const partner = currentTeam.find((p) => p.id !== selectedPlayer.id);
-		const replacedScore = skillScore(selectedPlayer);
-		const partnerScore = partner ? skillScore(partner) : replacedScore;
-		const opponentAvgScore =
-			opponentTeam.reduce((sum, p) => sum + skillScore(p), 0) / opponentTeam.length;
-
-		// 전체 팀 밸런스 목표: (partner + replacement) ≈ opponentTotal
-		const opponentTotal = opponentTeam.reduce((sum, p) => sum + skillScore(p), 0);
-
-		return availablePlayers
-			.map((player) => {
-				const score = skillScore(player);
-				const isPlaying = unavailableIds.has(player.id);
-
-				// 1. 스킬 적합도: 교체 후 팀 합이 상대 팀 합에 가까울수록 좋음
-				const teamTotal = partnerScore + score;
-				const balanceDiff = Math.abs(teamTotal - opponentTotal);
-
-				// 2. 페어 히스토리: 파트너와 같이 한 적 없을수록 좋음
-				const partnerPairCount = partner && pairHistory[partner.id]?.has(player.id) ? 1 : 0;
-				const opponentPairCount = opponentTeam.reduce(
-					(n, op) => n + (pairHistory[op.id]?.has(player.id) ? 1 : 0),
-					0,
-				);
-
-				// 3. 경기수: 적을수록 우선
-				const gameCount = player.gameCount;
-
-				// 종합 점수 (낮을수록 좋음)
-				// 밸런스 차이 * 10 + 페어 중복 * 5 + 경기수 * 1 + 경기중 패널티 * 3
-				const fitness =
-					balanceDiff * 10 +
-					partnerPairCount * 5 +
-					opponentPairCount * 2 +
-					gameCount * 1 +
-					(isPlaying ? 3 : 0);
-
-				return { player, fitness, isPlaying, balanceDiff };
-			})
-			.sort((a, b) => a.fitness - b.fitness);
+	const pickerPlayers = useMemo((): PlayerPickerItem[] => {
+		const ranked = rankReplaceCandidates(availablePlayers, selectedPlayer, currentTeam, opponentTeam, pairHistory, unavailableIds);
+		// rank = fitness 오름차순 인덱스 (rankReplaceCandidates가 이미 정렬된 결과)
+		return ranked.map((item, index) => ({
+			player: item.player,
+			isPlaying: item.isPlaying,
+			rank: index,
+			fitnessScore: item.fitness,
+			waitSince: item.player.waitSince ?? undefined,
+		}));
 	}, [availablePlayers, selectedPlayer, currentTeam, opponentTeam, pairHistory, unavailableIds]);
 
 	return (
@@ -97,40 +75,44 @@ export default function PlayerReplaceDialog({
 								팀 A
 							</span>
 							<div style={{ display: "flex", flexWrap: "wrap", gap: 6, flex: 1 }}>
-								{currentTeam.map((player) => (
-									<div
-										key={player.id}
-										style={{
-											opacity: player.id === selectedPlayer.id ? 0.4 : 1,
-											position: "relative",
-										}}
-									>
-										<PlayerBadge
-											name={player.name}
-											gender={player.gender}
-											skillScore={skillScore(player)}
-										/>
-										{player.id === selectedPlayer.id && (
-											<div
-												style={{
-													position: "absolute",
-													top: "50%",
-													left: "50%",
-													transform: "translate(-50%, -50%)",
-													fontSize: 10,
-													fontWeight: 700,
-													color: "#ff3b30",
-													background: "rgba(255,255,255,0.95)",
-													borderRadius: 4,
-													padding: "2px 6px",
-													whiteSpace: "nowrap",
-												}}
-											>
-												교체대상
-											</div>
-										)}
-									</div>
-								))}
+								{currentTeam.map((player) => {
+									const isTarget = player.id === selectedPlayer.id;
+									if (!isTarget) {
+										return (
+											<PlayerBadge
+												key={player.id}
+												name={player.name}
+												gender={player.gender}
+												skillScore={skillScore(player)}
+											/>
+										);
+									}
+									return (
+										<div
+											key={player.id}
+											style={{
+												display: "inline-flex",
+												alignItems: "center",
+												padding: "4px 10px",
+												background: "linear-gradient(135deg, rgba(255,59,48,0.12), rgba(255,59,48,0.06))",
+												border: "1.5px dashed rgba(255,59,48,0.4)",
+												borderRadius: 14,
+												gap: 4,
+											}}
+										>
+											<span style={{ fontSize: 10 }}>↻</span>
+											<span style={{
+												fontSize: 13,
+												fontWeight: 600,
+												color: "#ff3b30",
+												textDecoration: "line-through",
+												textDecorationColor: "rgba(255,59,48,0.4)",
+											}}>
+												{player.name}
+											</span>
+										</div>
+									);
+								})}
 							</div>
 						</div>
 
@@ -169,86 +151,20 @@ export default function PlayerReplaceDialog({
 				</div>
 			</div>
 
-			{/* Available players — sorted by fitness */}
-			<div className="px-5 py-2 max-h-[40vh] overflow-y-auto">
-				{rankedPlayers.length === 0 ? (
-					<div className="text-center py-8">
-						<p className="text-gray-500 dark:text-gray-400">
-							교체 가능한 선수가 없습니다
-						</p>
-					</div>
-				) : (
-					<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-						{rankedPlayers.map(({ player, isPlaying }) => (
-							<button
-								key={player.id}
-								type="button"
-								onClick={() => onReplace(player)}
-								className="hover:bg-[rgba(0,0,0,0.03)] dark:hover:bg-[rgba(255,255,255,0.06)] transition-colors"
-								style={{
-									display: "flex",
-									alignItems: "center",
-									gap: 10,
-									padding: "8px 10px",
-									borderRadius: 8,
-									border: "none",
-									background: "transparent",
-									cursor: "pointer",
-									width: "100%",
-									textAlign: "left",
-								}}
-							>
-								<PlayerBadge
-									name={player.name}
-									gender={player.gender}
-									skillScore={skillScore(player)}
-								/>
-
-								{/* 경기수 */}
-								<span
-									style={{
-										fontSize: 11,
-										fontWeight: 500,
-										color: "#98a0ab",
-									}}
-								>
-									{player.gameCount}회
-								</span>
-
-								<span style={{ flex: 1 }} />
-
-								{/* 상태 표시 */}
-								{isPlaying ? (
-									<span
-										style={{
-											fontSize: 10,
-											fontWeight: 600,
-											color: "#34c759",
-											background: "rgba(52,199,89,0.1)",
-											borderRadius: 4,
-											padding: "2px 7px",
-										}}
-									>
-										경기중
-									</span>
-								) : (
-									<span
-										style={{
-											fontSize: 10,
-											fontWeight: 600,
-											color: "#0b84ff",
-											background: "rgba(11,132,255,0.1)",
-											borderRadius: 4,
-											padding: "2px 7px",
-										}}
-									>
-										대기
-									</span>
-								)}
-							</button>
-						))}
-					</div>
-				)}
+			{/* 필터 + 선수 목록 */}
+			<div className="px-5 py-2">
+				<PlayerPickerList
+					players={pickerPlayers}
+					onSelect={onReplace}
+					showSearch
+					searchThreshold={FILTER_SHOW_THRESHOLD}
+					showGenderFilter
+					showStatusFilter={false}
+					sortOptions={SORT_OPTIONS}
+					maxHeight="35vh"
+					emptyMessage="교체 가능한 선수가 없습니다"
+					noResultMessage="검색 결과가 없습니다"
+				/>
 			</div>
 
 			{/* Cancel button */}

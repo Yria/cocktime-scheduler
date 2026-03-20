@@ -89,12 +89,10 @@ export function updateLastCoPlayers(
 	lastCoPlayers: Record<string, string[]>,
 	team: GeneratedTeam,
 ): Record<string, string[]> {
-	const allPlayers = [...team.teamA, ...team.teamB];
+	const allIds = [...team.teamA, ...team.teamB];
 	const next = { ...lastCoPlayers };
-	for (const player of allPlayers) {
-		next[player.id] = allPlayers
-			.filter((p) => p.id !== player.id)
-			.map((p) => p.id);
+	for (const id of allIds) {
+		next[id] = allIds.filter((otherId) => otherId !== id);
 	}
 	return next;
 }
@@ -464,7 +462,14 @@ function buildTeamFromFour(
 	const balanceNote = score === 0 ? "실력 균형 최적" : score <= 1 ? "실력 균형 양호" : "";
 	const fullReason = balanceNote ? `${reason} · ${balanceNote}` : reason;
 
-	return { teamA, teamB, gameType, reason: fullReason, strategy };
+	// 최종 반환 시 SessionPlayer 객체 대신 ID만 추출 (글로벌 스토어 참조 보장)
+	return {
+		teamA: [teamA[0].id, teamA[1].id],
+		teamB: [teamB[0].id, teamB[1].id],
+		gameType,
+		reason: fullReason,
+		strategy,
+	};
 }
 
 // ─────────────────────────────────────────────
@@ -758,13 +763,14 @@ export function recordHistory(
 	for (const key of Object.keys(history)) {
 		next[key] = new Set(history[key]);
 	}
-	const pairs: [SessionPlayer, SessionPlayer][] = [team.teamA, team.teamB];
+	// teamA/B는 이제 [string, string] ID 참조
+	const pairs: [string, string][] = [team.teamA, team.teamB];
 
-	for (const [a, b] of pairs) {
-		if (!next[a.id]) next[a.id] = new Set();
-		if (!next[b.id]) next[b.id] = new Set();
-		next[a.id].add(b.id);
-		next[b.id].add(a.id);
+	for (const [aId, bId] of pairs) {
+		if (!next[aId]) next[aId] = new Set();
+		if (!next[bId]) next[bId] = new Set();
+		next[aId].add(bId);
+		next[bId].add(aId);
 	}
 	return next;
 }
@@ -806,20 +812,17 @@ export function generateBulkTeamCandidates(
 	const seenGroups = new Set<string>(); // 동일 4명 중복 방지
 	const usedPlayerIds = new Set<string>(); // 이미 후보에 뽑힌 선수 ID
 
-	/** 후보 생성 후 사용된 선수 기록 */
+	/** 후보 생성 후 사용된 선수 기록 (teamA/B는 이제 ID 참조) */
 	function trackUsage(team: GeneratedTeam) {
-		for (const p of [...team.teamA, ...team.teamB]) {
-			usedPlayerIds.add(p.id);
+		for (const id of [...team.teamA, ...team.teamB]) {
+			usedPlayerIds.add(id);
 		}
 	}
 
 	// 기존 후보에서 중복 방지 및 선수 사용 추적 초기화
 	if (existingCandidates) {
 		for (const team of existingCandidates) {
-			const groupKey = [...team.teamA, ...team.teamB]
-				.map((p) => p.id)
-				.sort()
-				.join(",");
+			const groupKey = [...team.teamA, ...team.teamB].sort().join(",");
 			seenGroups.add(groupKey);
 			trackUsage(team);
 		}

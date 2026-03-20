@@ -17,6 +17,7 @@ import type { ClientSessionState } from "../lib/supabase";
 import {
 	recordHistory,
 } from "../lib/teamGenerator";
+import { getPlayingPlayerIds } from "../lib/sessionUtils";
 import type {
 	Court,
 	GeneratedTeam,
@@ -25,10 +26,203 @@ import type {
 } from "../types";
 import { useAppStore } from "./appStore";
 
+function getSessionId(): number {
+	return useAppStore.getState().sessionMeta?.sessionId ?? 0;
+}
+
+// ── Broadcast 핸들러 타입 ────────────────────────────────────
+type SetFn = (partial: Partial<SessionState> | ((state: SessionState) => Partial<SessionState>)) => void;
+type GetFn = () => SessionState;
+// BroadcastPayload는 union 타입이라 ["payload"]로 직접 접근 불가 — unknown 사용
+type BroadcastPayloadData = Record<string, unknown>;
+
+function upsertPlayers(map: Map<string, SessionPlayer>, players: SessionPlayer[]): Map<string, SessionPlayer> {
+	const next = new Map(map);
+	for (const p of players) next.set(p.id, p);
+	return next;
+}
+
+/** sessionPlayers Map에서 waitingIds/restingIds 파생 상태를 동기 재계산 */
+function rebuildDerivedIds(
+	sessionPlayers: Map<string, SessionPlayer>,
+	queuedPlayerIds: Set<string> = new Set(),
+): { waitingIds: string[]; restingIds: string[] } {
+	const waitingIds: string[] = [];
+	const restingIds: string[] = [];
+	for (const [id, p] of sessionPlayers) {
+		if (p.status === "waiting" && !queuedPlayerIds.has(id)) waitingIds.push(id);
+		else if (p.status === "resting") restingIds.push(id);
+	}
+	return { waitingIds, restingIds };
+}
+
+function handleMatchStarted(payload: BroadcastPayloadData, set: SetFn, _get: GetFn) {
+	const { matchId, courtId, gameType, teamA, teamB } = payload;
+	// teamA/B는 여전히 SessionPlayer 객체로 수신 (브로드캐스트 형식 유지)
+	const teamAPlayers = teamA as [SessionPlayer, SessionPlayer];
+	const teamBPlayers = teamB as [SessionPlayer, SessionPlayer];
+	const teamAIds: [string, string] = [teamAPlayers[0].id, teamAPlayers[1].id];
+	const teamBIds: [string, string] = [teamBPlayers[0].id, teamBPlayers[1].id];
+	const allIds = new Set([...teamAIds, ...teamBIds]);
+	const safeMatchId = matchId as string;
+	const safeCourtId = courtId as number;
+	const safeGameType = gameType as import("../types").GameType;
+
+	set((state) => {
+		// Map에 먼저 upsert (status='playing'으로 수신됨), courts에는 ID 참조 저장 (단일 배치)
+		const newMap = upsertPlayers(state.sessionPlayers, [...teamAPlayers, ...teamBPlayers]);
+		// matchQueue.teamA/B는 이제 [string, string] — 직접 ID 비교
+		const newMatchQueue = state.matchQueue.filter((team) => {
+			const teamIds = [...team.teamA, ...team.teamB];
+			return !teamIds.every((id) => allIds.has(id));
+		});
+		const queuedIds = new Set(newMatchQueue.flatMap((t) => [...t.teamA, ...t.teamB]));
+		const { waitingIds, restingIds } = rebuildDerivedIds(newMap, queuedIds);
+
+		return {
+			sessionPlayers: newMap,
+			courts: state.courts.map((c) =>
+				c.id === safeCourtId
+					? {
+						...c,
+						match: {
+							id: safeMatchId,
+							courtId: safeCourtId,
+							gameType: safeGameType,
+							teamA: teamAIds,
+							teamB: teamBIds,
+							startedAt: new Date().toISOString(),
+						},
+					}
+					: c,
+			),
+			waitingIds,
+			restingIds,
+			matchQueue: newMatchQueue,
+			pairHistory: recordHistory(state.pairHistory, { teamA: teamAIds, teamB: teamBIds, gameType: safeGameType }),
+			// candidateTeams.teamA/B도 [string, string] — 직접 ID 비교
+			candidateTeams: state.candidateTeams.filter((team) => {
+				const ids = new Set([...team.teamA, ...team.teamB]);
+				return !(allIds.size === ids.size && [...allIds].every((id) => ids.has(id)));
+			}),
+		};
+	});
+}
+
+function handleMatchCompleted(payload: BroadcastPayloadData, set: SetFn) {
+	const { courtId, gameType, teamA, teamB, updatedPlayers } = payload;
+	const teamAPlayers = teamA as [SessionPlayer, SessionPlayer];
+	const teamBPlayers = teamB as [SessionPlayer, SessionPlayer];
+	const allPlayers = [...teamAPlayers, ...teamBPlayers];
+
+	set((state) => {
+		const newPairHistory: Record<string, Set<string>> = {};
+		for (const key of Object.keys(state.pairHistory)) {
+			newPairHistory[key] = new Set(state.pairHistory[key]);
+		}
+		for (const [a, b] of [teamAPlayers, teamBPlayers] as [[SessionPlayer, SessionPlayer], [SessionPlayer, SessionPlayer]]) {
+			if (!newPairHistory[a.id]) newPairHistory[a.id] = new Set();
+			if (!newPairHistory[b.id]) newPairHistory[b.id] = new Set();
+			newPairHistory[a.id].add(b.id);
+			newPairHistory[b.id].add(a.id);
+		}
+
+		// matchQueue.teamA/B는 [string, string] — 직접 spread
+		const queuedIds = new Set(
+			state.matchQueue.flatMap((t: GeneratedTeam) => [...t.teamA, ...t.teamB]),
+		);
+
+		// Map 업데이트 후 rebuildDerivedIds로 파생 상태 재계산
+		const newMap = upsertPlayers(state.sessionPlayers, updatedPlayers as SessionPlayer[]);
+		const { waitingIds, restingIds } = rebuildDerivedIds(newMap, queuedIds);
+
+		const nextCoPlayers = { ...state.lastCoPlayers };
+		for (const player of allPlayers) {
+			nextCoPlayers[player.id] = allPlayers
+				.filter((p: SessionPlayer) => p.id !== player.id)
+				.map((p: SessionPlayer) => p.id);
+		}
+
+		return {
+			sessionPlayers: newMap,
+			courts: state.courts.map((c) => (c.id !== courtId ? c : { ...c, match: null })),
+			waitingIds,
+			restingIds,
+			pairHistory: newPairHistory,
+			lastMixedPlayerIds:
+				gameType === "혼복"
+					? allPlayers.map((p: SessionPlayer) => p.id)
+					: state.lastMixedPlayerIds,
+			lastCoPlayers: nextCoPlayers,
+		};
+	});
+}
+
+function handlePlayerStatusChanged(payload: BroadcastPayloadData, set: SetFn) {
+	const { player } = payload as { player: SessionPlayer };
+	set((state) => {
+		const newMap = upsertPlayers(state.sessionPlayers, [player]);
+		// matchQueue.teamA/B는 [string, string] — 직접 spread
+		const queuedIds = new Set(state.matchQueue.flatMap((t) => [...t.teamA, ...t.teamB]));
+		const { waitingIds, restingIds } = rebuildDerivedIds(newMap, queuedIds);
+		return { sessionPlayers: newMap, waitingIds, restingIds };
+	});
+}
+
+function handlePlayerFlagChanged(payload: BroadcastPayloadData, set: SetFn) {
+	const { player } = payload as { player: SessionPlayer };
+	set((state) => ({
+		sessionPlayers: upsertPlayers(state.sessionPlayers, [player]),
+	}));
+}
+
+function handlePlayerUpdated(payload: BroadcastPayloadData, set: SetFn) {
+	const { player } = payload as { player: SessionPlayer };
+	set((state) => ({
+		sessionPlayers: upsertPlayers(state.sessionPlayers, [player]),
+	}));
+}
+
+function handleSessionRefreshRequired(_payload: BroadcastPayloadData, _set: SetFn, get: GetFn) {
+	const sessionMeta = useAppStore.getState().sessionMeta;
+	if (sessionMeta) {
+		import("../lib/supabase")
+			.then(({ fetchSessionSnapshot, snapshotToClientState }) =>
+				fetchSessionSnapshot(sessionMeta.sessionId).then((snapshot) => {
+					if (snapshot) {
+						get().initialize(snapshotToClientState(snapshot));
+					}
+				}),
+			)
+			.catch((err) => console.error("Failed to refresh session:", err));
+	}
+}
+
+function handleQueueUpdated(payload: BroadcastPayloadData, set: SetFn) {
+	const { queue, restoredPlayers } = payload;
+	const newQueue = queue as GeneratedTeam[];
+	// teamA/B는 [string, string] — 직접 spread
+	const newQueuedIds = new Set(newQueue.flatMap((t) => [...t.teamA, ...t.teamB]));
+
+	set((state) => {
+		let newMap = state.sessionPlayers;
+		if (restoredPlayers) {
+			newMap = upsertPlayers(newMap, restoredPlayers as SessionPlayer[]);
+		}
+		const { waitingIds, restingIds } = rebuildDerivedIds(newMap, newQueuedIds);
+		return { matchQueue: newQueue, sessionPlayers: newMap, waitingIds, restingIds };
+	});
+}
+
+function handleCandidatesUpdated(payload: BroadcastPayloadData, set: SetFn) {
+	set({ candidateTeams: payload.candidates as GeneratedTeam[] });
+}
+
 export interface SessionState {
 	courts: Court[];
-	waiting: SessionPlayer[];
-	resting: SessionPlayer[];
+	sessionPlayers: Map<string, SessionPlayer>;
+	waitingIds: string[];
+	restingIds: string[];
 	pairHistory: PairHistory;
 	lastMixedPlayerIds: string[];
 	lastCoPlayers: Record<string, string[]>;
@@ -51,6 +245,7 @@ export interface SessionState {
 	handleComplete: (courtId: number) => Promise<void>;
 	handleAddToQueue: (team: GeneratedTeam) => Promise<void>;
 	handleRemoveFromQueue: (index: number) => Promise<void>;
+	handleReplaceInQueue: (queueIndex: number, oldPlayer: SessionPlayer, newPlayer: SessionPlayer) => Promise<void>;
 	handleAssignFromQueue: (queueIndex: number) => Promise<void>;
 	toggleResting: (playerId: string) => Promise<void>;
 	toggleForceMixed: (playerId: string) => Promise<void>;
@@ -67,8 +262,9 @@ export interface SessionState {
 
 const initialState = {
 	courts: [] as Court[],
-	waiting: [] as SessionPlayer[],
-	resting: [] as SessionPlayer[],
+	sessionPlayers: new Map<string, SessionPlayer>(),
+	waitingIds: [] as string[],
+	restingIds: [] as string[],
 	pairHistory: {} as PairHistory,
 	lastMixedPlayerIds: [] as string[],
 	lastCoPlayers: {} as Record<string, string[]>,
@@ -83,13 +279,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	...initialState,
 
 	initialize: (initial) => {
+		const playerMap = new Map(initial.players.map((p) => [p.id, p]));
+		// matchQueue.teamA/B는 [string, string] — 직접 spread
+		const queuedIds = new Set(
+			initial.matchQueue.flatMap((t) => [...t.teamA, ...t.teamB]),
+		);
+		const { waitingIds, restingIds } = rebuildDerivedIds(playerMap, queuedIds);
 		set({
 			...initialState,
 			_channel: get()._channel,
 			_metaChannel: get()._metaChannel,
 			courts: initial.courts,
-			waiting: initial.waiting,
-			resting: initial.resting,
+			sessionPlayers: playerMap,
+			waitingIds,
+			restingIds,
 			pairHistory: initial.pairHistory,
 			candidateTeams: initial.candidateTeams,
 			matchQueue: initial.matchQueue,
@@ -118,8 +321,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const court = courts.find((c) => c.id === courtId);
 		if (!court || court.match) { return; }
 
-		const sessionMeta = useAppStore.getState().sessionMeta;
-		const sessionId = sessionMeta?.sessionId ?? 0;
+		const sessionId = getSessionId();
 		const matchId = crypto.randomUUID();
 
 		const ok = await dbAssignMatch(
@@ -130,14 +332,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		);
 
 		if (ok) {
+			// 브로드캐스트 match_started 페이로드는 SessionPlayer 객체 형식 유지
+			const { sessionPlayers } = get();
+			const toPlayerPair = (ids: [string, string]): [SessionPlayer, SessionPlayer] =>
+				ids.map((id) => sessionPlayers.get(id)).filter(Boolean) as [SessionPlayer, SessionPlayer];
+
 			const payload: BroadcastPayload = {
 				event: "match_started",
 				payload: {
 					matchId,
 					courtId,
 					gameType: team.gameType,
-					teamA: team.teamA,
-					teamB: team.teamB,
+					teamA: toPlayerPair(team.teamA),
+					teamB: toPlayerPair(team.teamB),
 				},
 			};
 			get().applyBroadcast(payload, () => { });
@@ -152,12 +359,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const court = courts.find((c) => c.id === courtId);
 		if (!court?.match || !_channel) return;
 
-		const sessionMeta = useAppStore.getState().sessionMeta;
-		const sessionId = sessionMeta?.sessionId ?? 0;
+		const sessionId = getSessionId();
 		const match = court.match;
 
 		const result = await dbCompleteMatch(sessionId, match);
 		if (!result) { console.error(`[store] handleComplete dbCompleteMatch FAILED court=${courtId}`); return; }
+
+		// 브로드캐스트 페이로드에는 기존 형식(SessionPlayer 객체) 유지
+		const { sessionPlayers } = get();
+		const teamAPlayers = [
+			sessionPlayers.get(match.teamA[0]),
+			sessionPlayers.get(match.teamA[1]),
+		].filter(Boolean) as [SessionPlayer, SessionPlayer];
+		const teamBPlayers = [
+			sessionPlayers.get(match.teamB[0]),
+			sessionPlayers.get(match.teamB[1]),
+		].filter(Boolean) as [SessionPlayer, SessionPlayer];
 
 		const payload: BroadcastPayload = {
 			event: "match_completed",
@@ -165,8 +382,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				matchId: match.id,
 				courtId,
 				gameType: match.gameType,
-				teamA: match.teamA,
-				teamB: match.teamB,
+				teamA: teamAPlayers,
+				teamB: teamBPlayers,
 				updatedPlayers: result.updatedPlayers,
 			},
 		};
@@ -178,16 +395,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const { matchQueue, _channel } = get();
 		if (!_channel) return;
 
-		const sessionMeta = useAppStore.getState().sessionMeta;
-		const sessionId = sessionMeta?.sessionId ?? 0;
+		const sessionId = getSessionId();
 
-		// 선수 status는 변경하지 않음 (큐는 예약 데이터일 뿐)
 		const newQueue = [...matchQueue, team];
 
-		// DB: 큐 저장
 		await dbSaveMatchQueue(sessionId, newQueue);
 
-		// 로컬 + 브로드캐스트
 		const payload: BroadcastPayload = {
 			event: "queue_updated",
 			payload: { queue: newQueue },
@@ -200,32 +413,59 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const { matchQueue, courts, _channel } = get();
 		if (!_channel) return;
 
-		const sessionMeta = useAppStore.getState().sessionMeta;
-		const sessionId = sessionMeta?.sessionId ?? 0;
+		const sessionId = getSessionId();
 
 		const team = matchQueue[index];
 		if (!team) return;
 
 		const newQueue = matchQueue.filter((_, i) => i !== index);
 
-		// DB: 큐 저장 (선수 status는 변경하지 않음)
 		await dbSaveMatchQueue(sessionId, newQueue);
 
-		// 경기중이 아닌 선수만 waiting으로 복귀 (playing 선수는 경기 종료 시 자연 복귀)
-		const playingIds = new Set(
-			courts.flatMap((c) => (c.match ? [...c.match.teamA, ...c.match.teamB].map((p) => p.id) : [])),
-		);
+		const playingIds = new Set(getPlayingPlayerIds(courts));
+		const { sessionPlayers } = get();
+		// teamA/B는 [string, string] — sessionPlayers Map에서 lookup
 		const restoredPlayers: SessionPlayer[] = [...team.teamA, ...team.teamB]
-			.filter((p) => !playingIds.has(p.id))
-			.map((p) => ({
-				...p,
-				status: "waiting" as const,
-				waitSince: p.waitSince ?? new Date().toISOString(),
-			}));
+			.filter((id) => !playingIds.has(id))
+			.flatMap((id) => {
+				const p = sessionPlayers.get(id);
+				if (!p) return [];
+				return [{ ...p, status: "waiting" as const, waitSince: p.waitSince ?? new Date().toISOString() }];
+			});
 
 		const payload: BroadcastPayload = {
 			event: "queue_updated",
 			payload: { queue: newQueue, restoredPlayers },
+		};
+		get().applyBroadcast(payload, () => { });
+		sendBroadcast(_channel, payload);
+	},
+
+	handleReplaceInQueue: async (queueIndex: number, oldPlayer: SessionPlayer, newPlayer: SessionPlayer) => {
+		const { matchQueue, _channel } = get();
+		if (!_channel) return;
+
+		const team = matchQueue[queueIndex];
+		if (!team) return;
+
+		// teamA/B는 [string, string] — ID 기반으로 교체
+		const replaceIn = (arr: [string, string]): [string, string] =>
+			arr.map((id) => (id === oldPlayer.id ? newPlayer.id : id)) as [string, string];
+
+		const updatedTeam: GeneratedTeam = {
+			...team,
+			teamA: replaceIn(team.teamA),
+			teamB: replaceIn(team.teamB),
+		};
+
+		const newQueue = matchQueue.map((t, i) => (i === queueIndex ? updatedTeam : t));
+
+		const sessionId = getSessionId();
+		await dbSaveMatchQueue(sessionId, newQueue);
+
+		const payload: BroadcastPayload = {
+			event: "queue_updated",
+			payload: { queue: newQueue },
 		};
 		get().applyBroadcast(payload, () => { });
 		sendBroadcast(_channel, payload);
@@ -241,23 +481,24 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const court = courts.find((c) => !c.match);
 		if (!court) return;
 
-		// 큐 팀의 모든 선수가 코트에 없는지 확인 (playing 멤버가 있으면 배정 차단)
-		const playingIds = new Set(
-			courts.flatMap((c) => (c.match ? [...c.match.teamA, ...c.match.teamB].map((p) => p.id) : [])),
-		);
-		const allAvailable = [...team.teamA, ...team.teamB].every((p) => !playingIds.has(p.id));
+		const playingIds = new Set(getPlayingPlayerIds(courts));
+		// teamA/B는 [string, string] — 직접 ID 비교
+		const allAvailable = [...team.teamA, ...team.teamB].every((id) => !playingIds.has(id));
 		if (!allAvailable) return;
 
-		const sessionMeta = useAppStore.getState().sessionMeta;
-		const sessionId = sessionMeta?.sessionId ?? 0;
+		const sessionId = getSessionId();
 		const matchId = crypto.randomUUID();
 
 		const ok = await dbAssignMatch(sessionId, matchId, team, court.id);
 		if (!ok) return;
 
-		// 큐에서 제거 후 DB 저장
 		const newQueue = matchQueue.filter((_, i) => i !== queueIndex);
 		await dbSaveMatchQueue(sessionId, newQueue);
+
+		// 브로드캐스트 match_started 페이로드는 SessionPlayer 객체 형식 유지
+		const { sessionPlayers } = get();
+		const toPlayerPair = (ids: [string, string]): [SessionPlayer, SessionPlayer] =>
+			ids.map((id) => sessionPlayers.get(id)).filter(Boolean) as [SessionPlayer, SessionPlayer];
 
 		const payload: BroadcastPayload = {
 			event: "match_started",
@@ -265,8 +506,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				matchId,
 				courtId: court.id,
 				gameType: team.gameType,
-				teamA: team.teamA,
-				teamB: team.teamB,
+				teamA: toPlayerPair(team.teamA),
+				teamB: toPlayerPair(team.teamB),
 			},
 		};
 		get().applyBroadcast(payload, () => { });
@@ -274,11 +515,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 
 	toggleResting: async (playerId: string) => {
-		const { waiting, resting, _channel } = get();
+		const { sessionPlayers, _channel } = get();
 		if (!_channel) return;
-		const player =
-			waiting.find((p) => p.id === playerId) ??
-			resting.find((p) => p.id === playerId);
+		const player = sessionPlayers.get(playerId);
 		if (!player) return;
 
 		const updated = await dbToggleResting(player);
@@ -293,9 +532,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 
 	toggleForceMixed: async (playerId: string) => {
-		const { waiting, _channel } = get();
+		const { sessionPlayers, _channel } = get();
 		if (!_channel) return;
-		const player = waiting.find((p) => p.id === playerId);
+		const player = sessionPlayers.get(playerId);
 		if (!player || player.status !== "waiting") return;
 
 		const updated = await dbToggleForceMixed(player);
@@ -310,9 +549,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 
 	toggleForceHardGame: async (playerId: string) => {
-		const { waiting, _channel } = get();
+		const { sessionPlayers, _channel } = get();
 		if (!_channel) return;
-		const player = waiting.find((p) => p.id === playerId);
+		const player = sessionPlayers.get(playerId);
 		if (!player || player.status !== "waiting") return;
 
 		const updated = await dbToggleForceHardGame(player);
@@ -329,8 +568,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	handleEndSession: async (onEnd: () => void) => {
 		const { _channel } = get();
 		if (!_channel) return;
-		const sessionMeta = useAppStore.getState().sessionMeta;
-		const sessionId = sessionMeta?.sessionId ?? 0;
+		const sessionId = getSessionId();
 		await dbEndSession(sessionId);
 		sendBroadcast(_channel, { event: "session_ended" });
 		onEnd();
@@ -349,237 +587,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
 	// ── Channel management ──────────────────────────────────
 	applyBroadcast: (ev: BroadcastPayload, onEnd: () => void) => {
-		switch (ev.event) {
-			case "match_started": {
-				const { matchId, courtId, gameType, teamA, teamB } =
-					ev.payload;
-				const allIds = new Set([
-					teamA[0].id,
-					teamA[1].id,
-					teamB[0].id,
-					teamB[1].id,
-				]);
-				set((state) => ({
-					courts: state.courts.map((c) =>
-						c.id === courtId
-							? {
-								...c,
-								match: {
-									id: matchId,
-									courtId,
-									gameType,
-									teamA,
-									teamB,
-									startedAt: new Date().toISOString(),
-								},
-							}
-							: c,
-					),
-					waiting: state.waiting.filter((p) => !allIds.has(p.id)),
-					// 큐에서도 해당 팀 제거
-					matchQueue: state.matchQueue.filter((team) => {
-						const teamIds = [...team.teamA, ...team.teamB].map((p) => p.id);
-						return !teamIds.every((id) => allIds.has(id));
-					}),
-					pairHistory: recordHistory(state.pairHistory, {
-						teamA,
-						teamB,
-						gameType,
-					} as GeneratedTeam),
-					candidateTeams: state.candidateTeams.filter((team) => {
-						const ids = new Set([
-							...team.teamA.map((p) => p.id),
-							...team.teamB.map((p) => p.id),
-						]);
-						return !(allIds.size === ids.size && [...allIds].every((id) => ids.has(id)));
-					}),
-				}));
-				break;
-			}
+		if (ev.event === "session_ended") { onEnd(); return; }
 
-			case "match_completed": {
-				const {
-					courtId,
-					gameType,
-					teamA,
-					teamB,
-					updatedPlayers,
-				} = ev.payload;
-				const updatedMap = new Map(
-					updatedPlayers.map((p: SessionPlayer) => [p.id, p]),
-				);
-				const toWaiting = updatedPlayers.filter(
-					(p: SessionPlayer) => p.status === "waiting",
-				);
+		type Handler = (payload: BroadcastPayloadData, set: SetFn, get: GetFn) => void;
+		const handlers: Record<string, Handler> = {
+			match_started: (p, s, g) => handleMatchStarted(p, s, g),
+			match_completed: (p, s) => handleMatchCompleted(p, s),
+			player_status_changed: (p, s) => handlePlayerStatusChanged(p, s),
+			player_force_mixed_changed: (p, s) => handlePlayerFlagChanged(p, s),
+			player_force_hard_game_changed: (p, s) => handlePlayerFlagChanged(p, s),
+			player_updated: (p, s) => handlePlayerUpdated(p, s),
+			session_refresh_required: (p, s, g) => handleSessionRefreshRequired(p, s, g),
+			queue_updated: (p, s) => handleQueueUpdated(p, s),
+			candidates_updated: (p, s) => handleCandidatesUpdated(p, s),
+		};
 
-				set((state) => {
-					// Deep-clone Sets to avoid mutating existing state
-					const newPairHistory: Record<string, Set<string>> = {};
-					for (const key of Object.keys(state.pairHistory)) {
-						newPairHistory[key] = new Set(state.pairHistory[key]);
-					}
-					for (const [a, b] of [teamA, teamB] as [
-						[SessionPlayer, SessionPlayer],
-						[SessionPlayer, SessionPlayer],
-					]) {
-						if (!newPairHistory[a.id]) newPairHistory[a.id] = new Set();
-						if (!newPairHistory[b.id]) newPairHistory[b.id] = new Set();
-						newPairHistory[a.id].add(b.id);
-						newPairHistory[b.id].add(a.id);
-					}
-
-					// 큐에 예약된 선수 ID (waiting에 추가하지 않음)
-					const queuedIds = new Set(
-						state.matchQueue.flatMap((t: GeneratedTeam) =>
-							[...t.teamA, ...t.teamB].map((p: SessionPlayer) => p.id),
-						),
-					);
-
-					const newWaiting = [
-						...state.waiting.map((p) => updatedMap.get(p.id) ?? p),
-						...toWaiting.filter(
-							(p: SessionPlayer) =>
-								!state.waiting.some((pp) => pp.id === p.id) &&
-								!queuedIds.has(p.id),
-						),
-					];
-
-					return {
-						courts: state.courts.map((c) => {
-							if (c.id !== courtId) return c;
-							return { ...c, match: null };
-						}),
-						waiting: newWaiting,
-						pairHistory: newPairHistory,
-						lastMixedPlayerIds:
-							gameType === "혼복"
-								? [...teamA, ...teamB].map((p: SessionPlayer) => p.id)
-								: state.lastMixedPlayerIds,
-						lastCoPlayers: (() => {
-							const allPlayers = [...teamA, ...teamB];
-							const next = { ...state.lastCoPlayers };
-							for (const player of allPlayers) {
-								next[player.id] = allPlayers
-									.filter((p: SessionPlayer) => p.id !== player.id)
-									.map((p: SessionPlayer) => p.id);
-							}
-							return next;
-						})(),
-					};
-				});
-				break;
-			}
-
-			case "player_status_changed": {
-				const { player } = ev.payload;
-				if (player.status === "resting") {
-					set((state) => ({
-						waiting: state.waiting.filter((p) => p.id !== player.id),
-						resting: state.resting.some((p) => p.id === player.id)
-							? state.resting
-							: [...state.resting, player],
-					}));
-				} else if (player.status === "waiting") {
-					set((state) => ({
-						resting: state.resting.filter((p) => p.id !== player.id),
-						waiting: state.waiting.some((p) => p.id === player.id)
-							? state.waiting
-							: [...state.waiting, player],
-					}));
-				}
-				break;
-			}
-
-			case "player_force_mixed_changed": {
-				const { player } = ev.payload;
-				set((state) => ({
-					waiting: state.waiting.map((p) => (p.id === player.id ? player : p)),
-				}));
-				break;
-			}
-
-			case "player_force_hard_game_changed": {
-				const { player } = ev.payload;
-				set((state) => ({
-					waiting: state.waiting.map((p) => (p.id === player.id ? player : p)),
-				}));
-				break;
-			}
-
-			case "player_updated": {
-				const { player } = ev.payload;
-				set((state) => ({
-					waiting: state.waiting.map((p) => (p.id === player.id ? player : p)),
-					resting: state.resting.map((p) => (p.id === player.id ? player : p)),
-					courts: state.courts.map((c) =>
-						c.match
-							? {
-								...c,
-								match: {
-									...c.match,
-									teamA: c.match.teamA.map((p) =>
-										p.id === player.id ? player : p,
-									) as [SessionPlayer, SessionPlayer],
-									teamB: c.match.teamB.map((p) =>
-										p.id === player.id ? player : p,
-									) as [SessionPlayer, SessionPlayer],
-								},
-							}
-							: c,
-					),
-				}));
-				break;
-			}
-
-			case "session_ended": {
-				onEnd();
-				break;
-			}
-
-			case "session_refresh_required": {
-				// DB 상태를 다시 로드
-				const sessionMeta = useAppStore.getState().sessionMeta;
-				if (sessionMeta) {
-					import("../lib/supabase")
-						.then(({ fetchSessionSnapshot, snapshotToClientState }) =>
-							fetchSessionSnapshot(sessionMeta.sessionId).then((snapshot) => {
-								if (snapshot) {
-									const clientState = snapshotToClientState(snapshot);
-									get().initialize(clientState);
-								}
-							}),
-						)
-						.catch((err) => console.error("Failed to refresh session:", err));
-				}
-				break;
-			}
-
-			case "queue_updated": {
-				const { queue, restoredPlayers } = ev.payload;
-				const queuedPlayerIds = new Set(
-					queue.flatMap((t: GeneratedTeam) =>
-						[...t.teamA, ...t.teamB].map((p: SessionPlayer) => p.id),
-					),
-				);
-				set((state) => ({
-					matchQueue: queue,
-					waiting: [
-						...state.waiting.filter((p) => !queuedPlayerIds.has(p.id)),
-						...(restoredPlayers ?? []).filter(
-							(rp: SessionPlayer) => !state.waiting.some((w) => w.id === rp.id),
-						),
-					],
-				}));
-				break;
-			}
-
-			case "candidates_updated": {
-				const { candidates: newCandidates } = ev.payload;
-				set({ candidateTeams: newCandidates });
-				break;
-			}
-
-		}
+		const evWithPayload = ev as { payload?: BroadcastPayloadData };
+		handlers[ev.event]?.(evWithPayload.payload ?? {}, set, get);
 	},
 
 	subscribe: (sessionId: number, onEnd: () => void) => {
@@ -636,3 +660,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		set({ _channel: null, _metaChannel: null });
 	},
 }));
+
+// ── 안정적 참조 액션 (컴포넌트에서 구독 없이 직접 호출) ──────────
+export const sessionActions = {
+	setShowEndConfirm: (show: boolean) =>
+		useSessionStore.setState({ showEndConfirm: show }),
+} as const;

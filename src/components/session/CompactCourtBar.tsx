@@ -1,16 +1,10 @@
 import { memo } from "react";
-import type { Court } from "../../types";
-
-interface CompactCourtBarProps {
-	courts: Court[];
-	onComplete: (courtId: number) => void;
-}
+import { useSessionStore } from "../../store/sessionStore";
 
 const STYLES = `
 .court-bar {
   display: flex;
   flex-direction: column;
-  gap: 1px;
   background: rgba(0,0,0,0.04);
 }
 .dark .court-bar {
@@ -113,17 +107,17 @@ const STYLES = `
 }
 `;
 
-const GAME_TYPE_STYLE: Record<string, { bg: string; color: string; darkBg: string; darkColor: string }> = {
-	혼복: { bg: "rgba(175,82,222,0.12)", color: "#af52de", darkBg: "rgba(175,82,222,0.2)", darkColor: "#bf7ce0" },
-	남복: { bg: "rgba(0,122,255,0.1)", color: "#007aff", darkBg: "rgba(0,122,255,0.2)", darkColor: "#4da3ff" },
-	여복: { bg: "rgba(255,45,85,0.1)", color: "#ff2d55", darkBg: "rgba(255,45,85,0.2)", darkColor: "#ff6b8a" },
-	혼합: { bg: "rgba(255,149,0,0.1)", color: "#ff9500", darkBg: "rgba(255,149,0,0.2)", darkColor: "#ffb340" },
+const GAME_TYPE_STYLE: Record<string, { bg: string; color: string }> = {
+	혼복: { bg: "rgba(175,82,222,0.12)", color: "#af52de" },
+	남복: { bg: "rgba(0,122,255,0.1)", color: "#007aff" },
+	여복: { bg: "rgba(255,45,85,0.1)", color: "#ff2d55" },
+	혼합: { bg: "rgba(255,149,0,0.1)", color: "#ff9500" },
 };
 
-const CompactCourtBar = memo(function CompactCourtBar({
-	courts,
-	onComplete,
-}: CompactCourtBarProps) {
+const CompactCourtBar = memo(function CompactCourtBar() {
+	const courts = useSessionStore((s) => s.courts);
+	const sessionPlayers = useSessionStore((s) => s.sessionPlayers);
+	const onComplete = useSessionStore((s) => s.handleComplete);
 	return (
 		<div>
 			<style>{STYLES}</style>
@@ -132,25 +126,33 @@ const CompactCourtBar = memo(function CompactCourtBar({
 					const m = court.match;
 					const typeStyle = m ? GAME_TYPE_STYLE[m.gameType] : null;
 
+					// teamA/B는 ID 참조 — Map에서 선수 객체 조회
+					const teamA = m
+						? [sessionPlayers.get(m.teamA[0]), sessionPlayers.get(m.teamA[1])]
+						: null;
+					const teamB = m
+						? [sessionPlayers.get(m.teamB[0]), sessionPlayers.get(m.teamB[1])]
+						: null;
+
 					return (
 						<div key={court.id} className="court-row">
 							<span className="court-num">{court.id}</span>
 
-							{m ? (
+							{m && teamA && teamB ? (
 								<>
 									<div className="court-players">
-										<span className={`court-player ${m.teamA[0].gender === "F" ? "female" : "male"}`}>
-											{m.teamA[0].name}
+										<span className={`court-player ${teamA[0]?.gender === "F" ? "female" : "male"}`}>
+											{teamA[0]?.name ?? "?"}
 										</span>
-										<span className={`court-player ${m.teamA[1].gender === "F" ? "female" : "male"}`}>
-											{m.teamA[1].name}
+										<span className={`court-player ${teamA[1]?.gender === "F" ? "female" : "male"}`}>
+											{teamA[1]?.name ?? "?"}
 										</span>
 										<span className="court-vs">VS</span>
-										<span className={`court-player ${m.teamB[0].gender === "F" ? "female" : "male"}`}>
-											{m.teamB[0].name}
+										<span className={`court-player ${teamB[0]?.gender === "F" ? "female" : "male"}`}>
+											{teamB[0]?.name ?? "?"}
 										</span>
-										<span className={`court-player ${m.teamB[1].gender === "F" ? "female" : "male"}`}>
-											{m.teamB[1].name}
+										<span className={`court-player ${teamB[1]?.gender === "F" ? "female" : "male"}`}>
+											{teamB[1]?.name ?? "?"}
 										</span>
 									</div>
 									{typeStyle && (

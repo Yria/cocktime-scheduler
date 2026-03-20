@@ -1,12 +1,10 @@
-import { memo } from "react";
-import type { SessionPlayer } from "../../types";
+import { memo, useMemo } from "react";
+import { useAppStore } from "../../store/appStore";
+import { useSessionStore } from "../../store/sessionStore";
+import SectionHeader from "../shared/SectionHeader";
 import WaitingPlayerChip from "./WaitingPlayerChip";
 
-interface WaitingListProps {
-	waiting: SessionPlayer[];
-	singleWomanIds: string[];
-	onToggleResting: (playerId: string) => void;
-}
+const EMPTY_SINGLE_WOMAN_IDS: string[] = [];
 
 const STYLES = `
 .wl-chip {
@@ -92,99 +90,68 @@ const STYLES = `
 }
 `;
 
-const WaitingList = memo(function WaitingList({
-	waiting,
-	singleWomanIds,
-	onToggleResting,
-}: WaitingListProps) {
-	const countColor =
-		waiting.length >= 4
-			? { text: "#34c759", bg: "rgba(52,199,89,0.1)" }
-			: waiting.length > 0
-				? { text: "#ff9500", bg: "rgba(255,149,0,0.1)" }
-				: { text: "#8e8e93", bg: "rgba(0,0,0,0.05)" };
+const WaitingList = memo(function WaitingList() {
+	const sessionPlayers = useSessionStore((s) => s.sessionPlayers);
+	const waitingIds = useSessionStore((s) => s.waitingIds);
+	const singleWomanIds =
+		useAppStore((s) => s.sessionMeta?.singleWomanIds) ?? EMPTY_SINGLE_WOMAN_IDS;
+	const onToggleResting = useSessionStore((s) => s.toggleResting);
+	const totalCount = useSessionStore((s) => s.sessionPlayers.size);
+
+	const waiting = useMemo(
+		() =>
+			waitingIds
+				.map((id) => sessionPlayers.get(id))
+				.filter(
+					(p): p is import("../../types").SessionPlayer => p !== undefined,
+				),
+		[waitingIds, sessionPlayers],
+	);
 
 	return (
 		<div>
 			<style>{STYLES}</style>
 
-			{/* Section header */}
-			<div
-				style={{
-					padding: "24px 16px 12px 16px",
-					display: "flex",
-					alignItems: "center",
-					justifyContent: "space-between",
-				}}
-			>
-				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-					<div
-						style={{
-							width: 28,
-							height: 28,
-							borderRadius: 8,
-							background: "rgba(0,122,255,0.1)",
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "center",
-							flexShrink: 0,
-						}}
+			<SectionHeader
+				icon={
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 20 20"
+						fill="none"
+						aria-hidden="true"
 					>
-						<svg
-							width="16"
-							height="16"
-							viewBox="0 0 20 20"
-							fill="none"
-							aria-hidden="true"
+						<circle cx="7" cy="6" r="2.5" stroke="#007aff" strokeWidth="1.6" />
+						<circle cx="13" cy="6" r="2.5" stroke="#007aff" strokeWidth="1.6" />
+						<path
+							d="M2 17c0-3 2.2-4.5 5-4.5h6c2.8 0 5 1.5 5 4.5"
+							stroke="#007aff"
+							strokeWidth="1.6"
+							strokeLinecap="round"
+						/>
+					</svg>
+				}
+				iconBg="rgba(0,122,255,0.1)"
+				iconSize={28}
+				topPadding={24}
+				title="대기 명단"
+				badge={
+					<div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+						<span
+							style={{
+								fontSize: 11,
+								fontWeight: 600,
+								color: "#8e8e93",
+								background: "rgba(0,0,0,0.04)",
+								borderRadius: 99,
+								padding: "2px 8px",
+							}}
 						>
-							<circle
-								cx="7"
-								cy="6"
-								r="2.5"
-								stroke="#007aff"
-								strokeWidth="1.6"
-							/>
-							<circle
-								cx="13"
-								cy="6"
-								r="2.5"
-								stroke="#007aff"
-								strokeWidth="1.6"
-							/>
-							<path
-								d="M2 17c0-3 2.2-4.5 5-4.5h6c2.8 0 5 1.5 5 4.5"
-								stroke="#007aff"
-								strokeWidth="1.6"
-								strokeLinecap="round"
-							/>
-						</svg>
+							{waiting.length} 명 / 총 {totalCount} 명
+						</span>
 					</div>
-					<span
-						className="text-[#0f1724] dark:text-white"
-						style={{
-							fontSize: 16,
-							fontWeight: 600,
-							letterSpacing: "-0.01em",
-						}}
-					>
-						대기 명단
-					</span>
-				</div>
-				<span
-					style={{
-						fontSize: 12,
-						fontWeight: 700,
-						color: countColor.text,
-						background: countColor.bg,
-						borderRadius: 99,
-						padding: "3px 9px",
-						letterSpacing: "0.01em",
-						transition: "color 0.2s, background 0.2s",
-					}}
-				>
-					{waiting.length}명
-				</span>
-			</div>
+				}
+			/>
 
 			{/* Player chips */}
 			{waiting.length === 0 ? (
@@ -223,7 +190,6 @@ const WaitingList = memo(function WaitingList({
 					})}
 				</div>
 			)}
-
 		</div>
 	);
 });

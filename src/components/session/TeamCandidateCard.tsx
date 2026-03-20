@@ -1,7 +1,6 @@
 import { memo } from "react";
 import type { GeneratedTeam, SessionPlayer } from "../../types";
-import PlayerBadge from "../shared/PlayerBadge";
-import { skillScore } from "../../lib/teamGenerator";
+import ClickablePlayerBadge from "../shared/ClickablePlayerBadge";
 
 const GAME_TYPE_COLOR: Record<string, { bg: string; text: string }> = {
 	혼복: { bg: "rgba(175,82,222,0.1)", text: "#af52de" },
@@ -15,9 +14,10 @@ interface TeamCandidateCardProps {
 	index: number;
 	emptyCourtId: number | null;
 	unavailableIds: Set<string>;
+	sessionPlayers: Map<string, SessionPlayer>;
 	onAssign: (index: number, courtId: number) => void;
 	onQueue: (index: number) => void;
-	onPlayerClick: (index: number, player: SessionPlayer, e: React.MouseEvent) => void;
+	onPlayerClick: (index: number, player: SessionPlayer, e: React.MouseEvent | React.KeyboardEvent) => void;
 }
 
 const TeamCandidateCard = memo(function TeamCandidateCard({
@@ -25,37 +25,25 @@ const TeamCandidateCard = memo(function TeamCandidateCard({
 	index,
 	emptyCourtId,
 	unavailableIds,
+	sessionPlayers,
 	onAssign,
 	onQueue,
 	onPlayerClick,
 }: TeamCandidateCardProps) {
 	const gameTypeStyle = GAME_TYPE_COLOR[team.gameType];
-	const allPlayers = [...team.teamA, ...team.teamB];
-	const hasUnavailable = allPlayers.some((p) => unavailableIds.has(p.id));
+	const allIds = [...team.teamA, ...team.teamB];
+	const hasUnavailable = allIds.some((id) => unavailableIds.has(id));
 
-	const renderPlayer = (player: SessionPlayer) => {
-		const isUnavailable = unavailableIds.has(player.id);
+	const renderPlayer = (id: string) => {
+		const player = sessionPlayers.get(id);
+		if (!player) return null;
 		return (
-			<div
+			<ClickablePlayerBadge
 				key={player.id}
+				player={player}
 				onClick={(e) => onPlayerClick(index, player, e)}
-				onKeyDown={(e) => {
-					if (e.key === "Enter" || e.key === " ") {
-						e.preventDefault();
-						onPlayerClick(index, player, e as any);
-					}
-				}}
-				role="button"
-				tabIndex={0}
-				style={{ cursor: "pointer" }}
-			>
-				<PlayerBadge
-					name={player.name}
-					gender={player.gender}
-					skillScore={skillScore(player)}
-					isUnavailable={isUnavailable}
-				/>
-			</div>
+				isUnavailable={unavailableIds.has(player.id)}
+			/>
 		);
 	};
 

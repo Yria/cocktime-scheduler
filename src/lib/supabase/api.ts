@@ -436,14 +436,15 @@ export async function dbSaveTeamCandidates(
 	// 2. 새 후보 삽입
 	if (candidates.length === 0) return true;
 
+	// teamA/B는 [string, string] ID 참조 — .id 추출 불필요
 	const rows = candidates.map((team, index) => ({
 		session_id: sessionId,
 		queue_position: index,
 		game_type: team.gameType,
-		team_a_p1: team.teamA[0].id,
-		team_a_p2: team.teamA[1].id,
-		team_b_p1: team.teamB[0].id,
-		team_b_p2: team.teamB[1].id,
+		team_a_p1: team.teamA[0],
+		team_a_p2: team.teamA[1],
+		team_b_p1: team.teamB[0],
+		team_b_p2: team.teamB[1],
 		reason: team.reason ?? null,
 		strategy: team.strategy ?? null,
 		is_new: false,
@@ -481,14 +482,15 @@ export async function dbSaveMatchQueue(
 
 	if (queue.length === 0) return true;
 
+	// teamA/B는 [string, string] ID 참조 — .id 추출 불필요
 	const rows = queue.map((team, index) => ({
 		session_id: sessionId,
 		queue_position: QUEUE_POSITION_OFFSET + index,
 		game_type: team.gameType,
-		team_a_p1: team.teamA[0].id,
-		team_a_p2: team.teamA[1].id,
-		team_b_p1: team.teamB[0].id,
-		team_b_p2: team.teamB[1].id,
+		team_a_p1: team.teamA[0],
+		team_a_p2: team.teamA[1],
+		team_b_p1: team.teamB[0],
+		team_b_p2: team.teamB[1],
 		reason: team.reason ?? null,
 		strategy: team.strategy ?? null,
 		is_new: false,

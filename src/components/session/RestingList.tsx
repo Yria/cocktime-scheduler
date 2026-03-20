@@ -1,89 +1,43 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import type { SessionPlayer } from "../../types";
+import { useSessionStore } from "../../store/sessionStore";
+import SectionHeader from "../shared/SectionHeader";
 
-interface RestingListProps {
-	resting: SessionPlayer[];
-	onToggleResting: (playerId: string) => void;
-}
+const RestingList = memo(function RestingList() {
+	const sessionPlayers = useSessionStore((s) => s.sessionPlayers);
+	const restingIds = useSessionStore((s) => s.restingIds);
+	const onToggleResting = useSessionStore((s) => s.toggleResting);
 
-const RestingList = memo(function RestingList({
-	resting,
-	onToggleResting,
-}: RestingListProps) {
+	const resting = useMemo(
+		() => restingIds.map((id) => sessionPlayers.get(id)).filter((p): p is SessionPlayer => p !== undefined),
+		[restingIds, sessionPlayers],
+	);
+
 	if (resting.length === 0) return null;
 
 	return (
 		<div>
-			{/* Section header */}
-			<div
-				style={{
-					padding: "24px 16px 12px 16px",
-					display: "flex",
-					alignItems: "center",
-					justifyContent: "space-between",
-				}}
-			>
-				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-					<div
-						style={{
-							width: 28,
-							height: 28,
-							borderRadius: 8,
-							background: "rgba(100,116,139,0.1)",
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "center",
-							flexShrink: 0,
-						}}
+			<SectionHeader
+				icon={
+					<svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+						<circle cx="10" cy="10" r="7.5" stroke="#64748b" strokeWidth="1.5" />
+						<rect x="7.5" y="6" width="1.8" height="8" rx="0.9" fill="#64748b" />
+						<rect x="10.7" y="6" width="1.8" height="8" rx="0.9" fill="#64748b" />
+					</svg>
+				}
+				iconBg="rgba(100,116,139,0.1)"
+				iconSize={28}
+				topPadding={24}
+				title="휴식중"
+				badge={
+					<span
+						className="text-[#64748b] dark:text-[rgba(235,235,245,0.5)] bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.08)]"
+						style={{ fontSize: 12, fontWeight: 600, borderRadius: 99, padding: "2px 8px" }}
 					>
-						<svg
-							width="16"
-							height="16"
-							viewBox="0 0 20 20"
-							fill="none"
-							aria-hidden="true"
-						>
-							<circle
-								cx="10"
-								cy="10"
-								r="7.5"
-								stroke="#64748b"
-								strokeWidth="1.5"
-							/>
-							<rect
-								x="7.5"
-								y="6"
-								width="1.8"
-								height="8"
-								rx="0.9"
-								fill="#64748b"
-							/>
-							<rect
-								x="10.7"
-								y="6"
-								width="1.8"
-								height="8"
-								rx="0.9"
-								fill="#64748b"
-							/>
-						</svg>
-					</div>
-					<span className="text-[#0f1724] dark:text-white" style={{ fontSize: 16, fontWeight: 600 }}>
-						휴식중
+						{resting.length}명
 					</span>
-				</div>
-				<span
-					className="text-[#64748b] dark:text-[rgba(235,235,245,0.5)] bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.08)]"
-					style={{
-						fontSize: 12,
-						fontWeight: 600,
-						borderRadius: 99,
-						padding: "2px 8px",
-					}}
-				>
-					{resting.length}명
-				</span>
-			</div>
+				}
+			/>
 
 			{/* Player chips */}
 			<div

@@ -46,13 +46,13 @@ export interface SessionPlayer {
 	waitSince: string | null;
 }
 
-/** 코트 내 현재 경기 */
+/** 코트 내 현재 경기 — teamA/B는 session_players.id 참조 */
 export interface ActiveMatch {
 	id: string; // UUID (matches.id)
 	courtId: number;
 	gameType: GameType;
-	teamA: [SessionPlayer, SessionPlayer];
-	teamB: [SessionPlayer, SessionPlayer];
+	teamA: [string, string];
+	teamB: [string, string];
 	startedAt: string;
 }
 
@@ -61,10 +61,10 @@ export interface Court {
 	match: ActiveMatch | null;
 }
 
-/** 팀 구성 알고리즘 결과 */
+/** 팀 구성 알고리즘 결과 — teamA/B는 session_players.id 참조 */
 export interface GeneratedTeam {
-	teamA: [SessionPlayer, SessionPlayer];
-	teamB: [SessionPlayer, SessionPlayer];
+	teamA: [string, string];
+	teamB: [string, string];
 	gameType: GameType;
 	reason?: string;
 	strategy?: TeamStrategy;

@@ -8,6 +8,14 @@
 - **팀**: 한 코트에서 경기하는 4명 전체
 - **페어**: 팀 안에서 같은 편인 2명 (복식 파트너)
 
+### 데이터 참조 방식 (중요)
+
+`GeneratedTeam.teamA/B`는 `[string, string]` 형태의 **`session_players.id` 참조**다.
+`ActiveMatch.teamA/B`도 동일하게 ID 참조다.
+
+알고리즘 내부에서 `SessionPlayer` 객체로 계산하되, 최종 반환 시에는 `.id`만 추출한다.
+이를 통해 스킬/성별 변경이 candidateTeams/matchQueue에 즉시 반영되며, 객체 스냅샷 문제가 발생하지 않는다.
+
 ---
 
 ## 1단계 — 대기열 구성

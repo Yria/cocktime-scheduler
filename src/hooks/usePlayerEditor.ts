@@ -70,14 +70,9 @@ export function usePlayerEditor(sessionMeta: SessionMeta | null) {
 		}
 
 		if (sessionMeta) {
-			const { waiting, resting, courts } = useSessionStore.getState();
-			const sessionPlayer = [
-				...waiting,
-				...resting,
-				...courts.flatMap((c) =>
-					c.match ? [...c.match.teamA, ...c.match.teamB] : [],
-				),
-			].find((p) => p.playerId === editingPlayer.id);
+			const { sessionPlayers } = useSessionStore.getState();
+			const sessionPlayer = [...sessionPlayers.values()]
+				.find((p) => p.playerId === editingPlayer.id);
 
 			if (sessionPlayer) {
 				const serverData = await fetchSessionPlayerForConflictCheck(

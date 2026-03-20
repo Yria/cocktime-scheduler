@@ -15,22 +15,18 @@ export async function dbAssignMatch(
 	team: GeneratedTeam,
 	courtId: number,
 ): Promise<boolean> {
-	const allIds = [
-		team.teamA[0].id,
-		team.teamA[1].id,
-		team.teamB[0].id,
-		team.teamB[1].id,
-	];
+	// teamA/B는 [string, string] ID 참조
+	const allIds = [...team.teamA, ...team.teamB];
 
 	const { error: me } = await supabase.from("matches").insert({
 		id: matchId,
 		session_id: sessionId,
 		court_id: courtId,
 		game_type: team.gameType,
-		team_a_p1: team.teamA[0].id,
-		team_a_p2: team.teamA[1].id,
-		team_b_p1: team.teamB[0].id,
-		team_b_p2: team.teamB[1].id,
+		team_a_p1: team.teamA[0],
+		team_a_p2: team.teamA[1],
+		team_b_p1: team.teamB[0],
+		team_b_p2: team.teamB[1],
 		status: "playing",
 	});
 	if (me) {
@@ -56,7 +52,7 @@ export async function dbCompleteMatch(
 ): Promise<{
 	updatedPlayers: SessionPlayer[];
 } | null> {
-	const allPlayers = [...match.teamA, ...match.teamB];
+	const allPlayerIds = [...match.teamA, ...match.teamB];
 	const isMixed = match.gameType === "혼복";
 
 	// matches 완료 처리 (동시성 제어: status='playing'인 경우만 업데이트)
@@ -80,8 +76,8 @@ export async function dbCompleteMatch(
 
 	// pair_history upsert
 	const pairs: [string, string][] = [
-		[match.teamA[0].id, match.teamA[1].id],
-		[match.teamB[0].id, match.teamB[1].id],
+		[match.teamA[0], match.teamA[1]],
+		[match.teamB[0], match.teamB[1]],
 	];
 	for (const [a, b] of pairs) {
 		const [pa, pb] = a < b ? [a, b] : [b, a];
@@ -110,23 +106,36 @@ export async function dbCompleteMatch(
 		}
 	}
 
+	// 현재 선수 데이터 조회 (gameCount, mixedCount 등 최신 값 필요)
+	const { data: currentRows } = await supabase
+		.from("session_players")
+		.select("*")
+		.in("id", allPlayerIds);
+
+	const currentMap = new Map(
+		((currentRows ?? []) as SessionPlayerRow[]).map((r) => [r.id, r]),
+	);
+
 	// 모든 선수를 대기로 복귀
 	const now = new Date().toISOString();
 	const updatedPlayers: SessionPlayer[] = [];
 
-	for (const p of allPlayers) {
+	for (const pid of allPlayerIds) {
+		const current = currentMap.get(pid);
+		if (!current) continue;
+
 		const updates: Record<string, unknown> = {
 			status: "waiting",
 			wait_since: now,
-			game_count: p.gameCount + 1,
+			game_count: current.game_count + 1,
 		};
-		if (isMixed && p.gender === "M") {
-			updates.mixed_count = p.mixedCount + 1;
+		if (isMixed && current.gender === "M") {
+			updates.mixed_count = current.mixed_count + 1;
 		}
 		const { data } = await supabase
 			.from("session_players")
 			.update(updates)
-			.eq("id", p.id)
+			.eq("id", pid)
 			.select()
 			.single();
 		if (data) updatedPlayers.push(rowToSessionPlayer(data as SessionPlayerRow));

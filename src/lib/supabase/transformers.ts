@@ -37,26 +37,15 @@ function buildPairHistory(rows: PairHistoryRow[]): PairHistory {
 	return history;
 }
 
-function buildTeamCandidates(
-	rows: TeamCandidateRow[],
-	playerMap: Map<string, SessionPlayer>,
-): GeneratedTeam[] {
-	const teams: GeneratedTeam[] = [];
-	for (const row of rows) {
-		const p1 = playerMap.get(row.team_a_p1);
-		const p2 = playerMap.get(row.team_a_p2);
-		const p3 = playerMap.get(row.team_b_p1);
-		const p4 = playerMap.get(row.team_b_p2);
-		if (!p1 || !p2 || !p3 || !p4) continue;
-		teams.push({
-			teamA: [p1, p2],
-			teamB: [p3, p4],
-			gameType: row.game_type as GameType,
-			reason: row.reason ?? undefined,
-			strategy: (row.strategy as TeamStrategy) ?? undefined,
-		});
-	}
-	return teams;
+// teamA/B는 session_players.id 참조 — playerMap lookup 불필요
+function buildTeamCandidates(rows: TeamCandidateRow[]): GeneratedTeam[] {
+	return rows.map((row) => ({
+		teamA: [row.team_a_p1, row.team_a_p2] as [string, string],
+		teamB: [row.team_b_p1, row.team_b_p2] as [string, string],
+		gameType: row.game_type as GameType,
+		reason: row.reason ?? undefined,
+		strategy: (row.strategy as TeamStrategy) ?? undefined,
+	}));
 }
 
 /** queue_position 이 이 값 이상이면 매치 큐 아이템 */
@@ -66,9 +55,8 @@ export function snapshotToClientState(
 	snapshot: SessionSnapshot,
 ): ClientSessionState {
 	const courtCount = snapshot.session.court_count;
-	const playerMap = new Map(snapshot.players.map((p) => [p.id, p]));
 
-	// Courts
+	// Courts — match.teamA/B는 session_players.id 참조
 	const courts: Court[] = Array.from({ length: courtCount }, (_, i) => ({
 		id: i + 1,
 		match: null,
@@ -77,18 +65,13 @@ export function snapshotToClientState(
 	for (const m of snapshot.matches) {
 		const court = courts.find((c) => c.id === m.court_id);
 		if (!court) continue;
-		const p1 = playerMap.get(m.team_a_p1);
-		const p2 = playerMap.get(m.team_a_p2);
-		const p3 = playerMap.get(m.team_b_p1);
-		const p4 = playerMap.get(m.team_b_p2);
-		if (!p1 || !p2 || !p3 || !p4) continue;
 
 		court.match = {
 			id: m.id,
 			courtId: m.court_id,
 			gameType: m.game_type,
-			teamA: [p1, p2],
-			teamB: [p3, p4],
+			teamA: [m.team_a_p1, m.team_a_p2],
+			teamB: [m.team_b_p1, m.team_b_p2],
 			startedAt: m.started_at,
 		};
 	}
@@ -103,17 +86,22 @@ export function snapshotToClientState(
 	const queueRows = snapshot.teamCandidates.filter(
 		(r) => r.queue_position >= QUEUE_POSITION_OFFSET,
 	);
-	const candidateTeams = buildTeamCandidates(candidateRows, playerMap);
-	const matchQueue = buildTeamCandidates(queueRows, playerMap);
+	// teamA/B는 [string, string] ID 참조 — playerMap lookup 불필요
+	const candidateTeams = buildTeamCandidates(candidateRows);
+	const matchQueue = buildTeamCandidates(queueRows);
 
-	// 큐에 예약된 선수 ID (waiting에서 제외 — 큐는 예약 데이터이므로 DB status는 변경하지 않음)
+	// 큐에 예약된 선수 ID (waitingIds에서 제외 — 큐는 예약 데이터이므로 DB status는 변경하지 않음)
 	const queuedPlayerIds = new Set(
-		matchQueue.flatMap((t) => [...t.teamA, ...t.teamB].map((p) => p.id)),
+		matchQueue.flatMap((t) => [...t.teamA, ...t.teamB]),
 	);
 
-	// Waiting / Resting by status (큐 멤버 제외)
-	const waiting = snapshot.players.filter((p) => p.status === "waiting" && !queuedPlayerIds.has(p.id));
-	const resting = snapshot.players.filter((p) => p.status === "resting");
+	// waitingIds / restingIds (큐 멤버 제외)
+	const waitingIds = snapshot.players
+		.filter((p) => p.status === "waiting" && !queuedPlayerIds.has(p.id))
+		.map((p) => p.id);
+	const restingIds = snapshot.players
+		.filter((p) => p.status === "resting")
+		.map((p) => p.id);
 
-	return { courts, waiting, resting, pairHistory, candidateTeams, matchQueue };
+	return { courts, players: snapshot.players, waitingIds, restingIds, pairHistory, candidateTeams, matchQueue };
 }
