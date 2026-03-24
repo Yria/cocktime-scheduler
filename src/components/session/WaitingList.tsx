@@ -1,4 +1,5 @@
 import { memo, useMemo } from "react";
+import { Users } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { useSessionStore } from "../../store/sessionStore";
 import SectionHeader from "../shared/SectionHeader";
@@ -113,24 +114,7 @@ const WaitingList = memo(function WaitingList() {
 			<style>{STYLES}</style>
 
 			<SectionHeader
-				icon={
-					<svg
-						width="16"
-						height="16"
-						viewBox="0 0 20 20"
-						fill="none"
-						aria-hidden="true"
-					>
-						<circle cx="7" cy="6" r="2.5" stroke="#007aff" strokeWidth="1.6" />
-						<circle cx="13" cy="6" r="2.5" stroke="#007aff" strokeWidth="1.6" />
-						<path
-							d="M2 17c0-3 2.2-4.5 5-4.5h6c2.8 0 5 1.5 5 4.5"
-							stroke="#007aff"
-							strokeWidth="1.6"
-							strokeLinecap="round"
-						/>
-					</svg>
-				}
+				icon={<Users size={16} color="#007aff" />}
 				iconBg="rgba(0,122,255,0.1)"
 				iconSize={28}
 				topPadding={24}

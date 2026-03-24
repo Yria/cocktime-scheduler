@@ -1,17 +1,15 @@
 import { useCallback, useMemo, useState } from "react";
-import type { GeneratedTeam, PairHistory, SessionPlayer } from "../../types";
+import type { GeneratedTeam, SessionPlayer } from "../../types";
 import ModalSheet from "../common/ModalSheet";
 import PlayerBadge from "../shared/PlayerBadge";
 import PlayerPickerList from "../shared/PlayerPickerList";
 import type { PlayerPickerMeta } from "../shared/PlayerPickerList";
-import { bestPairing, determineGameType, skillScore } from "../../lib/teamGenerator";
+import { skillScore, pairPlayers } from "../../lib/teamSelection";
+import { usePickerCandidates } from "../../hooks/usePickerCandidates";
+import { useAppStore } from "../../store/appStore";
+import { useSessionStore } from "../../store/sessionStore";
 
 interface Props {
-	waiting: SessionPlayer[];
-	playingPlayers: SessionPlayer[];
-	unavailableIds: Set<string>;
-	pairHistory: PairHistory;
-	singleWomanIds: string[];
 	onConfirm: (team: GeneratedTeam) => void;
 	onCancel: () => void;
 }
@@ -22,68 +20,73 @@ const SORT_OPTIONS = [
 	{ value: "skill", label: "실력순" },
 ];
 
-export default function ManualMatchDialog({
-	waiting,
-	playingPlayers,
-	unavailableIds,
-	pairHistory,
-	singleWomanIds,
-	onConfirm,
-	onCancel,
-}: Props) {
+export default function ManualMatchDialog({ onConfirm, onCancel }: Props) {
 	const [selected, setSelected] = useState<string[]>([]);
+	const singleWomanIds = useAppStore((s) => s.sessionMeta?.singleWomanIds) ?? EMPTY_SINGLE_WOMAN_IDS;
+	const sessionPlayers = useSessionStore((s) => s.sessionPlayers);
+	const courts = useSessionStore((s) => s.courts);
 
-	const allPlayers = useMemo(() => {
-		const seen = new Set<string>();
-		const result: SessionPlayer[] = [];
-		for (const p of [...waiting, ...playingPlayers]) {
-			if (!seen.has(p.id)) {
-				seen.add(p.id);
-				result.push(p);
+	// 경기중 선수 ID 집합 (unavailable 표시용)
+	const unavailableIds = useMemo(() => {
+		const ids = new Set<string>();
+		for (const court of courts) {
+			if (court.match) {
+				court.match.teamA.forEach((id) => ids.add(id));
+				court.match.teamB.forEach((id) => ids.add(id));
+			}
+		}
+		return ids;
+	}, [courts]);
+
+	// usePickerCandidates: 선택한 선수 기준 추천 순위 계산
+	const rankedCandidates = usePickerCandidates(selected);
+
+	// 순위 맵 (id → score) — pickerPlayers 생성에 사용
+	const scoreMap = useMemo(
+		() => new Map(rankedCandidates.map((c) => [c.player.id, c.score])),
+		[rankedCandidates],
+	);
+
+	// 풀에 표시할 전체 선수: 이미 선택된 선수 + 추천 후보
+	// 선택된 선수는 rankedCandidates에서 제외되어 있으므로 sessionPlayers에서 별도 조회
+	const selectedPlayers = useMemo(
+		() =>
+			selected
+				.map((id) => sessionPlayers.get(id))
+				.filter((p): p is SessionPlayer => p !== undefined),
+		[selected, sessionPlayers],
+	);
+
+	const allDisplayPlayers = useMemo(() => {
+		const seen = new Set(selected);
+		const result: SessionPlayer[] = [...selectedPlayers];
+		for (const { player } of rankedCandidates) {
+			if (!seen.has(player.id)) {
+				seen.add(player.id);
+				result.push(player);
 			}
 		}
 		return result;
-	}, [waiting, playingPlayers]);
+	}, [selectedPlayers, rankedCandidates, selected]);
 
-	// fitness/score 계산만 담당 — 필터/정렬은 PlayerPickerList 내부로 위임
 	const pickerPlayers = useMemo(() => {
 		const selectedSet = new Set(selected);
-		const selectedPlayers = allPlayers.filter((p) => selectedSet.has(p.id));
-
-		return allPlayers.map((player) => {
+		return allDisplayPlayers.map((player) => {
 			const isPlaying = unavailableIds.has(player.id);
 			const isSelected = selectedSet.has(player.id);
 			const score = skillScore(player);
-
-			let fitness = 0;
-			if (selectedPlayers.length > 0 && !isSelected) {
-				const avgSelectedScore =
-					selectedPlayers.reduce((s, p) => s + skillScore(p), 0) / selectedPlayers.length;
-				fitness += Math.abs(score - avgSelectedScore) * 5;
-
-				const pairOverlap = selectedPlayers.reduce(
-					(n, sp) => n + (pairHistory[sp.id]?.has(player.id) ? 1 : 0),
-					0,
-				);
-				fitness += pairOverlap * 5;
-			}
-			fitness += player.gameCount * 1;
-			if (isPlaying) fitness += 3;
+			const rank = isSelected ? -1 : (scoreMap.get(player.id) ?? Infinity);
 
 			return {
 				player,
 				isPlaying,
 				isSelected,
-				// rank: fit 정렬 기준 (낮을수록 우선)
-				// "skill" 정렬은 score 내림차순이므로 PlayerPickerList의 "skill" 케이스가
-				// aRank - bRank (오름차순)를 사용한다는 점을 고려해 -score 저장
-				rank: fitness,
-				// skillRank: "skill" 정렬 전용 (-score, 오름차순 정렬 시 높은 스킬이 앞에 옴)
+				rank,
 				skillRank: -score,
 				extraLabel: score.toFixed(1),
 			};
 		});
-	}, [allPlayers, selected, unavailableIds, pairHistory]);
+	}, [allDisplayPlayers, selected, unavailableIds, scoreMap]);
 
 	const togglePlayer = useCallback((player: SessionPlayer) => {
 		setSelected((prev) => {
@@ -98,35 +101,25 @@ export default function ManualMatchDialog({
 	// 4명 선택 시 자동 페어링 미리보기
 	const previewTeam = useMemo((): GeneratedTeam | null => {
 		if (selected.length !== 4) return null;
+		const four = selected
+			.map((id) => sessionPlayers.get(id))
+			.filter((p): p is SessionPlayer => p !== undefined);
+		if (four.length !== 4) return null;
 
-		const four = selected.map((id) => allPlayers.find((p) => p.id === id)!);
-		if (four.some((p) => !p)) return null;
-
-		const [teamAPlayers, teamBPlayers] = bestPairing(
-			four as [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer],
-		);
-		const gameType = determineGameType([...teamAPlayers, ...teamBPlayers], singleWomanIds);
-
-		return {
-			teamA: [teamAPlayers[0].id, teamAPlayers[1].id],
-			teamB: [teamBPlayers[0].id, teamBPlayers[1].id],
-			gameType,
-			reason: "수동 매칭",
-			strategy: "manual" as any,
-		};
-	}, [selected, allPlayers, singleWomanIds]);
+		const fourTuple = four as [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer];
+		return pairPlayers(fourTuple, singleWomanIds);
+	}, [selected, sessionPlayers, singleWomanIds]);
 
 	const handleConfirm = () => {
 		if (previewTeam) onConfirm(previewTeam);
 	};
 
 	const selectedGenderCounts = useMemo(() => {
-		const players = selected.map((id) => allPlayers.find((p) => p.id === id)).filter(Boolean);
 		return {
-			M: players.filter((p) => p!.gender === "M").length,
-			F: players.filter((p) => p!.gender === "F").length,
+			M: selectedPlayers.filter((p) => p.gender === "M").length,
+			F: selectedPlayers.filter((p) => p.gender === "F").length,
 		};
-	}, [selected, allPlayers]);
+	}, [selectedPlayers]);
 
 	return (
 		<ModalSheet position="bottom" onClose={onCancel}>
@@ -155,7 +148,7 @@ export default function ManualMatchDialog({
 						<div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
 							<div style={{ display: "flex", gap: 4 }}>
 								{previewTeam.teamA.map((id) => {
-									const p = allPlayers.find((pl) => pl.id === id);
+									const p = sessionPlayers.get(id);
 									if (!p) return null;
 									return (
 										<PlayerBadge
@@ -170,7 +163,7 @@ export default function ManualMatchDialog({
 							<span style={{ fontSize: 10, fontWeight: 800, color: "#b0b8c1" }}>VS</span>
 							<div style={{ display: "flex", gap: 4 }}>
 								{previewTeam.teamB.map((id) => {
-									const p = allPlayers.find((pl) => pl.id === id);
+									const p = sessionPlayers.get(id);
 									if (!p) return null;
 									return (
 										<PlayerBadge
@@ -280,3 +273,5 @@ export default function ManualMatchDialog({
 		</ModalSheet>
 	);
 }
+
+const EMPTY_SINGLE_WOMAN_IDS: string[] = [];

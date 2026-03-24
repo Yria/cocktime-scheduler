@@ -1,18 +1,15 @@
 import { useMemo } from "react";
-import type { PairHistory, SessionPlayer } from "../types";
-import { rankReplaceCandidates } from "../lib/sessionUtils";
+import type { SessionPlayer } from "../types";
+import { usePickerCandidates } from "../hooks/usePickerCandidates";
 import ModalSheet from "./common/ModalSheet";
 import PlayerBadge from "./shared/PlayerBadge";
 import PlayerPickerList, { type PlayerPickerItem, type PlayerPickerSortOption } from "./shared/PlayerPickerList";
-import { skillScore } from "../lib/teamGenerator";
+import { skillScore } from "../lib/teamSelection";
 
 interface Props {
 	selectedPlayer: SessionPlayer;
 	currentTeam: SessionPlayer[];
 	opponentTeam: SessionPlayer[];
-	availablePlayers: SessionPlayer[];
-	pairHistory: PairHistory;
-	unavailableIds: Set<string>;
 	onReplace: (newPlayer: SessionPlayer) => void;
 	onCancel: () => void;
 }
@@ -29,23 +26,30 @@ export default function PlayerReplaceDialog({
 	selectedPlayer,
 	currentTeam,
 	opponentTeam,
-	availablePlayers,
-	pairHistory,
-	unavailableIds,
 	onReplace,
 	onCancel,
 }: Props) {
-	const pickerPlayers = useMemo((): PlayerPickerItem[] => {
-		const ranked = rankReplaceCandidates(availablePlayers, selectedPlayer, currentTeam, opponentTeam, pairHistory, unavailableIds);
-		// rank = fitness 오름차순 인덱스 (rankReplaceCandidates가 이미 정렬된 결과)
-		return ranked.map((item, index) => ({
+	// confirmed = 파트너 1명 + 상대 2명 (교체 대상인 selectedPlayer는 제외)
+	const confirmedIds = useMemo(() => {
+		const partner = currentTeam.find((p) => p.id !== selectedPlayer.id);
+		const ids: string[] = [];
+		if (partner) ids.push(partner.id);
+		opponentTeam.forEach((p) => ids.push(p.id));
+		return ids;
+	}, [currentTeam, opponentTeam, selectedPlayer.id]);
+
+	const rankedCandidates = usePickerCandidates(confirmedIds);
+
+	const pickerPlayers = useMemo((): PlayerPickerItem[] =>
+		rankedCandidates.map((item, index) => ({
 			player: item.player,
-			isPlaying: item.isPlaying,
+			isPlaying: item.player.status === "playing",
 			rank: index,
-			fitnessScore: item.fitness,
+			fitnessScore: item.score,
 			waitSince: item.player.waitSince ?? undefined,
-		}));
-	}, [availablePlayers, selectedPlayer, currentTeam, opponentTeam, pairHistory, unavailableIds]);
+		})),
+		[rankedCandidates],
+	);
 
 	return (
 		<ModalSheet position="bottom" onClose={onCancel}>

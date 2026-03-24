@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { useAppStore } from "../store/appStore";
 import { useSessionStore, sessionActions } from "../store/sessionStore";
-import type { TeamStrategy } from "../types";
 import CompactCourtBar from "./session/CompactCourtBar";
 import EndSessionModal from "./session/EndSessionModal";
 import MatchQueue from "./session/MatchQueue";
@@ -21,8 +20,6 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 	const subscribe = useSessionStore((s) => s.subscribe);
 	const unsubscribe = useSessionStore((s) => s.unsubscribe);
 	const handleEndSessionAction = useSessionStore((s) => s.handleEndSession);
-
-	const [strategyFilter, setStrategyFilter] = useState<TeamStrategy | null>(null);
 
 	// Subscribe to broadcast channel
 	useEffect(() => {
@@ -58,10 +55,7 @@ export default function SessionMain({ onBack, onEnd }: Props) {
 			<div>
 				<MatchQueue />
 
-				<TeamCandidatesList
-					strategyFilter={strategyFilter}
-					onStrategyChange={setStrategyFilter}
-				/>
+				<TeamCandidatesList />
 
 				<WaitingList />
 

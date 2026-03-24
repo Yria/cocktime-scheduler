@@ -1,6 +1,6 @@
 import { memo } from "react";
 import type { SessionPlayer } from "../../types";
-import { skillScore } from "../../lib/teamGenerator";
+import { skillScore } from "../../lib/teamSelection";
 
 interface WaitingPlayerChipProps {
 	player: SessionPlayer;

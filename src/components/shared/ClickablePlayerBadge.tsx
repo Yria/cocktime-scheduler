@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { SessionPlayer } from "../../types";
-import { skillScore } from "../../lib/teamGenerator";
+import { skillScore } from "../../lib/teamSelection";
 import PlayerBadge from "./PlayerBadge";
 
 interface ClickablePlayerBadgeProps {

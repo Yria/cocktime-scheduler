@@ -1,11 +1,10 @@
 import { memo, useMemo } from "react";
-import type { SessionPlayer } from "../../types";
+import { List } from "lucide-react";
 import { useSessionStore } from "../../store/sessionStore";
 import { usePlayerReplace } from "../../hooks/usePlayerReplace";
 import ClickablePlayerBadge from "../shared/ClickablePlayerBadge";
 import PlayerReplaceDialog from "../PlayerReplaceDialog";
 import SectionHeader from "../shared/SectionHeader";
-import { getPlayingPlayers, getUnavailableIds } from "../../lib/sessionUtils";
 
 const GAME_TYPE_COLOR: Record<string, { bg: string; text: string }> = {
 	혼복: { bg: "rgba(175,82,222,0.1)", text: "#af52de" },
@@ -18,53 +17,27 @@ const MatchQueue = memo(function MatchQueue() {
 	const queue = useSessionStore((s) => s.matchQueue);
 	const courts = useSessionStore((s) => s.courts);
 	const sessionPlayers = useSessionStore((s) => s.sessionPlayers);
-	const waitingIds = useSessionStore((s) => s.waitingIds);
-	const pairHistory = useSessionStore((s) => s.pairHistory);
 	const onAssignFromQueue = useSessionStore((s) => s.handleAssignFromQueue);
 	const onRemoveFromQueue = useSessionStore((s) => s.handleRemoveFromQueue);
 	const onReplaceInQueue = useSessionStore((s) => s.handleReplaceInQueue);
 
 	const hasEmptyCourt = courts.some((c) => !c.match);
 
-	// waiting 선수 목록 (Map에서 파생)
-	const waiting = useMemo(
-		() => waitingIds.map((id) => sessionPlayers.get(id)).filter((p): p is SessionPlayer => p !== undefined),
-		[waitingIds, sessionPlayers],
-	);
-
-	// 경기중 선수 목록
-	const playingPlayers = useMemo(
-		() => getPlayingPlayers(courts, sessionPlayers),
-		[courts, sessionPlayers],
-	);
-	const playingIds = useMemo(
-		() => new Set(playingPlayers.map((p) => p.id)),
-		[playingPlayers],
-	);
-
-	// 대기열 전체 선수 목록
-	const queuedPlayers = useMemo(
-		() =>
-			queue
-				.flatMap((t) => [...t.teamA, ...t.teamB])
-				.map((id) => sessionPlayers.get(id))
-				.filter((p): p is SessionPlayer => p !== undefined),
-		[queue, sessionPlayers],
-	);
-
-	// 배정 불가 선수 ID (경기중 + 대기열)
-	const unavailableIds = useMemo(
-		() => getUnavailableIds(playingPlayers, queuedPlayers),
-		[playingPlayers, queuedPlayers],
-	);
+	// 경기중 선수 ID (대기열 배정 가능 여부 판단용)
+	const playingIds = useMemo(() => {
+		const ids = new Set<string>();
+		for (const court of courts) {
+			if (court.match) {
+				court.match.teamA.forEach((id) => ids.add(id));
+				court.match.teamB.forEach((id) => ids.add(id));
+			}
+		}
+		return ids;
+	}, [courts]);
 
 	const { handlePlayerClick, replaceDialogProps } = usePlayerReplace({
 		teams: queue,
 		sessionPlayers,
-		waiting,
-		playingPlayers,
-		pairHistory,
-		unavailableIds,
 		onReplace: onReplaceInQueue,
 	});
 
@@ -74,11 +47,7 @@ const MatchQueue = memo(function MatchQueue() {
 		<>
 		<div>
 			<SectionHeader
-				icon={
-					<svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-						<path d="M4 6h12M4 10h12M4 14h8" stroke="#ff9500" strokeWidth="1.5" strokeLinecap="round" />
-					</svg>
-				}
+				icon={<List size={14} color="#ff9500" />}
 				iconBg="rgba(255,149,0,0.1)"
 				title="대기열"
 				badge={

@@ -2,7 +2,7 @@ import type { MatchLogEntry } from "../../lib/supabase/api";
 import type { GameType, PlayerSkills, SkillLevel } from "../../types";
 import SharedPlayerBadge from "../shared/PlayerBadge";
 
-// teamGenerator.ts의 skillScore와 동일
+// PlayerSkills 객체를 직접 받는 로컬 헬퍼 (skillScore는 SessionPlayer를 받으므로 별도 유지)
 const SKILL_VALUES: Record<SkillLevel, number> = { O: 3, V: 2, X: 1 };
 function getSkillScore(skills?: PlayerSkills): number {
 	if (!skills) return 0;

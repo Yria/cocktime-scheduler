@@ -68,6 +68,52 @@ export interface TeamCandidateRow {
 	is_new: boolean;
 }
 
+export interface ManualMatchLogRow {
+	id?: string;
+	session_id: number;
+	created_at?: string;
+	snapshot: ManualMatchSnapshot;
+}
+
+export interface ManualMatchSnapshot {
+	chosen_players: PlayerSnapshot[];
+	chosen_score: number;
+	candidate_teams: CandidateSnapshot[];
+	waiting_pool: PlayerSnapshot[];
+	playing_pool: PlayerSnapshot[];
+	context: ContextSnapshot;
+}
+
+export interface PlayerSnapshot {
+	id: string;
+	player_id: string;
+	name: string;
+	gender: Gender;
+	skills: PlayerSkills;
+	skill_score: number;
+	game_count: number;
+	mixed_count: number;
+	status: PlayerStatus;
+	is_resting: boolean;
+	force_mixed: boolean;
+	force_hard_game: boolean;
+	allow_mixed_single: boolean;
+	wait_since: string | null;
+}
+
+export interface CandidateSnapshot {
+	team_a: [string, string];
+	team_b: [string, string];
+	game_type: GameType;
+	reason?: string;
+}
+
+export interface ContextSnapshot {
+	pair_history: Record<string, string[]>;
+	last_co_players: Record<string, string[]>;
+	single_woman_ids: string[];
+}
+
 export interface SessionSnapshot {
 	session: SessionRow;
 	players: SessionPlayer[];

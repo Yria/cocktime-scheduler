@@ -1,4 +1,5 @@
 import { memo, useMemo } from "react";
+import { PauseCircle } from "lucide-react";
 import type { SessionPlayer } from "../../types";
 import { useSessionStore } from "../../store/sessionStore";
 import SectionHeader from "../shared/SectionHeader";
@@ -18,13 +19,7 @@ const RestingList = memo(function RestingList() {
 	return (
 		<div>
 			<SectionHeader
-				icon={
-					<svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-						<circle cx="10" cy="10" r="7.5" stroke="#64748b" strokeWidth="1.5" />
-						<rect x="7.5" y="6" width="1.8" height="8" rx="0.9" fill="#64748b" />
-						<rect x="10.7" y="6" width="1.8" height="8" rx="0.9" fill="#64748b" />
-					</svg>
-				}
+				icon={<PauseCircle size={16} color="#64748b" />}
 				iconBg="rgba(100,116,139,0.1)"
 				iconSize={28}
 				topPadding={24}

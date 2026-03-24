@@ -14,9 +14,7 @@ import {
 	supabase,
 } from "../lib/supabase";
 import type { ClientSessionState } from "../lib/supabase";
-import {
-	recordHistory,
-} from "../lib/teamGenerator";
+import { recordHistory } from "../lib/teamSelection";
 import { getPlayingPlayerIds } from "../lib/sessionUtils";
 import type {
 	Court,

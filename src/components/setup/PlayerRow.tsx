@@ -1,3 +1,4 @@
+import { Check } from "lucide-react";
 import type { Player } from "../../types";
 
 interface PlayerRowProps {
@@ -62,21 +63,7 @@ export function PlayerRow({
 					}}
 				>
 					{selected && (
-						<svg
-							width="12"
-							height="10"
-							viewBox="0 0 12 10"
-							fill="none"
-							aria-hidden="true"
-						>
-							<path
-								d="M1 5L4.5 8.5L11 1"
-								stroke="white"
-								strokeWidth="2"
-								strokeLinecap="round"
-								strokeLinejoin="round"
-							/>
-						</svg>
+						<Check size={12} color="white" strokeWidth={2.5} />
 					)}
 				</span>
 				<span

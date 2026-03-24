@@ -1,13 +1,9 @@
 import { useMemo, useState } from "react";
-import type { GeneratedTeam, PairHistory, SessionPlayer } from "../types";
+import type { GeneratedTeam, SessionPlayer } from "../types";
 
 interface UsePlayerReplaceParams {
 	teams: GeneratedTeam[];
 	sessionPlayers: Map<string, SessionPlayer>;
-	waiting: SessionPlayer[];
-	playingPlayers: SessionPlayer[];
-	pairHistory: PairHistory;
-	unavailableIds: Set<string>;
 	onReplace: (index: number, oldPlayer: SessionPlayer, newPlayer: SessionPlayer) => void;
 }
 
@@ -19,10 +15,6 @@ interface ReplacingPlayer {
 export function usePlayerReplace({
 	teams,
 	sessionPlayers,
-	waiting,
-	playingPlayers,
-	pairHistory,
-	unavailableIds,
 	onReplace,
 }: UsePlayerReplaceParams) {
 	const [replacingPlayer, setReplacingPlayer] = useState<ReplacingPlayer | null>(null);
@@ -41,23 +33,9 @@ export function usePlayerReplace({
 
 	const cancelReplace = () => setReplacingPlayer(null);
 
-	const getAvailablePlayers = (index: number): SessionPlayer[] => {
-		const team = teams[index];
-		if (!team) return [];
-		const teamPlayerIds = new Set([...team.teamA, ...team.teamB]);
-		const allPlayers = [...waiting, ...playingPlayers];
-		const seen = new Set<string>();
-		return allPlayers.filter((p) => {
-			if (teamPlayerIds.has(p.id) || seen.has(p.id)) return false;
-			seen.add(p.id);
-			return true;
-		});
-	};
-
 	const getPlayerTeams = (
 		index: number,
 		player: SessionPlayer,
-		sessionPlayers: Map<string, SessionPlayer>,
 	) => {
 		const team = teams[index];
 		if (!team) return { currentTeam: [] as SessionPlayer[], opponentTeam: [] as SessionPlayer[] };
@@ -76,20 +54,16 @@ export function usePlayerReplace({
 		const { currentTeam, opponentTeam } = getPlayerTeams(
 			replacingPlayer.index,
 			replacingPlayer.player,
-			sessionPlayers,
 		);
 		return {
 			selectedPlayer: replacingPlayer.player,
 			currentTeam,
 			opponentTeam,
-			availablePlayers: getAvailablePlayers(replacingPlayer.index),
-			pairHistory,
-			unavailableIds,
 			onReplace: handleReplace,
 			onCancel: cancelReplace,
 		};
 	// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [replacingPlayer, teams, sessionPlayers, waiting, playingPlayers, pairHistory, unavailableIds]);
+	}, [replacingPlayer, teams, sessionPlayers]);
 
 	return {
 		replacingPlayer,

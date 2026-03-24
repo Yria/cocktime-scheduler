@@ -8,6 +8,7 @@ import type {
 import { supabase } from "./client";
 import { rowToSessionPlayer } from "./transformers";
 import type {
+	ManualMatchSnapshot,
 	MatchRow,
 	PairHistoryRow,
 	SessionPlayerRow,
@@ -506,5 +507,20 @@ export async function dbSaveMatchQueue(
 	}
 
 	return true;
+}
+
+// ── 수동 매칭 로그 ────────────────────────────────────
+
+export async function dbLogManualMatch(
+	sessionId: number,
+	snapshot: ManualMatchSnapshot,
+): Promise<void> {
+	const { error } = await supabase
+		.from("manual_match_logs")
+		.insert({ session_id: sessionId, snapshot });
+
+	if (error) {
+		console.error("Failed to log manual match:", error);
+	}
 }
 

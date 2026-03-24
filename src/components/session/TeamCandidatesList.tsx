@@ -1,64 +1,89 @@
-import { memo, useState } from "react";
-import type { GeneratedTeam, TeamStrategy } from "../../types";
+import { memo, useMemo, useState } from "react";
+import type { GeneratedTeam, SessionPlayer } from "../../types";
+import { Star, RefreshCw, Equal, Sparkles, Shuffle, Scale, Users, Clock } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { useSessionStore } from "../../store/sessionStore";
 import { useTeamCandidates } from "../../hooks/useTeamCandidates";
 import { usePlayerReplace } from "../../hooks/usePlayerReplace";
+import { dbLogManualMatch } from "../../lib/supabase/api";
+import { rankCandidates, skillScore, WEIGHT_PROFILES } from "../../lib/teamSelection";
+import type { PlayerSnapshot, CandidateSnapshot, ContextSnapshot, ManualMatchSnapshot } from "../../lib/supabase/types";
 import PlayerReplaceDialog from "../PlayerReplaceDialog";
-import FilterChip from "../shared/FilterChip";
 import SectionHeader from "../shared/SectionHeader";
 import ManualMatchDialog from "./ManualMatchDialog";
 import TeamCandidateCard from "./TeamCandidateCard";
 
-const STRATEGY_OPTIONS: { value: TeamStrategy | null; label: string }[] = [
-	{ value: null, label: "전체" },
-	{ value: "gameCountBalanced", label: "경기수 균등" },
-	{ value: "coPlayerAvoidance", label: "동반자 회피" },
-	{ value: "newCombination", label: "새 조합" },
-	{ value: "mixedCountBalanced", label: "혼복 우선" },
-	{ value: "skillBalanced", label: "실력 균형" },
-	{ value: "randomShuffle", label: "랜덤" },
-];
-
-const EMPTY_SINGLE_WOMAN_IDS: string[] = [];
-
-interface TeamCandidatesListProps {
-	strategyFilter: TeamStrategy | null;
-	onStrategyChange: (strategy: TeamStrategy | null) => void;
+function toPlayerSnapshot(p: SessionPlayer): PlayerSnapshot {
+	return {
+		id: p.id,
+		player_id: p.playerId,
+		name: p.name,
+		gender: p.gender,
+		skills: p.skills,
+		skill_score: skillScore(p),
+		game_count: p.gameCount,
+		mixed_count: p.mixedCount,
+		status: p.status,
+		is_resting: p.status === "resting",
+		force_mixed: p.forceMixed,
+		force_hard_game: p.forceHardGame,
+		allow_mixed_single: p.allowMixedSingle,
+		wait_since: p.waitSince,
+	};
 }
 
-const TeamCandidatesList = memo(function TeamCandidatesList({
-	strategyFilter,
-	onStrategyChange,
-}: TeamCandidatesListProps) {
-	const singleWomanIds = useAppStore((s) => s.sessionMeta?.singleWomanIds) ?? EMPTY_SINGLE_WOMAN_IDS;
-
+const TeamCandidatesList = memo(function TeamCandidatesList() {
+	const sessionId = useAppStore((s) => s.sessionMeta?.sessionId) ?? 0;
+	const singleWomanIds = useAppStore((s) => s.sessionMeta?.singleWomanIds) ?? [];
 	const sessionPlayers = useSessionStore((s) => s.sessionPlayers);
+	const pairHistory = useSessionStore((s) => s.pairHistory);
+	const lastCoPlayers = useSessionStore((s) => s.lastCoPlayers);
 
 	const {
 		visibleCandidates: candidates,
 		unavailableIds,
-		playingPlayers,
 		waiting,
-		pairHistory,
+		playingPlayers,
 		handleAddToQueue,
 		handleRefreshCandidates: onRefresh,
 		handleCandidatePlayerReplace: onPlayerReplace,
 		handleAssignCandidate: onAssign,
 		handleQueueCandidate: onQueue,
-	} = useTeamCandidates({ strategyFilter });
+	} = useTeamCandidates();
 
 	const waitingCount = waiting.length;
 
 	const [showManualMatch, setShowManualMatch] = useState(false);
+	const [reasonFilter, setReasonFilter] = useState<string | null>(null);
+
+	// reason → icon 매핑
+	const REASON_ICONS: Record<string, React.ReactNode> = {
+		"게임수 균등": <Equal size={14} />,
+		"새 조합 우선": <Sparkles size={14} />,
+		"직전 동반 회피": <Shuffle size={14} />,
+		"실력 균형": <Scale size={14} />,
+		"혼복 참여 균등": <Users size={14} />,
+		"대기 시간 우선": <Clock size={14} />,
+	};
+
+	// reason 목록 추출 + 필터링
+	const reasonTabs = useMemo(() => {
+		const reasons = new Set<string>();
+		for (const c of candidates) {
+			const r = c.reason?.split(" · ")[0];
+			if (r) reasons.add(r);
+		}
+		return [...reasons];
+	}, [candidates]);
+
+	const filteredCandidates = useMemo(() => {
+		if (!reasonFilter) return candidates;
+		return candidates.filter((c) => c.reason?.startsWith(reasonFilter));
+	}, [candidates, reasonFilter]);
 
 	const { handlePlayerClick, replaceDialogProps } = usePlayerReplace({
 		teams: candidates,
 		sessionPlayers,
-		waiting,
-		playingPlayers,
-		pairHistory,
-		unavailableIds,
 		onReplace: onPlayerReplace,
 	});
 
@@ -69,17 +94,58 @@ const TeamCandidatesList = memo(function TeamCandidatesList({
 	const handleManualConfirm = (team: GeneratedTeam) => {
 		handleAddToQueue(team);
 		setShowManualMatch(false);
+
+		// 수동 매칭 로그 (비동기, UI 블로킹 없음)
+		if (sessionId) {
+			const chosenIds = [...team.teamA, ...team.teamB];
+			const chosenPlayers = chosenIds
+				.map((id) => sessionPlayers.get(id))
+				.filter((p): p is SessionPlayer => p !== undefined);
+
+			const chosenScore = chosenPlayers.length === 4
+				? rankCandidates(
+					chosenPlayers.slice(0, 3),
+					[chosenPlayers[3]],
+					{ pairHistory, lastCoPlayers },
+				)[0]?.score ?? -1
+				: -1;
+
+			const candidateSnapshots: CandidateSnapshot[] = candidates.map((c) => ({
+				team_a: c.teamA,
+				team_b: c.teamB,
+				game_type: c.gameType,
+				reason: c.reason,
+			}));
+
+			const pairHistorySnapshot: Record<string, string[]> = {};
+			for (const [key, partners] of Object.entries(pairHistory)) {
+				pairHistorySnapshot[key] = [...partners];
+			}
+
+			const contextSnapshot: ContextSnapshot = {
+				pair_history: pairHistorySnapshot,
+				last_co_players: lastCoPlayers,
+				single_woman_ids: singleWomanIds,
+			};
+
+			const snapshot: ManualMatchSnapshot = {
+				chosen_players: chosenPlayers.map(toPlayerSnapshot),
+				chosen_score: chosenScore,
+				candidate_teams: candidateSnapshots,
+				waiting_pool: waiting.map(toPlayerSnapshot),
+				playing_pool: playingPlayers.map(toPlayerSnapshot),
+				context: contextSnapshot,
+			};
+
+			dbLogManualMatch(sessionId, snapshot);
+		}
 	};
 
 	return (
 		<>
 			<div>
 				<SectionHeader
-					icon={
-						<svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-							<path d="M10 2.5L12 7.5H17L13 10.5L14.5 16L10 13L5.5 16L7 10.5L3 7.5H8L10 2.5Z" stroke="#0b84ff" strokeWidth="1.5" strokeLinejoin="round" fill="none" />
-						</svg>
-					}
+					icon={<Star size={14} color="#0b84ff" />}
 					iconBg="rgba(11,132,255,0.1)"
 					title="팀 매칭"
 					rightContent={
@@ -118,39 +184,11 @@ const TeamCandidatesList = memo(function TeamCandidatesList({
 								}}
 								title="팀 매칭 새로고침"
 							>
-								<svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-									<path d="M3.5 10a6.5 6.5 0 0 1 11.25-4.5M16.5 10a6.5 6.5 0 0 1-11.25 4.5" stroke="#0b84ff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-									<path d="M14.5 2v3.5H11M5.5 18v-3.5H9" stroke="#0b84ff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-								</svg>
+								<RefreshCw size={14} color="#0b84ff" />
 							</button>
 						</>
 					}
 				/>
-
-				{/* Strategy filter chips */}
-				<div
-					style={{
-						padding: "0 16px 10px",
-						display: "flex",
-						gap: 5,
-						overflowX: "auto",
-						overflowY: "hidden",
-						WebkitOverflowScrolling: "touch",
-						flexWrap: "nowrap",
-						touchAction: "pan-x",
-					}}
-					className="no-sb"
-				>
-					{STRATEGY_OPTIONS.map(({ value, label }) => (
-						<FilterChip
-							key={label}
-							label={label}
-							active={strategyFilter === value}
-							onClick={() => onStrategyChange(value)}
-							flexShrink={0}
-						/>
-					))}
-				</div>
 
 				{candidates.length > 0 ? (
 					<div
@@ -161,7 +199,50 @@ const TeamCandidatesList = memo(function TeamCandidatesList({
 							gap: 6,
 						}}
 					>
-						{candidates.map((team, index) => (
+						{reasonTabs.length > 1 && (
+							<div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 2 }}>
+								<button
+									type="button"
+									onClick={() => setReasonFilter(null)}
+									style={{
+										fontSize: 10,
+										fontWeight: 600,
+										padding: "3px 8px",
+										borderRadius: 99,
+										border: "none",
+										cursor: "pointer",
+										background: !reasonFilter ? "#0b84ff" : "rgba(142,142,147,0.12)",
+										color: !reasonFilter ? "#fff" : "#8e8e93",
+									}}
+								>
+									전체
+								</button>
+								{reasonTabs.map((r) => (
+									<button
+										key={r}
+										type="button"
+										onClick={() => setReasonFilter(reasonFilter === r ? null : r)}
+										title={r}
+										style={{
+											fontSize: 13,
+											padding: "4px 8px",
+											borderRadius: 99,
+											border: "none",
+											cursor: "pointer",
+											background: reasonFilter === r ? "#0b84ff" : "rgba(142,142,147,0.12)",
+											color: reasonFilter === r ? "#fff" : "inherit",
+											lineHeight: 1,
+											display: "inline-flex",
+											alignItems: "center",
+											justifyContent: "center",
+										}}
+									>
+										{REASON_ICONS[r] ?? r}
+									</button>
+								))}
+							</div>
+						)}
+						{filteredCandidates.map((team, index) => (
 							<TeamCandidateCard
 								key={index}
 								team={team}
@@ -198,11 +279,6 @@ const TeamCandidatesList = memo(function TeamCandidatesList({
 
 			{showManualMatch && (
 				<ManualMatchDialog
-					waiting={waiting}
-					playingPlayers={playingPlayers}
-					unavailableIds={unavailableIds}
-					pairHistory={pairHistory}
-					singleWomanIds={singleWomanIds}
 					onConfirm={handleManualConfirm}
 					onCancel={() => setShowManualMatch(false)}
 				/>
