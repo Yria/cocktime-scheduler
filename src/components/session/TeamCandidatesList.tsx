@@ -6,7 +6,7 @@ import { useSessionStore } from "../../store/sessionStore";
 import { useTeamCandidates } from "../../hooks/useTeamCandidates";
 import { usePlayerReplace } from "../../hooks/usePlayerReplace";
 import { dbLogManualMatch } from "../../lib/supabase/api";
-import { rankCandidates, skillScore, WEIGHT_PROFILES } from "../../lib/teamSelection";
+import { rankCandidates, skillScore } from "../../lib/teamSelection";
 import type { PlayerSnapshot, CandidateSnapshot, ContextSnapshot, ManualMatchSnapshot } from "../../lib/supabase/types";
 import PlayerReplaceDialog from "../PlayerReplaceDialog";
 import SectionHeader from "../shared/SectionHeader";
