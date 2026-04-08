@@ -1,6 +1,7 @@
 import { memo } from "react";
 import type { GeneratedTeam, SessionPlayer } from "../../types";
-import ClickablePlayerBadge from "../shared/ClickablePlayerBadge";
+import { skillScore } from "../../lib/teamSelection";
+import MatchPreview, { type MatchPreviewPlayer } from "../shared/MatchPreview";
 
 const GAME_TYPE_COLOR: Record<string, { bg: string; text: string }> = {
 	혼복: { bg: "rgba(175,82,222,0.1)", text: "#af52de" },
@@ -12,6 +13,8 @@ const GAME_TYPE_COLOR: Record<string, { bg: string; text: string }> = {
 interface TeamCandidateCardProps {
 	team: GeneratedTeam;
 	index: number;
+	displayNumber: number;
+	reasons: string[];
 	emptyCourtId: number | null;
 	unavailableIds: Set<string>;
 	sessionPlayers: Map<string, SessionPlayer>;
@@ -23,6 +26,8 @@ interface TeamCandidateCardProps {
 const TeamCandidateCard = memo(function TeamCandidateCard({
 	team,
 	index,
+	displayNumber,
+	reasons,
 	emptyCourtId,
 	unavailableIds,
 	sessionPlayers,
@@ -34,17 +39,17 @@ const TeamCandidateCard = memo(function TeamCandidateCard({
 	const allIds = [...team.teamA, ...team.teamB];
 	const hasUnavailable = allIds.some((id) => unavailableIds.has(id));
 
-	const renderPlayer = (id: string) => {
+	const toSlot = (id: string): MatchPreviewPlayer | null => {
 		const player = sessionPlayers.get(id);
 		if (!player) return null;
-		return (
-			<ClickablePlayerBadge
-				key={player.id}
-				player={player}
-				onClick={(e) => onPlayerClick(index, player, e)}
-				isUnavailable={unavailableIds.has(player.id)}
-			/>
-		);
+		return {
+			id: player.id,
+			name: player.name,
+			gender: player.gender,
+			skillScore: skillScore(player),
+			disabled: unavailableIds.has(player.id),
+			onClick: (e) => onPlayerClick(index, player, e),
+		};
 	};
 
 	return (
@@ -68,21 +73,28 @@ const TeamCandidateCard = memo(function TeamCandidateCard({
 							marginBottom: 6,
 						}}
 					>
-						<div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+						<div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
 							<span
 								className="text-[#0f1724] dark:text-white"
 								style={{ fontSize: 13, fontWeight: 600 }}
 							>
-								팀 {index + 1}
+								팀 {displayNumber}
 							</span>
-							{team.reason && (
+							{reasons.map((r) => (
 								<span
+									key={r}
 									className="text-[#6b7280] dark:text-[rgba(235,235,245,0.5)]"
-									style={{ fontSize: 10, fontWeight: 500 }}
+									style={{
+										fontSize: 9,
+										fontWeight: 600,
+										background: "rgba(142,142,147,0.1)",
+										borderRadius: 3,
+										padding: "1px 5px",
+									}}
 								>
-									{team.reason}
+									{r}
 								</span>
-							)}
+							))}
 						</div>
 						<div style={{ display: "flex", alignItems: "center", gap: 4 }}>
 							{hasUnavailable && (
@@ -115,30 +127,11 @@ const TeamCandidateCard = memo(function TeamCandidateCard({
 					</div>
 
 					{/* Teams in one row */}
-					<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-						<div style={{ display: "flex", gap: 3 }}>
-							{team.teamA.map(renderPlayer)}
-						</div>
-
-						<span
-							style={{
-								fontSize: 8,
-								fontWeight: 700,
-								color: "var(--text-secondary)",
-								background: "var(--mat-ultra-thin)",
-								borderRadius: 99,
-								padding: "1px 5px",
-								flexShrink: 0,
-								margin: "0 6px",
-							}}
-						>
-							VS
-						</span>
-
-						<div style={{ display: "flex", gap: 3 }}>
-							{team.teamB.map(renderPlayer)}
-						</div>
-					</div>
+					<MatchPreview
+						left={team.teamA.map(toSlot)}
+						right={team.teamB.map(toSlot)}
+						size="sm"
+					/>
 				</div>
 
 				{/* Assign / Queue buttons */}

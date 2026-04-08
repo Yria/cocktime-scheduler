@@ -13,6 +13,12 @@ import SectionHeader from "../shared/SectionHeader";
 import ManualMatchDialog from "./ManualMatchDialog";
 import TeamCandidateCard from "./TeamCandidateCard";
 
+interface GroupedCandidate {
+	team: GeneratedTeam;
+	reasons: string[];
+	visibleIndex: number;
+}
+
 function toPlayerSnapshot(p: SessionPlayer): PlayerSnapshot {
 	return {
 		id: p.id,
@@ -66,20 +72,42 @@ const TeamCandidatesList = memo(function TeamCandidatesList() {
 		"대기 시간 우선": <Clock size={14} />,
 	};
 
-	// reason 목록 추출 + 필터링
-	const reasonTabs = useMemo(() => {
-		const reasons = new Set<string>();
-		for (const c of candidates) {
+	// 같은 팀 구성 그룹핑: 동일 멤버면 한 카드에 이유만 모음
+	const grouped = useMemo(() => {
+		const groups = new Map<string, GroupedCandidate>();
+		for (let i = 0; i < candidates.length; i++) {
+			const c = candidates[i];
+			const key = [...c.teamA, ...c.teamB].sort().join(",");
 			const r = c.reason?.split(" · ")[0];
-			if (r) reasons.add(r);
+			const existing = groups.get(key);
+			if (existing) {
+				if (r && !existing.reasons.includes(r)) {
+					existing.reasons.push(r);
+				}
+			} else {
+				groups.set(key, {
+					team: c,
+					reasons: r ? [r] : [],
+					visibleIndex: i,
+				});
+			}
 		}
-		return [...reasons];
+		return [...groups.values()];
 	}, [candidates]);
 
-	const filteredCandidates = useMemo(() => {
-		if (!reasonFilter) return candidates;
-		return candidates.filter((c) => c.reason?.startsWith(reasonFilter));
-	}, [candidates, reasonFilter]);
+	// reason 목록 추출
+	const reasonTabs = useMemo(() => {
+		const reasons = new Set<string>();
+		for (const g of grouped) {
+			for (const r of g.reasons) reasons.add(r);
+		}
+		return [...reasons];
+	}, [grouped]);
+
+	const filteredGroups = useMemo(() => {
+		if (!reasonFilter) return grouped;
+		return grouped.filter((g) => g.reasons.includes(reasonFilter));
+	}, [grouped, reasonFilter]);
 
 	const { handlePlayerClick, replaceDialogProps } = usePlayerReplace({
 		teams: candidates,
@@ -199,7 +227,7 @@ const TeamCandidatesList = memo(function TeamCandidatesList() {
 							gap: 6,
 						}}
 					>
-						{reasonTabs.length > 1 && (
+						{reasonTabs.length > 0 && (
 							<div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 2 }}>
 								<button
 									type="button"
@@ -242,11 +270,13 @@ const TeamCandidatesList = memo(function TeamCandidatesList() {
 								))}
 							</div>
 						)}
-						{filteredCandidates.map((team, index) => (
+						{filteredGroups.map((group, displayIdx) => (
 							<TeamCandidateCard
-								key={index}
-								team={team}
-								index={index}
+								key={group.visibleIndex}
+								team={group.team}
+								index={group.visibleIndex}
+								displayNumber={displayIdx + 1}
+								reasons={group.reasons}
 								emptyCourtId={emptyCourtId}
 								unavailableIds={unavailableIds}
 								sessionPlayers={sessionPlayers}

@@ -90,6 +90,26 @@ function groupKey(team: GeneratedTeam): string {
 	return [...team.teamA, ...team.teamB].sort().join(",");
 }
 
+/** Fisher-Yates 셔플 (원본 변경 없이 복사본 반환) */
+function shuffle<T>(arr: T[]): T[] {
+	const copy = [...arr];
+	for (let i = copy.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[copy[i], copy[j]] = [copy[j], copy[i]];
+	}
+	return copy;
+}
+
+/** 라운드별 랜덤 pickIndex 생성 (상위 N명 중 랜덤 선택) */
+function randomPickIndices(): [number, number, number, number] {
+	return [
+		Math.floor(Math.random() * 3), // 상위 3명 중
+		Math.floor(Math.random() * 2), // 상위 2명 중
+		Math.floor(Math.random() * 2),
+		0,
+	];
+}
+
 /**
  * 다양한 가중치 프로필로 팀 후보를 생성한다.
  * 각 프로필은 다른 기준으로 선수를 선발하여 다양한 이유의 후보를 만든다.
@@ -118,38 +138,32 @@ export function generateCandidateTeams(
 		return true;
 	}
 
-	// 1단계: 각 가중치 프로필로 1팀씩 생성
-	const profileKeys = Object.keys(WEIGHT_PROFILES);
+	// 1단계: 각 가중치 프로필로 1팀씩 (프로필 순서 셔플로 다양성 확보)
+	const profileKeys = shuffle(Object.keys(WEIGHT_PROFILES));
 	for (const profileKey of profileKeys) {
 		if (results.length >= count) break;
 		const profile = WEIGHT_PROFILES[profileKey];
 		tryAdd(buildTeam(pool, context, { weights: profile.weights, reason: profile.label }));
 	}
 
-	// 2단계: 부족하면 프로필별 pickIndices 변주
-	const pickVariants: [number, number, number, number][] = [
-		[1, 0, 0, 0],
-		[0, 1, 0, 0],
-		[1, 1, 0, 0],
-	];
+	// 2단계: 부족하면 프로필별 랜덤 pickIndices 변주
 	for (const profileKey of profileKeys) {
 		if (results.length >= count) break;
 		const profile = WEIGHT_PROFILES[profileKey];
-		for (const pick of pickVariants) {
+		for (let v = 0; v < 3; v++) {
 			if (results.length >= count) break;
-			tryAdd(buildTeam(pool, context, { weights: profile.weights, reason: profile.label, pickIndices: pick }));
+			tryAdd(buildTeam(pool, context, {
+				weights: profile.weights,
+				reason: profile.label,
+				pickIndices: randomPickIndices(),
+			}));
 		}
 	}
 
 	// 3단계: 그래도 부족하면 셔플 풀로 랜덤 생성
 	const maxAttempts = (count - results.length) * 5;
 	for (let attempt = 0; results.length < count && attempt < maxAttempts; attempt++) {
-		const shuffled = [...pool];
-		for (let i = shuffled.length - 1; i > 0; i--) {
-			const j = Math.floor(Math.random() * (i + 1));
-			[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-		}
-		tryAdd(buildTeam(shuffled, context, { reason: "랜덤 셔플" }));
+		tryAdd(buildTeam(shuffle(pool), context, { reason: "랜덤 셔플" }));
 	}
 
 	return results;

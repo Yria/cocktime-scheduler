@@ -12,7 +12,9 @@
 		"test:watch": "vitest",
 		"preview": "vite preview",
 		"predeploy": "npm run build",
-		"deploy": "gh-pages -d dist"
+		"deploy": "gh-pages -d dist",
+		"photos": "scripts/.venv/bin/python -u scripts/fetch_photos.py",
+		"photos:dry": "scripts/.venv/bin/python -u scripts/fetch_photos.py --dry-run"
 	},
 	"dependencies": {
 		"@supabase/supabase-js": "^2.97.0",

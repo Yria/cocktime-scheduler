@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import type { GeneratedTeam, SessionPlayer } from "../../types";
 import ModalSheet from "../common/ModalSheet";
-import PlayerBadge from "../shared/PlayerBadge";
+import MatchPreview, { type MatchPreviewPlayer } from "../shared/MatchPreview";
 import PlayerPickerList from "../shared/PlayerPickerList";
 import type { PlayerPickerMeta } from "../shared/PlayerPickerList";
 import { skillScore, pairPlayers } from "../../lib/teamSelection";
@@ -18,6 +18,7 @@ const SORT_OPTIONS = [
 	{ value: "fit", label: "추천순" },
 	{ value: "gameCount", label: "경기수" },
 	{ value: "skill", label: "실력순" },
+	{ value: "waitTime", label: "대기시간" },
 ];
 
 export default function ManualMatchDialog({ onConfirm, onCancel }: Props) {
@@ -69,6 +70,12 @@ export default function ManualMatchDialog({ onConfirm, onCancel }: Props) {
 		return result;
 	}, [selectedPlayers, rankedCandidates, selected]);
 
+	// 선택된 선수들의 평균 스킬 (실력순 정렬 기준)
+	const avgSelectedSkill = useMemo(() => {
+		if (selectedPlayers.length === 0) return 0;
+		return selectedPlayers.reduce((sum, p) => sum + skillScore(p), 0) / selectedPlayers.length;
+	}, [selectedPlayers]);
+
 	const pickerPlayers = useMemo(() => {
 		const selectedSet = new Set(selected);
 		return allDisplayPlayers.map((player) => {
@@ -82,11 +89,12 @@ export default function ManualMatchDialog({ onConfirm, onCancel }: Props) {
 				isPlaying,
 				isSelected,
 				rank,
-				skillRank: -score,
+				// 실력순: 선택된 선수 평균과의 차이 (작을수록 우선)
+				skillRank: avgSelectedSkill > 0 ? Math.abs(score - avgSelectedSkill) : -score,
 				extraLabel: score.toFixed(1),
 			};
 		});
-	}, [allDisplayPlayers, selected, unavailableIds, scoreMap]);
+	}, [allDisplayPlayers, selected, unavailableIds, scoreMap, avgSelectedSkill]);
 
 	const togglePlayer = useCallback((player: SessionPlayer) => {
 		setSelected((prev) => {
@@ -114,12 +122,27 @@ export default function ManualMatchDialog({ onConfirm, onCancel }: Props) {
 		if (previewTeam) onConfirm(previewTeam);
 	};
 
-	const selectedGenderCounts = useMemo(() => {
-		return {
-			M: selectedPlayers.filter((p) => p.gender === "M").length,
-			F: selectedPlayers.filter((p) => p.gender === "F").length,
+	// 프리뷰 슬롯 계산: 1명 이상 선택 시 항상 표시
+	const previewSlots = useMemo(() => {
+		const toSlot = (id: string): MatchPreviewPlayer | null => {
+			const p = sessionPlayers.get(id);
+			if (!p) return null;
+			return { id: p.id, name: p.name, gender: p.gender, skillScore: skillScore(p) };
 		};
-	}, [selectedPlayers]);
+
+		if (previewTeam) {
+			return {
+				left: previewTeam.teamA.map(toSlot),
+				right: previewTeam.teamB.map(toSlot),
+			};
+		}
+
+		// < 4명: 선택 순서대로 좌2 / 우2 배치
+		const slots: (MatchPreviewPlayer | null)[] = Array.from({ length: 4 }, (_, i) =>
+			i < selected.length ? toSlot(selected[i]) : null,
+		);
+		return { left: [slots[0], slots[1]], right: [slots[2], slots[3]] };
+	}, [selected, previewTeam, sessionPlayers]);
 
 	return (
 		<ModalSheet position="bottom" onClose={onCancel}>
@@ -130,55 +153,17 @@ export default function ManualMatchDialog({ onConfirm, onCancel }: Props) {
 				</h3>
 				<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
 					4명을 선택하면 자동으로 최적 팀을 구성합니다
-					{selected.length > 0 && (
-						<span style={{ marginLeft: 8, fontWeight: 600, color: "#0b84ff" }}>
-							남{selectedGenderCounts.M} 여{selectedGenderCounts.F}
-						</span>
-					)}
 				</p>
 			</div>
 
-			{/* Preview (4명 선택 시) */}
-			{previewTeam && (
+			{/* Preview (1명 이상 선택 시) */}
+			{selected.length > 0 && (
 				<div className="px-5 pt-3 pb-1">
 					<div
 						className="bg-white dark:bg-[#1c1c1e] border border-[rgba(0,122,255,0.2)] dark:border-[rgba(0,122,255,0.3)]"
 						style={{ borderRadius: 8, padding: "12px 16px" }}
 					>
-						<div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-							<div style={{ display: "flex", gap: 4 }}>
-								{previewTeam.teamA.map((id) => {
-									const p = sessionPlayers.get(id);
-									if (!p) return null;
-									return (
-										<PlayerBadge
-											key={p.id}
-											name={p.name}
-											gender={p.gender}
-											skillScore={skillScore(p)}
-										/>
-									);
-								})}
-							</div>
-							<span style={{ fontSize: 10, fontWeight: 800, color: "#b0b8c1" }}>VS</span>
-							<div style={{ display: "flex", gap: 4 }}>
-								{previewTeam.teamB.map((id) => {
-									const p = sessionPlayers.get(id);
-									if (!p) return null;
-									return (
-										<PlayerBadge
-											key={p.id}
-											name={p.name}
-											gender={p.gender}
-											skillScore={skillScore(p)}
-										/>
-									);
-								})}
-							</div>
-						</div>
-						<div style={{ textAlign: "center", marginTop: 6, fontSize: 11, fontWeight: 600, color: "#8e8e93" }}>
-							{previewTeam.gameType}
-						</div>
+						<MatchPreview left={previewSlots.left} right={previewSlots.right} size="sm" />
 					</div>
 				</div>
 			)}
@@ -188,44 +173,29 @@ export default function ManualMatchDialog({ onConfirm, onCancel }: Props) {
 				<PlayerPickerList
 					players={pickerPlayers}
 					onSelect={togglePlayer}
+					showSearch
 					searchThreshold={0}
 					showGenderFilter
 					showStatusFilter
+
+
 					sortOptions={SORT_OPTIONS}
 					sortLabel="정렬"
 					maxHeight="40vh"
-					renderLeading={(player: SessionPlayer, meta: PlayerPickerMeta) => (
-						<span
-							style={{
-								width: 20,
-								height: 20,
-								borderRadius: "50%",
-								border: meta.isSelected ? "none" : "1.5px solid #d0d5dd",
-								background: meta.isSelected ? "#0b84ff" : "transparent",
-								color: meta.isSelected ? "#fff" : "transparent",
-								fontSize: 11,
-								fontWeight: 700,
-								display: "flex",
-								alignItems: "center",
-								justifyContent: "center",
-								flexShrink: 0,
-							}}
-						>
-							{meta.isSelected ? selected.indexOf(player.id) + 1 : ""}
-						</span>
-					)}
-					renderAfterBadge={(_player: SessionPlayer, meta: PlayerPickerMeta) => (
-						<span style={{ fontSize: 10, fontWeight: 600, color: "#b0b8c1", fontFamily: "monospace" }}>
-							{meta.extraLabel}
-						</span>
-					)}
-					getButtonStyle={(_player: SessionPlayer, meta: PlayerPickerMeta) => ({
-						border: meta.isSelected ? "2px solid #0b84ff" : "2px solid transparent",
-						background: meta.isSelected ? "rgba(11,132,255,0.06)" : "transparent",
-						cursor: !meta.isSelected && selected.length >= 4 ? "default" : "pointer",
-						opacity: !meta.isSelected && selected.length >= 4 ? 0.35 : 1,
-						transition: "all 0.15s",
-					})}
+					renderLeading={(player: SessionPlayer, meta: PlayerPickerMeta) =>
+						meta.isSelected ? (
+							<div style={{
+								position: "absolute", top: -4, right: -4,
+								width: 20, height: 20, borderRadius: "50%",
+								background: "#0b84ff", color: "#fff",
+								fontSize: 11, fontWeight: 700,
+								display: "flex", alignItems: "center", justifyContent: "center",
+								zIndex: 1,
+							}}>
+								{selected.indexOf(player.id) + 1}
+							</div>
+						) : null
+					}
 					isDisabled={(_player: SessionPlayer, meta: PlayerPickerMeta) =>
 						!meta.isSelected && selected.length >= 4
 					}

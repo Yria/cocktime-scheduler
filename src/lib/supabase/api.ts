@@ -422,24 +422,7 @@ export async function dbSaveTeamCandidates(
 	sessionId: number,
 	candidates: GeneratedTeam[],
 ): Promise<boolean> {
-	// 1. 기존 후보만 삭제 (큐 아이템 보존)
-	const { error: deleteError } = await supabase
-		.from("team_candidates")
-		.delete()
-		.eq("session_id", sessionId)
-		.lt("queue_position", QUEUE_POSITION_OFFSET);
-
-	if (deleteError) {
-		console.error("Failed to delete old team candidates:", deleteError);
-		return false;
-	}
-
-	// 2. 새 후보 삽입
-	if (candidates.length === 0) return true;
-
-	// teamA/B는 [string, string] ID 참조 — .id 추출 불필요
 	const rows = candidates.map((team, index) => ({
-		session_id: sessionId,
 		queue_position: index,
 		game_type: team.gameType,
 		team_a_p1: team.teamA[0],
@@ -451,15 +434,15 @@ export async function dbSaveTeamCandidates(
 		is_new: false,
 	}));
 
-	const { error: insertError } = await supabase
-		.from("team_candidates")
-		.insert(rows);
+	const { error } = await supabase.rpc("save_team_candidates", {
+		p_session_id: sessionId,
+		p_candidates: JSON.stringify(rows),
+	});
 
-	if (insertError) {
-		console.error("Failed to insert team candidates:", insertError);
+	if (error) {
+		console.error("dbSaveTeamCandidates:", error);
 		return false;
 	}
-
 	return true;
 }
 
@@ -470,22 +453,7 @@ export async function dbSaveMatchQueue(
 	sessionId: number,
 	queue: GeneratedTeam[],
 ): Promise<boolean> {
-	const { error: deleteError } = await supabase
-		.from("team_candidates")
-		.delete()
-		.eq("session_id", sessionId)
-		.gte("queue_position", QUEUE_POSITION_OFFSET);
-
-	if (deleteError) {
-		console.error("Failed to delete old match queue:", deleteError);
-		return false;
-	}
-
-	if (queue.length === 0) return true;
-
-	// teamA/B는 [string, string] ID 참조 — .id 추출 불필요
 	const rows = queue.map((team, index) => ({
-		session_id: sessionId,
 		queue_position: QUEUE_POSITION_OFFSET + index,
 		game_type: team.gameType,
 		team_a_p1: team.teamA[0],
@@ -497,15 +465,15 @@ export async function dbSaveMatchQueue(
 		is_new: false,
 	}));
 
-	const { error: insertError } = await supabase
-		.from("team_candidates")
-		.insert(rows);
+	const { error } = await supabase.rpc("save_match_queue", {
+		p_session_id: sessionId,
+		p_queue: JSON.stringify(rows),
+	});
 
-	if (insertError) {
-		console.error("Failed to insert match queue:", insertError);
+	if (error) {
+		console.error("dbSaveMatchQueue:", error);
 		return false;
 	}
-
 	return true;
 }
 

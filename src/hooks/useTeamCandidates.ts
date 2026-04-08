@@ -164,16 +164,22 @@ export function useTeamCandidates() {
 
 	// 자동 보충: 유효 후보 부족 시 또는 풀 변경 시
 	const prevPoolIdsRef = useRef("");
+	const emptyGenAttemptRef = useRef("");
 	useEffect(() => {
+		if (generationPool.length < 4) return;
+
 		const poolIds = generationPool.map((p) => p.id).sort().join(",");
 		const poolChanged = poolIds !== prevPoolIdsRef.current;
 		prevPoolIdsRef.current = poolIds;
 
-		if (generationPool.length < 4) return;
+		if (poolChanged) emptyGenAttemptRef.current = "";
 
 		const needSupplement = visibleCount < TARGET_CANDIDATE_COUNT;
+		// visibleCount === 0이면 풀 변경 없어도 재생성 시도 (같은 풀에서 1회만)
+		const emptyButNotAttempted = visibleCount === 0 && emptyGenAttemptRef.current !== poolIds;
 
-		if (needSupplement && poolChanged) {
+		if (needSupplement && (poolChanged || emptyButNotAttempted)) {
+			if (visibleCount === 0) emptyGenAttemptRef.current = poolIds;
 			supplementCandidates();
 		}
 	}, [generationPool, visibleCount, supplementCandidates]);

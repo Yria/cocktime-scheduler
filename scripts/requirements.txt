@@ -1,0 +1,4 @@
+Pillow
+pillow-heif
+requests
+# osxphotos  # optional: pip install osxphotos (Python 3.13 이하 권장)

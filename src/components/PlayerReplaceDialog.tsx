@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { SessionPlayer } from "../types";
 import { usePickerCandidates } from "../hooks/usePickerCandidates";
 import ModalSheet from "./common/ModalSheet";
-import PlayerBadge from "./shared/PlayerBadge";
+import MatchPreview, { type MatchPreviewPlayer } from "./shared/MatchPreview";
 import PlayerPickerList, { type PlayerPickerItem, type PlayerPickerSortOption } from "./shared/PlayerPickerList";
 import { skillScore } from "../lib/teamSelection";
 
@@ -15,12 +15,13 @@ interface Props {
 }
 
 const SORT_OPTIONS: PlayerPickerSortOption[] = [
-	{ value: "fitness", label: "적합도" },
-	{ value: "waitTime", label: "대기시간" },
+	{ value: "fit", label: "추천순" },
 	{ value: "gameCount", label: "경기수" },
+	{ value: "skill", label: "실력순" },
+	{ value: "waitTime", label: "대기시간" },
 ];
 
-const FILTER_SHOW_THRESHOLD = 5;
+const FILTER_SHOW_THRESHOLD = 0;
 
 export default function PlayerReplaceDialog({
 	selectedPlayer,
@@ -40,15 +41,25 @@ export default function PlayerReplaceDialog({
 
 	const rankedCandidates = usePickerCandidates(confirmedIds);
 
+	// confirmed 선수 평균 스킬 (실력순 정렬 기준)
+	const avgConfirmedSkill = useMemo(() => {
+		const confirmed = confirmedIds
+			.map((id) => currentTeam.find((p) => p.id === id) ?? opponentTeam.find((p) => p.id === id))
+			.filter((p): p is SessionPlayer => p !== undefined);
+		if (confirmed.length === 0) return 0;
+		return confirmed.reduce((sum, p) => sum + skillScore(p), 0) / confirmed.length;
+	}, [confirmedIds, currentTeam, opponentTeam]);
+
 	const pickerPlayers = useMemo((): PlayerPickerItem[] =>
 		rankedCandidates.map((item, index) => ({
 			player: item.player,
 			isPlaying: item.player.status === "playing",
 			rank: index,
+			skillRank: avgConfirmedSkill > 0 ? Math.abs(skillScore(item.player) - avgConfirmedSkill) : -skillScore(item.player),
 			fitnessScore: item.score,
 			waitSince: item.player.waitSince ?? undefined,
 		})),
-		[rankedCandidates],
+		[rankedCandidates, avgConfirmedSkill],
 	);
 
 	return (
@@ -67,91 +78,36 @@ export default function PlayerReplaceDialog({
 			<div className="px-5 pt-4 pb-3">
 				<div
 					className="bg-white dark:bg-[#1c1c1e] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
-					style={{ borderRadius: 8, overflow: "hidden" }}
+					style={{ borderRadius: 8, overflow: "hidden", padding: "16px 20px" }}
 				>
-					<div style={{ padding: "16px 20px" }}>
-						{/* Current Team (Team A) */}
-						<div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-							<span
-								className="text-[#0f1724] dark:text-white"
-								style={{ fontSize: 14, fontWeight: 600, width: 32, flexShrink: 0 }}
-							>
-								팀 A
-							</span>
-							<div style={{ display: "flex", flexWrap: "wrap", gap: 6, flex: 1 }}>
-								{currentTeam.map((player) => {
-									const isTarget = player.id === selectedPlayer.id;
-									if (!isTarget) {
-										return (
-											<PlayerBadge
-												key={player.id}
-												name={player.name}
-												gender={player.gender}
-												skillScore={skillScore(player)}
-											/>
-										);
-									}
-									return (
-										<div
-											key={player.id}
-											style={{
-												display: "inline-flex",
-												alignItems: "center",
-												padding: "4px 10px",
-												background: "linear-gradient(135deg, rgba(255,59,48,0.12), rgba(255,59,48,0.06))",
-												border: "1.5px dashed rgba(255,59,48,0.4)",
-												borderRadius: 14,
-												gap: 4,
-											}}
-										>
-											<span style={{ fontSize: 10 }}>↻</span>
-											<span style={{
-												fontSize: 13,
-												fontWeight: 600,
-												color: "#ff3b30",
-												textDecoration: "line-through",
-												textDecorationColor: "rgba(255,59,48,0.4)",
-											}}>
-												{player.name}
-											</span>
-										</div>
-									);
-								})}
-							</div>
-						</div>
-
-						{/* VS divider */}
-						<div style={{ display: "flex", alignItems: "center", margin: "12px 0" }}>
-							<div className="bg-[rgba(0,0,0,0.08)] dark:bg-[rgba(255,255,255,0.1)]" style={{ flex: 1, height: 1 }} />
-							<span
-								className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-								style={{ fontSize: 12, fontWeight: 700, padding: "0 8px" }}
-							>
-								VS
-							</span>
-							<div className="bg-[rgba(0,0,0,0.08)] dark:bg-[rgba(255,255,255,0.1)]" style={{ flex: 1, height: 1 }} />
-						</div>
-
-						{/* Opponent Team (Team B) */}
-						<div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-							<span
-								className="text-[#0f1724] dark:text-white"
-								style={{ fontSize: 14, fontWeight: 600, width: 32, flexShrink: 0 }}
-							>
-								팀 B
-							</span>
-							<div style={{ display: "flex", flexWrap: "wrap", gap: 6, flex: 1 }}>
-								{opponentTeam.map((player) => (
-									<PlayerBadge
-										key={player.id}
-										name={player.name}
-										gender={player.gender}
-										skillScore={skillScore(player)}
-									/>
-								))}
-							</div>
-						</div>
-					</div>
+					<MatchPreview
+						left={currentTeam.map((player): MatchPreviewPlayer => {
+							const isTarget = player.id === selectedPlayer.id;
+							return {
+								id: player.id,
+								name: player.name,
+								gender: player.gender,
+								skillScore: skillScore(player),
+								opacity: isTarget ? 0.5 : 1,
+								overlay: isTarget ? (
+									<div style={{
+										position: "absolute", top: 0, left: 0, width: "100%", height: "100%",
+										display: "flex", alignItems: "center", justifyContent: "center",
+										fontSize: 20,
+									}}>
+										↻
+									</div>
+								) : undefined,
+							};
+						})}
+						right={opponentTeam.map((player): MatchPreviewPlayer => ({
+							id: player.id,
+							name: player.name,
+							gender: player.gender,
+							skillScore: skillScore(player),
+						}))}
+						size="sm"
+					/>
 				</div>
 			</div>
 
@@ -164,6 +120,8 @@ export default function PlayerReplaceDialog({
 					searchThreshold={FILTER_SHOW_THRESHOLD}
 					showGenderFilter
 					showStatusFilter={false}
+
+
 					sortOptions={SORT_OPTIONS}
 					maxHeight="35vh"
 					emptyMessage="교체 가능한 선수가 없습니다"

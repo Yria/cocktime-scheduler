@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { Gender, SessionPlayer } from "../../types";
 import { disassemble, getChoseong } from "es-hangul";
+import { skillScore } from "../../lib/teamSelection";
 import FilterChip from "./FilterChip";
-import PlayerListRow from "./PlayerListRow";
+
+const SIZES_MAP = { sm: 68, md: 84 } as const;
+import PlayerCard from "./PlayerCard";
 
 export interface PlayerPickerItem {
 	player: SessionPlayer;
@@ -52,10 +55,10 @@ interface PlayerPickerListProps {
 	// 스크롤 영역
 	maxHeight?: string;
 
+	photoSize?: "sm" | "md";
+
 	// 커스텀 슬롯
 	renderLeading?: (player: SessionPlayer, meta: PlayerPickerMeta) => ReactNode;
-	renderAfterBadge?: (player: SessionPlayer, meta: PlayerPickerMeta) => ReactNode;
-	getButtonStyle?: (player: SessionPlayer, meta: PlayerPickerMeta) => CSSProperties;
 	isDisabled?: (player: SessionPlayer, meta: PlayerPickerMeta) => boolean;
 
 	// 빈 상태
@@ -91,9 +94,8 @@ export default function PlayerPickerList({
 	sortOptions,
 	sortLabel,
 	maxHeight = "35vh",
+	photoSize = "md",
 	renderLeading,
-	renderAfterBadge,
-	getButtonStyle,
 	isDisabled,
 	emptyMessage = "선수가 없습니다",
 	noResultMessage = "검색 결과가 없습니다",
@@ -248,8 +250,13 @@ export default function PlayerPickerList({
 								: emptyMessage}
 					</div>
 				) : (
-					<div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-						{sortedPlayers.map(({ player, isPlaying, isSelected, rank, skillRank, extraLabel, waitSince, fitnessScore }) => {
+					<div style={{
+						display: "grid",
+						gridTemplateColumns: `repeat(auto-fill, minmax(${SIZES_MAP[photoSize]}px, 1fr))`,
+						gap: 6,
+						justifyItems: "center",
+					}}>
+						{sortedPlayers.map(({ player, isPlaying, isSelected, rank, skillRank, extraLabel, fitnessScore, waitSince }) => {
 							const meta: PlayerPickerMeta = {
 								isPlaying,
 								isSelected: isSelected ?? false,
@@ -258,38 +265,63 @@ export default function PlayerPickerList({
 								extraLabel,
 							};
 
-							// 정렬 기준별 정보 라벨
-							let infoLabel: ReactNode = undefined;
-							if (sortBy === "waitTime") {
-								if (isPlaying) {
-									infoLabel = <span style={{ color: "#8e8e93" }}>경기중</span>;
-								} else if (waitSince) {
-									const elapsed = Math.floor((Date.now() - new Date(waitSince).getTime()) / 60000);
-									infoLabel = <span style={{ color: "#ff9500" }}>{elapsed < 1 ? "방금" : `${elapsed}분 대기`}</span>;
-								}
-							} else if (sortBy === "fitness" || (!sortBy && sortOptions && sortOptions.length > 0)) {
-								// 적합도: 퍼센테이지 표시 (최적=100%, 최악=0%)
+							// 정렬 기준별 뱃지 값
+							let sortLabel: ReactNode = null;
+							if (sortBy === "fit" || (!sortBy && sortOptions && sortOptions.length > 0)) {
 								if (fitnessScore !== undefined && fitnessRange) {
 									const { min, max } = fitnessRange;
 									const pct = max === min ? 100 : Math.round(((max - fitnessScore) / (max - min)) * 100);
 									const color = pct >= 80 ? "#34c759" : pct >= 50 ? "#ff9500" : "#ff3b30";
-									infoLabel = <span style={{ color }}>{pct}%</span>;
+									sortLabel = <span style={{ color }}>{pct}%</span>;
+								}
+							} else if (sortBy === "gameCount") {
+								sortLabel = <span style={{ color: "#ff9500" }}>{player.gameCount}회</span>;
+							} else if (sortBy === "skill") {
+								sortLabel = <span style={{ color: "#007aff" }}>{skillScore(player).toFixed(1)}</span>;
+							} else if (sortBy === "waitTime") {
+								if (isPlaying) {
+									sortLabel = <span style={{ color: "#8e8e93" }}>경기중</span>;
+								} else if (waitSince) {
+									const elapsed = Math.floor((Date.now() - new Date(waitSince).getTime()) / 60000);
+									sortLabel = <span style={{ color: "#ff9500" }}>{elapsed < 1 ? "방금" : `${elapsed}분`}</span>;
 								}
 							}
-							// gameCount: 기본 "{N}회" 그대로 (infoLabel = undefined)
 
 							return (
-								<PlayerListRow
-									key={player.id}
-									player={player}
-									isPlaying={isPlaying}
-									onClick={() => onSelect(player)}
-									leading={renderLeading?.(player, meta)}
-									afterBadge={renderAfterBadge?.(player, meta)}
-									infoLabel={infoLabel}
-									buttonStyle={getButtonStyle?.(player, meta)}
-									disabled={isDisabled?.(player, meta)}
-								/>
+								<div key={player.id} style={{
+									position: "relative",
+									opacity: isPlaying ? 0.45 : 1,
+									filter: isPlaying ? "grayscale(0.5)" : "none",
+									transition: "opacity 0.15s",
+								}}>
+									<PlayerCard
+										name={player.name}
+										gender={player.gender}
+										skillScore={skillScore(player)}
+										size={photoSize}
+										selected={isSelected}
+										disabled={isDisabled?.(player, meta)}
+										onClick={() => onSelect(player)}
+									/>
+									{renderLeading?.(player, meta)}
+									{sortLabel && (
+										<div style={{
+											position: "absolute", top: 2, left: 0, right: 0,
+											textAlign: "center",
+											fontSize: 11, fontWeight: 800,
+											lineHeight: "18px",
+										}}>
+											<span style={{
+												background: "rgba(0,0,0,0.7)",
+												borderRadius: 6,
+												padding: "2px 6px",
+												backdropFilter: "blur(4px)",
+											}}>
+												{sortLabel}
+											</span>
+										</div>
+									)}
+								</div>
 							);
 						})}
 					</div>
