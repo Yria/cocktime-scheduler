@@ -19,5 +19,8 @@ BEGIN
   UPDATE session_players
   SET status = 'playing', force_mixed = false, force_hard_game = false
   WHERE id IN (p_team_a_p1, p_team_a_p2, p_team_b_p1, p_team_b_p2);
+
+  -- 3. 세션의 매치 배정 카운트 증가 (deficit 계산용)
+  UPDATE sessions SET match_assign_count = match_assign_count + 1 WHERE id = p_session_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

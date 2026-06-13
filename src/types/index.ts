@@ -3,15 +3,6 @@ export type Gender = "M" | "F";
 export type GameType = "혼복" | "남복" | "여복" | "혼합";
 export type PlayerStatus = "waiting" | "playing" | "resting";
 
-/** 팀 후보 생성 전략 */
-export type TeamStrategy =
-	| "gameCountBalanced"   // 게임수 균등 (기본)
-	| "coPlayerAvoidance"   // 동반자 회피
-	| "newCombination"      // 새 조합 우선
-	| "mixedCountBalanced"  // 혼복 참여 균등
-	| "skillBalanced"       // 실력 균형 최적
-	| "randomShuffle";      // 랜덤 셔플
-
 export interface PlayerSkills {
 	클리어: SkillLevel;
 	스매시: SkillLevel;
@@ -39,11 +30,10 @@ export interface SessionPlayer {
 	skills: PlayerSkills;
 	allowMixedSingle: boolean;
 	status: PlayerStatus;
-	forceMixed: boolean;
-	forceHardGame: boolean;
 	gameCount: number;
 	mixedCount: number;
 	waitSince: string | null;
+	joinedAtMatch: number;
 }
 
 /** 코트 내 현재 경기 — teamA/B는 session_players.id 참조 */
@@ -67,12 +57,14 @@ export interface GeneratedTeam {
 	teamB: [string, string];
 	gameType: GameType;
 	reason?: string;
-	strategy?: TeamStrategy;
 }
 
-/** 파트너 이력 — session_players.id (UUID) 기반 */
+/**
+ * 동반 이력 — session_players.id(UUID) → { 함께 경기한 상대 id: 누적 횟수 }.
+ * 같은 경기에 함께 들어간 4명(teamA+teamB) 그룹 전체를 서로 동반으로 누적한다(같은 팀 한정 아님).
+ */
 export interface PairHistory {
-	[sessionPlayerId: string]: Set<string>;
+	[sessionPlayerId: string]: Record<string, number>;
 }
 
 export interface SessionSettings {

@@ -104,6 +104,8 @@ export default function PlayerPickerList({
 	const [genderFilter, setGenderFilter] = useState<GenderFilter>(null);
 	const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 	const [sortBy, setSortBy] = useState<string>(sortOptions?.[0]?.value ?? "");
+	// 경과 시간 표시용 — 마운트 시 1회 캡처(렌더 중 Date.now 직접 호출 회피)
+	const [renderNow] = useState(() => Date.now());
 
 	const hasEnoughForFilters = players.length >= searchThreshold;
 	const showSearchBar = showSearch && hasEnoughForFilters;
@@ -141,9 +143,10 @@ export default function PlayerPickerList({
 			if (sortBy === "waitTime") {
 				// 경기중 선수를 하단으로
 				if (a.isPlaying !== b.isPlaying) return a.isPlaying ? 1 : -1;
-				// waitSince가 빠를수록(오래 기다릴수록) 우선
-				const aWait = a.waitSince ? new Date(a.waitSince).getTime() : Date.now();
-				const bWait = b.waitSince ? new Date(b.waitSince).getTime() : Date.now();
+				// waitSince가 빠를수록(오래 기다릴수록) 우선. 없는 후보는 맨 뒤로(MAX).
+				// (Date.now() 같은 비순수 호출을 비교 함수에 두면 정렬 일관성이 깨질 수 있어 상수 사용)
+				const aWait = a.waitSince ? new Date(a.waitSince).getTime() : Number.MAX_SAFE_INTEGER;
+				const bWait = b.waitSince ? new Date(b.waitSince).getTime() : Number.MAX_SAFE_INTEGER;
 				return aWait - bWait;
 			}
 			// 기본(첫 번째 옵션 또는 "fitness"/"fit"/"추천순"): rank 기준 (외부에서 정렬된 순서 유지)
@@ -282,7 +285,7 @@ export default function PlayerPickerList({
 								if (isPlaying) {
 									sortLabel = <span style={{ color: "#8e8e93" }}>경기중</span>;
 								} else if (waitSince) {
-									const elapsed = Math.floor((Date.now() - new Date(waitSince).getTime()) / 60000);
+									const elapsed = Math.floor((renderNow - new Date(waitSince).getTime()) / 60000);
 									sortLabel = <span style={{ color: "#ff9500" }}>{elapsed < 1 ? "방금" : `${elapsed}분`}</span>;
 								}
 							}
@@ -290,8 +293,7 @@ export default function PlayerPickerList({
 							return (
 								<div key={player.id} style={{
 									position: "relative",
-									opacity: isPlaying ? 0.45 : 1,
-									filter: isPlaying ? "grayscale(0.5)" : "none",
+									opacity: isPlaying ? 0.7 : 1,
 									transition: "opacity 0.15s",
 								}}>
 									<PlayerCard
@@ -304,6 +306,17 @@ export default function PlayerPickerList({
 										onClick={() => onSelect(player)}
 									/>
 									{renderLeading?.(player, meta)}
+									{isPlaying && (
+										<div style={{ position: "absolute", top: 2, left: 2, zIndex: 1, pointerEvents: "none" }}>
+											<span style={{
+												fontSize: 9, fontWeight: 700, color: "#fff",
+												background: "rgba(52,199,89,0.95)",
+												borderRadius: 5, padding: "1px 4px",
+											}}>
+												경기중
+											</span>
+										</div>
+									)}
 									{sortLabel && (
 										<div style={{
 											position: "absolute", top: 2, left: 0, right: 0,

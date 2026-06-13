@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
 	Navigate,
 	Route,
@@ -6,9 +6,10 @@ import {
 	useLocation,
 	useNavigate,
 } from "react-router-dom";
+import SessionBoard from "./components/board/SessionBoard";
+import Toaster from "./components/common/Toaster";
 import Home from "./components/Home";
 import LogPage from "./components/LogPage";
-import SessionMain from "./components/SessionMain";
 import SessionSetup from "./components/SessionSetup";
 import { usePageVisibility } from "./hooks/usePageVisibility";
 import type { SessionRow } from "./lib/supabase";
@@ -34,10 +35,10 @@ export default function App() {
 
 	const allPlayers = useAppStore((s) => s.allPlayers);
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
-
-	const [sessionLoading, setSessionLoading] = useState(true);
+	const sessionChecked = useAppStore((s) => s.sessionChecked);
 
 	const sessionMetaRef = useRef<number | null>(null);
+	const initialPathRef = useRef(window.location.pathname);
 	const currentPathRef = useRef(window.location.pathname);
 	const location = useLocation();
 
@@ -53,21 +54,22 @@ export default function App() {
 	const applySession = useCallback(
 		async (row: SessionRow) => {
 			const success = await appActions.loadSession(row);
-			if (success && !currentPathRef.current.includes("/setup")) {
+			const path = currentPathRef.current;
+			if (success && !path.includes("/setup")) {
 				navRef.current("/session", { replace: true });
 			}
 		},
 		[],
 	);
 
-	// 마운트 시 활성 세션 확인 → 홈(/)에서만 세션 페이지로 자동 이동
+	// 마운트 시 활성 세션 확인 → 초기 URL이 홈(/)일 때만 세션 페이지로 자동 이동.
+	// setup/session 등 특정 경로로 진입했다면 그 경로 유지.
 	useEffect(() => {
 		async function check() {
 			const hasActive = await appActions.checkActiveSession();
-			if (hasActive && currentPathRef.current === "/") {
+			if (hasActive && initialPathRef.current === "/") {
 				navRef.current("/session", { replace: true });
 			}
-			setSessionLoading(false);
 		}
 		check();
 	}, []);
@@ -120,24 +122,18 @@ export default function App() {
 		[],
 	);
 
-	const handleSessionEnd = useCallback(() => {
-		appActions.setSessionMeta(null);
-		useSessionStore.getState().reset();
-		appActions.resetSetupState();
-		navRef.current("/setup");
-	}, []);
-
-	const handleSessionBack = useCallback(() => {
-		navRef.current("/setup");
-	}, []);
-
-	if (sessionLoading) {
+	if (!sessionChecked) {
 		return (
 			<div className="md:max-w-sm md:mx-auto min-h-[100dvh] flex items-center justify-center">
 				<p className="text-gray-400 dark:text-gray-500 text-sm">연결 중...</p>
 			</div>
 		);
 	}
+
+	// sessionChecked와 sessionMeta는 같은 zustand set()에 묶여 있어 한 렌더에 반영됨.
+	// checked=true && sessionMeta=null은 "세션 없음 확정" 상태.
+	const sessionGuarded = (element: React.ReactNode) =>
+		sessionMeta ? element : <Navigate to="/" replace />;
 
 	return (
 		<div className="md:max-w-sm md:mx-auto md:shadow-[0_0_80px_rgba(0,0,0,0.4)]">
@@ -155,20 +151,16 @@ export default function App() {
 				/>
 				<Route
 					path="/session"
-					element={
-						sessionMeta ? (
-							<SessionMain
-								onBack={handleSessionBack}
-								onEnd={handleSessionEnd}
-							/>
-						) : (
-							<Navigate to="/" replace />
-						)
-					}
+					element={sessionGuarded(<SessionBoard />)}
+				/>
+				<Route
+					path="/session/board"
+					element={<Navigate to="/session" replace />}
 				/>
 				<Route path="/logs" element={<LogPage />} />
 				<Route path="*" element={<Navigate to="/" replace />} />
 			</Routes>
+			<Toaster />
 		</div>
 	);
 }

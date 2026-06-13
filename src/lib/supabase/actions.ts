@@ -83,62 +83,6 @@ export async function dbUpdateSessionPlayer(
 	return rowToSessionPlayer(data as SessionPlayerRow);
 }
 
-export async function dbToggleResting(
-	player: SessionPlayer,
-): Promise<SessionPlayer | null> {
-	const isResting = player.status === "resting";
-	const updates: Record<string, unknown> = isResting
-		? { status: "waiting", wait_since: new Date().toISOString() }
-		: { status: "resting", wait_since: null };
-
-	const { data, error } = await supabase
-		.from("session_players")
-		.update(updates)
-		.eq("id", player.id)
-		.select()
-		.single();
-
-	if (error) {
-		console.error("dbToggleResting:", error);
-		return null;
-	}
-	return rowToSessionPlayer(data as SessionPlayerRow);
-}
-
-export async function dbToggleForceMixed(
-	player: SessionPlayer,
-): Promise<SessionPlayer | null> {
-	const { data, error } = await supabase
-		.from("session_players")
-		.update({ force_mixed: !player.forceMixed })
-		.eq("id", player.id)
-		.select()
-		.single();
-
-	if (error) {
-		console.error("dbToggleForceMixed:", error);
-		return null;
-	}
-	return rowToSessionPlayer(data as SessionPlayerRow);
-}
-
-export async function dbToggleForceHardGame(
-	player: SessionPlayer,
-): Promise<SessionPlayer | null> {
-	const { data, error } = await supabase
-		.from("session_players")
-		.update({ force_hard_game: !player.forceHardGame })
-		.eq("id", player.id)
-		.select()
-		.single();
-
-	if (error) {
-		console.error("dbToggleForceHardGame:", error);
-		return null;
-	}
-	return rowToSessionPlayer(data as SessionPlayerRow);
-}
-
 export async function dbEndSession(sessionId: number): Promise<void> {
 	const { error } = await supabase
 		.from("sessions")

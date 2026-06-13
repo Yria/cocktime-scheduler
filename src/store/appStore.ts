@@ -7,7 +7,6 @@ import {
 	updatePlayerWithToken,
 } from "../lib/sheetsApi";
 import {
-	dbSaveTeamCandidates,
 	dbUpdateSessionPlayer,
 	fetchActiveSession,
 	fetchSessionSnapshot,
@@ -30,6 +29,7 @@ export interface SessionMeta {
 interface AppState {
 	allPlayers: Player[];
 	sessionMeta: SessionMeta | null;
+	sessionChecked: boolean;
 
 	fetchPlayersAction: () => Promise<void>;
 	loadSessionAction: (row: SessionRow) => Promise<boolean>;
@@ -54,11 +54,13 @@ interface AppState {
 	resetSetupState: () => void;
 }
 
-let _loadingSessionId: number | null = null;
+let _loadingPromise: { sessionId: number; promise: Promise<boolean> } | null =
+	null;
 
 export const useAppStore = create<AppState>((set, get) => ({
 	allPlayers: [],
 	sessionMeta: null,
+	sessionChecked: false,
 	_sessionWatchChannel: null,
 
 	setupGuests: [],
@@ -74,69 +76,82 @@ export const useAppStore = create<AppState>((set, get) => ({
 	},
 
 	loadSessionAction: async (row: SessionRow) => {
-		// 이미 같은 세션이 로드되었거나 로딩 중이면 스킵 (동시 호출 방지)
+		// 이미 같은 세션이 로드되었으면 스킵
 		if (get().sessionMeta?.sessionId === row.id) {
 			return true;
 		}
-		if (_loadingSessionId === row.id) {
-			return true;
+		// 같은 세션 로딩이 진행 중이면 그 Promise를 공유
+		if (_loadingPromise && _loadingPromise.sessionId === row.id) {
+			return _loadingPromise.promise;
 		}
-		_loadingSessionId = row.id;
-		try {
-			const [snapshot, players] = await Promise.all([
-				fetchSessionSnapshot(row.id),
-				fetchPlayers().catch(() => [] as Player[]),
-			]);
-			if (!snapshot) return false;
 
-			// 비동기 대기 중 다른 호출이 먼저 완료했을 수 있음
-			if (get().sessionMeta?.sessionId === row.id) return true;
+		const promise = (async (): Promise<boolean> => {
+			try {
+				const [snapshot, players] = await Promise.all([
+					fetchSessionSnapshot(row.id),
+					fetchPlayers().catch(() => [] as Player[]),
+				]);
+				if (!snapshot) return false;
 
-			const clientState = snapshotToClientState(snapshot);
-			const singleWomanIds = snapshot.players
-				.filter((p) => p.allowMixedSingle)
-				.map((p) => p.playerId);
+				// 비동기 대기 중 다른 호출이 먼저 완료했을 수 있음
+				if (get().sessionMeta?.sessionId === row.id) return true;
 
-			if (players.length > 0) {
-				set({ allPlayers: players });
+				const clientState = snapshotToClientState(snapshot);
+				const singleWomanIds = snapshot.players
+					.filter((p) => p.allowMixedSingle)
+					.map((p) => p.playerId);
+
+				if (players.length > 0) {
+					set({ allPlayers: players });
+				}
+
+				const loadedPlayerIdSet = new Set(players.map((p) => p.id));
+				const guests: Player[] = snapshot.players
+					.filter((p) => !loadedPlayerIdSet.has(p.playerId))
+					.map((p) => ({
+						id: p.playerId,
+						name: p.name,
+						gender: p.gender,
+						skills: p.skills,
+					}));
+
+				// sessionStore를 스냅샷으로 직접 초기화 (1회성, 이후에는 broadcast로만 업데이트)
+				useSessionStore.getState().initialize(clientState);
+
+				set({
+					sessionMeta: {
+						sessionId: row.id,
+						courtCount: row.court_count,
+						singleWomanIds,
+					},
+					setupGuests: guests,
+					sessionChecked: true,
+				});
+				return true;
+			} catch (e) {
+				console.error("Failed to load session:", e);
+				return false;
+			} finally {
+				_loadingPromise = null;
 			}
+		})();
 
-			const loadedPlayerIdSet = new Set(players.map((p) => p.id));
-			const guests: Player[] = snapshot.players
-				.filter((p) => !loadedPlayerIdSet.has(p.playerId))
-				.map((p) => ({
-					id: p.playerId,
-					name: p.name,
-					gender: p.gender,
-					skills: p.skills,
-				}));
-
-			// sessionStore를 스냅샷으로 직접 초기화 (1회성, 이후에는 broadcast로만 업데이트)
-			useSessionStore.getState().initialize(clientState);
-
-			set({
-				sessionMeta: {
-					sessionId: row.id,
-					courtCount: row.court_count,
-					singleWomanIds,
-				},
-				setupGuests: guests,
-			});
-			return true;
-		} catch (e) {
-			console.error("Failed to load session:", e);
-			return false;
-		} finally {
-			_loadingSessionId = null;
-		}
+		_loadingPromise = { sessionId: row.id, promise };
+		return promise;
 	},
 
 	checkActiveSessionAction: async () => {
 		const row = await fetchActiveSession();
 		if (row?.is_active) {
-			if (get().sessionMeta?.sessionId === row.id) return true;
-			return await get().loadSessionAction(row);
+			if (get().sessionMeta?.sessionId === row.id) {
+				set({ sessionChecked: true });
+				return true;
+			}
+			const ok = await get().loadSessionAction(row);
+			set({ sessionChecked: true });
+			return ok;
 		}
+		set({ sessionChecked: true });
 		return false;
 	},
 
@@ -147,18 +162,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 		const { sessionMeta } = get();
 
 		if (sessionMeta) {
-			// 참가자 변경 여부 확인 (팀 후보 재생성 여부 결정)
-			const currentPlayerIds = new Set(selected.map((p) => p.id));
-			const { sessionPlayers } = useSessionStore.getState();
-			const previousPlayerIds = new Set(
-				[...sessionPlayers.values()].map((p) => p.playerId),
-			);
-
-			const playersChanged =
-				currentPlayerIds.size !== previousPlayerIds.size ||
-				[...currentPlayerIds].some((id) => !previousPlayerIds.has(id)) ||
-				[...previousPlayerIds].some((id) => !currentPlayerIds.has(id));
-
 			const success = await updateSession(
 				sessionMeta.sessionId,
 				settings.courtCount,
@@ -172,12 +175,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 			if (!snapshot) return false;
 
 			const clientState = snapshotToClientState(snapshot);
-
-			// 참가자가 변경되면 기존 후보 초기화 (SessionMain에서 자동 보충됨)
-			if (playersChanged) {
-				await dbSaveTeamCandidates(sessionMeta.sessionId, []);
-				clientState.candidateTeams = [];
-			}
 
 			// sessionStore를 DB 상태로 완전히 재초기화
 			useSessionStore.getState().initialize(clientState);
@@ -208,15 +205,16 @@ export const useAppStore = create<AppState>((set, get) => ({
 			match: null as null,
 		}));
 
-		// 새 세션의 초기 상태를 sessionStore에 직접 설정 (팀 후보는 SessionMain에서 자동 생성됨)
+		// 새 세션의 초기 상태를 sessionStore에 직접 설정
 		useSessionStore.getState().initialize({
 			courts,
 			players: sessionPlayers,
 			waitingIds: sessionPlayers.map((p) => p.id),
 			restingIds: [],
 			pairHistory: {},
-			candidateTeams: [],
-			matchQueue: [],
+			matchAssignCount: 0,
+			lastGameType: {},
+			boardDrafts: { teams: [], reservations: [] },
 		});
 
 		set({
@@ -273,10 +271,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 					if (updated) {
 						useSessionStore
 							.getState()
-							.applyBroadcast(
-								{ event: "player_updated", payload: { player: updated } },
-								() => {},
-							);
+							.applyBroadcast({
+								event: "player_updated",
+								payload: { player: updated },
+							});
 						const { _channel } = useSessionStore.getState();
 						if (_channel) {
 							sendBroadcast(_channel, {

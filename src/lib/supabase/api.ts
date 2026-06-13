@@ -5,10 +5,10 @@ import type {
 	PlayerSkills,
 	SessionPlayer,
 } from "../../types";
+import type { BoardDraftsPayload } from "../../types/board";
 import { supabase } from "./client";
 import { rowToSessionPlayer } from "./transformers";
 import type {
-	ManualMatchSnapshot,
 	MatchRow,
 	PairHistoryRow,
 	SessionPlayerRow,
@@ -40,7 +40,7 @@ export async function fetchActiveSession(): Promise<SessionRow | null> {
 export async function fetchSessionSnapshot(
 	sessionId: number,
 ): Promise<SessionSnapshot | null> {
-	const [sessionRes, playersRes, matchesRes, pairHistRes, candidatesRes] =
+	const [sessionRes, playersRes, matchesRes, pairHistRes] =
 		await Promise.all([
 			supabase.from("sessions").select("*").eq("id", sessionId).single(),
 			supabase
@@ -55,11 +55,6 @@ export async function fetchSessionSnapshot(
 				.eq("session_id", sessionId)
 				.eq("status", "playing"),
 			supabase.from("pair_history").select("*").eq("session_id", sessionId),
-			supabase
-				.from("team_candidates")
-				.select("*")
-				.eq("session_id", sessionId)
-				.order("queue_position", { ascending: true }),
 		]);
 
 	if (!sessionRes.data) return null;
@@ -71,7 +66,6 @@ export async function fetchSessionSnapshot(
 		),
 		matches: (matchesRes.data ?? []) as MatchRow[],
 		pairHistory: (pairHistRes.data ?? []) as PairHistoryRow[],
-		teamCandidates: (candidatesRes.data ?? []) as import("./types").TeamCandidateRow[],
 	};
 }
 
@@ -98,7 +92,7 @@ export async function startSession(
 	}
 
 	const singleWomanIdSet = new Set(singleWomanIds);
-	const now = new Date().toISOString();
+	const nowIso = new Date().toISOString();
 	const rows = players.map((p) => ({
 		session_id: session.id,
 		player_id: p.id,
@@ -107,7 +101,7 @@ export async function startSession(
 		skills: p.skills,
 		allow_mixed_single: p.gender === "F" && singleWomanIdSet.has(p.id),
 		status: "waiting",
-		wait_since: now,
+		wait_since: nowIso,
 	}));
 
 	const { data: playerRows, error: pe } = await supabase
@@ -147,9 +141,9 @@ export async function updateSession(
 	const newPlayerMap = new Map(players.map((p) => [p.id, p]));
 	const singleWomanIdSet = new Set(singleWomanIds);
 
-	const now = new Date().toISOString();
+	const nowIso = new Date().toISOString();
 
-	// 추가할 플레이어
+	// 추가할 플레이어 (waiting 상태로 삽입)
 	const playersToAdd = players
 		.filter((p) => !existingMap.has(p.id))
 		.map((p) => ({
@@ -160,7 +154,8 @@ export async function updateSession(
 			skills: p.skills,
 			allow_mixed_single: p.gender === "F" && singleWomanIdSet.has(p.id),
 			status: "waiting",
-			wait_since: now,
+			wait_since: nowIso,
+			joined_at_match: 0,
 		}));
 
 	// 변경된 플레이어만 upsert, 삭제할 플레이어 id 수집
@@ -323,7 +318,7 @@ export async function fetchSessionPlayers(
 }
 
 export async function dbClearSessionLogs(sessionId: number): Promise<boolean> {
-	const [{ error: matchErr }, { error: playerErr }] = await Promise.all([
+	const [{ error: matchErr }, { error: playerErr }, { error: sessionErr }] = await Promise.all([
 		supabase
 			.from("matches")
 			.delete()
@@ -331,16 +326,21 @@ export async function dbClearSessionLogs(sessionId: number): Promise<boolean> {
 			.eq("status", "completed"),
 		supabase
 			.from("session_players")
-			.update({ game_count: 0, mixed_count: 0 })
+			.update({ game_count: 0, mixed_count: 0, joined_at_match: 0 })
 			.eq("session_id", sessionId),
+		supabase
+			.from("sessions")
+			.update({ match_assign_count: 0 })
+			.eq("id", sessionId),
 	]);
 
 	if (matchErr) console.error("dbClearSessionLogs matches:", matchErr);
 	if (playerErr) console.error("dbClearSessionLogs players:", playerErr);
+	if (sessionErr) console.error("dbClearSessionLogs session:", sessionErr);
 
 	await supabase.from("pair_history").delete().eq("session_id", sessionId);
 
-	return !matchErr && !playerErr;
+	return !matchErr && !playerErr && !sessionErr;
 }
 
 // ── 충돌 감지용 서버 상태 조회 ──────────────────────────
@@ -410,85 +410,25 @@ export async function fetchSessionPlayerForConflictCheck(
 	return { gender: row.gender, skills: row.skills };
 }
 
-// ── Team Candidates API ──────────────────────────────────
-
-import type { GeneratedTeam } from "../../types";
-import { QUEUE_POSITION_OFFSET } from "./transformers";
+// ── 보드 drafts 저장 ──────────────────────────────────
 
 /**
- * 세션의 팀 후보를 삭제하고 새로운 후보들을 저장한다 (큐 아이템은 보존).
+ * 보드 "팀 구성중"(drafts)/예약 멤버십을 세션에 저장한다(위치 제외).
+ * sessions.board_drafts JSONB 한 컬럼을 통째로 교체.
  */
-export async function dbSaveTeamCandidates(
+export async function dbSaveBoardDrafts(
 	sessionId: number,
-	candidates: GeneratedTeam[],
+	payload: BoardDraftsPayload,
 ): Promise<boolean> {
-	const rows = candidates.map((team, index) => ({
-		queue_position: index,
-		game_type: team.gameType,
-		team_a_p1: team.teamA[0],
-		team_a_p2: team.teamA[1],
-		team_b_p1: team.teamB[0],
-		team_b_p2: team.teamB[1],
-		reason: team.reason ?? null,
-		strategy: team.strategy ?? null,
-		is_new: false,
-	}));
-
-	const { error } = await supabase.rpc("save_team_candidates", {
-		p_session_id: sessionId,
-		p_candidates: JSON.stringify(rows),
-	});
-
-	if (error) {
-		console.error("dbSaveTeamCandidates:", error);
-		return false;
-	}
-	return true;
-}
-
-/**
- * 매치 큐를 삭제하고 새로운 큐 아이템을 저장한다 (팀 후보는 보존).
- */
-export async function dbSaveMatchQueue(
-	sessionId: number,
-	queue: GeneratedTeam[],
-): Promise<boolean> {
-	const rows = queue.map((team, index) => ({
-		queue_position: QUEUE_POSITION_OFFSET + index,
-		game_type: team.gameType,
-		team_a_p1: team.teamA[0],
-		team_a_p2: team.teamA[1],
-		team_b_p1: team.teamB[0],
-		team_b_p2: team.teamB[1],
-		reason: team.reason ?? null,
-		strategy: team.strategy ?? null,
-		is_new: false,
-	}));
-
-	const { error } = await supabase.rpc("save_match_queue", {
-		p_session_id: sessionId,
-		p_queue: JSON.stringify(rows),
-	});
-
-	if (error) {
-		console.error("dbSaveMatchQueue:", error);
-		return false;
-	}
-	return true;
-}
-
-// ── 수동 매칭 로그 ────────────────────────────────────
-
-export async function dbLogManualMatch(
-	sessionId: number,
-	snapshot: ManualMatchSnapshot,
-): Promise<void> {
 	const { error } = await supabase
-		.from("manual_match_logs")
-		.insert({ session_id: sessionId, snapshot });
+		.from("sessions")
+		.update({ board_drafts: payload })
+		.eq("id", sessionId);
 
 	if (error) {
-		console.error("Failed to log manual match:", error);
+		console.error("dbSaveBoardDrafts:", error);
+		return false;
 	}
+	return true;
 }
 

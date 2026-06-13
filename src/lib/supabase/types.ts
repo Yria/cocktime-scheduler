@@ -14,6 +14,8 @@ export interface SessionRow {
 	court_count: number;
 	started_at: string;
 	ended_at: string | null;
+	match_assign_count: number;
+	board_drafts: import("../../types/board").BoardDraftsPayload | null;
 }
 
 export interface SessionPlayerRow {
@@ -25,12 +27,11 @@ export interface SessionPlayerRow {
 	skills: PlayerSkills;
 	allow_mixed_single: boolean;
 	status: PlayerStatus;
-	force_mixed: boolean;
-	force_hard_game: boolean;
 	game_count: number;
 	mixed_count: number;
 	wait_since: string | null;
 	joined_at: string;
+	joined_at_match: number;
 }
 
 export interface MatchRow {
@@ -54,72 +55,11 @@ export interface PairHistoryRow {
 	count: number;
 }
 
-export interface TeamCandidateRow {
-	id: string;
-	session_id: number;
-	queue_position: number;
-	game_type: GameType;
-	team_a_p1: string;
-	team_a_p2: string;
-	team_b_p1: string;
-	team_b_p2: string;
-	reason: string | null;
-	strategy: string | null;
-	is_new: boolean;
-}
-
-export interface ManualMatchLogRow {
-	id?: string;
-	session_id: number;
-	created_at?: string;
-	snapshot: ManualMatchSnapshot;
-}
-
-export interface ManualMatchSnapshot {
-	chosen_players: PlayerSnapshot[];
-	chosen_score: number;
-	candidate_teams: CandidateSnapshot[];
-	waiting_pool: PlayerSnapshot[];
-	playing_pool: PlayerSnapshot[];
-	context: ContextSnapshot;
-}
-
-export interface PlayerSnapshot {
-	id: string;
-	player_id: string;
-	name: string;
-	gender: Gender;
-	skills: PlayerSkills;
-	skill_score: number;
-	game_count: number;
-	mixed_count: number;
-	status: PlayerStatus;
-	is_resting: boolean;
-	force_mixed: boolean;
-	force_hard_game: boolean;
-	allow_mixed_single: boolean;
-	wait_since: string | null;
-}
-
-export interface CandidateSnapshot {
-	team_a: [string, string];
-	team_b: [string, string];
-	game_type: GameType;
-	reason?: string;
-}
-
-export interface ContextSnapshot {
-	pair_history: Record<string, string[]>;
-	last_co_players: Record<string, string[]>;
-	single_woman_ids: string[];
-}
-
 export interface SessionSnapshot {
 	session: SessionRow;
 	players: SessionPlayer[];
 	matches: MatchRow[];
 	pairHistory: PairHistoryRow[];
-	teamCandidates: TeamCandidateRow[];
 }
 
 export interface ClientSessionState {
@@ -128,6 +68,9 @@ export interface ClientSessionState {
 	waitingIds: string[];
 	restingIds: string[];
 	pairHistory: PairHistory;
-	candidateTeams: import("../../types").GeneratedTeam[];
-	matchQueue: import("../../types").GeneratedTeam[];
+	matchAssignCount: number;
+	/** session_player.id → 직전(또는 진행중) 경기의 게임 타입. 추천 로테이션 점수용. */
+	lastGameType: Record<string, import("../../types").GameType>;
+	/** 보드 "팀 구성중"/예약 멤버십(공유). 위치는 클라이언트 로컬에서 결정. */
+	boardDrafts: import("../../types/board").BoardDraftsPayload;
 }

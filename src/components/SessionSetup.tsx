@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
 	fetchSessionSettingsForConflictCheck,
 	type ServerSessionSettings,
@@ -24,6 +25,7 @@ import {
 import { SingleWomanSelector } from "./setup/SingleWomanSelector";
 
 export default function SessionSetup({ onStart }: Props) {
+	const navigate = useNavigate();
 	const guests = useAppStore((s) => s.setupGuests);
 
 	const [courtCount, setCourtCount] = useState(2);
@@ -46,6 +48,9 @@ export default function SessionSetup({ onStart }: Props) {
 		toggleAll,
 		sessionMeta,
 	} = useSetupPlayers(guests);
+
+	// 진행 중인 세션이 있으면 보드로, 없으면 홈으로 복귀 (보드 ↔ 세션 설정 왕복)
+	const handleBack = () => navigate(sessionMeta ? "/session" : "/");
 
 	// 초기 코트수/혼복싱글 복원 (세션 업데이트 모드)
 	const [initialized, setInitialized] = useState(false);
@@ -176,6 +181,16 @@ export default function SessionSetup({ onStart }: Props) {
 					paddingTop: "env(safe-area-inset-top)",
 				}}
 			>
+				<button
+					type="button"
+					onClick={handleBack}
+					aria-label="뒤로"
+					className="-ml-2 mr-1 p-2 text-[#0b84ff] flex items-center"
+				>
+					<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+						<polyline points="15 18 9 12 15 6" />
+					</svg>
+				</button>
 				<span
 					className="font-bold tracking-tight text-[#0f1724] dark:text-white"
 					style={{ fontSize: 17 }}

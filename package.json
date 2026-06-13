@@ -19,10 +19,14 @@
 	"dependencies": {
 		"@supabase/supabase-js": "^2.97.0",
 		"es-hangul": "^2.3.8",
+		"immer": "^11.1.4",
+		"konva": "^10.2.5",
 		"lucide-react": "^1.0.1",
 		"react": "^19.2.0",
 		"react-dom": "^19.2.0",
+		"react-konva": "^19.2.3",
 		"react-router-dom": "^7.13.0",
+		"use-image": "^1.1.4",
 		"zustand": "^5.0.11"
 	},
 	"devDependencies": {

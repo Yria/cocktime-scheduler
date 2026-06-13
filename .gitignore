@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 scripts/.venv/
+scripts/__pycache__/
+
+# Tooling artifacts
+.playwright-mcp/
 
 # Editor directories and files
 .vscode/*

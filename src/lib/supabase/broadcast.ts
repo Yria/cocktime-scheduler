@@ -1,5 +1,5 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import type { GameType, GeneratedTeam, SessionPlayer } from "../../types";
+import type { GameType, SessionPlayer } from "../../types";
 import { supabase } from "./client";
 
 export type BroadcastPayload =
@@ -25,33 +25,16 @@ export type BroadcastPayload =
 			};
 	  }
 	| {
-			event: "player_status_changed";
-			payload: { player: SessionPlayer };
-	  }
-	| {
-			event: "player_force_mixed_changed";
-			payload: { player: SessionPlayer };
-	  }
-	| {
-			event: "player_force_hard_game_changed";
-			payload: { player: SessionPlayer };
-	  }
-	| {
 			event: "player_updated";
 			payload: { player: SessionPlayer };
 	  }
-	| { event: "session_ended" }
 	| {
 			event: "session_refresh_required";
 			payload: Record<string, never>;
 	  }
 	| {
-			event: "candidates_updated";
-			payload: { candidates: GeneratedTeam[] };
-	  }
-	| {
-			event: "queue_updated";
-			payload: { queue: GeneratedTeam[]; restoredPlayers?: SessionPlayer[] };
+			event: "board_drafts_updated";
+			payload: import("../../types/board").BoardDraftsPayload;
 	  };
 
 export function createBroadcastChannel(sessionId: number): RealtimeChannel {

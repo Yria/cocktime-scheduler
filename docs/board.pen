@@ -1,0 +1,3495 @@
+{
+  "version": "2.11",
+  "children": [
+    {
+      "type": "frame",
+      "id": "OLFJd",
+      "x": 0,
+      "y": -200,
+      "name": "Component/PlayerMagnet",
+      "reusable": true,
+      "clip": true,
+      "width": 76,
+      "height": 76,
+      "fill": "#00000000",
+      "cornerRadius": 38,
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "#00000033",
+        "offset": {
+          "x": 0,
+          "y": 2
+        },
+        "blur": 8
+      },
+      "layout": "vertical",
+      "gap": 2,
+      "padding": [
+        0,
+        8,
+        8,
+        8
+      ],
+      "justifyContent": "end",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "ellipse",
+          "id": "WanRc",
+          "layoutPosition": "absolute",
+          "x": 0,
+          "y": 0,
+          "fill": "#818CF8",
+          "width": 76,
+          "height": 76
+        },
+        {
+          "type": "frame",
+          "id": "xtOvC",
+          "layoutPosition": "absolute",
+          "x": 0,
+          "y": 22,
+          "name": "ov",
+          "width": 76,
+          "height": 54,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 0,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "#000000E6",
+                "position": 0
+              },
+              {
+                "color": "#00000000",
+                "position": 1
+              }
+            ]
+          },
+          "layout": "vertical",
+          "gap": 2,
+          "padding": [
+            0,
+            8,
+            8,
+            8
+          ],
+          "justifyContent": "end",
+          "alignItems": "center"
+        },
+        {
+          "type": "ellipse",
+          "id": "ToYPm",
+          "layoutPosition": "absolute",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "innerRadius": 0.84,
+          "fill": "#FFFFFF20",
+          "width": 76,
+          "height": 76
+        },
+        {
+          "type": "ellipse",
+          "id": "O3VNM",
+          "layoutPosition": "absolute",
+          "x": 0,
+          "y": 0,
+          "name": "fg",
+          "innerRadius": 0.84,
+          "startAngle": 90,
+          "sweepAngle": -228,
+          "fill": "#FFFFFFCC",
+          "width": 76,
+          "height": 76
+        },
+        {
+          "type": "text",
+          "id": "ZSVcm",
+          "fill": "#FFFFFF",
+          "content": "김민수",
+          "fontFamily": "Inter",
+          "fontSize": 13,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "EI0d8",
+      "x": 120,
+      "y": -200,
+      "name": "Component/EmptySlot",
+      "reusable": true,
+      "width": 56,
+      "height": 56,
+      "cornerRadius": 28,
+      "stroke": {
+        "align": "center",
+        "thickness": 2,
+        "fill": "#475569"
+      },
+      "layout": "vertical",
+      "justifyContent": "center",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "icon_font",
+          "id": "kkmU2",
+          "width": 20,
+          "height": 20,
+          "iconFontName": "plus",
+          "iconFontFamily": "lucide",
+          "fill": "#475569"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "hZJ9t",
+      "x": 0,
+      "y": -40,
+      "fill": "#64748B",
+      "content": "M1. 초기 상태 (Dark)",
+      "fontFamily": "Inter",
+      "fontSize": 14,
+      "fontWeight": "600"
+    },
+    {
+      "type": "frame",
+      "id": "bsIAq",
+      "x": 0,
+      "y": 0,
+      "name": "M1. 초기 상태",
+      "theme": {
+        "mode": "dark"
+      },
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "$bg-board",
+      "cornerRadius": 24,
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "$shadow-color",
+        "blur": 60
+      },
+      "layout": "none",
+      "children": [
+        {
+          "type": "frame",
+          "id": "sVX7v",
+          "x": 0,
+          "y": 0,
+          "name": "tb",
+          "width": 390,
+          "height": 48,
+          "fill": "$bg-toolbar",
+          "padding": [
+            0,
+            12
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "eyxrG",
+              "name": "bb",
+              "cornerRadius": 8,
+              "gap": 4,
+              "padding": [
+                6,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "HodCN",
+                  "width": 16,
+                  "height": 16,
+                  "iconFontName": "arrow-left",
+                  "iconFontFamily": "lucide",
+                  "fill": "$text-secondary"
+                },
+                {
+                  "type": "text",
+                  "id": "wYqjS",
+                  "fill": "$text-secondary",
+                  "content": "뒤로",
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "q2Az9",
+              "fill": "$text-primary",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "세션 보드",
+              "textAlign": "center",
+              "fontFamily": "Inter",
+              "fontSize": 14,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "id": "7OUW1",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 30,
+          "y": 80,
+          "descendants": {
+            "O3VNM": {
+              "sweepAngle": -270
+            },
+            "ZSVcm": {
+              "content": "김민수"
+            }
+          }
+        },
+        {
+          "id": "zLkoo",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 180,
+          "y": 100,
+          "descendants": {
+            "WanRc": {
+              "fill": "#F472B6"
+            },
+            "O3VNM": {
+              "sweepAngle": -228
+            },
+            "ZSVcm": {
+              "content": "이지훈"
+            }
+          }
+        },
+        {
+          "id": "eNUrd",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 280,
+          "y": 200,
+          "descendants": {
+            "WanRc": {
+              "fill": "#34D399"
+            },
+            "O3VNM": {
+              "sweepAngle": -312
+            },
+            "ZSVcm": {
+              "content": "박서연"
+            }
+          }
+        },
+        {
+          "id": "2uOyY",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 60,
+          "y": 220,
+          "descendants": {
+            "WanRc": {
+              "fill": "#FBBF24"
+            },
+            "O3VNM": {
+              "sweepAngle": -180
+            },
+            "ZSVcm": {
+              "content": "최준호"
+            }
+          }
+        },
+        {
+          "id": "nLwRu",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 200,
+          "y": 330,
+          "descendants": {
+            "WanRc": {
+              "fill": "#60A5FA"
+            },
+            "O3VNM": {
+              "sweepAngle": -252
+            },
+            "ZSVcm": {
+              "content": "정하윤"
+            }
+          }
+        },
+        {
+          "id": "xrF6U",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 40,
+          "y": 430,
+          "descendants": {
+            "WanRc": {
+              "fill": "#F87171"
+            },
+            "O3VNM": {
+              "sweepAngle": -210
+            },
+            "ZSVcm": {
+              "content": "한예진"
+            }
+          }
+        },
+        {
+          "id": "3hEHU",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 190,
+          "y": 500,
+          "descendants": {
+            "WanRc": {
+              "fill": "#2DD4BF"
+            },
+            "O3VNM": {
+              "sweepAngle": -288
+            },
+            "ZSVcm": {
+              "content": "윤도현"
+            }
+          }
+        },
+        {
+          "id": "R5q3U",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 280,
+          "y": 610,
+          "descendants": {
+            "WanRc": {
+              "fill": "#A78BFA"
+            },
+            "O3VNM": {
+              "sweepAngle": -168
+            },
+            "ZSVcm": {
+              "content": "강수아"
+            }
+          }
+        },
+        {
+          "type": "frame",
+          "id": "pBszs",
+          "x": 0,
+          "y": 808,
+          "name": "cs",
+          "width": 390,
+          "height": 36,
+          "fill": "$bg-court-bar",
+          "gap": 12,
+          "padding": [
+            0,
+            12
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "wdXon",
+              "fill": "$text-secondary",
+              "content": "코트 현황:",
+              "fontFamily": "Inter",
+              "fontSize": 10,
+              "fontWeight": "500"
+            },
+            {
+              "type": "frame",
+              "id": "BqPuG",
+              "name": "ca",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "5Rs9V",
+                  "fill": "#22C55E",
+                  "width": 7,
+                  "height": 7
+                },
+                {
+                  "type": "text",
+                  "id": "P1Fc9",
+                  "fill": "$text-secondary",
+                  "content": "1번 비어있음",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "iAkOj",
+              "name": "cb",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "OGs5I",
+                  "fill": "#F59E0B",
+                  "width": 7,
+                  "height": 7
+                },
+                {
+                  "type": "text",
+                  "id": "ZKJLd",
+                  "fill": "$text-secondary",
+                  "content": "2번 경기중",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "0ZvKG",
+      "x": 450,
+      "y": -40,
+      "name": "lm2",
+      "fill": "#94A3B8",
+      "content": "M2. 팀 형성 중 (Dark)",
+      "fontFamily": "Inter",
+      "fontSize": 14,
+      "fontWeight": "500"
+    },
+    {
+      "type": "frame",
+      "id": "5GYL4",
+      "x": 450,
+      "y": 0,
+      "name": "M2. 팀 형성 중",
+      "theme": {
+        "mode": "dark"
+      },
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "$bg-board",
+      "cornerRadius": 24,
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "$shadow-color",
+        "blur": 60
+      },
+      "layout": "none",
+      "children": [
+        {
+          "type": "frame",
+          "id": "Dy3Rz",
+          "x": 0,
+          "y": 0,
+          "name": "tb",
+          "width": 390,
+          "height": 48,
+          "fill": "$bg-toolbar",
+          "padding": [
+            0,
+            12
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "eu9aQ",
+              "name": "bb2",
+              "cornerRadius": 8,
+              "gap": 4,
+              "padding": [
+                6,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "ER1tz",
+                  "name": "bbi2",
+                  "width": 14,
+                  "height": 14,
+                  "iconFontName": "chevron-left",
+                  "iconFontFamily": "lucide",
+                  "fill": "$text-secondary"
+                },
+                {
+                  "type": "text",
+                  "id": "R1IC8",
+                  "name": "bbt2",
+                  "fill": "$text-secondary",
+                  "content": "뒤로",
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "rtIsI",
+              "name": "tbt2",
+              "fill": "$text-primary",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "세션 보드",
+              "textAlign": "center",
+              "fontFamily": "Inter",
+              "fontSize": 14,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "mzKak",
+          "x": 99,
+          "y": 80,
+          "name": "tg",
+          "fill": "$bg-team-group",
+          "cornerRadius": 16,
+          "stroke": {
+            "align": "inside",
+            "thickness": 2,
+            "fill": "$stroke-default"
+          },
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 12,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "bMrMH",
+              "name": "tgl2",
+              "fill": "$text-secondary",
+              "content": "팀 구성 중 · 2/4",
+              "fontFamily": "Inter",
+              "fontSize": 11,
+              "fontWeight": "500"
+            },
+            {
+              "type": "frame",
+              "id": "kM3L7",
+              "name": "gr",
+              "layout": "vertical",
+              "gap": 6,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ligGx",
+                  "name": "r1",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "id": "51VM7",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "name": "km2",
+                      "descendants": {
+                        "O3VNM": {
+                          "sweepAngle": -270
+                        },
+                        "ZSVcm": {
+                          "content": "김민수"
+                        }
+                      }
+                    },
+                    {
+                      "id": "kkyGP",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "name": "lj2",
+                      "descendants": {
+                        "WanRc": {
+                          "fill": "#F472B6"
+                        },
+                        "O3VNM": {
+                          "sweepAngle": -228
+                        },
+                        "ZSVcm": {
+                          "content": "이지훈"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "DjMRX",
+                  "name": "r2",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "08qYw",
+                      "name": "sw1",
+                      "width": 76,
+                      "height": 76,
+                      "layout": "vertical",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "id": "kNyuM",
+                          "type": "ref",
+                          "ref": "EI0d8",
+                          "name": "esd1"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ISBqt",
+                      "name": "sw2",
+                      "width": 76,
+                      "height": 76,
+                      "layout": "vertical",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "id": "yrEbz",
+                          "type": "ref",
+                          "ref": "EI0d8",
+                          "name": "esd2"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "H81k1",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 30,
+          "y": 320,
+          "name": "p1",
+          "descendants": {
+            "WanRc": {
+              "fill": "#34D399"
+            },
+            "O3VNM": {
+              "sweepAngle": -312
+            },
+            "ZSVcm": {
+              "content": "박서연"
+            }
+          }
+        },
+        {
+          "id": "lSKdm",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 170,
+          "y": 290,
+          "name": "p2",
+          "descendants": {
+            "WanRc": {
+              "fill": "#FBBF24"
+            },
+            "O3VNM": {
+              "sweepAngle": -180
+            },
+            "ZSVcm": {
+              "content": "최준호"
+            }
+          }
+        },
+        {
+          "id": "rFbE7",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 280,
+          "y": 370,
+          "name": "p3",
+          "descendants": {
+            "WanRc": {
+              "fill": "#60A5FA"
+            },
+            "O3VNM": {
+              "sweepAngle": -252
+            },
+            "ZSVcm": {
+              "content": "정하윤"
+            }
+          }
+        },
+        {
+          "id": "u1Ogo",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 50,
+          "y": 480,
+          "name": "p4",
+          "descendants": {
+            "WanRc": {
+              "fill": "#F87171"
+            },
+            "O3VNM": {
+              "sweepAngle": -210
+            },
+            "ZSVcm": {
+              "content": "한예진"
+            }
+          }
+        },
+        {
+          "id": "XqtfR",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 200,
+          "y": 530,
+          "name": "p5",
+          "descendants": {
+            "WanRc": {
+              "fill": "#2DD4BF"
+            },
+            "O3VNM": {
+              "sweepAngle": -288
+            },
+            "ZSVcm": {
+              "content": "윤도현"
+            }
+          }
+        },
+        {
+          "id": "IoHYp",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 100,
+          "y": 650,
+          "name": "p6",
+          "descendants": {
+            "WanRc": {
+              "fill": "#A78BFA"
+            },
+            "O3VNM": {
+              "sweepAngle": -168
+            },
+            "ZSVcm": {
+              "content": "강수아"
+            }
+          }
+        },
+        {
+          "type": "frame",
+          "id": "ysatM",
+          "x": 0,
+          "y": 808,
+          "name": "cs",
+          "width": 390,
+          "height": 36,
+          "fill": "$bg-court-bar",
+          "gap": 12,
+          "padding": [
+            0,
+            12
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "xfJ7K",
+              "name": "csl2",
+              "fill": "$text-secondary",
+              "content": "코트 현황:",
+              "fontFamily": "Inter",
+              "fontSize": 10,
+              "fontWeight": "500"
+            },
+            {
+              "type": "frame",
+              "id": "X4YX6",
+              "name": "ca",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "kXTQg",
+                  "name": "cad2",
+                  "fill": "#22C55E",
+                  "width": 6,
+                  "height": 6
+                },
+                {
+                  "type": "text",
+                  "id": "KCc6J",
+                  "name": "cat2",
+                  "fill": "$text-secondary",
+                  "content": "A코트 · 비어있음",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "qMEKW",
+              "name": "cb",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "5sctd",
+                  "name": "cbd2",
+                  "fill": "#22C55E",
+                  "width": 6,
+                  "height": 6
+                },
+                {
+                  "type": "text",
+                  "id": "useyl",
+                  "name": "cbt2",
+                  "fill": "$text-secondary",
+                  "content": "B코트 · 비어있음",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "Un5o3",
+      "x": 900,
+      "y": -40,
+      "name": "lm3",
+      "fill": "#94A3B8",
+      "content": "M3. 팀 준비 완료 (Dark)",
+      "fontFamily": "Inter",
+      "fontSize": 14,
+      "fontWeight": "500"
+    },
+    {
+      "type": "frame",
+      "id": "htEHA",
+      "x": 900,
+      "y": 0,
+      "name": "M3. 팀 준비 완료",
+      "theme": {
+        "mode": "dark"
+      },
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "$bg-board",
+      "cornerRadius": 24,
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "$shadow-color",
+        "blur": 60
+      },
+      "layout": "none",
+      "children": [
+        {
+          "type": "frame",
+          "id": "xdjk1",
+          "x": 0,
+          "y": 0,
+          "name": "tb",
+          "width": 390,
+          "height": 48,
+          "fill": "$bg-toolbar",
+          "padding": [
+            0,
+            12
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "UEv5T",
+              "name": "bb3",
+              "cornerRadius": 8,
+              "gap": 4,
+              "padding": [
+                6,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "CY8ov",
+                  "name": "bbi3",
+                  "width": 14,
+                  "height": 14,
+                  "iconFontName": "chevron-left",
+                  "iconFontFamily": "lucide",
+                  "fill": "$text-secondary"
+                },
+                {
+                  "type": "text",
+                  "id": "TNTup",
+                  "name": "bbt3",
+                  "fill": "$text-secondary",
+                  "content": "뒤로",
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "B1SeI",
+              "name": "tbt3",
+              "fill": "$text-primary",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "세션 보드",
+              "textAlign": "center",
+              "fontFamily": "Inter",
+              "fontSize": 14,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "Hb1Jz",
+          "x": 99,
+          "y": 80,
+          "name": "tg",
+          "fill": "$team-ready-bg",
+          "cornerRadius": 16,
+          "stroke": {
+            "align": "inside",
+            "thickness": 2,
+            "fill": "#22C55E"
+          },
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 12,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "mbBq0",
+              "name": "tgl3",
+              "fill": "#22C55E",
+              "content": "팀 완성 · 4/4",
+              "fontFamily": "Inter",
+              "fontSize": 11,
+              "fontWeight": "600"
+            },
+            {
+              "type": "frame",
+              "id": "jqAdB",
+              "name": "gr",
+              "layout": "vertical",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "blLDF",
+                  "name": "r1",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "id": "pVmFY",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "name": "km3",
+                      "descendants": {
+                        "O3VNM": {
+                          "sweepAngle": -270
+                        },
+                        "ZSVcm": {
+                          "content": "김민수"
+                        }
+                      }
+                    },
+                    {
+                      "id": "sGXUq",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "name": "lj3",
+                      "descendants": {
+                        "WanRc": {
+                          "fill": "#F472B6"
+                        },
+                        "O3VNM": {
+                          "sweepAngle": -228
+                        },
+                        "ZSVcm": {
+                          "content": "이지훈"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "SYvGN",
+                  "name": "vs3",
+                  "fill": "#22C55E80",
+                  "content": "vs",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "frame",
+                  "id": "ZbSjG",
+                  "name": "r2",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "id": "hkquK",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "name": "ps3",
+                      "descendants": {
+                        "WanRc": {
+                          "fill": "#34D399"
+                        },
+                        "O3VNM": {
+                          "sweepAngle": -312
+                        },
+                        "ZSVcm": {
+                          "content": "박서연"
+                        }
+                      }
+                    },
+                    {
+                      "id": "6ORE8",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "name": "cj3",
+                      "descendants": {
+                        "WanRc": {
+                          "fill": "#FBBF24"
+                        },
+                        "O3VNM": {
+                          "sweepAngle": -180
+                        },
+                        "ZSVcm": {
+                          "content": "최준호"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "io1Hc",
+              "name": "cta",
+              "width": "fill_container",
+              "height": 36,
+              "fill": "#22C55E",
+              "cornerRadius": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "PA1tT",
+                  "name": "ctat3",
+                  "fill": "#FFFFFF",
+                  "content": "경기시작",
+                  "fontFamily": "Inter",
+                  "fontSize": 13,
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tqQ3P",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 40,
+          "y": 340,
+          "name": "f1",
+          "descendants": {
+            "WanRc": {
+              "fill": "#60A5FA"
+            },
+            "O3VNM": {
+              "sweepAngle": -252
+            },
+            "ZSVcm": {
+              "content": "정하윤"
+            }
+          }
+        },
+        {
+          "id": "dAdux",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 200,
+          "y": 380,
+          "name": "f2",
+          "descendants": {
+            "WanRc": {
+              "fill": "#F87171"
+            },
+            "O3VNM": {
+              "sweepAngle": -210
+            },
+            "ZSVcm": {
+              "content": "한예진"
+            }
+          }
+        },
+        {
+          "id": "n8u7p",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 80,
+          "y": 520,
+          "name": "f3",
+          "descendants": {
+            "WanRc": {
+              "fill": "#2DD4BF"
+            },
+            "O3VNM": {
+              "sweepAngle": -288
+            },
+            "ZSVcm": {
+              "content": "윤도현"
+            }
+          }
+        },
+        {
+          "id": "UQ6H8",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 260,
+          "y": 570,
+          "name": "f4",
+          "descendants": {
+            "WanRc": {
+              "fill": "#A78BFA"
+            },
+            "O3VNM": {
+              "sweepAngle": -168
+            },
+            "ZSVcm": {
+              "content": "강수아"
+            }
+          }
+        },
+        {
+          "type": "frame",
+          "id": "N2evm",
+          "x": 0,
+          "y": 808,
+          "name": "cs",
+          "width": 390,
+          "height": 36,
+          "fill": "$bg-court-bar",
+          "gap": 12,
+          "padding": [
+            0,
+            12
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "tIwJO",
+              "name": "csl3",
+              "fill": "$text-secondary",
+              "content": "코트 현황:",
+              "fontFamily": "Inter",
+              "fontSize": 10,
+              "fontWeight": "500"
+            },
+            {
+              "type": "frame",
+              "id": "Lr2IU",
+              "name": "ca",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "BO8Nq",
+                  "name": "cad3",
+                  "fill": "#22C55E",
+                  "width": 6,
+                  "height": 6
+                },
+                {
+                  "type": "text",
+                  "id": "MXKSK",
+                  "name": "cat3",
+                  "fill": "$text-secondary",
+                  "content": "A코트 · 비어있음",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "E6Dhz",
+              "name": "cb",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "GyDK4",
+                  "name": "cbd3",
+                  "fill": "#22C55E",
+                  "width": 6,
+                  "height": 6
+                },
+                {
+                  "type": "text",
+                  "id": "c1C5Y",
+                  "name": "cbt3",
+                  "fill": "$text-secondary",
+                  "content": "B코트 · 비어있음",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "ihJGv",
+      "x": 1350,
+      "y": -40,
+      "name": "lm4",
+      "fill": "#94A3B8",
+      "content": "M4. 경기 중 (Dark)",
+      "fontFamily": "Inter",
+      "fontSize": 14,
+      "fontWeight": "500"
+    },
+    {
+      "type": "frame",
+      "id": "ER1hP",
+      "x": 1350,
+      "y": 0,
+      "name": "M4. 경기 중",
+      "theme": {
+        "mode": "dark"
+      },
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "$bg-board",
+      "cornerRadius": 24,
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "$shadow-color",
+        "blur": 60
+      },
+      "layout": "none",
+      "children": [
+        {
+          "type": "frame",
+          "id": "tNhY3",
+          "x": 0,
+          "y": 0,
+          "name": "tb",
+          "width": 390,
+          "height": 48,
+          "fill": "$bg-toolbar",
+          "padding": [
+            0,
+            12
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "5HEub",
+              "name": "bb4",
+              "cornerRadius": 8,
+              "gap": 4,
+              "padding": [
+                6,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "zxqt0",
+                  "name": "bbi4",
+                  "width": 14,
+                  "height": 14,
+                  "iconFontName": "chevron-left",
+                  "iconFontFamily": "lucide",
+                  "fill": "$text-secondary"
+                },
+                {
+                  "type": "text",
+                  "id": "MDPAc",
+                  "name": "bbt4",
+                  "fill": "$text-secondary",
+                  "content": "뒤로",
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "KmDgL",
+              "name": "tbt4",
+              "fill": "$text-primary",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "세션 보드",
+              "textAlign": "center",
+              "fontFamily": "Inter",
+              "fontSize": 14,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "aLbta",
+          "x": 99,
+          "y": 80,
+          "name": "tg",
+          "fill": "$team-playing-bg",
+          "cornerRadius": 16,
+          "stroke": {
+            "align": "inside",
+            "thickness": 2,
+            "fill": "#F59E0B"
+          },
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 12,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "SmiOD",
+              "name": "hdr",
+              "gap": 6,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "SKWOt",
+                  "name": "hdrd4",
+                  "fill": "#F59E0B",
+                  "width": 8,
+                  "height": 8
+                },
+                {
+                  "type": "text",
+                  "id": "CkoGt",
+                  "name": "hdrt4",
+                  "fill": "#F59E0B",
+                  "content": "1번 코트 · 경기중",
+                  "fontFamily": "Inter",
+                  "fontSize": 11,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "UPdiE",
+              "name": "gr",
+              "layout": "vertical",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "mX57O",
+                  "name": "r1",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "id": "zJ0uE",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "opacity": 0.85,
+                      "name": "km4",
+                      "descendants": {
+                        "O3VNM": {
+                          "sweepAngle": -270
+                        },
+                        "ZSVcm": {
+                          "content": "김민수"
+                        }
+                      }
+                    },
+                    {
+                      "id": "ZDFSV",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "opacity": 0.85,
+                      "name": "lj4",
+                      "descendants": {
+                        "WanRc": {
+                          "fill": "#F472B6"
+                        },
+                        "O3VNM": {
+                          "sweepAngle": -228
+                        },
+                        "ZSVcm": {
+                          "content": "이지훈"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "v4k6k",
+                  "name": "vs4",
+                  "fill": "#F59E0B80",
+                  "content": "vs",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "frame",
+                  "id": "0vYra",
+                  "name": "r2",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "id": "5F8LE",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "opacity": 0.85,
+                      "name": "ps4",
+                      "descendants": {
+                        "WanRc": {
+                          "fill": "#34D399"
+                        },
+                        "O3VNM": {
+                          "sweepAngle": -312
+                        },
+                        "ZSVcm": {
+                          "content": "박서연"
+                        }
+                      }
+                    },
+                    {
+                      "id": "bPnxs",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "opacity": 0.85,
+                      "name": "cj4",
+                      "descendants": {
+                        "WanRc": {
+                          "fill": "#FBBF24"
+                        },
+                        "O3VNM": {
+                          "sweepAngle": -180
+                        },
+                        "ZSVcm": {
+                          "content": "최준호"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "dniJg",
+              "name": "cta",
+              "width": "fill_container",
+              "height": 36,
+              "fill": "#3B82F6",
+              "cornerRadius": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "JRDvF",
+                  "name": "ctat4",
+                  "fill": "#FFFFFF",
+                  "content": "경기완료",
+                  "fontFamily": "Inter",
+                  "fontSize": 13,
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "noQpT",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 40,
+          "y": 340,
+          "name": "ff1",
+          "descendants": {
+            "WanRc": {
+              "fill": "#60A5FA"
+            },
+            "O3VNM": {
+              "sweepAngle": -252
+            },
+            "ZSVcm": {
+              "content": "정하윤"
+            }
+          }
+        },
+        {
+          "id": "mFwxB",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 200,
+          "y": 380,
+          "name": "ff2",
+          "descendants": {
+            "WanRc": {
+              "fill": "#F87171"
+            },
+            "O3VNM": {
+              "sweepAngle": -210
+            },
+            "ZSVcm": {
+              "content": "한예진"
+            }
+          }
+        },
+        {
+          "id": "2QtZF",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 80,
+          "y": 520,
+          "name": "ff3",
+          "descendants": {
+            "WanRc": {
+              "fill": "#2DD4BF"
+            },
+            "O3VNM": {
+              "sweepAngle": -288
+            },
+            "ZSVcm": {
+              "content": "윤도현"
+            }
+          }
+        },
+        {
+          "id": "wzlXe",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 260,
+          "y": 570,
+          "name": "ff4",
+          "descendants": {
+            "WanRc": {
+              "fill": "#A78BFA"
+            },
+            "O3VNM": {
+              "sweepAngle": -168
+            },
+            "ZSVcm": {
+              "content": "강수아"
+            }
+          }
+        },
+        {
+          "type": "frame",
+          "id": "WZvWj",
+          "x": 0,
+          "y": 808,
+          "name": "cs",
+          "width": 390,
+          "height": 36,
+          "fill": "$bg-court-bar",
+          "gap": 12,
+          "padding": [
+            0,
+            12
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "R5PuF",
+              "name": "csl4",
+              "fill": "$text-secondary",
+              "content": "코트 현황:",
+              "fontFamily": "Inter",
+              "fontSize": 10,
+              "fontWeight": "500"
+            },
+            {
+              "type": "frame",
+              "id": "GlG6T",
+              "name": "ca",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "i4OrJ",
+                  "name": "cad4",
+                  "fill": "#F59E0B",
+                  "width": 6,
+                  "height": 6
+                },
+                {
+                  "type": "text",
+                  "id": "at9fq",
+                  "name": "cat4",
+                  "fill": "#F59E0B",
+                  "content": "A코트 · 경기중",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "mLJYv",
+              "name": "cb",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "7SMwd",
+                  "name": "cbd4",
+                  "fill": "#22C55E",
+                  "width": 6,
+                  "height": 6
+                },
+                {
+                  "type": "text",
+                  "id": "p8bqn",
+                  "name": "cbt4",
+                  "fill": "$text-secondary",
+                  "content": "B코트 · 비어있음",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "53g6c",
+      "x": 0,
+      "y": 910,
+      "name": "dl1",
+      "fill": "#64748B",
+      "content": "M1. 초기 상태 (Light)",
+      "fontFamily": "Inter",
+      "fontSize": 14,
+      "fontWeight": "500"
+    },
+    {
+      "type": "frame",
+      "id": "fcRJ2",
+      "x": 0,
+      "y": 930,
+      "name": "M1. 초기 상태 (Light)",
+      "theme": {
+        "mode": "light"
+      },
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "$bg-board",
+      "cornerRadius": 24,
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "$shadow-color",
+        "blur": 60
+      },
+      "layout": "none",
+      "children": [
+        {
+          "type": "frame",
+          "id": "2OOme",
+          "x": 0,
+          "y": 0,
+          "name": "tb",
+          "width": 390,
+          "height": 48,
+          "fill": "$bg-toolbar",
+          "padding": [
+            0,
+            12
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "FRM62",
+              "name": "bb",
+              "cornerRadius": 8,
+              "gap": 4,
+              "padding": [
+                6,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "V21XI",
+                  "width": 16,
+                  "height": 16,
+                  "iconFontName": "arrow-left",
+                  "iconFontFamily": "lucide",
+                  "fill": "$text-secondary"
+                },
+                {
+                  "type": "text",
+                  "id": "XCQpb",
+                  "fill": "$text-secondary",
+                  "content": "뒤로",
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "KdWl8",
+              "fill": "$text-primary",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "세션 보드",
+              "textAlign": "center",
+              "fontFamily": "Inter",
+              "fontSize": 14,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "id": "GCYQq",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 30,
+          "y": 80,
+          "descendants": {
+            "O3VNM": {
+              "sweepAngle": -270
+            },
+            "ZSVcm": {
+              "content": "김민수"
+            }
+          }
+        },
+        {
+          "id": "lKsAq",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 180,
+          "y": 100,
+          "descendants": {
+            "WanRc": {
+              "fill": "#F472B6"
+            },
+            "O3VNM": {
+              "sweepAngle": -228
+            },
+            "ZSVcm": {
+              "content": "이지훈"
+            }
+          }
+        },
+        {
+          "id": "ACttA",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 280,
+          "y": 200,
+          "descendants": {
+            "WanRc": {
+              "fill": "#34D399"
+            },
+            "O3VNM": {
+              "sweepAngle": -312
+            },
+            "ZSVcm": {
+              "content": "박서연"
+            }
+          }
+        },
+        {
+          "id": "2zbWU",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 60,
+          "y": 220,
+          "descendants": {
+            "WanRc": {
+              "fill": "#FBBF24"
+            },
+            "O3VNM": {
+              "sweepAngle": -180
+            },
+            "ZSVcm": {
+              "content": "최준호"
+            }
+          }
+        },
+        {
+          "id": "RNk1b",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 200,
+          "y": 330,
+          "descendants": {
+            "WanRc": {
+              "fill": "#60A5FA"
+            },
+            "O3VNM": {
+              "sweepAngle": -252
+            },
+            "ZSVcm": {
+              "content": "정하윤"
+            }
+          }
+        },
+        {
+          "id": "1btua",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 40,
+          "y": 430,
+          "descendants": {
+            "WanRc": {
+              "fill": "#F87171"
+            },
+            "O3VNM": {
+              "sweepAngle": -210
+            },
+            "ZSVcm": {
+              "content": "한예진"
+            }
+          }
+        },
+        {
+          "id": "ZOJi4",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 190,
+          "y": 500,
+          "descendants": {
+            "WanRc": {
+              "fill": "#2DD4BF"
+            },
+            "O3VNM": {
+              "sweepAngle": -288
+            },
+            "ZSVcm": {
+              "content": "윤도현"
+            }
+          }
+        },
+        {
+          "id": "0RRw5",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 280,
+          "y": 610,
+          "descendants": {
+            "WanRc": {
+              "fill": "#A78BFA"
+            },
+            "O3VNM": {
+              "sweepAngle": -168
+            },
+            "ZSVcm": {
+              "content": "강수아"
+            }
+          }
+        },
+        {
+          "type": "frame",
+          "id": "kFiyK",
+          "x": 0,
+          "y": 808,
+          "name": "cs",
+          "width": 390,
+          "height": 36,
+          "fill": "$bg-court-bar",
+          "gap": 12,
+          "padding": [
+            0,
+            12
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "eLbN1",
+              "fill": "$text-secondary",
+              "content": "코트 현황:",
+              "fontFamily": "Inter",
+              "fontSize": 10,
+              "fontWeight": "500"
+            },
+            {
+              "type": "frame",
+              "id": "yNLk4",
+              "name": "ca",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "mUWi3",
+                  "fill": "#22C55E",
+                  "width": 7,
+                  "height": 7
+                },
+                {
+                  "type": "text",
+                  "id": "0XTpV",
+                  "fill": "$text-secondary",
+                  "content": "1번 비어있음",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "0ZCXE",
+              "name": "cb",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "ZYgqo",
+                  "fill": "#F59E0B",
+                  "width": 7,
+                  "height": 7
+                },
+                {
+                  "type": "text",
+                  "id": "O1koU",
+                  "fill": "$text-secondary",
+                  "content": "2번 경기중",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "FkbQL",
+      "x": 450,
+      "y": 910,
+      "name": "dl2",
+      "fill": "#64748B",
+      "content": "M2. 팀 형성 중 (Light)",
+      "fontFamily": "Inter",
+      "fontSize": 14,
+      "fontWeight": "500"
+    },
+    {
+      "type": "frame",
+      "id": "aIil7",
+      "x": 450,
+      "y": 930,
+      "name": "M2. 팀 형성 중 (Light)",
+      "theme": {
+        "mode": "light"
+      },
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "$bg-board",
+      "cornerRadius": 24,
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "$shadow-color",
+        "blur": 60
+      },
+      "layout": "none",
+      "children": [
+        {
+          "type": "frame",
+          "id": "WNQsu",
+          "x": 0,
+          "y": 0,
+          "name": "tb",
+          "width": 390,
+          "height": 48,
+          "fill": "$bg-toolbar",
+          "padding": [
+            0,
+            12
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "tkYok",
+              "name": "bb2",
+              "cornerRadius": 8,
+              "gap": 4,
+              "padding": [
+                6,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "h482J",
+                  "name": "bbi2",
+                  "width": 14,
+                  "height": 14,
+                  "iconFontName": "chevron-left",
+                  "iconFontFamily": "lucide",
+                  "fill": "$text-secondary"
+                },
+                {
+                  "type": "text",
+                  "id": "Cagtl",
+                  "name": "bbt2",
+                  "fill": "$text-secondary",
+                  "content": "뒤로",
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "E9G9v",
+              "name": "tbt2",
+              "fill": "$text-primary",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "세션 보드",
+              "textAlign": "center",
+              "fontFamily": "Inter",
+              "fontSize": 14,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "HNtKg",
+          "x": 99,
+          "y": 80,
+          "name": "tg",
+          "fill": "$bg-team-group",
+          "cornerRadius": 16,
+          "stroke": {
+            "align": "inside",
+            "thickness": 2,
+            "fill": "$stroke-default"
+          },
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 12,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "igzgY",
+              "name": "tgl2",
+              "fill": "$text-secondary",
+              "content": "팀 구성 중 · 2/4",
+              "fontFamily": "Inter",
+              "fontSize": 11,
+              "fontWeight": "500"
+            },
+            {
+              "type": "frame",
+              "id": "IXU5T",
+              "name": "gr",
+              "layout": "vertical",
+              "gap": 6,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "qHu5o",
+                  "name": "r1",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "id": "mZPf2",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "name": "km2",
+                      "descendants": {
+                        "O3VNM": {
+                          "sweepAngle": -270
+                        },
+                        "ZSVcm": {
+                          "content": "김민수"
+                        }
+                      }
+                    },
+                    {
+                      "id": "HCTVD",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "name": "lj2",
+                      "descendants": {
+                        "WanRc": {
+                          "fill": "#F472B6"
+                        },
+                        "O3VNM": {
+                          "sweepAngle": -228
+                        },
+                        "ZSVcm": {
+                          "content": "이지훈"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "uF7J2",
+                  "name": "r2",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "RDcHE",
+                      "name": "sw1",
+                      "width": 76,
+                      "height": 76,
+                      "layout": "vertical",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "id": "rNUhE",
+                          "type": "ref",
+                          "ref": "EI0d8",
+                          "name": "esd1"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "tBAbu",
+                      "name": "sw2",
+                      "width": 76,
+                      "height": 76,
+                      "layout": "vertical",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "id": "DbGPN",
+                          "type": "ref",
+                          "ref": "EI0d8",
+                          "name": "esd2"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ub6fz",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 30,
+          "y": 320,
+          "name": "p1",
+          "descendants": {
+            "WanRc": {
+              "fill": "#34D399"
+            },
+            "O3VNM": {
+              "sweepAngle": -312
+            },
+            "ZSVcm": {
+              "content": "박서연"
+            }
+          }
+        },
+        {
+          "id": "1btu0",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 170,
+          "y": 290,
+          "name": "p2",
+          "descendants": {
+            "WanRc": {
+              "fill": "#FBBF24"
+            },
+            "O3VNM": {
+              "sweepAngle": -180
+            },
+            "ZSVcm": {
+              "content": "최준호"
+            }
+          }
+        },
+        {
+          "id": "kMiQk",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 280,
+          "y": 370,
+          "name": "p3",
+          "descendants": {
+            "WanRc": {
+              "fill": "#60A5FA"
+            },
+            "O3VNM": {
+              "sweepAngle": -252
+            },
+            "ZSVcm": {
+              "content": "정하윤"
+            }
+          }
+        },
+        {
+          "id": "TYi7h",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 50,
+          "y": 480,
+          "name": "p4",
+          "descendants": {
+            "WanRc": {
+              "fill": "#F87171"
+            },
+            "O3VNM": {
+              "sweepAngle": -210
+            },
+            "ZSVcm": {
+              "content": "한예진"
+            }
+          }
+        },
+        {
+          "id": "UbcBU",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 200,
+          "y": 530,
+          "name": "p5",
+          "descendants": {
+            "WanRc": {
+              "fill": "#2DD4BF"
+            },
+            "O3VNM": {
+              "sweepAngle": -288
+            },
+            "ZSVcm": {
+              "content": "윤도현"
+            }
+          }
+        },
+        {
+          "id": "LCAUB",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 100,
+          "y": 650,
+          "name": "p6",
+          "descendants": {
+            "WanRc": {
+              "fill": "#A78BFA"
+            },
+            "O3VNM": {
+              "sweepAngle": -168
+            },
+            "ZSVcm": {
+              "content": "강수아"
+            }
+          }
+        },
+        {
+          "type": "frame",
+          "id": "tOGtO",
+          "x": 0,
+          "y": 808,
+          "name": "cs",
+          "width": 390,
+          "height": 36,
+          "fill": "$bg-court-bar",
+          "gap": 12,
+          "padding": [
+            0,
+            12
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "afQY0",
+              "name": "csl2",
+              "fill": "$text-secondary",
+              "content": "코트 현황:",
+              "fontFamily": "Inter",
+              "fontSize": 10,
+              "fontWeight": "500"
+            },
+            {
+              "type": "frame",
+              "id": "SHAMi",
+              "name": "ca",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "zSwWR",
+                  "name": "cad2",
+                  "fill": "#22C55E",
+                  "width": 6,
+                  "height": 6
+                },
+                {
+                  "type": "text",
+                  "id": "6uFqy",
+                  "name": "cat2",
+                  "fill": "$text-secondary",
+                  "content": "A코트 · 비어있음",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "9tPvT",
+              "name": "cb",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "tOfJK",
+                  "name": "cbd2",
+                  "fill": "#22C55E",
+                  "width": 6,
+                  "height": 6
+                },
+                {
+                  "type": "text",
+                  "id": "QkMrB",
+                  "name": "cbt2",
+                  "fill": "$text-secondary",
+                  "content": "B코트 · 비어있음",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "AYUIW",
+      "x": 900,
+      "y": 910,
+      "name": "dl3",
+      "fill": "#64748B",
+      "content": "M3. 팀 준비 완료 (Light)",
+      "fontFamily": "Inter",
+      "fontSize": 14,
+      "fontWeight": "500"
+    },
+    {
+      "type": "frame",
+      "id": "AQcho",
+      "x": 900,
+      "y": 930,
+      "name": "M3. 팀 준비 완료 (Light)",
+      "theme": {
+        "mode": "light"
+      },
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "$bg-board",
+      "cornerRadius": 24,
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "$shadow-color",
+        "blur": 60
+      },
+      "layout": "none",
+      "children": [
+        {
+          "type": "frame",
+          "id": "ah8Ua",
+          "x": 0,
+          "y": 0,
+          "name": "tb",
+          "width": 390,
+          "height": 48,
+          "fill": "$bg-toolbar",
+          "padding": [
+            0,
+            12
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "7ILYe",
+              "name": "bb3",
+              "cornerRadius": 8,
+              "gap": 4,
+              "padding": [
+                6,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "lO2Yf",
+                  "name": "bbi3",
+                  "width": 14,
+                  "height": 14,
+                  "iconFontName": "chevron-left",
+                  "iconFontFamily": "lucide",
+                  "fill": "$text-secondary"
+                },
+                {
+                  "type": "text",
+                  "id": "9ECvE",
+                  "name": "bbt3",
+                  "fill": "$text-secondary",
+                  "content": "뒤로",
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "FWWJw",
+              "name": "tbt3",
+              "fill": "$text-primary",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "세션 보드",
+              "textAlign": "center",
+              "fontFamily": "Inter",
+              "fontSize": 14,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "r6ulI",
+          "x": 99,
+          "y": 80,
+          "name": "tg",
+          "fill": "$team-ready-bg",
+          "cornerRadius": 16,
+          "stroke": {
+            "align": "inside",
+            "thickness": 2,
+            "fill": "#22C55E"
+          },
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 12,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "A7lF1",
+              "name": "tgl3",
+              "fill": "#22C55E",
+              "content": "팀 완성 · 4/4",
+              "fontFamily": "Inter",
+              "fontSize": 11,
+              "fontWeight": "600"
+            },
+            {
+              "type": "frame",
+              "id": "a83T8",
+              "name": "gr",
+              "layout": "vertical",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "NJEIK",
+                  "name": "r1",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "id": "0P188",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "name": "km3",
+                      "descendants": {
+                        "O3VNM": {
+                          "sweepAngle": -270
+                        },
+                        "ZSVcm": {
+                          "content": "김민수"
+                        }
+                      }
+                    },
+                    {
+                      "id": "kEPH6",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "name": "lj3",
+                      "descendants": {
+                        "WanRc": {
+                          "fill": "#F472B6"
+                        },
+                        "O3VNM": {
+                          "sweepAngle": -228
+                        },
+                        "ZSVcm": {
+                          "content": "이지훈"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "Np66X",
+                  "name": "vs3",
+                  "fill": "#22C55E80",
+                  "content": "vs",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "frame",
+                  "id": "d3PDp",
+                  "name": "r2",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "id": "Jkd8d",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "name": "ps3",
+                      "descendants": {
+                        "WanRc": {
+                          "fill": "#34D399"
+                        },
+                        "O3VNM": {
+                          "sweepAngle": -312
+                        },
+                        "ZSVcm": {
+                          "content": "박서연"
+                        }
+                      }
+                    },
+                    {
+                      "id": "WZ07r",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "name": "cj3",
+                      "descendants": {
+                        "WanRc": {
+                          "fill": "#FBBF24"
+                        },
+                        "O3VNM": {
+                          "sweepAngle": -180
+                        },
+                        "ZSVcm": {
+                          "content": "최준호"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "TFtxH",
+              "name": "cta",
+              "width": "fill_container",
+              "height": 36,
+              "fill": "#22C55E",
+              "cornerRadius": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "3BUM4",
+                  "name": "ctat3",
+                  "fill": "#FFFFFF",
+                  "content": "경기시작",
+                  "fontFamily": "Inter",
+                  "fontSize": 13,
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "f4ucl",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 40,
+          "y": 340,
+          "name": "f1",
+          "descendants": {
+            "WanRc": {
+              "fill": "#60A5FA"
+            },
+            "O3VNM": {
+              "sweepAngle": -252
+            },
+            "ZSVcm": {
+              "content": "정하윤"
+            }
+          }
+        },
+        {
+          "id": "oJLLt",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 200,
+          "y": 380,
+          "name": "f2",
+          "descendants": {
+            "WanRc": {
+              "fill": "#F87171"
+            },
+            "O3VNM": {
+              "sweepAngle": -210
+            },
+            "ZSVcm": {
+              "content": "한예진"
+            }
+          }
+        },
+        {
+          "id": "T3GyH",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 80,
+          "y": 520,
+          "name": "f3",
+          "descendants": {
+            "WanRc": {
+              "fill": "#2DD4BF"
+            },
+            "O3VNM": {
+              "sweepAngle": -288
+            },
+            "ZSVcm": {
+              "content": "윤도현"
+            }
+          }
+        },
+        {
+          "id": "sBaNK",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 260,
+          "y": 570,
+          "name": "f4",
+          "descendants": {
+            "WanRc": {
+              "fill": "#A78BFA"
+            },
+            "O3VNM": {
+              "sweepAngle": -168
+            },
+            "ZSVcm": {
+              "content": "강수아"
+            }
+          }
+        },
+        {
+          "type": "frame",
+          "id": "ELA0t",
+          "x": 0,
+          "y": 808,
+          "name": "cs",
+          "width": 390,
+          "height": 36,
+          "fill": "$bg-court-bar",
+          "gap": 12,
+          "padding": [
+            0,
+            12
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "thDoK",
+              "name": "csl3",
+              "fill": "$text-secondary",
+              "content": "코트 현황:",
+              "fontFamily": "Inter",
+              "fontSize": 10,
+              "fontWeight": "500"
+            },
+            {
+              "type": "frame",
+              "id": "o3z5u",
+              "name": "ca",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "o3nQ2",
+                  "name": "cad3",
+                  "fill": "#22C55E",
+                  "width": 6,
+                  "height": 6
+                },
+                {
+                  "type": "text",
+                  "id": "8LvCd",
+                  "name": "cat3",
+                  "fill": "$text-secondary",
+                  "content": "A코트 · 비어있음",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "caC2U",
+              "name": "cb",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "lGQNy",
+                  "name": "cbd3",
+                  "fill": "#22C55E",
+                  "width": 6,
+                  "height": 6
+                },
+                {
+                  "type": "text",
+                  "id": "wcRcH",
+                  "name": "cbt3",
+                  "fill": "$text-secondary",
+                  "content": "B코트 · 비어있음",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "YFKMl",
+      "x": 1350,
+      "y": 910,
+      "name": "dl4",
+      "fill": "#64748B",
+      "content": "M4. 경기 중 (Light)",
+      "fontFamily": "Inter",
+      "fontSize": 14,
+      "fontWeight": "500"
+    },
+    {
+      "type": "frame",
+      "id": "5FwA6",
+      "x": 1350,
+      "y": 930,
+      "name": "M4. 경기 중 (Light)",
+      "theme": {
+        "mode": "light"
+      },
+      "clip": true,
+      "width": 390,
+      "height": 844,
+      "fill": "$bg-board",
+      "cornerRadius": 24,
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "$shadow-color",
+        "blur": 60
+      },
+      "layout": "none",
+      "children": [
+        {
+          "type": "frame",
+          "id": "qTqkX",
+          "x": 0,
+          "y": 0,
+          "name": "tb",
+          "width": 390,
+          "height": 48,
+          "fill": "$bg-toolbar",
+          "padding": [
+            0,
+            12
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "FpLyi",
+              "name": "bb4",
+              "cornerRadius": 8,
+              "gap": 4,
+              "padding": [
+                6,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "Y0HkX",
+                  "name": "bbi4",
+                  "width": 14,
+                  "height": 14,
+                  "iconFontName": "chevron-left",
+                  "iconFontFamily": "lucide",
+                  "fill": "$text-secondary"
+                },
+                {
+                  "type": "text",
+                  "id": "RLA4Q",
+                  "name": "bbt4",
+                  "fill": "$text-secondary",
+                  "content": "뒤로",
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "HVXI0",
+              "name": "tbt4",
+              "fill": "$text-primary",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "세션 보드",
+              "textAlign": "center",
+              "fontFamily": "Inter",
+              "fontSize": 14,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "bkqa8",
+          "x": 99,
+          "y": 80,
+          "name": "tg",
+          "fill": "$team-playing-bg",
+          "cornerRadius": 16,
+          "stroke": {
+            "align": "inside",
+            "thickness": 2,
+            "fill": "#F59E0B"
+          },
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 12,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "jku7w",
+              "name": "hdr",
+              "gap": 6,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "034cL",
+                  "name": "hdrd4",
+                  "fill": "#F59E0B",
+                  "width": 8,
+                  "height": 8
+                },
+                {
+                  "type": "text",
+                  "id": "pwMC9",
+                  "name": "hdrt4",
+                  "fill": "#F59E0B",
+                  "content": "1번 코트 · 경기중",
+                  "fontFamily": "Inter",
+                  "fontSize": 11,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "wkwc5",
+              "name": "gr",
+              "layout": "vertical",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "3cHfl",
+                  "name": "r1",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "id": "Se2Kn",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "opacity": 0.85,
+                      "name": "km4",
+                      "descendants": {
+                        "O3VNM": {
+                          "sweepAngle": -270
+                        },
+                        "ZSVcm": {
+                          "content": "김민수"
+                        }
+                      }
+                    },
+                    {
+                      "id": "uSmH5",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "opacity": 0.85,
+                      "name": "lj4",
+                      "descendants": {
+                        "WanRc": {
+                          "fill": "#F472B6"
+                        },
+                        "O3VNM": {
+                          "sweepAngle": -228
+                        },
+                        "ZSVcm": {
+                          "content": "이지훈"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "mKCPd",
+                  "name": "vs4",
+                  "fill": "#F59E0B80",
+                  "content": "vs",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "frame",
+                  "id": "a4Qsk",
+                  "name": "r2",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "id": "uz0uq",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "opacity": 0.85,
+                      "name": "ps4",
+                      "descendants": {
+                        "WanRc": {
+                          "fill": "#34D399"
+                        },
+                        "O3VNM": {
+                          "sweepAngle": -312
+                        },
+                        "ZSVcm": {
+                          "content": "박서연"
+                        }
+                      }
+                    },
+                    {
+                      "id": "gw28P",
+                      "type": "ref",
+                      "ref": "OLFJd",
+                      "opacity": 0.85,
+                      "name": "cj4",
+                      "descendants": {
+                        "WanRc": {
+                          "fill": "#FBBF24"
+                        },
+                        "O3VNM": {
+                          "sweepAngle": -180
+                        },
+                        "ZSVcm": {
+                          "content": "최준호"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "cBy8G",
+              "name": "cta",
+              "width": "fill_container",
+              "height": 36,
+              "fill": "#3B82F6",
+              "cornerRadius": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "T7Vqj",
+                  "name": "ctat4",
+                  "fill": "#FFFFFF",
+                  "content": "경기완료",
+                  "fontFamily": "Inter",
+                  "fontSize": 13,
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "7YaXC",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 40,
+          "y": 340,
+          "name": "ff1",
+          "descendants": {
+            "WanRc": {
+              "fill": "#60A5FA"
+            },
+            "O3VNM": {
+              "sweepAngle": -252
+            },
+            "ZSVcm": {
+              "content": "정하윤"
+            }
+          }
+        },
+        {
+          "id": "g03w6",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 200,
+          "y": 380,
+          "name": "ff2",
+          "descendants": {
+            "WanRc": {
+              "fill": "#F87171"
+            },
+            "O3VNM": {
+              "sweepAngle": -210
+            },
+            "ZSVcm": {
+              "content": "한예진"
+            }
+          }
+        },
+        {
+          "id": "iJGMX",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 80,
+          "y": 520,
+          "name": "ff3",
+          "descendants": {
+            "WanRc": {
+              "fill": "#2DD4BF"
+            },
+            "O3VNM": {
+              "sweepAngle": -288
+            },
+            "ZSVcm": {
+              "content": "윤도현"
+            }
+          }
+        },
+        {
+          "id": "UortJ",
+          "type": "ref",
+          "ref": "OLFJd",
+          "x": 260,
+          "y": 570,
+          "name": "ff4",
+          "descendants": {
+            "WanRc": {
+              "fill": "#A78BFA"
+            },
+            "O3VNM": {
+              "sweepAngle": -168
+            },
+            "ZSVcm": {
+              "content": "강수아"
+            }
+          }
+        },
+        {
+          "type": "frame",
+          "id": "t4da5",
+          "x": 0,
+          "y": 808,
+          "name": "cs",
+          "width": 390,
+          "height": 36,
+          "fill": "$bg-court-bar",
+          "gap": 12,
+          "padding": [
+            0,
+            12
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "0W5k8",
+              "name": "csl4",
+              "fill": "$text-secondary",
+              "content": "코트 현황:",
+              "fontFamily": "Inter",
+              "fontSize": 10,
+              "fontWeight": "500"
+            },
+            {
+              "type": "frame",
+              "id": "6loKM",
+              "name": "ca",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "fIHPK",
+                  "name": "cad4",
+                  "fill": "#F59E0B",
+                  "width": 6,
+                  "height": 6
+                },
+                {
+                  "type": "text",
+                  "id": "0xdRy",
+                  "name": "cat4",
+                  "fill": "#F59E0B",
+                  "content": "A코트 · 경기중",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "qTWso",
+              "name": "cb",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "ftGZ7",
+                  "name": "cbd4",
+                  "fill": "#22C55E",
+                  "width": 6,
+                  "height": 6
+                },
+                {
+                  "type": "text",
+                  "id": "dlbeF",
+                  "name": "cbt4",
+                  "fill": "$text-secondary",
+                  "content": "B코트 · 비어있음",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "500"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "themes": {
+    "mode": [
+      "dark",
+      "light"
+    ]
+  },
+  "variables": {
+    "bg-board": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#1B2A22",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#EDF2EE",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "bg-court-bar": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#15201A80",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#FFFFFF99",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "bg-team-group": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FFFFFF0A",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#00000008",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "bg-toolbar": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#15201A",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#FFFFFF",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "shadow-color": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#00000040",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#0000001A",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "stroke-default": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#475569",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#CBD5E1",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "team-playing-bg": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#F59E0B0D",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#F59E0B15",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "team-ready-bg": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#22C55E0D",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#22C55E15",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "text-primary": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#E2E8F0",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#1E293B",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    },
+    "text-secondary": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#94A3B8",
+          "theme": {
+            "mode": "dark"
+          }
+        },
+        {
+          "value": "#64748B",
+          "theme": {
+            "mode": "light"
+          }
+        }
+      ]
+    }
+  }
+}

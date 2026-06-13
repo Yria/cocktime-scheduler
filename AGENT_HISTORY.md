@@ -145,3 +145,301 @@
 **Answer**: 8개 문제 전부 해결 확인 완료. rebuildDerivedIds/snapshotToClientState에 추가했던 courts 교차검증 방어코드를 제거하고 원래 로직으로 원복. RPC 트랜잭션이 근본 원인을 해결했으므로 방어코드 불필요.
 
 ---
+
+## #14
+
+**Prompt**: @docs/session-board.md 를 보면 기획을 구현하기 위해 어떻게 개발했는지 문서로 나열되어있어. 근데 나 이거 맘에 안들어 다시만들거야. 기획의도만 참고하고 react-knova를 써서 완전 처음부터 다시 만들거야. 네가 기존코드에서 유일하게 참조할 것은 멤버리스트가져오는것과 프로필사진을 통한 "자석"만드는 것 외엔, 싹 다 처음부터 만들거야. 필요없어진 기존 코드 및 라이브러리는 제거해. 일단 로컬에서 작동을 테스트하고 디비연동할거야.
+
+**Answer**: hardwork 스킬로 팀 에이전트(기획자+OOP개발자+프론트엔드개발자)를 구성해 세션 보드를 react-konva로 완전 재구축했습니다.
+- 기획 검증: 기존 시스템과 충돌 없음 확인, 보드 파일이 완전 격리되어 안전하게 제거 가능
+- 설계 합의: OOP방안2+3 하이브리드(geometry.ts 유지, stateMachine/interaction 삭제, boardStore handleDrop 통합) + FE방안1(Flat Layer 분리, getMagnetRenderPos 파생 셀렉터)
+- 삭제: stateMachine.ts, interaction.ts, useBoardStartMatch.ts + 관련 테스트 3개
+- 재작성: types/board.ts(flat DraftTeam), constants.ts, boardStore.ts(7액션), 5개 컴포넌트
+- 크로스 리뷰 후 수정: handleDrop을 set() 내부로 이동(스냅샷 일관성), getMagnetRenderPos에 useShallow 적용(무한 루프 방지), TeamBackground 드래그 후 Konva 노드 위치 리셋
+
+---
+
+## #15
+
+**Prompt**: session-board.md 파일을 디자인으로 구현할거야. 가상의 칠판위에 이름이 씌여진 자석을 옮기면서 팀을 만드려고 해. 인원수만큼의 자석이 있을테고, 드래그해서 겹치면 하나의 예비그룹이 될거야. 총 4명이 한 그룹이 되어 2vs2 로 경기하게 할거야.
+
+**Answer**: session-board.md 스펙 기반으로 Pencil(.pen) 디자인 4개 화면을 구현했습니다.
+- 재사용 컴포넌트 2개 생성: PlayerMagnet(프로필 원형+이름+스킬바), EmptySlot(대시 원형+아이콘)
+- 4단계 상태 화면: ① 초기 상태(8명 자유 자석 산재), ② 팀 형성 중(2/4, 대시 테두리+빈슬롯 2개), ③ 팀 준비 완료(4/4, 초록 테두리+"경기시작" CTA), ④ 경기 중(앰버 테두리+"경기완료" 버튼+코트 표시)
+- 각 화면에 툴바(세션으로 돌아가기), 코트 현황 바, 2vs2 "vs" 레이블 포함
+- 다크 칠판 배경(#1B2A22) + 비네트 이너 섀도로 물리 칠판 메타포 구현
+- 이후 반복 개선: PlayerMagnet을 원형 자석으로 재디자인(76×76 원, 내부에 이름+radial arc ring 스킬 표시), 코트 현황 바 통일, 모바일(390×844) 4개 화면 추가 생성
+
+---
+
+## #16
+
+**Prompt**: (컨텍스트 이어서) 모바일용 디자인 390×844 화면 4개 완성
+
+**Answer**: 이전 대화에서 만든 데스크탑(800×600) 세션 보드 디자인의 모바일(390×844) 버전을 완성했습니다.
+- Mobile Screen 1(초기 상태): 8명 자석 산재, 컴팩트 툴바("뒤로"), cornerRadius:24
+- Mobile Screen 2(팀 형성 중): 2/4 팀 그룹(빈 슬롯 2개) + 자유 자석 6명
+- Mobile Screen 3(팀 준비 완료): 4/4 팀 완성 + "경기시작" CTA + 자유 자석 4명
+- Mobile Screen 4(경기 중): 앰버 테두리 + "경기완료" CTA + 코트 경기중 표시
+- 모든 화면에 동일한 코트 현황 바(컬러 도트) 적용
+
+---
+
+## #17
+
+**Prompt**: 데스크탑 레이아웃 필요없으니까 제거하고 레이어 정리해줘. 그리고 모바일화면에서 라이트/다크테마 디자인도 적용해주고.
+
+**Answer**: 데스크탑 화면 4개 + 라벨 4개를 삭제하고 모바일 화면을 원점으로 재배치하여 레이어를 정리했습니다. 라이트/다크 테마 시스템을 구축했습니다.
+- 테마 변수 10개 생성: bg-board, bg-toolbar, bg-court-bar, bg-team-group, text-primary, text-secondary, stroke-default, team-ready-bg, team-playing-bg, shadow-color
+- 다크/라이트 두 테마축으로 모든 모바일 화면의 배경, 툴바, 텍스트, 코트바에 변수 바인딩 적용
+- 다크 테마 4화면(상단) + 라이트 테마 4화면(하단) 총 8개 화면으로 정리
+- 컴포넌트(PlayerMagnet, EmptySlot)는 별도 영역(y:-200)에 배치
+
+---
+
+## #15
+
+**Prompt**: @docs/board.pen 디자인을 반영해줘.
+
+**Answer**: .pen 디자인 파일을 분석하여 세션 보드의 비주얼을 전면 교체했습니다.
+- 자석: 80x80 사각형 → 76x76 원형 + 링형 스킬 인디케이터(sweep angle), 플레이어별 고유 색상(해시 기반 팔레트)
+- 팀 그룹: 다크 테마 배경, 상태별 색상(forming: slate, ready: green, playing: amber), "vs" 텍스트, 빈 슬롯에 + 아이콘 원형
+- 툴바: 56px → 48px, chevron-left 아이콘 + "뒤로" + 중앙 "세션 보드" 타이틀
+- 코트 현황 바: 하단 36px 신규 요소, 코트별 상태 dot 표시
+- 전체 다크 테마: BG_BOARD #0F172A, BG_TOOLBAR #1E293B
+- CTA 위치 조정: 팀 그룹 하단 내부 스타일로 변경
+- constants.ts에 디자인 토큰 전체 반영, geometry 테스트 업데이트
+
+---
+
+## #18
+
+**Prompt**: 문서 최신화하고 구현해줘
+
+**Answer**: `/session/board`를 "다중 예약 + DB 연동 코트 배치" 설계로 재구축하고 `docs/session-board.md`를 실제 react-konva 구현 기준으로 최신화했다. 설계 패널(설계안 3종 심사)에서 채택한 Anchor-Magnet + 별도 Reservation 분리 모델을 골격으로, 한 선수가 anchor 1개 + ghost N개로 여러 예비팀에 동시 소속되도록 구현했다. 적대적 리뷰(37 에이전트)로 32개 발견을 도출해 실제 버그 7건만 선별 수정하고, "경기시작한 4명의 타팀 예약 미정리"는 다음 라운드 미리짜기라는 설계 의도대로 유지했다.
+
+- 데이터 모델: `MagnetPosition.teamId`(anchor 단일) 유지 + `Reservation` Map 분리, `DraftTeam`에서 playing/queued 제거(코트 상태는 sessionStore에서 derive)
+- 상태머신(dropResolver): 3규칙(자유끼리=createPair / anchor를 빈공간=detach / anchor를 다른 팀·선수=reserve·reservePair), 경기중 선수는 페어 대상에서 제외
+- DB 연동: `startMatch`→`handleAssign`(선수집합 일치로 성공 판정+롤백+더블클릭 가드), `completeMatch`→`handleComplete`, 4명→GeneratedTeam은 `pairPlayers` 재활용
+- 빈 코트 없으면 경기시작 버튼 비활성(대기열 기능 제외), ghost는 점선·반투명·뱃지로 시각 구분
+- 검증: tsc/eslint/vitest(32, membership·dropResolver 테스트 신규)/vite build 전부 통과
+
+---
+
+## #19
+
+**Prompt**: 경기완료 버튼 안눌려
+
+**Answer**: 경기완료 버튼(CourtMatchCard)이 안 눌리는 원인을 z-order 문제로 진단했다. SessionBoard가 코트 카드를 가장 먼저(맨 아래) 렌더하고, 그 뒤에 그려지는 자유 자석/예비팀이 코트 카드 위에 겹쳐 버튼 클릭을 가로챘다(자유 자석 초기 그리드가 코트 레인과 같은 상단 영역에서 시작). 경기시작 버튼은 정상이었는데, 이는 TeamBackground가 코트 카드보다 나중에(위에) 렌더되기 때문이라는 점이 진단을 뒷받침했다.
+
+- 코트 카드를 Layer에서 **맨 마지막(맨 위)으로 렌더** → 버튼이 항상 클릭 가능
+- 상단 `COURT_LANE_H` 코트 레인을 예약: 풀 초기 그리드/rearrange 시작 Y/clampAnchor/settle을 모두 레인 아래로 이동해 자석·예비팀이 코트 카드와 겹치지 않도록
+- settleFreeMagnets에 topMargin 인자 추가로 자유 자석이 레인 위로 못 올라오게 클램프
+- 검증: tsc/eslint/vitest(32)/vite build 전부 통과
+
+---
+
+## #20
+
+**Prompt**: 테스트하는데 안눌려. 현재 기획을 바탕으로 테스트코드를 작성해서 그대로 수행되는지 확인해
+
+**Answer**: 버튼이 여전히 무반응이라 근본 원인을 다시 추적해 진짜 원인을 찾았다(z-order는 부차적). `subscribe()`(= `sessionStore._channel` 설정)는 오직 `SessionMain`의 useEffect에서만 호출되고 언마운트 시 `unsubscribe()`된다. 그런데 `/session/board`는 `SessionBoard`만 마운트하고 `SessionMain`은 마운트하지 않으므로 보드에서 `_channel`이 항상 null → `handleAssign`/`handleComplete`가 전부 early return → 경기시작·경기완료가 무반응(코트 카드는 로드된 스냅샷 courts로 보임). 기획을 인코딩한 boardStore 통합 테스트를 작성해 로직 자체는 스펙대로 정확함을 입증했고(테스트는 sessionStore를 모킹해 통과 → 버그가 로직이 아닌 채널 구독 누락임을 분리 확인), SessionBoard에 채널 구독 effect를 추가해 수정했다.
+
+- 근본 수정: `SessionBoard`에 `subscribe(sessionId, ()=>navigate("/"))` / `unsubscribe()` useEffect 추가(SessionMain 구독 패턴 이식)
+- 신규 테스트 `boardStore.test.ts`(7건): createPair, 다중 예약(원본 유지+여러 팀 ghost), 경기시작→handleAssign+예비팀 해체, 빈코트없음/멤버경기중 시작차단, RPC실패 롤백, 경기완료→handleComplete
+- 검증: tsc/eslint/vitest(39: geometry11+membership13+dropResolver8+boardStore7)/vite build 전부 통과
+
+---
+
+## #21
+
+**Prompt**: 보드위 자석들의 드래그 움직임이 의도대로 움직이지 않아. 일단 일반상황에서 자석은 자유롭게 움직여야하는데 자꾸 정렬되는것처럼 움직이고, 4명이 모여 경기가 시작했을때, 해당 판넬이 드래그로 움직이지 않아. 그리고 그 안에서 사람 뽑아서 다른 사람이랑 겹치면 예비 팀으로서 생성되야하는데 그것도 안돼.
+
+**Answer**: 보드 드래그 동작 3가지 결함을 수정했다. (1) 자유 이동: 드래그 끝날 때마다 호출되던 settle(pushAwayFreeMagnets)과 PlayerMagnet의 트윈 효과가 자석을 자동 재배치·활주시켜 "정렬되는 것처럼" 보였음 → 두 가지 모두 제거해 드롭한 자리에 그대로 남도록. 정렬은 툴바 "정렬" 버튼으로만, 경기완료 시 4명 풀릴 때만 예외적 settle. (2) 코트 카드 드래그: CourtMatchCard가 고정이었음 → courtAnchors Map + setCourtAnchor 추가해 드래그 이동 가능. (3) 경기중 선수 예약: 코트 멤버가 locked였음 → playing 자석을 드래그 가능하게 하고 handlePlayingMagnetDrop 신설(팀에 겹치면 예약 추가, 자유 자석에 겹치면 새 예비팀의 ghost로, 빈 공간이면 no-op; 원본은 코트 유지·슬롯 복귀).
+
+- PlayerMagnet: 트윈 useEffect 제거, locked→playing prop 전환, ghost/playing/anchor 드래그 분기
+- boardStore: courtAnchors/setCourtAnchor/handlePlayingMagnetDrop 추가, nearestFreePartner export
+- CourtMatchCard: 드래그 가능 + 멤버 자석 예약 드롭 + 경기완료 CTA cancelBubble
+- SessionBoard/TeamBackground: 드래그 종료 시 settle 호출 제거
+- 검증: tsc/eslint/vitest(44: +boardStore 5건 신규)/vite build 전부 통과
+
+---
+
+## #22
+
+**Prompt**: 그룹내에서 자석을 바깥으로 드래그하면 이상하게 움직이는데 확인해봐
+
+**Answer**: 그룹 멤버를 바깥으로 드래그할 때 "떨리며 튀는" 현상의 근본 원인을 PlayerMagnet의 슬롯 복귀 애니메이션에서 찾았다. 드래그 종료 후 `e.target.to({...})` 트윈으로 슬롯에 복귀하는데, 바깥 드롭이 근처 자유 자석/팀과 겹치면 reserve/reservePair가 store(reservations/drafts Map)를 변경 → 모든 TeamBackground가 동시에 re-render되며 같은 노드의 x를 슬롯값으로 즉시 set한다. 이 react-konva 즉시 set과 Konva 트윈이 충돌해 자석이 슬롯으로 튀었다가 되돌아갔다 하는 떨림이 발생했다(none처럼 store 변경이 없는 경우엔 트윈만 돌아 부드러웠음). 슬롯 복귀를 애니메이션 대신 즉시 위치 설정(position + batchDraw)으로 바꿔 트윈-리렌더 충돌을 제거했다. 이 수정은 anchor reserve/reservePair뿐 아니라 ghost reReserve, 경기중 선수 예약 등 모든 스냅백 경로의 떨림을 함께 해결한다.
+
+- PlayerMagnet.handleDragEnd: `e.target.to(...)` → `e.target.position({x,y}) + getLayer().batchDraw()`
+- 동작 정리(스펙대로): 바깥 빈 공간 드롭=해제(detach), 자유 자석/다른 팀에 겹침=예약(원본은 팀 유지하며 슬롯 즉시 복귀)
+- 검증: tsc/eslint/vitest(44)/vite build 전부 통과
+
+---
+
+## #23
+
+**Prompt**: 아냐 내 말은 좌표계산이 잘못된것처럼 드래그 돼.
+
+**Answer**: 떨림이 아니라 좌표 자체가 틀어지는 증상의 진짜 원인을 Konva 드래그 이벤트 버블링에서 찾았다. 멤버 자석을 드래그하면 dragmove/dragend가 부모인 팀 Group(및 코트 카드 Group)으로 버블링되는데, 그 부모 핸들러가 setTeamAnchor(teamId, e.target.x(), e.target.y())를 호출한다. 버블링된 이벤트에서 e.target은 팀이 아니라 멤버 자석이라, 팀 anchor가 멤버의 로컬 좌표(슬롯 오프셋 ±35 + drag delta)로 덮어써져 팀 전체가 좌상단으로 튀고 멤버도 끌려가 "좌표계산이 잘못된 것처럼" 보였다. 자유 자석은 Layer 직속이라 버블링될 부모 핸들러가 없어 정상이었던 점이 진단과 일치한다.
+
+- 수정: 팀 Group/코트 카드 Group의 onDragStart/onDragMove/onDragEnd에서 `e.target !== e.currentTarget`이면 return(버블링된 자식 드래그 무시), 자기 자신이 드래그될 때만 anchor 갱신/moveToTop
+- 영향: TeamBackground, CourtMatchCard 모두 적용. 멤버 드래그는 PlayerMagnet 자체 핸들러로만 처리되어 팀/코트 좌표 오염 제거
+- 검증: tsc/eslint/vitest(44)/vite build 전부 통과
+
+---
+
+## #24
+
+**Prompt**: 그룹이 만들어질때, 그룹 레이아웃과 겹치는 자석들을 겹치지않게 흩어지게 할 수 있을까. 흩어지되, 전체 화면 바운더리 바깥으론 벗어나지 않으면 좋겠어
+
+**Answer**: 자유 이동을 위해 드래그마다 제거했던 settle을, 새 팀이 생성되는 순간에만 호출하도록 추가했다. createPair/reservePair/경기중-선수 페어로 새 DraftTeam이 만들어진 직후 settleFreeMagnets를 호출해 새 팀 박스와 겹치는 자유 자석을 흩어지게 한다. settleFreeMagnets는 이미 bounds 클램프(MAG_R~viewport-MAG_R)와 topMargin(COURT_LANE_H, 코트 레인 회피)을 지원하므로 화면 바운더리 밖으로 나가지 않고 경기중 선수(excludeIds)는 제외된다. 일반 드래그/이동에는 settle을 호출하지 않아 자유 이동은 유지된다.
+
+- viewport() 헬퍼 추가(window 폴백: vw=innerWidth, vh=innerHeight-TOOLBAR-COURTBAR)
+- handleDrop의 createPair/reservePair, handlePlayingMagnetDrop의 새 팀 생성 직후 settleFreeMagnets 호출
+- 신규 테스트: createPair로 팀 생성 시 겹치던 자유 자석이 이동 + 화면 바운더리 안 유지
+- 검증: tsc/eslint/vitest(45)/vite build 전부 통과
+
+---
+
+## #25
+
+**Prompt**: 드래그하는 자석은 항상최상단에 그리게해줘
+
+**Answer**: 드래그 중인 자석이 항상 최상단에 그려지도록 PlayerMagnet의 onDragStart를 보강했다. 기존 e.target.moveToTop()은 자석을 부모 내에서만 최상단으로 올려, 팀/코트 카드 멤버는 부모 그룹 안에서만 위로 갈 뿐 그 그룹 자체가 Layer에서 자유 자석/코트 카드보다 아래라 멤버를 끌어내면 다른 요소 아래에 깔렸다. 자석을 부모 내 최상단으로 올린 뒤, 부모가 Group(팀/코트 카드)이면 그 부모도 Layer 최상단으로 moveToTop하도록 추가했다. 자유 자석은 부모가 Layer(Group 아님)라 추가 이동 없이 기존대로 동작.
+
+- PlayerMagnet.handleDragStart: e.target.moveToTop() + (getParent() instanceof Konva.Group이면) parent.moveToTop()
+- 검증: tsc/eslint/vitest(45)/vite build 전부 통과
+
+---
+
+## #26
+
+**Prompt**: 정렬버튼 눌렀을때 이미구성된 팀부터 정렬하고 나머지 자석을 정렬해줘
+
+**Answer**: rearrangeAll(정렬 버튼)을 개선했다. 기존엔 팀의 x를 그대로 둔 채 y만 한 줄씩 쌓아 정돈이 안 됐다. 이제 ① 이미 구성된 팀을 멤버 수 내림차순(완성된 4명 팀 먼저, 동수면 createdAt)으로 정렬해 코트 레인 아래에 격자(행/열)로 배치하고 ② 나머지 자유 자석을 팀 영역 아래에 격자로 배치한 뒤 ③ settleFreeMagnets로 잔여 겹침 정리 및 화면 바운더리 클램프를 수행한다.
+
+- 팀 격자: teamCols = floor((viewW-pad*2+gap)/(TEAM_W+gap)), 행 높이 = TEAM_BOX_ABOVE+TEAM_BOX_BELOW+gap
+- 자유 자석 시작 y = 팀 행들 아래(teamTop + teamRows*teamRowH + MAGNET_R)
+- 신규 테스트: 완성 팀이 부분 팀보다 먼저 배치 + 자유 자석은 팀 영역 아래
+- 검증: tsc/eslint/vitest(46)/vite build 전부 통과
+
+---
+
+## #27
+
+**Prompt**: 옵션B로 해줘. 그런데 이 로직도 그렇고 앞의 게임타입로테이션도 그렇고 내가 만드려는 기능은 "팀 추천"이야. 그래서 두명일때, 세명일때도 중요하지만, 한명만 선택했을때도 중요해. 그러니까 현재 알고리즘에서 한명만 선택한 상황에서 이 선수가 전판에 남복을 했다면, 혼복에 가중치가 높아야하니 상대적으로 여성분들에게 가중치를 주고 혼복을 했다면, 같은 성별의 사람들에게 가중치를 줘야겠지. 그리고 직전동반+과거파트너 역시 마찬가지로 한명만 선택한 상황에서 나와 경기를 뛰지 않은 선수들에게 가중치를 주는거야. 여기서 경기라 함은 같은 팀 2명이 아니고 4명 그룹을 말하는거야. 그렇기 때문에 네가 말하는 방식처럼 구조가 엄청 복잡해야하는지 잘 모르겟어. 내가 말하는걸 다시 이해해도 지금 분석처럼 고비용이 들어가는지 다시생각해봐
+
+**Answer**: 추천 알고리즘의 두 룰을 "1명 선택 중심" 기획에 맞춰 단순화했다. 처음 제안한 고비용 방식(라운드 타임스탬프+감쇠)이 과했음을 인정하고, 기존 누적 지표를 재활용해 신규 데이터 구조·DB 마이그레이션 없이 구현했다.
+
+- 직전동반(`lastCoPlayers`) + 과거파트너(`pairHistory`)를 `pairHistory` 누적 단일 지표(W_PAIR)로 통합. 작업 중 `lastCoPlayers`는 DB 복원이 안 되는 런타임 상태였고 `updateLastCoPlayers`는 호출되지 않는 죽은 코드, `last_co_players`는 쓰기 전용이라 통합이 곧 정리였음을 확인
+- 게임타입 로테이션: 후보 자신의 직전 타입만 보던 것을 시드(확정 멤버)+후보 각자의 직전 타입 합산으로 변경 → 1명 추천 시 시드 직전 타입이 후보 성별 가중을 좌우(남복→여성 우대, 혼복→동성 우대)
+- WEIGHT_PROFILES의 `coPlayerAvoidance` 전략 제거(newCombination이 흡수), TeamStrategy union 정리
+- 검증: tsc 통과, vitest 71개 통과(시드 로테이션 검증 테스트 2개 추가), 변경 파일 lint 클린
+- 문서(TEAM_GENERATION_RULES.md) 규칙9·전략 목록 갱신
+
+---
+
+## #28
+
+**Prompt**: 경기중 배지는 이름 그대로 "경기중" 인 사람들 모두에게 보여야해
+
+**Answer**: 경기중 배지가 추천 정렬 플래그(deprioritizePlaying)에 묶여 있어, 좋은 후보가 경기중에 몰리면 플래그가 false로 뒤집히며 배지까지 꺼지던 회귀를 수정했다. 배지/흐림 표시를 실제 경기중 여부(playingIds) 기반으로 분리해 추천 상태와 무관하게 항상 표시되도록 했다.
+
+- RecommendTeammateDialog: `isPlaying`을 `deprioritizePlaying && playingIds.has()` → `playingIds.has()`로 변경
+- useTeammateRecommendations: deprioritizePlaying을 표시용 반환에서 제거하고 정렬 전용(경기중 페널티 W_PLAYING 적용 여부)으로 한정, 주석 정리
+- isPlaying 하나가 배지+흐림(opacity)을 함께 제어하므로 흐림도 경기중 후보 전체에 적용됨(사용자에게 분리 가능 안내)
+- 검증: tsc/lint 클린
+
+---
+
+## #29
+
+**Prompt**: 점수분해 디버그 추가하고, 이전겜 남복일시, 다시한번 남복할때 가중치좀 낮추자
+
+**Answer**: 추천 점수의 항목별 기여도를 보여주는 디버그를 추가하고, 게임타입 로테이션의 "반복 페널티"를 보너스와 분리해 완화했다. 남필립처럼 동성 시드를 선택했을 때 동성 후보 전체가 과도하게 하위로 밀리던 양극화를 줄이는 게 목적.
+
+- 점수 분해 디버그: `ScoreBreakdown` 타입 추가, `computeScore`/`rankCandidates`/`recommendTeammates`가 항목별 기여도(skill/pair/deficit/mixed/wait + rotate/gender/playing)를 `RankedCandidate.breakdown`에 담아 반환(합=score). 추천 다이얼로그 헤더 🐛 토글로 후보별 분해 테이블 표시
+- 로테이션 완화: 기존 대칭 `±W_ROTATE`(6)를 분리 → 다른 타입 전환은 보너스 `−W_ROTATE`(6) 유지, 같은 타입 반복은 약한 페널티 `+W_ROTATE_REPEAT`(2). 동성 시드 양극화 완화
+- 테스트 2개 추가(반복<보너스 검증, breakdown 합=score), 문서 7절 갱신
+- 검증: tsc 통과, vitest 73개 통과, 변경 파일 lint 클린
+
+---
+
+## #30
+
+**Prompt**: 추천 다이얼로그의 로직에서 대기시간이 로직에서 빠져도 될거같아. 어차피 경기횟수가 적은 사람일수록 추천이 잘 되는 구조이다보니 대기시간이많다=경기를많이안뛰엇다 같은 맥락 아닐까?
+
+**Answer**: 추천 점수에서 대기시간(W_WAIT)을 제거했다. W_WAIT와 deficit는 측정 대상이 미묘하게 다르지만(현재 대기 지속 시간 vs 누적 참여 공정성) 상관이 높고, 보드 추천에선 미미한 타이브레이커 수준이라 deficit로 일원화해도 영향이 거의 없다는 분석. 추가로 Date.now() 의존이 줄어 추천 점수가 더 순수해진다.
+
+- recommendTeammates의 RECOMMEND_WEIGHTS.W_WAIT를 2.0 → 0 (자동 후보 생성의 waitTimePriority 프로필·DEFAULT_WEIGHTS는 유지)
+- 디버그 테이블에서 항상 0이 되는 "대기" 컬럼 제거
+- 문서 7절 가중치 표 갱신
+- 검증: tsc 통과, vitest 73개 통과, 변경 파일 lint 클린
+
+---
+
+## #31
+
+**Prompt**: 팀 만들때 선택한 사람이 혼복구조면, 이후 선택할 사람에 혼복이 오게끔 스코어 배정을 해줄 수 있나?
+
+**Answer**: "혼복 구조"를 "고른 멤버가 남녀 혼합"으로 확정하고, confirmed가 이미 남녀 혼합(baseMixed)이면 2남2녀 혼복을 완성하는 데 부족한 성별 후보에 보너스를 주는 스코어 항을 추가했다. 기존 W_GENDER(초과 페널티)와 짝을 이뤄 혼복 완성을 양방향으로 유도한다.
+
+- 새 가중치 `W_MIXED_COMPLETE`(8.0): baseMixed일 때 후보가 "아직 2명 미만인 부족한 성별"이면 −보너스(상위). 1남1녀처럼 양쪽 다 부족하면 동일 가산이라 편향 없음(2남1녀→여자 우대, 1남2녀→남자 우대)
+- 보너스/페널티는 breakdown의 `gender` 항에 합산 — 디버그 테이블 "성별" 컬럼에 그대로 표시
+- 테스트 2개 추가(1남2녀→남자 우대, 동성 confirmed면 미적용), 문서 7절 갱신
+- 검증: tsc 통과, vitest teamSelection 10개 통과, lint 클린
+
+---
+
+## #32
+
+**Prompt**: 솔직히 네가 말한게 정확히 이해되진 않는데, 요지는 선택하는 나의 시점으로도 계산하고 선택당하는 사람들의 시점에서도 계산한다는거지? 만약 그러기 위해 제안한거라면 수행해
+
+**Answer**: 양쪽 시점(시드+후보) 합산은 이미 되고 있었고, 제안했던 "시드/후보 반복 페널티 분리"를 수행했다. 이전에 남필립 양극화 완화로 낮춘 반복 페널티(2)가 후보 시점에도 적용돼 "직전 혼복 후보 누르기"가 약했던 것을 분리로 해결.
+
+- 로테이션을 시드 루프와 후보 단건으로 분리: 후보 본인 시점은 대칭 ±W_ROTATE(직전 혼복 후보를 혼복 팀에서 강하게 하위), 시드 시점은 반복만 약한 +W_ROTATE_REPEAT 유지(남필립 완화 보존)
+- 직전 혼복 후보 vs 직전 동성 후보 격차: 후보 시점 기준 8 → 12로 강화
+- 테스트 1개 추가(후보 시점 대칭 검증) + 기존 테스트 이름을 "시드 시점"으로 명확화, 문서 7절 갱신
+- 검증: tsc 통과, vitest teamSelection 11개 통과, lint 클린
+
+---
+
+## #33
+
+**Prompt**: 그 방향으로 해.
+
+**Answer**: 경기완료 시 흩어진 선수들이 그룹 아래로 가려지던 문제를 수정했다. 원인은 완료된 4명이 "경기 시작 때 그룹이 있던 자리"(상단 밀집 영역)에서 흩어짐을 시작해, 그룹과 겹치거나 빈 자리를 못 찾고 잔류하던 것. scatterMagnets의 시작점을 그룹 영역 아래(자유 자석 영역)로 옮겼다.
+
+- scatterMagnets: 완료 자석을 현재 위치(그룹 자리)가 아니라 모든 팀 anchor의 최하단(`groupBottom = max(COURT_LANE_H, anchor.y + TEAM_BOX_BELOW)`) 아래로 가로 배치한 뒤 방사형 흩어짐 + settleFreeMagnets 정리
+- 항상 그룹 아래 보이는 영역에서 시작하므로 그룹에 가려지지 않음
+- 테스트 1개 추가(완료 자석이 그룹 anchor보다 아래로 내려가는지 검증), boardStore 29개 통과
+- 검증: tsc 통과, vitest 전체 통과, lint 클린
+
+---
+
+## #34
+
+**Prompt**: 추천팀원 모달에서 우상단 벌레누르면 디버그 테이블뜨는데 그러면서 모달 크기가 화면을 넘어서. 조절해줘
+
+**Answer**: 디버그 테이블에 높이 제한이 없어 모달(ModalSheet)이 화면 위로 넘치던 문제를 레이아웃으로 해결했다. 시트를 flex 컬럼 + 최대 높이로 제한하고, 헤더·리스트·버튼은 고정, 디버그 테이블만 남은 공간에서 스크롤되게 했다.
+
+- ModalSheet에 `max-h-[90dvh] flex flex-col` 주입(className은 sheet에 적용됨)
+- 헤더·picker·버튼 div에 `shrink-0`, 디버그 테이블 영역에 `flex-1 min-h-0 overflow-auto`(세로·가로 스크롤)
+- 디버그 ON 시 PlayerPickerList 높이를 34vh→26vh로 줄여 디버그 공간 확보
+- 검증: tsc 통과, lint 클린 (레이아웃 변경, 테스트 영향 없음)
+
+---
+
+## #35
+
+**Prompt**: 고치고 재실행
+
+**Answer**: 사진 수집 스크립트(fetch_photos.py)의 업로드 단계에서 한 건의 ReadTimeout이 스크립트 전체를 중단시키던 문제를 진단·수정 후 재실행했다.
+
+- 근본 원인: upload_photo의 requests.post가 15초 read timeout 시 예외가 main까지 전파되어 스크립트 abort, 이미 올린 결과와 picker 선택까지 유실됨
+- upload_photo에 재시도 3회 + timeout 30초 상향, 네트워크 예외를 내부에서 흡수하도록 변경
+- main 업로드 루프를 per-item try/except로 격리(한 건 실패해도 진행), 기존 photo_urls.csv 병합 로드 후 성공 시마다 즉시 저장
+- 재실행 결과 23/23 업로드 성공
+
+---

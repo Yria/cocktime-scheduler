@@ -975,12 +975,22 @@ def upload_photo(
         "x-upsert": "true",
     }
     with open(photo_path, "rb") as f:
-        resp = requests.post(url, headers=headers, data=f.read(), timeout=15)
+        data = f.read()
 
-    if resp.status_code in (200, 201):
-        return f"{supabase_url}/storage/v1/object/public/{STORAGE_BUCKET}/{filename}"
+    last_err = ""
+    for attempt in range(1, 4):  # up to 3 attempts
+        try:
+            resp = requests.post(url, headers=headers, data=data, timeout=30)
+        except requests.exceptions.RequestException as e:
+            last_err = str(e)
+            print(f"[Upload] {player_name}: network error (attempt {attempt}/3): {e}")
+            continue
+        if resp.status_code in (200, 201):
+            return f"{supabase_url}/storage/v1/object/public/{STORAGE_BUCKET}/{filename}"
+        last_err = f"{resp.status_code} {resp.text}"
+        print(f"[Upload] {player_name}: failed (attempt {attempt}/3): {last_err}")
 
-    print(f"[Upload] Failed for {player_name}: {resp.status_code} {resp.text}")
+    print(f"[Upload] Giving up on {player_name}: {last_err}")
     return None
 
 
@@ -1136,14 +1146,32 @@ def main():
         print("[ERROR] Could not create/access storage bucket")
         return
 
-    success_count = 0
+    csv_path = PROJECT_ROOT / "scripts" / "photo_urls.csv"
+
+    # Load existing mappings so a partial run never loses prior results
     uploaded: dict[str, str] = {}  # name -> public_url
+    if csv_path.exists():
+        with open(csv_path, encoding="utf-8") as f:
+            next(f, None)  # skip header
+            for line in f:
+                cols = line.rstrip("\n").split(",", 2)
+                if len(cols) >= 2 and cols[0]:
+                    uploaded[cols[0]] = cols[1]
+
+    def flush_csv():
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("name,url,formula\n")
+            for name, url in sorted(uploaded.items()):
+                f.write(f'{name},{url},=IMAGE("{url}")\n')
+
+    success_count = 0
     for name, photo_path in resolved.items():
         public_url = upload_photo(supabase_url, service_key, name, photo_path)
         if public_url:
             print(f"  [OK] {name} -> {public_url}")
             uploaded[name] = public_url
             success_count += 1
+            flush_csv()  # persist immediately so a later failure can't lose this
         else:
             print(f"  [FAIL] {name}")
 
@@ -1152,13 +1180,7 @@ def main():
     print(f"  Uploaded: {success_count}/{len(resolved)}")
     print(f"  Skipped:  {len(player_names) - len(resolved)}")
 
-    # Save URL mapping for manual sheet entry
-    if uploaded:
-        csv_path = PROJECT_ROOT / "scripts" / "photo_urls.csv"
-        with open(csv_path, "w", encoding="utf-8") as f:
-            f.write("name,url,formula\n")
-            for name, url in sorted(uploaded.items()):
-                f.write(f'{name},{url},=IMAGE("{url}")\n')
+    if success_count:
         print(f"\n  URL list saved to: {csv_path}")
         print(f"  Copy the 'formula' column to Google Sheets column J")
 

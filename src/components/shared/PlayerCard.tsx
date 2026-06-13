@@ -1,6 +1,16 @@
 import { useState } from "react";
 import type { Gender } from "../../types";
 import { getPlayerPhotoUrl } from "../../lib/playerPhoto";
+import {
+	MAGNET_SKILL_ARC_RATIO,
+	MAGNET_GENDER_RING_W,
+	MAGNET_SKILL_FG,
+	MAGNET_SKILL_TRACK,
+	magnetGenderRing,
+	magnetGenderBg,
+	magnetGenderInk,
+	magnetSkillAngle,
+} from "../../lib/magnetStyle";
 
 interface PlayerCardProps {
 	name: string;
@@ -12,12 +22,17 @@ interface PlayerCardProps {
 	onClick?: (e: React.MouseEvent) => void;
 }
 
-const SIZES = {
-	sm: { photo: 56, width: 68, fontSize: 10, barHeight: 6 },
-	md: { photo: 72, width: 84, fontSize: 11, barHeight: 6 },
-	lg: { photo: 88, width: 100, fontSize: 12, barHeight: 7 },
+export const PLAYER_CARD_SIZES = {
+	sm: { photo: 56, width: 68, fontSize: 10 },
+	md: { photo: 72, width: 84, fontSize: 11 },
+	lg: { photo: 88, width: 100, fontSize: 12 },
 } as const;
 
+/**
+ * PlayerCard — 앱 전체 공통 "자석" 아바타(HTML).
+ * 보드 Konva 자석(PlayerMagnet)과 동일한 디자인 토큰(magnetStyle)을 사용한다:
+ * 원형 사진 + 성별색 링 + 스킬 아크 + 이름(안쪽 하단, 흰 글씨).
+ */
 export default function PlayerCard({
 	name,
 	gender,
@@ -29,122 +44,133 @@ export default function PlayerCard({
 }: PlayerCardProps) {
 	const [imgFailed, setImgFailed] = useState(false);
 	const url = getPlayerPhotoUrl(name);
-	const isF = gender === "F";
-	const s = SIZES[size];
+	const s = PLAYER_CARD_SIZES[size];
 
-	const genderColor = isF ? "#ff2d55" : "#007aff";
-	const genderBgLight = isF ? "#fca5a5" : "#7dd3fc";
-	const genderTextColor = isF ? "#991b1b" : "#075985";
+	const ringColor = magnetGenderRing(gender);
+	const bgLight = magnetGenderBg(gender);
+	const ink = magnetGenderInk(gender);
 
-	// Skill bar percentage (1.0~3.0 → 0%~100%)
-	const skillPercent = skillScore ? ((skillScore - 1.0) / 2.0) * 100 : 0;
+	const diameter = s.photo; // 자석 전체 지름
+	const inset = Math.round(diameter * MAGNET_SKILL_ARC_RATIO); // 바깥 스킬 아크 밴드(보드와 동일 비율)
+	const photoD = diameter - inset * 2; // 사진 원
+	const skillDeg = magnetSkillAngle(skillScore);
 
 	const card = (
 		<div
 			style={{
 				width: s.width,
 				display: "flex",
-				flexDirection: "column",
-				alignItems: "center",
-				gap: 4,
+				justifyContent: "center",
 				opacity: disabled ? 0.4 : 1,
 				cursor: onClick ? "pointer" : "default",
-				transition: "transform 0.1s, opacity 0.15s",
+				transition: "opacity 0.15s",
 			}}
 		>
-			{/* Photo container */}
-			<div
-				style={{
-					position: "relative",
-					width: s.photo,
-					height: s.photo,
-					borderRadius: 12,
-					overflow: "hidden",
-					border: selected
-						? `2.5px solid ${genderColor}`
-						: "2px solid rgba(128,128,128,0.15)",
-					boxShadow: selected
-						? `0 0 0 2px ${genderColor}33`
-						: "0 2px 8px rgba(0,0,0,0.08)",
-					transition: "border-color 0.15s, box-shadow 0.15s",
-					flexShrink: 0,
-				}}
-			>
-				{/* Photo or fallback */}
-				{imgFailed ? (
-					<div
-						style={{
-							width: "100%",
-							height: "100%",
-							background: genderBgLight,
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "center",
-							color: genderTextColor,
-							fontSize: s.photo * 0.38,
-							fontWeight: 700,
-						}}
-					>
-						{name.charAt(0)}
-					</div>
-				) : (
-					<img
-						src={url}
-						alt={name}
-						onError={() => setImgFailed(true)}
-						loading="lazy"
-						style={{
-							width: "100%",
-							height: "100%",
-							objectFit: "cover",
-							display: "block",
-						}}
-					/>
-				)}
-
-				{/* Skill bar overlay at bottom */}
-				{skillScore != null && (
-					<div
-						style={{
-							position: "absolute",
-							bottom: 0,
-							left: 0,
-							right: 0,
-							height: s.barHeight,
-							background: "rgba(0,0,0,0.2)",
-						}}
-					>
-						<div
-							style={{
-								height: "100%",
-								width: `${skillPercent}%`,
-								background: genderColor,
-								borderRadius: `0 ${s.barHeight}px ${s.barHeight}px 0`,
-								transition: "width 0.3s",
-							}}
-						/>
-					</div>
-				)}
-			</div>
-
-			{/* Name */}
-			{name && (
-				<span
-					className="text-[#1a1a1a] dark:text-[#e5e5e5]"
+			<div style={{ position: "relative", width: diameter, height: diameter, flexShrink: 0 }}>
+				{/* 스킬 아크 링 (12시 시작, 시계방향) — 바깥 밴드 */}
+				<div
 					style={{
-						fontSize: s.fontSize,
-						fontWeight: 600,
-						lineHeight: 1.2,
-						textAlign: "center",
-						maxWidth: s.width,
+						position: "absolute",
+						inset: 0,
+						borderRadius: "50%",
+						background:
+							skillScore != null
+								? `conic-gradient(${MAGNET_SKILL_FG} ${skillDeg}deg, ${MAGNET_SKILL_TRACK} ${skillDeg}deg)`
+								: MAGNET_SKILL_TRACK,
+					}}
+				/>
+				{/* 사진 원(84%) + 이름(안쪽 하단) */}
+				<div
+					style={{
+						position: "absolute",
+						top: inset,
+						left: inset,
+						width: photoD,
+						height: photoD,
+						borderRadius: "50%",
 						overflow: "hidden",
-						textOverflow: "ellipsis",
-						whiteSpace: "nowrap",
+						background: bgLight,
 					}}
 				>
-					{name}
-				</span>
-			)}
+					{imgFailed ? (
+						<div
+							style={{
+								width: "100%",
+								height: "100%",
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "center",
+								color: ink,
+								fontSize: photoD * 0.4,
+								fontWeight: 700,
+							}}
+						>
+							{name.charAt(0)}
+						</div>
+					) : (
+						<img
+							src={url}
+							alt={name}
+							onError={() => setImgFailed(true)}
+							loading="lazy"
+							draggable={false}
+							style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+						/>
+					)}
+
+					{/* 이름 — 자석 안쪽 하단(흰 글씨 + 그라데이션), 보드 자석과 동일 */}
+					{name && (
+						<>
+							<div
+								style={{
+									position: "absolute",
+									left: 0,
+									right: 0,
+									bottom: 0,
+									height: "58%",
+									background: "linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.35) 55%, rgba(0,0,0,0))",
+									pointerEvents: "none",
+								}}
+							/>
+							<span
+								style={{
+									position: "absolute",
+									left: 2,
+									right: 2,
+									bottom: 5,
+									textAlign: "center",
+									color: "#fff",
+									fontSize: s.fontSize,
+									fontWeight: 700,
+									lineHeight: 1.1,
+									textShadow: "0 1px 2px rgba(0,0,0,0.6)",
+									overflow: "hidden",
+									textOverflow: "ellipsis",
+									whiteSpace: "nowrap",
+									pointerEvents: "none",
+								}}
+							>
+								{name}
+							</span>
+						</>
+					)}
+				</div>
+				{/* 성별 링 — 사진 테두리(오버레이) */}
+				<div
+					style={{
+						position: "absolute",
+						top: inset,
+						left: inset,
+						width: photoD,
+						height: photoD,
+						borderRadius: "50%",
+						border: `${selected ? MAGNET_GENDER_RING_W + 0.5 : MAGNET_GENDER_RING_W}px solid ${ringColor}`,
+						boxShadow: selected ? `0 0 0 3px ${ringColor}66` : "0 2px 6px rgba(0,0,0,0.25)",
+						pointerEvents: "none",
+						transition: "border-color 0.15s, box-shadow 0.15s",
+					}}
+				/>
+			</div>
 		</div>
 	);
 
