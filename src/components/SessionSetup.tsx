@@ -4,6 +4,7 @@ import {
 	fetchSessionSettingsForConflictCheck,
 	type ServerSessionSettings,
 } from "../lib/supabase";
+import { diffSessionSettings } from "../lib/session/conflict";
 import type { Player, SessionSettings } from "../types";
 import { EditModal } from "./setup/EditModal";
 import { GuestModal } from "./setup/GuestModal";
@@ -133,29 +134,14 @@ export default function SessionSetup({ onStart }: Props) {
 				sessionMeta.sessionId,
 			);
 			if (serverState) {
-				const courtDiff = settings.courtCount !== serverState.courtCount;
-
-				const myPlayerIds = new Set(selectedPlayers.map((p) => p.id));
-				const serverPlayerIdSet = new Set(serverState.playerIds);
-				const playerDiff =
-					myPlayerIds.size !== serverPlayerIdSet.size ||
-					[...myPlayerIds].some((id) => !serverPlayerIdSet.has(id)) ||
-					[...serverPlayerIdSet].some((id) => !myPlayerIds.has(id));
-
-				const mySingleSet = new Set(settings.singleWomanIds);
-				const serverSingleSet = new Set(serverState.singleWomanIds);
-				const singleDiff =
-					mySingleSet.size !== serverSingleSet.size ||
-					[...mySingleSet].some((id) => !serverSingleSet.has(id)) ||
-					[...serverSingleSet].some((id) => !mySingleSet.has(id));
-
-				if (courtDiff || playerDiff || singleDiff) {
+				const localSnapshot = {
+					courtCount: settings.courtCount,
+					playerIds: selectedPlayers.map((p) => p.id),
+					singleWomanIds: settings.singleWomanIds,
+				};
+				if (diffSessionSettings(localSnapshot, serverState).any) {
 					setSessionConflict(serverState);
-					setSessionConflictLocalSnapshot({
-						courtCount: settings.courtCount,
-						playerIds: [...myPlayerIds],
-						singleWomanIds: settings.singleWomanIds,
-					});
+					setSessionConflictLocalSnapshot(localSnapshot);
 					pendingStartRef.current = { selectedPlayers, settings };
 					return;
 				}

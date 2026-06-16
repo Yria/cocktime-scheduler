@@ -474,3 +474,17 @@
 - 편집락 단순화: ViewerLockOverlay를 헤더 아래 전 영역 단일 차단막으로. 락 시 캔버스 입력 전부 차단, "보기 전용" 버튼으로만 권한 모달. 선택적 게이팅(보기전용도 일부 로컬 드래그 허용) 되돌림. 배경 탭은 무동작·무선택(userSelect/tapHighlight/touchAction 처리).
 - 회귀 테스트 추가: applyRemoteDrafts가 사용자 자석 위치 보존, 상단 영역 드롭 시 그대로 유지. 총 80 테스트 통과.
 - 임시 디버그 계측(lib/debug.ts) 추가 후 원인 확정되어 제거.
+
+---
+## #38
+
+**Action**: 코드 정리 로드맵 P0~P4 수행 — 중복 제거·순수 로직 추출·스토어 분해
+
+**Answer**: 멀티에이전트 분석(파일 집중도/공통 코드 중복/React 표준 문법)으로 도출·적대적 검증한 정리 항목을 우선순위 로드맵 순서로 단계별 게이트(tsc/test/lint/build)를 통과하며 수행.
+- P0(독립 quick win): skill-score 3중복→`skillScoreOf`, guest-id→`lib/player`(Date.now 충돌 제거), pairHistory 대칭미러→`lib/pairHistory`, Spinner+keyframes index.css 전역화, GenderDot/MagnetBadge 추출, `boardStore.applyRemoteDrafts` try/finally(throw 시 억제 플래그 영구 고착 방지), useSetupPlayers 의존성 `[allPlayers]`, usePlayerEditor cargo-cult useCallback/pendingSaveRef 제거. (RI-12 status union은 React Compiler set-state-in-effect 위양성으로 보류)
+- P1(공유 기반): `lib/playerSearch.matchesQuery`(useSetupPlayers의 대소문자 구분 버그 수정), `lib/board/konvaEvents`(isSelfDrag/stopTap), `shared/GenderDot`(magnetStyle 단일출처), `lib/session/conflict.diffSessionSettings`.
+- P2(board 기하/충돌): `collision.ts`→`settle.ts`/`scatter.ts`/`keepout.ts` 분리(KEEPOUT 4중 재인코딩 제거, inTeamKeepOut/computeBounds/freeMagnets/tieAngle 통일), `geometry.teamRect`로 isInsideTeamBounds 재구성.
+- P3(스토어 분해): FC-01 boardStore — clampAnchor/centroidAnchor를 geometry로(window 직접읽기 제거, DEFAULT_VIEWPORT), arrangeBoard·remoteDrafts(canonicalize/reconcile) 추출. FC-02 — editLock(computePresence/nextClaimAt)·sessionChannels(실시간 채널 배선) 추출. FC-04 — sessionSync.diffSessionPlayers. FC-10 — broadcastPlayerUpdated로 크로스스토어 _channel 접근 제거.
+- P4(뷰 추출): App.tsx sessionMetaRef/currentPathRef 제거(라이브 getState/window.location), useDarkMode 훅, MatchEditModal SwapCard, SessionBoard RestZonePanel+useBoardDragHandlers, EditModal/GuestModal 공유 PlayerAttributesForm.
+- 결과: 신규 lib/컴포넌트/훅 16개 + 단위테스트 3개(settle/editLock/sessionSync, 총 80→96 통과). 스토어 축소 boardStore 933→828·sessionStore 606→517·SessionBoard 390→237·api 434→379. eslint 4→3(기존만, 신규 0).
+- 의도적 보류: App.tsx navRef 제거(BrowserRouter navigate 재생성 가능성 → 마운트-원스 effect 회귀 위험, 미검증), DUP-01 BoardCard(~150줄 Konva 병합)·FC-07·RI-11·DUP-03/06(테스트 없는 Konva/시각·실시간 수동검증 필요). FC-02 실시간 채널은 기계적 추출이나 2-클라이언트 수동 검증 권장.

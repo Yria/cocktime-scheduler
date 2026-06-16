@@ -1,6 +1,8 @@
 import { SKILLS } from "../../lib/constants";
+import { magnetGenderRing } from "../../lib/magnetStyle";
 import type { Gender, PlayerSkills, SkillLevel } from "../../types";
 import ModalSheet from "../common/ModalSheet";
+import GenderDot from "../shared/GenderDot";
 
 interface PlayerConflictDialogProps {
 	playerName: string;
@@ -13,8 +15,6 @@ interface PlayerConflictDialogProps {
 }
 
 const SKILL_LABEL: Record<SkillLevel, string> = { O: "상", V: "중", X: "하" };
-const GENDER_LABEL: Record<Gender, string> = { M: "남", F: "여" };
-const GENDER_COLOR: Record<Gender, string> = { M: "#007aff", F: "#ff2d55" };
 
 export function PlayerConflictDialog({
 	playerName,
@@ -169,21 +169,14 @@ function Arrow() {
 }
 
 function GenderChip({ gender }: { gender: Gender }) {
-	const color = GENDER_COLOR[gender];
+	const color = magnetGenderRing(gender);
 	return (
 		<span
 			className="text-sm font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1"
 			style={{ background: `${color}12`, color }}
 		>
-			<span
-				style={{
-					width: 6,
-					height: 6,
-					borderRadius: "50%",
-					background: color,
-				}}
-			/>
-			{GENDER_LABEL[gender]}
+			<GenderDot gender={gender} size={6} />
+			{gender === "M" ? "남" : "여"}
 		</span>
 	);
 }

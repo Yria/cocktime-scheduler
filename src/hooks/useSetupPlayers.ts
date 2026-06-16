@@ -1,6 +1,6 @@
-import { disassemble, getChoseong } from "es-hangul";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { GenderFilter } from "../components/setup/PlayerSelectionList";
+import { matchesQuery } from "../lib/playerSearch";
 import { useAppStore } from "../store/appStore";
 import { useSessionStore } from "../store/sessionStore";
 import type { Player } from "../types";
@@ -85,40 +85,25 @@ export function useSetupPlayers(guests: Player[]) {
 			if (filtered.size === prev.size) return prev;
 			return filtered;
 		});
-	}, [allPlayers.length]);
-
-	// 검색
-	const matchesSearch = useCallback(
-		(name: string) => {
-			if (!search) return true;
-			if (name.includes(search)) return true;
-			const decomposed = disassemble(search);
-			const isAllChoseong = /^[ㄱ-ㅎ]+$/.test(decomposed);
-			if (isAllChoseong) {
-				return getChoseong(name).includes(decomposed);
-			}
-			return false;
-		},
-		[search],
-	);
+	}, [allPlayers]);
 
 	const filtered = useMemo(() => {
 		return players.filter((p) => {
-			const matchName = matchesSearch(p.name);
+			const matchName = matchesQuery(p.name, search);
 			const matchGender = genderFilter === "all" || genderFilter === "selected" || p.gender === genderFilter;
 			const matchSelected = genderFilter !== "selected" || selected.has(p.id);
 			return matchName && matchGender && matchSelected;
 		});
-	}, [players, matchesSearch, genderFilter, selected]);
+	}, [players, search, genderFilter, selected]);
 
 	const filteredGuests = useMemo(() => {
 		return guests.filter((p) => {
-			const matchName = matchesSearch(p.name);
+			const matchName = matchesQuery(p.name, search);
 			const matchGender = genderFilter === "all" || genderFilter === "selected" || p.gender === genderFilter;
 			const matchSelected = genderFilter !== "selected" || selected.has(p.id);
 			return matchName && matchGender && matchSelected;
 		});
-	}, [guests, matchesSearch, genderFilter, selected]);
+	}, [guests, search, genderFilter, selected]);
 
 	const selectedCount = allPlayers.filter((p) => selected.has(p.id)).length;
 

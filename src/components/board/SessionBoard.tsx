@@ -1,32 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Layer, Path, Rect, Stage, Text } from "react-konva";
+import { Layer, Stage } from "react-konva";
 import { useShallow } from "zustand/react/shallow";
+import { useBoardDragHandlers } from "../../hooks/useBoardDragHandlers";
 import { useBoardPlayerPool } from "../../hooks/useBoardPlayerPool";
 import { useContainerSize } from "../../hooks/useContainerSize";
 import { useAppStore } from "../../store/appStore";
 import { useBoardStore } from "../../store/boardStore";
 import { useSessionStore } from "../../store/sessionStore";
 import { playingIdsFromCourts } from "../../lib/board/membership";
-import { isInRestField, restSlotOffset } from "../../lib/board/geometry";
 import {
 	TOOLBAR_H,
 	COURT_BAR_H,
 	BG_BOARD,
 	TEAM_W,
 	TEAM_BOX_ABOVE,
-	REST_ZONE_H,
-	REST_ZONE_BG,
-	REST_ZONE_STROKE,
-	REST_ZONE_LABEL,
-	REST_ZONE_HOT_BG,
-	REST_ZONE_HOT_STROKE,
-	REST_ZONE_HOT_LABEL,
 } from "../../lib/board/constants";
 import BoardToolbar from "./BoardToolbar";
 import RestBar from "./RestBar";
 import CourtMatchCard from "./CourtMatchCard";
 import PlayerMagnet from "./PlayerMagnet";
+import RestZonePanel from "./RestZonePanel";
 import TeamBackground from "./TeamBackground";
 import RecommendTeammateDialog from "./RecommendTeammateDialog";
 import MatchEditModal from "./MatchEditModal";
@@ -94,11 +88,7 @@ export default function SessionBoard() {
 	// 휴식 필드(하단 바) — 바 탭으로 패널 열고 닫음. 자석을 끌어 내리면 휴식, 빼면 복귀.
 	const restZoneOpen = useBoardStore((s) => s.restZoneOpen);
 	const restFieldHot = useBoardStore((s) => s.restFieldHot);
-	const setRestFieldHot = useBoardStore((s) => s.setRestFieldHot);
-	const restPlayer = useBoardStore((s) => s.restPlayer);
-	const unrestPlayer = useBoardStore((s) => s.unrestPlayer);
 	const restingSet = useMemo(() => new Set(restingIds), [restingIds]);
-	const hotRef = useRef(false); // 드래그 프레임마다 store set 남발 방지(상태 전환 시에만)
 
 	// 자유 자석: 팀 미소속(teamId null) && 경기중 아님
 	const freeMagnetIds = useBoardStore(
@@ -117,9 +107,6 @@ export default function SessionBoard() {
 	);
 
 	const draftIds = useBoardStore(useShallow((s) => Array.from(s.drafts.keys())));
-
-	const handleDrop = useBoardStore((s) => s.handleDrop);
-	const handleGhostDrop = useBoardStore((s) => s.handleGhostDrop);
 
 	// 추천 팀원 다이얼로그 대상: 빈 슬롯(+) → {teamId}, 자유 자석 탭 → {seedId}
 	const [recommendTarget, setRecommendTarget] = useState<RecommendTarget | null>(null);
@@ -150,54 +137,9 @@ export default function SessionBoard() {
 		[playingIds, isEditor],
 	);
 
-	// 드래그 이동 중: 휴식 필드 위로 들어오면 액티베이트(hot) 하이라이트. 상태 전환 시에만 store 갱신.
-	const onMagnetDragMove = useCallback(
-		(_playerId: string, cx: number, cy: number) => {
-			const hot = isInRestField({ x: cx, y: cy }, stageH, restZoneOpen);
-			if (hot !== hotRef.current) {
-				hotRef.current = hot;
-				setRestFieldHot(hot);
-			}
-		},
-		[stageH, restZoneOpen, setRestFieldHot],
-	);
-
-	const clearHot = useCallback(() => {
-		if (hotRef.current) {
-			hotRef.current = false;
-			setRestFieldHot(false);
-		}
-	}, [setRestFieldHot]);
-
-	// 자유 이동: 드롭한 자리에 그대로 둔다(자동 재배치/settle 없음). 정렬은 툴바 "정렬" 버튼으로만.
-	// 단, 하단 휴식 필드(푸터 위)에 드롭하면 휴식 처리(접힘 상태에선 얇은 캐치존, 펼침 상태에선 패널).
-	const onMagnetDragEnd = useCallback(
-		(playerId: string, cx: number, cy: number) => {
-			clearHot();
-			if (isInRestField({ x: cx, y: cy }, stageH, restZoneOpen)) {
-				restPlayer(playerId);
-				return;
-			}
-			handleDrop(playerId, { x: cx, y: cy });
-		},
-		[handleDrop, restZoneOpen, stageH, restPlayer, clearHot],
-	);
-
-	// 휴식 자석 드래그-엔드: 패널 밖(위)으로 빼면 복귀, 패널 안이면 슬롯으로 스냅백(PlayerMagnet 처리).
-	const onRestingDragEnd = useCallback(
-		(playerId: string, cx: number, cy: number) => {
-			clearHot();
-			if (!isInRestField({ x: cx, y: cy }, stageH, true)) unrestPlayer(playerId, { x: cx, y: cy });
-		},
-		[stageH, unrestPlayer, clearHot],
-	);
-
-	const onGhostDragEnd = useCallback(
-		(resId: string, cx: number, cy: number) => {
-			handleGhostDrop(resId, { x: cx, y: cy });
-		},
-		[handleGhostDrop],
-	);
+	// 드래그/드롭 핸들러(휴식 hot 하이라이트·휴식 처리·자유 배치·예약 드롭)
+	const { onMagnetDragMove, onMagnetDragEnd, onRestingDragEnd, onGhostDragEnd } =
+		useBoardDragHandlers(stageH, restZoneOpen);
 
 	const halfW = TEAM_W / 2;
 	const courtCardY = TEAM_BOX_ABOVE + 8;
@@ -234,111 +176,16 @@ export default function SessionBoard() {
 						))}
 						{/* 휴식 패널 — 펼침(restZoneOpen) 시에만 stage에 렌더.
 						    접힘 상태의 드래그 활성 피드백은 stage 밴드 없이 푸터(RestBar) 점등으로만 표현. */}
-						{restZoneOpen && (() => {
-							const fieldH = REST_ZONE_H;
-							const fieldTop = stageH - fieldH;
-							const midY = fieldTop + fieldH / 2;
-							const empty = restingIds.length === 0;
-							// 중앙 드롭 힌트는 빈 상태에서만(자석 있으면 헤더+자석). hot이면 액센트 문구.
-							const showCenter = empty;
-							const showIcon = showCenter;
-							const centerText = restFieldHot ? "여기에 놓으면 휴식" : "끌어다 놓으면 휴식";
-							const centerColor = restFieldHot ? REST_ZONE_HOT_LABEL : REST_ZONE_LABEL;
-							return (
-								<>
-									<Rect
-										x={0}
-										y={fieldTop}
-										width={stageW}
-										height={fieldH}
-										cornerRadius={[14, 14, 0, 0]}
-										fill={restFieldHot ? REST_ZONE_HOT_BG : REST_ZONE_BG}
-										stroke={restFieldHot ? REST_ZONE_HOT_STROKE : REST_ZONE_STROKE}
-										strokeWidth={restFieldHot ? 2 : 1}
-										dash={restFieldHot ? [9, 5] : undefined}
-										listening={false}
-										perfectDrawEnabled={false}
-									/>
-									{/* 빈 상태 점선 드롭 프레임 */}
-									{restZoneOpen && empty && !restFieldHot && (
-										<Rect
-											x={12}
-											y={fieldTop + 10}
-											width={stageW - 24}
-											height={fieldH - 20}
-											cornerRadius={10}
-											stroke={REST_ZONE_STROKE}
-											strokeWidth={1.5}
-											dash={[6, 5]}
-											listening={false}
-											perfectDrawEnabled={false}
-										/>
-									)}
-									{/* 중앙 드롭 힌트 — 트레이 아이콘 + 문구 */}
-									{showIcon && (
-										<Path
-											data="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3"
-											x={stageW / 2 - 11}
-											y={midY - 21}
-											scaleX={0.9}
-											scaleY={0.9}
-											stroke={centerColor}
-											strokeWidth={2}
-											lineCap="round"
-											lineJoin="round"
-											listening={false}
-											perfectDrawEnabled={false}
-										/>
-									)}
-									{showCenter && (
-										<Text
-											x={0}
-											y={showIcon ? midY + 5 : midY - 7}
-											width={stageW}
-											text={centerText}
-											fontSize={11}
-											fontStyle="bold"
-											fontFamily="Inter, system-ui, sans-serif"
-											fill={centerColor}
-											align="center"
-											listening={false}
-											perfectDrawEnabled={false}
-										/>
-									)}
-									{/* 휴식자 헤더(좌상단) */}
-									{restZoneOpen && !empty && (
-										<Text
-											x={0}
-											y={fieldTop + 8}
-											width={stageW}
-											offsetX={-14}
-											text={`휴식 ${restingIds.length} · 위로 빼면 복귀`}
-											fontSize={11}
-											fontStyle="bold"
-											fontFamily="Inter, system-ui, sans-serif"
-											fill={restFieldHot ? REST_ZONE_HOT_LABEL : REST_ZONE_LABEL}
-											align="left"
-											listening={false}
-											perfectDrawEnabled={false}
-										/>
-									)}
-									{restZoneOpen && restingIds.map((id, i) => {
-										const off = restSlotOffset(i, stageW, stageH);
-										return (
-											<PlayerMagnet
-												key={`rest-${id}`}
-												playerId={id}
-												offsetX={off.x}
-												offsetY={off.y}
-												resting
-												onRestingDragEnd={onRestingDragEnd}
-												onDragMove={onMagnetDragMove}
-											/>
-									);
-								})}
-							</>
-							);
-						})()}
+						{restZoneOpen && (
+							<RestZonePanel
+								stageW={stageW}
+								stageH={stageH}
+								restingIds={restingIds}
+								restFieldHot={restFieldHot}
+								onRestingDragEnd={onRestingDragEnd}
+								onMagnetDragMove={onMagnetDragMove}
+							/>
+						)}
 					</Layer>
 				</Stage>
 			</div>

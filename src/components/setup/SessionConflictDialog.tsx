@@ -1,3 +1,4 @@
+import { diffSessionSettings } from "../../lib/session/conflict";
 import type { ServerSessionSettings } from "../../lib/supabase";
 import type { Player } from "../../types";
 import ModalSheet from "../common/ModalSheet";
@@ -26,21 +27,22 @@ export function SessionConflictDialog({
 		...serverSettings.playerNames.map((p) => [p.playerId, p.name] as const),
 	]);
 
-	const courtCountDiff = localCourtCount !== serverSettings.courtCount;
+	const {
+		courtChanged: courtCountDiff,
+		playersChanged: playerDiff,
+		singleChanged: singleDiff,
+	} = diffSessionSettings(
+		{
+			courtCount: localCourtCount,
+			playerIds: localPlayerIds,
+			singleWomanIds: localSingleWomanIds,
+		},
+		serverSettings,
+	);
 
+	// 참가자 칩 강조용(서버/로컬 양쪽 멤버십 표시)
 	const localSet = new Set(localPlayerIds);
 	const serverSet = new Set(serverSettings.playerIds);
-	const playerDiff =
-		localSet.size !== serverSet.size ||
-		[...localSet].some((id) => !serverSet.has(id)) ||
-		[...serverSet].some((id) => !localSet.has(id));
-
-	const localSingleSet = new Set(localSingleWomanIds);
-	const serverSingleSet = new Set(serverSettings.singleWomanIds);
-	const singleDiff =
-		localSingleWomanIds.length !== serverSettings.singleWomanIds.length ||
-		localSingleWomanIds.some((id) => !serverSingleSet.has(id)) ||
-		serverSettings.singleWomanIds.some((id) => !localSingleSet.has(id));
 
 	const serverSingleNames = serverSettings.singleWomanIds.map(
 		(id) => playerNameMap.get(id) || id,

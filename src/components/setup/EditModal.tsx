@@ -1,8 +1,8 @@
-import { SKILL_LEVELS, SKILLS } from "../../lib/constants";
 import { OAUTH_AVAILABLE } from "../../lib/googleAuth";
+import { isGuestId } from "../../lib/player";
 import type { Gender, Player, PlayerSkills, SkillLevel } from "../../types";
 import ModalSheet from "../common/ModalSheet";
-import { SkillButton } from "./SkillButton";
+import { PlayerAttributesForm } from "./PlayerAttributesForm";
 
 interface EditModalProps {
 	player: Player;
@@ -27,7 +27,7 @@ export function EditModal({
 	onChangeGender,
 	onChangeSkill,
 }: EditModalProps) {
-	const isGuest = player.id.startsWith("guest-");
+	const isGuest = isGuestId(player.id);
 
 	return (
 		<ModalSheet position="bottom" onClose={onClose} className="flex flex-col max-h-[90dvh]">
@@ -55,66 +55,12 @@ export function EditModal({
 			</div>
 
 			<div className="no-sb overflow-y-auto px-5 pb-2">
-				<div className="mb-4">
-					<p className="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wide mb-2">
-						성별
-					</p>
-					<div className="flex gap-2">
-						{(["M", "F"] as Gender[]).map((g) => (
-							<button
-								type="button"
-								key={g}
-								onClick={() => onChangeGender(g)}
-								className={`btn-toggle flex-1 py-2.5 ${editGender === g ? "btn-toggle-active" : ""}`}
-							>
-								<span
-									style={{
-										display: "inline-flex",
-										alignItems: "center",
-										gap: 5,
-									}}
-								>
-									<span
-										style={{
-											width: 7,
-											height: 7,
-											borderRadius: "50%",
-											background: g === "M" ? "#007aff" : "#ff2d55",
-											display: "inline-block",
-											flexShrink: 0,
-										}}
-									/>
-									{g === "M" ? "남" : "여"}
-								</span>
-							</button>
-						))}
-					</div>
-				</div>
-
-				<div className="mb-2">
-					<p className="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wide mb-2">
-						스킬
-					</p>
-					<div className="flex flex-col gap-2">
-						{SKILLS.map((skill) => (
-							<div key={skill} className="flex items-center gap-3">
-								<span className="text-sm text-gray-500 dark:text-gray-300 w-[60px] shrink-0">
-									{skill}
-								</span>
-								<div className="flex gap-1.5 flex-1">
-									{SKILL_LEVELS.map((level) => (
-										<SkillButton
-											key={level}
-											level={level}
-											active={editSkills[skill] === level}
-											onClick={() => onChangeSkill(skill, level)}
-										/>
-									))}
-								</div>
-							</div>
-						))}
-					</div>
-				</div>
+				<PlayerAttributesForm
+					gender={editGender}
+					skills={editSkills}
+					onChangeGender={onChangeGender}
+					onChangeSkill={onChangeSkill}
+				/>
 
 				{editError && (
 					<p className="text-sm text-red-400 mb-2">{editError}</p>

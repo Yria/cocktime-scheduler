@@ -4,6 +4,7 @@ import type Konva from "konva";
 import { useBoardStore } from "../../store/boardStore";
 import { useSessionStore } from "../../store/sessionStore";
 import { computeEmptySlots, computeSlotOffset } from "../../lib/board/geometry";
+import { isSelfDrag, stopTap } from "../../lib/board/konvaEvents";
 import {
 	findReservation,
 	isTeamStartable,
@@ -63,7 +64,7 @@ const TeamBackground = memo(function TeamBackground({
 	// 안 하면 setTeamAnchor가 멤버의 로컬 좌표로 anchor를 덮어써 팀이 튄다.
 	const handleDragMove = useCallback(
 		(e: Konva.KonvaEventObject<DragEvent>) => {
-			if (e.target !== e.currentTarget) return;
+			if (!isSelfDrag(e)) return;
 			setTeamAnchor(teamId, e.target.x(), e.target.y());
 		},
 		[teamId, setTeamAnchor],
@@ -71,7 +72,7 @@ const TeamBackground = memo(function TeamBackground({
 
 	const handleDragEnd = useCallback(
 		(e: Konva.KonvaEventObject<DragEvent>) => {
-			if (e.target !== e.currentTarget) return;
+			if (!isSelfDrag(e)) return;
 			setTeamAnchor(teamId, e.target.x(), e.target.y());
 			// 드래그-엔드: 팀 패널에서 겹친 자유 자석 흩어짐
 			settleBoard({ teamId });
@@ -80,7 +81,7 @@ const TeamBackground = memo(function TeamBackground({
 	);
 
 	const handleDragStart = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
-		if (e.target === e.currentTarget) e.target.moveToTop();
+		if (isSelfDrag(e)) e.target.moveToTop();
 	}, []);
 
 	if (!team) return null;
@@ -185,10 +186,7 @@ const TeamBackground = memo(function TeamBackground({
 					x={slot.x}
 					y={slot.y}
 					listening={!!onSlotClick}
-					onMouseDown={(e) => { e.cancelBubble = true; }}
-					onTouchStart={(e) => { e.cancelBubble = true; }}
-					onClick={(e) => { e.cancelBubble = true; onSlotClick?.(teamId); }}
-					onTap={(e) => { e.cancelBubble = true; onSlotClick?.(teamId); }}
+					{...stopTap(() => onSlotClick?.(teamId))}
 				>
 					{/* 클릭 히트영역(투명 원) — + 선 사이 빈 공간도 잡도록 */}
 					<Circle radius={EMPTY_SLOT_R} fill="rgba(0,0,0,0.001)" stroke={STROKE_DEFAULT} strokeWidth={2} perfectDrawEnabled={false} />

@@ -1,8 +1,9 @@
-import { useCallback, useRef, useState } from "react";
+import { useState } from "react";
 import {
 	fetchSessionPlayerForConflictCheck,
 	type ServerPlayerData,
 } from "../lib/supabase";
+import { isGuestId } from "../lib/player";
 import { appActions } from "../store/appStore";
 import { useSessionStore } from "../store/sessionStore";
 import type { Gender, Player, PlayerSkills } from "../types";
@@ -27,7 +28,6 @@ export function usePlayerEditor(sessionMeta: SessionMeta | null) {
 		localGender: Gender;
 		localSkills: PlayerSkills;
 	} | null>(null);
-	const pendingSaveRef = useRef<(() => Promise<void>) | null>(null);
 
 	function openEdit(e: React.MouseEvent, player: Player) {
 		e.stopPropagation();
@@ -37,7 +37,7 @@ export function usePlayerEditor(sessionMeta: SessionMeta | null) {
 		setEditError("");
 	}
 
-	const doPlayerSave = useCallback(async () => {
+	async function doPlayerSave() {
 		if (!editingPlayer) return;
 		setEditSaving(true);
 		setEditError("");
@@ -53,11 +53,11 @@ export function usePlayerEditor(sessionMeta: SessionMeta | null) {
 		} finally {
 			setEditSaving(false);
 		}
-	}, [editingPlayer, editGender, editSkills]);
+	}
 
 	async function handleSave() {
 		if (!editingPlayer) return;
-		if (editingPlayer.id.startsWith("guest-")) {
+		if (isGuestId(editingPlayer.id)) {
 			appActions.setSetupGuests((prev) =>
 				prev.map((g) =>
 					g.id === editingPlayer.id
@@ -89,7 +89,6 @@ export function usePlayerEditor(sessionMeta: SessionMeta | null) {
 							localGender: editGender,
 							localSkills: { ...editSkills },
 						});
-						pendingSaveRef.current = doPlayerSave;
 						return;
 					}
 				}
@@ -101,16 +100,11 @@ export function usePlayerEditor(sessionMeta: SessionMeta | null) {
 
 	function resolvePlayerConflict() {
 		setPlayerConflict(null);
-		if (pendingSaveRef.current) {
-			const save = pendingSaveRef.current;
-			pendingSaveRef.current = null;
-			save();
-		}
+		doPlayerSave();
 	}
 
 	function cancelPlayerConflict() {
 		setPlayerConflict(null);
-		pendingSaveRef.current = null;
 		setEditingPlayer(null);
 	}
 

@@ -7,6 +7,7 @@ import type {
 } from "../../types";
 import type { BoardDraftsPayload } from "../../types/board";
 import { supabase } from "./client";
+import { diffSessionPlayers } from "./sessionSync";
 import { rowToSessionPlayer } from "./transformers";
 import type {
 	MatchRow,
@@ -137,59 +138,12 @@ export async function updateSession(
 		return false;
 	}
 
-	const existingMap = new Map(existingPlayers.map((p) => [p.player_id, p]));
-	const newPlayerMap = new Map(players.map((p) => [p.id, p]));
-	const singleWomanIdSet = new Set(singleWomanIds);
-
 	const nowIso = new Date().toISOString();
-
-	// 추가할 플레이어 (waiting 상태로 삽입)
-	const playersToAdd = players
-		.filter((p) => !existingMap.has(p.id))
-		.map((p) => ({
-			session_id: sessionId,
-			player_id: p.id,
-			name: p.name,
-			gender: p.gender,
-			skills: p.skills,
-			allow_mixed_single: p.gender === "F" && singleWomanIdSet.has(p.id),
-			status: "waiting",
-			wait_since: nowIso,
-			joined_at_match: 0,
-		}));
-
-	// 변경된 플레이어만 upsert, 삭제할 플레이어 id 수집
-	const playersToUpsert: object[] = [];
-	const playersToRemoveIds: string[] = [];
-
-	for (const ep of existingPlayers) {
-		const newP = newPlayerMap.get(ep.player_id);
-		if (!newP) {
-			// 새 목록에 없는 플레이어 → 삭제 대상
-			// 단, status가 playing이 아니어야 함
-			if (ep.status !== "playing") {
-				playersToRemoveIds.push(ep.id);
-			}
-		} else {
-			const allowedMixedSingle =
-				newP.gender === "F" && singleWomanIdSet.has(newP.id);
-			const changed =
-				ep.allow_mixed_single !== allowedMixedSingle ||
-				ep.name !== newP.name ||
-				ep.gender !== newP.gender ||
-				JSON.stringify(ep.skills) !== JSON.stringify(newP.skills);
-
-			if (changed) {
-				playersToUpsert.push({
-					...ep,
-					name: newP.name,
-					gender: newP.gender,
-					skills: newP.skills,
-					allow_mixed_single: allowedMixedSingle,
-				});
-			}
-		}
-	}
+	const {
+		toAdd: playersToAdd,
+		toUpsert: playersToUpsert,
+		toRemoveIds: playersToRemoveIds,
+	} = diffSessionPlayers(existingPlayers, players, singleWomanIds, sessionId, nowIso);
 
 	// DB에 ON DELETE SET NULL이 설정되어 있으므로 매치 참조 체크 불필요
 	// 삭제 시 매치의 참조만 NULL이 되고 매치 기록은 보존됨
@@ -225,17 +179,8 @@ export async function updateSession(
 				.delete()
 				.in("id", playersToRemoveIds)
 				.then((res) => {
-					if (res.error) {
-						console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-						console.error("❌ session_players 삭제 실패!");
-						console.error("에러 코드:", res.error.code);
-						console.error("에러 메시지:", res.error.message);
-						console.error("에러 상세:", res.error.details);
-						console.error("에러 힌트:", res.error.hint);
-						console.error("삭제 시도한 ID 수:", playersToRemoveIds.length);
-						console.error("삭제 시도한 ID 샘플:", playersToRemoveIds.slice(0, 3));
-						console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-					}
+					if (res.error)
+						console.error("session_players delete error:", res.error);
 				}),
 		);
 	}

@@ -1,5 +1,6 @@
 import { Check } from "lucide-react";
 import type { Player } from "../../types";
+import GenderDot from "../shared/GenderDot";
 
 interface PlayerRowProps {
 	player: Player;
@@ -33,7 +34,7 @@ export function PlayerRow({
 		>
 			<button
 				type="button"
-				onClick={disabled ? undefined : onToggle}
+				onClick={onToggle}
 				disabled={disabled}
 				style={{
 					display: "flex",
@@ -66,16 +67,7 @@ export function PlayerRow({
 						<Check size={12} color="white" strokeWidth={2.5} />
 					)}
 				</span>
-				<span
-					style={{
-						width: 9,
-						height: 9,
-						borderRadius: "50%",
-						background: player.gender === "F" ? "#ff2d55" : "#007aff",
-						flexShrink: 0,
-						display: "inline-block",
-					}}
-				/>
+				<GenderDot gender={player.gender} size={9} />
 				<span
 					className="text-[#0f1724] dark:text-white"
 					style={{

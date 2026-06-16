@@ -7,6 +7,62 @@ import PlayerCard from "../shared/PlayerCard";
 
 type Props = { courtId: number; onClose: () => void };
 
+/** 로스터/벤치 선수 카드(선택 시 강조 + "선택됨" 배지). 자기 player를 store에서 구독. */
+function SwapCard({
+	id,
+	selected,
+	onClick,
+}: {
+	id: string;
+	selected: boolean;
+	onClick: () => void;
+}) {
+	const p = useSessionStore((s) => s.sessionPlayers.get(id));
+	if (!p) return null;
+	return (
+		<div
+			style={{
+				position: "relative",
+				borderRadius: 16,
+				padding: 4,
+				background: selected ? "rgba(0,122,255,0.16)" : "transparent",
+				boxShadow: selected ? "0 0 0 3px var(--ios-blue)" : "none",
+				transition: "background 120ms ease, box-shadow 120ms ease",
+			}}
+		>
+			<PlayerCard
+				name={p.name}
+				gender={p.gender}
+				skillScore={skillScore(p)}
+				size="sm"
+				selected={selected}
+				onClick={onClick}
+			/>
+			{selected && (
+				<span
+					style={{
+						position: "absolute",
+						top: -7,
+						left: "50%",
+						transform: "translateX(-50%)",
+						background: "var(--ios-blue)",
+						color: "#fff",
+						fontSize: 9,
+						fontWeight: 800,
+						lineHeight: 1,
+						padding: "3px 7px",
+						borderRadius: 999,
+						whiteSpace: "nowrap",
+						boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+					}}
+				>
+					선택됨
+				</span>
+			)}
+		</div>
+	);
+}
+
 /**
  * 경기 수정(특수 액션) — 진행중 매치의 로스터를 자유롭게 편집.
  * 현재 4명 중 하나 + 아래 목록(경기중 아닌 전원) 중 하나를 고르면 서로 자리가 바뀐다(로컬 스테이징).
@@ -61,54 +117,6 @@ export default function MatchEditModal({ courtId, onClose }: Props) {
 		onClose();
 	};
 
-	const card = (id: string, selected: boolean, onClick: () => void) => {
-		const p = sessionPlayers.get(id);
-		if (!p) return null;
-		return (
-			<div
-				key={id}
-				style={{
-					position: "relative",
-					borderRadius: 16,
-					padding: 4,
-					background: selected ? "rgba(0,122,255,0.16)" : "transparent",
-					boxShadow: selected ? "0 0 0 3px var(--ios-blue)" : "none",
-					transition: "background 120ms ease, box-shadow 120ms ease",
-				}}
-			>
-				<PlayerCard
-					name={p.name}
-					gender={p.gender}
-					skillScore={skillScore(p)}
-					size="sm"
-					selected={selected}
-					onClick={onClick}
-				/>
-				{selected && (
-					<span
-						style={{
-							position: "absolute",
-							top: -7,
-							left: "50%",
-							transform: "translateX(-50%)",
-							background: "var(--ios-blue)",
-							color: "#fff",
-							fontSize: 9,
-							fontWeight: 800,
-							lineHeight: 1,
-							padding: "3px 7px",
-							borderRadius: 999,
-							whiteSpace: "nowrap",
-							boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
-						}}
-					>
-						선택됨
-					</span>
-				)}
-			</div>
-		);
-	};
-
 	return (
 		<ModalSheet position="bottom" onClose={onClose} className="max-h-[90dvh] flex flex-col">
 			<div className="shrink-0 px-5 pt-5 pb-3 border-b border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]">
@@ -121,11 +129,15 @@ export default function MatchEditModal({ courtId, onClose }: Props) {
 			{/* 현재 로스터(스테이징) */}
 			<div className="shrink-0 px-5 py-4">
 				<div className="flex justify-center items-start gap-3">
-					{[0, 1].map((i) => card(roster[i], selSlot === i, () => clickSlot(i)))}
+					{[0, 1].map((i) => (
+						<SwapCard key={roster[i]} id={roster[i]} selected={selSlot === i} onClick={() => clickSlot(i)} />
+					))}
 				</div>
 				<div className="text-center text-xs font-bold text-gray-400 dark:text-gray-500 my-1">vs</div>
 				<div className="flex justify-center items-start gap-3">
-					{[2, 3].map((i) => card(roster[i], selSlot === i, () => clickSlot(i)))}
+					{[2, 3].map((i) => (
+						<SwapCard key={roster[i]} id={roster[i]} selected={selSlot === i} onClick={() => clickSlot(i)} />
+					))}
 				</div>
 			</div>
 
@@ -136,7 +148,9 @@ export default function MatchEditModal({ courtId, onClose }: Props) {
 					<p className="text-sm text-gray-400 dark:text-gray-500 py-3 text-center">교체 가능한 선수가 없습니다</p>
 				) : (
 					<div className="flex flex-wrap justify-center gap-2">
-						{benchIds.map((id) => card(id, selBench === id, () => clickBench(id)))}
+						{benchIds.map((id) => (
+							<SwapCard key={id} id={id} selected={selBench === id} onClick={() => clickBench(id)} />
+						))}
 					</div>
 				)}
 			</div>

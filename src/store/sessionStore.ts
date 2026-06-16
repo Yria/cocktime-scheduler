@@ -2,7 +2,6 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { create } from "zustand";
 import {
 	type BroadcastPayload,
-	createBroadcastChannel,
 	dbAssignMatch,
 	dbCompleteMatch,
 	dbEndSession,
@@ -12,7 +11,14 @@ import {
 	supabase,
 } from "../lib/supabase";
 import type { ClientSessionState } from "../lib/supabase";
-import { recordHistory } from "../lib/teamSelection";
+import { createSessionChannels } from "../lib/supabase/sessionChannels";
+import { matchPlayerIds } from "../lib/board/membership";
+import {
+	computePresence,
+	nextClaimAt,
+	type PresenceState,
+} from "../lib/editLock";
+import { recordTeam } from "../lib/pairHistory";
 import type {
 	Court,
 	GameType,
@@ -40,70 +46,12 @@ function upsertPlayers(map: Map<string, SessionPlayer>, players: SessionPlayer[]
 	return next;
 }
 
-/**
- * 양도형 편집 락 — presenceState에서 "현재 접속자 중 가장 최근에 점유(claim)한 기기"를 보유자로 산정.
- * 아무도 claim 안 했으면 lockFree=true(자유, 누구나 편집 가능, 첫 편집이 자동 점유).
- * 모든 클라이언트가 동일 presence 집합을 보므로 결정이 일치. 보유자 이탈 시 presence에서 사라져 자동 자유/인계.
- * isEditor(=편집 가능) = 내가 보유자이거나 lockFree.
- */
-type PresenceEntry = { clientId: string; name: string };
-function computePresence(
-	state: Record<string, Array<Record<string, unknown>>>,
-	myClientId: string,
-	myClaimAt: number,
-): {
-	presenceCount: number;
-	presenceList: PresenceEntry[];
-	holderClientId: string | null;
-	holderName: string | null;
-	lockFree: boolean;
-	isEditor: boolean;
-} {
-	const byId = new Map<string, { name: string; claimAt: number }>();
-	for (const arr of Object.values(state)) {
-		for (const p of arr) {
-			const cid = p?.clientId;
-			if (typeof cid !== "string") continue;
-			const claimAt = typeof p?.claimAt === "number" ? (p.claimAt as number) : 0;
-			const name = typeof p?.name === "string" ? (p.name as string) : "기기";
-			const ex = byId.get(cid);
-			if (!ex || claimAt > ex.claimAt) byId.set(cid, { name, claimAt });
-		}
-	}
-	// 내 최신 claim이 presence에 아직 반영 안 됐을 수 있어 로컬 값으로 보정(깜빡임 방지)
-	const mine = byId.get(myClientId);
-	if (mine && myClaimAt > mine.claimAt) mine.claimAt = myClaimAt;
-
-	const claimants = [...byId.entries()]
-		.filter(([, v]) => v.claimAt > 0)
-		.sort((a, b) => b[1].claimAt - a[1].claimAt || a[0].localeCompare(b[0]));
-	const holder = claimants[0];
-	const holderClientId = holder?.[0] ?? null;
-	const holderName = holder?.[1].name ?? null;
-	const lockFree = holderClientId === null;
-	return {
-		presenceCount: byId.size,
-		presenceList: [...byId.entries()].map(([cid, v]) => ({ clientId: cid, name: v.name })),
-		holderClientId,
-		holderName,
-		lockFree,
-		isEditor: lockFree || holderClientId === myClientId,
-	};
-}
-
 /** 편집 권한 점유/인계 — 현재 보유자보다 큰 claim을 부여(시계 오차 무관). 낙관적 즉시 반영. */
 function doClaim(get: GetFn, set: SetFn) {
 	const { _channel, _clientId, _myName, _myClaimAt } = get();
 	if (!_channel || !_clientId) return;
-	const state = _channel.presenceState() as unknown as Record<string, Array<Record<string, unknown>>>;
-	let maxClaim = _myClaimAt;
-	for (const arr of Object.values(state)) {
-		for (const p of arr) {
-			const c = p?.claimAt;
-			if (typeof c === "number" && c > maxClaim) maxClaim = c;
-		}
-	}
-	const myClaimAt = Math.max(Date.now(), maxClaim + 1);
+	const state = _channel.presenceState() as unknown as PresenceState;
+	const myClaimAt = Math.max(Date.now(), nextClaimAt(state, _myClaimAt));
 	const name = _myName ?? "기기";
 	void _channel.track({ clientId: _clientId, name, claimAt: myClaimAt });
 	set({ _myClaimAt: myClaimAt, isEditor: true, lockFree: false, holderClientId: _clientId, holderName: name });
@@ -172,7 +120,7 @@ function handleMatchCompleted(payload: BroadcastPayloadData, set: SetFn) {
 
 	set((state) => {
 		// 같은 경기 4명(teamA+teamB) 그룹 전체의 모든 쌍을 동반 +1. 완료 시점에만 1회 누적(DB와 정합).
-		const newPairHistory = recordHistory(state.pairHistory, {
+		const newPairHistory = recordTeam(state.pairHistory, {
 			teamA: [teamAPlayers[0].id, teamAPlayers[1].id],
 			teamB: [teamBPlayers[0].id, teamBPlayers[1].id],
 			gameType: gameType as GameType,
@@ -280,6 +228,9 @@ export interface SessionState {
 	// 편집 락 — 명시적 인계(권한 가져오기) / 자유 상태에서 자동 점유
 	claimEditor: () => void;
 	claimEditingIfFree: () => void;
+
+	/** 선수 정보(성별/스킬 등) 변경을 로컬 반영 + 다른 클라이언트로 브로드캐스트. */
+	broadcastPlayerUpdated: (player: SessionPlayer) => void;
 
 	// Channel management
 	subscribe: (sessionId: number, onEnd: () => void) => void;
@@ -413,7 +364,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 
 	setResting: async (playerId: string, resting: boolean) => {
-		const { _channel, isEditor } = get();
+		const { isEditor } = get();
 		if (!isEditor) return; // 보기 전용 차단
 		const sessionId = getSessionId();
 		if (!sessionId) return;
@@ -422,7 +373,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			console.error(`[store] setResting FAILED player=${playerId} resting=${resting}`);
 			return;
 		}
-		const payload: BroadcastPayload = { event: "player_updated", payload: { player: updated } };
+		get().broadcastPlayerUpdated(updated);
+	},
+
+	broadcastPlayerUpdated: (player) => {
+		const { _channel } = get();
+		const payload: BroadcastPayload = { event: "player_updated", payload: { player } };
 		get().applyBroadcast(payload);
 		if (_channel) sendBroadcast(_channel, payload);
 	},
@@ -432,8 +388,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		if (!isEditor) return; // 보기 전용 차단
 		const court = courts.find((c) => c.id === courtId);
 		if (!court?.match) return;
-		const oldIds = [...court.match.teamA, ...court.match.teamB];
-		const newIds = [...teamA, ...teamB];
+		const oldIds = matchPlayerIds(court.match);
+		const newIds = matchPlayerIds({ teamA, teamB });
 		const removed = oldIds.filter((id) => !newIds.includes(id));
 		const added = newIds.filter((id) => !oldIds.includes(id));
 		if (removed.length === 0) return; // 변경 없음
@@ -512,77 +468,32 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 
 	subscribe: (sessionId: number, onEnd: () => void) => {
-		const { applyBroadcast } = get();
-
 		// 편집 락용 presence 식별자 — 이 연결의 clientId + 기기 이름
 		const myClientId = crypto.randomUUID();
 		const myName = getDeviceName();
 
-		// Broadcast + presence channel
-		const channel = createBroadcastChannel(sessionId, myClientId);
-		const events = [
-			"match_started",
-			"match_completed",
-			"player_updated",
-			"board_drafts_updated",
-			"session_refresh_required",
-		] as const;
-		for (const event of events) {
-			channel.on("broadcast", { event }, ({ payload }) =>
-				applyBroadcast({ event, payload } as BroadcastPayload),
-			);
-		}
-		// presence 변경(sync/join/leave) → 보유자/접속자 재산정.
-		// join/leave도 명시 구독해 보유자 이탈 시 인계가 지연되지 않게 한다.
-		const syncPresence = () => {
-			const state = channel.presenceState() as unknown as Record<
-				string,
-				Array<Record<string, unknown>>
-			>;
-			const info = computePresence(state, myClientId, get()._myClaimAt);
-			set(info);
-			// 자유(아무도 점유 안 함) 상태면 접속자 중 clientId 최소 1명이 즉시 자동 점유 →
-			// "접속하면 곧바로 편집자 1명 확정, 나머지는 보기 전용". 보유자 이탈 시에도 남은 최소 1명이 인계.
-			if (info.lockFree && info.presenceList.length > 0) {
-				const lowest = info.presenceList.map((p) => p.clientId).sort()[0];
-				if (lowest === myClientId) doClaim(get, set);
-			}
-		};
-		channel.on("presence", { event: "sync" }, syncPresence);
-		channel.on("presence", { event: "join" }, syncPresence);
-		channel.on("presence", { event: "leave" }, syncPresence);
-		channel.subscribe((status) => {
-			if (status === "SUBSCRIBED") {
-				// 입장만 track(claimAt=0, 미점유). 첫 편집/인계 시 doClaim이 claimAt을 올린다.
-				void channel
-					.track({ clientId: myClientId, name: myName, claimAt: 0 })
-					.then(() => syncPresence())
-					.catch((e) => console.error("presence track failed:", e));
-			}
-		});
-
-		// Session meta channel — 다른 클라이언트의 세션 종료(is_active=false) 및 match_assign_count 동기화
-		const metaChannel = supabase
-			.channel(`session-meta:${sessionId}`)
-			.on(
-				"postgres_changes",
-				{
-					event: "UPDATE",
-					schema: "public",
-					table: "sessions",
-					filter: `id=eq.${sessionId}`,
-				},
-				(payload) => {
-					const row = payload.new as { is_active: boolean; match_assign_count?: number };
-					if (!row.is_active) { onEnd(); return; }
-					if (row.match_assign_count !== undefined) {
-						set({ matchAssignCount: row.match_assign_count });
+		const { broadcastChannel, metaChannel } = createSessionChannels(
+			sessionId,
+			myClientId,
+			myName,
+			{
+				onBroadcast: (payload) => get().applyBroadcast(payload),
+				onPresenceSync: (state) => {
+					const info = computePresence(state, myClientId, get()._myClaimAt);
+					set(info);
+					// 자유(아무도 점유 안 함) 상태면 접속자 중 clientId 최소 1명이 즉시 자동 점유 →
+					// "접속하면 곧바로 편집자 1명 확정, 나머지는 보기 전용". 보유자 이탈 시에도 남은 최소 1명이 인계.
+					if (info.lockFree && info.presenceList.length > 0) {
+						const lowest = info.presenceList.map((p) => p.clientId).sort()[0];
+						if (lowest === myClientId) doClaim(get, set);
 					}
 				},
-			)
-			.subscribe();
+				onEnd,
+				onMetaUpdate: (matchAssignCount) => set({ matchAssignCount }),
+			},
+		);
 
-		set({ _channel: channel, _metaChannel: metaChannel, _clientId: myClientId, _myName: myName, _myClaimAt: 0 });
+		set({ _channel: broadcastChannel, _metaChannel: metaChannel, _clientId: myClientId, _myName: myName, _myClaimAt: 0 });
 	},
 
 	unsubscribe: () => {

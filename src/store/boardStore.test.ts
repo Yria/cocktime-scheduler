@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { SessionPlayer, Court } from "../types";
 import type { DraftTeam, MagnetPosition, Reservation } from "../types/board";
+import { DEFAULT_VIEWPORT } from "../lib/board/geometry";
 
 // ── sessionStore / appStore 모킹 (Supabase 미로드) ───────────
 const h = vi.hoisted(() => ({
@@ -103,13 +104,11 @@ describe("그룹 생성 — 겹치는 자유 자석을 화면 안에서 흩어�
 		const c = useBoardStore.getState().magnets.get("c")!;
 		// 겹쳐 있던 c는 밀려나 위치가 바뀜
 		expect(c.x === 120 && c.y === 400).toBe(false);
-		// 화면 바운더리 바깥으로 나가지 않음 (store의 viewport fallback과 동일 계산: vw=400, vh=innerHeight-84)
-		const vw = typeof window !== "undefined" ? window.innerWidth : 400;
-		const vh = (typeof window !== "undefined" ? window.innerHeight : 800) - 84;
+		// 화면 바운더리 바깥으로 나가지 않음 — stage 미설정 시 store의 기본 뷰포트(DEFAULT_VIEWPORT) 기준
 		expect(c.x).toBeGreaterThanOrEqual(0);
-		expect(c.x).toBeLessThanOrEqual(vw);
+		expect(c.x).toBeLessThanOrEqual(DEFAULT_VIEWPORT.vw);
 		expect(c.y).toBeGreaterThanOrEqual(0);
-		expect(c.y).toBeLessThanOrEqual(vh);
+		expect(c.y).toBeLessThanOrEqual(DEFAULT_VIEWPORT.vh);
 	});
 });
 

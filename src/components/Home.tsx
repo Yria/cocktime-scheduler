@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { appActions, useAppStore } from "../store/appStore";
+import Spinner from "./shared/Spinner";
 
 interface Props {
 	onStart: () => void;
@@ -72,16 +73,7 @@ export default function Home({ onStart }: Props) {
 				>
 					{loading ? (
 						<div className="flex items-center gap-2">
-							<div
-								style={{
-									width: 16,
-									height: 16,
-									borderRadius: "50%",
-									border: "2px solid rgba(11,132,255,0.3)",
-									borderTopColor: "#0b84ff",
-									animation: "spin 0.8s linear infinite",
-								}}
-							/>
+							<Spinner size={16} />
 							<p className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]" style={{ fontSize: 14, fontWeight: 500 }}>
 								시트 불러오는 중…
 							</p>
@@ -173,12 +165,6 @@ export default function Home({ onStart }: Props) {
 					매치 로그 보기
 				</button>
 			</div>
-
-			<style>{`
-				@keyframes spin {
-					to { transform: rotate(360deg); }
-				}
-			`}</style>
 		</div>
 	);
 }

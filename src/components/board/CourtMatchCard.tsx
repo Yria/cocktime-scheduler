@@ -5,6 +5,8 @@ import type { Court } from "../../types";
 import { useBoardStore } from "../../store/boardStore";
 import { useSessionStore } from "../../store/sessionStore";
 import { computeSlotOffset } from "../../lib/board/geometry";
+import { isSelfDrag, stopTap } from "../../lib/board/konvaEvents";
+import { matchPlayerIds } from "../../lib/board/membership";
 import {
 	TEAM_W,
 	TEAM_PAD,
@@ -53,7 +55,7 @@ const CourtMatchCard = memo(function CourtMatchCard({ court, x, y, onEditMatch }
 	// 멤버 자석 드래그가 코트 카드 Group으로 버블링된 경우 무시(카드가 튀는 것 방지).
 	const handleDragMove = useCallback(
 		(e: Konva.KonvaEventObject<DragEvent>) => {
-			if (e.target !== e.currentTarget) return;
+			if (!isSelfDrag(e)) return;
 			setCourtAnchor(court.id, e.target.x(), e.target.y());
 		},
 		[court.id, setCourtAnchor],
@@ -61,7 +63,7 @@ const CourtMatchCard = memo(function CourtMatchCard({ court, x, y, onEditMatch }
 
 	const handleDragEnd = useCallback(
 		(e: Konva.KonvaEventObject<DragEvent>) => {
-			if (e.target !== e.currentTarget) return;
+			if (!isSelfDrag(e)) return;
 			setCourtAnchor(court.id, e.target.x(), e.target.y());
 			// 드래그-엔드: 코트 카드에서 겹친 자유 자석 흩어짐
 			settleBoard({ courtId: court.id });
@@ -70,7 +72,7 @@ const CourtMatchCard = memo(function CourtMatchCard({ court, x, y, onEditMatch }
 	);
 
 	const handleDragStart = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
-		if (e.target === e.currentTarget) e.target.moveToTop();
+		if (isSelfDrag(e)) e.target.moveToTop();
 	}, []);
 
 	const onMemberDragEnd = useCallback(
@@ -81,7 +83,7 @@ const CourtMatchCard = memo(function CourtMatchCard({ court, x, y, onEditMatch }
 	);
 
 	if (!match) return null;
-	const ids = [...match.teamA, ...match.teamB];
+	const ids = matchPlayerIds(match);
 
 	const halfW = TEAM_W / 2;
 	const boxTop = -TEAM_GRID_HALF - TEAM_GAP - TEAM_LABEL_H - TEAM_PAD;
@@ -133,10 +135,7 @@ const CourtMatchCard = memo(function CourtMatchCard({ court, x, y, onEditMatch }
 				<Group
 					x={halfW - 22}
 					y={boxTop + 8}
-					onMouseDown={(e) => { e.cancelBubble = true; }}
-					onTouchStart={(e) => { e.cancelBubble = true; }}
-					onClick={(e) => { e.cancelBubble = true; onEditMatch(court.id); }}
-					onTap={(e) => { e.cancelBubble = true; onEditMatch(court.id); }}
+					{...stopTap(() => onEditMatch(court.id))}
 				>
 					<Rect x={-4} y={-4} width={24} height={24} cornerRadius={6} fill="rgba(255,255,255,0.08)" perfectDrawEnabled={false} />
 					<Path

@@ -29,6 +29,27 @@ import {
 const GRAD_H = MAGNET_SIZE * 0.7;
 const NAME_FONT = 11;
 
+/** 자석 우상단 라운드 배지(예약/휴식 공용). 캔버스 출력 동일성을 위해 폰트/perfectDraw 고정. */
+const MagnetBadge = ({ text, fill }: { text: string; fill: string }) => (
+	<Group x={MAGNET_R - 8} y={-MAGNET_R + 8} listening={false}>
+		<Rect x={-16} y={-9} width={32} height={18} cornerRadius={9} fill={fill} perfectDrawEnabled={false} />
+		<Text
+			x={-16}
+			y={-9}
+			width={32}
+			height={18}
+			text={text}
+			fontSize={10}
+			fontStyle="bold"
+			fontFamily="Inter, system-ui, sans-serif"
+			fill="#FFFFFF"
+			align="center"
+			verticalAlign="middle"
+			perfectDrawEnabled={false}
+		/>
+	</Group>
+);
+
 interface Props {
 	playerId: string;
 	offsetX?: number;
@@ -335,46 +356,10 @@ const PlayerMagnet = memo(function PlayerMagnet({
 			/>
 
 			{/* 예약 뱃지 */}
-			{isGhost && (
-				<Group x={MAGNET_R - 8} y={-MAGNET_R + 8} listening={false}>
-					<Rect x={-16} y={-9} width={32} height={18} cornerRadius={9} fill={RESERVATION_BADGE_BG} perfectDrawEnabled={false} />
-					<Text
-						x={-16}
-						y={-9}
-						width={32}
-						height={18}
-						text="예약"
-						fontSize={10}
-						fontStyle="bold"
-						fontFamily="Inter, system-ui, sans-serif"
-						fill="#FFFFFF"
-						align="center"
-						verticalAlign="middle"
-						perfectDrawEnabled={false}
-					/>
-				</Group>
-			)}
+			{isGhost && <MagnetBadge text="예약" fill={RESERVATION_BADGE_BG} />}
 
 			{/* 휴식 뱃지 */}
-			{resting && (
-				<Group x={MAGNET_R - 8} y={-MAGNET_R + 8} listening={false}>
-					<Rect x={-16} y={-9} width={32} height={18} cornerRadius={9} fill={RESTING_BADGE_BG} perfectDrawEnabled={false} />
-					<Text
-						x={-16}
-						y={-9}
-						width={32}
-						height={18}
-						text="휴식"
-						fontSize={10}
-						fontStyle="bold"
-						fontFamily="Inter, system-ui, sans-serif"
-						fill="#FFFFFF"
-						align="center"
-						verticalAlign="middle"
-						perfectDrawEnabled={false}
-					/>
-				</Group>
-			)}
+			{resting && <MagnetBadge text="휴식" fill={RESTING_BADGE_BG} />}
 		</Group>
 	);
 });

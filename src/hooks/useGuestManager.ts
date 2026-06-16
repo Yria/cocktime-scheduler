@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { DEFAULT_SKILLS } from "../lib/constants";
+import { makeGuestId } from "../lib/player";
 import { appActions } from "../store/appStore";
 import type { Gender, Player, PlayerSkills } from "../types";
 
@@ -27,7 +28,7 @@ export function useGuestManager(
 	function addGuest() {
 		const name = guestName.trim();
 		if (!name) return;
-		const id = `guest-${Date.now()}`;
+		const id = makeGuestId();
 		const newGuest: Player = {
 			id,
 			name,

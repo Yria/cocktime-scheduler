@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scatterFromSource } from "./collision";
+import { scatterFromSource } from "./scatter";
 import { MAGNET_SIZE } from "./constants";
 import type { DraftTeam, MagnetPosition } from "../../types/board";
 

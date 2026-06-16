@@ -1,12 +1,6 @@
+import { skillScoreOf } from "../../lib/teamSelection";
 import type { MatchLogEntry } from "../../lib/supabase/api";
-import type { Gender, PlayerSkills, SkillLevel } from "../../types";
-
-// PlayerSkills 객체를 직접 받는 로컬 헬퍼 (skillScore는 SessionPlayer를 받으므로 별도 유지)
-const SKILL_VALUES: Record<SkillLevel, number> = { O: 3, V: 2, X: 1 };
-function getSkillScore(skills: PlayerSkills): number {
-	const values = Object.values(skills) as SkillLevel[];
-	return values.reduce((sum, s) => sum + SKILL_VALUES[s], 0) / values.length;
-}
+import type { Gender, PlayerSkills } from "../../types";
 
 interface Participant {
 	name: string;
@@ -62,7 +56,7 @@ export default function MatchSummary({
 					<div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
 						{participants.map((p) => {
 							// 스킬 스코어 기반 그라데이션 배경
-							const score = getSkillScore(p.skills);
+							const score = skillScoreOf(p.skills);
 							const scorePercent = ((score - 1.0) / 2.0) * 100;
 							const baseColorLight = p.gender === "F" ? "#fee2e2" : "#e0f2fe";
 							const baseColorDark = p.gender === "F" ? "#fca5a5" : "#7dd3fc";

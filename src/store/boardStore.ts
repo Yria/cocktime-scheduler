@@ -5,20 +5,23 @@ import { enableMapSet } from "immer";
 
 import type { SessionPlayer } from "../types";
 import type { BoardDraftsPayload, DraftTeam, MagnetPosition, Reservation, StagePoint } from "../types/board";
-import { computeSlotOffset, isInsideTeamBounds } from "../lib/board/geometry";
 import {
-	MAGNET_SIZE,
-	TEAM_W,
-	TEAM_BOX_ABOVE,
-	TEAM_BOX_BELOW,
-	TOOLBAR_H,
-	COURT_BAR_H,
-} from "../lib/board/constants";
-import { settleFreeMagnets, scatterFromSource, type ScatterShape } from "../lib/board/collision";
+	clampAnchor,
+	computeSlotOffset,
+	DEFAULT_VIEWPORT,
+	isInsideTeamBounds,
+} from "../lib/board/geometry";
+import { MAGNET_SIZE, TEAM_BOX_BELOW } from "../lib/board/constants";
+import { arrangeBoard } from "../lib/board/arrange";
+import { canonicalizeDrafts, reconcileMembership } from "../lib/board/remoteDrafts";
+import { scatterFromSource, type ScatterShape } from "../lib/board/scatter";
+import { settleFreeMagnets } from "../lib/board/settle";
 import { resolveDropTarget, nearestFreePartner } from "../lib/board/dropResolver";
 import {
 	isMemberOf,
 	isTeamStartable,
+	matchPlayerIds,
+	matchPlayerIdsFromCourt,
 	playingIdsFromCourts,
 	teamMemberCount,
 	teamMembers,
@@ -47,24 +50,9 @@ function gridPos(i: number): StagePoint {
 	};
 }
 
-function clampAnchor(p: StagePoint): StagePoint {
-	const vw = typeof window !== "undefined" ? window.innerWidth : 400;
-	// stage 영역 = 화면 높이 − 툴바 − 코트바 (자석 좌표는 stage 기준)
-	const vh = (typeof window !== "undefined" ? window.innerHeight : 800) - TOOLBAR_H - COURT_BAR_H;
-	const halfW = TEAM_W / 2;
-	// 화면 경계로만 클램프(코트 레인 제한 없음) — 팀 박스 상/하단이 화면 안에 있도록만.
-	const minY = TEAM_BOX_ABOVE;
-	const maxY = Math.max(minY, vh - TEAM_BOX_BELOW);
-	return {
-		x: Math.max(halfW, Math.min(vw - halfW, p.x)),
-		y: Math.max(minY, Math.min(maxY, p.y)),
-	};
-}
-
-function viewport(): { vw: number; vh: number } {
-	const vw = typeof window !== "undefined" ? window.innerWidth : 400;
-	const vh = (typeof window !== "undefined" ? window.innerHeight : 800) - TOOLBAR_H - COURT_BAR_H;
-	return { vw, vh };
+/** 현재 stage 크기 기준으로 anchor를 화면 안에 클램프. stage 미설정 시 기본 뷰포트. */
+function clampToStage(s: { stageW: number; stageH: number }, p: StagePoint): StagePoint {
+	return clampAnchor(p, s.stageW || DEFAULT_VIEWPORT.vw, s.stageH || DEFAULT_VIEWPORT.vh);
 }
 
 /** 드래그-엔드 소스: 무엇을 놓았는지(자석/팀/코트). 흩어짐의 시작점이 된다. */
@@ -84,8 +72,8 @@ type SettleState = {
  */
 function runSettle(s: SettleState, src: DragSource) {
 	const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
-	const vw = s.stageW || viewport().vw;
-	const vh = s.stageH || viewport().vh;
+	const vw = s.stageW || DEFAULT_VIEWPORT.vw;
+	const vh = s.stageH || DEFAULT_VIEWPORT.vh;
 	const r = MAGNET_SIZE / 2;
 
 	let source: ScatterShape;
@@ -131,22 +119,6 @@ function serializeBoardDrafts(s: { drafts: Map<string, DraftTeam>; reservations:
 			createdMs: r.createdAt,
 		})),
 	};
-}
-
-/** 멤버 자석들의 중심(새 팀의 로컬 위치 추정). */
-function centroidAnchor(memberIds: string[], magnets: Map<string, MagnetPosition>): StagePoint {
-	let sx = 0;
-	let sy = 0;
-	let n = 0;
-	for (const id of memberIds) {
-		const m = magnets.get(id);
-		if (m) {
-			sx += m.x;
-			sy += m.y;
-			n++;
-		}
-	}
-	return n > 0 ? { x: sx / n, y: sy / n } : { x: 200, y: 200 };
 }
 
 /** 편집 가능하면 true + 자유 상태면 자동 점유(양도형 락). 보기 전용이면 false. */
@@ -407,7 +379,7 @@ const creator = immer<BoardState>((set, get) => ({
 					s.drafts.set(id, {
 						id,
 						anchorMemberIds: [playerId, target.partnerId],
-						anchor: clampAnchor(target.anchor),
+						anchor: clampToStage(s, target.anchor),
 						createdAt: nowMs(),
 					});
 					a.teamId = id;
@@ -424,7 +396,7 @@ const creator = immer<BoardState>((set, get) => ({
 					s.drafts.set(id, {
 						id,
 						anchorMemberIds: [target.partnerId],
-						anchor: clampAnchor(target.anchor),
+						anchor: clampToStage(s, target.anchor),
 						createdAt: nowMs(),
 					});
 					partner.teamId = id;
@@ -502,7 +474,7 @@ const creator = immer<BoardState>((set, get) => ({
 						s.drafts.set(id, {
 							id,
 							anchorMemberIds: [partner.id],
-							anchor: clampAnchor({ x: (drop.x + partner.pos.x) / 2, y: (drop.y + partner.pos.y) / 2 }),
+							anchor: clampToStage(s, { x: (drop.x + partner.pos.x) / 2, y: (drop.y + partner.pos.y) / 2 }),
 							createdAt: nowMs(),
 						});
 						pm.teamId = id;
@@ -531,7 +503,7 @@ const creator = immer<BoardState>((set, get) => ({
 				s.drafts.set(teamId, {
 					id: teamId,
 					anchorMemberIds: [target.seedId],
-					anchor: clampAnchor({ x: seed.x, y: seed.y }),
+					anchor: clampToStage(s, { x: seed.x, y: seed.y }),
 					createdAt: nowMs(),
 				});
 				seed.teamId = teamId;
@@ -552,13 +524,13 @@ const creator = immer<BoardState>((set, get) => ({
 	setTeamAnchor: (teamId, x, y) => {
 		set((s) => {
 			const t = s.drafts.get(teamId);
-			if (t) t.anchor = clampAnchor({ x, y }); // 화면 안 어디든(코트 레인 제한 없음), 화면 밖만 방지
+			if (t) t.anchor = clampToStage(s, { x, y }); // 화면 안 어디든(코트 레인 제한 없음), 화면 밖만 방지
 		});
 	},
 
 	setCourtAnchor: (courtId, x, y) => {
 		set((s) => {
-			s.courtAnchors.set(courtId, clampAnchor({ x, y })); // 코트 카드도 화면 안 어디든
+			s.courtAnchors.set(courtId, clampToStage(s, { x, y })); // 코트 카드도 화면 안 어디든
 		});
 	},
 
@@ -578,95 +550,66 @@ const creator = immer<BoardState>((set, get) => ({
 	applyRemoteDrafts: (payload) => {
 		// 멤버십이 실제로 안 바뀐 재수신/스냅샷(handleBoardDraftsUpdated는 동일 멤버십도 매번 새 객체 set)이면
 		// 자석 위치를 전혀 만지지 않는다 — 자유 자석 위치는 로컬 전용이므로 보존되어야 한다.
-		const canonDrafts = (p: BoardDraftsPayload) =>
-			JSON.stringify({
-				teams: [...p.teams]
-					.map((t) => ({ id: t.id, memberIds: [...t.memberIds].sort(), createdMs: t.createdMs }))
-					.sort((a, b) => a.id.localeCompare(b.id)),
-				reservations: [...p.reservations]
-					.map((r) => ({ id: r.id, playerId: r.playerId, teamId: r.teamId, createdMs: r.createdMs }))
-					.sort((a, b) => a.id.localeCompare(b.id)),
-			});
-		if (canonDrafts(payload) === canonDrafts(serializeBoardDrafts(get()))) return;
+		if (canonicalizeDrafts(payload) === canonicalizeDrafts(serializeBoardDrafts(get()))) return;
 		applyingRemoteDrafts = true;
-		set((s) => {
-			// 같은 id 팀은 기존 위치(anchor) 유지, 새 팀은 멤버 중심으로 배치(위치는 로컬)
-			const oldAnchors = new Map<string, StagePoint>();
-			for (const [id, t] of s.drafts) oldAnchors.set(id, { x: t.anchor.x, y: t.anchor.y });
+		try {
+			set((s) => {
+				// 같은 id 팀은 기존 위치(anchor) 유지, 새 팀은 멤버 중심으로 배치(위치는 로컬)
+				const oldAnchors = new Map<string, StagePoint>();
+				for (const [id, t] of s.drafts) oldAnchors.set(id, { x: t.anchor.x, y: t.anchor.y });
 
-			// 적용 전 "이미 필드에 있던" 자유 자석 — 원격 변경으로 새로 들어온 자석 판별용
-			const prevFreeIds = new Set<string>();
-			for (const [, m] of s.magnets) if (m.teamId === null) prevFreeIds.add(m.playerId);
+				// 적용 전 "이미 필드에 있던" 자유 자석 — 원격 변경으로 새로 들어온 자석 판별용
+				const prevFreeIds = new Set<string>();
+				for (const [, m] of s.magnets) if (m.teamId === null) prevFreeIds.add(m.playerId);
 
-			// 멤버십 초기화 후 payload로 재구성
-			for (const m of s.magnets.values()) m.teamId = null;
+				const vw = s.stageW || DEFAULT_VIEWPORT.vw;
+				const vh = s.stageH || DEFAULT_VIEWPORT.vh;
 
-			const newDrafts = new Map<string, DraftTeam>();
-			for (const team of payload.teams) {
-				const memberIds = team.memberIds.filter((id) => s.magnets.has(id));
-				if (memberIds.length === 0) continue;
-				const anchor = oldAnchors.get(team.id) ?? centroidAnchor(memberIds, s.magnets);
-				newDrafts.set(team.id, {
-					id: team.id,
-					anchorMemberIds: memberIds,
-					anchor: clampAnchor(anchor),
-					createdAt: team.createdMs,
-				});
-				for (const id of memberIds) {
-					const m = s.magnets.get(id);
-					if (m) m.teamId = team.id;
+				// 멤버십(drafts/reservations) 재구성 + 자석 teamId 재설정(위치는 아래에서 별도 처리)
+				const { drafts, reservations } = reconcileMembership(payload, s.magnets, oldAnchors, vw, vh);
+				s.drafts = drafts;
+				s.reservations = reservations;
+
+				// 원격 변경으로 "새로 필드에 들어온" 자석(팀/예약 → 자유): 내가 드래그하지 않았어도
+				// 드롭과 동일하게 흩어짐을 적용 — 각 자석을 소스로 BFS 방사형으로 주변을 밀어낸다.
+				const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
+				const r = MAGNET_SIZE / 2;
+				// 흩어짐/정리에서 "사용자가 직접 배치한(원래 필드에 있던) 자유 자석"은 제외해 위치를 보존한다.
+				// 이게 빠지면 원격 멤버십 동기화가 내가 방금 드롭한 자석을 밀어내 "가끔 원래자리로" 되돌아오는 버그가 난다.
+				// scatter 소스 제외(아래 continue)뿐 아니라 "밀리는 대상"·settle 대상에서도 빼야 하므로 excludeIds에 합친다.
+				const settleExclude = new Set<string>([...playingIds, ...prevFreeIds]);
+				for (const [, m] of s.magnets) {
+					if (m.teamId !== null || playingIds.has(m.playerId)) continue;
+					if (prevFreeIds.has(m.playerId)) continue; // 원래 필드에 있던 자석은 흩어짐 대상 아님
+					// 들어온 자석을 화면 안으로만 클램프(레인 제한 없음) 후 그 자리를 소스로 흩어짐
+					m.x = Math.max(r + 4, Math.min(vw - r - 4, m.x));
+					m.y = Math.max(r + 4, Math.min(vh - r - 4, m.y));
+					scatterFromSource(
+						{ kind: "magnet", id: m.playerId, x: m.x, y: m.y },
+						s.magnets,
+						s.drafts,
+						vw,
+						vh,
+						settleExclude,
+						0,
+					);
 				}
-			}
-			s.drafts = newDrafts;
-
-			const newRes = new Map<string, Reservation>();
-			for (const r of payload.reservations) {
-				if (!newDrafts.has(r.teamId)) continue;
-				if (!s.magnets.has(r.playerId)) continue;
-				newRes.set(r.id, { id: r.id, playerId: r.playerId, teamId: r.teamId, createdAt: r.createdMs });
-			}
-			s.reservations = newRes;
-
-			// 원격 변경으로 "새로 필드에 들어온" 자석(팀/예약 → 자유): 내가 드래그하지 않았어도
-			// 드롭과 동일하게 흩어짐을 적용 — 각 자석을 소스로 BFS 방사형으로 주변을 밀어낸다.
-			const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
-			const vw = s.stageW || viewport().vw;
-			const vh = s.stageH || viewport().vh;
-			const r = MAGNET_SIZE / 2;
-			// 흩어짐/정리에서 "사용자가 직접 배치한(원래 필드에 있던) 자유 자석"은 제외해 위치를 보존한다.
-			// 이게 빠지면 원격 멤버십 동기화가 내가 방금 드롭한 자석을 밀어내 "가끔 원래자리로" 되돌아오는 버그가 난다.
-			// scatter 소스 제외(아래 continue)뿐 아니라 "밀리는 대상"·settle 대상에서도 빼야 하므로 excludeIds에 합친다.
-			const settleExclude = new Set<string>([...playingIds, ...prevFreeIds]);
-			for (const [, m] of s.magnets) {
-				if (m.teamId !== null || playingIds.has(m.playerId)) continue;
-				if (prevFreeIds.has(m.playerId)) continue; // 원래 필드에 있던 자석은 흩어짐 대상 아님
-				// 들어온 자석을 화면 안으로만 클램프(레인 제한 없음) 후 그 자리를 소스로 흩어짐
-				m.x = Math.max(r + 4, Math.min(vw - r - 4, m.x));
-				m.y = Math.max(r + 4, Math.min(vh - r - 4, m.y));
-				scatterFromSource(
-					{ kind: "magnet", id: m.playerId, x: m.x, y: m.y },
-					s.magnets,
-					s.drafts,
-					vw,
-					vh,
-					settleExclude,
-					0,
-				);
-			}
-			// 잔여 겹침 정리 — 새로 들어온 자석만 대상(기존 사용자 배치 자석은 보존), 화면 경계로만
-			settleFreeMagnets(s.magnets, s.drafts, vw, vh, settleExclude, 0);
-		});
-		// 방금 적용한 멤버십을 기준선으로 — 이후 위치만 바뀌면 재브로드캐스트 안 함
-		lastSyncedDraftsJson = JSON.stringify(serializeBoardDrafts(get()));
-		applyingRemoteDrafts = false;
+				// 잔여 겹침 정리 — 새로 들어온 자석만 대상(기존 사용자 배치 자석은 보존), 화면 경계로만
+				settleFreeMagnets(s.magnets, s.drafts, vw, vh, settleExclude, 0);
+			});
+			// 방금 적용한 멤버십을 기준선으로 — 이후 위치만 바뀌면 재브로드캐스트 안 함
+			lastSyncedDraftsJson = JSON.stringify(serializeBoardDrafts(get()));
+		} finally {
+			applyingRemoteDrafts = false;
+		}
 	},
 
 	scatterMagnets: (ids) => {
 		set((s) => {
 			const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 			const restingIds = new Set(useSessionStore.getState().restingIds);
-			const vw = s.stageW || viewport().vw;
-			const vh = s.stageH || viewport().vh;
+			const vw = s.stageW || DEFAULT_VIEWPORT.vw;
+			const vh = s.stageH || DEFAULT_VIEWPORT.vh;
 			const r = MAGNET_SIZE / 2;
 
 			// 흩어뜨릴 대상: 자유(teamId null)·비경기중·비휴식 자석만
@@ -704,71 +647,23 @@ const creator = immer<BoardState>((set, get) => ({
 	},
 
 	rearrangeAll: (viewW, viewH) => {
+		const sessionCourts = useSessionStore.getState().courts;
+		const sessionPlayers = useSessionStore.getState().sessionPlayers;
+		const playingIds = playingIdsFromCourts(sessionCourts);
+		const restingIds = new Set(useSessionStore.getState().restingIds);
 		set((s) => {
-			const sessionCourts = useSessionStore.getState().courts;
-			const sessionPlayers = useSessionStore.getState().sessionPlayers;
-			const playingIds = playingIdsFromCourts(sessionCourts);
-			const restingIds = new Set(useSessionStore.getState().restingIds);
-			const halfW = TEAM_W / 2;
-			const PAD_X = 12;
-			const GAP_X = 16;
-			const GAP_Y = 16;
-
-			const cols = Math.max(1, Math.floor((viewW - PAD_X * 2 + GAP_X) / (TEAM_W + GAP_X)));
-			const rowH = TEAM_BOX_ABOVE + TEAM_BOX_BELOW + GAP_Y;
-			// 그룹(코트 카드·팀) 박스는 anchor 기준 위 TEAM_BOX_ABOVE / 아래 TEAM_BOX_BELOW,
-			// 좌우 halfW 만큼 뻗는다. 격자 좌표를 화면 경계 안으로 클램프해 어떤 그룹도 밖으로 넘지 않게 한다.
-			const maxAnchorY = Math.max(TEAM_BOX_ABOVE, viewH - TEAM_BOX_BELOW);
-			const gridAnchor = (idx: number, top: number) => {
-				const col = idx % cols;
-				const row = Math.floor(idx / cols);
-				return {
-					x: Math.max(halfW, Math.min(viewW - halfW, PAD_X + halfW + col * (TEAM_W + GAP_X))),
-					y: Math.min(maxAnchorY, top + TEAM_BOX_ABOVE + row * rowH),
-				};
-			};
-
-			// 1) 그룹을 하나의 연속 격자에 종류 순서대로 이어서 배치(같은 줄 공유).
-			//    순서: 경기중(코트) → 4명 찬 팀 → 그 외 팀(멤버 많은 순)
-			const occupied = sessionCourts.filter((c) => c.match);
-			const teams = [...s.drafts.values()].sort((a, b) => {
-				const ca = teamMemberCount(a.id, s.drafts, s.reservations);
-				const cb = teamMemberCount(b.id, s.drafts, s.reservations);
-				const fa = ca === 4 ? 1 : 0;
-				const fb = cb === 4 ? 1 : 0;
-				if (fa !== fb) return fb - fa; // 4명 찬 그룹 먼저
-				if (cb !== ca) return cb - ca; // 그 외: 멤버 많은 순
-				return a.createdAt - b.createdAt;
+			arrangeBoard({
+				magnets: s.magnets,
+				drafts: s.drafts,
+				reservations: s.reservations,
+				courtAnchors: s.courtAnchors,
+				courts: sessionCourts,
+				sessionPlayers,
+				playingIds,
+				restingIds,
+				viewW,
+				viewH,
 			});
-			const GROUP_TOP = 10;
-			let gi = 0;
-			for (const c of occupied) s.courtAnchors.set(c.id, gridAnchor(gi++, GROUP_TOP));
-			for (const t of teams) t.anchor = gridAnchor(gi++, GROUP_TOP);
-			const groupCount = occupied.length + teams.length;
-			const groupRows = groupCount > 0 ? Math.ceil(groupCount / cols) : 0;
-			// 그룹이 없으면 상단 공백 없이 맨 위부터(코트 전용 영역 개념 없음)
-			const groupAreaBottom = groupRows > 0 ? GROUP_TOP + groupRows * rowH : GROUP_TOP;
-
-			// 2) 나머지 자유 자석을 그룹 영역 아래에 격자 배치 — 경기수 적은 사람 먼저
-			//    (휴식 선수는 휴식존으로 분리되므로 메인 보드 배치에서 제외)
-			const freeMagnets = [...s.magnets.values()]
-				.filter((m) => m.teamId === null && !playingIds.has(m.playerId) && !restingIds.has(m.playerId))
-				.sort((a, b) => {
-					const ga = sessionPlayers.get(a.playerId)?.gameCount ?? 0;
-					const gb = sessionPlayers.get(b.playerId)?.gameCount ?? 0;
-					return ga - gb;
-				});
-			const magCols = Math.max(1, Math.floor(viewW / (MAGNET_SIZE + 10)));
-			const freeStartY = groupAreaBottom + MAGNET_SIZE / 2 + 8;
-			freeMagnets.forEach((m, i) => {
-				const col = i % magCols;
-				const row = Math.floor(i / magCols);
-				m.x = MAGNET_SIZE / 2 + 8 + col * (MAGNET_SIZE + 10);
-				m.y = freeStartY + row * (MAGNET_SIZE + 10);
-			});
-
-			// 3) 남은 겹침 정리 + 화면 바운더리 클램프 (그룹 영역 아래로)
-			settleFreeMagnets(s.magnets, s.drafts, viewW, viewH, playingIds, groupAreaBottom);
 			s.hasArranged = true;
 		});
 	},
@@ -882,7 +777,7 @@ const creator = immer<BoardState>((set, get) => ({
 		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
 		// 완료 처리 전에 끝난 4명 id를 확보(이후 court.match는 null이 됨)
 		const court = useSessionStore.getState().courts.find((c) => c.id === courtId);
-		const endedIds = court?.match ? [...court.match.teamA, ...court.match.teamB] : [];
+		const endedIds = matchPlayerIdsFromCourt(court);
 		await useSessionStore.getState().handleComplete(courtId);
 		// 그룹 해제로 자유 자석이 된 4명에 흩어짐 적용(방사형 + 겹침 정리)
 		get().scatterMagnets(endedIds);
@@ -891,8 +786,8 @@ const creator = immer<BoardState>((set, get) => ({
 	setMatchRoster: async (courtId, teamA, teamB) => {
 		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
 		const court = useSessionStore.getState().courts.find((c) => c.id === courtId);
-		const oldIds = court?.match ? [...court.match.teamA, ...court.match.teamB] : [];
-		const newIds = [...teamA, ...teamB];
+		const oldIds = matchPlayerIdsFromCourt(court);
+		const newIds = matchPlayerIds({ teamA, teamB });
 		const removed = oldIds.filter((id) => !newIds.includes(id));
 		await useSessionStore.getState().handleSetMatchRoster(courtId, teamA, teamB);
 		// 빠진 선수는 자유 자석으로 보이게 흩어뜨림(들어온 선수는 playing→자동 숨김)

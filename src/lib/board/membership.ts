@@ -18,6 +18,19 @@ type DraftMap = ReadonlyMap<string, DraftTeam>;
 type ResMap = ReadonlyMap<string, Reservation>;
 type MagMap = ReadonlyMap<string, MagnetPosition>;
 
+/** match/team(teamA·teamB id 튜플)의 선수 id 4개를 평탄화한다. */
+export function matchPlayerIds(team: {
+	teamA: readonly string[];
+	teamB: readonly string[];
+}): string[] {
+	return [...team.teamA, ...team.teamB];
+}
+
+/** 코트의 현재 경기 선수 id. 경기 없으면 빈 배열. */
+export function matchPlayerIdsFromCourt(court: Court | undefined): string[] {
+	return court?.match ? matchPlayerIds(court.match) : [];
+}
+
 /** 코트에 배치되어 경기중인 session_player.id 집합. */
 export function playingIdsFromCourts(courts: Court[]): Set<string> {
 	const out = new Set<string>();

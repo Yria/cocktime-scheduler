@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { Gender, SessionPlayer } from "../../types";
-import { disassemble, getChoseong } from "es-hangul";
+import { matchesQuery } from "../../lib/playerSearch";
 import { skillScore } from "../../lib/teamSelection";
 import FilterChip from "./FilterChip";
 
@@ -76,14 +76,6 @@ const DIVIDER = (
 	/>
 );
 
-function matchesQuery(name: string, q: string): boolean {
-	if (!q) return true;
-	if (name.toLowerCase().includes(q)) return true;
-	const decomposed = disassemble(q);
-	const isAllChoseong = /^[ㄱ-ㅎ]+$/.test(decomposed);
-	return isAllChoseong && getChoseong(name).includes(decomposed);
-}
-
 export default function PlayerPickerList({
 	players,
 	onSelect,
@@ -112,11 +104,10 @@ export default function PlayerPickerList({
 	const showFilters = hasEnoughForFilters && (showGenderFilter || showStatusFilter || (sortOptions && sortOptions.length > 0));
 
 	const filteredPlayers = useMemo(() => {
-		const q = query.trim().toLowerCase();
 		return players.filter(({ player, isPlaying, isSelected }) => {
 			// 선택된 선수는 항상 표시
 			if (isSelected) return true;
-			if (!matchesQuery(player.name, q)) return false;
+			if (!matchesQuery(player.name, query)) return false;
 			if (genderFilter && player.gender !== genderFilter) return false;
 			if (showStatusFilter) {
 				if (statusFilter === "waiting" && isPlaying) return false;

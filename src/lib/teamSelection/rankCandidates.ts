@@ -7,7 +7,7 @@
  * - 순수 함수 (랜덤 없음)
  * - 풀 구성(성별 필터, 대기/경기중 혼합 등)은 호출자 책임
  */
-import type { GeneratedTeam, PairHistory, SessionPlayer, SkillLevel } from "../../types";
+import type { PairHistory, PlayerSkills, SessionPlayer, SkillLevel } from "../../types";
 
 // ─────────────────────────────────────────────
 // 타입 정의
@@ -67,12 +67,18 @@ const DEFAULT_WEIGHTS: Weights = { W_SKILL: 4.0, W_PAIR: 6.0, W_GAME: 1.0, W_MIX
 // 스킬 점수 유틸
 // ─────────────────────────────────────────────
 
-const SKILL_VALUES: Record<SkillLevel, number> = { O: 3, V: 2, X: 1 };
+export const SKILL_VALUES: Record<SkillLevel, number> = { O: 3, V: 2, X: 1 };
+
+/** PlayerSkills 객체의 평균 점수 (1.0 ~ 3.0). skills가 없으면 0. */
+export function skillScoreOf(skills?: PlayerSkills): number {
+	if (!skills) return 0;
+	const values = Object.values(skills) as SkillLevel[];
+	return values.reduce((sum, s) => sum + SKILL_VALUES[s], 0) / values.length;
+}
 
 /** 선수의 전체 스킬 평균 점수 (1.0 ~ 3.0) */
 export function skillScore(player: SessionPlayer): number {
-	const values = Object.values(player.skills) as SkillLevel[];
-	return values.reduce((sum, s) => sum + SKILL_VALUES[s], 0) / values.length;
+	return skillScoreOf(player.skills);
 }
 
 // ─────────────────────────────────────────────
@@ -183,31 +189,3 @@ export function rankCandidates(
 		.sort((a, b) => a.score - b.score);
 }
 
-// ─────────────────────────────────────────────
-// 히스토리 업데이트 유틸
-// ─────────────────────────────────────────────
-
-/**
- * 경기 완료 시 PairHistory를 업데이트한다 (클라이언트 상태용).
- * 같은 경기 4명(teamA+teamB) 그룹 전체의 모든 쌍(6쌍)을 서로 동반 +1 누적한다.
- * (같은 팀뿐 아니라 상대팀으로 만난 경우도 동반으로 카운트)
- */
-export function recordHistory(
-	history: PairHistory,
-	team: GeneratedTeam,
-): PairHistory {
-	const next: PairHistory = {};
-	for (const key of Object.keys(history)) {
-		next[key] = { ...history[key] };
-	}
-	const all = [...team.teamA, ...team.teamB];
-	for (let i = 0; i < all.length; i++) {
-		for (let j = i + 1; j < all.length; j++) {
-			const a = all[i];
-			const b = all[j];
-			(next[a] ??= {})[b] = (next[a][b] ?? 0) + 1;
-			(next[b] ??= {})[a] = (next[b][a] ?? 0) + 1;
-		}
-	}
-	return next;
-}

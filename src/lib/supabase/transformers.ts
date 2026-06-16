@@ -1,4 +1,5 @@
 import type { Court, GameType, PairHistory, SessionPlayer } from "../../types";
+import { addPair } from "../pairHistory";
 import type {
 	ClientSessionState,
 	PairHistoryRow,
@@ -25,10 +26,7 @@ export function rowToSessionPlayer(row: SessionPlayerRow): SessionPlayer {
 function buildPairHistory(rows: PairHistoryRow[]): PairHistory {
 	const history: PairHistory = {};
 	for (const row of rows) {
-		(history[row.player_a] ??= {})[row.player_b] =
-			(history[row.player_a][row.player_b] ?? 0) + row.count;
-		(history[row.player_b] ??= {})[row.player_a] =
-			(history[row.player_b][row.player_a] ?? 0) + row.count;
+		addPair(history, row.player_a, row.player_b, row.count);
 	}
 	return history;
 }

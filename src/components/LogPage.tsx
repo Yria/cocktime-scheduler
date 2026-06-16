@@ -168,12 +168,6 @@ export default function LogPage() {
 					setShowClearConfirm={setShowClearConfirm}
 				/>
 			)}
-
-			<style>{`
-				@keyframes spin {
-					to { transform: rotate(360deg); }
-				}
-			`}</style>
 		</div>
 	);
 }

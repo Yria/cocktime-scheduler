@@ -10,7 +10,6 @@ import {
 	dbUpdateSessionPlayer,
 	fetchActiveSession,
 	fetchSessionSnapshot,
-	sendBroadcast,
 	snapshotToClientState,
 	startSession,
 	supabase,
@@ -269,19 +268,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 						player.skills,
 					);
 					if (updated) {
-						useSessionStore
-							.getState()
-							.applyBroadcast({
-								event: "player_updated",
-								payload: { player: updated },
-							});
-						const { _channel } = useSessionStore.getState();
-						if (_channel) {
-							sendBroadcast(_channel, {
-								event: "player_updated",
-								payload: { player: updated },
-							});
-						}
+						useSessionStore.getState().broadcastPlayerUpdated(updated);
 					}
 				}
 			}

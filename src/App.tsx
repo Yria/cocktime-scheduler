@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useRef } from "react";
-import {
-	Navigate,
-	Route,
-	Routes,
-	useLocation,
-	useNavigate,
-} from "react-router-dom";
+import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import SessionBoard from "./components/board/SessionBoard";
 import Toaster from "./components/common/Toaster";
 import Home from "./components/Home";
 import LogPage from "./components/LogPage";
 import SessionSetup from "./components/SessionSetup";
+import { useDarkMode } from "./hooks/useDarkMode";
 import { usePageVisibility } from "./hooks/usePageVisibility";
 import type { SessionRow } from "./lib/supabase";
 import { appActions, useAppStore } from "./store/appStore";
@@ -22,40 +17,19 @@ export default function App() {
 	const navRef = useRef(navigate);
 	navRef.current = navigate;
 
-	useEffect(() => {
-		const mq = window.matchMedia("(prefers-color-scheme: dark)");
-		const apply = (dark: boolean) => {
-			document.documentElement.classList.toggle("dark", dark);
-		};
-		apply(mq.matches);
-		const handler = (e: MediaQueryListEvent) => apply(e.matches);
-		mq.addEventListener("change", handler);
-		return () => mq.removeEventListener("change", handler);
-	}, []);
+	useDarkMode();
 
 	const allPlayers = useAppStore((s) => s.allPlayers);
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
 	const sessionChecked = useAppStore((s) => s.sessionChecked);
 
-	const sessionMetaRef = useRef<number | null>(null);
 	const initialPathRef = useRef(window.location.pathname);
-	const currentPathRef = useRef(window.location.pathname);
-	const location = useLocation();
-
-	useEffect(() => {
-		currentPathRef.current = location.pathname;
-	}, [location.pathname]);
-
-	useEffect(() => {
-		sessionMetaRef.current = sessionMeta ? sessionMeta.sessionId : null;
-	}, [sessionMeta]);
 
 	// snapshot 로드 → 상태 설정 → navigate (setup 화면이 아닌 경우)
 	const applySession = useCallback(
 		async (row: SessionRow) => {
 			const success = await appActions.loadSession(row);
-			const path = currentPathRef.current;
-			if (success && !path.includes("/setup")) {
+			if (success && !window.location.pathname.includes("/setup")) {
 				navRef.current("/session", { replace: true });
 			}
 		},
@@ -88,13 +62,12 @@ export default function App() {
 	useEffect(() => {
 		appActions.subscribeSessionWatch({
 			onSessionStart: async (row) => {
-				if (currentPathRef.current.includes("/setup")) return;
-				if (sessionMetaRef.current === row.id) return;
+				if (window.location.pathname.includes("/setup")) return;
 				if (useAppStore.getState().sessionMeta?.sessionId === row.id) return;
 				await applySession(row);
 			},
 			onSessionEnd: (endedSessionId) => {
-				if (sessionMetaRef.current === endedSessionId) {
+				if (useAppStore.getState().sessionMeta?.sessionId === endedSessionId) {
 					appActions.setSessionMeta(null);
 					useSessionStore.getState().reset();
 					appActions.resetSetupState();
@@ -152,10 +125,6 @@ export default function App() {
 				<Route
 					path="/session"
 					element={sessionGuarded(<SessionBoard />)}
-				/>
-				<Route
-					path="/session/board"
-					element={<Navigate to="/session" replace />}
 				/>
 				<Route path="/logs" element={<LogPage />} />
 				<Route path="*" element={<Navigate to="/" replace />} />

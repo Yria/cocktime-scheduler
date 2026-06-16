@@ -125,6 +125,12 @@ h4,
 	}
 }
 
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
 /* ── Components: Glass Card ────────────────────────────────── */
 .glass {
 	background: var(--mat-regular);

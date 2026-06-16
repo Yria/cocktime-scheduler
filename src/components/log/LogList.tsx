@@ -1,5 +1,6 @@
 import { ClipboardList } from "lucide-react";
 import type { MatchLogEntry } from "../../lib/supabase/api";
+import Spinner from "../shared/Spinner";
 import MatchCard from "./MatchCard";
 
 interface LogListProps {
@@ -18,16 +19,7 @@ export default function LogList({ logLoading, logs }: LogListProps) {
 						paddingTop: 40,
 					}}
 				>
-					<div
-						style={{
-							width: 20,
-							height: 20,
-							borderRadius: "50%",
-							border: "2px solid rgba(11,132,255,0.3)",
-							borderTopColor: "#0b84ff",
-							animation: "spin 0.8s linear infinite",
-						}}
-					/>
+					<Spinner size={20} />
 				</div>
 			) : logs.length === 0 ? (
 				<div
