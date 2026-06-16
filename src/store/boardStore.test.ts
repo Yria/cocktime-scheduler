@@ -18,6 +18,7 @@ vi.mock("./sessionStore", () => ({
 			sessionPlayers: h.players,
 			handleAssign: h.handleAssign,
 			handleComplete: h.handleComplete,
+			isEditor: true, // 편집 락: 테스트는 편집자 관점에서 동작 검증
 		}),
 	},
 }));

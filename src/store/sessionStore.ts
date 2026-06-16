@@ -6,6 +6,8 @@ import {
 	dbAssignMatch,
 	dbCompleteMatch,
 	dbEndSession,
+	dbSetMatchRoster,
+	dbSetPlayerResting,
 	sendBroadcast,
 	supabase,
 } from "../lib/supabase";
@@ -20,6 +22,7 @@ import type {
 } from "../types";
 import type { BoardDraftsPayload } from "../types/board";
 import { useAppStore } from "./appStore";
+import { getDeviceName } from "../lib/deviceName";
 
 function getSessionId(): number {
 	return useAppStore.getState().sessionMeta?.sessionId ?? 0;
@@ -35,6 +38,75 @@ function upsertPlayers(map: Map<string, SessionPlayer>, players: SessionPlayer[]
 	const next = new Map(map);
 	for (const p of players) next.set(p.id, p);
 	return next;
+}
+
+/**
+ * 양도형 편집 락 — presenceState에서 "현재 접속자 중 가장 최근에 점유(claim)한 기기"를 보유자로 산정.
+ * 아무도 claim 안 했으면 lockFree=true(자유, 누구나 편집 가능, 첫 편집이 자동 점유).
+ * 모든 클라이언트가 동일 presence 집합을 보므로 결정이 일치. 보유자 이탈 시 presence에서 사라져 자동 자유/인계.
+ * isEditor(=편집 가능) = 내가 보유자이거나 lockFree.
+ */
+type PresenceEntry = { clientId: string; name: string };
+function computePresence(
+	state: Record<string, Array<Record<string, unknown>>>,
+	myClientId: string,
+	myClaimAt: number,
+): {
+	presenceCount: number;
+	presenceList: PresenceEntry[];
+	holderClientId: string | null;
+	holderName: string | null;
+	lockFree: boolean;
+	isEditor: boolean;
+} {
+	const byId = new Map<string, { name: string; claimAt: number }>();
+	for (const arr of Object.values(state)) {
+		for (const p of arr) {
+			const cid = p?.clientId;
+			if (typeof cid !== "string") continue;
+			const claimAt = typeof p?.claimAt === "number" ? (p.claimAt as number) : 0;
+			const name = typeof p?.name === "string" ? (p.name as string) : "기기";
+			const ex = byId.get(cid);
+			if (!ex || claimAt > ex.claimAt) byId.set(cid, { name, claimAt });
+		}
+	}
+	// 내 최신 claim이 presence에 아직 반영 안 됐을 수 있어 로컬 값으로 보정(깜빡임 방지)
+	const mine = byId.get(myClientId);
+	if (mine && myClaimAt > mine.claimAt) mine.claimAt = myClaimAt;
+
+	const claimants = [...byId.entries()]
+		.filter(([, v]) => v.claimAt > 0)
+		.sort((a, b) => b[1].claimAt - a[1].claimAt || a[0].localeCompare(b[0]));
+	const holder = claimants[0];
+	const holderClientId = holder?.[0] ?? null;
+	const holderName = holder?.[1].name ?? null;
+	const lockFree = holderClientId === null;
+	return {
+		presenceCount: byId.size,
+		presenceList: [...byId.entries()].map(([cid, v]) => ({ clientId: cid, name: v.name })),
+		holderClientId,
+		holderName,
+		lockFree,
+		isEditor: lockFree || holderClientId === myClientId,
+	};
+}
+
+/** 편집 권한 점유/인계 — 현재 보유자보다 큰 claim을 부여(시계 오차 무관). 낙관적 즉시 반영. */
+function doClaim(get: GetFn, set: SetFn) {
+	const { _channel, _clientId, _myName, _myClaimAt } = get();
+	if (!_channel || !_clientId) return;
+	const state = _channel.presenceState() as unknown as Record<string, Array<Record<string, unknown>>>;
+	let maxClaim = _myClaimAt;
+	for (const arr of Object.values(state)) {
+		for (const p of arr) {
+			const c = p?.claimAt;
+			if (typeof c === "number" && c > maxClaim) maxClaim = c;
+		}
+	}
+	const myClaimAt = Math.max(Date.now(), maxClaim + 1);
+	const name = _myName ?? "기기";
+	void _channel.track({ clientId: _clientId, name, claimAt: myClaimAt });
+	set({ _myClaimAt: myClaimAt, isEditor: true, lockFree: false, holderClientId: _clientId, holderName: name });
 }
 
 /** sessionPlayers Map에서 waitingIds/restingIds 파생 상태를 동기 재계산 */
@@ -124,9 +196,12 @@ function handleMatchCompleted(payload: BroadcastPayloadData, set: SetFn) {
 
 function handlePlayerUpdated(payload: BroadcastPayloadData, set: SetFn) {
 	const { player } = payload as { player: SessionPlayer };
-	set((state) => ({
-		sessionPlayers: upsertPlayers(state.sessionPlayers, [player]),
-	}));
+	set((state) => {
+		// status가 바뀔 수 있으므로(휴식 토글) waitingIds/restingIds 파생도 재계산한다.
+		const newMap = upsertPlayers(state.sessionPlayers, [player]);
+		const { waitingIds, restingIds } = rebuildDerivedIds(newMap);
+		return { sessionPlayers: newMap, waitingIds, restingIds };
+	});
 }
 
 function handleSessionRefreshRequired(_payload: BroadcastPayloadData, _set: SetFn, get: GetFn) {
@@ -160,9 +235,29 @@ export interface SessionState {
 	/** 보드 drafts/예약 멤버십(공유). 스냅샷에서 복원해 boardStore가 적용. */
 	boardDrafts: BoardDraftsPayload;
 
+	// ── 편집 락(presence, 양도형) ──────────────────────────
+	/** 편집 가능 여부(= 내가 보유자이거나 락이 비어있음). false면 보기 전용. */
+	isEditor: boolean;
+	/** 현재 접속 기기 수. */
+	presenceCount: number;
+	/** 접속 기기 목록(이름) — 접속자 모달용. */
+	presenceList: { clientId: string; name: string }[];
+	/** 편집 권한 보유자 clientId(아무도 점유 안 했으면 null=자유). */
+	holderClientId: string | null;
+	/** 보유자 기기 이름. */
+	holderName: string | null;
+	/** 락이 비어있는지(아무도 점유 안 함). */
+	lockFree: boolean;
+
 	// Internal channel reference (not reactive)
 	_channel: RealtimeChannel | null;
 	_metaChannel: RealtimeChannel | null;
+	/** 이 클라이언트의 presence 식별자. */
+	_clientId: string | null;
+	/** 이 기기 이름. */
+	_myName: string | null;
+	/** 이 기기의 최신 claim 시각(ms, 0=미점유). */
+	_myClaimAt: number;
 
 	initialize: (initial: ClientSessionState) => void;
 	reset: () => void;
@@ -170,9 +265,21 @@ export interface SessionState {
 	// DB Actions
 	handleAssign: (team: GeneratedTeam, courtId: number) => Promise<void>;
 	handleComplete: (courtId: number) => Promise<void>;
+	/** 휴식 토글. resting=true 휴식 진입 / false 복귀(deficit 보정). player_updated 브로드캐스트. */
+	setResting: (playerId: string, resting: boolean) => Promise<void>;
+	/** 경기 수정: 진행중 매치의 최종 로스터 설정(직접 DB 반영, 동기화 없음, 로컬만 갱신). */
+	handleSetMatchRoster: (
+		courtId: number,
+		teamA: [string, string],
+		teamB: [string, string],
+	) => Promise<void>;
 	handleEndSession: (onEnd: () => void) => Promise<void>;
 
 	notifySessionRefresh: () => void;
+
+	// 편집 락 — 명시적 인계(권한 가져오기) / 자유 상태에서 자동 점유
+	claimEditor: () => void;
+	claimEditingIfFree: () => void;
 
 	// Channel management
 	subscribe: (sessionId: number, onEnd: () => void) => void;
@@ -189,8 +296,17 @@ const initialState = {
 	lastGameType: {} as Record<string, GameType>,
 	matchAssignCount: 0,
 	boardDrafts: { teams: [], reservations: [] } as BoardDraftsPayload,
+	isEditor: false,
+	presenceCount: 0,
+	presenceList: [] as { clientId: string; name: string }[],
+	holderClientId: null as string | null,
+	holderName: null as string | null,
+	lockFree: true,
 	_channel: null as RealtimeChannel | null,
 	_metaChannel: null as RealtimeChannel | null,
+	_clientId: null as string | null,
+	_myName: null as string | null,
+	_myClaimAt: 0,
 };
 
 export const useSessionStore = create<SessionState>((set, get) => ({
@@ -220,8 +336,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
 	// ── DB Actions ──────────────────────────────────────────
 	handleAssign: async (team: GeneratedTeam, courtId: number) => {
-		const { courts, _channel } = get();
-		if (!_channel) { return; }
+		const { courts, _channel, isEditor } = get();
+		if (!_channel || !isEditor) { return; } // 보기 전용 차단
 
 		const court = courts.find((c) => c.id === courtId);
 		if (!court || court.match) { return; }
@@ -260,9 +376,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 
 	handleComplete: async (courtId: number) => {
-		const { courts, _channel } = get();
+		const { courts, _channel, isEditor } = get();
 		const court = courts.find((c) => c.id === courtId);
-		if (!court?.match || !_channel) return;
+		if (!court?.match || !_channel || !isEditor) return; // 보기 전용 차단
 
 		const sessionId = getSessionId();
 		const match = court.match;
@@ -296,7 +412,63 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		sendBroadcast(_channel, payload);
 	},
 
+	setResting: async (playerId: string, resting: boolean) => {
+		const { _channel, isEditor } = get();
+		if (!isEditor) return; // 보기 전용 차단
+		const sessionId = getSessionId();
+		if (!sessionId) return;
+		const updated = await dbSetPlayerResting(playerId, sessionId, resting);
+		if (!updated) {
+			console.error(`[store] setResting FAILED player=${playerId} resting=${resting}`);
+			return;
+		}
+		const payload: BroadcastPayload = { event: "player_updated", payload: { player: updated } };
+		get().applyBroadcast(payload);
+		if (_channel) sendBroadcast(_channel, payload);
+	},
+
+	handleSetMatchRoster: async (courtId, teamA, teamB) => {
+		const { courts, isEditor } = get();
+		if (!isEditor) return; // 보기 전용 차단
+		const court = courts.find((c) => c.id === courtId);
+		if (!court?.match) return;
+		const oldIds = [...court.match.teamA, ...court.match.teamB];
+		const newIds = [...teamA, ...teamB];
+		const removed = oldIds.filter((id) => !newIds.includes(id));
+		const added = newIds.filter((id) => !oldIds.includes(id));
+		if (removed.length === 0) return; // 변경 없음
+
+		const ok = await dbSetMatchRoster(court.match.id, teamA, teamB, removed, added);
+		if (!ok) {
+			console.error(`[store] handleSetMatchRoster FAILED court=${courtId}`);
+			return;
+		}
+		// 동기화 안 함(결과만 서버 반영) — 편집자 로컬 상태만 갱신. 다른 기기는 다음 로드 시 반영.
+		set((state) => {
+			const newMap = new Map(state.sessionPlayers);
+			const nowIso = new Date().toISOString();
+			for (const id of removed) {
+				const p = newMap.get(id);
+				if (p) newMap.set(id, { ...p, status: "waiting", waitSince: nowIso });
+			}
+			for (const id of added) {
+				const p = newMap.get(id);
+				if (p) newMap.set(id, { ...p, status: "playing" });
+			}
+			const { waitingIds, restingIds } = rebuildDerivedIds(newMap);
+			return {
+				sessionPlayers: newMap,
+				waitingIds,
+				restingIds,
+				courts: state.courts.map((c) =>
+					c.id === courtId && c.match ? { ...c, match: { ...c.match, teamA, teamB } } : c,
+				),
+			};
+		});
+	},
+
 	handleEndSession: async (onEnd: () => void) => {
+		if (!get().isEditor) return; // 보기 전용 차단
 		const sessionId = getSessionId();
 		if (!sessionId) return;
 		// sessions.is_active=false → 다른 클라이언트는 meta 채널(postgres watch)로 종료 감지.
@@ -331,11 +503,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		handlers[ev.event]?.(evWithPayload.payload ?? {}, set, get);
 	},
 
+	claimEditor: () => {
+		doClaim(get, set); // 명시적 인계(권한 가져오기)
+	},
+	claimEditingIfFree: () => {
+		if (!get().lockFree) return; // 자유일 때만 자동 점유(이미 점유됐으면 그대로)
+		doClaim(get, set);
+	},
+
 	subscribe: (sessionId: number, onEnd: () => void) => {
 		const { applyBroadcast } = get();
 
-		// Broadcast channel
-		const channel = createBroadcastChannel(sessionId);
+		// 편집 락용 presence 식별자 — 이 연결의 clientId + 기기 이름
+		const myClientId = crypto.randomUUID();
+		const myName = getDeviceName();
+
+		// Broadcast + presence channel
+		const channel = createBroadcastChannel(sessionId, myClientId);
 		const events = [
 			"match_started",
 			"match_completed",
@@ -348,7 +532,34 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				applyBroadcast({ event, payload } as BroadcastPayload),
 			);
 		}
-		channel.subscribe();
+		// presence 변경(sync/join/leave) → 보유자/접속자 재산정.
+		// join/leave도 명시 구독해 보유자 이탈 시 인계가 지연되지 않게 한다.
+		const syncPresence = () => {
+			const state = channel.presenceState() as unknown as Record<
+				string,
+				Array<Record<string, unknown>>
+			>;
+			const info = computePresence(state, myClientId, get()._myClaimAt);
+			set(info);
+			// 자유(아무도 점유 안 함) 상태면 접속자 중 clientId 최소 1명이 즉시 자동 점유 →
+			// "접속하면 곧바로 편집자 1명 확정, 나머지는 보기 전용". 보유자 이탈 시에도 남은 최소 1명이 인계.
+			if (info.lockFree && info.presenceList.length > 0) {
+				const lowest = info.presenceList.map((p) => p.clientId).sort()[0];
+				if (lowest === myClientId) doClaim(get, set);
+			}
+		};
+		channel.on("presence", { event: "sync" }, syncPresence);
+		channel.on("presence", { event: "join" }, syncPresence);
+		channel.on("presence", { event: "leave" }, syncPresence);
+		channel.subscribe((status) => {
+			if (status === "SUBSCRIBED") {
+				// 입장만 track(claimAt=0, 미점유). 첫 편집/인계 시 doClaim이 claimAt을 올린다.
+				void channel
+					.track({ clientId: myClientId, name: myName, claimAt: 0 })
+					.then(() => syncPresence())
+					.catch((e) => console.error("presence track failed:", e));
+			}
+		});
 
 		// Session meta channel — 다른 클라이언트의 세션 종료(is_active=false) 및 match_assign_count 동기화
 		const metaChannel = supabase
@@ -371,13 +582,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			)
 			.subscribe();
 
-		set({ _channel: channel, _metaChannel: metaChannel });
+		set({ _channel: channel, _metaChannel: metaChannel, _clientId: myClientId, _myName: myName, _myClaimAt: 0 });
 	},
 
 	unsubscribe: () => {
 		const { _channel, _metaChannel } = get();
 		if (_channel) supabase.removeChannel(_channel);
 		if (_metaChannel) supabase.removeChannel(_metaChannel);
-		set({ _channel: null, _metaChannel: null });
+		set({
+			_channel: null,
+			_metaChannel: null,
+			_clientId: null,
+			_myName: null,
+			_myClaimAt: 0,
+			isEditor: false,
+			presenceCount: 0,
+			presenceList: [],
+			holderClientId: null,
+			holderName: null,
+			lockFree: true,
+		});
 	},
 }));

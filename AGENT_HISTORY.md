@@ -443,3 +443,19 @@
 - 재실행 결과 23/23 업로드 성공
 
 ---
+
+---
+## #36
+
+**Action**: 보드 편집락·경기 수정·휴식존·DB 정리·로고/아이콘 일괄 적용
+
+**Answer**: 이번 세션 누적 변경 일괄 커밋(main). 보드(/session) 4대 이슈 + 후속 개선.
+- 그룹 드래그: 자석 인터랙션 히트영역 축소(MAGNET_HIT_R)로 빈틈/프레임에서 그룹 드래그 가능
+- 휴식: 추천 풀에서 휴식자 제외 + 휴식존(하단 드롭 필드/패널, 드래그 in/out, 액티베이트 하이라이트) + 복귀 시 deficit 보정(set_player_resting RPC, rest_since_match 컬럼)
+- 동시편집: 코트 이중배정 방지(부분 유니크 인덱스 + assign_match 충돌 처리), 양도형 편집 락(Realtime Presence 기반 — 접속 즉시 단일 편집자, claim 인계, 보기 전용 오버레이/모달, 기기 이름 표시)
+- 경기 수정: 진행중 매치 로스터 편집 모달(MatchEditModal). 경기중 아닌 전원 후보, 다중 교체 스테이징, 직접 테이블 UPDATE(dbSetMatchRoster, 브로드캐스트 없음). 카운트는 완료 시 최종 로스터 기준
+- 레이아웃/모바일: 코트현황 헤더 이동, 하단 RestBar, PWA standalone(manifest + 메타)
+- DB 정리: 미사용 swap_match_player RPC·sessions.script_url DROP, matches team_* FK ON DELETE SET NULL·pair_history CASCADE 확정, 레거시 비추적 마이그레이션 파일 제거, DATABASE.md 갱신. 마이그레이션 20260615120000~20260616000000 적용
+- player_updated 브로드캐스트가 waitingIds/restingIds 재계산하도록 보정
+- 로고/아이콘: 새 COCK TIME 로고(투명 PNG, 다크모드 invert) + 파비콘(.ico/png)·PWA(192/512/maskable)·apple-touch 아이콘(네이비+흰 로고)
+- 신규: MatchEditModal, RestBar, ViewerLockOverlay, lib/deviceName, public 아이콘 세트 / 삭제: CourtStatusBar, 레거시 SQL 4종, 구 main 이미지·vite.svg

@@ -11,6 +11,7 @@ import { magnetGenderInk, magnetSkillAngle, MAGNET_SKILL_ARC_RATIO, MAGNET_GENDE
 import {
 	MAGNET_SIZE,
 	MAGNET_R,
+	MAGNET_HIT_R,
 	RING_BG_COLOR,
 	RING_FG_COLOR,
 	GENDER_M_COLOR,
@@ -21,6 +22,8 @@ import {
 	RESERVATION_STROKE,
 	RESERVATION_DASH,
 	RESERVATION_BADGE_BG,
+	RESTING_OPACITY,
+	RESTING_BADGE_BG,
 } from "../../lib/board/constants";
 
 const GRAD_H = MAGNET_SIZE * 0.7;
@@ -36,9 +39,15 @@ interface Props {
 	reservationId?: string;
 	/** 코트 배치된 경기중 선수 — 드래그 시 예약 생성, 항상 슬롯 복귀 */
 	playing?: boolean;
+	/** 휴식존에 들어간 휴식 선수 — 흐리게+배지, 존 밖으로 드래그 시 복귀 */
+	resting?: boolean;
 	onDragEnd?: (playerId: string, cx: number, cy: number) => void;
 	onGhostDragEnd?: (resId: string, cx: number, cy: number) => void;
 	onPlayingDragEnd?: (playerId: string, cx: number, cy: number) => void;
+	/** 휴식 자석 드래그-엔드(절대좌표) — 존 밖이면 복귀 처리 */
+	onRestingDragEnd?: (playerId: string, cx: number, cy: number) => void;
+	/** 드래그 이동 중 절대좌표 — 휴식 필드 hover 감지 등 */
+	onDragMove?: (playerId: string, cx: number, cy: number) => void;
 	/** 자석 탭(드래그 아님) — 추천 팀원 모달 열기 */
 	onClick?: (playerId: string) => void;
 }
@@ -50,13 +59,17 @@ const PlayerMagnet = memo(function PlayerMagnet({
 	kind = "anchor",
 	reservationId,
 	playing = false,
+	resting = false,
 	onDragEnd,
 	onGhostDragEnd,
 	onPlayingDragEnd,
+	onRestingDragEnd,
+	onDragMove,
 	onClick,
 }: Props) {
 	const magnet = useBoardStore((s) => s.magnets.get(playerId));
 	const player = useSessionStore((s) => s.sessionPlayers.get(playerId));
+	const isEditor = useSessionStore((s) => s.isEditor); // 보기 전용이면 드래그 비활성
 	const isGhost = kind === "ghost";
 
 	// 렌더 목표 좌표(자유 자석=magnet.x/y, 팀/코트 멤버=슬롯 offset)
@@ -129,6 +142,15 @@ const PlayerMagnet = memo(function PlayerMagnet({
 		[onClick, playerId],
 	);
 
+	const handleDragMove = useCallback(
+		(e: Konva.KonvaEventObject<DragEvent>) => {
+			if (!onDragMove) return;
+			const abs = e.target.getAbsolutePosition();
+			onDragMove(playerId, abs.x, abs.y);
+		},
+		[onDragMove, playerId],
+	);
+
 	const handleDragStart = useCallback(
 		(e: Konva.KonvaEventObject<DragEvent>) => {
 			clearLongPress(); // 드래그 의도 → 롱프레스 취소
@@ -149,19 +171,20 @@ const PlayerMagnet = memo(function PlayerMagnet({
 			const abs = e.target.getAbsolutePosition();
 			if (isGhost && reservationId) onGhostDragEnd?.(reservationId, abs.x, abs.y);
 			else if (playing) onPlayingDragEnd?.(playerId, abs.x, abs.y);
+			else if (resting) onRestingDragEnd?.(playerId, abs.x, abs.y);
 			else onDragEnd?.(playerId, abs.x, abs.y);
 
-			// 슬롯 복귀: ghost/playing이거나, 드롭 후에도 여전히 팀 anchor면 원래 자리로.
+			// 슬롯 복귀: ghost/playing/resting이거나, 드롭 후에도 여전히 팀 anchor면 원래 자리로.
 			// (자유 자석은 그대로 드롭 위치에 남는다 — 자유 이동)
 			// 애니메이션(.to) 대신 즉시 위치 설정 — reserve/reservePair로 인한 동시 re-render와
 			// 트윈이 충돌해 자석이 떨리며 튀는 현상을 방지한다.
 			const stillAnchored = !!useBoardStore.getState().magnets.get(playerId)?.teamId;
-			if (isGhost || playing || stillAnchored) {
+			if (isGhost || playing || resting || stillAnchored) {
 				e.target.position({ x: offsetX ?? 0, y: offsetY ?? 0 });
 				e.target.getLayer()?.batchDraw();
 			}
 		},
-		[playerId, isGhost, playing, reservationId, onDragEnd, onGhostDragEnd, onPlayingDragEnd, offsetX, offsetY],
+		[playerId, isGhost, playing, resting, reservationId, onDragEnd, onGhostDragEnd, onPlayingDragEnd, onRestingDragEnd, offsetX, offsetY],
 	);
 
 	if (!magnet || !player) return null;
@@ -187,10 +210,11 @@ const PlayerMagnet = memo(function PlayerMagnet({
 			id={`magnet-${playerId}`}
 			x={rx}
 			y={ry}
-			opacity={isGhost ? RESERVATION_OPACITY : 1}
-			draggable
+			opacity={isGhost ? RESERVATION_OPACITY : resting ? RESTING_OPACITY : 1}
+			draggable={isEditor}
 			listening
 			onDragStart={handleDragStart}
+			onDragMove={handleDragMove}
 			onDragEnd={handleDragEnd}
 			onPointerDown={handlePointerDown}
 			onPointerUp={clearLongPress}
@@ -198,8 +222,8 @@ const PlayerMagnet = memo(function PlayerMagnet({
 			onClick={handleClick}
 			onTap={handleClick}
 		>
-			{/* 히트 영역 */}
-			<Circle radius={MAGNET_R} fill="transparent" />
+			{/* 히트 영역 — 시각 반경보다 작게(MAGNET_HIT_R): 자석 주변/프레임은 부모 그룹 드래그로 떨어짐 */}
+			<Circle radius={MAGNET_HIT_R} fill="transparent" />
 
 			{/* 사진(또는 사진 없을 때 성별 light 배경 + 이니셜) — PlayerCard와 동일 */}
 			{hasPhoto ? (
@@ -320,6 +344,27 @@ const PlayerMagnet = memo(function PlayerMagnet({
 						width={32}
 						height={18}
 						text="예약"
+						fontSize={10}
+						fontStyle="bold"
+						fontFamily="Inter, system-ui, sans-serif"
+						fill="#FFFFFF"
+						align="center"
+						verticalAlign="middle"
+						perfectDrawEnabled={false}
+					/>
+				</Group>
+			)}
+
+			{/* 휴식 뱃지 */}
+			{resting && (
+				<Group x={MAGNET_R - 8} y={-MAGNET_R + 8} listening={false}>
+					<Rect x={-16} y={-9} width={32} height={18} cornerRadius={9} fill={RESTING_BADGE_BG} perfectDrawEnabled={false} />
+					<Text
+						x={-16}
+						y={-9}
+						width={32}
+						height={18}
+						text="휴식"
 						fontSize={10}
 						fontStyle="bold"
 						fontFamily="Inter, system-ui, sans-serif"

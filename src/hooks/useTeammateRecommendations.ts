@@ -29,8 +29,9 @@ export interface TeammateRecommendations {
  *  - teamId: "팀 구성 중" 그룹의 빈 슬롯(+) — 팀 멤버에 어울리는 후보
  *  - seedId: 자유 자석 탭 — 그 선수를 시드로 팀을 만들 때 어울리는 후보
  *
- * pool = 보드의 가용 선수 − 확정 멤버 − 다른 보드 팀에 묶인 선수
- *        (보드는 상태 무관 전원을 자석으로 노출. 경기중 선수만 recommendTeammates에서 페널티로 하위 처리)
+ * pool = 보드의 가용 선수 − 확정 멤버 − 휴식(resting) 선수 − 다른 보드 팀에 묶인 선수
+ *        (보드는 상태 무관 전원을 자석으로 노출하되, 휴식 선수는 추천 후보에서 제외.
+ *         경기중 선수만 recommendTeammates에서 페널티로 하위 처리)
  * 점수 기준: 실력 유사 > 미동반 > 게임타입 로테이션 + 성별 균형 + 대기 우선
  */
 export function useTeammateRecommendations(
@@ -84,6 +85,8 @@ export function useTeammateRecommendations(
 		const pool: SessionPlayer[] = [];
 		for (const p of sessionPlayers.values()) {
 			if (memberIds.has(p.id)) continue;
+			// 휴식(resting) 선택한 선수는 어떤 추천에서도 제외한다.
+			if (p.status === "resting") continue;
 			// 다른 보드 팀에 anchor로 묶인 선수는 제외(경기중 선수는 magnet.teamId=null이라 포함됨)
 			const mag = magnets.get(p.id);
 			if (mag && mag.teamId && mag.teamId !== teamId) continue;

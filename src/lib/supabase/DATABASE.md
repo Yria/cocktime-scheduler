@@ -30,7 +30,8 @@
 | game_count | INT | 게임 수 |
 | mixed_count | INT | 혼복 게임 수 |
 | joined_at_match | INT | 합류 시점 match_assign_count (deficit 기산점) |
-| wait_since | TIMESTAMPTZ? | 대기 시작 시각 |
+| wait_since | TIMESTAMPTZ? | 대기 시작 시각 (휴식 진입 시 NULL, 복귀 시 now()) |
+| rest_since_match | INT? | **서버 전용** — 휴식 진입 시 match_assign_count 기록. 복귀 시 `set_player_resting` 이 joined_at_match 를 휴식 구간만큼 전진시켜 deficit 폭증 방지. 클라이언트 타입/transformer 는 읽지 않음 (마이그레이션 `20260615130000`) |
 
 > **제거됨(deprecated)**: `force_mixed`(혼복 우선배치) / `force_hard_game`(빡겜 우선배치) 컬럼.
 > 마이그레이션 `20260612120000_remove_legacy_team_formation.sql` 에서 `ALTER TABLE session_players DROP COLUMN IF EXISTS` 로 DROP. 코드 필드·transformer(`rowToSessionPlayer`)·타입(`SessionPlayerRow`)·`DebugMatchModal` 표시까지 전부 제거됨.
@@ -42,11 +43,14 @@
 | session_id | BIGINT FK | 세션 |
 | court_id | INT | 코트 번호 |
 | game_type | TEXT | 혼복/남복/여복/혼합 |
-| team_a_p1/p2 | UUID FK | A팀 선수 |
-| team_b_p1/p2 | UUID FK | B팀 선수 |
+| team_a_p1/p2 | UUID FK? | A팀 선수 (`ON DELETE SET NULL`) |
+| team_b_p1/p2 | UUID FK? | B팀 선수 (`ON DELETE SET NULL`) |
 | status | TEXT | playing/completed |
 | started_at | TIMESTAMPTZ | 시작 시각 |
 | ended_at | TIMESTAMPTZ? | 종료 시각 |
+
+> **코트 이중배정 방지(2026-06-15)**: 부분 유니크 인덱스 `uq_matches_active_court (session_id, court_id) WHERE status='playing'` — 코트당 진행중 매치 최대 1개. 마이그레이션 `20260615120000_prevent_court_double_booking.sql`. 완료(completed) 매치는 대상 아님(코트 재사용 정상).
+> **FK 정책(2026-06-16, `20260616000000_db_cleanup.sql`)**: team_*_p* 는 `ON DELETE SET NULL`(NULL 허용) — 선수 삭제 시 매치 기록은 보존되고 참조만 NULL. 진행중(playing) 매치 선수는 `updateSession` 이 `status != 'playing'` 필터로 삭제 제외하므로 활성 매치엔 NULL 이 생기지 않음. `pair_history` FK 는 `ON DELETE CASCADE`. 이로써 선수 삭제가 FK 로 막히지 않음.
 
 ### pair_history
 | 컬럼 | 타입 | 설명 |
@@ -64,10 +68,12 @@
 
 | RPC | 시그니처 | 용도 |
 |---|---|---|
-| `assign_match` | (코트 배정 파라미터) | matches INSERT + players→playing + match_assign_count++ |
-| `complete_match` | `(p_match_id UUID, p_session_id BIGINT, p_game_type TEXT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID)` | match→completed + pair_history UPSERT(팀 페어 2쌍) + players→waiting(game_count++/혼복 남자 mixed_count++) |
+| `assign_match` | (코트 배정 파라미터) | matches INSERT + players→playing + match_assign_count++. 코트 점유 시 `unique_violation`→`RAISE EXCEPTION 'court already assigned'`(dbAssignMatch=false 처리) |
+| `complete_match` | `(p_match_id UUID, p_session_id BIGINT, p_game_type TEXT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID)` | match→completed + pair_history UPSERT(같은 경기 4명 6쌍) + players→waiting(game_count++/혼복 남자 mixed_count++) |
+| `set_player_resting` | `(p_session_player_id UUID, p_session_id BIGINT, p_resting BOOLEAN)` | status 휴식/복귀 전환. 복귀 시 joined_at_match 를 휴식 구간만큼 전진(deficit 보정) + wait_since 리셋. 갱신 선수 반환 (`20260615130000`) |
 
 > **제거된 RPC(deprecated)**: ~~`save_team_candidates(BIGINT, JSONB)`~~, ~~`save_match_queue(BIGINT, JSONB)`~~, ~~`activate_pending_player(BIGINT, UUID)`~~.
+> ~~`swap_match_player(UUID, BIGINT, TEXT, UUID, UUID)`~~ — `20260615140000` 에서 추가됐으나 미사용으로 `20260616000000_db_cleanup.sql` 에서 DROP. **경기 수정(선수 교체)은 RPC 없이 클라이언트가 matches/session_players 를 직접 UPDATE**(`dbSetMatchRoster`)한다.
 
 ## API 함수 목록
 
@@ -93,10 +99,12 @@
 |---|---|
 | `dbAssignMatch(...)` | sessionStore |
 | `dbCompleteMatch(...)` | sessionStore |
-| `dbUpdateSessionPlayer(...)` | appStore, sessionStore (휴식 토글은 status 필드 업데이트로 처리) |
+| `dbUpdateSessionPlayer(id, gender, skills)` | appStore (선수 정보 변경 — gender/skills 직접 UPDATE) |
+| `dbSetPlayerResting(id, sessionId, resting)` | sessionStore (`setResting` → `set_player_resting` RPC) |
+| `dbSetMatchRoster(matchId, teamA, teamB, removed, added)` | sessionStore (`handleSetMatchRoster`: 경기 수정 — matches/session_players **직접 UPDATE**, 브로드캐스트 없이 결과만 반영) |
 | `dbEndSession(sessionId)` | sessionStore (`handleEndSession`: `sessions.is_active=false`) |
 
-> **제거됨(deprecated)**: ~~`dbToggleResting`~~, ~~`dbToggleForceMixed`~~, ~~`dbToggleForceHardGame`~~, ~~`dbLogManualMatch`~~, ~~`dbActivatePendingPlayer`~~. 휴식 전환은 `dbUpdateSessionPlayer` 로 통합됨.
+> **제거됨(deprecated)**: ~~`dbToggleResting`~~, ~~`dbToggleForceMixed`~~, ~~`dbToggleForceHardGame`~~, ~~`dbLogManualMatch`~~, ~~`dbActivatePendingPlayer`~~, ~~`dbSwapMatchPlayer`~~. 휴식 전환은 `dbSetPlayerResting`(RPC), 경기 수정은 `dbSetMatchRoster`(직접 UPDATE)로 분리.
 > **재추가됨**: `dbEndSession` (세션 종료) — 보드 헤더 [세션 종료] 버튼 → `handleEndSession` → `is_active=false`. 다른 클라이언트는 `is_active` postgres watch 로 종료 감지(`session_ended` 브로드캐스트는 미사용).
 
 ---
@@ -163,3 +171,9 @@ sessionStore (휴식 토글)
 
 > **제거된 이벤트(deprecated)**: ~~`player_status_changed`~~(→ `player_updated` 로 통합), ~~`session_updated`~~,
 > ~~`player_force_mixed_changed`~~, ~~`player_force_hard_game_changed`~~, ~~`candidates_updated`~~, ~~`session_ended`~~, ~~`pending_team`~~.
+
+> **경기 수정(`dbSetMatchRoster`)은 브로드캐스트 안 함** — 결과만 DB 에 반영하고 편집자 로컬만 갱신. 다른 기기는 다음 스냅샷 로드 시 반영.
+
+## 편집 락 (Realtime Presence, DB 미사용)
+
+같은 `session-bc:{id}` 채널의 **Presence** 로 동시편집을 제어한다(DB 테이블 없음). 각 기기가 `{clientId, name, claimAt}` 를 track → 현재 접속자 중 `claimAt` 최댓값이 **편집자(보유자)**, 아무도 claim 안 했으면 자유(누구나 편집, 첫 편집이 자동 점유). 비편집자는 모든 변경 액션 차단(보기 전용)이되 위 브로드캐스트는 정상 수신. 헤더 칩 → 접속자 모달에서 "편집 권한 가져오기"로 즉시 인계. 보유자 이탈 시 presence 에서 사라져 자동 자유/인계(영구 잠금 없음).

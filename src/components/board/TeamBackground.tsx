@@ -2,6 +2,7 @@ import { memo, useCallback } from "react";
 import { Group, Rect, Text, Circle, Line } from "react-konva";
 import type Konva from "konva";
 import { useBoardStore } from "../../store/boardStore";
+import { useSessionStore } from "../../store/sessionStore";
 import { computeEmptySlots, computeSlotOffset } from "../../lib/board/geometry";
 import {
 	findReservation,
@@ -56,6 +57,7 @@ const TeamBackground = memo(function TeamBackground({
 	const magnets = useBoardStore((s) => s.magnets);
 	const setTeamAnchor = useBoardStore((s) => s.setTeamAnchor);
 	const settleBoard = useBoardStore((s) => s.settleBoard);
+	const isEditor = useSessionStore((s) => s.isEditor); // 보기 전용이면 드래그/경기시작 비활성
 
 	// 멤버 자석 드래그가 팀 Group으로 버블링된 경우(e.target≠그룹) 무시.
 	// 안 하면 setTeamAnchor가 멤버의 로컬 좌표로 anchor를 덮어써 팀이 튄다.
@@ -87,7 +89,7 @@ const TeamBackground = memo(function TeamBackground({
 	const count = members.length;
 	const startable = isTeamStartable(teamId, drafts, reservations, magnets, playingIds);
 	const isFull = count === 4;
-	const ctaEnabled = startable && hasEmptyCourt;
+	const ctaEnabled = startable && hasEmptyCourt && isEditor;
 
 	// 박스 스타일: 시작 가능=초록 / 4명이지만 대기=호박 / 구성 중=회색
 	const style = startable
@@ -103,7 +105,7 @@ const TeamBackground = memo(function TeamBackground({
 			: "대기 · 선수 경기중";
 	const labelColor = startable ? TEAM_READY_STROKE : isFull ? TEAM_PLAYING_STROKE : TEXT_SECONDARY;
 
-	const ctaLabel = ctaEnabled ? "경기시작" : !startable ? "선수 경기중" : "코트 대기";
+	const ctaLabel = !isEditor ? "보기 전용" : ctaEnabled ? "경기시작" : !startable ? "선수 경기중" : "코트 대기";
 	const ctaColor = ctaEnabled ? CTA_START_COLOR : CTA_DISABLED_COLOR;
 
 	const emptySlots = computeEmptySlots(count);
@@ -127,7 +129,7 @@ const TeamBackground = memo(function TeamBackground({
 			id={`team-${teamId}`}
 			x={team.anchor.x}
 			y={team.anchor.y}
-			draggable
+			draggable={isEditor}
 			onDragStart={handleDragStart}
 			onDragMove={handleDragMove}
 			onDragEnd={handleDragEnd}

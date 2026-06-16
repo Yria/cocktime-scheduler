@@ -43,9 +43,9 @@ export default function Home({ onStart }: Props) {
 				{/* Logo */}
 				<div className="flex flex-col items-center mb-6">
 					<img
-						src="main.png"
-						className="w-20 h-20 object-contain mb-5 drop-shadow-[0_4px_12px_rgba(11,132,255,0.15)] dark:[filter:brightness(0)_invert(1)_drop-shadow(0_4px_16px_rgba(255,255,255,0.2))]"
-						alt="콕타임"
+						src="logo.png"
+						className="w-48 max-w-[80%] h-auto object-contain mb-5 drop-shadow-[0_4px_12px_rgba(11,132,255,0.15)] dark:[filter:brightness(0)_invert(1)_drop-shadow(0_4px_16px_rgba(255,255,255,0.2))]"
+						alt="콕타임 배드민턴 클럽"
 					/>
 					<h1
 						className="font-bold tracking-tight text-[#0f1724] dark:text-white"

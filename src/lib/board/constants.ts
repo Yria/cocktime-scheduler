@@ -1,6 +1,11 @@
 // Magnet (circle)
 export const MAGNET_SIZE = 64;
 export const MAGNET_R = MAGNET_SIZE / 2;
+// 자석 인터랙션(드래그/탭) 히트 반경 — 시각 반경(MAGNET_R=32)보다 작게 둔다.
+// 4명 팀은 자석 4개가 박스를 거의 메워 그룹 드래그용 빈틈이 ~6px뿐이었다.
+// 히트 반경을 줄이면 자석 사이/주변·프레임이 부모 그룹(예비팀·코트카드) 드래그로 떨어져
+// "보이는 자석 4개를 제외한 곳 어디서든" 그룹을 잡을 수 있다(탭 타깃 52px로 충분).
+export const MAGNET_HIT_R = 26;
 
 // 자석 디자인 토큰은 단일 출처(magnetStyle)에서 가져온다 — PlayerCard(HTML)와 완전 동일.
 import {
@@ -87,3 +92,18 @@ export const RESERVATION_OPACITY = 0.5;
 export const RESERVATION_STROKE = "#A78BFA";
 export const RESERVATION_DASH = [5, 4];
 export const RESERVATION_BADGE_BG = "#7C3AED";
+
+// 휴식존(rest zone) — 하단 푸터가 곧 휴식 필드. 접힘 상태에선 푸터 위 얇은 캐치존,
+// 펼침(탭) 상태에선 패널이 위로 열려 휴식자 노출. 드래그로 넣고/빼서 휴식/복귀.
+export const REST_FIELD_H = 56; // 접힘 상태 드롭 캐치존(푸터 바로 위 stage 하단 strip)
+export const REST_ZONE_H = MAGNET_SIZE + 44; // 펼침 패널 높이(라벨 + 자석 1줄)
+export const REST_ZONE_BG = "rgba(15,23,42,0.92)"; // 다크 슬레이트(반투명)
+export const REST_ZONE_STROKE = "#475569";
+export const REST_ZONE_LABEL = "#94A3B8";
+// 드래그가 필드 위로 들어온 액티베이트(hot) 상태 — 스카이 액센트로 "여기 놓기" 강조
+export const REST_ZONE_HOT_BG = "rgba(56,189,248,0.18)";
+export const REST_ZONE_HOT_STROKE = "#38BDF8";
+export const REST_ZONE_HOT_LABEL = "#7DD3FC";
+// 휴식 자석 시각화
+export const RESTING_OPACITY = 0.55;
+export const RESTING_BADGE_BG = "#475569";

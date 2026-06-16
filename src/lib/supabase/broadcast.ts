@@ -37,9 +37,13 @@ export type BroadcastPayload =
 			payload: import("../../types/board").BoardDraftsPayload;
 	  };
 
-export function createBroadcastChannel(sessionId: number): RealtimeChannel {
+export function createBroadcastChannel(
+	sessionId: number,
+	clientId: string,
+): RealtimeChannel {
+	// presence.key = clientId → "현재 접속자 중 최초 입장자"를 편집자로 산정(편집 락)
 	return supabase.channel(`session-bc:${sessionId}`, {
-		config: { broadcast: { self: false } },
+		config: { broadcast: { self: false }, presence: { key: clientId } },
 	});
 }
 

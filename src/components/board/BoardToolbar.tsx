@@ -2,6 +2,7 @@ import { memo, useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ModalSheet from "../common/ModalSheet";
 import { useSessionStore } from "../../store/sessionStore";
+import { useBoardStore } from "../../store/boardStore";
 import { TOOLBAR_H } from "../../lib/board/constants";
 
 export { TOOLBAR_H };
@@ -23,12 +24,34 @@ const iconBtn = (color: string): React.CSSProperties => ({
 const BoardToolbar = memo(function BoardToolbar() {
 	const navigate = useNavigate();
 	const handleEndSession = useSessionStore((s) => s.handleEndSession);
+	const courts = useSessionStore((s) => s.courts);
+	const isEditor = useSessionStore((s) => s.isEditor);
+	const lockFree = useSessionStore((s) => s.lockFree);
+	const holderName = useSessionStore((s) => s.holderName);
+	const holderClientId = useSessionStore((s) => s.holderClientId);
+	const presenceCount = useSessionStore((s) => s.presenceCount);
+	const presenceList = useSessionStore((s) => s.presenceList);
+	const myClientId = useSessionStore((s) => s._clientId);
+	const claimEditor = useSessionStore((s) => s.claimEditor);
+	// 모달 표시는 공유 플래그(헤더 칩 + 보기전용 칩 둘 다 연다)
+	const showPresence = useBoardStore((s) => s.presenceModalOpen);
+	const setShowPresence = useBoardStore((s) => s.setPresenceModalOpen);
 	const [confirmEnd, setConfirmEnd] = useState(false);
 
 	const onConfirmEnd = useCallback(() => {
 		setConfirmEnd(false);
 		handleEndSession(() => navigate("/"));
 	}, [handleEndSession, navigate]);
+
+	const onTakeover = useCallback(() => {
+		claimEditor();
+		setShowPresence(false);
+	}, [claimEditor, setShowPresence]);
+
+	// 칩 라벨/색: 보기전용(마젠타=잠금 전용색, 서비스 미사용) / 편집중-나·자유(초록)
+	const chipLabel = !isEditor ? `🔒 ${holderName ?? "다른 기기"}` : lockFree ? "편집 가능" : "편집 중";
+	const chipAccent = isEditor ? "var(--ios-green)" : "#C026D3";
+	const chipBg = isEditor ? "rgba(52,199,89,0.14)" : "rgba(217,70,239,0.18)";
 
 	return (
 		<>
@@ -59,7 +82,48 @@ const BoardToolbar = memo(function BoardToolbar() {
 					<span>설정</span>
 				</button>
 
-				<div style={{ flex: 1 }} />
+				{/* 편집 권한/접속자 칩 — 탭하면 접속자·권한 인계 모달 */}
+				<button
+					type="button"
+					onClick={() => setShowPresence(true)}
+					title="접속 기기 및 편집 권한"
+					style={{
+						display: "inline-flex",
+						alignItems: "center",
+						gap: 5,
+						marginLeft: 2,
+						padding: "4px 9px",
+						borderRadius: 999,
+						border: "none",
+						fontSize: 11,
+						fontWeight: 700,
+						whiteSpace: "nowrap",
+						cursor: "pointer",
+						background: chipBg,
+						color: chipAccent,
+					}}
+				>
+					<span style={{ width: 7, height: 7, borderRadius: "50%", background: "currentColor", display: "inline-block" }} />
+					<span>{chipLabel}{presenceCount > 1 ? ` · ${presenceCount}` : ""}</span>
+				</button>
+
+				{/* 코트 현황(중앙) — 비어있음(초록)/경기중(주황) */}
+				<div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minWidth: 0, overflow: "hidden" }}>
+					{courts.map((court) => {
+						const empty = !court.match;
+						const dotColor = empty ? "var(--ios-green)" : "var(--ios-orange)";
+						return (
+							<span
+								key={court.id}
+								title={empty ? `${court.id}번 코트 · 비어있음` : `${court.id}번 코트 · 경기중`}
+								style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}
+							>
+								<span style={{ width: 7, height: 7, borderRadius: "50%", background: dotColor, display: "inline-block" }} />
+								<span style={{ color: empty ? "var(--text-secondary)" : dotColor, fontSize: 11, fontWeight: 600 }}>{court.id}번</span>
+							</span>
+						);
+					})}
+				</div>
 
 				<button
 					type="button"
@@ -76,19 +140,22 @@ const BoardToolbar = memo(function BoardToolbar() {
 					<span>로그</span>
 				</button>
 
-				<button
-					type="button"
-					onClick={() => setConfirmEnd(true)}
-					aria-label="세션 종료"
-					style={iconBtn("var(--ios-red)")}
-				>
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-						<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-						<polyline points="16 17 21 12 16 7" />
-						<line x1="21" y1="12" x2="9" y2="12" />
-					</svg>
-					<span>종료</span>
-				</button>
+				{/* 세션 종료는 편집자만 */}
+				{isEditor && (
+					<button
+						type="button"
+						onClick={() => setConfirmEnd(true)}
+						aria-label="세션 종료"
+						style={iconBtn("var(--ios-red)")}
+					>
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+							<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+							<polyline points="16 17 21 12 16 7" />
+							<line x1="21" y1="12" x2="9" y2="12" />
+						</svg>
+						<span>종료</span>
+					</button>
+				)}
 			</div>
 
 			{confirmEnd && (
@@ -115,6 +182,50 @@ const BoardToolbar = memo(function BoardToolbar() {
 							종료
 						</button>
 					</div>
+				</ModalSheet>
+			)}
+
+			{showPresence && (
+				<ModalSheet position="center" className="p-6" onClose={() => setShowPresence(false)}>
+					<div className="flex items-center justify-between mb-3">
+						<h3 className="font-bold text-gray-800 dark:text-white text-lg">
+							접속 기기 {Math.max(1, presenceCount)}
+						</h3>
+						<button type="button" onClick={() => setShowPresence(false)} className="btn-icon-close">✕</button>
+					</div>
+					<ul className="flex flex-col gap-1.5 mb-4">
+						{presenceList.map((d) => {
+							const isMe = d.clientId === myClientId;
+							const holds = d.clientId === holderClientId;
+							return (
+								<li
+									key={d.clientId}
+									className="flex items-center justify-between rounded-lg px-3 py-2 bg-gray-50 dark:bg-white/5"
+								>
+									<span className={`text-sm ${isMe ? "font-bold text-blue-600 dark:text-blue-400" : "font-medium text-gray-800 dark:text-gray-100"}`}>
+										{d.name}{isMe ? " (나)" : ""}
+									</span>
+									{holds && (
+										<span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+											편집 중
+										</span>
+									)}
+								</li>
+							);
+						})}
+					</ul>
+					<p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+						{lockFree
+							? "현재 아무도 편집하지 않습니다. 편집하면 자동으로 권한을 갖습니다."
+							: isEditor
+								? "내가 편집 권한을 갖고 있습니다."
+								: `${holderName ?? "다른 기기"}님이 편집 중입니다. 권한을 가져오면 상대는 보기 전용이 됩니다.`}
+					</p>
+					{!isEditor && (
+						<button type="button" onClick={onTakeover} className="btn-lq-primary w-full py-3 text-sm">
+							편집 권한 가져오기
+						</button>
+					)}
 				</ModalSheet>
 			)}
 		</>

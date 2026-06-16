@@ -6,6 +6,10 @@ import {
 	TEAM_W,
 	TEAM_BOX_ABOVE,
 	TEAM_BOX_BELOW,
+	REST_ZONE_H,
+	REST_FIELD_H,
+	MAGNET_SIZE,
+	MAGNET_R,
 } from "./constants";
 
 export function distance(a: StagePoint, b: StagePoint): number {
@@ -46,4 +50,25 @@ export function isInsideTeamBounds(
 	const above = TEAM_BOX_ABOVE + TEAM_HIT_PADDING;
 	const below = TEAM_BOX_BELOW + TEAM_HIT_PADDING;
 	return dy >= -above && dy <= below;
+}
+
+/**
+ * 휴식 필드(하단) 안에 점이 있는지. stageH = 보드 캔버스 높이.
+ * expanded=true(펼침)면 패널 높이, false(접힘)면 푸터 위 얇은 캐치존 기준.
+ */
+export function isInRestField(point: StagePoint, stageH: number, expanded: boolean): boolean {
+	const h = expanded ? REST_ZONE_H : REST_FIELD_H;
+	return point.y >= stageH - h;
+}
+
+/** 휴식존 내부 자석 슬롯 좌표(절대, stage 기준). index 순서로 한 줄 배치(넘치면 줄바꿈). */
+export function restSlotOffset(index: number, stageW: number, stageH: number): StagePoint {
+	const step = MAGNET_SIZE + 10;
+	const perRow = Math.max(1, Math.floor((stageW - 16) / step));
+	const col = index % perRow;
+	const row = Math.floor(index / perRow);
+	return {
+		x: MAGNET_R + 12 + col * step,
+		y: stageH - REST_ZONE_H + MAGNET_R + 20 + row * (MAGNET_SIZE + 6),
+	};
 }

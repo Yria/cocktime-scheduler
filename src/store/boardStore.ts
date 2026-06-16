@@ -148,8 +148,17 @@ function centroidAnchor(memberIds: string[], magnets: Map<string, MagnetPosition
 	return n > 0 ? { x: sx / n, y: sy / n } : { x: 200, y: COURT_LANE_H + 60 };
 }
 
+/** 편집 가능하면 true + 자유 상태면 자동 점유(양도형 락). 보기 전용이면 false. */
+function claimEdit(): boolean {
+	const s = useSessionStore.getState();
+	if (!s.isEditor) return false;
+	s.claimEditingIfFree?.();
+	return true;
+}
+
 /** 로컬 멤버십 변경을 DB 저장 + 브로드캐스트(원격 적용 중에는 생략). */
 function pushDraftsToRemote(payload: BoardDraftsPayload) {
+	if (!useSessionStore.getState().isEditor) return; // 보기 전용은 보드 드래프트를 공유하지 않음
 	const sessionId = useAppStore.getState().sessionMeta?.sessionId;
 	if (!sessionId) return;
 	void dbSaveBoardDrafts(sessionId, payload);
@@ -180,6 +189,12 @@ export interface BoardState {
 	/** 실제 stage(보드 캔버스) 크기 — 흩어짐 바운더리 클램프용. SessionBoard가 갱신. */
 	stageW: number;
 	stageH: number;
+	/** 휴식존(하단 패널) 표시 여부 — 플로팅 버튼으로 토글. */
+	restZoneOpen: boolean;
+	/** 드래그 중인 자석이 휴식 필드 위에 있는지(액티베이트 하이라이트용). */
+	restFieldHot: boolean;
+	/** 접속자/편집권한 모달 표시 — 헤더 칩 또는 보기전용 칩에서 연다. */
+	presenceModalOpen: boolean;
 
 	initializeFromPool: (players: SessionPlayer[]) => void;
 	handleDrop: (playerId: string, drop: StagePoint) => void;
@@ -203,8 +218,24 @@ export interface BoardState {
 	/** 지정한 자석들을 소스로 방사형 흩어짐 + 정리(경기 완료로 그룹 해제된 자석용) */
 	scatterMagnets: (ids: string[]) => void;
 	rearrangeAll: (viewW: number, viewH: number) => void;
+	/** 휴식존 표시 토글. */
+	toggleRestZone: () => void;
+	/** 휴식 필드 액티베이트(hot) 상태 설정. */
+	setRestFieldHot: (hot: boolean) => void;
+	/** 접속자/편집권한 모달 표시 토글. */
+	setPresenceModalOpen: (open: boolean) => void;
+	/** 선수를 휴식 처리(보드 멤버십에서 제거 + status='resting'). */
+	restPlayer: (playerId: string) => void;
+	/** 휴식 선수를 복귀(status='waiting', deficit 보정) + 자유 자석으로 drop 위치에 배치. */
+	unrestPlayer: (playerId: string, drop: StagePoint) => void;
 	startMatch: (teamId: string) => Promise<void>;
 	completeMatch: (courtId: number) => Promise<void>;
+	/** 경기 수정: 진행중 매치의 최종 로스터 설정(빠진 선수는 자유 자석으로 흩어짐). */
+	setMatchRoster: (
+		courtId: number,
+		teamA: [string, string],
+		teamB: [string, string],
+	) => Promise<void>;
 	reset: () => void;
 }
 
@@ -301,6 +332,9 @@ const creator = immer<BoardState>((set, get) => ({
 	hasArranged: false,
 	stageW: 0,
 	stageH: 0,
+	restZoneOpen: false,
+	restFieldHot: false,
+	presenceModalOpen: false,
 
 	initializeFromPool: (players) => {
 		const current = get().magnets;
@@ -330,6 +364,7 @@ const creator = immer<BoardState>((set, get) => ({
 	},
 
 	handleDrop: (playerId, drop) => {
+		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
 		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 		set((s) => {
 			const target = resolveDropTarget(playerId, drop, s.magnets, s.drafts, s.reservations, playingIds);
@@ -406,6 +441,7 @@ const creator = immer<BoardState>((set, get) => ({
 	},
 
 	handleGhostDrop: (resId, drop) => {
+		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
 		set((s) => {
 			const r = s.reservations.get(resId);
 			if (!r) return;
@@ -438,6 +474,7 @@ const creator = immer<BoardState>((set, get) => ({
 	// 경기중(코트 배치) 선수를 끌어내 다른 팀/선수에 겹치면 예약(ghost) 생성.
 	// 원본은 코트에 그대로(자석은 슬롯 복귀), 빈 공간 드롭은 no-op.
 	handlePlayingMagnetDrop: (playerId, drop) => {
+		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
 		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 		set((s) => {
 			let source: DragSource | null = null;
@@ -481,6 +518,7 @@ const creator = immer<BoardState>((set, get) => ({
 	},
 
 	commitTeammates: (target, playerIds) => {
+		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
 		if (playerIds.length === 0) return;
 		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 		set((s) => {
@@ -619,15 +657,16 @@ const creator = immer<BoardState>((set, get) => ({
 	scatterMagnets: (ids) => {
 		set((s) => {
 			const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
+			const restingIds = new Set(useSessionStore.getState().restingIds);
 			const vw = s.stageW || viewport().vw;
 			const vh = s.stageH || viewport().vh;
 			const r = MAGNET_SIZE / 2;
 
-			// 흩어뜨릴 대상: 자유(teamId null)·비경기중인 자석만
+			// 흩어뜨릴 대상: 자유(teamId null)·비경기중·비휴식 자석만
 			const targets: MagnetPosition[] = [];
 			for (const id of ids) {
 				const m = s.magnets.get(id);
-				if (m && m.teamId === null && !playingIds.has(id)) targets.push(m);
+				if (m && m.teamId === null && !playingIds.has(id) && !restingIds.has(id)) targets.push(m);
 			}
 			if (targets.length === 0) return;
 
@@ -662,6 +701,7 @@ const creator = immer<BoardState>((set, get) => ({
 			const sessionCourts = useSessionStore.getState().courts;
 			const sessionPlayers = useSessionStore.getState().sessionPlayers;
 			const playingIds = playingIdsFromCourts(sessionCourts);
+			const restingIds = new Set(useSessionStore.getState().restingIds);
 			const halfW = TEAM_W / 2;
 			const PAD_X = 12;
 			const GAP_X = 16;
@@ -702,8 +742,9 @@ const creator = immer<BoardState>((set, get) => ({
 			const groupAreaBottom = groupRows > 0 ? GROUP_TOP + groupRows * rowH : COURT_LANE_H;
 
 			// 2) 나머지 자유 자석을 그룹 영역 아래에 격자 배치 — 경기수 적은 사람 먼저
+			//    (휴식 선수는 휴식존으로 분리되므로 메인 보드 배치에서 제외)
 			const freeMagnets = [...s.magnets.values()]
-				.filter((m) => m.teamId === null && !playingIds.has(m.playerId))
+				.filter((m) => m.teamId === null && !playingIds.has(m.playerId) && !restingIds.has(m.playerId))
 				.sort((a, b) => {
 					const ga = sessionPlayers.get(a.playerId)?.gameCount ?? 0;
 					const gb = sessionPlayers.get(b.playerId)?.gameCount ?? 0;
@@ -724,7 +765,54 @@ const creator = immer<BoardState>((set, get) => ({
 		});
 	},
 
+	toggleRestZone: () => {
+		set((s) => {
+			s.restZoneOpen = !s.restZoneOpen;
+		});
+	},
+
+	setRestFieldHot: (hot) => {
+		// 값이 같으면 immer가 동일 상태를 반환해 리렌더 없음(드래그 프레임마다 호출돼도 안전).
+		set((s) => {
+			s.restFieldHot = hot;
+		});
+	},
+
+	setPresenceModalOpen: (open) => {
+		set((s) => {
+			s.presenceModalOpen = open;
+		});
+	},
+
+	restPlayer: (playerId) => {
+		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
+		set((s) => {
+			// 보드 멤버십에서 제거: 팀 anchor 해제 + 이 선수를 가리키는 예약(ghost) 삭제.
+			detachAnchor(s, playerId);
+			for (const [rid, r] of [...s.reservations]) {
+				if (r.playerId === playerId) s.reservations.delete(rid);
+			}
+		});
+		// status='resting' (휴식 진입 — deficit 기준점 기록). 다른 클라이언트에 player_updated 전파.
+		void useSessionStore.getState().setResting(playerId, true);
+	},
+
+	unrestPlayer: (playerId, drop) => {
+		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
+		// status='waiting' 복귀(deficit 보정). 자유 자석으로 drop 위치에 배치.
+		void useSessionStore.getState().setResting(playerId, false);
+		set((s) => {
+			const m = s.magnets.get(playerId);
+			if (!m) return;
+			m.teamId = null;
+			m.x = drop.x;
+			m.y = drop.y;
+			runSettle(s, { magnetId: playerId });
+		});
+	},
+
 	startMatch: async (teamId) => {
+		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
 		const { drafts, reservations, magnets, assigningTeamIds } = get();
 		if (assigningTeamIds.has(teamId)) return;
 
@@ -783,12 +871,24 @@ const creator = immer<BoardState>((set, get) => ({
 	},
 
 	completeMatch: async (courtId) => {
+		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
 		// 완료 처리 전에 끝난 4명 id를 확보(이후 court.match는 null이 됨)
 		const court = useSessionStore.getState().courts.find((c) => c.id === courtId);
 		const endedIds = court?.match ? [...court.match.teamA, ...court.match.teamB] : [];
 		await useSessionStore.getState().handleComplete(courtId);
 		// 그룹 해제로 자유 자석이 된 4명에 흩어짐 적용(방사형 + 겹침 정리)
 		get().scatterMagnets(endedIds);
+	},
+
+	setMatchRoster: async (courtId, teamA, teamB) => {
+		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
+		const court = useSessionStore.getState().courts.find((c) => c.id === courtId);
+		const oldIds = court?.match ? [...court.match.teamA, ...court.match.teamB] : [];
+		const newIds = [...teamA, ...teamB];
+		const removed = oldIds.filter((id) => !newIds.includes(id));
+		await useSessionStore.getState().handleSetMatchRoster(courtId, teamA, teamB);
+		// 빠진 선수는 자유 자석으로 보이게 흩어뜨림(들어온 선수는 playing→자동 숨김)
+		if (removed.length > 0) get().scatterMagnets(removed);
 	},
 
 	reset: () => {
@@ -801,6 +901,9 @@ const creator = immer<BoardState>((set, get) => ({
 			s.hasArranged = false;
 			s.stageW = 0;
 			s.stageH = 0;
+			s.restZoneOpen = false;
+			s.restFieldHot = false;
+			s.presenceModalOpen = false;
 		});
 	},
 }));
