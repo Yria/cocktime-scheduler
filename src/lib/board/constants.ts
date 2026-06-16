@@ -50,9 +50,6 @@ export const TEAM_GRID_HALF = TEAM_GRID_H / 2;
 export const TEAM_BOX_ABOVE = TEAM_GRID_HALF + TEAM_GAP + TEAM_LABEL_H + TEAM_PAD;
 export const TEAM_BOX_BELOW = TEAM_GRID_HALF + TEAM_PAD + TEAM_CTA_GAP + TEAM_CTA_H;
 
-// 상단 코트 레인 높이 — 경기중 코트 카드 전용 영역. 자유 자석/예비팀은 이 아래에만 배치.
-export const COURT_LANE_H = TEAM_BOX_ABOVE + TEAM_BOX_BELOW + 24;
-
 // Hit detection
 export const TEAM_HIT_PADDING = 16;
 // 그룹화: 두 자석이 지름의 10% 이상 겹칠 때만(중심거리 ≤ 0.9·지름). 살짝 닿는 정도로는 그룹 X.

@@ -13,7 +13,6 @@ import {
 	TEAM_BOX_BELOW,
 	TOOLBAR_H,
 	COURT_BAR_H,
-	COURT_LANE_H,
 } from "../lib/board/constants";
 import { settleFreeMagnets, scatterFromSource, type ScatterShape } from "../lib/board/collision";
 import { resolveDropTarget, nearestFreePartner } from "../lib/board/dropResolver";
@@ -36,8 +35,8 @@ enableMapSet();
 
 const POOL_COLS = 4;
 const POOL_START_X = MAGNET_SIZE;
-// 코트 레인 아래에서 풀 그리드 시작 (코트 카드와 겹치지 않도록)
-const POOL_START_Y = COURT_LANE_H + MAGNET_SIZE / 2;
+// 풀 그리드 시작 — 상단부터(코트 전용 영역 개념 없음). 첫 진입 시 rearrangeAll이 다시 정렬한다.
+const POOL_START_Y = MAGNET_SIZE;
 const POOL_GAP_X = MAGNET_SIZE + 10;
 const POOL_GAP_Y = MAGNET_SIZE + 10;
 
@@ -53,8 +52,8 @@ function clampAnchor(p: StagePoint): StagePoint {
 	// stage 영역 = 화면 높이 − 툴바 − 코트바 (자석 좌표는 stage 기준)
 	const vh = (typeof window !== "undefined" ? window.innerHeight : 800) - TOOLBAR_H - COURT_BAR_H;
 	const halfW = TEAM_W / 2;
-	// 예비팀은 코트 레인 아래에만 (팀 상단이 레인 밑으로)
-	const minY = COURT_LANE_H + TEAM_BOX_ABOVE;
+	// 화면 경계로만 클램프(코트 레인 제한 없음) — 팀 박스 상/하단이 화면 안에 있도록만.
+	const minY = TEAM_BOX_ABOVE;
 	const maxY = Math.max(minY, vh - TEAM_BOX_BELOW);
 	return {
 		x: Math.max(halfW, Math.min(vw - halfW, p.x)),
@@ -93,9 +92,10 @@ function runSettle(s: SettleState, src: DragSource) {
 	if ("magnetId" in src) {
 		const m = s.magnets.get(src.magnetId);
 		if (!m || m.teamId !== null) return;
-		// 드롭한 자석을 먼저 화면 안으로 클램프
+		// 드롭한 자석은 "놓은 자리에 그대로" — 화면 경계로만 클램프(상단 코트 레인 제한 없음).
+		// (사용자가 의도적으로 둔 위치 보존 = "아무데나". 코트 카드는 위에 렌더되므로 겹쳐도 카드 버튼은 동작.)
 		m.x = Math.max(r + 4, Math.min(vw - r - 4, m.x));
-		m.y = Math.max(Math.max(r + 4, COURT_LANE_H + r), Math.min(vh - r - 4, m.y));
+		m.y = Math.max(r + 4, Math.min(vh - r - 4, m.y));
 		source = { kind: "magnet", id: src.magnetId, x: m.x, y: m.y };
 	} else if ("teamId" in src) {
 		const t = s.drafts.get(src.teamId);
@@ -106,7 +106,8 @@ function runSettle(s: SettleState, src: DragSource) {
 		if (!a) return; // 위치 미상(기본 레인) → 자석은 레인 아래라 겹침 없음
 		source = { kind: "rect", x: a.x, y: a.y };
 	}
-	scatterFromSource(source, s.magnets, s.drafts, vw, vh, playingIds, COURT_LANE_H);
+	// 흩어짐도 화면 경계로만(레인 floor 없음) — 자유 배치 일관성
+	scatterFromSource(source, s.magnets, s.drafts, vw, vh, playingIds, 0);
 }
 
 // ── 보드 멤버십 공유(drafts/reservations) ────────────────────
@@ -145,7 +146,7 @@ function centroidAnchor(memberIds: string[], magnets: Map<string, MagnetPosition
 			n++;
 		}
 	}
-	return n > 0 ? { x: sx / n, y: sy / n } : { x: 200, y: COURT_LANE_H + 60 };
+	return n > 0 ? { x: sx / n, y: sy / n } : { x: 200, y: 200 };
 }
 
 /** 편집 가능하면 true + 자유 상태면 자동 점유(양도형 락). 보기 전용이면 false. */
@@ -214,7 +215,6 @@ export interface BoardState {
 	settleBoard: (source: DragSource) => void;
 	/** 공유된 보드 멤버십(payload)을 로컬에 적용(위치는 로컬에서 결정). 스냅샷/브로드캐스트 수신용. */
 	applyRemoteDrafts: (payload: BoardDraftsPayload) => void;
-	pushAwayFreeMagnets: (viewW?: number, viewH?: number) => void;
 	/** 지정한 자석들을 소스로 방사형 흩어짐 + 정리(경기 완료로 그룹 해제된 자석용) */
 	scatterMagnets: (ids: string[]) => void;
 	rearrangeAll: (viewW: number, viewH: number) => void;
@@ -364,7 +364,7 @@ const creator = immer<BoardState>((set, get) => ({
 	},
 
 	handleDrop: (playerId, drop) => {
-		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
+		if (!claimEdit()) return; // 보기 전용이면 차단(락 = 전부 차단). 자유면 자동 점유.
 		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 		set((s) => {
 			const target = resolveDropTarget(playerId, drop, s.magnets, s.drafts, s.reservations, playingIds);
@@ -552,13 +552,13 @@ const creator = immer<BoardState>((set, get) => ({
 	setTeamAnchor: (teamId, x, y) => {
 		set((s) => {
 			const t = s.drafts.get(teamId);
-			if (t) t.anchor = { x, y };
+			if (t) t.anchor = clampAnchor({ x, y }); // 화면 안 어디든(코트 레인 제한 없음), 화면 밖만 방지
 		});
 	},
 
 	setCourtAnchor: (courtId, x, y) => {
 		set((s) => {
-			s.courtAnchors.set(courtId, { x, y });
+			s.courtAnchors.set(courtId, clampAnchor({ x, y })); // 코트 카드도 화면 안 어디든
 		});
 	},
 
@@ -576,6 +576,18 @@ const creator = immer<BoardState>((set, get) => ({
 	},
 
 	applyRemoteDrafts: (payload) => {
+		// 멤버십이 실제로 안 바뀐 재수신/스냅샷(handleBoardDraftsUpdated는 동일 멤버십도 매번 새 객체 set)이면
+		// 자석 위치를 전혀 만지지 않는다 — 자유 자석 위치는 로컬 전용이므로 보존되어야 한다.
+		const canonDrafts = (p: BoardDraftsPayload) =>
+			JSON.stringify({
+				teams: [...p.teams]
+					.map((t) => ({ id: t.id, memberIds: [...t.memberIds].sort(), createdMs: t.createdMs }))
+					.sort((a, b) => a.id.localeCompare(b.id)),
+				reservations: [...p.reservations]
+					.map((r) => ({ id: r.id, playerId: r.playerId, teamId: r.teamId, createdMs: r.createdMs }))
+					.sort((a, b) => a.id.localeCompare(b.id)),
+			});
+		if (canonDrafts(payload) === canonDrafts(serializeBoardDrafts(get()))) return;
 		applyingRemoteDrafts = true;
 		set((s) => {
 			// 같은 id 팀은 기존 위치(anchor) 유지, 새 팀은 멤버 중심으로 배치(위치는 로컬)
@@ -621,37 +633,32 @@ const creator = immer<BoardState>((set, get) => ({
 			const vw = s.stageW || viewport().vw;
 			const vh = s.stageH || viewport().vh;
 			const r = MAGNET_SIZE / 2;
+			// 흩어짐/정리에서 "사용자가 직접 배치한(원래 필드에 있던) 자유 자석"은 제외해 위치를 보존한다.
+			// 이게 빠지면 원격 멤버십 동기화가 내가 방금 드롭한 자석을 밀어내 "가끔 원래자리로" 되돌아오는 버그가 난다.
+			// scatter 소스 제외(아래 continue)뿐 아니라 "밀리는 대상"·settle 대상에서도 빼야 하므로 excludeIds에 합친다.
+			const settleExclude = new Set<string>([...playingIds, ...prevFreeIds]);
 			for (const [, m] of s.magnets) {
 				if (m.teamId !== null || playingIds.has(m.playerId)) continue;
 				if (prevFreeIds.has(m.playerId)) continue; // 원래 필드에 있던 자석은 흩어짐 대상 아님
-				// 들어온 자석을 화면(필드) 안으로 클램프 후 그 자리를 소스로 흩어짐
+				// 들어온 자석을 화면 안으로만 클램프(레인 제한 없음) 후 그 자리를 소스로 흩어짐
 				m.x = Math.max(r + 4, Math.min(vw - r - 4, m.x));
-				m.y = Math.max(Math.max(r + 4, COURT_LANE_H + r), Math.min(vh - r - 4, m.y));
+				m.y = Math.max(r + 4, Math.min(vh - r - 4, m.y));
 				scatterFromSource(
 					{ kind: "magnet", id: m.playerId, x: m.x, y: m.y },
 					s.magnets,
 					s.drafts,
 					vw,
 					vh,
-					playingIds,
-					COURT_LANE_H,
+					settleExclude,
+					0,
 				);
 			}
-			// 잔여 겹침/팀 박스 침범 정리(들어온 자석이 팀 박스 안이면 빈자리로 이동)
-			settleFreeMagnets(s.magnets, s.drafts, vw, vh, playingIds, COURT_LANE_H);
+			// 잔여 겹침 정리 — 새로 들어온 자석만 대상(기존 사용자 배치 자석은 보존), 화면 경계로만
+			settleFreeMagnets(s.magnets, s.drafts, vw, vh, settleExclude, 0);
 		});
 		// 방금 적용한 멤버십을 기준선으로 — 이후 위치만 바뀌면 재브로드캐스트 안 함
 		lastSyncedDraftsJson = JSON.stringify(serializeBoardDrafts(get()));
 		applyingRemoteDrafts = false;
-	},
-
-	pushAwayFreeMagnets: (viewW, viewH) => {
-		set((s) => {
-			const vw = viewW ?? (typeof window !== "undefined" ? window.innerWidth : 400);
-			const vh = viewH ?? (typeof window !== "undefined" ? window.innerHeight - 84 : 700);
-			const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
-			settleFreeMagnets(s.magnets, s.drafts, vw, vh, playingIds, COURT_LANE_H);
-		});
 	},
 
 	scatterMagnets: (ids) => {
@@ -671,12 +678,12 @@ const creator = immer<BoardState>((set, get) => ({
 			if (targets.length === 0) return;
 
 			// 경기 완료된 자석은 "경기 시작 때 그룹이 있던 자리"에 그대로 남아 그룹과 겹쳐 가려진다.
-			// → 그룹(팀) 영역의 최하단 아래(자유 자석 영역, 항상 보이는 곳)로 옮긴 뒤 흩어짐을 시작한다.
-			let groupBottom = COURT_LANE_H;
+			// → 그룹(팀) 영역의 최하단 아래(항상 보이는 곳)로 옮긴 뒤 흩어짐을 시작한다. 그룹이 없으면 상단부터.
+			let groupBottom = 0;
 			for (const t of s.drafts.values()) {
 				groupBottom = Math.max(groupBottom, t.anchor.y + TEAM_BOX_BELOW);
 			}
-			const startY = Math.max(COURT_LANE_H + r, Math.min(vh - r - 4, groupBottom + r + 8));
+			const startY = Math.max(r + 4, Math.min(vh - r - 4, groupBottom + r + 8));
 
 			targets.forEach((m, i) => {
 				m.x = Math.max(r + 4, Math.min(vw - r - 4, r + 8 + i * (MAGNET_SIZE + 10)));
@@ -688,11 +695,11 @@ const creator = immer<BoardState>((set, get) => ({
 					vw,
 					vh,
 					playingIds,
-					COURT_LANE_H,
+					0,
 				);
 			});
-			// 잔여 겹침/팀 박스 침범 정리 (완료 자석 + 기존 자유 자석 모두 겹침 해소)
-			settleFreeMagnets(s.magnets, s.drafts, vw, vh, playingIds, COURT_LANE_H);
+			// 잔여 겹침/팀 박스 침범 정리 (완료 자석 + 기존 자유 자석 모두 겹침 해소), 화면 경계로만
+			settleFreeMagnets(s.magnets, s.drafts, vw, vh, playingIds, 0);
 		});
 	},
 
@@ -739,7 +746,8 @@ const creator = immer<BoardState>((set, get) => ({
 			for (const t of teams) t.anchor = gridAnchor(gi++, GROUP_TOP);
 			const groupCount = occupied.length + teams.length;
 			const groupRows = groupCount > 0 ? Math.ceil(groupCount / cols) : 0;
-			const groupAreaBottom = groupRows > 0 ? GROUP_TOP + groupRows * rowH : COURT_LANE_H;
+			// 그룹이 없으면 상단 공백 없이 맨 위부터(코트 전용 영역 개념 없음)
+			const groupAreaBottom = groupRows > 0 ? GROUP_TOP + groupRows * rowH : GROUP_TOP;
 
 			// 2) 나머지 자유 자석을 그룹 영역 아래에 격자 배치 — 경기수 적은 사람 먼저
 			//    (휴식 선수는 휴식존으로 분리되므로 메인 보드 배치에서 제외)

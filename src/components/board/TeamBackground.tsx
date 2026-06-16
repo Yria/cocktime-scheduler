@@ -57,7 +57,7 @@ const TeamBackground = memo(function TeamBackground({
 	const magnets = useBoardStore((s) => s.magnets);
 	const setTeamAnchor = useBoardStore((s) => s.setTeamAnchor);
 	const settleBoard = useBoardStore((s) => s.settleBoard);
-	const isEditor = useSessionStore((s) => s.isEditor); // 보기 전용이면 드래그/경기시작 비활성
+	const isEditor = useSessionStore((s) => s.isEditor); // 보기 전용이면 드래그/경기시작 비활성(락 = 전부 차단)
 
 	// 멤버 자석 드래그가 팀 Group으로 버블링된 경우(e.target≠그룹) 무시.
 	// 안 하면 setTeamAnchor가 멤버의 로컬 좌표로 anchor를 덮어써 팀이 튄다.

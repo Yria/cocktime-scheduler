@@ -230,6 +230,14 @@ describe("자유 이동 — handleDrop move는 드롭 위치 유지(겹치지 �
 		expect(useBoardStore.getState().drafts.size).toBe(0);
 	});
 
+	it("화면 상단(옛 코트 레인 영역)에 놓아도 그 자리에 그대로 — 레인 클램프 없음", () => {
+		useBoardStore.getState().setStageSize(2000, 2000);
+		seed({ magnets: [mag("a", null, 100, 400)] });
+		// y=100 은 옛 COURT_LANE_H(약 248) 위. 예전엔 레인 아래로 끌려갔지만 이제 그대로 유지.
+		useBoardStore.getState().handleDrop("a", { x: 130, y: 100 });
+		expect(useBoardStore.getState().magnets.get("a")).toMatchObject({ x: 130, y: 100, teamId: null });
+	});
+
 	it("드래그-엔드(move) 시 겹친 자석은 소스에서 흩어진다", () => {
 		useBoardStore.getState().setStageSize(2000, 2000);
 		seed({ magnets: [mag("a", null, 100, 400), mag("b", null, 500, 500)] });
@@ -602,5 +610,33 @@ describe("경기 완료 흩어짐 — scatterMagnets는 그룹 영역 아래(보
 		for (const id of ["a", "b", "c", "d"]) {
 			expect(ms.get(id)!.y).toBeGreaterThan(groupY);
 		}
+	});
+});
+
+// ── 회귀: 원격 멤버십 동기화(applyRemoteDrafts)가 "사용자가 직접 배치한 자유 자석" 위치를 보존 ──
+// 버그: 드롭 직후 다른 기기의 board_drafts 브로드캐스트/스냅샷이 도착하면 settleFreeMagnets/scatter가
+//       방금 놓은 자석을 밀어내 "가끔 원래자리로/딴자리로" 되돌아옴.
+describe("회귀 — applyRemoteDrafts는 사용자 배치 자유 자석을 건드리지 않는다", () => {
+	it("실제 멤버십 변경(팀 생성) 적용 시에도 기존 자유 자석 위치는 보존된다", () => {
+		useBoardStore.getState().setStageSize(2000, 2000);
+		// x,y는 곧 팀이 되고, u는 그 팀 박스 한가운데에 사용자가 놓아둔 자유 자석.
+		seed({ magnets: [mag("x", null, 300, 500), mag("y", null, 340, 500), mag("u", null, 320, 500)] });
+		useBoardStore.getState().applyRemoteDrafts({
+			teams: [{ id: "T1", memberIds: ["x", "y"], createdMs: 1 }],
+			reservations: [],
+		});
+		expect(useBoardStore.getState().magnets.get("x")!.teamId).toBe("T1");
+		expect(useBoardStore.getState().magnets.get("y")!.teamId).toBe("T1");
+		// 버그면 settleFreeMagnets가 u를 팀 박스 밖으로 밀어냄. 수정 후엔 그대로.
+		expect(useBoardStore.getState().magnets.get("u")).toMatchObject({ x: 320, y: 500, teamId: null });
+	});
+
+	it("멤버십이 동일한 원격 재수신/스냅샷은 자유 자석을 전혀 움직이지 않는다(early-return)", () => {
+		useBoardStore.getState().setStageSize(2000, 2000);
+		// 지름 이내로 가깝게 둔 두 자유 자석 — 예전 코드면 settle이 분리해버림.
+		seed({ magnets: [mag("u", null, 500, 500), mag("v", null, 505, 500)] });
+		useBoardStore.getState().applyRemoteDrafts({ teams: [], reservations: [] });
+		expect(useBoardStore.getState().magnets.get("u")).toMatchObject({ x: 500, y: 500 });
+		expect(useBoardStore.getState().magnets.get("v")).toMatchObject({ x: 505, y: 500 });
 	});
 });

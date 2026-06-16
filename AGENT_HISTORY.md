@@ -459,3 +459,18 @@
 - player_updated 브로드캐스트가 waitingIds/restingIds 재계산하도록 보정
 - 로고/아이콘: 새 COCK TIME 로고(투명 PNG, 다크모드 invert) + 파비콘(.ico/png)·PWA(192/512/maskable)·apple-touch 아이콘(네이비+흰 로고)
 - 신규: MatchEditModal, RestBar, ViewerLockOverlay, lib/deviceName, public 아이콘 세트 / 삭제: CourtStatusBar, 레거시 SQL 4종, 구 main 이미지·vite.svg
+
+---
+## #37
+
+**Action**: 보드 오브젝트 자유 배치 + 편집락 전면 차단 단순화 + 자석 롤백 근본 수정
+
+**Answer**: "자석을 놓아도 가끔 원래자리로 되돌아온다"는 버그를 추적해 근본 원인을 잡고, 보드 배치/편집락 정책을 정리.
+- 롤백 근본 원인: runSettle의 상단 코트 레인 클램프(COURT_LANE_H)가 드롭한 자석 y를 레인 아래로 강제(예: 179→274). 디버그 계측 로그로 deterministic 클램프임을 확정(원격/락/타이밍 무관).
+- 자유 배치: 사용자가 직접 옮기는 모든 오브젝트(자석·팀·코트카드)를 화면 안 어디든 둘 수 있게 함. runSettle/clampAnchor의 레인 floor 제거, setTeamAnchor·setCourtAnchor에 화면 경계 클램프 추가(화면 밖만 방지).
+- COURT_LANE_H 완전 제거: 코트 전용 영역 개념 폐기. POOL_START_Y는 상단부터, centroidAnchor 기본값 치환, 호출되지 않던 죽은 함수 pushAwayFreeMagnets 삭제, scatterMagnets는 그룹 실제 하단 기준으로.
+- 정렬(rearrangeAll): 그룹이 없을 때 상단 공백 없이 맨 위부터 정렬되도록 수정.
+- applyRemoteDrafts 위치 보존(별개 멀티기기 개선): 원격 멤버십 동기화가 사용자 배치 자유 자석을 흩뜨리지 않도록 prevFreeIds를 scatter·settle 양쪽 excludeIds에 포함 + 멤버십 동일 시 early-return. (적대적 검증으로 settle만 막던 1차안의 누락 경로(scatter) 보완)
+- 편집락 단순화: ViewerLockOverlay를 헤더 아래 전 영역 단일 차단막으로. 락 시 캔버스 입력 전부 차단, "보기 전용" 버튼으로만 권한 모달. 선택적 게이팅(보기전용도 일부 로컬 드래그 허용) 되돌림. 배경 탭은 무동작·무선택(userSelect/tapHighlight/touchAction 처리).
+- 회귀 테스트 추가: applyRemoteDrafts가 사용자 자석 위치 보존, 상단 영역 드롭 시 그대로 유지. 총 80 테스트 통과.
+- 임시 디버그 계측(lib/debug.ts) 추가 후 원인 확정되어 제거.

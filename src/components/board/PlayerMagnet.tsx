@@ -69,7 +69,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 }: Props) {
 	const magnet = useBoardStore((s) => s.magnets.get(playerId));
 	const player = useSessionStore((s) => s.sessionPlayers.get(playerId));
-	const isEditor = useSessionStore((s) => s.isEditor); // 보기 전용이면 드래그 비활성
+	const isEditor = useSessionStore((s) => s.isEditor); // 보기 전용이면 드래그 불가(락 = 전부 차단)
 	const isGhost = kind === "ghost";
 
 	// 렌더 목표 좌표(자유 자석=magnet.x/y, 팀/코트 멤버=슬롯 offset)

@@ -42,7 +42,7 @@ const CourtMatchCard = memo(function CourtMatchCard({ court, x, y, onEditMatch }
 	const setCourtAnchor = useBoardStore((s) => s.setCourtAnchor);
 	const settleBoard = useBoardStore((s) => s.settleBoard);
 	const stored = useBoardStore((s) => s.courtAnchors.get(court.id));
-	const isEditor = useSessionStore((s) => s.isEditor); // 보기 전용이면 드래그/경기완료 비활성
+	const isEditor = useSessionStore((s) => s.isEditor); // 보기 전용이면 드래그/경기완료 비활성(락 = 전부 차단)
 	const match = court.match;
 
 	const handleComplete = useCallback(() => {
