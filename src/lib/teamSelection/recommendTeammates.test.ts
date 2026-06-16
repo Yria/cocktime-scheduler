@@ -12,7 +12,7 @@ function player(
 		playerId: id,
 		name: id,
 		gender,
-		skills: { 클리어: skill, 스매시: skill, 로테이션: skill, 드랍: skill, 헤어핀: skill, 드라이브: skill, 백핸드: skill },
+		skills: { 클리어: skill, 스매시: skill, 로테이션: skill, 드랍: skill, 헤어핀: skill, 푸시: skill },
 		allowMixedSingle: false,
 		status: "waiting",
 		gameCount: 0,

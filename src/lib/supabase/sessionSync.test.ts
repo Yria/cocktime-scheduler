@@ -9,8 +9,7 @@ const SKILLS: PlayerSkills = {
 	로테이션: "V",
 	드랍: "V",
 	헤어핀: "V",
-	드라이브: "V",
-	백핸드: "V",
+	푸시: "V",
 };
 
 function player(id: string, over: Partial<Player> = {}): Player {

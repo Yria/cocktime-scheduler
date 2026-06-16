@@ -488,3 +488,15 @@
 - P4(뷰 추출): App.tsx sessionMetaRef/currentPathRef 제거(라이브 getState/window.location), useDarkMode 훅, MatchEditModal SwapCard, SessionBoard RestZonePanel+useBoardDragHandlers, EditModal/GuestModal 공유 PlayerAttributesForm.
 - 결과: 신규 lib/컴포넌트/훅 16개 + 단위테스트 3개(settle/editLock/sessionSync, 총 80→96 통과). 스토어 축소 boardStore 933→828·sessionStore 606→517·SessionBoard 390→237·api 434→379. eslint 4→3(기존만, 신규 0).
 - 의도적 보류: App.tsx navRef 제거(BrowserRouter navigate 재생성 가능성 → 마운트-원스 effect 회귀 위험, 미검증), DUP-01 BoardCard(~150줄 Konva 병합)·FC-07·RI-11·DUP-03/06(테스트 없는 Konva/시각·실시간 수동검증 필요). FC-02 실시간 채널은 기계적 추출이나 2-클라이언트 수동 검증 권장.
+
+---
+## #39
+
+**Action**: 모임원 시트 양식 변경 마이그레이션 — 사진 컬럼 추가 + 스킬셋 변경(드라이브·백핸드→푸시)
+
+**Answer**: 라이브 Edge Function(GET)으로 시트 헤더/샘플을 직접 확인해 양식 변경 3건을 파악하고 코드 정합화.
+- 변경 내용: ① C열에 "사진" 컬럼 신규 삽입(스킬이 D열부터로 한 칸 이동) ② 스킬셋 7→6종(드라이브·백핸드 제거, "푸시" 추가) ③ 스킬값 표기 O/V/X → 상/중/하.
+- 마이그레이션: `PlayerSkills` 타입·`SKILLS`·`DEFAULT_SKILLS`를 6종(클리어·스매시·로테이션·드랍·헤어핀·푸시)으로. `parseSkillLevel`에 상→O/중→V/하→X 추가(O/V/X도 호환). `fetchPlayers`가 스킬을 D~I(row[3]~[8])에서 읽고 C(사진)은 건너뜀(사진 표시는 storage 기반 getPlayerPhotoUrl이 담당).
+- 쓰기 정합화: POST 경로(updatePlayer)는 헤더명(SKILLS) 기반이라 SKILLS 갱신만으로 자동 정합+사진 안전. PUT 경로(updatePlayerWithToken+edge function)는 인덱스 기반 A:I 덮어쓰기였음 → 사진(C) 손상 방지 위해 values:batchUpdate로 B(성별)·D:I(스킬)만 갱신하도록 변경(A 멤버·C 사진 보존). OAuth가 설정돼 PUT이 주 경로.
+- 검증: tsc/96 tests/build 통과(테스트 픽스처 3곳 옛 스킬키→푸시 수정). 라이브 시트 100명 파싱 실증 — 스킬 셀 원본값은 상/중/하+빈칸뿐, O/V/X로 정상 분포. 스킬 미입력(행 길이 2) 회원은 빈셀→X 기본값 처리 확인.
+- 후속 필요: edge function 재배포(`supabase functions deploy sheets`)해야 PUT 쓰기 경로가 새 레이아웃으로 동작. 라이브 쓰기(선수 스킬 편집)는 실데이터 영향이라 자동검증 불가 → 배포 후 수동 확인 권장. POST 폴백이 쓰는 Apps Script는 "푸시" 헤더 인식 필요(레포 외부). 기존 활성 세션의 session_players.skills JSON은 옛 7키지만 skillScoreOf가 Object.values 순회라 호환(전환적).

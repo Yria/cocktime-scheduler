@@ -38,7 +38,7 @@ function player(id: string, gender: "M" | "F" = "M"): SessionPlayer {
 		playerId: id,
 		name: id,
 		gender,
-		skills: { 클리어: "V", 스매시: "V", 로테이션: "V", 드랍: "V", 헤어핀: "V", 드라이브: "V", 백핸드: "V" },
+		skills: { 클리어: "V", 스매시: "V", 로테이션: "V", 드랍: "V", 헤어핀: "V", 푸시: "V" },
 		allowMixedSingle: false,
 		status: "waiting",
 		gameCount: 0,

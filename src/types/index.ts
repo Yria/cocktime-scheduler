@@ -9,8 +9,7 @@ export interface PlayerSkills {
 	로테이션: SkillLevel;
 	드랍: SkillLevel;
 	헤어핀: SkillLevel;
-	드라이브: SkillLevel;
-	백핸드: SkillLevel;
+	푸시: SkillLevel;
 }
 
 /** 구글 시트에서 로드한 원본 선수 데이터 */

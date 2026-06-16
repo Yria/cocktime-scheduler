@@ -61,7 +61,9 @@ Deno.serve(async (req) => {
       const accessToken = req.headers.get("X-Google-Token");
       if (!accessToken) throw new Error("인증 토큰이 없습니다");
 
-      const { playerName, values } = await req.json();
+      // 시트 컬럼: A 멤버 · B 성별 · C 사진 · D~I 스킬 6종.
+      // gender → B, skills(D~I)만 갱신하고 A(멤버)·C(사진)는 보존한다.
+      const { playerName, gender, skills } = await req.json();
 
       // 이름으로 행 탐색
       const findRes = await fetch(
@@ -76,14 +78,20 @@ Deno.serve(async (req) => {
 
       const sheetRow = rowIndex + 1;
       const updateRes = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/A${sheetRow}:I${sheetRow}?valueInputOption=USER_ENTERED`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values:batchUpdate`,
         {
-          method: "PUT",
+          method: "POST",
           headers: {
             Authorization: `Bearer ${accessToken}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ values: [values] }),
+          body: JSON.stringify({
+            valueInputOption: "USER_ENTERED",
+            data: [
+              { range: `B${sheetRow}`, values: [[gender]] },
+              { range: `D${sheetRow}:I${sheetRow}`, values: [skills] },
+            ],
+          }),
         },
       );
       if (!updateRes.ok) throw new Error(`수정 실패: ${updateRes.status}`);
