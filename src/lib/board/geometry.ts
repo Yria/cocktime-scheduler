@@ -12,6 +12,8 @@ import {
 	MAGNET_R,
 	TOOLBAR_H,
 	COURT_BAR_H,
+	SLOT_SNAP_R,
+	DETACH_ZONE_H,
 } from "./constants";
 
 /** stage 크기 미상(마운트 직전)일 때의 기본 뷰포트. stage 영역 = 화면 − 툴바 − 코트바. */
@@ -77,6 +79,22 @@ export function computeEmptySlots(memberCount: number): StagePoint[] {
 	return [];
 }
 
+/**
+ * 드롭 점이 팀의 빈 슬롯(구멍) 중 하나에 충분히 가까운지(중심거리 ≤ radius).
+ * 그룹 합류/예약은 이때만 허용 — 박스 안 아무 곳이 아니라 "구멍에 정확히 놓을 때만" 반응.
+ */
+export function isOnEmptySlot(
+	point: StagePoint,
+	anchor: StagePoint,
+	memberCount: number,
+	radius: number = SLOT_SNAP_R,
+): boolean {
+	for (const off of computeEmptySlots(memberCount)) {
+		if (distance(point, { x: anchor.x + off.x, y: anchor.y + off.y }) <= radius) return true;
+	}
+	return false;
+}
+
 export interface TeamRect {
 	minX: number;
 	maxX: number;
@@ -117,6 +135,11 @@ export function isInsideTeamBounds(
 export function isInRestField(point: StagePoint, stageH: number, expanded: boolean): boolean {
 	const h = expanded ? REST_ZONE_H : REST_FIELD_H;
 	return point.y >= stageH - h;
+}
+
+/** '팀에서 빼기' 드롭존(상단 밴드) 안에 점이 있는지 — 논리 좌표 기준. */
+export function isInDetachZone(point: StagePoint): boolean {
+	return point.y <= DETACH_ZONE_H;
 }
 
 /** 휴식존 내부 자석 슬롯 좌표(절대, stage 기준). index 순서로 한 줄 배치(넘치면 줄바꿈). */

@@ -1,12 +1,16 @@
 import { useCallback, useRef } from "react";
-import { isInRestField } from "../lib/board/geometry";
+import { isInRestField, isInDetachZone } from "../lib/board/geometry";
+import { playingIdsFromCourts } from "../lib/board/membership";
+import { resolveDropTarget } from "../lib/board/dropResolver";
 import { useBoardStore } from "../store/boardStore";
+import { useSessionStore } from "../store/sessionStore";
 
 /**
  * 보드 자석 드래그/드롭 핸들러 묶음.
- * - 드래그 이동 중 휴식 필드 hover → hot 하이라이트(상태 전환 시에만 store 갱신, hotRef 스로틀).
- * - 드롭: 휴식 필드면 휴식 처리, 아니면 자유 배치(handleDrop).
- * - 휴식 자석을 패널 밖(위)으로 빼면 복귀(unrestPlayer).
+ * - 드래그 이동 중: 휴식 필드 hover → hot, '팀에서 빼기' 드롭존 hover → detachHot, 겹침 대상 → hoverTarget(하이라이트).
+ * - 드롭: 상단 드롭존(팀 소속) → detach / 하단 휴식 필드 → 휴식 / 그 외 → 자유 배치(handleDrop).
+ * - ghost: 드롭존 → 예약 취소, 그 외 → handleGhostDrop.
+ * 좌표(cx,cy)는 PlayerMagnet에서 줌/팬 보정된 논리 좌표.
  */
 export function useBoardDragHandlers(stageH: number, restZoneOpen: boolean) {
 	const setRestFieldHot = useBoardStore((s) => s.setRestFieldHot);
@@ -15,16 +19,42 @@ export function useBoardDragHandlers(stageH: number, restZoneOpen: boolean) {
 	const handleDrop = useBoardStore((s) => s.handleDrop);
 	const handleGhostDrop = useBoardStore((s) => s.handleGhostDrop);
 
-	const hotRef = useRef(false); // 드래그 프레임마다 store set 남발 방지(상태 전환 시에만)
+	const hotRef = useRef(false); // 휴식 hot 스로틀(상태 전환 시에만 store set)
 
-	// 드래그 이동 중: 휴식 필드 위로 들어오면 액티베이트(hot) 하이라이트.
+	// 드래그 이동 중: 휴식 hot + 빼기 드롭존 hot + 겹침 하이라이트.
 	const onMagnetDragMove = useCallback(
-		(_playerId: string, cx: number, cy: number) => {
-			const hot = isInRestField({ x: cx, y: cy }, stageH, restZoneOpen);
-			if (hot !== hotRef.current) {
-				hotRef.current = hot;
-				setRestFieldHot(hot);
+		(playerId: string, cx: number, cy: number) => {
+			const point = { x: cx, y: cy };
+			const store = useBoardStore.getState();
+
+			// 휴식 필드 hot
+			const restHot = isInRestField(point, stageH, restZoneOpen);
+			if (restHot !== hotRef.current) {
+				hotRef.current = restHot;
+				setRestFieldHot(restHot);
 			}
+
+			// '팀에서 빼기' 드롭존 hot — 팀 소속(anchor/ghost) 자석을 끌 때만 활성
+			const detachable = store.dragInfo?.detachable ?? false;
+			const detachHot = detachable && isInDetachZone(point);
+			store.setDetachHot(detachHot);
+
+			// 겹침 하이라이트 — 빼기 드롭존 위면 하이라이트 없음(합류가 아니라 빼기 동작)
+			if (detachHot) {
+				store.setHoverTarget(null);
+				return;
+			}
+			const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
+			const target = resolveDropTarget(playerId, point, store.magnets, store.drafts, store.reservations, playingIds);
+			const hover =
+				target.kind === "attach"
+					? { kind: "team" as const, id: target.teamId }
+					: target.kind === "reserve"
+						? { kind: "team" as const, id: target.toTeamId }
+						: target.kind === "createPair" || target.kind === "reservePair"
+							? { kind: "magnet" as const, id: target.partnerId }
+							: null;
+			store.setHoverTarget(hover);
 		},
 		[stageH, restZoneOpen, setRestFieldHot],
 	);
@@ -36,15 +66,22 @@ export function useBoardDragHandlers(stageH: number, restZoneOpen: boolean) {
 		}
 	}, [setRestFieldHot]);
 
-	// 자유 이동: 드롭한 자리에 그대로 둔다. 단, 하단 휴식 필드에 드롭하면 휴식 처리.
+	// 자유/anchor 드래그-엔드: 빼기존(팀 소속) → detach / 휴식 필드 → 휴식 / 그 외 → handleDrop.
 	const onMagnetDragEnd = useCallback(
 		(playerId: string, cx: number, cy: number) => {
 			clearHot();
-			if (isInRestField({ x: cx, y: cy }, stageH, restZoneOpen)) {
+			const point = { x: cx, y: cy };
+			const store = useBoardStore.getState();
+			const mag = store.magnets.get(playerId);
+			if (mag && mag.teamId !== null && isInDetachZone(point)) {
+				store.detachMember(playerId, point);
+				return;
+			}
+			if (isInRestField(point, stageH, restZoneOpen)) {
 				restPlayer(playerId);
 				return;
 			}
-			handleDrop(playerId, { x: cx, y: cy });
+			handleDrop(playerId, point);
 		},
 		[handleDrop, restZoneOpen, stageH, restPlayer, clearHot],
 	);
@@ -58,9 +95,15 @@ export function useBoardDragHandlers(stageH: number, restZoneOpen: boolean) {
 		[stageH, unrestPlayer, clearHot],
 	);
 
+	// ghost 드래그-엔드: 빼기존 → 예약 취소, 그 외 → handleGhostDrop.
 	const onGhostDragEnd = useCallback(
 		(resId: string, cx: number, cy: number) => {
-			handleGhostDrop(resId, { x: cx, y: cy });
+			const point = { x: cx, y: cy };
+			if (isInDetachZone(point)) {
+				useBoardStore.getState().cancelReservation(resId);
+				return;
+			}
+			handleGhostDrop(resId, point);
 		},
 		[handleGhostDrop],
 	);

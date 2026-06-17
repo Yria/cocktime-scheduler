@@ -48,11 +48,6 @@ const BoardToolbar = memo(function BoardToolbar() {
 		setShowPresence(false);
 	}, [claimEditor, setShowPresence]);
 
-	// 칩 라벨/색: 보기전용(마젠타=잠금 전용색, 서비스 미사용) / 편집중-나·자유(초록)
-	const chipLabel = !isEditor ? `🔒 ${holderName ?? "다른 기기"}` : lockFree ? "편집 가능" : "편집 중";
-	const chipAccent = isEditor ? "var(--ios-green)" : "#C026D3";
-	const chipBg = isEditor ? "rgba(52,199,89,0.14)" : "rgba(217,70,239,0.18)";
-
 	return (
 		<>
 			<div
@@ -80,31 +75,6 @@ const BoardToolbar = memo(function BoardToolbar() {
 						<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
 					</svg>
 					<span>설정</span>
-				</button>
-
-				{/* 편집 권한/접속자 칩 — 탭하면 접속자·권한 인계 모달 */}
-				<button
-					type="button"
-					onClick={() => setShowPresence(true)}
-					title="접속 기기 및 편집 권한"
-					style={{
-						display: "inline-flex",
-						alignItems: "center",
-						gap: 5,
-						marginLeft: 2,
-						padding: "4px 9px",
-						borderRadius: 999,
-						border: "none",
-						fontSize: 11,
-						fontWeight: 700,
-						whiteSpace: "nowrap",
-						cursor: "pointer",
-						background: chipBg,
-						color: chipAccent,
-					}}
-				>
-					<span style={{ width: 7, height: 7, borderRadius: "50%", background: "currentColor", display: "inline-block" }} />
-					<span>{chipLabel}{presenceCount > 1 ? ` · ${presenceCount}` : ""}</span>
 				</button>
 
 				{/* 코트 현황(중앙) — 비어있음(초록)/경기중(주황) */}

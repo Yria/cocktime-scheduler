@@ -123,3 +123,36 @@ export function recommendTeammates(
 		})
 		.sort((a, b) => a.score - b.score);
 }
+
+/**
+ * 자동편성 — 빈 슬롯을 추천도 높은순으로 greedy하게 채운다.
+ *
+ * 알고리즘 특성상 추천 점수는 "현재 확정 멤버가 누구냐"에 따라 매번 달라지므로,
+ * 한 명을 뽑을 때마다 confirmed에 합치고 recommendTeammates를 다시 돌려 다음 1명을 고른다.
+ * (한 번에 상위 N명을 자르는 방식과 다르다 — 매 라운드 재평가가 핵심.)
+ *
+ * @param confirmed 현재 확정 멤버(0~3명). pool에 포함되지 않아야 함.
+ * @param pool 후보 풀(호출자가 경기중/휴식/타팀소속 등 필터 완료).
+ * @param count 채울 인원 수(보통 4 − confirmed.length).
+ * @returns 뽑힌 후보를 추천된 순서대로 반환. 풀이 모자라면 가능한 만큼만.
+ */
+export function autoFillTeammates(
+	confirmed: SessionPlayer[],
+	pool: SessionPlayer[],
+	ctx: RecommendContext,
+	count: number,
+	weights: RecommendWeights = RECOMMEND_WEIGHTS,
+): SessionPlayer[] {
+	const picks: SessionPlayer[] = [];
+	const working = [...confirmed];
+	let remaining = [...pool];
+	for (let i = 0; i < count && remaining.length > 0; i++) {
+		const ranked = recommendTeammates(working, remaining, ctx, weights);
+		if (ranked.length === 0) break;
+		const best = ranked[0].player;
+		picks.push(best);
+		working.push(best);
+		remaining = remaining.filter((p) => p.id !== best.id);
+	}
+	return picks;
+}

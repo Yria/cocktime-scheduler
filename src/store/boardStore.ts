@@ -10,6 +10,7 @@ import {
 	computeSlotOffset,
 	DEFAULT_VIEWPORT,
 	isInsideTeamBounds,
+	isOnEmptySlot,
 } from "../lib/board/geometry";
 import { MAGNET_SIZE, TEAM_BOX_BELOW } from "../lib/board/constants";
 import { arrangeBoard } from "../lib/board/arrange";
@@ -26,9 +27,10 @@ import {
 	teamMemberCount,
 	teamMembers,
 } from "../lib/board/membership";
+import { buildRecommendData } from "../lib/board/recommendPool";
 import { useSessionStore } from "./sessionStore";
 import { useAppStore } from "./appStore";
-import { pairPlayers } from "../lib/teamSelection";
+import { autoFillTeammates, pairPlayers } from "../lib/teamSelection";
 import { toast } from "./toastStore";
 import { dbSaveBoardDrafts, sendBroadcast } from "../lib/supabase";
 
@@ -168,6 +170,12 @@ export interface BoardState {
 	restFieldHot: boolean;
 	/** 접속자/편집권한 모달 표시 — 헤더 칩 또는 보기전용 칩에서 연다. */
 	presenceModalOpen: boolean;
+	/** 드래그 중인 자석 정보(드롭존 표시·하이라이트용). null이면 드래그 안 함. detachable=팀 소속(anchor/ghost). */
+	dragInfo: { playerId: string; detachable: boolean } | null;
+	/** 드래그 중 현재 겹침 대상(하이라이트). team=그룹 박스, magnet=페어 상대. */
+	hoverTarget: { kind: "team" | "magnet"; id: string } | null;
+	/** 드래그가 상단 '팀에서 빼기' 드롭존 위에 있는지(hot). */
+	detachHot: boolean;
 
 	initializeFromPool: (players: SessionPlayer[]) => void;
 	handleDrop: (playerId: string, drop: StagePoint) => void;
@@ -178,7 +186,12 @@ export interface BoardState {
 	 * target.teamId가 있으면 그 팀에, target.seedId만 있으면 시드를 첫 멤버로 새 팀을 만들어 추가.
 	 * 경기중 선수는 예약(ghost), 그 외는 정식 멤버(anchor).
 	 */
-	commitTeammates: (target: { teamId?: string; seedId?: string }, playerIds: string[]) => void;
+	commitTeammates: (target: { teamId?: string; seedId?: string; newTeam?: boolean }, playerIds: string[]) => void;
+	/**
+	 * 자동편성 — 구성 중 팀(teamId)의 빈 슬롯을 추천도 높은순으로 채운다(대기 선수만, 4명 상한).
+	 * 한 명 추가할 때마다 알고리즘을 다시 돌려 다음 추천 1명을 뽑는 greedy 방식.
+	 */
+	autoFillTeam: (teamId: string) => void;
 	setTeamAnchor: (teamId: string, x: number, y: number) => void;
 	setCourtAnchor: (courtId: number, x: number, y: number) => void;
 	/** 실제 stage 크기 등록(흩어짐 바운더리용) */
@@ -194,6 +207,18 @@ export interface BoardState {
 	toggleRestZone: () => void;
 	/** 휴식 필드 액티베이트(hot) 상태 설정. */
 	setRestFieldHot: (hot: boolean) => void;
+	/** 드래그 시작/종료 시 드래그 정보 설정(null=종료). */
+	setDragInfo: (info: { playerId: string; detachable: boolean } | null) => void;
+	/** 드래그 중 겹침 대상 하이라이트 설정(변화 시에만 반영). */
+	setHoverTarget: (t: { kind: "team" | "magnet"; id: string } | null) => void;
+	/** '팀에서 빼기' 드롭존 hot 설정(변화 시에만 반영). */
+	setDetachHot: (hot: boolean) => void;
+	/** 드래그 종료 — dragInfo/hoverTarget/detachHot 일괄 초기화. */
+	clearDrag: () => void;
+	/** 멤버를 팀에서 빼 자유 자석으로(드롭존). drop 위치에 두고 흩어짐. */
+	detachMember: (playerId: string, drop: StagePoint) => void;
+	/** 예약(ghost) 취소(드롭존). */
+	cancelReservation: (resId: string) => void;
 	/** 접속자/편집권한 모달 표시 토글. */
 	setPresenceModalOpen: (open: boolean) => void;
 	/** 선수를 휴식 처리(보드 멤버십에서 제거 + status='resting'). */
@@ -307,6 +332,9 @@ const creator = immer<BoardState>((set, get) => ({
 	restZoneOpen: false,
 	restFieldHot: false,
 	presenceModalOpen: false,
+	dragInfo: null,
+	hoverTarget: null,
+	detachHot: false,
 
 	initializeFromPool: (players) => {
 		const current = get().magnets;
@@ -450,19 +478,22 @@ const creator = immer<BoardState>((set, get) => ({
 		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 		set((s) => {
 			let source: DragSource | null = null;
-			// 1) forming/ready 팀 위 → 예약 추가
+			// 1) forming/ready 팀의 빈 슬롯(구멍) 위 → 예약 추가. 박스 안 다른 곳이면 슬롯 복귀(no-op).
+			//    박스가 겹칠 수 있으므로 bounds 안 모든 팀을 보고 슬롯이 맞는 팀에 예약(첫 박스에서 멈추지 않음).
 			let done = false;
 			for (const d of s.drafts.values()) {
 				if (!isInsideTeamBounds(drop, d.anchor)) continue;
-				done = true;
+				done = true; // 박스 안이면 새 팀 생성(2단계)으로 넘어가지 않음
+				const count = teamMemberCount(d.id, s.drafts, s.reservations);
 				if (
 					!isMemberOf(playerId, d.id, s.drafts, s.reservations) &&
-					teamMemberCount(d.id, s.drafts, s.reservations) < 4
+					count < 4 &&
+					isOnEmptySlot(drop, d.anchor, count)
 				) {
 					addReservation(s, playerId, d.id);
+					source = { teamId: d.id };
+					break; // 슬롯에 예약 성공 → 종료
 				}
-				source = { teamId: d.id };
-				break;
 			}
 			// 2) 자유 자석 위 → 새 예비팀(파트너 anchor + 이 선수 ghost)
 			if (!done) {
@@ -508,6 +539,23 @@ const creator = immer<BoardState>((set, get) => ({
 				});
 				seed.teamId = teamId;
 			}
+			// 새 팀 모드(+ 버튼): 선택분 중 첫 비경기중·자유 선수를 anchor로 새 팀 생성
+			if (!teamId && target.newTeam) {
+				const anchorId = playerIds.find((id) => {
+					const m = s.magnets.get(id);
+					return m && m.teamId === null && !playingIds.has(id);
+				});
+				if (!anchorId) return; // anchor 가능한 선수 없음
+				const am = s.magnets.get(anchorId)!;
+				teamId = newId();
+				s.drafts.set(teamId, {
+					id: teamId,
+					anchorMemberIds: [anchorId],
+					anchor: clampToStage(s, { x: am.x, y: am.y }),
+					createdAt: nowMs(),
+				});
+				am.teamId = teamId;
+			}
 			if (!teamId || !s.drafts.get(teamId)) return;
 			for (const pid of playerIds) {
 				if (isMemberOf(pid, teamId, s.drafts, s.reservations)) continue;
@@ -519,6 +567,39 @@ const creator = immer<BoardState>((set, get) => ({
 			// 그룹 생성/채움 후 겹친 자유 자석 흩어짐
 			runSettle(s, { teamId });
 		});
+	},
+
+	autoFillTeam: (teamId) => {
+		if (!claimEdit()) return; // 보기 전용 차단
+		const { drafts, reservations, magnets } = get();
+		const ss = useSessionStore.getState();
+		const data = buildRecommendData(
+			{ teamId },
+			[],
+			{
+				drafts,
+				reservations,
+				magnets,
+				sessionPlayers: ss.sessionPlayers,
+				courts: ss.courts,
+				pairHistory: ss.pairHistory,
+				lastGameType: ss.lastGameType,
+				matchAssignCount: ss.matchAssignCount,
+			},
+			{ excludePlaying: true }, // 자동편성은 대기 선수만으로 채운다(경기중 제외)
+		);
+		if (!data) return;
+		const slotsToFill = 4 - data.members.length;
+		if (slotsToFill <= 0) return; // 이미 가득 참
+		const picks = autoFillTeammates(data.confirmed, data.pool, data.ctx, slotsToFill);
+		if (picks.length === 0) {
+			toast("자동편성할 대기 선수가 없어요", { variant: "error" });
+			return;
+		}
+		get().commitTeammates({ teamId }, picks.map((p) => p.id));
+		if (picks.length < slotsToFill) {
+			toast(`대기 선수가 부족해 ${picks.length}명만 채웠어요`);
+		}
 	},
 
 	setTeamAnchor: (teamId, x, y) => {
@@ -681,6 +762,61 @@ const creator = immer<BoardState>((set, get) => ({
 		});
 	},
 
+	setDragInfo: (info) => {
+		set((s) => {
+			s.dragInfo = info;
+		});
+	},
+
+	setHoverTarget: (t) => {
+		// 객체는 immer가 내용 동일해도 새 참조면 리렌더하므로, 내용 비교로 무변경 시 스킵(드래그 프레임 다발 호출).
+		const cur = get().hoverTarget;
+		if (cur === t) return;
+		if (cur && t && cur.kind === t.kind && cur.id === t.id) return;
+		set((s) => {
+			s.hoverTarget = t;
+		});
+	},
+
+	setDetachHot: (hot) => {
+		// boolean은 immer가 동일값이면 리렌더 없음.
+		set((s) => {
+			s.detachHot = hot;
+		});
+	},
+
+	clearDrag: () => {
+		set((s) => {
+			s.dragInfo = null;
+			s.hoverTarget = null;
+			s.detachHot = false;
+		});
+	},
+
+	detachMember: (playerId, drop) => {
+		if (!claimEdit()) return; // 보기 전용 차단
+		set((s) => {
+			const mag = s.magnets.get(playerId);
+			if (!mag || mag.teamId === null) return;
+			detachAnchor(s, playerId); // 팀에서 제거(+남은 인원 부족 시 팀 해체)
+			const p = clampToStage(s, drop);
+			mag.x = p.x;
+			mag.y = p.y;
+			runSettle(s, { magnetId: playerId }); // 드롭존 아래로 흩어져 보이게
+		});
+	},
+
+	cancelReservation: (resId) => {
+		if (!claimEdit()) return; // 보기 전용 차단
+		set((s) => {
+			const r = s.reservations.get(resId);
+			if (!r) return;
+			const teamId = r.teamId;
+			s.reservations.delete(resId);
+			if (s.drafts.get(teamId)) runSettle(s, { teamId });
+		});
+	},
+
 	setPresenceModalOpen: (open) => {
 		set((s) => {
 			s.presenceModalOpen = open;
@@ -807,6 +943,9 @@ const creator = immer<BoardState>((set, get) => ({
 			s.restZoneOpen = false;
 			s.restFieldHot = false;
 			s.presenceModalOpen = false;
+			s.dragInfo = null;
+			s.hoverTarget = null;
+			s.detachHot = false;
 		});
 	},
 }));

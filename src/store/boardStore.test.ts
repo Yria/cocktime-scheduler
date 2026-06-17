@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import type { SessionPlayer, Court } from "../types";
+import type { SessionPlayer, Court, PairHistory, GameType } from "../types";
 import type { DraftTeam, MagnetPosition, Reservation } from "../types/board";
 import { DEFAULT_VIEWPORT } from "../lib/board/geometry";
 
@@ -10,6 +10,9 @@ const h = vi.hoisted(() => ({
 	courts: [] as Court[],
 	players: new Map<string, SessionPlayer>(),
 	singleWomanIds: [] as string[],
+	pairHistory: {} as PairHistory,
+	lastGameType: {} as Record<string, GameType>,
+	matchAssignCount: 0,
 }));
 
 vi.mock("./sessionStore", () => ({
@@ -19,6 +22,9 @@ vi.mock("./sessionStore", () => ({
 			sessionPlayers: h.players,
 			handleAssign: h.handleAssign,
 			handleComplete: h.handleComplete,
+			pairHistory: h.pairHistory,
+			lastGameType: h.lastGameType,
+			matchAssignCount: h.matchAssignCount,
 			isEditor: true, // 편집 락: 테스트는 편집자 관점에서 동작 검증
 		}),
 	},
@@ -72,6 +78,9 @@ beforeEach(() => {
 	h.courts = [];
 	h.players = new Map();
 	h.singleWomanIds = [];
+	h.pairHistory = {};
+	h.lastGameType = {};
+	h.matchAssignCount = 0;
 	useBoardStore.getState().reset();
 });
 
@@ -128,14 +137,14 @@ describe("요구5 — 다중 예약(한 선수 여러 팀 동시 소속)", () =>
 		});
 		const store = useBoardStore.getState();
 
-		// a를 T2 위로 → 예약(원본 T1 유지)
-		store.handleDrop("a", { x: 700, y: 500 });
+		// a를 T2 빈 슬롯 위로 → 예약(원본 T1 유지). T2(700,500) 2명 → 빈 슬롯 (735,535)
+		store.handleDrop("a", { x: 735, y: 535 });
 		expect(useBoardStore.getState().magnets.get("a")!.teamId).toBe("T1"); // 원본 유지
 		const t2 = teamMembers("T2", useBoardStore.getState().drafts, useBoardStore.getState().reservations);
 		expect(t2.find((m) => m.playerId === "a")).toMatchObject({ kind: "ghost" });
 
-		// a를 T3 위로 → 또 다른 예약 (동시 다중 소속)
-		store.handleDrop("a", { x: 1100, y: 500 });
+		// a를 T3 빈 슬롯 위로 → 또 다른 예약 (동시 다중 소속). T3(1100,500) → (1135,535)
+		store.handleDrop("a", { x: 1135, y: 535 });
 		const t3 = teamMembers("T3", useBoardStore.getState().drafts, useBoardStore.getState().reservations);
 		expect(t3.find((m) => m.playerId === "a")).toMatchObject({ kind: "ghost" });
 		// a는 T1 anchor + T2/T3 ghost = 예약 2개
@@ -273,7 +282,8 @@ describe("경기중 선수 → 예약(handlePlayingMagnetDrop)", () => {
 			magnets: [mag("p", null), mag("a", "T", 300, 500), mag("b", "T", 300, 500)],
 			drafts: [draft("T", ["a", "b"], 300, 500)],
 		});
-		useBoardStore.getState().handlePlayingMagnetDrop("p", { x: 300, y: 500 });
+		// T(300,500) 2명 → 빈 슬롯 (335,535)에 드롭
+		useBoardStore.getState().handlePlayingMagnetDrop("p", { x: 335, y: 535 });
 		const res = [...useBoardStore.getState().reservations.values()];
 		expect(res).toHaveLength(1);
 		expect(res[0]).toMatchObject({ playerId: "p", teamId: "T" });
@@ -489,6 +499,119 @@ describe("commitTeammates — 다중 선택 커밋", () => {
 		});
 		useBoardStore.getState().commitTeammates({ seedId: "seed" }, ["partner"]);
 		expect(useBoardStore.getState().drafts.size).toBe(1); // 새 팀 생성 안 됨
+	});
+});
+
+// ── 자동편성(autoFillTeam) ───────────────────────────────────
+describe("autoFillTeam — 구성 중 팀의 빈 슬롯을 추천도순으로 채움", () => {
+	it("2인 팀을 대기 선수로 4명까지 채운다(전원 anchor → 경기시작 가능 상태)", () => {
+		h.players = new Map(["a", "b", "c", "d", "e"].map((id) => [id, player(id)]));
+		seed({
+			magnets: [
+				mag("a", "T"), mag("b", "T"),
+				mag("c", null), mag("d", null), mag("e", null),
+			],
+			drafts: [draft("T", ["a", "b"])],
+		});
+		useBoardStore.getState().autoFillTeam("T");
+		const { drafts, reservations } = useBoardStore.getState();
+		const members = teamMembers("T", drafts, reservations);
+		expect(members).toHaveLength(4);
+		// 대기 선수만 채웠으므로 ghost(예약) 없이 전원 anchor
+		expect(members.every((m) => m.kind === "anchor")).toBe(true);
+		expect(reservations.size).toBe(0);
+	});
+
+	it("경기중 선수는 제외하고 대기 선수만 채운다(부족하면 빈 슬롯 유지)", () => {
+		h.players = new Map(["a", "b", "c", "d"].map((id) => [id, player(id)]));
+		// d는 코트에서 경기중 → 자동편성 후보에서 제외
+		h.courts = [{ id: 1, match: { teamA: ["d", "x"], teamB: ["y", "z"] } } as unknown as Court];
+		seed({
+			magnets: [mag("a", "T"), mag("b", "T"), mag("c", null), mag("d", null)],
+			drafts: [draft("T", ["a", "b"])],
+		});
+		useBoardStore.getState().autoFillTeam("T");
+		const { drafts, reservations } = useBoardStore.getState();
+		const ids = teamMembers("T", drafts, reservations).map((m) => m.playerId);
+		// 대기 가능은 c 한 명뿐 → 3명, d는 미포함
+		expect(ids).toEqual(["a", "b", "c"]);
+		expect(ids).not.toContain("d");
+	});
+
+	it("추천 가능한 대기 선수가 없으면 멤버를 바꾸지 않는다", () => {
+		h.players = new Map(["a", "b"].map((id) => [id, player(id)]));
+		seed({ magnets: [mag("a", "T"), mag("b", "T")], drafts: [draft("T", ["a", "b"])] });
+		useBoardStore.getState().autoFillTeam("T");
+		const team = useBoardStore.getState().drafts.get("T")!;
+		expect(team.anchorMemberIds).toEqual(["a", "b"]);
+	});
+
+	it("이미 4명이면 아무 동작 안 함(no-op)", () => {
+		h.players = new Map(["a", "b", "c", "d", "e"].map((id) => [id, player(id)]));
+		seed({
+			magnets: [mag("a", "T"), mag("b", "T"), mag("c", "T"), mag("d", "T"), mag("e", null)],
+			drafts: [draft("T", ["a", "b", "c", "d"])],
+		});
+		useBoardStore.getState().autoFillTeam("T");
+		const team = useBoardStore.getState().drafts.get("T")!;
+		expect(team.anchorMemberIds).toEqual(["a", "b", "c", "d"]); // e 미추가
+	});
+});
+
+// ── 새 팀(+ 버튼) commitTeammates({ newTeam }) ────────────────
+describe("commitTeammates — 새 팀(newTeam) 생성", () => {
+	it("선택분으로 새 팀 생성 — 첫 비경기중 자유 선수가 anchor, 나머지 합류", () => {
+		h.players = new Map(["a", "b", "c"].map((id) => [id, player(id)]));
+		seed({ magnets: [mag("a", null, 100, 100), mag("b", null, 200, 200), mag("c", null, 300, 300)] });
+		useBoardStore.getState().commitTeammates({ newTeam: true }, ["a", "b", "c"]);
+		const { drafts, reservations } = useBoardStore.getState();
+		expect(drafts.size).toBe(1);
+		const t = [...drafts.values()][0];
+		expect(t.anchorMemberIds[0]).toBe("a"); // 첫 선택이 anchor
+		const ids = teamMembers(t.id, drafts, reservations).map((m) => m.playerId).sort();
+		expect(ids).toEqual(["a", "b", "c"]);
+	});
+
+	it("anchor 가능한 선수(비경기중 자유)가 없으면 팀을 만들지 않음", () => {
+		h.players = new Map([["p", player("p")]]);
+		h.courts = [{ id: 1, match: { id: "m", courtId: 1, gameType: "남복", teamA: ["p", "x"], teamB: ["y", "z"], startedAt: "" } }];
+		seed({ magnets: [mag("p", null)] }); // p는 경기중
+		useBoardStore.getState().commitTeammates({ newTeam: true }, ["p"]);
+		expect(useBoardStore.getState().drafts.size).toBe(0);
+	});
+});
+
+// ── 드롭존: 팀에서 빼기(detachMember) / 예약 취소(cancelReservation) ──
+describe("detachMember / cancelReservation — 드롭존", () => {
+	it("detachMember: 3인 팀에서 한 명 빼면 자유 자석(teamId=null)이 되고 팀은 유지", () => {
+		h.players = new Map(["a", "b", "c"].map((id) => [id, player(id)]));
+		seed({
+			magnets: [mag("a", "T"), mag("b", "T"), mag("c", "T")],
+			drafts: [draft("T", ["a", "b", "c"])],
+		});
+		useBoardStore.getState().detachMember("a", { x: 200, y: 30 });
+		const { drafts, magnets } = useBoardStore.getState();
+		expect(drafts.get("T")!.anchorMemberIds).toEqual(["b", "c"]);
+		expect(magnets.get("a")!.teamId).toBeNull();
+	});
+
+	it("detachMember: 2인 팀에서 빼면 남은 인원<2 → 팀 해체", () => {
+		h.players = new Map(["a", "b"].map((id) => [id, player(id)]));
+		seed({ magnets: [mag("a", "T"), mag("b", "T")], drafts: [draft("T", ["a", "b"])] });
+		useBoardStore.getState().detachMember("a", { x: 200, y: 30 });
+		expect(useBoardStore.getState().drafts.has("T")).toBe(false);
+		expect(useBoardStore.getState().magnets.get("a")!.teamId).toBeNull();
+	});
+
+	it("cancelReservation: 예약(ghost)을 삭제한다", () => {
+		h.players = new Map(["a", "p"].map((id) => [id, player(id)]));
+		seed({
+			magnets: [mag("a", "T"), mag("p", null)],
+			drafts: [draft("T", ["a"])],
+			reservations: [{ id: "r1", playerId: "p", teamId: "T", createdAt: 0 }],
+		});
+		useBoardStore.getState().cancelReservation("r1");
+		expect(useBoardStore.getState().reservations.has("r1")).toBe(false);
 	});
 });
 

@@ -2,16 +2,18 @@ import { useMemo } from "react";
 import type { SessionPlayer } from "../types";
 import { useSessionStore } from "../store/sessionStore";
 import { useBoardStore } from "../store/boardStore";
-import { teamMembers, playingIdsFromCourts } from "../lib/board/membership";
+import { buildRecommendData } from "../lib/board/recommendPool";
 import { recommendTeammates, RECOMMEND_WEIGHTS } from "../lib/teamSelection";
 import type { RankedCandidate } from "../lib/teamSelection";
 
 export type { RankedCandidate };
 
-/** 추천 대상: 기존 팀(teamId) 또는 단일 시드 선수(seedId). 둘 중 하나만 지정. */
+/** 추천 대상: 기존 팀(teamId) · 단일 시드 선수(seedId) · 빈 새 팀(newTeam). 하나만 지정. */
 export interface RecommendTarget {
 	teamId?: string | null;
 	seedId?: string | null;
+	/** 아무도 확정 안 된 빈 상태에서 시작해 선택으로 새 팀을 만든다(좌상단 + 버튼). */
+	newTeam?: boolean;
 }
 
 export interface TeammateRecommendations {
@@ -50,58 +52,18 @@ export function useTeammateRecommendations(
 
 	const teamId = target?.teamId ?? null;
 	const seedId = target?.seedId ?? null;
+	const newTeam = target?.newTeam ?? false;
 
 	return useMemo((): TeammateRecommendations => {
 		const empty: TeammateRecommendations = { ranked: [], members: [], playingIds: new Set() };
 
-		// 확정 멤버(팀 멤버 또는 시드) + 풀에서 제외할 ID 집합 결정
-		let members: SessionPlayer[];
-		const memberIds = new Set<string>();
-		if (teamId) {
-			if (!drafts.get(teamId)) return empty;
-			const tm = teamMembers(teamId, drafts, reservations);
-			tm.forEach((m) => memberIds.add(m.playerId));
-			members = tm
-				.map((m) => sessionPlayers.get(m.playerId))
-				.filter((p): p is SessionPlayer => p !== undefined);
-		} else if (seedId) {
-			const seed = sessionPlayers.get(seedId);
-			if (!seed) return empty;
-			memberIds.add(seedId);
-			members = [seed];
-		} else {
-			return empty;
-		}
-
-		// 진행 중 다중선택분도 확정 멤버처럼 취급(점수 재계산 + 풀에서 제외)
-		const selectedPlayers = selectedIds
-			.map((id) => sessionPlayers.get(id))
-			.filter((p): p is SessionPlayer => p !== undefined);
-		selectedIds.forEach((id) => memberIds.add(id));
-		const confirmed = [...members, ...selectedPlayers];
-
-		const playingIds = playingIdsFromCourts(courts);
-
-		const pool: SessionPlayer[] = [];
-		for (const p of sessionPlayers.values()) {
-			if (memberIds.has(p.id)) continue;
-			// 휴식(resting) 선택한 선수는 어떤 추천에서도 제외한다.
-			if (p.status === "resting") continue;
-			// 다른 보드 팀에 anchor로 묶인 선수는 제외(경기중 선수는 magnet.teamId=null이라 포함됨)
-			const mag = magnets.get(p.id);
-			if (mag && mag.teamId && mag.teamId !== teamId) continue;
-			pool.push(p);
-		}
-
-		const allSessionPlayers = [...sessionPlayers.values()];
-
-		const ctx = {
-			pairHistory,
-			totalMatchCount: matchAssignCount,
-			allSessionPlayers,
-			lastGameType,
-			playingIds,
-		};
+		const data = buildRecommendData(
+			{ teamId, seedId, newTeam },
+			selectedIds,
+			{ drafts, reservations, magnets, sessionPlayers, courts, pairHistory, lastGameType, matchAssignCount },
+		);
+		if (!data) return empty;
+		const { confirmed, members, pool, ctx, playingIds } = data;
 
 		// 기본: 경기중 페널티(W_PLAYING) 적용 → 경기중이 뒤로 정렬되는 순위
 		const baseRanked = recommendTeammates(confirmed, pool, ctx);
@@ -125,5 +87,5 @@ export function useTeammateRecommendations(
 			: recommendTeammates(confirmed, pool, ctx, { ...RECOMMEND_WEIGHTS, W_PLAYING: 0 });
 
 		return { ranked, members, playingIds };
-	}, [teamId, seedId, selectedIds, drafts, reservations, magnets, sessionPlayers, courts, pairHistory, lastGameType, matchAssignCount]);
+	}, [teamId, seedId, newTeam, selectedIds, drafts, reservations, magnets, sessionPlayers, courts, pairHistory, lastGameType, matchAssignCount]);
 }

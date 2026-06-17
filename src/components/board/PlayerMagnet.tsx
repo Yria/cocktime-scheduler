@@ -7,6 +7,7 @@ import { useSessionStore } from "../../store/sessionStore";
 import { useDebugStore } from "../../store/debugStore";
 import { skillScore as computeSkillScore } from "../../lib/teamSelection";
 import { getPlayerPhotoUrl } from "../../lib/playerPhoto";
+import { absToStage } from "../../lib/board/konvaEvents";
 import { magnetGenderInk, magnetSkillAngle, MAGNET_SKILL_ARC_RATIO, MAGNET_GENDER_RING_W } from "../../lib/magnetStyle";
 import {
 	MAGNET_SIZE,
@@ -24,6 +25,7 @@ import {
 	RESERVATION_BADGE_BG,
 	RESTING_OPACITY,
 	RESTING_BADGE_BG,
+	HILITE_STROKE,
 } from "../../lib/board/constants";
 
 const GRAD_H = MAGNET_SIZE * 0.7;
@@ -92,6 +94,8 @@ const PlayerMagnet = memo(function PlayerMagnet({
 	const player = useSessionStore((s) => s.sessionPlayers.get(playerId));
 	const isEditor = useSessionStore((s) => s.isEditor); // 보기 전용이면 드래그 불가(락 = 전부 차단)
 	const isGhost = kind === "ghost";
+	// 드래그 중 다른 자석이 이 자석에 겹쳐 페어 대상이 되면 하이라이트
+	const isHovered = useBoardStore((s) => s.hoverTarget?.kind === "magnet" && s.hoverTarget.id === playerId);
 
 	// 렌더 목표 좌표(자유 자석=magnet.x/y, 팀/코트 멤버=슬롯 offset)
 	const rx = offsetX ?? magnet?.x ?? 0;
@@ -137,6 +141,15 @@ const PlayerMagnet = memo(function PlayerMagnet({
 
 	useEffect(() => clearLongPress, [clearLongPress]);
 
+	// 드래그 중 이 컴포넌트가 언마운트되면(원격 팀 해체 등으로 부모 Group destroy) dragend가 안 와
+	// clearDrag가 누락돼 '팀에서 빼기' 드롭존이 고착될 수 있다 → 언마운트 시 내가 드래그 주인이면 정리.
+	useEffect(
+		() => () => {
+			if (useBoardStore.getState().dragInfo?.playerId === playerId) useBoardStore.getState().clearDrag();
+		},
+		[playerId],
+	);
+
 	const handlePointerDown = useCallback(() => {
 		longFired.current = false;
 		clearLongPress();
@@ -166,8 +179,8 @@ const PlayerMagnet = memo(function PlayerMagnet({
 	const handleDragMove = useCallback(
 		(e: Konva.KonvaEventObject<DragEvent>) => {
 			if (!onDragMove) return;
-			const abs = e.target.getAbsolutePosition();
-			onDragMove(playerId, abs.x, abs.y);
+			const p = absToStage(e.target); // 줌/팬 보정 → 논리 좌표
+			onDragMove(playerId, p.x, p.y);
 		},
 		[onDragMove, playerId],
 	);
@@ -175,6 +188,9 @@ const PlayerMagnet = memo(function PlayerMagnet({
 	const handleDragStart = useCallback(
 		(e: Konva.KonvaEventObject<DragEvent>) => {
 			clearLongPress(); // 드래그 의도 → 롱프레스 취소
+			// 드래그 정보 등록 — 팀 소속(anchor/ghost)이면 '팀에서 빼기' 드롭존 노출.
+			const teamBound = isGhost || !!useBoardStore.getState().magnets.get(playerId)?.teamId;
+			useBoardStore.getState().setDragInfo({ playerId, detachable: teamBound });
 			// 드래그 중인 자석을 항상 최상단으로: 자석을 부모 내 최상단으로 올리고,
 			// 팀/코트 카드 멤버라면 그 부모 그룹도 Layer 최상단으로 끌어올린다
 			// (안 그러면 멤버가 부모 그룹 안에서만 위로 가서 다른 자석/카드 아래에 깔린다).
@@ -182,28 +198,38 @@ const PlayerMagnet = memo(function PlayerMagnet({
 			const parent = e.target.getParent();
 			if (parent instanceof Konva.Group) parent.moveToTop();
 		},
-		[clearLongPress],
+		[clearLongPress, isGhost, playerId],
 	);
 
 	const handleDragEnd = useCallback(
 		(e: Konva.KonvaEventObject<DragEvent>) => {
 			// 방금 드래그로 놓인 자석 본인은 흩어짐 트윈에서 제외(이미 드롭 위치에 있음)
 			justDragged.current = true;
-			const abs = e.target.getAbsolutePosition();
-			if (isGhost && reservationId) onGhostDragEnd?.(reservationId, abs.x, abs.y);
-			else if (playing) onPlayingDragEnd?.(playerId, abs.x, abs.y);
-			else if (resting) onRestingDragEnd?.(playerId, abs.x, abs.y);
-			else onDragEnd?.(playerId, abs.x, abs.y);
+			const p = absToStage(e.target); // 줌/팬 보정 → 논리 좌표
+			if (isGhost && reservationId) onGhostDragEnd?.(reservationId, p.x, p.y);
+			else if (playing) onPlayingDragEnd?.(playerId, p.x, p.y);
+			else if (resting) onRestingDragEnd?.(playerId, p.x, p.y);
+			else onDragEnd?.(playerId, p.x, p.y);
 
-			// 슬롯 복귀: ghost/playing/resting이거나, 드롭 후에도 여전히 팀 anchor면 원래 자리로.
-			// (자유 자석은 그대로 드롭 위치에 남는다 — 자유 이동)
+			// 슬롯 복귀: ghost/playing/resting이거나, 드롭 후에도 여전히 팀 anchor면 슬롯(offset)으로.
 			// 애니메이션(.to) 대신 즉시 위치 설정 — reserve/reservePair로 인한 동시 re-render와
 			// 트윈이 충돌해 자석이 떨리며 튀는 현상을 방지한다.
-			const stillAnchored = !!useBoardStore.getState().magnets.get(playerId)?.teamId;
+			const mag = useBoardStore.getState().magnets.get(playerId);
+			const stillAnchored = !!mag?.teamId;
 			if (isGhost || playing || resting || stillAnchored) {
 				e.target.position({ x: offsetX ?? 0, y: offsetY ?? 0 });
 				e.target.getLayer()?.batchDraw();
+			} else if (mag && !(e.target.getParent() instanceof Konva.Group)) {
+				// 자유 자석(Layer 직속)만 스토어 좌표로 정합. 드롭 거부(none)면 원위치 복귀,
+				// 자유 이동(move)이면 드롭 위치 그대로(스토어와 동일 좌표라 무동작).
+				// 거부 시엔 상태 변화가 없어 re-render가 안 일어나므로 여기서 직접 되돌려야 한다.
+				// (방금 detach된 멤버는 아직 팀 Group 자식이라 제외 — 여기서 잡으면 team.anchor만큼
+				//  어긋나 한 프레임 튄다. React 재마운트가 자유 자석으로 올바른 위치에 놓는다.)
+				e.target.position({ x: mag.x, y: mag.y });
+				e.target.getLayer()?.batchDraw();
 			}
+			// 드래그 종료 — 드롭존/하이라이트 상태 초기화(모든 종류 공통)
+			useBoardStore.getState().clearDrag();
 		},
 		[playerId, isGhost, playing, resting, reservationId, onDragEnd, onGhostDragEnd, onPlayingDragEnd, onRestingDragEnd, offsetX, offsetY],
 	);
@@ -354,6 +380,11 @@ const PlayerMagnet = memo(function PlayerMagnet({
 				listening={false}
 				perfectDrawEnabled={false}
 			/>
+
+			{/* 겹침 하이라이트 — 드래그 중 페어 대상이 되면 스카이 링 */}
+			{isHovered && (
+				<Circle radius={MAGNET_R + 3} stroke={HILITE_STROKE} strokeWidth={3} shadowColor={HILITE_STROKE} shadowBlur={10} listening={false} perfectDrawEnabled={false} />
+			)}
 
 			{/* 예약 뱃지 */}
 			{isGhost && <MagnetBadge text="예약" fill={RESERVATION_BADGE_BG} />}

@@ -67,6 +67,7 @@ interface BoardState {
 
 - **자유 이동**: 자석/팀/코트 카드는 드롭한 자리에 그대로 둔다(드래그마다 자동 재배치/settle 하지 않음). 겹침 정리는 툴바 **"정렬"** 버튼(`rearrangeAll`)으로만.
 - **정렬(`rearrangeAll`)**: ① 이미 구성된 팀부터 정렬 — 멤버 많은(완성된) 팀 먼저, 코트 레인 아래 격자 배치 → ② 나머지 자유 자석을 팀 영역 아래 격자 배치 → ③ `settleFreeMagnets`로 잔여 겹침 정리 + 바운더리 클램프.
+- **보기 전용 자동 정렬**: 편집자는 수동 배치(드래그)가 진실의 원천이라 정렬은 "정렬" 버튼으로만. 반면 **보기 전용(`!isEditor`)** 은 드래그를 못 하므로, 멤버십(팀·예약)이나 코트 매치가 바뀔 때마다 `SessionBoard`가 자동으로 `rearrangeAll`을 호출해 레이아웃을 정돈한다. 트리거는 멤버 구성·코트 매치 시그니처(`membershipSig`/`courtSig`) — `arrangeBoard`가 바꾸는 "위치"는 시그니처에 없어 정렬→재정렬 루프가 생기지 않는다.
 - **그룹 생성 시 흩어짐**: 새 팀이 만들어질 때(`createPair`/`reservePair`/경기중-선수 페어)만 `settleFreeMagnets`를 호출해, 새 팀 박스와 겹치는 자유 자석을 **화면 바운더리 안에서** 흩어지게 한다(코트 레인 위로는 안 올라감). 경기완료로 4명이 한꺼번에 풀릴 때도 예외적으로 settle.
 - **코트 카드 드래그**: 경기중 코트 카드(`CourtMatchCard`)도 드래그로 이동 가능(`courtAnchors` Map에 위치 저장). 멤버 자석을 끌어내면 예약 생성(아래 §12).
 - **자유 자석 렌더 조건** = `teamId === null && !playing`.
@@ -79,15 +80,19 @@ interface BoardState {
 
 드래그 노드는 **자유 자석 / anchor 멤버 / ghost** 3종. 자유·anchor는 `handleDrop(playerId)`, ghost는 `handleGhostDrop(resId)`로 분리.
 
-**핵심 3규칙**: ① 자유끼리 겹치면 새 팀 · ② anchor를 빈 공간이면 해제 · ③ anchor를 다른 팀/선수에 겹치면 예약.
+**핵심 3규칙**: ① 자유끼리 겹치면 새 팀 · ② anchor를 빈 공간이면 해제 · ③ anchor를 다른 팀의 **빈 슬롯(구멍)**에 놓으면 예약.
+
+> **그룹 합류는 빈 슬롯(구멍)만 타겟**: 박스 아무 곳이 아니라 4개 슬롯 중 빈 구멍 중심 근처(`SLOT_SNAP_R`=32, `isOnEmptySlot`)에 정확히 놓을 때만 `attach`/`reserve`. 박스 안이지만 슬롯이 아니거나 정원 초과면 `none`(드래그 취소→원위치 복귀). 자유 자석의 `none` 복귀는 상태 무변경이라 re-render가 없어 `PlayerMagnet.handleDragEnd`가 스토어 좌표로 직접 되돌린다. 박스가 겹쳐도 첫 박스에서 멈추지 않고 bounds 안 모든 팀을 보아 슬롯이 맞는 팀을 고른다(없으면 `none`).
 
 | 드래그 | 드롭 | 액션 |
 |--------|------|------|
-| 자유 자석 | 팀 박스(<4 또는 이미 ghost) | `attach` (anchor 합류, ghost면 승격) |
-| | 다른 자유자석 ≤`PAIR_RADIUS` | `createPair` (둘 다 anchor 신규 팀) |
+| 자유 자석 | 팀 빈 슬롯(구멍, <4) 또는 이미 그 팀 ghost | `attach` (anchor 합류, ghost면 승격) |
+| | 팀 박스 안이지만 슬롯 밖/정원초과 | `none` (원위치 복귀) |
+| | 다른 자유자석 ≤`PAIR_RADIUS`(중심거리, 지름 10%↑ 겹침) | `createPair` (둘 다 anchor 신규 팀) |
 | | 빈 공간 | `move` |
 | anchor 멤버 | 빈 공간 | `detach` (요구2: 팀에서 빠짐) |
-| | 다른 팀 박스(<4, 비멤버) | `reserve` (원본 유지 + ghost, 요구5) |
+| | 다른 팀 빈 슬롯(<4, 비멤버) | `reserve` (원본 유지 + ghost, 요구5) |
+| | 다른 팀 박스 안이지만 슬롯 밖/정원초과 | `none` (원위치 복귀) |
 | | 다른 자유자석 ≤`PAIR_RADIUS` | `reservePair` (자유자석=anchor, 끌린 선수=ghost로 신규 예비팀) |
 | | 자기 팀 박스 | `none` (슬롯 스냅백) |
 | ghost | 다른 팀 박스(<4, 비멤버) | `reReserve` (예약 대상 변경) |
@@ -150,8 +155,14 @@ interface BoardState {
 
 - **자유/anchor 자석**: 성별색 + 사진 + 스킬 링(`PlayerMagnet`).
 - **ghost(예약)**: opacity `0.5` + 점선 보라 외곽링(`dash=[5,4]`) + 우상단 "예약" 뱃지.
-- **예비팀 박스**: startable=초록 / 4명이지만 대기=호박 / 구성중=회색.
+- **예비팀 박스**: startable=초록 / 4명이지만 대기=호박 / 구성중=회색. **박스 높이는 상태와 무관하게 항상 CTA 영역을 포함** → 시각 박스 = 드래그 히트영역(`geometry.teamRect`/`TEAM_BOX_BELOW`)이 모든 상태에서 일치(구성중 박스가 버튼 높이만큼 작아 히트영역과 어긋나던 문제 해소).
+- **박스 하단 CTA 버튼**(`TeamBackground`): 라벨은 **팀 상태/액션 기준(편집 권한 무관)** 으로 정한다 — 구성중(1~3명)=**"자동편성"**(빈 슬롯을 추천도순 greedy로 채움 — `boardStore.autoFillTeam`, 알고리즘은 `docs/TEAM_GENERATION_RULES.md` §8) / 4명=**"경기시작"**(미시작 조건 시 "선수 경기중"·"코트 대기"). 색은 활성=파랑(자동편성)·초록(경기시작), **비활성=회색**.
+- **보기 전용(`!isEditor`)**: 버튼은 그대로 렌더하되 **편집자와 같은 라벨을 회색 비활성**으로 보여준다("보기 전용" 같은 별도 텍스트를 쓰지 않음). `ctaEnabled=false`라 클릭 무반응이며 `listening=false`(다만 보기 전용은 팀 자체가 `draggable=false`). 박스 높이는 권한과 무관하게 항상 풀사이즈(시각=히트영역 일치).
 - **코트 카드**(`CourtMatchCard`): 호박색, "N번 코트 · 경기중", 멤버 locked(드래그 불가), "경기완료" 버튼.
+- **겹침 하이라이트(드래그 중)**: 드래그 중 합류/페어 대상이 되는 자석·그룹을 스카이(`HILITE_STROKE`)로 강조 — 자석은 외곽 링, 그룹은 박스 스트로크/글로우. `resolveDropTarget` 결과를 `hoverTarget`(team|magnet)으로 store에 두고, 각 `PlayerMagnet`/`TeamBackground`가 "내가 대상인가" selector로 구독(대상만 리렌더).
+- **'팀에서 빼기' 드롭존**(`DetachZone`): 팀 소속(anchor/ghost) 자석을 드래그하는 동안에만 상단에 점선 로즈 밴드로 노출. 위로 끌어 놓으면 detach(자유)/예약 취소. 드래그 안 할 땐 숨김(`dragInfo.detachable`). `listening=false`라 드롭은 좌표(`isInDetachZone`)로 판정.
+- **줌(0.5~1배)**: 우상단 ＋/－ 버튼·휠·핀치로 Stage를 중앙 기준 축소. 콘텐츠만 스케일되고 논리 좌표는 그대로라 정렬·드롭·휴식/빼기 판정은 동일(드래그 좌표는 `absToStage`로 역변환 복원).
+- **좌상단 ＋ 버튼**: 빈 추천 모달(0명 선택)을 열어 추천 순으로 새 팀을 만든다(`recommendTarget={newTeam:true}` → `commitTeammates({newTeam})`). 편집자만 노출.
 
 ---
 
@@ -163,16 +174,19 @@ src/
 │  ├─ SessionBoard.tsx     — Stage/Layer. 코트카드+예비팀+자유자석 배치, 드롭 배선
 │  ├─ BoardToolbar.tsx     — 뒤로/정렬
 │  ├─ PlayerMagnet.tsx     — 자석(anchor/ghost/locked 시각 분기)
-│  ├─ TeamBackground.tsx   — 예비팀 박스 + 멤버 + 비활성 CTA
+│  ├─ TeamBackground.tsx   — 예비팀 박스 + 멤버 + CTA(구성중=자동편성 / 4명=경기시작) + 겹침 하이라이트
+│  ├─ DetachZone.tsx       — 드래그 중 상단 '팀에서 빼기' 드롭존(listening=false)
 │  ├─ CourtMatchCard.tsx   — 경기중 코트(읽기전용) + 경기완료
 │  └─ CourtStatusBar.tsx   — 하단 코트 현황 바
 ├─ lib/board/
 │  ├─ dropResolver.ts      — resolveDropTarget 상태머신 (순수)
 │  ├─ membership.ts        — teamMembers/deriveLifecycle/isTeamStartable (순수)
-│  ├─ geometry.ts          — 슬롯/히트 (순수)
+│  ├─ geometry.ts          — 슬롯/히트/빼기존(isInDetachZone) (순수)
+│  ├─ recommendPool.ts     — 추천/자동편성 입력(confirmed·pool·ctx) 빌드 (순수)
+│  ├─ konvaEvents.ts       — isSelfDrag/stopTap/absToStage(줌 좌표 역변환)
 │  ├─ collision.ts         — settleFreeMagnets (경기중 선수 제외)
-│  └─ constants.ts         — 치수/색/예약 시각 상수
-├─ store/boardStore.ts     — magnets/drafts/reservations + startMatch/completeMatch
+│  └─ constants.ts         — 치수/색/예약·빼기존·하이라이트 상수
+├─ store/boardStore.ts     — magnets/drafts/reservations + startMatch/completeMatch/autoFillTeam/detachMember/dragInfo·hoverTarget
 ├─ types/board.ts          — MagnetPosition/DraftTeam/Reservation/TeamMember
 └─ lib/teamSelection/pairPlayers.ts — 4명→GeneratedTeam(2v2+gameType) [재활용]
 ```
@@ -183,7 +197,7 @@ src/
 
 | 항목 | 상태 | 비고 |
 |------|------|------|
-| 경기중 선수를 예비팀에 신규 예약 | 지원 | 코트 카드 멤버를 끌어내 팀/선수에 겹치면 예약(ghost) 생성, 원본은 코트 유지(`handlePlayingMagnetDrop`) |
+| 경기중 선수를 예비팀에 신규 예약 | 지원 | 코트 카드 멤버를 끌어내 팀 **빈 슬롯**(또는 자유 자석)에 놓으면 예약(ghost) 생성, 원본은 코트 유지(`handlePlayingMagnetDrop`) |
 | 캔버스 persist | 미구현 | 새로고침 시 자석/예비팀 레이아웃 유실(의도) |
 | 코트 카드 ↔ 예비팀 위치 겹침 | 해소 | 상단 `COURT_LANE_H` 레인 예약 + 코트 카드를 **맨 위로 렌더**(경기완료 버튼 클릭 보장). 풀/예비팀/자유자석은 레인 아래로 클램프 |
 | 팬/줌 | 미구현 | 핵심 아님 |

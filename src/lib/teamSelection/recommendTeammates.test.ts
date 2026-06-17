@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { GameType, SessionPlayer, SkillLevel } from "../../types";
-import { recommendTeammates, RECOMMEND_WEIGHTS, type RecommendContext } from "./recommendTeammates";
+import { recommendTeammates, autoFillTeammates, RECOMMEND_WEIGHTS, type RecommendContext } from "./recommendTeammates";
 
 function player(
 	id: string,
@@ -156,5 +156,35 @@ describe("recommendTeammates", () => {
 		const ro = ranked.find((r) => r.player.id === "rotateOut")!;
 		// 두 후보는 confirmed·성별이 같아 시드 항·W_MIXED_COMPLETE가 공통 → 격차는 후보 시점 로테이션뿐: 대칭 2×W_ROTATE
 		expect(rm.score - ro.score).toBeCloseTo(2 * RECOMMEND_WEIGHTS.W_ROTATE, 5);
+	});
+});
+
+describe("autoFillTeammates — greedy 자동편성", () => {
+	it("요청한 인원 수만큼, 풀이 모자라면 가능한 만큼만 뽑는다", () => {
+		const confirmed = [player("c1", "M")];
+		const pool = [player("a", "M"), player("b", "M")];
+		expect(autoFillTeammates(confirmed, pool, ctx(), 3)).toHaveLength(2); // 풀=2 < 3
+		expect(autoFillTeammates(confirmed, pool, ctx(), 1)).toHaveLength(1);
+		// 같은 후보를 중복으로 뽑지 않는다
+		const picks = autoFillTeammates(confirmed, pool, ctx(), 2);
+		expect(new Set(picks.map((p) => p.id)).size).toBe(2);
+	});
+
+	it("매 라운드 재평가한다 — 한 명을 넣으면 동반 이력에 따라 다음 추천이 달라진다", () => {
+		// 전원 동일 실력/남성 → 점수 = 동반 누적(pairHistory)×W_PAIR 만 작동(deficit=0).
+		const confirmed = [player("c1", "M")];
+		const a = player("a", "M");
+		const b = player("b", "M");
+		const x = player("x", "M");
+		// c1 단독 기준: a(0) < b(1) < x(2). a를 먼저 뽑음.
+		// a를 넣은 뒤: b는 a와 5회 동반(누적 6)으로 급락, x는 a와 0회(누적 2)라 x가 b보다 상위.
+		const pairHistory = { c1: { a: 0, b: 1, x: 2 }, a: { b: 5, x: 0 } };
+		const picks = autoFillTeammates(confirmed, [a, b, x], ctx({ pairHistory }), 2);
+		expect(picks.map((p) => p.id)).toEqual(["a", "x"]);
+		// 단순 상위 N(재평가 없음)이라면 [a, b]가 됐을 것 — 재평가가 b를 밀어냈다.
+		const oneShotTop2 = recommendTeammates(confirmed, [a, b, x], ctx({ pairHistory }))
+			.slice(0, 2)
+			.map((r) => r.player.id);
+		expect(oneShotTop2).toEqual(["a", "b"]);
 	});
 });

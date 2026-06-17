@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layer, Stage } from "react-konva";
+import type Konva from "konva";
 import { useShallow } from "zustand/react/shallow";
 import { useBoardDragHandlers } from "../../hooks/useBoardDragHandlers";
 import { useBoardPlayerPool } from "../../hooks/useBoardPlayerPool";
@@ -22,6 +23,7 @@ import CourtMatchCard from "./CourtMatchCard";
 import PlayerMagnet from "./PlayerMagnet";
 import RestZonePanel from "./RestZonePanel";
 import TeamBackground from "./TeamBackground";
+import DetachZone from "./DetachZone";
 import RecommendTeammateDialog from "./RecommendTeammateDialog";
 import MatchEditModal from "./MatchEditModal";
 import ViewerLockOverlay from "./ViewerLockOverlay";
@@ -29,6 +31,30 @@ import DebugMatchModal from "./DebugMatchModal";
 import type { RecommendTarget } from "../../hooks/useTeammateRecommendations";
 
 const COURT_CARD_GAP = 20;
+
+// 줌(축소 전용) — 0.5~1배. arrange/drop은 논리 좌표(stageW×stageH 기준)라 줌과 무관하게 동작한다.
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 1;
+const ZOOM_STEP = 0.1;
+const clampScale = (v: number) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(v * 100) / 100));
+
+const zoomBtnStyle: React.CSSProperties = {
+	width: 36,
+	height: 36,
+	padding: 0,
+	borderRadius: 18,
+	border: "none",
+	background: "rgba(30,41,59,0.85)",
+	color: "#fff",
+	fontSize: 20,
+	fontWeight: 700,
+	lineHeight: 1,
+	display: "inline-flex",
+	alignItems: "center",
+	justifyContent: "center",
+	cursor: "pointer",
+	boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
+};
 
 export default function SessionBoard() {
 	const stageContainerRef = useRef<HTMLDivElement | null>(null);
@@ -85,9 +111,44 @@ export default function SessionBoard() {
 	const hasEmptyCourt = useMemo(() => courts.some((c) => !c.match), [courts]);
 	const isEditor = useSessionStore((s) => s.isEditor); // 보기 전용이면 추천 다이얼로그 차단
 
+	// ── 보기 전용 자동 정렬 ──────────────────────────────────
+	// 뷰어는 직접 드래그/정렬을 못 하므로, 멤버십(팀·예약)이나 코트가 바뀔 때마다 rearrangeAll로
+	// 레이아웃을 스스로 정돈한다. (편집자는 수동 배치가 진실의 원천이라 제외.)
+	//
+	// membershipSig/courtSig는 값을 "쓰는" 게 아니라 아래 useEffect의 의존성 배열에 넣는
+	// **변화 감지용 트리거 키**다. 이 문자열이 달라질 때만 effect가 재실행 → rearrangeAll 호출.
+	//
+	// 왜 drafts/courts Map을 직접 의존성에 안 넣고 시그니처를 쓰나(중요 — 무한 루프 방지):
+	//   rearrangeAll(→arrangeBoard)은 "위치"(magnet x/y, 팀 anchor, courtAnchors)만 바꾼다.
+	//   drafts/magnets Map을 직접 의존성에 넣으면 정렬이 위치를 바꿔 ref가 새로 생기고 → effect 재실행
+	//   → 또 정렬 → 무한 루프. 그래서 arrangeBoard가 건드리지 않는 값(멤버 구성 + 코트 매치)만으로
+	//   시그니처를 만든다. 위치가 바뀌어도 이 문자열은 그대로라 "진짜 멤버십·코트 변경" 때만 정렬된다.
+	const membershipSig = useBoardStore((s) => {
+		// 팀별 멤버(anchorMemberIds) + 예약(playerId>teamId)만 — 위치(anchor.x/y)는 포함하지 않는다.
+		let sig = "";
+		for (const d of s.drafts.values()) sig += `${d.id}:${d.anchorMemberIds.join(",")}|`;
+		sig += "#";
+		for (const r of s.reservations.values()) sig += `${r.playerId}>${r.teamId},`;
+		return sig;
+	});
+	// 코트별 경기 선수 구성 — 경기 시작/완료로 매치가 바뀔 때만 달라진다(코트 위치는 미포함).
+	const courtSig = useSessionStore((s) =>
+		s.courts
+			.map((c) => (c.match ? `${c.id}:${c.match.teamA.join("")}/${c.match.teamB.join("")}` : `${c.id}:-`))
+			.join("|"),
+	);
+	useEffect(() => {
+		if (isEditor) return; // 편집자는 수동 배치가 진실의 원천 — 자동 정렬 안 함
+		if (stageW <= 0 || stageH <= 0) return;
+		rearrangeAll(stageW, stageH);
+		// deps의 membershipSig/courtSig가 바로 위에서 설명한 "트리거 키"다.
+	}, [isEditor, membershipSig, courtSig, stageW, stageH, rearrangeAll]);
+
 	// 휴식 필드(하단 바) — 바 탭으로 패널 열고 닫음. 자석을 끌어 내리면 휴식, 빼면 복귀.
 	const restZoneOpen = useBoardStore((s) => s.restZoneOpen);
 	const restFieldHot = useBoardStore((s) => s.restFieldHot);
+	// 팀 소속 자석을 드래그하는 동안에만 상단 '팀에서 빼기' 드롭존 노출
+	const showDetach = useBoardStore((s) => s.dragInfo?.detachable ?? false);
 	const restingSet = useMemo(() => new Set(restingIds), [restingIds]);
 
 	// 자유 자석: 팀 미소속(teamId null) && 경기중 아님
@@ -141,15 +202,53 @@ export default function SessionBoard() {
 	const { onMagnetDragMove, onMagnetDragEnd, onRestingDragEnd, onGhostDragEnd } =
 		useBoardDragHandlers(stageH, restZoneOpen);
 
+	// ── 줌(0.5~1배 축소) ─────────────────────────────────────
+	// Stage scale로 콘텐츠를 화면 중앙 기준 축소. 논리 좌표는 그대로라 정렬·드롭·휴식 판정은 기존과 동일
+	// (드래그 좌표는 PlayerMagnet에서 absToStage로 논리 좌표 복원). 핀치(2손가락)·휠·버튼 지원.
+	const [scale, setScale] = useState(1);
+	const stageX = (stageW * (1 - scale)) / 2;
+	const stageY = (stageH * (1 - scale)) / 2;
+	const pinchDist = useRef(0);
+	const onStageWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
+		e.evt.preventDefault();
+		setScale((s) => clampScale(s + (e.evt.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP)));
+	}, []);
+	const onStageTouchMove = useCallback((e: Konva.KonvaEventObject<TouchEvent>) => {
+		const t = e.evt.touches;
+		if (t.length !== 2) return; // 두 손가락 핀치만(한 손가락은 드래그)
+		e.evt.preventDefault();
+		const dist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+		if (pinchDist.current > 0) {
+			const ratio = dist / pinchDist.current;
+			setScale((s) => clampScale(s * ratio));
+		}
+		pinchDist.current = dist;
+	}, []);
+	const onStageTouchEnd = useCallback(() => {
+		pinchDist.current = 0;
+	}, []);
+
 	const halfW = TEAM_W / 2;
 	const courtCardY = TEAM_BOX_ABOVE + 8;
 
 	return (
 		<div style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden", background: BG_BOARD }}>
 			<BoardToolbar />
-			<div ref={stageContainerRef} style={{ position: "absolute", top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top))`, left: 0, right: 0, bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px))` }}>
-				<Stage width={stageW} height={stageH}>
+			<div ref={stageContainerRef} style={{ position: "absolute", top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top))`, left: 0, right: 0, bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px))`, touchAction: "none" }}>
+				<Stage
+					width={stageW}
+					height={stageH}
+					scaleX={scale}
+					scaleY={scale}
+					x={stageX}
+					y={stageY}
+					onWheel={onStageWheel}
+					onTouchMove={onStageTouchMove}
+					onTouchEnd={onStageTouchEnd}
+				>
 					<Layer>
+						{/* '팀에서 빼기' 드롭존 — 배경 밴드(드래그 자석이 항상 위로). 드래그 중에만 노출 */}
+						{showDetach && <DetachZone stageW={stageW} />}
 						{draftIds.map((id) => (
 							<TeamBackground
 								key={id}
@@ -158,6 +257,7 @@ export default function SessionBoard() {
 								playingIds={playingIds}
 								onMagnetDragEnd={onMagnetDragEnd}
 								onGhostDragEnd={onGhostDragEnd}
+								onMagnetDragMove={onMagnetDragMove}
 								onSlotClick={openTeamRecommend}
 							/>
 						))}
@@ -189,7 +289,53 @@ export default function SessionBoard() {
 					</Layer>
 				</Stage>
 			</div>
+			{/* 좌상단 + 버튼 — 빈 추천 모달을 열어 새 팀을 만든다(편집자만) */}
+			{isEditor && (
+				<button
+					type="button"
+					onClick={() => setRecommendTarget({ newTeam: true })}
+					aria-label="새 팀"
+					style={{
+						position: "absolute",
+						left: 16,
+						top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top) + 12px)`,
+						display: "inline-flex",
+						alignItems: "center",
+						justifyContent: "center",
+						width: 44,
+						height: 44,
+						padding: 0,
+						borderRadius: 22,
+						border: "none",
+						background: "var(--ios-green)",
+						color: "#fff",
+						boxShadow: "0 6px 16px rgba(52, 199, 89, 0.4)",
+						cursor: "pointer",
+						zIndex: 20,
+					}}
+				>
+					<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+						<line x1="12" y1="5" x2="12" y2="19" />
+						<line x1="5" y1="12" x2="19" y2="12" />
+					</svg>
+				</button>
+			)}
 			<RestBar />
+			{/* 줌 컨트롤(우상단) — 0.5~1배 축소(편집/보기 공통) */}
+			<div
+				style={{
+					position: "absolute",
+					right: 16,
+					top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top) + 12px)`,
+					display: "flex",
+					flexDirection: "column",
+					gap: 6,
+					zIndex: 20,
+				}}
+			>
+				<button type="button" onClick={() => setScale((s) => clampScale(s + ZOOM_STEP))} aria-label="확대" style={zoomBtnStyle}>＋</button>
+				<button type="button" onClick={() => setScale((s) => clampScale(s - ZOOM_STEP))} aria-label="축소" style={zoomBtnStyle}>－</button>
+			</div>
 				{/* 우하단 플로팅 정렬 버튼 — 휴식 패널 열림 시 숨김(겹침 방지) */}
 			{!restZoneOpen && (
 			<button
@@ -224,6 +370,7 @@ export default function SessionBoard() {
 				<RecommendTeammateDialog
 					teamId={recommendTarget.teamId ?? undefined}
 					seedId={recommendTarget.seedId ?? undefined}
+					newTeam={recommendTarget.newTeam}
 					onClose={() => setRecommendTarget(null)}
 				/>
 			)}

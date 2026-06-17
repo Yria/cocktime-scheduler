@@ -24,7 +24,7 @@ const SORT_OPTIONS: PlayerPickerSortOption[] = [
 /** 디버그 점수 분해 표시 — 0(또는 미세)이면 가운뎃점, 그 외 소수1자리. */
 const fmtScore = (n?: number): string => (n === undefined || Math.abs(n) < 0.05 ? "·" : n.toFixed(1));
 
-export default function RecommendTeammateDialog({ teamId, seedId, onClose }: Props) {
+export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClose }: Props) {
 	const commitTeammates = useBoardStore((s) => s.commitTeammates);
 	const sessionPlayers = useSessionStore((s) => s.sessionPlayers);
 
@@ -33,7 +33,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, onClose }: Pro
 	// 점수 분해 디버그 토글(제목 우측 🐛 버튼)
 	const [debug, setDebug] = useState(false);
 
-	const { ranked, members, playingIds } = useTeammateRecommendations({ teamId, seedId }, selectedIds);
+	const { ranked, members, playingIds } = useTeammateRecommendations({ teamId, seedId, newTeam }, selectedIds);
 
 	const selectedPlayers = useMemo(
 		() =>
@@ -84,13 +84,15 @@ export default function RecommendTeammateDialog({ teamId, seedId, onClose }: Pro
 
 	const handleConfirm = () => {
 		if (selectedIds.length === 0) return;
-		commitTeammates({ teamId: teamId ?? undefined, seedId: seedId ?? undefined }, selectedIds);
+		commitTeammates({ teamId: teamId ?? undefined, seedId: seedId ?? undefined, newTeam }, selectedIds);
 		onClose();
 	};
 
 	const headerNote = teamId
 		? `${filledCount}/4명 · 추천에서 골라 팀을 채우세요`
-		: `${members[0]?.name ?? ""} 선수와 함께할 팀원을 골라 팀을 만듭니다`;
+		: newTeam
+			? `${filledCount}/4명 · 추천 순으로 골라 새 팀을 만듭니다`
+			: `${members[0]?.name ?? ""} 선수와 함께할 팀원을 골라 팀을 만듭니다`;
 
 	return (
 		<ModalSheet position="bottom" onClose={onClose} className="max-h-[90dvh] flex flex-col">

@@ -10,7 +10,7 @@
  *   ③ anchor 멤버를 다른 팀/선수에 겹치면 → reserve / reservePair (원본 유지 + ghost, 요구5)
  */
 import type { DraftTeam, MagnetPosition, StagePoint } from "../../types/board";
-import { distance, isInsideTeamBounds } from "./geometry";
+import { distance, isInsideTeamBounds, isOnEmptySlot } from "./geometry";
 import { PAIR_RADIUS } from "./constants";
 import { isMemberOf, teamMemberCount } from "./membership";
 
@@ -62,14 +62,19 @@ export function resolveDropTarget(
 
 	// ── anchor 멤버를 끌어낸 경우 ──────────────────────────
 	if (self.teamId !== null) {
-		// 1) 다른 팀 박스 안 → 예약(reserve)
+		// 1) 다른 팀의 빈 슬롯(구멍)에 정확히 놓을 때만 예약(reserve).
+		//    박스가 겹칠 수 있으므로 bounds 안 모든 팀을 보고 "슬롯이 맞는" 팀을 찾는다(첫 박스에서 멈추지 않음).
+		//    bounds 안이지만 어떤 슬롯에도 안 맞으면 스냅백(none).
+		let insideOtherTeam = false;
 		for (const d of drafts.values()) {
 			if (d.id === self.teamId) continue;
 			if (!isInsideTeamBounds(drop, d.anchor)) continue;
-			if (isMemberOf(playerId, d.id, drafts, reservations)) return { kind: "none" };
-			if (teamMemberCount(d.id, drafts, reservations) >= 4) return { kind: "none" };
-			return { kind: "reserve", toTeamId: d.id };
+			insideOtherTeam = true;
+			if (isMemberOf(playerId, d.id, drafts, reservations)) continue; // 이미 그 팀 멤버 → 패스(겹친 다른 팀 탐색)
+			const count = teamMemberCount(d.id, drafts, reservations);
+			if (count < 4 && isOnEmptySlot(drop, d.anchor, count)) return { kind: "reserve", toTeamId: d.id };
 		}
+		if (insideOtherTeam) return { kind: "none" }; // 박스 안이지만 슬롯 아님/정원 초과 → 원위치
 		// 2) 자기 팀 박스 안 → 스냅백 (슬롯 고정)
 		const own = drafts.get(self.teamId);
 		if (own && isInsideTeamBounds(drop, own.anchor)) return { kind: "none" };
@@ -87,13 +92,19 @@ export function resolveDropTarget(
 	}
 
 	// ── 자유 자석을 끌어낸 경우 ───────────────────────────
-	// 1) 팀 박스 안 → 합류(attach). 이미 ghost면 승격(정원 무관).
+	// 1) 팀의 빈 슬롯(구멍)에 정확히 놓을 때만 합류(attach).
+	//    박스가 겹칠 수 있으므로 bounds 안 모든 팀을 보고 "슬롯이 맞는" 팀을 찾는다(첫 박스에서 멈추지 않음).
+	//    bounds 안이지만 어떤 슬롯에도 안 맞으면 스냅백(none).
+	let insideAnyTeam = false;
 	for (const d of drafts.values()) {
 		if (!isInsideTeamBounds(drop, d.anchor)) continue;
+		insideAnyTeam = true;
+		// 이미 이 팀의 멤버(ghost)면 승격(슬롯 무관, 정원 무관).
 		if (isMemberOf(playerId, d.id, drafts, reservations)) return { kind: "attach", teamId: d.id };
-		if (teamMemberCount(d.id, drafts, reservations) < 4) return { kind: "attach", teamId: d.id };
-		// 정원 꽉 참 & 비멤버 → 이 팀은 패스, 다음 후보 탐색
+		const count = teamMemberCount(d.id, drafts, reservations);
+		if (count < 4 && isOnEmptySlot(drop, d.anchor, count)) return { kind: "attach", teamId: d.id };
 	}
+	if (insideAnyTeam) return { kind: "none" }; // 박스 안이지만 슬롯 아님/정원 초과 → 원위치
 	// 2) 다른 자유 자석 근접 → 신규 팀
 	const partner = nearestFreePartner(playerId, drop, magnets, playingIds);
 	if (partner) {

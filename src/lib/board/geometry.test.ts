@@ -4,8 +4,10 @@ import {
 	computeSlotOffset,
 	computeEmptySlots,
 	isInsideTeamBounds,
+	isOnEmptySlot,
+	isInDetachZone,
 } from "./geometry";
-import { SLOT_SIZE, SLOT_GAP } from "./constants";
+import { SLOT_SIZE, SLOT_GAP, DETACH_ZONE_H } from "./constants";
 
 describe("distance", () => {
 	it("같은 좌표는 0", () => {
@@ -67,5 +69,38 @@ describe("isInsideTeamBounds", () => {
 
 	it("대각선으로 크게 벗어나면 false", () => {
 		expect(isInsideTeamBounds({ x: 9999, y: 9999 }, anchor)).toBe(false);
+	});
+});
+
+describe("isOnEmptySlot", () => {
+	const anchor = { x: 100, y: 100 };
+	const h = (SLOT_SIZE + SLOT_GAP) / 2; // 35
+
+	it("빈 슬롯 중심에 정확히 놓으면 true", () => {
+		// 2명 팀의 빈 슬롯 = idx2(-h,+h), idx3(+h,+h)
+		expect(isOnEmptySlot({ x: anchor.x + h, y: anchor.y + h }, anchor, 2)).toBe(true);
+	});
+
+	it("박스 가운데(슬롯 아님)는 false", () => {
+		expect(isOnEmptySlot(anchor, anchor, 2)).toBe(false);
+	});
+
+	it("이미 찬 슬롯 위는 false(빈 슬롯만 타겟)", () => {
+		// 2명이면 idx0(-h,-h)은 찬 슬롯 → 타겟 아님
+		expect(isOnEmptySlot({ x: anchor.x - h, y: anchor.y - h }, anchor, 2)).toBe(false);
+	});
+
+	it("정원 4명이면 빈 슬롯 없음 → 항상 false", () => {
+		expect(isOnEmptySlot({ x: anchor.x + h, y: anchor.y + h }, anchor, 4)).toBe(false);
+	});
+});
+
+describe("isInDetachZone", () => {
+	it("상단 밴드 안(y ≤ DETACH_ZONE_H)이면 true", () => {
+		expect(isInDetachZone({ x: 100, y: 0 })).toBe(true);
+		expect(isInDetachZone({ x: 100, y: DETACH_ZONE_H })).toBe(true);
+	});
+	it("밴드 아래면 false", () => {
+		expect(isInDetachZone({ x: 100, y: DETACH_ZONE_H + 1 })).toBe(false);
 	});
 });

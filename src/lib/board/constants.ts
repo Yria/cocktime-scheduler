@@ -58,6 +58,10 @@ export const PAIR_RADIUS = MAGNET_SIZE * 0.9;
 // Empty slot
 export const EMPTY_SLOT_SIZE = 44;
 export const EMPTY_SLOT_R = EMPTY_SLOT_SIZE / 2;
+// 그룹 합류 스냅 반경 — 드롭한 자석 중심이 빈 슬롯(구멍) 중심에서 이 거리 안일 때만 합류/예약.
+// 슬롯 간격(SLOT_SIZE+SLOT_GAP=70)의 절반 미만이라 인접 슬롯 캐치먼트가 겹치지 않고,
+// 박스 가운데/가장자리(슬롯 아님)는 잡히지 않아 "구멍에 정확히 놓을 때만" 반응한다.
+export const SLOT_SNAP_R = SLOT_SIZE / 2; // 32
 
 // Toolbar & court bar
 export const TOOLBAR_H = 48;
@@ -104,3 +108,15 @@ export const REST_ZONE_HOT_LABEL = "#7DD3FC";
 // 휴식 자석 시각화
 export const RESTING_OPACITY = 0.55;
 export const RESTING_BADGE_BG = "#475569";
+
+// 팀에서 빼기(detach) 드롭존 — 드래그 중에만 상단에 노출. 휴식존(하단)과 구분되는 레드/로즈.
+export const DETACH_ZONE_H = 72; // 상단 밴드 높이(논리)
+export const DETACH_ZONE_BG = "rgba(76,29,29,0.92)"; // 다크 로즈(반투명)
+export const DETACH_ZONE_STROKE = "#7F1D1D";
+export const DETACH_ZONE_LABEL = "#FCA5A5";
+export const DETACH_ZONE_HOT_BG = "rgba(239,68,68,0.22)"; // 드래그가 위로 올라온 hot
+export const DETACH_ZONE_HOT_STROKE = "#F87171";
+export const DETACH_ZONE_HOT_LABEL = "#FECACA";
+
+// 드래그 중 겹침 대상 하이라이트(자석/그룹 공통) — 스카이 액센트
+export const HILITE_STROKE = "#38BDF8";

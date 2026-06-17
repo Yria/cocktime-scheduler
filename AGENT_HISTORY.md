@@ -500,3 +500,99 @@
 - 쓰기 정합화: POST 경로(updatePlayer)는 헤더명(SKILLS) 기반이라 SKILLS 갱신만으로 자동 정합+사진 안전. PUT 경로(updatePlayerWithToken+edge function)는 인덱스 기반 A:I 덮어쓰기였음 → 사진(C) 손상 방지 위해 values:batchUpdate로 B(성별)·D:I(스킬)만 갱신하도록 변경(A 멤버·C 사진 보존). OAuth가 설정돼 PUT이 주 경로.
 - 검증: tsc/96 tests/build 통과(테스트 픽스처 3곳 옛 스킬키→푸시 수정). 라이브 시트 100명 파싱 실증 — 스킬 셀 원본값은 상/중/하+빈칸뿐, O/V/X로 정상 분포. 스킬 미입력(행 길이 2) 회원은 빈셀→X 기본값 처리 확인.
 - 후속 필요: edge function 재배포(`supabase functions deploy sheets`)해야 PUT 쓰기 경로가 새 레이아웃으로 동작. 라이브 쓰기(선수 스킬 편집)는 실데이터 영향이라 자동검증 불가 → 배포 후 수동 확인 권장. POST 폴백이 쓰는 Apps Script는 "푸시" 헤더 인식 필요(레포 외부). 기존 활성 세션의 session_players.skills JSON은 옛 7키지만 skillScoreOf가 Object.values 순회라 호환(전환적).
+
+---
+
+## #40
+
+**Prompt**: 드래그할때 겹쳐져서 발생하는 영역은 직관적이어야 해. 지금 보면 팀 구성중 상태일때의 그룹크기와 팀 완성상태의 그룹크기가 버튼만큼 차이나. 그런데 드래그 영역은 동일해서 문제가 있어. 완성상태의 그룹크기와 동일하게 하되, 해당 위치에 버튼을 넣어서 액션을 추가하면 좋겠어. 자동편성 버튼을 만들어서 누르면 추천도가 높은순으로 들어가면 좋겠어. 대신 우리 알고리즘 특성상 팀원이 누가 되느냐에 따라 추천도가 계속 바뀌므로 팀 구성중 2명 상태에서 눌렀을때, 추천도 높은 사람 한명 넣고 다시 알고리즘돌려 다음 추천도 높은사람 뽑고 이렇게 하는게 좋을거야.
+
+**Answer**: 보드 예비팀 박스의 시각 크기와 드래그 히트영역 불일치를 해소하고 팀 단위 자동편성을 추가했다. 구성 중 박스가 CTA 버튼 높이만큼 작았는데 히트영역(teamRect/TEAM_BOX_BELOW)은 항상 풀사이즈여서 어긋났던 게 원인.
+- 박스 높이를 상태 무관 항상 풀사이즈로 고정 → 시각=히트영역 일치. 빈 CTA 자리에 구성중=파랑 "자동편성", 4명=초록 "경기시작" 버튼을 렌더.
+- 자동편성: recommendTeammates를 매 라운드 재실행하는 greedy(autoFillTeammates) — 추천 1명 추가→confirmed 갱신→재평가 반복. 추천 점수가 멤버 구성에 의존하므로 한 번에 N명을 자르지 않고 매번 재선정.
+- 대기 선수만으로 채움(경기중 제외, ghost 미생성) → 4명 채워지면 즉시 경기시작 가능, 부족하면 토스트 안내(사용자 결정 반영).
+- 풀/컨텍스트 빌드를 순수함수 buildRecommendData(recommendPool.ts)로 추출해 추천 훅·자동편성 스토어가 공유. 적대적 리뷰 반영: 비활성 CTA는 listening=false로 드래그 데드존 제거, pool에서 자석 없는 후보 제외(commit 전제와 일치).
+- 4차원 리뷰 워크플로로 검증(확정 low 3건 반영). tsc·lint 클린, 108개 테스트 통과(신규 12개).
+
+---
+
+## #41
+
+**Prompt**: 문서 최신화가 필요할거같은데, 최신화해줘
+
+**Answer**: 자동편성 추가에 맞춰 알고리즘/보드 문서를 동기화했다. 기존 문서는 이미 teamSelection 리팩토링 기준으로 정리돼 있었고, 누락분은 신규 autoFillTeammates와 stale 경로뿐이었다.
+- docs/TEAM_GENERATION_RULES.md: 헤더 표에 autoFillTeammates·buildRecommendData 추가, §7에 공통 풀 빌더 설명, 신규 §8 "자동편성"(greedy 재평가 + 대기 선수만 채움) 추가, 공통규칙 8→9 번호 조정, 부록 selectFour 항목에 §8 재도입 교차참조.
+- CLAUDE.md: 프로젝트 규칙의 stale 경로 정정(teamGenerator.ts→teamSelection/, src/lib/TEAM_GENERATION_RULES.md→docs/TEAM_GENERATION_RULES.md), 함수·섹션 참조 현행화.
+- docs/session-board.md: CTA 버튼(자동편성/경기시작)·박스=히트영역 일치·비활성 listening 동작 명시, 파일 구조에 recommendPool.ts·autoFillTeam 반영.
+
+---
+
+## #42
+
+**Prompt**: 보기전용일때 그룹안 버튼텍스트 보기전용 나오는거 없어보여 없애줘
+
+**Answer**: 보기 전용(`!isEditor`)에서 예비팀 박스의 회색 "보기 전용" CTA가 어색해 버튼 자체를 숨기도록 변경했다.
+- TeamBackground: CTA 렌더를 `showCta = isEditor`로 게이트 → 보기 전용은 버튼(및 "보기 전용" 텍스트) 미노출. ctaLabel에서 "보기 전용" 분기 제거.
+- 보기 전용은 드래그가 없어 히트영역 일치가 불필요하므로, 빈 CTA 공간을 남기지 않고 박스 하단(boxBottom)을 그만큼 타이트하게 축소(편집자만 풀사이즈 유지).
+- docs/session-board.md의 CTA 설명에 보기 전용 동작(버튼 미렌더 + 박스 축소) 반영. tsc·lint 클린, 108개 테스트 통과.
+
+---
+
+## #43
+
+**Prompt**: 아니 버튼을 숨기는게 아니고, 보기전용이라는 텍스트대신 다른걸 쓰라고
+
+**Answer**: 의도 정정 — 버튼을 숨기는 게 아니라 "보기 전용" 텍스트만 바꾸는 것. 사용자 선택대로 보기 전용에서도 **편집자와 동일한 라벨을 회색 비활성으로** 표시하도록 변경(#42의 숨김·박스축소 되돌림).
+- TeamBackground: CTA 라벨을 편집 권한과 무관하게 팀 상태/액션 기준으로 계산(구성중="자동편성", 4명="경기시작", 미시작 조건이면 "선수 경기중"·"코트 대기"). "보기 전용" 분기 삭제.
+- 버튼을 항상 렌더(showCta 제거)하고 박스도 항상 풀사이즈로 복원(시각=히트영역 일치). 보기 전용은 ctaEnabled=false라 회색·클릭 무반응.
+- docs/session-board.md의 CTA/보기 전용 설명을 새 동작으로 갱신. tsc·lint 클린, 108개 테스트 통과.
+
+---
+
+## #44
+
+**Prompt**: 오케이. 그럼 지금 자석끼리 겹치는 로직이 눈으로 보는것과 동일하게 하는지 한번더 확인하고 그룹안으로 자석을 옮길때 반응하는건, 4개의 구멍만 타겟팅이지, 그 외엔 드래그가 취소되어 원래자지로 가게 해.
+
+**Answer**: 두 가지 — (1) 페어 판정 검증, (2) 그룹 합류를 슬롯(구멍) 타겟으로 변경.
+- (검증) nearestFreePartner는 두 자석 중심거리 ≤ PAIR_RADIUS(MAGNET_SIZE×0.9=57.6)일 때 페어. 지름 64라 약 6.4px(지름 10%) 이상 실제로 겹쳐야 페어 → 시각적 겹침과 일치(닿기만 하면 안 됨). drop 좌표도 드래그 자석 중심이라 정합. 의도된 동작으로 판단, 변경 안 함(더 느슨히 원하면 PAIR_RADIUS=64).
+- (변경) 그룹 합류/예약을 "박스 안 아무 곳"이 아니라 "빈 슬롯 중심 32px 이내(isOnEmptySlot, SLOT_SNAP_R=SLOT_SIZE/2)"로 제한. 박스 안이지만 슬롯 아님/정원초과면 none(드래그 취소→원위치). dropResolver 자유 attach·anchor reserve, boardStore handlePlayingMagnetDrop 세 경로 모두 적용.
+- 자유 자석이 none이면 상태 무변경이라 re-render가 없어 안 돌아오던 문제 → PlayerMagnet.handleDragEnd에 스토어 좌표로 직접 복귀하는 else-if(mag) 분기 추가.
+- 적대적 리뷰 워크플로(3차원)로 검증 → 확정 1건(low) 반영: 박스 겹침 시 첫 박스에서 멈춰 둘째 박스 슬롯을 못 잡던 엣지 → bounds 안 모든 팀을 보고 슬롯 맞는 팀을 고르도록(insideAnyTeam/insideOtherTeam 플래그) 수정.
+- 신규 테스트: isOnEmptySlot 4 + dropResolver 슬롯/겹침 케이스. tsc·lint 클린, 116개 테스트 통과. session-board.md 인터랙션 표 갱신.
+
+---
+
+## #45
+
+**Prompt**: 4. 보기전용일때 상태가 바뀔때마다 자동 정렬됐으면 해.
+
+**Answer**: 보기 전용(뷰어)은 드래그/정렬을 못 하므로, 멤버십·코트가 바뀔 때마다 자동 정렬되게 했다.
+- SessionBoard에 useEffect 추가 — !isEditor일 때 멤버십(팀·예약)이나 코트 매치가 바뀌면 rearrangeAll(stageW, stageH) 호출. 편집자는 수동 배치가 진실의 원천이라 제외.
+- 무한 루프 방지가 핵심: rearrangeAll(→arrangeBoard)은 위치(magnet x/y·anchor·courtAnchors)만 바꾸므로, drafts/courts Map을 직접 의존성에 넣으면 위치 변경→ref 변경→재실행→재정렬 루프가 생긴다. 그래서 arrangeBoard가 안 건드리는 값(anchorMemberIds + 예약 playerId>teamId + 코트 매치)만으로 시그니처 문자열(membershipSig/courtSig)을 만들어 useEffect 의존성(트리거 키)으로 사용. 위치가 바뀌어도 시그니처는 불변이라 진짜 멤버십/코트 변경 때만 정렬.
+- 후속 질문(시그니처 어디 쓰나)에 따라, 트리거 키 역할·루프 방지 이유를 코드 주석으로 상세화. session-board.md §5에 보기 전용 자동 정렬 항목 추가.
+- arrangeBoard가 멤버십/코트를 변경하지 않음을 코드로 확인(루프 없음 확정). tsc·lint 클린, 116개 테스트 통과.
+
+---
+
+## #46
+
+**Prompt**: 3. 상단 탑바에 누가 편집중인지 보여주는게 있는데 이제 그거 없어도 되겠어.
+
+**Answer**: 상단 툴바의 편집 권한/접속자 칩(🔒 보유자명 / "편집 중" / "편집 가능" + 접속자 수)을 제거했다.
+- BoardToolbar에서 칩 버튼 JSX와 칩 전용 변수(chipLabel/chipAccent/chipBg) 삭제.
+- 편집권한 모달(권한 가져오기)은 그대로 둠 — 뷰어는 ViewerLockOverlay 하단 "보기 전용" 칩으로 같은 모달을 여는 별도 경로가 있어 take-over 기능 유지. (편집자는 권한을 이미 보유해 모달 불필요.)
+- 모달에서 계속 쓰는 selector(lockFree/holderName/presenceCount/setShowPresence)는 보존 → 미사용 변수 없음. tsc·lint 클린, 116개 테스트 통과.
+
+---
+
+## #47
+
+**Prompt**: 1. 좌상단에 + 버튼 넣어서 누르면 추천팀원 모달이 뜨는데, 팀원선택이 아무도 안되어있는 모달이야. ... 2. 화면 축소가 가능하게 ... 3. 그룹 해제 드랍존(드래그 중에만) ... 4. 겹쳐졌을때 자석/그룹 하이라이트 ... 다 끝나면 커밋&푸쉬
+
+**Answer**: 보드에 4개 기능을 추가하고 적대적 리뷰 후 커밋&푸쉬.
+- F1(새 팀): 좌상단 + 버튼 → newTeam 모드 추천 모달(0명 선택). buildRecommendData/commitTeammates/dialog/hook에 newTeam 추가, 첫 비경기중 자유 선수를 anchor로 새 팀 생성.
+- F2(줌 0.5~1배): Stage scale(핀치/휠/우상단 버튼), 중앙정렬 오프셋. 드래그 좌표는 absToStage(stage 역변환)로 논리 좌표 복원 → 정렬·드롭·판정은 줌과 무관. 컨테이너 touch-action:none.
+- F3(해제 드롭존): 팀 소속(anchor/ghost) 드래그 중에만 상단 DetachZone(listening=false) 노출. dragInfo로 표시, 드롭 시 detachMember/cancelReservation(좌표 isInDetachZone 판정).
+- F4(겹침 하이라이트): onMagnetDragMove가 resolveDropTarget로 대상 판정→hoverTarget. TeamBackground/PlayerMagnet이 derived selector로 자기 여부 구독→스카이 강조(대상만 리렌더).
+- 리뷰(3차원 적대검증) 확정 3건 반영: ①멤버(anchor/ghost) 드래그에 onMagnetDragMove 미연결로 hot·하이라이트 안 뜨던 핵심 누락 수정(TeamBackground 배선) ②언마운트 시 dragInfo 잔존 방지 useEffect ③detach 직후 1프레임 좌표 튐 방지(Layer 직속일 때만 좌표 정합).
+- 신규 테스트(isInDetachZone/newTeam/detachMember/cancelReservation 등) 포함 123개 통과, tsc·lint·prod build 클린.

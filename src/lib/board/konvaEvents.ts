@@ -15,6 +15,18 @@ export function isSelfDrag(e: Konva.KonvaEventObject<DragEvent>): boolean {
 }
 
 /**
+ * 노드의 절대(화면) 위치를 stage 로컬(논리) 좌표로 변환한다.
+ * Stage가 줌(scale)/팬(position)돼 있어도 drop/arrange가 쓰는 논리 좌표를 복원한다.
+ * (scale=1·position=0이면 항등 → 기존 getAbsolutePosition과 동일.)
+ */
+export function absToStage(node: Konva.Node): { x: number; y: number } {
+	const abs = node.getAbsolutePosition();
+	const stage = node.getStage();
+	if (!stage) return { x: abs.x, y: abs.y };
+	return stage.getAbsoluteTransform().copy().invert().point(abs);
+}
+
+/**
  * 캔버스 위 탭/클릭이 부모로 버블링되어 드래그·카드 클릭으로 오인되는 것을 막는 핸들러 묶음.
  * onClick/onTap에서 onActivate를 호출한다. Konva Group에 spread해서 사용:
  *   <Group {...stopTap(() => onEditMatch(id))}>

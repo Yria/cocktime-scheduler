@@ -9,7 +9,8 @@
 > |------|------|------|
 > | `skillScore` / `rankCandidates` / `recordHistory` | `src/lib/teamSelection/rankCandidates.ts` | 후보 점수·정렬·동반 이력 누적 |
 > | `determineGameType` / `pairingScore` / `pairPlayers` | `src/lib/teamSelection/pairPlayers.ts` | 게임 타입 결정·2v2 페어 편성 |
-> | `recommendTeammates` | `src/lib/teamSelection/recommendTeammates.ts` | 보드 빈 슬롯 추천(랭킹 + 보드 특화 가산) |
+> | `recommendTeammates` / `autoFillTeammates` | `src/lib/teamSelection/recommendTeammates.ts` | 보드 빈 슬롯 추천(랭킹 + 보드 특화 가산) · 추천도순 greedy 자동편성 |
+> | `buildRecommendData` | `src/lib/board/recommendPool.ts` | 보드 추천/자동편성 공통 입력(confirmed·pool·ctx) 빌드 |
 >
 > CLAUDE.md 프로젝트 규칙상 이 문서는 위 소스 변경 시 **동기화 대상**이다. 공식/가중치는 코드와 일치해야 한다.
 
@@ -164,6 +165,16 @@ score = intraDiff × 0.5 + interDiff × 1.5
 보드의 "팀 구성 중" 그룹에서 빈 슬롯(+)을 눌렀을 때 보여줄 추천 팀원 순위.
 `rankCandidates` 결과(base cost)에 보드 특화 3요소를 가산하고 다시 오름차순 정렬한다. (점수 = 비용, 낮을수록 상위)
 
+### 풀 구성 — buildRecommendData (`recommendPool.ts`)
+
+`rankCandidates`/`recommendTeammates`는 풀을 인자로 받기만 하고 구성은 호출자 책임이다. 보드의 두 진입점 — 추천 다이얼로그 훅(`useTeammateRecommendations`)과 자동편성 액션(`boardStore.autoFillTeam`) — 은 입력 구성을 공통 순수 함수 `buildRecommendData`로 일원화한다.
+
+- `confirmed` = 팀/시드 멤버 + (다이얼로그) 진행 중 다중선택분
+- `pool` = 세션 전체 − 확정 멤버 − 휴식(`resting`) − **자석 없는 선수** − 다른 보드 팀 anchor
+  - `excludePlaying:true`(자동편성 전용)면 경기중 선수도 풀에서 제외
+  - 자석(`MagnetPosition`) 없는 선수는 제외 — 멤버십 commit(`attachAnchor`)이 자석을 전제로 하기 때문
+- `ctx` = `pairHistory` / `totalMatchCount`(=`matchAssignCount`) / `allSessionPlayers` / `lastGameType` / `playingIds`(코트 기반)
+
 ### 추천 가중치 (RECOMMEND_WEIGHTS)
 
 `Weights` 5개 + 보드 특화 3개:
@@ -207,7 +218,36 @@ score = intraDiff × 0.5 + interDiff × 1.5
 
 ---
 
-## 8. 공통 규칙
+## 8. 자동편성 — autoFillTeammates
+
+보드 "팀 구성 중" 박스의 CTA 자리(멤버 4명 미만일 때)에 있는 **자동편성** 버튼이 빈 슬롯을 추천도 높은순으로 채운다.
+
+### 핵심: 매 라운드 재평가 (greedy)
+
+추천 점수는 "현재 확정 멤버가 누구냐"에 따라 매번 달라진다(실력 유사·동반 회피·로테이션·성별 균형 모두 `confirmed` 의존). 그래서 상위 N명을 한 번에 잘라 넣지 않고, **한 명을 뽑을 때마다 재평가**한다.
+
+```
+autoFillTeammates(confirmed, pool, ctx, count):
+  반복 count회 (또는 pool 소진까지):
+    1. recommendTeammates(confirmed, pool, ctx) → 최상위 1명 선택
+    2. 그 1명을 confirmed에 추가, pool에서 제거
+  → 뽑힌 후보를 추천된 순서대로 반환(풀이 모자라면 가능한 만큼만)
+```
+
+> 단순 "상위 N명 자르기"와 다르다: 먼저 들어간 후보가 다음 라운드의 동반 이력/성별 균형/로테이션 점수를 바꾸므로, 라운드마다 다음 1명이 재선정된다.
+
+### 풀 구성 — 대기 선수만
+
+보드 액션 `boardStore.autoFillTeam(teamId)`는 `buildRecommendData(..., { excludePlaying: true })`로 풀을 만든다 → **경기중 선수 제외, 대기 선수만**으로 채운다.
+
+- picks는 전원 비경기중이라 `commitTeammates`에서 모두 anchor로 붙는다(ghost 미생성) → 4명이 채워지면 즉시 경기시작 가능.
+- 채울 수(`count`) = `4 − 현재 멤버 수`. 대기 선수가 부족하면 채운 만큼만 두고 토스트로 안내(`N명만 채웠어요`), 0명이면 멤버 불변.
+
+> 대비 — 다이얼로그(`RecommendTeammateDialog`)의 수동 추천은 `excludePlaying:false`(기본). 경기중 후보도 `W_PLAYING` 페널티로 하위 노출하되 선택 가능하며, 선택 시 ghost 예약이 된다.
+
+---
+
+## 9. 공통 규칙
 
 ### 동점 시 랜덤 선택 (다양성 확보)
 - 페어 편성에서 `pairingScore` 가 완전히 동일한 최적 조합이 여러 개면 그중 **무작위**로 선택한다(`bestPairing`/`bestMixedPairing`).
@@ -222,7 +262,7 @@ score = intraDiff × 0.5 + interDiff × 1.5
 
 - **미도착(pending) 선수 제외**: `pending` 상태 자체가 제거됨. 세션 시작 시 전원 `waiting`.
 - **혼복/빡겜 우선배치 강제(`force_mixed`/`force_hard_game`)**: 토글 액션·플래그 제거됨. 추천은 `W_ROTATE` 로 게임 타입을 자연 분산.
-- **selectFour / 대기열 선발 우선순위 단계**: 자동 4명 선발 로직 제거. 보드에서 수동 구성 + `recommendTeammates` 추천으로 대체.
+- **selectFour / 대기열 선발 우선순위 단계**: 대기열에서 한 번에 4명을 자동 선발하던 로직 제거. 보드에서 수동 구성 + `recommendTeammates` 추천이 기본이며, **팀 단위 점진적 자동편성은 §8 `autoFillTeammates`(추천 재평가 greedy)로 재도입**되었다(과거의 bulk selectFour와 다름).
 - **다전략 후보 생성(`generateBulkTeamCandidates`)**: `coPlayerAvoidance` 포함 5전략, 보충 모드(supplement), `usedPlayerIds` 다양성, `team_candidates` 저장/`candidates_updated` 브로드캐스트 등 전부 제거.
 - **가중치 프로필(`WEIGHT_PROFILES`)**: 위 다전략 후보 생성용 5개 프로필(`gameCountBalanced`/`newCombination`/`skillBalanced`/`mixedCountBalanced`/`waitTimePriority`) 상수. 소비자 전원 삭제로 코드에서 완전히 제거됨.
 - **혼복 남자/여자 실력 유사성 별도 규칙**: 별도 `(mixedCount·10 + skillDiff)` 선발식 제거. 혼복 균등은 `W_MIXED` 가중치와 페어 편성 단계의 균형 점수로 흡수.
