@@ -596,3 +596,16 @@
 - F4(겹침 하이라이트): onMagnetDragMove가 resolveDropTarget로 대상 판정→hoverTarget. TeamBackground/PlayerMagnet이 derived selector로 자기 여부 구독→스카이 강조(대상만 리렌더).
 - 리뷰(3차원 적대검증) 확정 3건 반영: ①멤버(anchor/ghost) 드래그에 onMagnetDragMove 미연결로 hot·하이라이트 안 뜨던 핵심 누락 수정(TeamBackground 배선) ②언마운트 시 dragInfo 잔존 방지 useEffect ③detach 직후 1프레임 좌표 튐 방지(Layer 직속일 때만 좌표 정합).
 - 신규 테스트(isInDetachZone/newTeam/detachMember/cancelReservation 등) 포함 123개 통과, tsc·lint·prod build 클린.
+
+---
+
+## #48
+
+**Prompt**: 동기화가 제대로 안되는거 같아. 다른 폰에서 보면 동기화가 안돼 데이터가 중복되고 사용자가 독립 인스턴스로 생성되는 것 같아. 세션이 꼬이면 한 사람이 편성/대기/휴식에 동시 존재. 로그도 마찬가지로, 경기 참여 후 설정에서 빠진 사람이 디버그모달·로그페이지에서 ?로 보임. 더 나은 동기화 방법을 찾아보고, 인스턴스를 유니크하게 쓰도록 같이 하고, 로깅은 그 시점 데이터만 스냅샷으로 기록(인스턴스 공유로 ?나오지 않게).
+
+**Answer**: 4영역 병렬 조사로 근본 원인 진단 후, 사용자 승인(전부 한 번에 + 자동 dedup)대로 구현. 진단: ①session_players에 (session_id,player_id) UNIQUE 제약 없음 + updateSession이 insert(ON CONFLICT 없음)라 동시 설정 변경 시 중복 row("독립 인스턴스"→다중 상태 공존). ②선수 추가/삭제가 row 단위 실시간 구독이 아니라 fire-and-forget broadcast+스냅샷에만 의존(meta 채널은 sessions만 watch). ③matches가 선수를 UUID FK로만 저장, fetchMatchLogs가 현재 session_players 룩업→삭제 시 "?".
+- 인스턴스 유니크: 마이그레이션이 기존 중복을 canonical로 병합(matches·pair_history 재연결/합산) 후 UNIQUE 제약, updateSession을 upsert(onConflict,ignoreDuplicates).
+- 동기화: session_players를 realtime 퍼블리케이션+REPLICA IDENTITY FULL, session-meta 채널이 row 단위(INS/UPD/DEL) 구독→onSessionPlayersChange로 Map 수렴(보드 자동 재정합). broadcast와 이중적용돼도 idempotent.
+- 로그 스냅샷: matches.player_snapshot JSONB(complete_match가 완료 시 기록)+백필, transformers.matchLogTeams가 스냅샷 우선→폴백→"?".
+- 적대적 리뷰(3차원) 확정 7건 반영: ①dedup가 pair_history를 CASCADE 손실 → 삭제 전 dup→canonical 재키잉+합산 ②complete_match가 6쌍→2쌍 회귀 → 6쌍 누적 복원 ③배포 순서(마이그레이션 먼저) 문서화 ④DELETE가 session_id 필터로 미전파 → REPLICA IDENTITY FULL ⑤경기중 선수 외부 삭제 시 코트 정합 → DELETE 핸들러가 코트 비움 ⑥pair_history 비대칭 손실(①과 동일) ⑦MatchCard key={name} 중복 → 인덱스 key.
+- DATABASE.md 갱신. tsc·lint·prod build 클린, 127개 테스트 통과(transformers.matchLogTeams 4개 추가). **마이그레이션은 수동 적용 필요(코드 배포 전 적용)** — 푸쉬 안 함.

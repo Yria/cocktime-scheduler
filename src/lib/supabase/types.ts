@@ -34,6 +34,14 @@ export interface SessionPlayerRow {
 	joined_at_match: number;
 }
 
+/** 경기 시점 선수 스냅샷(이름/성별/스킬) — matches.player_snapshot 배열 요소. 삭제된 선수 위치는 null. */
+export interface PlayerSnapshotEntry {
+	id: string;
+	name: string;
+	gender: Gender;
+	skills: PlayerSkills;
+}
+
 export interface MatchRow {
 	id: string;
 	session_id: number;
@@ -46,6 +54,8 @@ export interface MatchRow {
 	status: "playing" | "completed";
 	started_at: string;
 	ended_at: string | null;
+	/** [team_a_p1, team_a_p2, team_b_p1, team_b_p2] 순서의 시점 스냅샷. 구 매치는 null. */
+	player_snapshot: (PlayerSnapshotEntry | null)[] | null;
 }
 
 export interface PairHistoryRow {

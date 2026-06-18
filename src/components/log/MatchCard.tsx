@@ -82,8 +82,8 @@ export default function MatchCard({
 						팀 A
 					</span>
 					<div style={{ display: "flex", flexWrap: "wrap", gap: 6, flex: 1 }}>
-						{log.teamA.map((p) => (
-							<SharedPlayerBadge key={p.name} name={p.name} gender={p.gender} skillScore={skillScoreOf(p.skills)} />
+						{log.teamA.map((p, i) => (
+							<SharedPlayerBadge key={`${log.id}-A-${i}`} name={p.name} gender={p.gender} skillScore={skillScoreOf(p.skills)} />
 						))}
 					</div>
 				</div>
@@ -124,8 +124,8 @@ export default function MatchCard({
 						팀 B
 					</span>
 					<div style={{ display: "flex", flexWrap: "wrap", gap: 6, flex: 1 }}>
-						{log.teamB.map((p) => (
-							<SharedPlayerBadge key={p.name} name={p.name} gender={p.gender} skillScore={skillScoreOf(p.skills)} />
+						{log.teamB.map((p, i) => (
+							<SharedPlayerBadge key={`${log.id}-B-${i}`} name={p.name} gender={p.gender} skillScore={skillScoreOf(p.skills)} />
 						))}
 					</div>
 				</div>

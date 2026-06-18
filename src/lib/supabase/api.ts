@@ -8,7 +8,7 @@ import type {
 import type { BoardDraftsPayload } from "../../types/board";
 import { supabase } from "./client";
 import { diffSessionPlayers } from "./sessionSync";
-import { rowToSessionPlayer } from "./transformers";
+import { matchLogTeams, rowToSessionPlayer } from "./transformers";
 import type {
 	MatchRow,
 	PairHistoryRow,
@@ -151,13 +151,15 @@ export async function updateSession(
 	// add / upsert / delete 병렬 처리
 	const ops: PromiseLike<void>[] = [];
 	if (playersToAdd.length > 0) {
+		// 신규 추가는 (session_id, player_id) 충돌 시 무시(DO NOTHING) — 두 기기 동시 추가나
+		// stale diff로 인한 중복 row 생성을 막는다(기존 행의 상태를 덮어쓰지 않음).
 		ops.push(
 			supabase
 				.from("session_players")
-				.insert(playersToAdd)
+				.upsert(playersToAdd, { onConflict: "session_id,player_id", ignoreDuplicates: true })
 				.then((res) => {
 					if (res.error)
-						console.error("session_players insert error:", res.error);
+						console.error("session_players add error:", res.error);
 				}),
 		);
 	}
@@ -236,19 +238,20 @@ export async function fetchMatchLogs(
 	}[];
 	const playerMap = new Map(players.map((p) => [p.id, p]));
 
-	return matches.map((m) => ({
-		id: m.id,
-		courtId: m.court_id,
-		gameType: m.game_type,
-		teamA: [m.team_a_p1, m.team_a_p2].map(
-			(id) => playerMap.get(id) ?? { name: "?", gender: "M" as Gender },
-		),
-		teamB: [m.team_b_p1, m.team_b_p2].map(
-			(id) => playerMap.get(id) ?? { name: "?", gender: "M" as Gender },
-		),
-		startedAt: m.started_at,
-		endedAt: m.ended_at,
-	}));
+	// 로그는 "그 시점 스냅샷"(player_snapshot) 우선 — 선수가 삭제돼도 당시 이름 유지.
+	// 스냅샷 없는 구 매치만 현재 선수 맵으로 폴백, 그래도 없으면 "?".
+	return matches.map((m) => {
+		const { teamA, teamB } = matchLogTeams(m, playerMap);
+		return {
+			id: m.id,
+			courtId: m.court_id,
+			gameType: m.game_type,
+			teamA,
+			teamB,
+			startedAt: m.started_at,
+			endedAt: m.ended_at,
+		};
+	});
 }
 
 export async function fetchSessionPlayers(

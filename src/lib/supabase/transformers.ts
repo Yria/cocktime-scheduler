@@ -1,11 +1,37 @@
-import type { Court, GameType, PairHistory, SessionPlayer } from "../../types";
+import type { Court, GameType, Gender, PairHistory, PlayerSkills, SessionPlayer } from "../../types";
 import { addPair } from "../pairHistory";
 import type {
 	ClientSessionState,
+	MatchRow,
 	PairHistoryRow,
 	SessionPlayerRow,
 	SessionSnapshot,
 } from "./types";
+
+/** 로그 표시용 선수(이름/성별/스킬). */
+export type LogPlayer = { name: string; gender: Gender; skills?: PlayerSkills };
+
+/**
+ * 매치 row를 로그용 팀 배열로 변환(순수). "그 시점 스냅샷"(player_snapshot)을 우선 사용하고,
+ * 스냅샷이 없는 구 매치만 현재 선수 맵으로 폴백, 그래도 없으면 "?".
+ * → 선수가 설정에서 삭제돼도 로그는 당시 이름을 유지한다(인스턴스 미참조).
+ */
+export function matchLogTeams(
+	m: MatchRow,
+	playerMap: ReadonlyMap<string, LogPlayer>,
+): { teamA: LogPlayer[]; teamB: LogPlayer[] } {
+	const snap = m.player_snapshot;
+	const at = (i: number, fallbackId: string): LogPlayer => {
+		const s = snap?.[i];
+		if (s) return { name: s.name, gender: s.gender, skills: s.skills };
+		const p = playerMap.get(fallbackId);
+		return p ? { name: p.name, gender: p.gender, skills: p.skills } : { name: "?", gender: "M" };
+	};
+	return {
+		teamA: [at(0, m.team_a_p1), at(1, m.team_a_p2)],
+		teamB: [at(2, m.team_b_p1), at(3, m.team_b_p2)],
+	};
+}
 
 export function rowToSessionPlayer(row: SessionPlayerRow): SessionPlayer {
 	return {

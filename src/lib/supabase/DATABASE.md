@@ -33,6 +33,9 @@
 | wait_since | TIMESTAMPTZ? | 대기 시작 시각 (휴식 진입 시 NULL, 복귀 시 now()) |
 | rest_since_match | INT? | **서버 전용** — 휴식 진입 시 match_assign_count 기록. 복귀 시 `set_player_resting` 이 joined_at_match 를 휴식 구간만큼 전진시켜 deficit 폭증 방지. 클라이언트 타입/transformer 는 읽지 않음 (마이그레이션 `20260615130000`) |
 
+> **UNIQUE(session_id, player_id) (2026-06-18, `20260618000000`)**: 같은 세션에 같은 원본 player_id는 단 1 row. 과거 동시 설정 변경이 `insert()`(ON CONFLICT 없음)로 중복 row("독립 인스턴스" → 한 사람이 편성/대기/휴식 동시 공존)를 만들던 버그를 차단. 마이그레이션이 기존 중복을 canonical(playing>game_count>id) 한 row로 병합(matches 참조 재연결, status playing>resting>waiting)·삭제 후 제약 추가. `updateSession` 의 신규 추가는 `upsert(onConflict:'session_id,player_id', ignoreDuplicates:true)`(DO NOTHING)로 변경 — **이 코드는 제약 적용(마이그레이션 A) 후 배포해야 함**.
+> **Realtime 구독(2026-06-18)**: `session_players` 를 `supabase_realtime` 퍼블리케이션에 추가 → 아래 postgres_changes 로 row 단위(추가/삭제/상태) 즉시 동기화.
+
 > **제거됨(deprecated)**: `force_mixed`(혼복 우선배치) / `force_hard_game`(빡겜 우선배치) 컬럼.
 > 마이그레이션 `20260612120000_remove_legacy_team_formation.sql` 에서 `ALTER TABLE session_players DROP COLUMN IF EXISTS` 로 DROP. 코드 필드·transformer(`rowToSessionPlayer`)·타입(`SessionPlayerRow`)·`DebugMatchModal` 표시까지 전부 제거됨.
 
@@ -48,6 +51,7 @@
 | status | TEXT | playing/completed |
 | started_at | TIMESTAMPTZ | 시작 시각 |
 | ended_at | TIMESTAMPTZ? | 종료 시각 |
+| player_snapshot | JSONB? | **경기 시점 선수 스냅샷**(2026-06-18, `20260618000100`). `[team_a_p1, team_a_p2, team_b_p1, team_b_p2]` 순서 `{id,name,gender,skills}` 배열. 완료 시 `complete_match` 가 기록. 로그/디버그가 이걸로 이름을 표시하므로 선수가 삭제돼도 "?" 대신 당시 이름 유지(인스턴스 미참조). 구 매치는 null → 현재 선수 맵 폴백 → "?" |
 
 > **코트 이중배정 방지(2026-06-15)**: 부분 유니크 인덱스 `uq_matches_active_court (session_id, court_id) WHERE status='playing'` — 코트당 진행중 매치 최대 1개. 마이그레이션 `20260615120000_prevent_court_double_booking.sql`. 완료(completed) 매치는 대상 아님(코트 재사용 정상).
 > **FK 정책(2026-06-16, `20260616000000_db_cleanup.sql`)**: team_*_p* 는 `ON DELETE SET NULL`(NULL 허용) — 선수 삭제 시 매치 기록은 보존되고 참조만 NULL. 진행중(playing) 매치 선수는 `updateSession` 이 `status != 'playing'` 필터로 삭제 제외하므로 활성 매치엔 NULL 이 생기지 않음. `pair_history` FK 는 `ON DELETE CASCADE`. 이로써 선수 삭제가 FK 로 막히지 않음.
@@ -69,7 +73,7 @@
 | RPC | 시그니처 | 용도 |
 |---|---|---|
 | `assign_match` | (코트 배정 파라미터) | matches INSERT + players→playing + match_assign_count++. 코트 점유 시 `unique_violation`→`RAISE EXCEPTION 'court already assigned'`(dbAssignMatch=false 처리) |
-| `complete_match` | `(p_match_id UUID, p_session_id BIGINT, p_game_type TEXT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID)` | match→completed + pair_history UPSERT(같은 경기 4명 6쌍) + players→waiting(game_count++/혼복 남자 mixed_count++) |
+| `complete_match` | `(p_match_id UUID, p_session_id BIGINT, p_game_type TEXT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID)` | match→completed + **player_snapshot 기록**(2026-06-18) + pair_history UPSERT(같은 경기 4명 6쌍) + players→waiting(game_count++/혼복 남자 mixed_count++). 시그니처 불변(스냅샷은 RPC 내부에서 session_players로부터 생성) |
 | `set_player_resting` | `(p_session_player_id UUID, p_session_id BIGINT, p_resting BOOLEAN)` | status 휴식/복귀 전환. 복귀 시 joined_at_match 를 휴식 구간만큼 전진(deficit 보정) + wait_since 리셋. 갱신 선수 반환 (`20260615130000`) |
 
 > **제거된 RPC(deprecated)**: ~~`save_team_candidates(BIGINT, JSONB)`~~, ~~`save_match_queue(BIGINT, JSONB)`~~, ~~`activate_pending_player(BIGINT, UUID)`~~.
@@ -173,6 +177,12 @@ sessionStore (휴식 토글)
 > ~~`player_force_mixed_changed`~~, ~~`player_force_hard_game_changed`~~, ~~`candidates_updated`~~, ~~`session_ended`~~, ~~`pending_team`~~.
 
 > **경기 수정(`dbSetMatchRoster`)은 브로드캐스트 안 함** — 결과만 DB 에 반영하고 편집자 로컬만 갱신. 다른 기기는 다음 스냅샷 로드 시 반영.
+
+## Realtime postgres_changes (2026-06-18)
+
+`session-meta:{id}` 채널이 두 테이블을 row 단위로 감시한다.
+- `sessions` UPDATE: `is_active`(세션 종료) + `match_assign_count`.
+- **`session_players` `*`(INSERT/UPDATE/DELETE, filter `session_id`)**: 선수 추가/삭제/상태를 **즉시** 모든 기기에 전파(`sessionStore.onSessionPlayersChange`). DELETE→Map 제거+보드 자동 재정합(`initializeFromPool`), INSERT/UPDATE→`rowToSessionPlayer` upsert. broadcast(`player_updated` 등)와 이중 적용돼도 id 기반 upsert라 idempotent — broadcast 누락/지연·낙관적 반영 실패 시에도 DB 로 수렴(중복/미동기화/다중상태 방지). 코트(경기중)는 여전히 broadcast 가 담당(이 핸들러는 session_players Map 만 갱신).
 
 ## 편집 락 (Realtime Presence, DB 미사용)
 

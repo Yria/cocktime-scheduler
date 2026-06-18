@@ -12,6 +12,8 @@ import {
 } from "../lib/supabase";
 import type { ClientSessionState } from "../lib/supabase";
 import { createSessionChannels } from "../lib/supabase/sessionChannels";
+import { rowToSessionPlayer } from "../lib/supabase/transformers";
+import type { SessionPlayerRow } from "../lib/supabase/types";
 import { matchPlayerIds } from "../lib/board/membership";
 import {
 	computePresence,
@@ -490,6 +492,37 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				},
 				onEnd,
 				onMetaUpdate: (matchAssignCount) => set({ matchAssignCount }),
+				// session_players row 변경(추가/삭제/상태)을 즉시 반영 — broadcast 누락/지연과 무관하게
+				// 모든 기기의 sessionPlayers가 DB와 수렴(중복·미동기화·다중상태 방지). 보드는 sessionPlayers
+				// 변경 시 initializeFromPool로 자동 재정합(삭제된 선수의 자석·예약 정리).
+				onSessionPlayersChange: (payload) => {
+					if (payload.eventType === "DELETE") {
+						const id = (payload.old as { id?: string }).id;
+						if (!id) return;
+						set((state) => {
+							if (!state.sessionPlayers.has(id)) return {};
+							const newMap = new Map(state.sessionPlayers);
+							newMap.delete(id);
+							// 경기중 선수가 외부에서 삭제되면 코트 match 참조가 끊기므로 그 코트를 비워 정합 유지.
+							const affectsCourt = state.courts.some(
+								(c) => c.match != null && matchPlayerIds(c.match).includes(id),
+							);
+							const courts = affectsCourt
+								? state.courts.map((c) =>
+										c.match != null && matchPlayerIds(c.match).includes(id) ? { ...c, match: null } : c,
+									)
+								: state.courts;
+							return { sessionPlayers: newMap, courts, ...rebuildDerivedIds(newMap) };
+						});
+						return;
+					}
+					const row = payload.new as unknown as SessionPlayerRow;
+					if (!row?.id) return;
+					set((state) => {
+						const newMap = upsertPlayers(state.sessionPlayers, [rowToSessionPlayer(row)]);
+						return { sessionPlayers: newMap, ...rebuildDerivedIds(newMap) };
+					});
+				},
 			},
 		);
 

@@ -4,10 +4,12 @@
  * 세션 실시간 채널(브로드캐스트+presence, 메타 postgres_changes) 배선 팩토리.
  * 도메인 처리/편집 락 결정은 호출자(sessionStore)가 핸들러로 주입한다 — 여기는 transport 배선만.
  */
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import type { PresenceState } from "../editLock";
 import { type BroadcastPayload, createBroadcastChannel } from "./broadcast";
 import { supabase } from "./client";
+
+export type SessionPlayersChange = RealtimePostgresChangesPayload<Record<string, unknown>>;
 
 const BROADCAST_EVENTS = [
 	"match_started",
@@ -26,6 +28,8 @@ export interface SessionChannelHandlers {
 	onEnd: () => void;
 	/** sessions.match_assign_count 변경. */
 	onMetaUpdate: (matchAssignCount: number) => void;
+	/** session_players row 변경(INSERT/UPDATE/DELETE) — 선수 추가/삭제/상태가 row 단위로 즉시 전파. */
+	onSessionPlayersChange: (payload: SessionPlayersChange) => void;
 }
 
 /**
@@ -83,6 +87,16 @@ export function createSessionChannels(
 					handlers.onMetaUpdate(row.match_assign_count);
 				}
 			},
+		)
+		.on(
+			"postgres_changes",
+			{
+				event: "*", // INSERT/UPDATE/DELETE
+				schema: "public",
+				table: "session_players",
+				filter: `session_id=eq.${sessionId}`,
+			},
+			(payload) => handlers.onSessionPlayersChange(payload),
 		)
 		.subscribe();
 
