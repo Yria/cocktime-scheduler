@@ -24,6 +24,8 @@ export function useBoardDragHandlers(stageH: number, restZoneOpen: boolean) {
 	// 드래그 이동 중: 휴식 hot + 빼기 드롭존 hot + 겹침 하이라이트.
 	const onMagnetDragMove = useCallback(
 		(playerId: string, cx: number, cy: number) => {
+			// 보기 전용은 자유 자석 로컬 이동만 — 멤버십 피드백(휴식/빼기/겹침) 없음.
+			if (!useSessionStore.getState().isEditor) return;
 			const point = { x: cx, y: cy };
 			const store = useBoardStore.getState();
 
@@ -72,6 +74,11 @@ export function useBoardDragHandlers(stageH: number, restZoneOpen: boolean) {
 			clearHot();
 			const point = { x: cx, y: cy };
 			const store = useBoardStore.getState();
+			// 보기 전용은 자유 자석 로컬 이동만(handleDrop이 viewer 분기로 처리) — 휴식/빼기/멤버십 없음.
+			if (!useSessionStore.getState().isEditor) {
+				handleDrop(playerId, point);
+				return;
+			}
 			const mag = store.magnets.get(playerId);
 			if (mag && mag.teamId !== null && isInDetachZone(point)) {
 				store.detachMember(playerId, point);

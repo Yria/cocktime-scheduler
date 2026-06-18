@@ -149,7 +149,7 @@ const TeamBackground = memo(function TeamBackground({
 			id={`team-${teamId}`}
 			x={team.anchor.x}
 			y={team.anchor.y}
-			draggable={isEditor}
+			draggable /* 그룹 위치는 로컬(미동기화) — 보기 전용도 이동 허용. 멤버십(CTA·슬롯)은 편집자만. */
 			onDragStart={handleDragStart}
 			onDragMove={handleDragMove}
 			onDragEnd={handleDragEnd}

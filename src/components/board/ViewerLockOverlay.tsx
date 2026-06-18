@@ -29,7 +29,8 @@ export default function ViewerLockOverlay() {
 	if (!locked) return null;
 
 	return (
-		// 헤더 아래 전 영역을 덮어 모든 입력을 가로채 차단한다(배경 탭은 아무 동작 안 함·선택 안 됨).
+		// 보기 전용 표시(시각 프레임 + 권한 칩)만. 입력은 가로채지 않는다(pointerEvents:none) —
+		// 로컬/읽기 작업(자석·그룹 이동, 정렬, 줌, 디버그)은 허용하고 공유 변경만 액션 레벨에서 차단한다.
 		<div
 			style={{
 				position: "absolute",
@@ -38,12 +39,7 @@ export default function ViewerLockOverlay() {
 				right: 0,
 				bottom: 0,
 				zIndex: 25,
-				pointerEvents: "auto",
-				cursor: "default",
-				userSelect: "none",
-				WebkitUserSelect: "none",
-				WebkitTapHighlightColor: "transparent",
-				touchAction: "none",
+				pointerEvents: "none",
 			}}
 		>
 			{/* 보드 콘텐츠 영역 둘레 마젠타 글로우 프레임 — 표시용 */}

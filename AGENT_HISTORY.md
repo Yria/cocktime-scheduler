@@ -609,3 +609,17 @@
 - 로그 스냅샷: matches.player_snapshot JSONB(complete_match가 완료 시 기록)+백필, transformers.matchLogTeams가 스냅샷 우선→폴백→"?".
 - 적대적 리뷰(3차원) 확정 7건 반영: ①dedup가 pair_history를 CASCADE 손실 → 삭제 전 dup→canonical 재키잉+합산 ②complete_match가 6쌍→2쌍 회귀 → 6쌍 누적 복원 ③배포 순서(마이그레이션 먼저) 문서화 ④DELETE가 session_id 필터로 미전파 → REPLICA IDENTITY FULL ⑤경기중 선수 외부 삭제 시 코트 정합 → DELETE 핸들러가 코트 비움 ⑥pair_history 비대칭 손실(①과 동일) ⑦MatchCard key={name} 중복 → 인덱스 key.
 - DATABASE.md 갱신. tsc·lint·prod build 클린, 127개 테스트 통과(transformers.matchLogTeams 4개 추가). **마이그레이션은 수동 적용 필요(코드 배포 전 적용)** — 푸쉬 안 함.
+- (후속) 사용자 요청으로 마이그레이션 라이브 적용(supabase db push) — 적용 전 REST 백업, 중복 0건 확인, 무손실 검증 후 커밋·푸쉬(4de95f9).
+
+---
+
+## #49
+
+**Prompt**: 보기 전용일때 자석 정렬버튼 눌리는거랑, 자석 드래그랑, 그룹 드래그랑, 자석 누르고있을때 디버그모달 뜨게하고, 우상단 확대축소버튼 작동하게 해주고, 팀생성하는 + 버튼을 좌하단으로 내리고 크기는 정렬버튼과 동일하게 해줘.
+
+**Answer**: 보기 전용 정책을 "전부 차단"에서 "로컬/읽기 작업은 허용, 공유 변경만 차단"으로 완화.
+- ViewerLockOverlay: 입력 차단 제거(pointerEvents:none) — 시각 프레임 + "보기 전용" 칩(권한 가져오기)만 유지. 이로써 정렬 버튼·줌 버튼·롱프레스 디버그 모달이 보기 전용에서도 작동.
+- PlayerMagnet: 자유 자석(팀 미소속)은 보기 전용도 draggable, 멤버(anchor/ghost)는 편집자만. TeamBackground 그룹은 항상 draggable(위치는 로컬·미동기화).
+- boardStore.handleDrop: 보기 전용이면 자유 자석 로컬 이동만(clampToStage+settle), 멤버십 변경 없음. useBoardDragHandlers: 보기 전용은 드래그 피드백/휴식/빼기 없이 로컬 이동만.
+- + 버튼(새 팀): 좌상단→좌하단(정렬 버튼과 대칭·동일 44px), 휴식 패널 열림 시 숨김. 편집자 전용 유지.
+- 공유 변경(편성·경기·휴식·예약·DB/broadcast)은 claimEdit/isEditor 게이트로 그대로 차단 — Explore 에이전트 적대 검증으로 누출 0 확인(위치 변경은 serialize 제외라 broadcast 안 됨). tsc·lint·prod build 클린, 127개 테스트 통과.

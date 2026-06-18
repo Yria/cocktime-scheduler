@@ -92,8 +92,11 @@ const PlayerMagnet = memo(function PlayerMagnet({
 }: Props) {
 	const magnet = useBoardStore((s) => s.magnets.get(playerId));
 	const player = useSessionStore((s) => s.sessionPlayers.get(playerId));
-	const isEditor = useSessionStore((s) => s.isEditor); // 보기 전용이면 드래그 불가(락 = 전부 차단)
+	const isEditor = useSessionStore((s) => s.isEditor);
 	const isGhost = kind === "ghost";
+	// 자유 자석(팀 미소속·비ghost)은 보기 전용에서도 드래그해 로컬 위치 이동 가능(위치는 로컬·미동기화).
+	// 팀 멤버(anchor/ghost)는 멤버십 변경이 되므로 편집자만.
+	const isFreeMagnet = !isGhost && magnet?.teamId == null;
 	// 드래그 중 다른 자석이 이 자석에 겹쳐 페어 대상이 되면 하이라이트
 	const isHovered = useBoardStore((s) => s.hoverTarget?.kind === "magnet" && s.hoverTarget.id === playerId);
 
@@ -258,7 +261,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 			x={rx}
 			y={ry}
 			opacity={isGhost ? RESERVATION_OPACITY : resting ? RESTING_OPACITY : 1}
-			draggable={isEditor}
+			draggable={isEditor || isFreeMagnet}
 			listening
 			onDragStart={handleDragStart}
 			onDragMove={handleDragMove}

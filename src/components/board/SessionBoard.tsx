@@ -289,8 +289,8 @@ export default function SessionBoard() {
 					</Layer>
 				</Stage>
 			</div>
-			{/* 좌상단 + 버튼 — 빈 추천 모달을 열어 새 팀을 만든다(편집자만) */}
-			{isEditor && (
+			{/* 좌하단 + 버튼 — 빈 추천 모달을 열어 새 팀을 만든다(편집자만, 정렬 버튼과 대칭·동일 크기) */}
+			{isEditor && !restZoneOpen && (
 				<button
 					type="button"
 					onClick={() => setRecommendTarget({ newTeam: true })}
@@ -298,7 +298,7 @@ export default function SessionBoard() {
 					style={{
 						position: "absolute",
 						left: 16,
-						top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top) + 12px)`,
+						bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px) + 16px)`,
 						display: "inline-flex",
 						alignItems: "center",
 						justifyContent: "center",

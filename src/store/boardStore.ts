@@ -364,7 +364,20 @@ const creator = immer<BoardState>((set, get) => ({
 	},
 
 	handleDrop: (playerId, drop) => {
-		if (!claimEdit()) return; // 보기 전용이면 차단(락 = 전부 차단). 자유면 자동 점유.
+		// 보기 전용: 공유 멤버십(팀/예약)은 못 바꾸지만, 자유 자석의 로컬 위치 이동은 허용(위치는 로컬 상태·미동기화).
+		// 멤버(anchor)는 슬롯 고정이라 스냅백, 팀 합류/페어 등 공유 변경은 일어나지 않는다.
+		if (!useSessionStore.getState().isEditor) {
+			set((s) => {
+				const m = s.magnets.get(playerId);
+				if (!m || m.teamId !== null) return;
+				const p = clampToStage(s, drop);
+				m.x = p.x;
+				m.y = p.y;
+				runSettle(s, { magnetId: playerId });
+			});
+			return;
+		}
+		if (!claimEdit()) return; // 자유면 자동 점유
 		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 		set((s) => {
 			const target = resolveDropTarget(playerId, drop, s.magnets, s.drafts, s.reservations, playingIds);
