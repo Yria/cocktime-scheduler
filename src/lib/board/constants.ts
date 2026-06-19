@@ -120,3 +120,6 @@ export const DETACH_ZONE_HOT_LABEL = "#FECACA";
 
 // 드래그 중 겹침 대상 하이라이트(자석/그룹 공통) — 스카이 액센트
 export const HILITE_STROKE = "#38BDF8";
+
+// 콕 미확인(비활성) 자석 — 앰버(노랑). 탭하면 콕 제출 확인 다이얼로그.
+export const COCK_PENDING_COLOR = "#EAB308";

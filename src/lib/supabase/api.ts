@@ -74,6 +74,7 @@ export async function startSession(
 	courtCount: number,
 	players: Player[],
 	singleWomanIds: string[],
+	cockCheckEnabled: boolean,
 ): Promise<{ sessionId: number; sessionPlayers: SessionPlayer[] } | null> {
 	// 기존 활성 세션 종료
 	await supabase
@@ -83,7 +84,7 @@ export async function startSession(
 
 	const { data: session, error } = await supabase
 		.from("sessions")
-		.insert({ court_count: courtCount })
+		.insert({ court_count: courtCount, cock_check_enabled: cockCheckEnabled })
 		.select()
 		.single();
 
@@ -126,6 +127,7 @@ export async function updateSession(
 	courtCount: number,
 	players: Player[],
 	singleWomanIds: string[],
+	cockCheckEnabled: boolean,
 ): Promise<boolean> {
 	// 1. Fetch existing session_players
 	const { data: existingPlayers, error: playersErr } = await supabase
@@ -193,7 +195,7 @@ export async function updateSession(
 	// other clients fetch a consistent snapshot when they receive the event.
 	const { error: sessionErr } = await supabase
 		.from("sessions")
-		.update({ court_count: courtCount })
+		.update({ court_count: courtCount, cock_check_enabled: cockCheckEnabled })
 		.eq("id", sessionId);
 
 	if (sessionErr) {
@@ -298,6 +300,7 @@ export interface ServerSessionSettings {
 	playerIds: string[]; // player_id 목록
 	playerNames: { playerId: string; name: string; gender: Gender }[];
 	singleWomanIds: string[]; // allow_mixed_single=true인 player_id 목록
+	cockCheckEnabled: boolean;
 }
 
 export async function fetchSessionSettingsForConflictCheck(
@@ -306,7 +309,7 @@ export async function fetchSessionSettingsForConflictCheck(
 	const [sessionRes, playersRes] = await Promise.all([
 		supabase
 			.from("sessions")
-			.select("court_count")
+			.select("court_count, cock_check_enabled")
 			.eq("id", sessionId)
 			.single(),
 		supabase
@@ -324,8 +327,10 @@ export async function fetchSessionSettingsForConflictCheck(
 		allow_mixed_single: boolean;
 	}[];
 
+	const sessionData = sessionRes.data as { court_count: number; cock_check_enabled: boolean };
 	return {
-		courtCount: (sessionRes.data as { court_count: number }).court_count,
+		courtCount: sessionData.court_count,
+		cockCheckEnabled: sessionData.cock_check_enabled ?? true,
 		playerIds: players.map((p) => p.player_id),
 		playerNames: players.map((p) => ({
 			playerId: p.player_id,

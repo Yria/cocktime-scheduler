@@ -623,3 +623,18 @@
 - boardStore.handleDrop: 보기 전용이면 자유 자석 로컬 이동만(clampToStage+settle), 멤버십 변경 없음. useBoardDragHandlers: 보기 전용은 드래그 피드백/휴식/빼기 없이 로컬 이동만.
 - + 버튼(새 팀): 좌상단→좌하단(정렬 버튼과 대칭·동일 44px), 휴식 패널 열림 시 숨김. 편집자 전용 유지.
 - 공유 변경(편성·경기·휴식·예약·DB/broadcast)은 claimEdit/isEditor 게이트로 그대로 차단 — Explore 에이전트 적대 검증으로 누출 0 확인(위치 변경은 serialize 제외라 broadcast 안 됨). tsc·lint·prod build 클린, 127개 테스트 통과.
+
+---
+
+## #50
+
+**Prompt**: 세션시작 설정화면에 on/off 콕체크 기능 추가. 입장 선수가 제출한 콕을 확인해 실제 매칭대기 상태로 만드는 기능. 디폴트 on. 세션화면에서 자석 비활성(grayscale 등) + 누르면 콕 제출확인 다이얼로그 → 확인해야 매칭 참여. 모든 사용자 공유 데이터, 읽기모드는 불가. (이후) startSession PGRST204 cock_check_enabled 컬럼 없음 에러.
+
+**Answer**: 콕체크 기능을 데이터→설정UI→보드 게이팅 전 계층으로 구현.
+- DB(20260619000000): sessions.cock_check_enabled(default true), session_players.cock_checked(default false). 매칭대기 = !cockCheckEnabled || cockChecked.
+- 타입/transformer/api/appStore/sessionStore 전반에 두 필드 전파. 설정 UI: CockCheckToggle 스위치(디폴트 on) + SessionSetup 연동.
+- 보드: PlayerMagnet 콕 미확인 자석 비활성(앰버 점선링+회색워시+"콕?" 배지+opacity, 드래그 불가) → 탭하면 SessionBoard의 "콕 제출 확인" 다이얼로그(편집자만) → confirmCock(isEditor 가드+dbSetCockChecked+broadcast, postgres_changes로도 수렴).
+- 매칭 게이팅: cockPendingIds(membership) + recommendPool cockCheckEnabled 풀 제외 + dropResolver notReadyIds(페어 제외) — 미확인 선수는 페어/추천/자동편성 불가.
+- 적대 리뷰(3차원) 확정 2건(둘 다 low): #1 설정 동시편집 충돌감지에 콕체크 누락 → conflict.ts/api/SessionConflictDialog/SessionSetup에 cockCheckEnabled 추가(반영). #2 미확인 자석 롱프레스 디버그(읽기전용 정보)는 의도로 유지.
+- **에러 원인**: 마이그레이션 미적용 상태에서 코드가 cock_check_enabled write → PGRST204. → supabase db push로 적용(컬럼 생성 확인, 활성 세션 0이라 disruption 없음). startSession 정상화.
+- tsc·lint·prod build 클린, 131개 테스트 통과(콕 게이팅 4개 추가). DATABASE.md 갱신.

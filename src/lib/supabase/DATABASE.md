@@ -15,6 +15,7 @@
 | ended_at | TIMESTAMPTZ? | 종료 시각 |
 | match_assign_count | INT | 누적 코트 배정 횟수 (deficit 기산점) |
 | board_drafts | JSONB? | 보드 "팀 구성중" 멤버십 공유 드래프트 |
+| cock_check_enabled | BOOLEAN | **콕 체크 모드**(2026-06-19, `20260619000000`). 디폴트 true. on이면 선수가 콕 제출 확인을 받아야 매칭 대기 상태가 됨 |
 
 ### session_players
 | 컬럼 | 타입 | 설명 |
@@ -32,6 +33,7 @@
 | joined_at_match | INT | 합류 시점 match_assign_count (deficit 기산점) |
 | wait_since | TIMESTAMPTZ? | 대기 시작 시각 (휴식 진입 시 NULL, 복귀 시 now()) |
 | rest_since_match | INT? | **서버 전용** — 휴식 진입 시 match_assign_count 기록. 복귀 시 `set_player_resting` 이 joined_at_match 를 휴식 구간만큼 전진시켜 deficit 폭증 방지. 클라이언트 타입/transformer 는 읽지 않음 (마이그레이션 `20260615130000`) |
+| cock_checked | BOOLEAN | **콕 제출 확인 여부**(2026-06-19, `20260619000000`). 디폴트 false. 매칭 대기 = `(NOT cock_check_enabled) OR cock_checked`. 운영자 확인(`dbSetCockChecked`)으로 true 전환, 미확인 자석은 보드에서 비활성·페어/추천/자동편성 제외 |
 
 > **UNIQUE(session_id, player_id) (2026-06-18, `20260618000000`)**: 같은 세션에 같은 원본 player_id는 단 1 row. 과거 동시 설정 변경이 `insert()`(ON CONFLICT 없음)로 중복 row("독립 인스턴스" → 한 사람이 편성/대기/휴식 동시 공존)를 만들던 버그를 차단. 마이그레이션이 기존 중복을 canonical(playing>game_count>id) 한 row로 병합(matches 참조 재연결, status playing>resting>waiting)·삭제 후 제약 추가. `updateSession` 의 신규 추가는 `upsert(onConflict:'session_id,player_id', ignoreDuplicates:true)`(DO NOTHING)로 변경 — **이 코드는 제약 적용(마이그레이션 A) 후 배포해야 함**.
 > **Realtime 구독(2026-06-18)**: `session_players` 를 `supabase_realtime` 퍼블리케이션에 추가 → 아래 postgres_changes 로 row 단위(추가/삭제/상태) 즉시 동기화.

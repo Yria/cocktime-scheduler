@@ -9,12 +9,14 @@ export interface SessionSettingsSnapshot {
 	courtCount: number;
 	playerIds: string[];
 	singleWomanIds: string[];
+	cockCheckEnabled: boolean;
 }
 
 export interface SessionSettingsDiff {
 	courtChanged: boolean;
 	playersChanged: boolean;
 	singleChanged: boolean;
+	cockCheckChanged: boolean;
 	/** 하나라도 다르면 true. */
 	any: boolean;
 }
@@ -36,10 +38,12 @@ export function diffSessionSettings(
 	const courtChanged = local.courtCount !== server.courtCount;
 	const playersChanged = idSetsDiffer(local.playerIds, server.playerIds);
 	const singleChanged = idSetsDiffer(local.singleWomanIds, server.singleWomanIds);
+	const cockCheckChanged = local.cockCheckEnabled !== server.cockCheckEnabled;
 	return {
 		courtChanged,
 		playersChanged,
 		singleChanged,
-		any: courtChanged || playersChanged || singleChanged,
+		cockCheckChanged,
+		any: courtChanged || playersChanged || singleChanged || cockCheckChanged,
 	};
 }

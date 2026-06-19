@@ -132,6 +132,23 @@ export async function dbSetMatchRoster(
 	return true;
 }
 
+/** 콕 제출 확인 — session_players.cock_checked=true. 갱신 선수 반환. */
+export async function dbSetCockChecked(
+	sessionPlayerId: string,
+): Promise<SessionPlayer | null> {
+	const { data, error } = await supabase
+		.from("session_players")
+		.update({ cock_checked: true })
+		.eq("id", sessionPlayerId)
+		.select()
+		.single();
+	if (error) {
+		console.error("dbSetCockChecked:", error);
+		return null;
+	}
+	return rowToSessionPlayer(data as SessionPlayerRow);
+}
+
 export async function dbSetPlayerResting(
 	sessionPlayerId: string,
 	sessionId: number,

@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import { isInRestField, isInDetachZone } from "../lib/board/geometry";
-import { playingIdsFromCourts } from "../lib/board/membership";
+import { cockPendingIds, playingIdsFromCourts } from "../lib/board/membership";
 import { resolveDropTarget } from "../lib/board/dropResolver";
 import { useBoardStore } from "../store/boardStore";
 import { useSessionStore } from "../store/sessionStore";
@@ -46,8 +46,10 @@ export function useBoardDragHandlers(stageH: number, restZoneOpen: boolean) {
 				store.setHoverTarget(null);
 				return;
 			}
-			const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
-			const target = resolveDropTarget(playerId, point, store.magnets, store.drafts, store.reservations, playingIds);
+			const ss = useSessionStore.getState();
+			const playingIds = playingIdsFromCourts(ss.courts);
+			const notReadyIds = cockPendingIds(ss.sessionPlayers.values(), ss.cockCheckEnabled);
+			const target = resolveDropTarget(playerId, point, store.magnets, store.drafts, store.reservations, playingIds, notReadyIds);
 			const hover =
 				target.kind === "attach"
 					? { kind: "team" as const, id: target.teamId }

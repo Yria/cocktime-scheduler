@@ -19,6 +19,7 @@ import { scatterFromSource, type ScatterShape } from "../lib/board/scatter";
 import { settleFreeMagnets } from "../lib/board/settle";
 import { resolveDropTarget, nearestFreePartner } from "../lib/board/dropResolver";
 import {
+	cockPendingIds,
 	isMemberOf,
 	isTeamStartable,
 	matchPlayerIds,
@@ -378,9 +379,11 @@ const creator = immer<BoardState>((set, get) => ({
 			return;
 		}
 		if (!claimEdit()) return; // 자유면 자동 점유
-		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
+		const ss = useSessionStore.getState();
+		const playingIds = playingIdsFromCourts(ss.courts);
+		const notReadyIds = cockPendingIds(ss.sessionPlayers.values(), ss.cockCheckEnabled);
 		set((s) => {
-			const target = resolveDropTarget(playerId, drop, s.magnets, s.drafts, s.reservations, playingIds);
+			const target = resolveDropTarget(playerId, drop, s.magnets, s.drafts, s.reservations, playingIds, notReadyIds);
 			let source: DragSource | null = null;
 			switch (target.kind) {
 				case "none":
@@ -488,7 +491,9 @@ const creator = immer<BoardState>((set, get) => ({
 	// 원본은 코트에 그대로(자석은 슬롯 복귀), 빈 공간 드롭은 no-op.
 	handlePlayingMagnetDrop: (playerId, drop) => {
 		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
-		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
+		const ss = useSessionStore.getState();
+		const playingIds = playingIdsFromCourts(ss.courts);
+		const notReadyIds = cockPendingIds(ss.sessionPlayers.values(), ss.cockCheckEnabled);
 		set((s) => {
 			let source: DragSource | null = null;
 			// 1) forming/ready 팀의 빈 슬롯(구멍) 위 → 예약 추가. 박스 안 다른 곳이면 슬롯 복귀(no-op).
@@ -510,7 +515,7 @@ const creator = immer<BoardState>((set, get) => ({
 			}
 			// 2) 자유 자석 위 → 새 예비팀(파트너 anchor + 이 선수 ghost)
 			if (!done) {
-				const partner = nearestFreePartner(playerId, drop, s.magnets, playingIds);
+				const partner = nearestFreePartner(playerId, drop, s.magnets, playingIds, notReadyIds);
 				if (partner) {
 					const pm = s.magnets.get(partner.id);
 					if (pm && pm.teamId === null) {
@@ -598,6 +603,7 @@ const creator = immer<BoardState>((set, get) => ({
 				pairHistory: ss.pairHistory,
 				lastGameType: ss.lastGameType,
 				matchAssignCount: ss.matchAssignCount,
+				cockCheckEnabled: ss.cockCheckEnabled,
 			},
 			{ excludePlaying: true }, // 자동편성은 대기 선수만으로 채운다(경기중 제외)
 		);

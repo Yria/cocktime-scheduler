@@ -8,6 +8,7 @@ function player(
 	id: string,
 	gender: "M" | "F" = "M",
 	status: SessionPlayer["status"] = "waiting",
+	cockChecked = true,
 ): SessionPlayer {
 	return {
 		id,
@@ -21,6 +22,7 @@ function player(
 		mixedCount: 0,
 		waitSince: null,
 		joinedAtMatch: 0,
+		cockChecked,
 	};
 }
 function mag(playerId: string, teamId: string | null): MagnetPosition {
@@ -36,6 +38,7 @@ function makeInputs(opts: {
 	drafts?: DraftTeam[];
 	reservations?: Reservation[];
 	courts?: Court[];
+	cockCheckEnabled?: boolean;
 }): RecommendPoolInputs {
 	return {
 		sessionPlayers: new Map(opts.players.map((p) => [p.id, p])),
@@ -46,6 +49,7 @@ function makeInputs(opts: {
 		pairHistory: {},
 		lastGameType: {},
 		matchAssignCount: 0,
+		cockCheckEnabled: opts.cockCheckEnabled ?? false,
 	};
 }
 
@@ -110,6 +114,26 @@ describe("buildRecommendData", () => {
 		});
 		const data = buildRecommendData({ seedId: "seed" }, [], inputs);
 		expect(ids(data!.pool)).toEqual(["a"]); // rest(resting)·nomag(자석없음) 제외
+	});
+
+	it("콕 체크 on이면 콕 미확인(cockChecked=false) 선수는 풀에서 제외", () => {
+		const inputs = makeInputs({
+			players: [player("seed"), player("ok", "M", "waiting", true), player("pending", "M", "waiting", false)],
+			magnets: [mag("seed", null), mag("ok", null), mag("pending", null)],
+			cockCheckEnabled: true,
+		});
+		const data = buildRecommendData({ seedId: "seed" }, [], inputs);
+		expect(ids(data!.pool)).toEqual(["ok"]); // pending(콕 미확인) 제외
+	});
+
+	it("콕 체크 off면 미확인 선수도 풀에 포함", () => {
+		const inputs = makeInputs({
+			players: [player("seed"), player("pending", "M", "waiting", false)],
+			magnets: [mag("seed", null), mag("pending", null)],
+			cockCheckEnabled: false,
+		});
+		const data = buildRecommendData({ seedId: "seed" }, [], inputs);
+		expect(ids(data!.pool)).toEqual(["pending"]);
 	});
 
 	it("대상이 무효면 null — teamId/seedId 없음, 없는 팀, 없는 시드", () => {

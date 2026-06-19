@@ -8,6 +8,7 @@ interface SessionConflictDialogProps {
 	localCourtCount: number;
 	localPlayerIds: string[];
 	localSingleWomanIds: string[];
+	localCockCheckEnabled: boolean;
 	allPlayers: Player[];
 	onForceOverwrite: () => void;
 	onCancel: () => void;
@@ -18,6 +19,7 @@ export function SessionConflictDialog({
 	localCourtCount,
 	localPlayerIds,
 	localSingleWomanIds,
+	localCockCheckEnabled,
 	allPlayers,
 	onForceOverwrite,
 	onCancel,
@@ -31,11 +33,13 @@ export function SessionConflictDialog({
 		courtChanged: courtCountDiff,
 		playersChanged: playerDiff,
 		singleChanged: singleDiff,
+		cockCheckChanged: cockDiff,
 	} = diffSessionSettings(
 		{
 			courtCount: localCourtCount,
 			playerIds: localPlayerIds,
 			singleWomanIds: localSingleWomanIds,
+			cockCheckEnabled: localCockCheckEnabled,
 		},
 		serverSettings,
 	);
@@ -84,6 +88,16 @@ export function SessionConflictDialog({
 						<DiffRow
 							localValue={`${localCourtCount}면`}
 							serverValue={`${serverSettings.courtCount}면`}
+						/>
+					</DiffSection>
+				)}
+
+				{/* 콕 체크 */}
+				{cockDiff && (
+					<DiffSection label="콕 체크">
+						<DiffRow
+							localValue={localCockCheckEnabled ? "켜짐" : "꺼짐"}
+							serverValue={serverSettings.cockCheckEnabled ? "켜짐" : "꺼짐"}
 						/>
 					</DiffSection>
 				)}

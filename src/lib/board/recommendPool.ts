@@ -22,6 +22,8 @@ export interface RecommendPoolInputs {
 	pairHistory: PairHistory;
 	lastGameType: Record<string, GameType>;
 	matchAssignCount: number;
+	/** 콕 체크 on이면 cockChecked=false 선수는 매칭 대기 아님 → 풀에서 제외. */
+	cockCheckEnabled: boolean;
 }
 
 export interface RecommendData {
@@ -56,7 +58,7 @@ export function buildRecommendData(
 	inputs: RecommendPoolInputs,
 	options: { excludePlaying?: boolean } = {},
 ): RecommendData | null {
-	const { drafts, reservations, magnets, sessionPlayers, courts, pairHistory, lastGameType, matchAssignCount } = inputs;
+	const { drafts, reservations, magnets, sessionPlayers, courts, pairHistory, lastGameType, matchAssignCount, cockCheckEnabled } = inputs;
 	const teamId = target.teamId ?? null;
 	const seedId = target.seedId ?? null;
 
@@ -96,6 +98,8 @@ export function buildRecommendData(
 		if (memberIds.has(p.id)) continue;
 		// 휴식(resting) 선택한 선수는 어떤 추천에서도 제외한다.
 		if (p.status === "resting") continue;
+		// 콕 미확인(매칭 대기 아님) 선수 제외.
+		if (cockCheckEnabled && !p.cockChecked) continue;
 		// 자동편성: 경기중 선수 제외(대기 선수만으로 채운다)
 		if (options.excludePlaying && playingIds.has(p.id)) continue;
 		// 보드에 자석이 없는 선수는 제외 — 멤버십 commit은 자석을 전제로 한다

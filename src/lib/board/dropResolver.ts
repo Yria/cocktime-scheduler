@@ -32,13 +32,14 @@ export function nearestFreePartner(
 	drop: StagePoint,
 	magnets: ReadonlyMap<string, MagnetPosition>,
 	playingIds: ReadonlySet<string>,
+	notReadyIds: ReadonlySet<string> = new Set(),
 ): { id: string; pos: StagePoint } | null {
 	let bestDist = Number.POSITIVE_INFINITY;
 	let bestId: string | null = null;
 	let bestPos: StagePoint = { x: 0, y: 0 };
 	for (const m of magnets.values()) {
-		// 자기 자신 / 팀 소속 / 경기중 선수는 페어 대상에서 제외
-		if (m.playerId === playerId || m.teamId !== null || playingIds.has(m.playerId)) continue;
+		// 자기 자신 / 팀 소속 / 경기중 / 콕 미확인(매칭 대기 아님) 선수는 페어 대상에서 제외
+		if (m.playerId === playerId || m.teamId !== null || playingIds.has(m.playerId) || notReadyIds.has(m.playerId)) continue;
 		const d = distance(drop, { x: m.x, y: m.y });
 		if (d <= PAIR_RADIUS && d < bestDist) {
 			bestDist = d;
@@ -56,6 +57,7 @@ export function resolveDropTarget(
 	drafts: ReadonlyMap<string, DraftTeam>,
 	reservations: ReadonlyMap<string, import("../../types/board").Reservation>,
 	playingIds: ReadonlySet<string> = new Set(),
+	notReadyIds: ReadonlySet<string> = new Set(),
 ): DropTarget {
 	const self = magnets.get(playerId);
 	if (!self) return { kind: "none" };
@@ -79,7 +81,7 @@ export function resolveDropTarget(
 		const own = drafts.get(self.teamId);
 		if (own && isInsideTeamBounds(drop, own.anchor)) return { kind: "none" };
 		// 3) 자유 자석 근접 → 신규 예비팀 예약
-		const partner = nearestFreePartner(playerId, drop, magnets, playingIds);
+		const partner = nearestFreePartner(playerId, drop, magnets, playingIds, notReadyIds);
 		if (partner) {
 			return {
 				kind: "reservePair",
@@ -106,7 +108,7 @@ export function resolveDropTarget(
 	}
 	if (insideAnyTeam) return { kind: "none" }; // 박스 안이지만 슬롯 아님/정원 초과 → 원위치
 	// 2) 다른 자유 자석 근접 → 신규 팀
-	const partner = nearestFreePartner(playerId, drop, magnets, playingIds);
+	const partner = nearestFreePartner(playerId, drop, magnets, playingIds, notReadyIds);
 	if (partner) {
 		return {
 			kind: "createPair",

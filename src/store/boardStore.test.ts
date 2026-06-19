@@ -51,6 +51,7 @@ function player(id: string, gender: "M" | "F" = "M"): SessionPlayer {
 		mixedCount: 0,
 		waitSince: null,
 		joinedAtMatch: 0,
+		cockChecked: true,
 	};
 }
 function mag(playerId: string, teamId: string | null, x = 0, y = 0): MagnetPosition {

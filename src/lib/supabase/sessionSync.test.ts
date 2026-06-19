@@ -29,6 +29,7 @@ function row(over: Partial<SessionPlayerRow> & { player_id: string }): SessionPl
 		wait_since: null,
 		joined_at: "t0",
 		joined_at_match: 0,
+		cock_checked: false,
 		...over,
 	};
 }

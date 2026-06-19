@@ -5,6 +5,7 @@ import {
 	dbAssignMatch,
 	dbCompleteMatch,
 	dbEndSession,
+	dbSetCockChecked,
 	dbSetMatchRoster,
 	dbSetPlayerResting,
 	sendBroadcast,
@@ -184,6 +185,8 @@ export interface SessionState {
 	matchAssignCount: number;
 	/** 보드 drafts/예약 멤버십(공유). 스냅샷에서 복원해 boardStore가 적용. */
 	boardDrafts: BoardDraftsPayload;
+	/** 콕 체크 모드 on/off(세션 설정, 공유). on이면 cockChecked=false 선수는 매칭 대기 아님. */
+	cockCheckEnabled: boolean;
 
 	// ── 편집 락(presence, 양도형) ──────────────────────────
 	/** 편집 가능 여부(= 내가 보유자이거나 락이 비어있음). false면 보기 전용. */
@@ -217,6 +220,8 @@ export interface SessionState {
 	handleComplete: (courtId: number) => Promise<void>;
 	/** 휴식 토글. resting=true 휴식 진입 / false 복귀(deficit 보정). player_updated 브로드캐스트. */
 	setResting: (playerId: string, resting: boolean) => Promise<void>;
+	/** 콕 제출 확인 — cock_checked=true로 매칭 대기 상태로 전환(공유, 편집자만). */
+	confirmCock: (playerId: string) => Promise<void>;
 	/** 경기 수정: 진행중 매치의 최종 로스터 설정(직접 DB 반영, 동기화 없음, 로컬만 갱신). */
 	handleSetMatchRoster: (
 		courtId: number,
@@ -249,6 +254,7 @@ const initialState = {
 	lastGameType: {} as Record<string, GameType>,
 	matchAssignCount: 0,
 	boardDrafts: { teams: [], reservations: [] } as BoardDraftsPayload,
+	cockCheckEnabled: true,
 	isEditor: false,
 	presenceCount: 0,
 	presenceList: [] as { clientId: string; name: string }[],
@@ -280,6 +286,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			matchAssignCount: initial.matchAssignCount,
 			lastGameType: initial.lastGameType,
 			boardDrafts: initial.boardDrafts,
+			cockCheckEnabled: initial.cockCheckEnabled,
 		});
 	},
 	reset: () => {
@@ -376,6 +383,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			return;
 		}
 		get().broadcastPlayerUpdated(updated);
+	},
+
+	confirmCock: async (playerId: string) => {
+		if (!get().isEditor) return; // 보기 전용 차단(공유 변경)
+		const updated = await dbSetCockChecked(playerId);
+		if (!updated) {
+			console.error(`[store] confirmCock FAILED player=${playerId}`);
+			return;
+		}
+		get().broadcastPlayerUpdated(updated); // 로컬 반영 + 타 기기 전파(postgres_changes도 백업)
 	},
 
 	broadcastPlayerUpdated: (player) => {

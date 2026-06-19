@@ -20,6 +20,7 @@ import { useSetupPlayers } from "../hooks/useSetupPlayers";
 import { useGuestManager } from "../hooks/useGuestManager";
 import { usePlayerEditor } from "../hooks/usePlayerEditor";
 import { CourtCountSelector } from "./setup/CourtCountSelector";
+import { CockCheckToggle } from "./setup/CockCheckToggle";
 import {
 	PlayerSelectionList,
 } from "./setup/PlayerSelectionList";
@@ -31,6 +32,7 @@ export default function SessionSetup({ onStart }: Props) {
 
 	const [courtCount, setCourtCount] = useState(2);
 	const [singleWomanIds, setSingleWomanIds] = useState<Set<string>>(new Set());
+	const [cockCheck, setCockCheck] = useState(true); // 콕 체크 디폴트 on
 
 	const {
 		allPlayers,
@@ -58,6 +60,7 @@ export default function SessionSetup({ onStart }: Props) {
 	if (!initialized && sessionMeta && allPlayers.length > 0) {
 		setCourtCount(sessionMeta.courtCount);
 		setSingleWomanIds(new Set(sessionMeta.singleWomanIds));
+		setCockCheck(sessionMeta.cockCheckEnabled);
 		setInitialized(true);
 	}
 
@@ -99,6 +102,7 @@ export default function SessionSetup({ onStart }: Props) {
 			courtCount: number;
 			playerIds: string[];
 			singleWomanIds: string[];
+			cockCheckEnabled: boolean;
 		} | null>(null);
 	const pendingStartRef = useRef<{
 		selectedPlayers: Player[];
@@ -127,6 +131,7 @@ export default function SessionSetup({ onStart }: Props) {
 		const settings: SessionSettings = {
 			courtCount,
 			singleWomanIds: validSingleWomanIds,
+			cockCheckEnabled: cockCheck,
 		};
 
 		if (isUpdating && sessionMeta) {
@@ -138,6 +143,7 @@ export default function SessionSetup({ onStart }: Props) {
 					courtCount: settings.courtCount,
 					playerIds: selectedPlayers.map((p) => p.id),
 					singleWomanIds: settings.singleWomanIds,
+					cockCheckEnabled: settings.cockCheckEnabled,
 				};
 				if (diffSessionSettings(localSnapshot, serverState).any) {
 					setSessionConflict(serverState);
@@ -191,6 +197,8 @@ export default function SessionSetup({ onStart }: Props) {
 
 					onChange={setCourtCount}
 				/>
+
+				<CockCheckToggle enabled={cockCheck} onChange={setCockCheck} />
 
 				<SingleWomanSelector
 					selectedFemales={selectedFemales}
@@ -299,6 +307,7 @@ export default function SessionSetup({ onStart }: Props) {
 					localCourtCount={sessionConflictLocalSnapshot.courtCount}
 					localPlayerIds={sessionConflictLocalSnapshot.playerIds}
 					localSingleWomanIds={sessionConflictLocalSnapshot.singleWomanIds}
+					localCockCheckEnabled={sessionConflictLocalSnapshot.cockCheckEnabled}
 					allPlayers={allPlayers}
 					onForceOverwrite={() => {
 						setSessionConflict(null);

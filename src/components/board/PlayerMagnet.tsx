@@ -26,6 +26,7 @@ import {
 	RESTING_OPACITY,
 	RESTING_BADGE_BG,
 	HILITE_STROKE,
+	COCK_PENDING_COLOR,
 } from "../../lib/board/constants";
 
 const GRAD_H = MAGNET_SIZE * 0.7;
@@ -73,6 +74,8 @@ interface Props {
 	onDragMove?: (playerId: string, cx: number, cy: number) => void;
 	/** 자석 탭(드래그 아님) — 추천 팀원 모달 열기 */
 	onClick?: (playerId: string) => void;
+	/** 콕 미확인 자석 탭 — 콕 제출 확인 다이얼로그 열기 */
+	onCockCheck?: (playerId: string) => void;
 }
 
 const PlayerMagnet = memo(function PlayerMagnet({
@@ -89,14 +92,18 @@ const PlayerMagnet = memo(function PlayerMagnet({
 	onRestingDragEnd,
 	onDragMove,
 	onClick,
+	onCockCheck,
 }: Props) {
 	const magnet = useBoardStore((s) => s.magnets.get(playerId));
 	const player = useSessionStore((s) => s.sessionPlayers.get(playerId));
+	const cockCheckEnabled = useSessionStore((s) => s.cockCheckEnabled);
 	const isEditor = useSessionStore((s) => s.isEditor);
 	const isGhost = kind === "ghost";
 	// 자유 자석(팀 미소속·비ghost)은 보기 전용에서도 드래그해 로컬 위치 이동 가능(위치는 로컬·미동기화).
 	// 팀 멤버(anchor/ghost)는 멤버십 변경이 되므로 편집자만.
 	const isFreeMagnet = !isGhost && magnet?.teamId == null;
+	// 콕 체크 on인데 미확인 → 비활성(매칭 대기 아님): 드래그 불가, 탭하면 확인 다이얼로그.
+	const cockPending = cockCheckEnabled && !isGhost && !playing && !resting && player != null && !player.cockChecked;
 	// 드래그 중 다른 자석이 이 자석에 겹쳐 페어 대상이 되면 하이라이트
 	const isHovered = useBoardStore((s) => s.hoverTarget?.kind === "magnet" && s.hoverTarget.id === playerId);
 
@@ -172,11 +179,17 @@ const PlayerMagnet = memo(function PlayerMagnet({
 				e.cancelBubble = true;
 				return;
 			}
+			// 콕 미확인 자석 탭 → 추천 대신 콕 제출 확인 다이얼로그.
+			if (cockPending) {
+				e.cancelBubble = true;
+				onCockCheck?.(playerId);
+				return;
+			}
 			if (!onClick) return;
 			e.cancelBubble = true;
 			onClick(playerId);
 		},
-		[onClick, playerId],
+		[onClick, onCockCheck, cockPending, playerId],
 	);
 
 	const handleDragMove = useCallback(
@@ -260,8 +273,8 @@ const PlayerMagnet = memo(function PlayerMagnet({
 			id={`magnet-${playerId}`}
 			x={rx}
 			y={ry}
-			opacity={isGhost ? RESERVATION_OPACITY : resting ? RESTING_OPACITY : 1}
-			draggable={isEditor || isFreeMagnet}
+			opacity={cockPending ? 0.5 : isGhost ? RESERVATION_OPACITY : resting ? RESTING_OPACITY : 1}
+			draggable={(isEditor || isFreeMagnet) && !cockPending}
 			listening
 			onDragStart={handleDragStart}
 			onDragMove={handleDragMove}
@@ -384,10 +397,21 @@ const PlayerMagnet = memo(function PlayerMagnet({
 				perfectDrawEnabled={false}
 			/>
 
+			{/* 콕 미확인(비활성) — 회색 워시 오버레이 + 앰버 점선링 + "콕?" 배지로 "탭해서 확인" 표시 */}
+			{cockPending && (
+				<>
+					<Circle radius={innerR} fill="rgba(70,72,82,0.55)" listening={false} perfectDrawEnabled={false} />
+					<Circle radius={MAGNET_R} stroke={COCK_PENDING_COLOR} strokeWidth={2.5} dash={[4, 3]} listening={false} perfectDrawEnabled={false} />
+				</>
+			)}
+
 			{/* 겹침 하이라이트 — 드래그 중 페어 대상이 되면 스카이 링 */}
 			{isHovered && (
 				<Circle radius={MAGNET_R + 3} stroke={HILITE_STROKE} strokeWidth={3} shadowColor={HILITE_STROKE} shadowBlur={10} listening={false} perfectDrawEnabled={false} />
 			)}
+
+			{/* 콕 미확인 배지 */}
+			{cockPending && <MagnetBadge text="콕?" fill={COCK_PENDING_COLOR} />}
 
 			{/* 예약 뱃지 */}
 			{isGhost && <MagnetBadge text="예약" fill={RESERVATION_BADGE_BG} />}

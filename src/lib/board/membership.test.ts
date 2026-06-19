@@ -6,9 +6,10 @@ import {
 	deriveLifecycle,
 	isTeamStartable,
 	playingIdsFromCourts,
+	cockPendingIds,
 } from "./membership";
 import type { DraftTeam, MagnetPosition, Reservation } from "../../types/board";
-import type { Court } from "../../types";
+import type { Court, SessionPlayer } from "../../types";
 
 function mag(playerId: string, teamId: string | null = null): MagnetPosition {
 	return { playerId, x: 0, y: 0, teamId };
@@ -117,5 +118,22 @@ describe("playingIdsFromCourts", () => {
 			{ id: 2, match: null },
 		];
 		expect(playingIdsFromCourts(courts)).toEqual(new Set(["a", "b", "c", "d"]));
+	});
+});
+
+describe("cockPendingIds", () => {
+	const sp = (id: string, cockChecked: boolean): SessionPlayer => ({
+		id, playerId: id, name: id, gender: "M",
+		skills: { 클리어: "V", 스매시: "V", 로테이션: "V", 드랍: "V", 헤어핀: "V", 푸시: "V" },
+		allowMixedSingle: false, status: "waiting", gameCount: 0, mixedCount: 0,
+		waitSince: null, joinedAtMatch: 0, cockChecked,
+	});
+	it("콕체크 on이면 미확인(cockChecked=false) id만 반환", () => {
+		const ids = cockPendingIds([sp("a", true), sp("b", false), sp("c", false)], true);
+		expect([...ids].sort()).toEqual(["b", "c"]);
+	});
+	it("콕체크 off면 빈 집합(전원 매칭 대기)", () => {
+		const ids = cockPendingIds([sp("a", false), sp("b", false)], false);
+		expect(ids.size).toBe(0);
 	});
 });

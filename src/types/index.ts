@@ -33,6 +33,8 @@ export interface SessionPlayer {
 	mixedCount: number;
 	waitSince: string | null;
 	joinedAtMatch: number;
+	/** 콕(셔틀콕) 제출 확인 여부. 콕체크 on일 때 false면 매칭 대기 아님(비활성). */
+	cockChecked: boolean;
 }
 
 /** 코트 내 현재 경기 — teamA/B는 session_players.id 참조 */
@@ -69,4 +71,6 @@ export interface PairHistory {
 export interface SessionSettings {
 	courtCount: number;
 	singleWomanIds: string[]; // Player.id (구글 시트 기반), 세션 시작 시 사용
+	/** 콕 체크 모드 — on이면 선수가 콕 제출 확인을 받아야 매칭 대기 상태가 된다. 디폴트 on. */
+	cockCheckEnabled: boolean;
 }

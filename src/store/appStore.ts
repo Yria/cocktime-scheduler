@@ -23,6 +23,7 @@ export interface SessionMeta {
 	sessionId: number;
 	courtCount: number;
 	singleWomanIds: string[];
+	cockCheckEnabled: boolean;
 }
 
 interface AppState {
@@ -122,6 +123,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 						sessionId: row.id,
 						courtCount: row.court_count,
 						singleWomanIds,
+						cockCheckEnabled: row.cock_check_enabled ?? true,
 					},
 					setupGuests: guests,
 					sessionChecked: true,
@@ -166,6 +168,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 				settings.courtCount,
 				selected,
 				settings.singleWomanIds,
+				settings.cockCheckEnabled,
 			);
 			if (!success) return false;
 
@@ -186,6 +189,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 					sessionId: sessionMeta.sessionId,
 					courtCount: settings.courtCount,
 					singleWomanIds: settings.singleWomanIds,
+					cockCheckEnabled: settings.cockCheckEnabled,
 				},
 			});
 			return true;
@@ -195,6 +199,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 			settings.courtCount,
 			selected,
 			settings.singleWomanIds,
+			settings.cockCheckEnabled,
 		);
 		if (!result) return false;
 
@@ -214,6 +219,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 			matchAssignCount: 0,
 			lastGameType: {},
 			boardDrafts: { teams: [], reservations: [] },
+			cockCheckEnabled: settings.cockCheckEnabled,
 		});
 
 		set({
@@ -221,6 +227,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 				sessionId,
 				courtCount: settings.courtCount,
 				singleWomanIds: settings.singleWomanIds,
+				cockCheckEnabled: settings.cockCheckEnabled,
 			},
 		});
 		return true;
@@ -327,7 +334,7 @@ export const appActions = {
 	checkActiveSession: () => useAppStore.getState().checkActiveSessionAction(),
 	startOrUpdateSession: (
 		selected: Player[],
-		settings: { courtCount: number; singleWomanIds: string[] },
+		settings: { courtCount: number; singleWomanIds: string[]; cockCheckEnabled: boolean },
 	) => useAppStore.getState().startOrUpdateSessionAction(selected, settings),
 	updatePlayer: (player: Player) =>
 		useAppStore.getState().updatePlayerAction(player),

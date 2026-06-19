@@ -16,6 +16,7 @@ export interface SessionRow {
 	ended_at: string | null;
 	match_assign_count: number;
 	board_drafts: import("../../types/board").BoardDraftsPayload | null;
+	cock_check_enabled: boolean;
 }
 
 export interface SessionPlayerRow {
@@ -32,6 +33,7 @@ export interface SessionPlayerRow {
 	wait_since: string | null;
 	joined_at: string;
 	joined_at_match: number;
+	cock_checked: boolean;
 }
 
 /** 경기 시점 선수 스냅샷(이름/성별/스킬) — matches.player_snapshot 배열 요소. 삭제된 선수 위치는 null. */
@@ -83,4 +85,6 @@ export interface ClientSessionState {
 	lastGameType: Record<string, import("../../types").GameType>;
 	/** 보드 "팀 구성중"/예약 멤버십(공유). 위치는 클라이언트 로컬에서 결정. */
 	boardDrafts: import("../../types/board").BoardDraftsPayload;
+	/** 콕 체크 모드 on/off(세션 설정). */
+	cockCheckEnabled: boolean;
 }

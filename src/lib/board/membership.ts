@@ -5,7 +5,7 @@
  * - 예비팀의 유효 멤버는 anchor(원본) + 그 팀 향한 ghost(예약)를 합쳐 derive한다.
  * - "경기중" 여부는 보드 로컬이 아니라 sessionStore.courts(playingIds)에서 derive한다.
  */
-import type { Court } from "../../types";
+import type { Court, SessionPlayer } from "../../types";
 import type {
 	DraftTeam,
 	MagnetPosition,
@@ -142,4 +142,19 @@ export function isTeamStartable(
 		}
 		return true;
 	});
+}
+
+/**
+ * 콕 체크 on인데 아직 콕 미확인(cockChecked=false)인 선수 id(session_player.id) 집합.
+ * 이 선수들은 "매칭 대기 아님" — 보드엔 비활성으로 보이고 페어/추천/자동편성에서 제외된다.
+ * cockCheckEnabled=false면 빈 집합(전원 매칭 대기).
+ */
+export function cockPendingIds(
+	players: Iterable<SessionPlayer>,
+	cockCheckEnabled: boolean,
+): Set<string> {
+	const out = new Set<string>();
+	if (!cockCheckEnabled) return out;
+	for (const p of players) if (!p.cockChecked) out.add(p.id);
+	return out;
 }

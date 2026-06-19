@@ -19,6 +19,7 @@ function player(
 		mixedCount: 0,
 		waitSince: null,
 		joinedAtMatch: 0,
+		cockChecked: true,
 	};
 }
 

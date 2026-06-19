@@ -46,6 +46,7 @@ export function rowToSessionPlayer(row: SessionPlayerRow): SessionPlayer {
 		mixedCount: row.mixed_count,
 		waitSince: row.wait_since,
 		joinedAtMatch: row.joined_at_match ?? 0,
+		cockChecked: row.cock_checked ?? false,
 	};
 }
 
@@ -104,5 +105,5 @@ export function snapshotToClientState(
 
 	const boardDrafts = snapshot.session.board_drafts ?? { teams: [], reservations: [] };
 
-	return { courts, players: snapshot.players, waitingIds, restingIds, pairHistory, matchAssignCount: snapshot.session.match_assign_count, lastGameType, boardDrafts };
+	return { courts, players: snapshot.players, waitingIds, restingIds, pairHistory, matchAssignCount: snapshot.session.match_assign_count, lastGameType, boardDrafts, cockCheckEnabled: snapshot.session.cock_check_enabled ?? true };
 }

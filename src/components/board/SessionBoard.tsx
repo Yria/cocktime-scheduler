@@ -25,6 +25,7 @@ import RestZonePanel from "./RestZonePanel";
 import TeamBackground from "./TeamBackground";
 import DetachZone from "./DetachZone";
 import RecommendTeammateDialog from "./RecommendTeammateDialog";
+import ModalSheet from "../common/ModalSheet";
 import MatchEditModal from "./MatchEditModal";
 import ViewerLockOverlay from "./ViewerLockOverlay";
 import DebugMatchModal from "./DebugMatchModal";
@@ -198,6 +199,17 @@ export default function SessionBoard() {
 		[playingIds, isEditor],
 	);
 
+	// 콕 제출 확인 다이얼로그 대상(편집자만). 자유 자석 비활성(콕 미확인) 탭 → 여기로.
+	const confirmCock = useSessionStore((s) => s.confirmCock);
+	const [cockTarget, setCockTarget] = useState<string | null>(null);
+	const onCockCheck = useCallback(
+		(playerId: string) => {
+			if (!isEditor) return; // 보기 전용 차단(공유 변경)
+			setCockTarget(playerId);
+		},
+		[isEditor],
+	);
+
 	// 드래그/드롭 핸들러(휴식 hot 하이라이트·휴식 처리·자유 배치·예약 드롭)
 	const { onMagnetDragMove, onMagnetDragEnd, onRestingDragEnd, onGhostDragEnd } =
 		useBoardDragHandlers(stageH, restZoneOpen);
@@ -262,7 +274,7 @@ export default function SessionBoard() {
 							/>
 						))}
 						{visibleFreeIds.map((id) => (
-							<PlayerMagnet key={id} playerId={id} onDragEnd={onMagnetDragEnd} onDragMove={onMagnetDragMove} onClick={onMagnetClick} />
+							<PlayerMagnet key={id} playerId={id} onDragEnd={onMagnetDragEnd} onDragMove={onMagnetDragMove} onClick={onMagnetClick} onCockCheck={onCockCheck} />
 						))}
 						{/* 코트 카드는 상단 레인에 맨 위로 렌더 — 경기완료 버튼이 항상 클릭 가능하도록 */}
 						{occupiedCourts.map((c, i) => (
@@ -376,6 +388,29 @@ export default function SessionBoard() {
 			)}
 			{editMatchCourtId !== null && (
 				<MatchEditModal courtId={editMatchCourtId} onClose={() => setEditMatchCourtId(null)} />
+			)}
+			{cockTarget && (
+				<ModalSheet position="center" className="p-6" onClose={() => setCockTarget(null)}>
+					<h3 className="font-bold text-gray-800 dark:text-white text-lg mb-1.5">콕 제출 확인</h3>
+					<p className="text-sm text-gray-600 dark:text-gray-300 mb-5">
+						<b>{useSessionStore.getState().sessionPlayers.get(cockTarget)?.name ?? "이 선수"}</b> 님의 콕 제출을 확인했나요? 확인하면 매칭 대기 상태가 됩니다.
+					</p>
+					<div className="flex gap-3">
+						<button type="button" onClick={() => setCockTarget(null)} className="btn-lq-secondary flex-1 py-3 text-sm">
+							취소
+						</button>
+						<button
+							type="button"
+							onClick={() => {
+								void confirmCock(cockTarget);
+								setCockTarget(null);
+							}}
+							className="btn-lq-primary flex-1 py-3 text-sm"
+						>
+							확인
+						</button>
+					</div>
+				</ModalSheet>
 			)}
 			<ViewerLockOverlay />
 			<DebugMatchModal />
