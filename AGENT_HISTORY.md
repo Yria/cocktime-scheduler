@@ -77,3 +77,17 @@
 - **E2E**: 성별 설정→참석(확정 1/20)→세션 시작→/session 보드 이동, session_players에 오상진(gender 스냅샷 M·status=waiting) 편입 + session active 확인, 콘솔 에러 0. tsc·biome·빌드 통과.
 
 ---
+
+## #7
+
+**Prompt**: 커밋하고 계속
+
+**Answer**: Phase 8 앱내 실시간 알림 구현 + E2E 검증.
+
+- notifications Realtime 구독(`subscribeNotifications`, postgres_changes INSERT filter recipient_member_id) → 기존 toastStore 토스트로 표시. type별 메시지(`notificationMessage`: promoted/session_cancelled/session_closed/carpool_muster).
+- App.tsx에서 memberId 있을 때 구독, 로그아웃/언마운트 시 removeChannel. NotificationRow 타입 추가.
+- notifications는 Phase 5에서 이미 자동승급 시 INSERT + realtime publication 등록됨 → 구독만 추가하면 동작.
+- **E2E**: service_role로 promoted 알림 INSERT → "대기자에서 참석이 확정되었어요!" 토스트가 실시간으로 표시됨 확인. tsc·biome·빌드 통과. (콘솔 player-photos 400은 기존 선수사진 storage 누락, 알림과 무관)
+- 설치형 PWA 웹푸시(SW+VAPID+Edge Function)는 Phase 8 잔여로 추후.
+
+---

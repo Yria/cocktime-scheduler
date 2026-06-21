@@ -9,9 +9,15 @@ import ScheduleForm from "./components/schedule/ScheduleForm";
 import { useDarkMode } from "./hooks/useDarkMode";
 import { usePageVisibility } from "./hooks/usePageVisibility";
 import type { SessionRow } from "./lib/supabase";
+import { supabase } from "./lib/supabase";
+import {
+	notificationMessage,
+	subscribeNotifications,
+} from "./lib/supabase/notifications";
 import { appActions, useAppStore } from "./store/appStore";
-import { authActions } from "./store/authStore";
+import { authActions, useAuthStore } from "./store/authStore";
 import { useSessionStore } from "./store/sessionStore";
+import { toast } from "./store/toastStore";
 import type { Player, SessionSettings } from "./types";
 
 export default function App() {
@@ -25,6 +31,18 @@ export default function App() {
 	useEffect(() => {
 		authActions.init();
 	}, []);
+
+	// 앱내 실시간 알림 (Phase 8): 자동승급·공지 → 토스트
+	const memberId = useAuthStore((s) => s.memberId);
+	useEffect(() => {
+		if (!memberId) return;
+		const ch = subscribeNotifications(memberId, (n) => {
+			toast(notificationMessage(n), { variant: "success", duration: 6000 });
+		});
+		return () => {
+			supabase.removeChannel(ch);
+		};
+	}, [memberId]);
 
 	const allPlayers = useAppStore((s) => s.allPlayers);
 	const sessionMeta = useAppStore((s) => s.sessionMeta);

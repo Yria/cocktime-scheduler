@@ -63,6 +63,17 @@ export interface AttendanceRow {
 	updated_at: string;
 }
 
+export interface NotificationRow {
+	id: string;
+	recipient_member_id: string;
+	type: string;
+	session_id: number | null;
+	payload: Record<string, unknown> | null;
+	read_at: string | null;
+	sent: boolean;
+	created_at: string;
+}
+
 export interface SessionPlayerRow {
 	id: string;
 	session_id: number;
