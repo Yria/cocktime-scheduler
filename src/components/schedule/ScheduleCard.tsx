@@ -24,6 +24,7 @@ interface Props {
 	onJoin: () => void;
 	onCancel: () => void;
 	onDelete: () => void;
+	onStartSession: () => void;
 }
 
 export default function ScheduleCard({
@@ -36,6 +37,7 @@ export default function ScheduleCard({
 	onJoin,
 	onCancel,
 	onDelete,
+	onStartSession,
 }: Props) {
 	const confirmed = attendances.filter((a) => a.status === "confirmed");
 	const waiting = attendances.filter((a) => a.status === "waitlisted");
@@ -180,6 +182,28 @@ export default function ScheduleCard({
 					</span>
 				)}
 			</div>
+
+			{isAdmin && isOpen && (
+				<button
+					type="button"
+					onClick={onStartSession}
+					disabled={busy}
+					style={{
+						width: "100%",
+						marginTop: 10,
+						padding: "10px",
+						borderRadius: 9,
+						fontSize: 13.5,
+						fontWeight: 700,
+						color: "#fff",
+						background: busy ? "rgba(44,122,87,0.5)" : "#2c7a57",
+						border: "none",
+						cursor: busy ? "not-allowed" : "pointer",
+					}}
+				>
+					세션 시작 · 보드 열기
+				</button>
+			)}
 		</div>
 	);
 }

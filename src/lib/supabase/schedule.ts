@@ -144,3 +144,17 @@ export async function cancelAttendance(
 	}
 	return { ok: true };
 }
+
+/** 운영진: 일정 confirmed 참석자를 session_players로 편입하고 세션 활성화(브릿지 RPC). */
+export async function startSessionFromSchedule(
+	sessionId: number,
+): Promise<{ ok: boolean; error?: string }> {
+	const { error } = await supabase.rpc("start_session_from_schedule", {
+		p_session_id: sessionId,
+	});
+	if (error) {
+		console.error("startSessionFromSchedule:", error);
+		return { ok: false, error: error.message };
+	}
+	return { ok: true };
+}

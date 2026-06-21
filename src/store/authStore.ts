@@ -11,6 +11,8 @@ interface AuthState {
 	memberId: string | null;
 	/** 운영진 여부 */
 	isAdmin: boolean;
+	/** 내 프로필 성별(없으면 null → 세션 편입 전 입력 필요) */
+	myGender: "M" | "F" | null;
 }
 
 export const useAuthStore = create<AuthState>(() => ({
@@ -19,6 +21,7 @@ export const useAuthStore = create<AuthState>(() => ({
 	ready: false,
 	memberId: null,
 	isAdmin: false,
+	myGender: null,
 }));
 
 let initialized = false;
@@ -34,13 +37,14 @@ async function loadMember(user: User) {
 		);
 	const { data: member } = await supabase
 		.from("members")
-		.select("id")
+		.select("id, gender")
 		.eq("auth_user_id", user.id)
 		.maybeSingle();
 	const { data: admin } = await supabase.rpc("is_admin");
 	useAuthStore.setState({
 		memberId: (member?.id as string | undefined) ?? null,
 		isAdmin: admin === true,
+		myGender: (member?.gender as "M" | "F" | null | undefined) ?? null,
 	});
 }
 
@@ -89,6 +93,22 @@ export const authActions = {
 
 	async signOut() {
 		await supabase.auth.signOut();
+	},
+
+	/** 내 프로필 성별 설정(세션 편입 전 필수). */
+	async updateGender(gender: "M" | "F") {
+		const user = useAuthStore.getState().user;
+		if (!user) return false;
+		const { error } = await supabase
+			.from("members")
+			.update({ gender })
+			.eq("auth_user_id", user.id);
+		if (error) {
+			console.error("updateGender:", error);
+			return false;
+		}
+		useAuthStore.setState({ myGender: gender });
+		return true;
 	},
 };
 

@@ -64,3 +64,16 @@
 - **검증**: Playwright E2E 참석→확정 1/20→취소→0 정상, 콘솔 에러 0. 대기/자동승급은 회원 2명 필요(동시성 워크플로 논리 검증 완료, 추후 실증).
 
 ---
+
+## #6
+
+**Prompt**: 참석확정 → 보드 편입 (Phase 3+6)
+
+**Answer**: Phase 3(선수↔회원 연결) + 6(참석확정→보드 브릿지) 구현 + E2E 검증. 일정/참석과 기존 편성보드를 연결.
+
+- **마이그레이션 060000**: session_players.member_id 추가(nullable) + `start_session_from_schedule` 브릿지 RPC(is_admin 가드, status='open' 검증, gender 미입력 confirmed 차단, confirmed 참석자→session_players 일괄 INSERT with members gender/skills 스냅샷, sessions status='active'+is_active=true).
+- **핵심 통합 포인트**: 기존 appStore.subscribeSessionWatch(postgres_changes on sessions)가 is_active=true를 감지해 모든 클라가 자동 loadSession→보드 이동. 브릿지는 session_players 생성 + is_active만 켜면 기존 보드 흐름이 그대로 받음(보드 코드 0변경, 스냅샷 격리막).
+- **클라**: schedule.ts startSessionFromSchedule, authStore myGender+updateGender(프로필 성별), ScheduleCard "세션 시작·보드 열기" 버튼(운영진+open), Home 성별 입력 배너(미입력 시 남/여)+handleStartSession(RPC→checkActiveSession→/session).
+- **E2E**: 성별 설정→참석(확정 1/20)→세션 시작→/session 보드 이동, session_players에 오상진(gender 스냅샷 M·status=waiting) 편입 + session active 확인, 콘솔 에러 0. tsc·biome·빌드 통과.
+
+---

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { startSessionFromSchedule } from "../lib/supabase/schedule";
 import type { SessionRow } from "../lib/supabase/types";
 import { appActions, useAppStore } from "../store/appStore";
 import { authActions, authDisplayName, useAuthStore } from "../store/authStore";
@@ -18,12 +19,21 @@ function joinErrorMsg(e?: string): string {
 	return "신청에 실패했습니다";
 }
 
+function startErrorMsg(e?: string): string {
+	if (e?.includes("profile incomplete"))
+		return "성별 미입력 참석자가 있어 시작할 수 없습니다";
+	if (e?.includes("not open")) return "이미 시작되었거나 모집 중이 아닙니다";
+	if (e?.includes("forbidden")) return "운영진만 시작할 수 있습니다";
+	return "세션 시작에 실패했습니다";
+}
+
 export default function Home({ onStart }: Props) {
 	const navigate = useNavigate();
 	const authReady = useAuthStore((s) => s.ready);
 	const authUser = useAuthStore((s) => s.user);
 	const isAdmin = useAuthStore((s) => s.isAdmin);
 	const memberId = useAuthStore((s) => s.memberId);
+	const myGender = useAuthStore((s) => s.myGender);
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
 	const schedules = useScheduleStore((s) => s.schedules);
 	const places = useScheduleStore((s) => s.places);
@@ -67,6 +77,23 @@ export default function Home({ onStart }: Props) {
 		await scheduleActions.cancel(sessionId);
 		setBusyId(null);
 	}, []);
+
+	const handleStartSession = useCallback(
+		async (sessionId: number) => {
+			setBusyId(sessionId);
+			const res = await startSessionFromSchedule(sessionId);
+			if (!res.ok) {
+				setBusyId(null);
+				alert(startErrorMsg(res.error));
+				return;
+			}
+			// is_active=true → 활성 세션 로드 후 보드로 이동
+			await appActions.checkActiveSession();
+			setBusyId(null);
+			navigate("/session");
+		},
+		[navigate],
+	);
 
 	// ── 초기 로딩 ──
 	if (!authReady) {
@@ -191,6 +218,62 @@ export default function Home({ onStart }: Props) {
 					</button>
 				)}
 
+				{/* 프로필 성별 미입력 안내 */}
+				{myGender == null && (
+					<div
+						className="bg-[#fff7ed] dark:bg-[rgba(180,118,43,0.12)] border border-[rgba(180,118,43,0.25)]"
+						style={{
+							borderRadius: 12,
+							padding: "12px 14px",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							gap: 8,
+						}}
+					>
+						<span
+							className="text-[#9a3412] dark:text-[#f59e0b]"
+							style={{ fontSize: 13, fontWeight: 600 }}
+						>
+							성별을 선택하면 편성에 반영돼요
+						</span>
+						<div className="flex gap-1.5">
+							<button
+								type="button"
+								onClick={() => authActions.updateGender("M")}
+								style={{
+									fontSize: 13,
+									fontWeight: 700,
+									color: "#fff",
+									background: "#1366a6",
+									border: "none",
+									borderRadius: 8,
+									padding: "6px 14px",
+									cursor: "pointer",
+								}}
+							>
+								남
+							</button>
+							<button
+								type="button"
+								onClick={() => authActions.updateGender("F")}
+								style={{
+									fontSize: 13,
+									fontWeight: 700,
+									color: "#fff",
+									background: "#b4762b",
+									border: "none",
+									borderRadius: 8,
+									padding: "6px 14px",
+									cursor: "pointer",
+								}}
+							>
+								여
+							</button>
+						</div>
+					</div>
+				)}
+
 				{/* 일정 섹션 헤더 */}
 				<div className="flex items-center justify-between mt-1">
 					<h2
@@ -247,6 +330,7 @@ export default function Home({ onStart }: Props) {
 								onJoin={() => handleJoin(s.id)}
 								onCancel={() => handleCancel(s.id)}
 								onDelete={() => handleDelete(s)}
+								onStartSession={() => handleStartSession(s.id)}
 							/>
 						))}
 					</div>
