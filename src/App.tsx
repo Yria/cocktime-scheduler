@@ -9,6 +9,7 @@ import { useDarkMode } from "./hooks/useDarkMode";
 import { usePageVisibility } from "./hooks/usePageVisibility";
 import type { SessionRow } from "./lib/supabase";
 import { appActions, useAppStore } from "./store/appStore";
+import { authActions } from "./store/authStore";
 import { useSessionStore } from "./store/sessionStore";
 import type { Player, SessionSettings } from "./types";
 
@@ -19,6 +20,11 @@ export default function App() {
 
 	useDarkMode();
 
+	// 인증 세션 초기화/복원 (Phase 1: RLS 무변경, 로그인 기능만 도입)
+	useEffect(() => {
+		authActions.init();
+	}, []);
+
 	const allPlayers = useAppStore((s) => s.allPlayers);
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
 	const sessionChecked = useAppStore((s) => s.sessionChecked);
@@ -26,15 +32,12 @@ export default function App() {
 	const initialPathRef = useRef(window.location.pathname);
 
 	// snapshot 로드 → 상태 설정 → navigate (setup 화면이 아닌 경우)
-	const applySession = useCallback(
-		async (row: SessionRow) => {
-			const success = await appActions.loadSession(row);
-			if (success && !window.location.pathname.includes("/setup")) {
-				navRef.current("/session", { replace: true });
-			}
-		},
-		[],
-	);
+	const applySession = useCallback(async (row: SessionRow) => {
+		const success = await appActions.loadSession(row);
+		if (success && !window.location.pathname.includes("/setup")) {
+			navRef.current("/session", { replace: true });
+		}
+	}, []);
 
 	// 마운트 시 활성 세션 확인 → 초기 URL이 홈(/)일 때만 세션 페이지로 자동 이동.
 	// setup/session 등 특정 경로로 진입했다면 그 경로 유지.
@@ -122,10 +125,7 @@ export default function App() {
 						)
 					}
 				/>
-				<Route
-					path="/session"
-					element={sessionGuarded(<SessionBoard />)}
-				/>
+				<Route path="/session" element={sessionGuarded(<SessionBoard />)} />
 				<Route path="/logs" element={<LogPage />} />
 				<Route path="*" element={<Navigate to="/" replace />} />
 			</Routes>

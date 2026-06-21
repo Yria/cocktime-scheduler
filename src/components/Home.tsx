@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { appActions, useAppStore } from "../store/appStore";
+import { authActions, authDisplayName, useAuthStore } from "../store/authStore";
 import Spinner from "./shared/Spinner";
 
 interface Props {
@@ -14,6 +15,21 @@ export default function Home({ onStart }: Props) {
 	const [connected, setConnected] = useState(false);
 	const players = useAppStore((s) => s.allPlayers);
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
+	const authUser = useAuthStore((s) => s.user);
+	const isAdmin = useAuthStore((s) => s.isAdmin);
+	const [authBusy, setAuthBusy] = useState(false);
+	const [authError, setAuthError] = useState("");
+	const handleKakaoLogin = useCallback(async () => {
+		setAuthBusy(true);
+		setAuthError("");
+		try {
+			await authActions.signInWithKakao();
+			// 성공 시 카카오로 리다이렉트되어 이후 코드는 실행되지 않음
+		} catch (e) {
+			setAuthError(e instanceof Error ? e.message : "로그인 실패");
+			setAuthBusy(false);
+		}
+	}, []);
 	const connect = useCallback(async () => {
 		setLoading(true);
 		setError("");
@@ -54,7 +70,10 @@ export default function Home({ onStart }: Props) {
 					>
 						콕타임 팀매칭
 					</h1>
-					<p className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]" style={{ fontSize: 14, fontWeight: 500 }}>
+					<p
+						className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+						style={{ fontSize: 14, fontWeight: 500 }}
+					>
 						스마트 배드민턴 코트 배정
 					</p>
 				</div>
@@ -74,7 +93,10 @@ export default function Home({ onStart }: Props) {
 					{loading ? (
 						<div className="flex items-center gap-2">
 							<Spinner size={16} />
-							<p className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]" style={{ fontSize: 14, fontWeight: 500 }}>
+							<p
+								className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+								style={{ fontSize: 14, fontWeight: 500 }}
+							>
 								시트 불러오는 중…
 							</p>
 						</div>
@@ -90,7 +112,10 @@ export default function Home({ onStart }: Props) {
 									flexShrink: 0,
 								}}
 							/>
-							<p className="text-[#166534] dark:text-[#30d158]" style={{ fontSize: 14, fontWeight: 600 }}>
+							<p
+								className="text-[#166534] dark:text-[#30d158]"
+								style={{ fontSize: 14, fontWeight: 600 }}
+							>
 								연동됨 — {players.length}명
 							</p>
 						</div>
@@ -146,6 +171,69 @@ export default function Home({ onStart }: Props) {
 				>
 					{sessionMeta ? "세션 이어하기" : "세션 시작"}
 				</button>
+
+				{/* 로그인 (Phase 1: 기능만 도입, 열람 강제는 추후) */}
+				{authUser ? (
+					<div
+						className="flex items-center justify-center gap-2"
+						style={{ fontSize: 13 }}
+					>
+						<span
+							className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+							style={{ fontWeight: 500 }}
+						>
+							{authDisplayName(authUser)}님{isAdmin ? " · 운영진" : ""} 로그인됨
+						</span>
+						<button
+							type="button"
+							onClick={() => authActions.signOut()}
+							className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+							style={{
+								background: "none",
+								border: "none",
+								fontWeight: 600,
+								cursor: "pointer",
+								padding: "2px 6px",
+							}}
+						>
+							로그아웃
+						</button>
+					</div>
+				) : (
+					<div className="flex flex-col gap-2">
+						<button
+							type="button"
+							onClick={handleKakaoLogin}
+							disabled={authBusy}
+							style={{
+								width: "100%",
+								padding: "13px",
+								borderRadius: 12,
+								fontSize: 15,
+								fontWeight: 700,
+								color: "#191600",
+								background: "#FEE500",
+								border: "none",
+								cursor: authBusy ? "not-allowed" : "pointer",
+								opacity: authBusy ? 0.6 : 1,
+							}}
+						>
+							{authBusy ? "이동 중…" : "카카오로 로그인"}
+						</button>
+						{authError && (
+							<p
+								style={{
+									fontSize: 12,
+									color: "#ef4444",
+									fontWeight: 500,
+									textAlign: "center",
+								}}
+							>
+								{authError}
+							</p>
+						)}
+					</div>
+				)}
 
 				{/* Log link */}
 				<button

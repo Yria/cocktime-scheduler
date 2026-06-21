@@ -1,0 +1,330 @@
+# 서비스 확장 계약서 (EXPANSION_SPEC) — Phase 0
+
+> 로그인 · 일정 · 참석/대기열 · 카풀 · 푸시 확장의 **단일 기준 문서**.
+> 4트랙 설계 + 통합 적대적 검증의 "계약 동결" 결과를 정규화한 것이다.
+> **이후 모든 마이그레이션·RPC·RLS·클라이언트 코드는 이 문서의 계약을 따른다.**
+> 계약을 바꾸려면 먼저 이 문서를 고치고, 영향받는 Phase를 다시 검토한다.
+
+작성: 2026-06-21 · 브랜치 `sam/expansion` · 관련 메모리 `cocktime-expansion-design`
+
+---
+
+## 0. 확정된 제품 결정 (요약)
+
+| # | 결정 | 함의 |
+|---|------|------|
+| 1 | **회원 프로필 = 선수** | `members`가 성별·실력의 단일 소스. 게스트도 계정 없는 member 행. Sheets 점진 폐지 |
+| 2 | **카카오 우선 → 네이버 2차** | 카카오 네이티브, 네이버는 Edge Function(Phase 10) |
+| 3 | **무료 티어 + 앱내 알림 1차** | Realtime 앱내 알림 1차, 설치형 PWA 웹푸시 보조 |
+| 4 | **일정 = 세션 통합** | 별도 events 없음. `sessions`를 상태기계로 확장. 하루 여러 모임 = 행 여러 개 |
+| 5 | **로그인해야 열람** | 최종 RLS: 로그인 사용자 read + 운영진 write |
+| 6 | **places = 좌표 테이블** | 모임 코트 위치 + 카풀 집결지 공용. name·address·lat·lng 수준 |
+| 7 | **카풀 = 표시만** | `attendances.carpool_role` + 운영진 수동 매칭. 좌석 매칭 테이블 없음 |
+| 8 | **정원 상향 시 자동 승급** | `promote_waitlist` RPC |
+| 9 | **콕 체크는 운영진만** | 별도 본인검증 RPC 불필요 |
+| 10 | **마이그레이션 자유** | 개발 중이라 백필/파괴적 정리 부담 낮음. 이중운영 최소화 |
+
+---
+
+## 1. 식별자 타입 계약 (동결 — 절대 어기지 말 것)
+
+4트랙이 서로 다르게 잡았던 부분. 통합 검증이 다음으로 동결한다.
+
+| 엔티티 | PK 타입 | 근거 |
+|--------|---------|------|
+| `sessions.id` | **BIGSERIAL → BIGINT** | 기존 그대로. 클라이언트가 number로 사용 중 |
+| `members.id` | **UUID (별도 PK)** | `auth.uid()`와 **다름**. 게스트(계정 없음) 표현 위해 |
+| `members.auth_user_id` | UUID FK → `auth.users(id)`, **nullable, UNIQUE** | 계정 연결. 게스트는 NULL |
+| `places.id` | BIGSERIAL → BIGINT | admin 전용 생성, 열거 위험 낮음 |
+| `attendances` PK | `(session_id, member_id)` 복합 | 회원당 세션당 1행 |
+| `attendances.session_id` | **BIGINT** FK → sessions | events 없음, session 직접 참조 |
+| `attendances.member_id` | **UUID** FK → members | |
+| `notifications.id` | UUID | |
+| `notifications.recipient_member_id` | **UUID** FK → members | 컬럼명 동결: `recipient_member_id` (member_id/recipient_id 아님) |
+
+**핵심 규칙**: `members.id ≠ auth.uid()`. 모든 "본인" 판별은 `current_member_id()` 헬퍼를 거친다. 직접 `auth.uid() = …` 비교 금지.
+
+---
+
+## 2. 헬퍼 함수 계약 (Phase 2에서 생성, 모든 RPC·RLS가 의존)
+
+```sql
+-- auth.uid() → members.id 매핑. 게스트/미연결/미로그인은 NULL.
+create or replace function public.current_member_id()
+returns uuid
+language sql stable security definer set search_path = ''
+as $$
+  select id from public.members where auth_user_id = auth.uid()
+$$;
+
+-- 운영진 여부. user_roles 직접 조회(JWT 아님) → 권한 즉시 회수 가능.
+-- SECURITY DEFINER + search_path='' 로 user_roles RLS 재귀(42P17) 회피.
+create or replace function public.is_admin()
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select exists (
+    select 1 from public.user_roles ur
+    join public.members m on m.id = ur.member_id
+    where m.auth_user_id = auth.uid() and ur.role = 'admin'
+  )
+$$;
+```
+
+- 두 함수는 `public`에 두되, 노출 위험을 줄이기 위해 `revoke execute … from anon` 후 `authenticated`에만 grant.
+- `supabase_auth_admin` 권한 grant 필요 없음(JWT Hook 미사용).
+
+---
+
+## 3. 상태값 · enum 레지스트리 (동결)
+
+| 대상 | 허용 값 | 비고 |
+|------|---------|------|
+| `members.gender` | `'M'` `'F'` (NULL 허용) | **세션 편입 전 NOT NULL 필수**(편입 RPC 가드) |
+| `user_roles.role` | `'admin'` `'member'` | |
+| `sessions.status` | `'draft'` `'open'` `'active'` `'closed'` `'cancelled'` | 상태기계 ↓ |
+| `attendances.status` | `'confirmed'` `'waitlisted'` `'cancelled'` | confirmed/waitlisted/cancelled 로 동결(going/waitlist 표기 금지) |
+| `attendances.carpool_role` | `'none'` `'can_drive'` `'need_ride'` | 기본 `'none'` |
+| `notifications.type` | `'promoted'` `'session_cancelled'` `'session_closed'` `'carpool_muster'` `'noshow'` | 신규 타입은 여기 추가 |
+
+### sessions 상태기계
+
+```
+draft ──(운영진 공개)──▶ open ──(세션 시작)──▶ active ──(종료)──▶ closed
+  │                        │                      │
+  └────────────────────── cancelled ◀────────────┘   (어느 상태에서든 운영진 취소)
+```
+
+- `draft`: 작성 중(회원 비공개)
+- `open`: 참석 모집 중 — `join_session`은 **open에서만** 허용
+- `active`: 당일 편성 진행(기존 `is_active=true`에 해당). 브릿지로 confirmed → session_players 생성
+- `closed`: 종료(기존 `is_active=false, ended_at`)
+- 기존 `sessions.is_active`는 `status='active'`로 의미 이전. 과도기엔 `is_active`를 `status` 기반으로 채우거나 generated column로 공존 후 제거(마이그레이션 자유).
+
+---
+
+## 4. 테이블 스키마 (신규 7 + 기존 변경 2)
+
+### 4.1 신규 테이블
+
+```sql
+-- ① members : 계정 + 선수 프로필 (단일 소스). 게스트도 여기.
+create table public.members (
+  id            uuid primary key default gen_random_uuid(),
+  auth_user_id  uuid unique references auth.users(id) on delete set null,  -- 게스트 NULL
+  name          text not null,
+  gender        text check (gender in ('M','F')),     -- NULL 허용(가입 직후), 편입 전 필수
+  skills        jsonb,                                 -- 기존 PlayerSkills 구조 그대로
+  avatar_url    text,
+  phone         text,
+  is_guest      boolean not null default false,
+  is_active     boolean not null default true,
+  sheet_player_id text unique,                         -- Sheets player-N 매핑 키(폐지 후 deprecated)
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+-- ② user_roles : 권한 소스 오브 트루스
+create table public.user_roles (
+  member_id  uuid not null references public.members(id) on delete cascade,
+  role       text not null check (role in ('admin','member')),
+  granted_at timestamptz not null default now(),
+  primary key (member_id, role)
+);
+
+-- ③ places : 좌표 프리셋 (모임 코트 위치 + 카풀 집결지 공용)
+create table public.places (
+  id                  bigserial primary key,
+  name                text not null,
+  address             text,
+  lat                 double precision,
+  lng                 double precision,
+  default_court_count int,
+  is_active           boolean not null default true,
+  created_by          uuid references public.members(id) on delete set null,
+  created_at          timestamptz not null default now()
+);
+
+-- ④ attendances : 참석/대기 RSVP + 카풀 의향. 회원당 세션당 1행.
+create table public.attendances (
+  session_id   bigint not null references public.sessions(id) on delete cascade,
+  member_id    uuid   not null references public.members(id) on delete cascade,
+  status       text   not null check (status in ('confirmed','waitlisted','cancelled')),
+  position     bigint not null,                          -- nextval(seq), 경쟁 없는 단조 순번
+  carpool_role text   not null default 'none' check (carpool_role in ('none','can_drive','need_ride')),
+  carpool_seats int,                                     -- can_drive일 때 제공 좌석(옵션)
+  requested_at timestamptz not null default now(),
+  confirmed_at timestamptz,
+  cancelled_at timestamptz,
+  updated_at   timestamptz not null default now(),
+  primary key (session_id, member_id)
+);
+create sequence if not exists attendance_position_seq;
+create index idx_att_session_status_pos on public.attendances(session_id, status, position);
+
+-- ⑤ session_counters : 정원 동시성 단일 진실 소스 (sessions와 1:1, 락 분리용)
+--    sessions 행을 직접 FOR UPDATE 하면 보드 편성(board_drafts UPDATE 등)과 경합 →
+--    참석 동시성 전용 카운터 행을 별도로 잠근다.
+create table public.session_counters (
+  session_id      bigint primary key references public.sessions(id) on delete cascade,
+  confirmed_count int not null default 0
+);
+
+-- ⑥ notifications : 앱내 알림 1차 + 푸시 트리거 소스
+create table public.notifications (
+  id                  uuid primary key default gen_random_uuid(),
+  recipient_member_id uuid not null references public.members(id) on delete cascade,
+  type                text not null,                     -- §3 레지스트리
+  session_id          bigint references public.sessions(id) on delete cascade,
+  payload             jsonb,
+  read_at             timestamptz,
+  sent                boolean not null default false,    -- 웹푸시 발송 여부(보조)
+  created_at          timestamptz not null default now()
+);
+create index idx_notif_recipient on public.notifications(recipient_member_id, created_at desc);
+
+-- ⑦ push_subscriptions : 웹푸시 구독(보조). 410/404 시 정리.
+create table public.push_subscriptions (
+  id         uuid primary key default gen_random_uuid(),
+  member_id  uuid not null references public.members(id) on delete cascade,
+  endpoint   text not null,
+  p256dh     text not null,
+  auth       text not null,
+  created_at timestamptz not null default now(),
+  unique (member_id, endpoint)
+);
+```
+
+### 4.2 기존 테이블 변경
+
+```sql
+-- sessions : 일정 = 세션. 상태기계 + 일정 메타 + 카풀 집결 공지.
+alter table public.sessions
+  add column title             text,
+  add column scheduled_at      timestamptz,                          -- 예정 시작 (Asia/Seoul 표시)
+  add column capacity          int,                                  -- 정원 (NULL=무제한)
+  add column place_id          bigint references public.places(id) on delete set null,
+  add column status            text not null default 'active'
+       check (status in ('draft','open','active','closed','cancelled')),
+  add column created_by        uuid references public.members(id) on delete set null,
+  add column carpool_muster_place_id bigint references public.places(id) on delete set null,
+  add column carpool_muster_at timestamptz;
+-- is_active → status='active' 의미 이전(과도기 처리는 Phase 4에서).
+
+-- session_players : 회원 연결만. 선수 정보는 여전히 세션 스냅샷(아래 §6).
+alter table public.session_players
+  add column member_id uuid references public.members(id) on delete set null;  -- 게스트 NULL
+create index idx_sp_member on public.session_players(member_id);
+```
+
+> `matches`, `pair_history`는 **변경 없음**. 전부 `session_players.id`(UUID) 기준이라 무영향.
+
+---
+
+## 5. RPC 계약 (시그니처 + 동작 + 동시성)
+
+모든 RPC는 `SECURITY DEFINER SET search_path = ''`. 잠금 순서 통일로 데드락 회피: **sessions(검증) → session_counters(직렬화) → attendances**.
+
+| RPC | 시그니처 | 권한 | 동작 |
+|-----|---------|------|------|
+| `join_session` | `(p_session_id bigint) → attendances` | 로그인 회원 | 정원 여유면 confirmed, 아니면 waitlisted. 중복신청 차단, 취소후재신청은 같은 행 갱신 |
+| `cancel_attendance` | `(p_session_id bigint) → void` | 로그인 회원(본인) | 본인 취소(멱등). confirmed였으면 카운터 감소 + 대기 1순위 자동 승급 + 알림 |
+| `promote_waitlist` | `(p_session_id bigint) → int` | 운영진 | 정원 상향 후 여유만큼 대기자 일괄 승급 + 각자 알림. 승급 수 반환 |
+| `cancel_session` | `(p_session_id bigint) → void` | 운영진 | status='cancelled' + 전체 참석자 알림 |
+| `bridge_confirmed_to_players` | `(p_session_id bigint) → void` | 운영진 | **Phase 6**: confirmed 참석자를 session_players로 일괄 INSERT(members→스냅샷, gender NULL 가드). 보드 로직 0변경 |
+| `set_session_status` | `(p_session_id bigint, p_status text) → void` | 운영진 | 상태 전이(draft→open→active→closed) |
+
+### 5.1 join_session / cancel_attendance 동시성 규칙 (핵심)
+
+- **직렬화 지점은 `session_counters` 행의 `FOR UPDATE` 단독.** sessions는 status 검증용 `SELECT`(필요 시 `FOR SHARE`)만 — 편성 경로(sessions UPDATE)와 락 분리.
+- 카운터 행 보장: `INSERT … ON CONFLICT (session_id) DO NOTHING` 후 `SELECT … FOR UPDATE`.
+- 정원 판정은 **`count(*)` 금지**, `session_counters.confirmed_count`만 권위.
+- `position = nextval('attendance_position_seq')` — 경쟁 없는 단조 순번. 대기 1순위 = `status='waitlisted' ORDER BY position ASC`.
+- 자동 승급: `… FOR UPDATE SKIP LOCKED LIMIT 1` 로 1순위 선택(동시 취소 시 중복 승급 방지).
+- 알림 INSERT는 **같은 트랜잭션**에서 → 승급 롤백 시 알림도 미발생(불일치 차단).
+- `cancel_attendance`는 이미 취소/미신청이면 예외 없이 `RETURN`(멱등).
+
+### 5.2 기존 RPC 가드 (Phase 9)
+
+`assign_match` · `complete_match` · `set_player_resting` · 콕 체크 함수에 `if not is_admin() then raise exception 'forbidden'; end if;` 주입. **전 운영진 로그인 완료 후에만.** 콕 체크는 운영진 전용이므로 본인검증 RPC 불필요.
+
+---
+
+## 6. 스냅샷 격리막 (왜 보드가 안 바뀌나)
+
+- 편성 추천(`rankCandidates`, `recommendPool`), 매치(`matches`), 동반이력(`pair_history`)은 전부 `session_players`의 `gender`/`skills` **사본**만 읽는다.
+- `members`는 권위 소스, `session_players`는 **세션 시작 시점의 사본**. 회원이 나중에 프로필을 고쳐도 과거 세션 기록·진행 중 편성 공정성은 흔들리지 않는다.
+- 따라서 알고리즘·보드 코드 **0변경**. `startSession` row 빌더에서 `member_id` 추가 + `gender/skills`를 members에서 복사하는 것만 바뀐다.
+- `docs/TEAM_GENERATION_RULES.md` 갱신 의무는 발생하지 않음(입력 출처만 members로 바뀜). `recommendPool.ts`에 "입력 출처=members 스냅샷" 주석만 추가 권장.
+
+---
+
+## 7. RLS 정책 계약
+
+- **신규 테이블은 처음부터 좁게**(anon_all 부채를 새로 만들지 않음). 쓰기는 거의 SECURITY DEFINER RPC 경유.
+- **기존 4테이블(sessions·session_players·matches·pair_history)만** anon_all → RBAC 단계 전환 대상(Phase 9).
+- 최종 상태(결정 5): **로그인 사용자 read + 운영진 write**.
+
+| 테이블 | SELECT | INSERT/UPDATE/DELETE |
+|--------|--------|----------------------|
+| members | authenticated 전체 | 본인(`id = current_member_id()`) update / admin write |
+| user_roles | admin (또는 본인 역할만) | admin only |
+| places | authenticated | admin only |
+| sessions | authenticated | admin write (RPC) / 최종 전환 Phase 9 |
+| session_players | authenticated | admin write (RPC) / 콕 체크 포함 |
+| matches · pair_history | authenticated | RPC(admin) |
+| attendances | authenticated | RPC only(join/cancel/promote) — 직접 write 정책 없음 |
+| session_counters | (차단 또는 admin) | RPC only |
+| notifications | 본인(`recipient_member_id = current_member_id()`) | read_at 표시만 본인 update / INSERT는 RPC |
+| push_subscriptions | 본인 | 본인 CRUD |
+
+- 과도기(Phase 9 진행 중): 기존 4테이블은 `public_read (SELECT, USING true)`를 먼저 추가해 읽기를 유지하고, 쓰기만 좁힌 뒤, 전원 로그인 완료 후 read를 authenticated로 조이고 anon_all DROP.
+
+---
+
+## 8. Realtime 채널
+
+- 기존: `session-bc:{id}`(broadcast), `session-meta:{id}`(postgres_changes), `app-session-watch`.
+- 추가:
+  - `notifications` postgres_changes (filter `recipient_member_id`) → 앱내 알림 1차(toastStore 연결).
+  - 일정 목록/참석 현황: `attendances` 또는 sessions 변경 구독(필요 시).
+- 웹푸시(보조): `notifications` INSERT → Database Webhook(pg_net) → `send-push` Edge Function(`@negrel/webpush`) → 410/404 시 `push_subscriptions` 정리. (Phase 8)
+
+---
+
+## 9. 인증 플로우 계약
+
+- 클라이언트 `createClient` 옵션: `flowType: 'pkce'`, `detectSessionInUrl: true`, `persistSession: true`, `autoRefreshToken: true`.
+- 카카오(Phase 1): `signInWithOAuth({ provider: 'kakao', options: { redirectTo: <GitHub Pages base URL> } })`. Supabase Redirect allow list + Site URL에 base 경로 등록. 404.html SPA 폴백 유지.
+- 첫 로그인 시 `members` upsert(auth_user_id 기준) — **단일 지점**에서만(중복 호출 금지).
+- admin 시드: `sam@dooub.com` 계정을 `user_roles`에 admin으로.
+- 네이버(Phase 10): `naver-auth` Edge Function이 콜백 받아 userinfo `{response}` 언랩 → `admin.createUser`(선행) → `generateLink(magiclink)` → 클라이언트 `verifyOtp`. service_role 키는 **Edge Function 환경변수에만**(클라 번들 금지).
+
+---
+
+## 10. 10단계 마이그레이션 순서 (무중단)
+
+| Phase | 산출 | 의존 | 위험 |
+|-------|------|------|------|
+| 0 | **이 계약서** | — | 없음 |
+| 1 | 카카오 로그인(RLS 무변경) | 0 | 낮음 |
+| 2 | members · user_roles · `is_admin()` · `current_member_id()` + admin 시드 | 1 | 낮음 |
+| 3 | session_players.member_id + 스냅샷 빌더(백필 부담 낮음) | 2 | 중간 |
+| 4 | sessions 일정화(상태기계) + places + 시간대(Asia/Seoul) | 2 | 낮음 |
+| 5 | attendances · session_counters · notifications + join/cancel/promote RPC | 4 | 중간 |
+| 6 | **브릿지** `bridge_confirmed_to_players` | 5,3 | 중간 |
+| 7 | 카풀 표시(carpool_role) + 집결 공지 + 운영진 집계 뷰 | 5 | 낮음 |
+| 8 | Service Worker + 웹푸시(보조) + send-push Edge Function | 5 | 낮음 |
+| 9 | **기존 4테이블 RLS 전환 + RPC is_admin() 가드** | 5(전원 로그인) | **높음** |
+| 10 | 네이버 OAuth(Edge Function) | 9 | 낮음 |
+
+- 마이그레이션 파일은 `supabase/migrations/`에 타임스탬프 규약(`YYYYMMDDHHMMSS_*.sql`)으로 추가.
+- Phase 9는 **전 운영진 로그인 + admin 시드 확인 + 비활성 세션 시간대**에만 적용, 직후 편성 1회 스모크 테스트, 문제 시 즉시 롤백(anon_all 재생성 / 가드 없는 RPC `create or replace`).
+
+---
+
+## 11. 향후/보류
+
+- 카풀 매칭 보조 툴(누가 누구 차에) — 지금은 운영진 수동, 후순위.
+- 한 일정 다중 세션(오전/오후) — 현재 1 sessions 행 = 1 모임으로 충분(하루 여러 모임은 행 여러 개).
+- Google Sheets/googleAuth 완전 폐지 시점 — sheet_player_id 백필 충분 후 점진.
