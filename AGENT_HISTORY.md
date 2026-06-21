@@ -91,3 +91,16 @@
 - 설치형 PWA 웹푸시(SW+VAPID+Edge Function)는 Phase 8 잔여로 추후.
 
 ---
+
+## #8
+
+**Prompt**: 커밋하고 계속
+
+**Answer**: Phase 7 카풀(의향 표시 + 집계) 구현 + E2E 검증.
+
+- 마이그레이션 070000: `set_carpool_role`(본인 의향, 참석자만) + `announce_carpool_muster`(운영진 집결지/시각 설정 + confirmed 참석자에게 carpool_muster 알림) RPC. attendances.carpool_role / sessions.carpool_muster_* 컬럼은 기존(Phase 4/5).
+- 클라: schedule.ts setCarpoolRole, scheduleStore setCarpool(+reloadAttendances), ScheduleCard 카풀 토글(운전 가능/탑승 필요/안 함, 본인 상태 강조)+집계(🚗 운전 N·탑승 M), Home handleSetCarpool 연결.
+- **E2E**: 참석→"운전 가능" 클릭→carpool_role 설정+버튼 active+"🚗 운전 가능 1·탑승 필요 0" 집계 표시, 콘솔 에러 0. tsc·biome·빌드 통과.
+- 집결 공지 운영진 입력 UI(place/time→announce_carpool_muster)는 RPC만 준비, UI 추후. 잔여 즉석 세션(53) 종료 정리.
+
+---

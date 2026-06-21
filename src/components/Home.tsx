@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { startSessionFromSchedule } from "../lib/supabase/schedule";
-import type { SessionRow } from "../lib/supabase/types";
+import type { CarpoolRole, SessionRow } from "../lib/supabase/types";
 import { appActions, useAppStore } from "../store/appStore";
 import { authActions, authDisplayName, useAuthStore } from "../store/authStore";
 import { scheduleActions, useScheduleStore } from "../store/scheduleStore";
@@ -93,6 +93,13 @@ export default function Home({ onStart }: Props) {
 			navigate("/session");
 		},
 		[navigate],
+	);
+
+	const handleSetCarpool = useCallback(
+		async (sessionId: number, role: CarpoolRole) => {
+			await scheduleActions.setCarpool(sessionId, role);
+		},
+		[],
 	);
 
 	// ── 초기 로딩 ──
@@ -331,6 +338,7 @@ export default function Home({ onStart }: Props) {
 								onCancel={() => handleCancel(s.id)}
 								onDelete={() => handleDelete(s)}
 								onStartSession={() => handleStartSession(s.id)}
+								onSetCarpool={(role) => handleSetCarpool(s.id, role)}
 							/>
 						))}
 					</div>

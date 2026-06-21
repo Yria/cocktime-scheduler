@@ -1,5 +1,5 @@
 import { supabase } from "./client";
-import type { AttendanceRow, PlaceRow, SessionRow } from "./types";
+import type { AttendanceRow, CarpoolRole, PlaceRow, SessionRow } from "./types";
 
 export interface CreateScheduleInput {
 	title: string;
@@ -154,6 +154,22 @@ export async function startSessionFromSchedule(
 	});
 	if (error) {
 		console.error("startSessionFromSchedule:", error);
+		return { ok: false, error: error.message };
+	}
+	return { ok: true };
+}
+
+/** 본인 카풀 의향 설정(참석자). */
+export async function setCarpoolRole(
+	sessionId: number,
+	role: CarpoolRole,
+): Promise<{ ok: boolean; error?: string }> {
+	const { error } = await supabase.rpc("set_carpool_role", {
+		p_session_id: sessionId,
+		p_role: role,
+	});
+	if (error) {
+		console.error("setCarpoolRole:", error);
 		return { ok: false, error: error.message };
 	}
 	return { ok: true };

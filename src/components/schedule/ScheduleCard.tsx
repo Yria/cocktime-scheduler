@@ -1,4 +1,8 @@
-import type { AttendanceRow, SessionRow } from "../../lib/supabase/types";
+import type {
+	AttendanceRow,
+	CarpoolRole,
+	SessionRow,
+} from "../../lib/supabase/types";
 
 const dtFmt = new Intl.DateTimeFormat("ko-KR", {
 	timeZone: "Asia/Seoul",
@@ -25,6 +29,7 @@ interface Props {
 	onCancel: () => void;
 	onDelete: () => void;
 	onStartSession: () => void;
+	onSetCarpool: (role: CarpoolRole) => void;
 }
 
 export default function ScheduleCard({
@@ -38,6 +43,7 @@ export default function ScheduleCard({
 	onCancel,
 	onDelete,
 	onStartSession,
+	onSetCarpool,
 }: Props) {
 	const confirmed = attendances.filter((a) => a.status === "confirmed");
 	const waiting = attendances.filter((a) => a.status === "waitlisted");
@@ -49,6 +55,13 @@ export default function ScheduleCard({
 			? waiting.filter((a) => a.position <= mine.position).length
 			: 0;
 	const isOpen = s.status === "open";
+	const canDrive = attendances.filter(
+		(a) => a.carpool_role === "can_drive",
+	).length;
+	const needRide = attendances.filter(
+		(a) => a.carpool_role === "need_ride",
+	).length;
+	const attending = mine != null && mine.status !== "cancelled";
 
 	return (
 		<div
@@ -182,6 +195,64 @@ export default function ScheduleCard({
 					</span>
 				)}
 			</div>
+
+			{/* 카풀 의향 (참석자) */}
+			{attending && (
+				<div
+					className="flex items-center gap-1.5 mt-2.5"
+					style={{ fontSize: 12 }}
+				>
+					<span
+						className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.45)]"
+						style={{ fontWeight: 600 }}
+					>
+						카풀
+					</span>
+					{(["can_drive", "need_ride", "none"] as const).map((r) => {
+						const active = (mine?.carpool_role ?? "none") === r;
+						const bg = active
+							? r === "can_drive"
+								? "#2c7a57"
+								: r === "need_ride"
+									? "#b4762b"
+									: "#94a3b8"
+							: "rgba(0,0,0,0.05)";
+						return (
+							<button
+								key={r}
+								type="button"
+								onClick={() => onSetCarpool(r)}
+								style={{
+									fontSize: 11.5,
+									fontWeight: 600,
+									padding: "4px 9px",
+									borderRadius: 7,
+									border: "none",
+									cursor: "pointer",
+									color: active ? "#fff" : "#64748b",
+									background: bg,
+								}}
+							>
+								{r === "can_drive"
+									? "운전 가능"
+									: r === "need_ride"
+										? "탑승 필요"
+										: "안 함"}
+							</button>
+						);
+					})}
+				</div>
+			)}
+
+			{/* 카풀 집계 */}
+			{(canDrive > 0 || needRide > 0) && (
+				<div
+					className="mt-1.5 text-[#64748b] dark:text-[rgba(235,235,245,0.5)]"
+					style={{ fontSize: 11.5, fontWeight: 500 }}
+				>
+					🚗 운전 가능 {canDrive} · 탑승 필요 {needRide}
+				</div>
+			)}
 
 			{isAdmin && isOpen && (
 				<button

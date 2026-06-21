@@ -9,9 +9,11 @@ import {
 	fetchPlaces,
 	fetchSchedules,
 	joinSession,
+	setCarpoolRole,
 } from "../lib/supabase/schedule";
 import type {
 	AttendanceRow,
+	CarpoolRole,
 	PlaceRow,
 	SessionRow,
 } from "../lib/supabase/types";
@@ -90,6 +92,12 @@ export const scheduleActions = {
 
 	async cancel(sessionId: number) {
 		const res = await cancelAttendance(sessionId);
+		if (res.ok) await reloadAttendances();
+		return res;
+	},
+
+	async setCarpool(sessionId: number, role: CarpoolRole) {
+		const res = await setCarpoolRole(sessionId, role);
 		if (res.ok) await reloadAttendances();
 		return res;
 	},
