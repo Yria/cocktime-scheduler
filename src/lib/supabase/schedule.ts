@@ -1,5 +1,5 @@
 import { supabase } from "./client";
-import type { PlaceRow, SessionRow } from "./types";
+import type { AttendanceRow, PlaceRow, SessionRow } from "./types";
 
 export interface CreateScheduleInput {
 	title: string;
@@ -95,4 +95,52 @@ export async function createPlace(
 		return null;
 	}
 	return data as PlaceRow;
+}
+
+// ── 참석(attendances) ─────────────────────────────────
+
+/** 여러 세션의 참석 현황(취소 제외). 클라에서 세션별 집계. */
+export async function fetchAttendances(
+	sessionIds: number[],
+): Promise<AttendanceRow[]> {
+	if (sessionIds.length === 0) return [];
+	const { data, error } = await supabase
+		.from("attendances")
+		.select("*")
+		.in("session_id", sessionIds)
+		.neq("status", "cancelled")
+		.order("position", { ascending: true });
+	if (error) {
+		console.error("fetchAttendances:", error);
+		return [];
+	}
+	return (data ?? []) as AttendanceRow[];
+}
+
+/** 참석 신청. 정원 여유면 confirmed, 아니면 waitlisted (RPC가 판정). */
+export async function joinSession(
+	sessionId: number,
+): Promise<{ ok: boolean; error?: string }> {
+	const { error } = await supabase.rpc("join_session", {
+		p_session_id: sessionId,
+	});
+	if (error) {
+		console.error("joinSession:", error);
+		return { ok: false, error: error.message };
+	}
+	return { ok: true };
+}
+
+/** 참석 취소. confirmed였으면 대기 1순위 자동 승급(RPC). */
+export async function cancelAttendance(
+	sessionId: number,
+): Promise<{ ok: boolean; error?: string }> {
+	const { error } = await supabase.rpc("cancel_attendance", {
+		p_session_id: sessionId,
+	});
+	if (error) {
+		console.error("cancelAttendance:", error);
+		return { ok: false, error: error.message };
+	}
+	return { ok: true };
 }

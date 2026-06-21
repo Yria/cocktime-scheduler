@@ -50,3 +50,17 @@
 - **검증**: tsc·biome·빌드 통과. Playwright E2E — 로그인(오상진·운영진)→일정 추가→폼 작성→저장→목록에 "수요 정기 모임 / 6월 25일(목) 오후 7:00 / 정원 20명"(Asia/Seoul 포맷) 표시, 콘솔 에러 0.
 
 ---
+
+## #5
+
+**Prompt**: 진행해
+
+**Answer**: Phase 5(참석/정원/대기/자동승급) 구현 + 동시성 적대 검증 + FOUND 버그 발견·수정 + db push 파이프라인 전환.
+
+- **마이그레이션**: attendances·session_counters·notifications + join_session/cancel_attendance/promote_waitlist RPC. 직렬화 지점 session_counters FOR UPDATE(보드 편성과 락 분리), 대기 1순위 FOR UPDATE SKIP LOCKED 승급, 취소+승급+알림 단일 트랜잭션. 적대 검증 3트랙(동시성/정확성/보안)으로 FOR SHARE·종료세션 거부 보정, 과장 결함(explicit deny·무한루프·cascade 등) 기각.
+- **클라**: AttendanceRow 타입, schedule.ts 참석 API(join/cancel/fetch), scheduleStore 확장, ScheduleCard(참석/대기 현황+참석/취소 버튼), Home 연결.
+- **근본 버그**: counter만 +1되고 attendances가 비는 증상. 처음엔 대시보드 붙여넣기 잘림으로 의심했으나, 디버그 RPC(pg_get_functiondef)로 소스 확인 결과 **PL/pgSQL FOUND 버그**. 기존참석 select 직후의 FOUND가 그 뒤 `update session_counters`에 덮어써져 `if found then update else insert`가 INSERT 대신 UPDATE(0행) 경로를 탐 → v_has_existing 변수로 FOUND 캡처해 수정(050000).
+- **인프라**: 원격 세션이라 supabase login(브라우저) 불가 → `supabase login --token`으로 전환, migration repair(--status reverted/applied) + db push 파이프라인 확립. 이제 마이그레이션은 db push로 적용.
+- **검증**: Playwright E2E 참석→확정 1/20→취소→0 정상, 콘솔 에러 0. 대기/자동승급은 회원 2명 필요(동시성 워크플로 논리 검증 완료, 추후 실증).
+
+---

@@ -47,6 +47,22 @@ export interface PlaceRow {
 	created_at: string;
 }
 
+export type AttendanceStatus = "confirmed" | "waitlisted" | "cancelled";
+export type CarpoolRole = "none" | "can_drive" | "need_ride";
+
+export interface AttendanceRow {
+	session_id: number;
+	member_id: string;
+	status: AttendanceStatus;
+	position: number;
+	carpool_role: CarpoolRole;
+	carpool_seats: number | null;
+	requested_at: string;
+	confirmed_at: string | null;
+	cancelled_at: string | null;
+	updated_at: string;
+}
+
 export interface SessionPlayerRow {
 	id: string;
 	session_id: number;

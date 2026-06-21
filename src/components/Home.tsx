@@ -4,24 +4,18 @@ import type { SessionRow } from "../lib/supabase/types";
 import { appActions, useAppStore } from "../store/appStore";
 import { authActions, authDisplayName, useAuthStore } from "../store/authStore";
 import { scheduleActions, useScheduleStore } from "../store/scheduleStore";
+import ScheduleCard from "./schedule/ScheduleCard";
 import Spinner from "./shared/Spinner";
 
 interface Props {
 	onStart: () => void;
 }
 
-const dtFmt = new Intl.DateTimeFormat("ko-KR", {
-	timeZone: "Asia/Seoul",
-	month: "long",
-	day: "numeric",
-	weekday: "short",
-	hour: "numeric",
-	minute: "2-digit",
-});
-
-function formatSchedule(iso: string | null): string {
-	if (!iso) return "시간 미정";
-	return dtFmt.format(new Date(iso));
+function joinErrorMsg(e?: string): string {
+	if (e?.includes("already joined")) return "이미 신청했습니다";
+	if (e?.includes("not open")) return "모집 중이 아닙니다";
+	if (e?.includes("not authenticated")) return "로그인이 필요합니다";
+	return "신청에 실패했습니다";
 }
 
 export default function Home({ onStart }: Props) {
@@ -29,12 +23,15 @@ export default function Home({ onStart }: Props) {
 	const authReady = useAuthStore((s) => s.ready);
 	const authUser = useAuthStore((s) => s.user);
 	const isAdmin = useAuthStore((s) => s.isAdmin);
+	const memberId = useAuthStore((s) => s.memberId);
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
 	const schedules = useScheduleStore((s) => s.schedules);
 	const places = useScheduleStore((s) => s.places);
+	const attendances = useScheduleStore((s) => s.attendances);
 	const scheduleLoading = useScheduleStore((s) => s.loading);
 
 	const [authBusy, setAuthBusy] = useState(false);
+	const [busyId, setBusyId] = useState<number | null>(null);
 
 	// 즉석 세션용 시트 연동(로그인 후 백그라운드) + 일정 로드
 	useEffect(() => {
@@ -56,6 +53,19 @@ export default function Home({ onStart }: Props) {
 	const handleDelete = useCallback(async (s: SessionRow) => {
 		if (!confirm(`'${s.title ?? "일정"}'을(를) 삭제할까요?`)) return;
 		await scheduleActions.remove(s.id);
+	}, []);
+
+	const handleJoin = useCallback(async (sessionId: number) => {
+		setBusyId(sessionId);
+		const res = await scheduleActions.join(sessionId);
+		setBusyId(null);
+		if (!res.ok) alert(joinErrorMsg(res.error));
+	}, []);
+
+	const handleCancel = useCallback(async (sessionId: number) => {
+		setBusyId(sessionId);
+		await scheduleActions.cancel(sessionId);
+		setBusyId(null);
 	}, []);
 
 	// ── 초기 로딩 ──
@@ -226,67 +236,18 @@ export default function Home({ onStart }: Props) {
 				) : (
 					<div className="flex flex-col gap-2.5">
 						{schedules.map((s) => (
-							<div
+							<ScheduleCard
 								key={s.id}
-								className="bg-white dark:bg-[rgba(30,30,35,0.8)] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.1)]"
-								style={{ borderRadius: 12, padding: "14px 16px" }}
-							>
-								<div className="flex items-start justify-between gap-2">
-									<div className="flex flex-col gap-1 min-w-0">
-										<div className="flex items-center gap-2">
-											<span
-												className="text-[#0f1724] dark:text-white truncate"
-												style={{ fontSize: 15, fontWeight: 700 }}
-											>
-												{s.title ?? "제목 없음"}
-											</span>
-											{s.status === "active" && (
-												<span
-													style={{
-														fontSize: 10,
-														fontWeight: 700,
-														color: "#30d158",
-														background: "rgba(52,199,89,0.12)",
-														padding: "2px 6px",
-														borderRadius: 5,
-													}}
-												>
-													진행중
-												</span>
-											)}
-										</div>
-										<span
-											className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
-											style={{ fontSize: 13, fontWeight: 500 }}
-										>
-											{formatSchedule(s.scheduled_at)}
-										</span>
-										<span
-											className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.45)]"
-											style={{ fontSize: 12 }}
-										>
-											{placeName(s.place_id) ?? "장소 미정"}
-											{s.capacity != null ? ` · 정원 ${s.capacity}명` : ""}
-										</span>
-									</div>
-									{isAdmin && (
-										<button
-											type="button"
-											onClick={() => handleDelete(s)}
-											className="text-[#cbd2d9] dark:text-[rgba(235,235,245,0.3)]"
-											style={{
-												background: "none",
-												border: "none",
-												fontSize: 12,
-												cursor: "pointer",
-												flexShrink: 0,
-											}}
-										>
-											삭제
-										</button>
-									)}
-								</div>
-							</div>
+								session={s}
+								placeName={placeName(s.place_id)}
+								attendances={attendances.filter((a) => a.session_id === s.id)}
+								memberId={memberId}
+								isAdmin={isAdmin}
+								busy={busyId === s.id}
+								onJoin={() => handleJoin(s.id)}
+								onCancel={() => handleCancel(s.id)}
+								onDelete={() => handleDelete(s)}
+							/>
 						))}
 					</div>
 				)}
