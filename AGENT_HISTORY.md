@@ -37,3 +37,16 @@
 - **적용 대기**: `supabase db push`로 원격 DB 적용 필요. tsc·biome·빌드 통과.
 
 ---
+
+## #4
+
+**Prompt**: 했어
+
+**Answer**: Phase 4(일정 = 세션) 일정 기능을 풀스택 구현하고 E2E로 검증함. "홈을 일정 목록 중심으로" 결정 반영.
+
+- **마이그레이션** `20260621010000_sessions_schedule_and_places.sql`: 기존 sessions를 예정→진행→종료 상태기계로 확장(title·scheduled_at·capacity·place_id·status·created_by·carpool_muster_*) + places(좌표 프리셋) 테이블 + 좁은 RLS. status 기본값 'active'로 기존 즉석 세션 무영향, is_active→status 보정.
+- **배관**: types.ts SessionRow 확장 + SessionStatus + PlaceRow. schedule.ts(fetchSchedules/createSchedule/deleteSchedule/fetchPlaces/createPlace). scheduleStore(schedules·places 상태 + load/create/remove/addPlace).
+- **화면**: Home 전면 개편 — 비로그인=로그인 뷰, 로그인=일정 목록 중심(헤더·운영진 "일정 추가"·일정 카드·즉석 세션 시작·매치 로그). ScheduleForm(운영진 일정 생성: 제목·일시·장소 select+신규추가·코트수·정원). App에 /schedule/new 라우트.
+- **검증**: tsc·biome·빌드 통과. Playwright E2E — 로그인(오상진·운영진)→일정 추가→폼 작성→저장→목록에 "수요 정기 모임 / 6월 25일(목) 오후 7:00 / 정원 20명"(Asia/Seoul 포맷) 표시, 콘솔 에러 0.
+
+---

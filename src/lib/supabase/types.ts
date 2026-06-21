@@ -8,6 +8,13 @@ import type {
 	SessionPlayer,
 } from "../../types";
 
+export type SessionStatus =
+	| "draft"
+	| "open"
+	| "active"
+	| "closed"
+	| "cancelled";
+
 export interface SessionRow {
 	id: number;
 	is_active: boolean;
@@ -17,6 +24,27 @@ export interface SessionRow {
 	match_assign_count: number;
 	board_drafts: import("../../types/board").BoardDraftsPayload | null;
 	cock_check_enabled: boolean;
+	// Phase 4: 일정화 (일정 = 세션)
+	title: string | null;
+	scheduled_at: string | null;
+	capacity: number | null;
+	place_id: number | null;
+	status: SessionStatus;
+	created_by: string | null;
+	carpool_muster_place_id: number | null;
+	carpool_muster_at: string | null;
+}
+
+export interface PlaceRow {
+	id: number;
+	name: string;
+	address: string | null;
+	lat: number | null;
+	lng: number | null;
+	default_court_count: number | null;
+	is_active: boolean;
+	created_by: string | null;
+	created_at: string;
 }
 
 export interface SessionPlayerRow {

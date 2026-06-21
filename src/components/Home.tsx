@@ -1,188 +1,147 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import type { SessionRow } from "../lib/supabase/types";
 import { appActions, useAppStore } from "../store/appStore";
 import { authActions, authDisplayName, useAuthStore } from "../store/authStore";
+import { scheduleActions, useScheduleStore } from "../store/scheduleStore";
 import Spinner from "./shared/Spinner";
 
 interface Props {
 	onStart: () => void;
 }
 
+const dtFmt = new Intl.DateTimeFormat("ko-KR", {
+	timeZone: "Asia/Seoul",
+	month: "long",
+	day: "numeric",
+	weekday: "short",
+	hour: "numeric",
+	minute: "2-digit",
+});
+
+function formatSchedule(iso: string | null): string {
+	if (!iso) return "시간 미정";
+	return dtFmt.format(new Date(iso));
+}
+
 export default function Home({ onStart }: Props) {
 	const navigate = useNavigate();
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState("");
-	const [connected, setConnected] = useState(false);
-	const players = useAppStore((s) => s.allPlayers);
-	const sessionMeta = useAppStore((s) => s.sessionMeta);
+	const authReady = useAuthStore((s) => s.ready);
 	const authUser = useAuthStore((s) => s.user);
 	const isAdmin = useAuthStore((s) => s.isAdmin);
+	const sessionMeta = useAppStore((s) => s.sessionMeta);
+	const schedules = useScheduleStore((s) => s.schedules);
+	const places = useScheduleStore((s) => s.places);
+	const scheduleLoading = useScheduleStore((s) => s.loading);
+
 	const [authBusy, setAuthBusy] = useState(false);
-	const [authError, setAuthError] = useState("");
+
+	// 즉석 세션용 시트 연동(로그인 후 백그라운드) + 일정 로드
+	useEffect(() => {
+		if (authUser) {
+			void scheduleActions.load();
+			void appActions.fetchPlayers().catch(() => {});
+		}
+	}, [authUser]);
+
 	const handleKakaoLogin = useCallback(async () => {
 		setAuthBusy(true);
-		setAuthError("");
 		try {
 			await authActions.signInWithKakao();
-			// 성공 시 카카오로 리다이렉트되어 이후 코드는 실행되지 않음
-		} catch (e) {
-			setAuthError(e instanceof Error ? e.message : "로그인 실패");
+		} catch {
 			setAuthBusy(false);
 		}
 	}, []);
-	const connect = useCallback(async () => {
-		setLoading(true);
-		setError("");
-		try {
-			await appActions.fetchPlayers();
-			setConnected(true);
-		} catch (e) {
-			setError(e instanceof Error ? e.message : "연동 실패");
-		} finally {
-			setLoading(false);
-		}
+
+	const handleDelete = useCallback(async (s: SessionRow) => {
+		if (!confirm(`'${s.title ?? "일정"}'을(를) 삭제할까요?`)) return;
+		await scheduleActions.remove(s.id);
 	}, []);
 
-	useEffect(() => {
-		connect();
-	}, [connect]);
+	// ── 초기 로딩 ──
+	if (!authReady) {
+		return (
+			<div className="min-h-[100dvh] flex items-center justify-center bg-[#fafbff] dark:bg-[#0f172a]">
+				<Spinner size={18} />
+			</div>
+		);
+	}
+
+	// ── 비로그인: 로그인 화면 ──
+	if (!authUser) {
+		return (
+			<div
+				className="min-h-[100dvh] flex flex-col items-center justify-center bg-[#fafbff] dark:bg-[#0f172a]"
+				style={{
+					padding: "1.5rem",
+					paddingTop: "max(1.5rem, env(safe-area-inset-top))",
+					paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
+				}}
+			>
+				<div className="w-full max-w-sm flex flex-col gap-5 items-center">
+					<img
+						src="logo.png"
+						className="w-48 max-w-[80%] h-auto object-contain drop-shadow-[0_4px_12px_rgba(11,132,255,0.15)] dark:[filter:brightness(0)_invert(1)]"
+						alt="콕타임 배드민턴 클럽"
+					/>
+					<p
+						className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)] text-center"
+						style={{ fontSize: 14, fontWeight: 500 }}
+					>
+						로그인하고 일정을 확인하세요
+					</p>
+					<button
+						type="button"
+						onClick={handleKakaoLogin}
+						disabled={authBusy}
+						style={{
+							width: "100%",
+							padding: "15px",
+							borderRadius: 12,
+							fontSize: 16,
+							fontWeight: 700,
+							color: "#191600",
+							background: "#FEE500",
+							border: "none",
+							cursor: authBusy ? "not-allowed" : "pointer",
+							opacity: authBusy ? 0.6 : 1,
+						}}
+					>
+						{authBusy ? "이동 중…" : "카카오로 로그인"}
+					</button>
+				</div>
+			</div>
+		);
+	}
+
+	// ── 로그인: 일정 목록 ──
+	const placeName = (id: number | null) =>
+		id == null ? null : (places.find((p) => p.id === id)?.name ?? null);
 
 	return (
 		<div
-			className="min-h-[100dvh] flex flex-col items-center justify-center bg-[#fafbff] dark:bg-[#0f172a]"
+			className="min-h-[100dvh] bg-[#fafbff] dark:bg-[#0f172a]"
 			style={{
-				padding: "1.5rem",
-				paddingTop: "max(1.5rem, env(safe-area-inset-top))",
-				paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
+				padding: "1.25rem",
+				paddingTop: "max(1.25rem, env(safe-area-inset-top))",
+				paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))",
 			}}
 		>
-			<div className="w-full max-w-sm flex flex-col gap-4">
-				{/* Logo */}
-				<div className="flex flex-col items-center mb-6">
+			<div className="w-full max-w-sm mx-auto flex flex-col gap-4">
+				{/* 헤더 */}
+				<div className="flex items-center justify-between">
 					<img
 						src="logo.png"
-						className="w-48 max-w-[80%] h-auto object-contain mb-5 drop-shadow-[0_4px_12px_rgba(11,132,255,0.15)] dark:[filter:brightness(0)_invert(1)_drop-shadow(0_4px_16px_rgba(255,255,255,0.2))]"
-						alt="콕타임 배드민턴 클럽"
+						className="h-7 w-auto object-contain dark:[filter:brightness(0)_invert(1)]"
+						alt="콕타임"
 					/>
-					<h1
-						className="font-bold tracking-tight text-[#0f1724] dark:text-white"
-						style={{ fontSize: 28, marginBottom: 6 }}
-					>
-						콕타임 팀매칭
-					</h1>
-					<p
-						className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
-						style={{ fontSize: 14, fontWeight: 500 }}
-					>
-						스마트 배드민턴 코트 배정
-					</p>
-				</div>
-
-				{/* Status card */}
-				<div
-					className="bg-white dark:bg-[rgba(30,30,35,0.8)] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.1)]"
-					style={{
-						borderRadius: 12,
-						padding: "16px 20px",
-						display: "flex",
-						alignItems: "center",
-						justifyContent: "center",
-						minHeight: 56,
-					}}
-				>
-					{loading ? (
-						<div className="flex items-center gap-2">
-							<Spinner size={16} />
-							<p
-								className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
-								style={{ fontSize: 14, fontWeight: 500 }}
-							>
-								시트 불러오는 중…
-							</p>
-						</div>
-					) : connected ? (
-						<div className="flex items-center gap-2">
-							<span
-								style={{
-									width: 8,
-									height: 8,
-									borderRadius: "50%",
-									background: "#34c759",
-									boxShadow: "0 0 6px rgba(52,199,89,0.6)",
-									flexShrink: 0,
-								}}
-							/>
-							<p
-								className="text-[#166534] dark:text-[#30d158]"
-								style={{ fontSize: 14, fontWeight: 600 }}
-							>
-								연동됨 — {players.length}명
-							</p>
-						</div>
-					) : (
-						<div className="flex flex-col items-center gap-2">
-							<p style={{ fontSize: 14, color: "#ef4444", fontWeight: 500 }}>
-								{error}
-							</p>
-							<button
-								type="button"
-								onClick={() => connect()}
-								style={{
-									fontSize: 14,
-									fontWeight: 600,
-									color: "#0b84ff",
-									background: "none",
-									border: "none",
-									cursor: "pointer",
-									padding: "2px 8px",
-								}}
-							>
-								재시도
-							</button>
-						</div>
-					)}
-				</div>
-
-				{/* CTA */}
-				<button
-					type="button"
-					onClick={() => {
-						if (!connected) return;
-						if (sessionMeta) {
-							navigate("/session");
-						} else {
-							onStart();
-						}
-					}}
-					disabled={!connected}
-					style={{
-						width: "100%",
-						padding: "16px",
-						borderRadius: 12,
-						fontSize: 17,
-						fontWeight: 600,
-						color: "#fff",
-						background: connected ? "#0b84ff" : "rgba(11,132,255,0.35)",
-						border: "none",
-						cursor: connected ? "pointer" : "not-allowed",
-						boxShadow: connected ? "0 4px 16px rgba(11,132,255,0.3)" : "none",
-						transition: "opacity 0.2s",
-					}}
-				>
-					{sessionMeta ? "세션 이어하기" : "세션 시작"}
-				</button>
-
-				{/* 로그인 (Phase 1: 기능만 도입, 열람 강제는 추후) */}
-				{authUser ? (
-					<div
-						className="flex items-center justify-center gap-2"
-						style={{ fontSize: 13 }}
-					>
+					<div className="flex items-center gap-2" style={{ fontSize: 12 }}>
 						<span
 							className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
-							style={{ fontWeight: 500 }}
+							style={{ fontWeight: 600 }}
 						>
-							{authDisplayName(authUser)}님{isAdmin ? " · 운영진" : ""} 로그인됨
+							{authDisplayName(authUser)}
+							{isAdmin ? " · 운영진" : ""}
 						</span>
 						<button
 							type="button"
@@ -193,49 +152,167 @@ export default function Home({ onStart }: Props) {
 								border: "none",
 								fontWeight: 600,
 								cursor: "pointer",
-								padding: "2px 6px",
 							}}
 						>
 							로그아웃
 						</button>
 					</div>
-				) : (
-					<div className="flex flex-col gap-2">
+				</div>
+
+				{/* 진행 중 세션 이어하기 */}
+				{sessionMeta && (
+					<button
+						type="button"
+						onClick={() => navigate("/session")}
+						style={{
+							width: "100%",
+							padding: "14px",
+							borderRadius: 12,
+							fontSize: 15,
+							fontWeight: 700,
+							color: "#fff",
+							background: "#0b84ff",
+							border: "none",
+							cursor: "pointer",
+							boxShadow: "0 4px 16px rgba(11,132,255,0.3)",
+						}}
+					>
+						진행 중 세션 이어하기
+					</button>
+				)}
+
+				{/* 일정 섹션 헤더 */}
+				<div className="flex items-center justify-between mt-1">
+					<h2
+						className="text-[#0f1724] dark:text-white"
+						style={{ fontSize: 18, fontWeight: 800 }}
+					>
+						일정
+					</h2>
+					{isAdmin && (
 						<button
 							type="button"
-							onClick={handleKakaoLogin}
-							disabled={authBusy}
+							onClick={() => navigate("/schedule/new")}
 							style={{
-								width: "100%",
-								padding: "13px",
-								borderRadius: 12,
-								fontSize: 15,
+								fontSize: 13,
 								fontWeight: 700,
-								color: "#191600",
-								background: "#FEE500",
+								color: "#0b84ff",
+								background: "rgba(11,132,255,0.1)",
 								border: "none",
-								cursor: authBusy ? "not-allowed" : "pointer",
-								opacity: authBusy ? 0.6 : 1,
+								borderRadius: 8,
+								padding: "6px 12px",
+								cursor: "pointer",
 							}}
 						>
-							{authBusy ? "이동 중…" : "카카오로 로그인"}
+							+ 일정 추가
 						</button>
-						{authError && (
-							<p
-								style={{
-									fontSize: 12,
-									color: "#ef4444",
-									fontWeight: 500,
-									textAlign: "center",
-								}}
+					)}
+				</div>
+
+				{/* 일정 목록 */}
+				{scheduleLoading && schedules.length === 0 ? (
+					<div className="flex justify-center py-8">
+						<Spinner size={16} />
+					</div>
+				) : schedules.length === 0 ? (
+					<div
+						className="text-center text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+						style={{ fontSize: 14, padding: "32px 0" }}
+					>
+						{isAdmin
+							? "아직 일정이 없습니다. '일정 추가'로 만들어보세요."
+							: "예정된 일정이 없습니다."}
+					</div>
+				) : (
+					<div className="flex flex-col gap-2.5">
+						{schedules.map((s) => (
+							<div
+								key={s.id}
+								className="bg-white dark:bg-[rgba(30,30,35,0.8)] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.1)]"
+								style={{ borderRadius: 12, padding: "14px 16px" }}
 							>
-								{authError}
-							</p>
-						)}
+								<div className="flex items-start justify-between gap-2">
+									<div className="flex flex-col gap-1 min-w-0">
+										<div className="flex items-center gap-2">
+											<span
+												className="text-[#0f1724] dark:text-white truncate"
+												style={{ fontSize: 15, fontWeight: 700 }}
+											>
+												{s.title ?? "제목 없음"}
+											</span>
+											{s.status === "active" && (
+												<span
+													style={{
+														fontSize: 10,
+														fontWeight: 700,
+														color: "#30d158",
+														background: "rgba(52,199,89,0.12)",
+														padding: "2px 6px",
+														borderRadius: 5,
+													}}
+												>
+													진행중
+												</span>
+											)}
+										</div>
+										<span
+											className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+											style={{ fontSize: 13, fontWeight: 500 }}
+										>
+											{formatSchedule(s.scheduled_at)}
+										</span>
+										<span
+											className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.45)]"
+											style={{ fontSize: 12 }}
+										>
+											{placeName(s.place_id) ?? "장소 미정"}
+											{s.capacity != null ? ` · 정원 ${s.capacity}명` : ""}
+										</span>
+									</div>
+									{isAdmin && (
+										<button
+											type="button"
+											onClick={() => handleDelete(s)}
+											className="text-[#cbd2d9] dark:text-[rgba(235,235,245,0.3)]"
+											style={{
+												background: "none",
+												border: "none",
+												fontSize: 12,
+												cursor: "pointer",
+												flexShrink: 0,
+											}}
+										>
+											삭제
+										</button>
+									)}
+								</div>
+							</div>
+						))}
 					</div>
 				)}
 
-				{/* Log link */}
+				{/* 운영진: 즉석 세션 시작 */}
+				{isAdmin && (
+					<button
+						type="button"
+						onClick={onStart}
+						className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)] border border-dashed border-[rgba(0,0,0,0.12)] dark:border-[rgba(255,255,255,0.15)]"
+						style={{
+							width: "100%",
+							padding: "12px",
+							borderRadius: 12,
+							fontSize: 14,
+							fontWeight: 600,
+							background: "none",
+							cursor: "pointer",
+							marginTop: 4,
+						}}
+					>
+						즉석 세션 시작
+					</button>
+				)}
+
+				{/* 매치 로그 */}
 				<button
 					type="button"
 					onClick={() => navigate("/logs")}
