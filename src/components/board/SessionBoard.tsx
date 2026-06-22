@@ -259,8 +259,9 @@ export default function SessionBoard() {
 	const halfW = TEAM_W / 2;
 	const courtCardY = TEAM_BOX_ABOVE + 8;
 
+	// 100dvh 콜드스타트 버그 회피: fixed/inset:0 으로 layout viewport(safe-area 포함) 전체를 안정적으로 덮는다.
 	return (
-		<div style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden", background: BG_BOARD }}>
+		<div style={{ position: "fixed", inset: 0, overflow: "hidden", background: BG_BOARD }}>
 			<BoardToolbar />
 			<div ref={stageContainerRef} style={{ position: "absolute", top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top))`, left: 0, right: 0, bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px))`, touchAction: "none" }}>
 				<Stage

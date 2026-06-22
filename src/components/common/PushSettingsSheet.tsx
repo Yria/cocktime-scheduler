@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import { isAndroid, isIOS, isStandalone } from "../../lib/push/platform";
 import { useAuthStore } from "../../store/authStore";
 import { pushActions, usePushStore } from "../../store/pushStore";
 import { toast } from "../../store/toastStore";
+import Spinner from "../shared/Spinner";
 import ModalSheet from "./ModalSheet";
 
 interface Props {
@@ -52,10 +54,16 @@ function installSteps(): string[] {
 			"'앱 설치'(또는 '홈 화면에 추가')를 선택하세요",
 			"설치된 '콕타임' 앱으로 다시 여세요",
 		];
-	return [
-		"주소창 오른쪽의 설치 아이콘을 누르세요",
-		"'설치'를 선택하세요",
-	];
+	return ["주소창 오른쪽의 설치 아이콘을 누르세요", "'설치'를 선택하세요"];
+}
+
+/** 권한 차단(denied) 시 해제 경로 안내 */
+function unblockHint(): string {
+	if (isIOS())
+		return "기기 설정 > 알림 > 콕타임에서 '알림 허용'을 켜주세요.";
+	if (isAndroid())
+		return "기기 설정 > 앱 > 콕타임 > 알림에서 허용으로 바꿔주세요.";
+	return "브라우저 주소창의 자물쇠 아이콘 > 알림에서 허용으로 바꿔주세요.";
 }
 
 export default function PushSettingsSheet({ onClose }: Props) {
@@ -65,6 +73,18 @@ export default function PushSettingsSheet({ onClose }: Props) {
 	const subscribed = usePushStore((s) => s.subscribed);
 	const busy = usePushStore((s) => s.busy);
 	const standalone = isStandalone();
+
+	// 모달을 열 때 현재 구독 가능 상태를 최신으로 다시 파악(권한·구독·설치 여부).
+	const [checking, setChecking] = useState(true);
+	useEffect(() => {
+		let alive = true;
+		void pushActions.init().finally(() => {
+			if (alive) setChecking(false);
+		});
+		return () => {
+			alive = false;
+		};
+	}, []);
 
 	const handleEnable = async () => {
 		if (!memberId) return;
@@ -95,7 +115,7 @@ export default function PushSettingsSheet({ onClose }: Props) {
 		</p>
 	);
 
-	// 플랫폼별 "홈 화면에 앱 추가" 단계 안내
+	// 플랫폼별 "홈 화면에 앱 추가" 단계 안내(도움말)
 	const installGuide = (highlight: boolean) => (
 		<div
 			className={
@@ -122,11 +142,27 @@ export default function PushSettingsSheet({ onClose }: Props) {
 		</div>
 	);
 
+	// ── 구독 가능 여부를 먼저 파악해 분기 ──
 	let content: React.ReactNode;
-	if (installState === "unsupported") {
-		content = note("이 브라우저는 잠금화면 알림을 지원하지 않아요.");
+	if (checking) {
+		content = (
+			<div className="flex items-center gap-2 py-3">
+				<Spinner size={14} />
+				<span
+					className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+					style={{ fontSize: 13 }}
+				>
+					알림 사용 가능 여부 확인 중…
+				</span>
+			</div>
+		);
+	} else if (installState === "unsupported") {
+		// 구독 불가 — 미지원 안내
+		content = note(
+			"이 브라우저는 잠금화면 알림을 지원하지 않아요. 최신 Safari/Chrome에서 다시 시도해 주세요.",
+		);
 	} else if (installState === "ios-needs-install") {
-		// iOS는 홈 화면에 설치해야만 알림 가능 → 설치 안내를 메인으로
+		// 구독 불가 — iOS는 홈 화면 설치 필요 → 설치 도움말
 		content = (
 			<div className="flex flex-col gap-2">
 				{note(
@@ -136,10 +172,15 @@ export default function PushSettingsSheet({ onClose }: Props) {
 			</div>
 		);
 	} else if (permission === "denied") {
-		content = note(
-			"알림이 차단되어 있어요. 기기 설정 > 콕타임 > 알림에서 허용으로 바꿔 주세요.",
+		// 구독 불가 — 권한 차단됨 → 해제 도움말
+		content = (
+			<div className="flex flex-col gap-1.5">
+				{note("알림이 차단돼 있어 켤 수 없어요.")}
+				{note(unblockHint())}
+			</div>
 		);
 	} else if (subscribed) {
+		// 구독 중 — 끄기
 		content = (
 			<div className="flex flex-col gap-3">
 				{note("잠금화면 알림이 켜져 있어요.")}
@@ -154,7 +195,7 @@ export default function PushSettingsSheet({ onClose }: Props) {
 			</div>
 		);
 	} else {
-		// 켤 수 있는 상태(이미 설치됐거나 Android/데스크톱)
+		// 구독 가능 — 켜기 (+ 미설치면 설치 권장 도움말)
 		content = (
 			<div className="flex flex-col gap-3">
 				{note("앱을 닫아도 대기→참석 확정, 일정 변경 알림을 받을 수 있어요.")}
@@ -166,7 +207,6 @@ export default function PushSettingsSheet({ onClose }: Props) {
 				>
 					{busy ? "처리 중…" : "잠금화면 알림 켜기"}
 				</button>
-				{/* 아직 홈 화면에 설치 안 했으면 설치 방법을 접이식으로 안내 */}
 				{!standalone && (
 					<details className="mt-1">
 						<summary
