@@ -1,25 +1,86 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "./client";
-import type { NotificationRow } from "./types";
+import type { NotificationRow, PlaceRow, SessionRow } from "./types";
 
-/** 알림 type → 사용자 표시 메시지 */
-export function notificationMessage(n: NotificationRow): string {
+/** 알림 메시지를 풍부하게 만들기 위한 컨텍스트(세션/장소 정보). 없으면 기본 문구로 폴백. */
+export interface NotificationContext {
+	sessionTitle?: string | null;
+	scheduledAt?: string | null;
+	placeName?: string | null;
+}
+
+/** ISO 시각 → "6월 25일 (목) 오후 7:00" 형식(Asia/Seoul). 없으면 빈 문자열. */
+function formatWhen(iso?: string | null): string {
+	if (!iso) return "";
+	const t = Date.parse(iso);
+	if (Number.isNaN(t)) return "";
+	return new Intl.DateTimeFormat("ko-KR", {
+		timeZone: "Asia/Seoul",
+		month: "long",
+		day: "numeric",
+		weekday: "short",
+		hour: "numeric",
+		minute: "2-digit",
+	}).format(new Date(t));
+}
+
+/** 알림 row + 로드된 일정/장소에서 표시 컨텍스트를 만든다(클라이언트용). */
+export function notificationContext(
+	n: NotificationRow,
+	schedules: SessionRow[],
+	places: PlaceRow[],
+): NotificationContext {
+	const sess =
+		n.session_id != null ? schedules.find((s) => s.id === n.session_id) : undefined;
+	const placeId =
+		n.payload && typeof n.payload.place_id === "number"
+			? n.payload.place_id
+			: null;
+	const place = placeId != null ? places.find((p) => p.id === placeId) : undefined;
+	return {
+		sessionTitle: sess?.title ?? null,
+		scheduledAt: sess?.scheduled_at ?? null,
+		placeName: place?.name ?? null,
+	};
+}
+
+/** 알림 type(+컨텍스트) → 사용자 표시 메시지. ctx가 있으면 세션 제목·날짜·장소를 포함한다. */
+export function notificationMessage(
+	n: NotificationRow,
+	ctx?: NotificationContext,
+): string {
+	const when = formatWhen(ctx?.scheduledAt);
+	// "'수요 정기모임' (6월 25일 (목) 오후 7:00)" 또는 제목만, 없으면 빈 문자열
+	const sess = ctx?.sessionTitle
+		? `'${ctx.sessionTitle}'${when ? ` (${when})` : ""}`
+		: "";
+
 	switch (n.type) {
 		case "promoted":
-			return "대기자에서 참석이 확정되었어요!";
+			return sess
+				? `${sess} 대기자에서 참석이 확정됐어요!`
+				: "대기자에서 참석이 확정되었어요!";
 		case "session_cancelled":
-			return "참석 예정 일정이 취소되었어요";
+			return sess ? `${sess} 일정이 취소됐어요` : "참석 예정 일정이 취소되었어요";
 		case "session_closed":
-			return "일정 모집이 마감되었어요";
-		case "carpool_muster":
+			return sess ? `${sess} 모집이 마감됐어요` : "일정 모집이 마감되었어요";
+		case "carpool_muster": {
+			const at = formatWhen(
+				n.payload && typeof n.payload.at === "string" ? n.payload.at : null,
+			);
+			const place = ctx?.placeName;
+			if (place && at)
+				return `카풀 안내: '${place}'(으)로 ${at}까지 모여주세요`;
+			if (place) return `카풀 안내: '${place}' 집결 안내가 도착했어요`;
 			return "카풀 집결 안내가 도착했어요";
+		}
 		case "schedule_added": {
 			const label =
 				n.payload && typeof n.payload.label === "string"
 					? n.payload.label
 					: null;
 			return label
-				? `새 일정이 추가되었어요: ${label}`
+				? `새 일정이 추가됐어요: ${label}`
 				: "새 일정이 추가되었어요";
 		}
 		default:

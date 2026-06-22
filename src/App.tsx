@@ -12,6 +12,7 @@ import { usePageVisibility } from "./hooks/usePageVisibility";
 import type { SessionRow } from "./lib/supabase";
 import { supabase } from "./lib/supabase";
 import {
+	notificationContext,
 	notificationMessage,
 	subscribeNotifications,
 } from "./lib/supabase/notifications";
@@ -19,7 +20,7 @@ import { appActions, useAppStore } from "./store/appStore";
 import { authActions, useAuthStore } from "./store/authStore";
 import { notificationActions } from "./store/notificationStore";
 import { pushActions } from "./store/pushStore";
-import { scheduleActions } from "./store/scheduleStore";
+import { scheduleActions, useScheduleStore } from "./store/scheduleStore";
 import { useSessionStore } from "./store/sessionStore";
 import { toast } from "./store/toastStore";
 import type { Player, SessionSettings } from "./types";
@@ -75,7 +76,11 @@ export default function App() {
 		void notificationActions.load(memberId);
 		const ch = subscribeNotifications(memberId, (n) => {
 			notificationActions.pushRealtime(n);
-			toast(notificationMessage(n), { variant: "success", duration: 6000 });
+			const { schedules, places } = useScheduleStore.getState();
+			toast(notificationMessage(n, notificationContext(n, schedules, places)), {
+				variant: "success",
+				duration: 6000,
+			});
 		});
 		return () => {
 			supabase.removeChannel(ch);

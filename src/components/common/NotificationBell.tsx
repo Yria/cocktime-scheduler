@@ -1,11 +1,15 @@
 import { Bell, X } from "lucide-react";
 import { useState } from "react";
-import { notificationMessage } from "../../lib/supabase/notifications";
+import {
+	notificationContext,
+	notificationMessage,
+} from "../../lib/supabase/notifications";
 import { useAuthStore } from "../../store/authStore";
 import {
 	notificationActions,
 	useNotificationStore,
 } from "../../store/notificationStore";
+import { useScheduleStore } from "../../store/scheduleStore";
 import ModalSheet from "./ModalSheet";
 
 /** 알림 생성 시각 → 상대시간 표기 */
@@ -28,6 +32,8 @@ export default function NotificationBell() {
 	const memberId = useAuthStore((s) => s.memberId);
 	const items = useNotificationStore((s) => s.items);
 	const unreadCount = useNotificationStore((s) => s.unreadCount);
+	const schedules = useScheduleStore((s) => s.schedules);
+	const places = useScheduleStore((s) => s.places);
 	const [open, setOpen] = useState(false);
 	// 패널을 여는 순간의 미읽음 id 스냅샷. 일괄 읽음 처리 후에도
 	// 이번 열람 동안은 "새 알림" 점을 유지해 무엇이 새 알림이었는지 보이게 한다.
@@ -148,7 +154,10 @@ export default function NotificationBell() {
 											className="text-[#0f1724] dark:text-white"
 											style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.4 }}
 										>
-											{notificationMessage(n)}
+											{notificationMessage(
+												n,
+												notificationContext(n, schedules, places),
+											)}
 										</p>
 										<span
 											className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"

@@ -40,21 +40,59 @@ interface NotificationPayload {
   payload: Record<string, unknown> | null;
 }
 
+interface NotifCtx {
+  sessionTitle?: string | null;
+  scheduledAt?: string | null;
+  placeName?: string | null;
+}
+
+/** ISO → "6월 25일 (목) 오후 7:00" (Asia/Seoul). */
+function formatWhen(iso?: string | null): string {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(t));
+}
+
 // ⚠️ src/lib/supabase/notifications.ts 의 notificationMessage 와 반드시 동기화할 것.
-function buildBody(type: string, payload: Record<string, unknown> | null): string {
+function buildBody(
+  type: string,
+  payload: Record<string, unknown> | null,
+  ctx: NotifCtx,
+): string {
+  const when = formatWhen(ctx.scheduledAt);
+  const sess = ctx.sessionTitle
+    ? `'${ctx.sessionTitle}'${when ? ` (${when})` : ""}`
+    : "";
   switch (type) {
     case "promoted":
-      return "대기자에서 참석이 확정되었어요!";
+      return sess
+        ? `${sess} 대기자에서 참석이 확정됐어요!`
+        : "대기자에서 참석이 확정되었어요!";
     case "session_cancelled":
-      return "참석 예정 일정이 취소되었어요";
+      return sess ? `${sess} 일정이 취소됐어요` : "참석 예정 일정이 취소되었어요";
     case "session_closed":
-      return "일정 모집이 마감되었어요";
-    case "carpool_muster":
+      return sess ? `${sess} 모집이 마감됐어요` : "일정 모집이 마감되었어요";
+    case "carpool_muster": {
+      const at = formatWhen(
+        payload && typeof payload.at === "string" ? payload.at : null,
+      );
+      const place = ctx.placeName;
+      if (place && at) return `카풀 안내: '${place}'(으)로 ${at}까지 모여주세요`;
+      if (place) return `카풀 안내: '${place}' 집결 안내가 도착했어요`;
       return "카풀 집결 안내가 도착했어요";
+    }
     case "schedule_added": {
       const label =
         payload && typeof payload.label === "string" ? payload.label : null;
-      return label ? `새 일정이 추가되었어요: ${label}` : "새 일정이 추가되었어요";
+      return label ? `새 일정이 추가됐어요: ${label}` : "새 일정이 추가되었어요";
     }
     default:
       return "새 알림이 있어요";
@@ -86,10 +124,36 @@ Deno.serve(async (req) => {
       });
     }
 
+    // 메시지를 풍부하게: 세션 제목·시각, 카풀 집결 장소명 조회
+    const ctx: NotifCtx = {};
+    if (n.session_id != null) {
+      const { data: s } = await sb
+        .from("sessions")
+        .select("title, scheduled_at")
+        .eq("id", n.session_id)
+        .maybeSingle();
+      if (s) {
+        ctx.sessionTitle = s.title;
+        ctx.scheduledAt = s.scheduled_at;
+      }
+    }
+    const placeId =
+      n.payload && typeof n.payload.place_id === "number"
+        ? n.payload.place_id
+        : null;
+    if (placeId != null) {
+      const { data: p } = await sb
+        .from("places")
+        .select("name")
+        .eq("id", placeId)
+        .maybeSingle();
+      if (p) ctx.placeName = p.name;
+    }
+
     const appServer = await getAppServer();
     const msg = JSON.stringify({
       title: "콕타임",
-      body: buildBody(n.type, n.payload),
+      body: buildBody(n.type, n.payload, ctx),
       url: n.session_id ? "session" : "",
       tag: `notif-${n.id}`,
       type: n.type,
