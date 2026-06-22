@@ -1,3 +1,11 @@
+import {
+	Download,
+	EllipsisVertical,
+	MonitorDown,
+	Settings,
+	Smartphone,
+	SquarePlus,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { isAndroid, isIOS, isStandalone } from "../../lib/push/platform";
 import { useAuthStore } from "../../store/authStore";
@@ -34,33 +42,76 @@ const secondaryBtn: React.CSSProperties = {
 	cursor: "pointer",
 };
 
+// iOS 공유 버튼 아이콘(네모 + 위 화살표) — lucide Share와 모양이 달라 직접 그린다.
+function IosShareIcon({ size = 16 }: { size?: number }) {
+	return (
+		<svg
+			width={size}
+			height={size}
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth={2}
+			strokeLinecap="round"
+			strokeLinejoin="round"
+			aria-hidden="true"
+		>
+			<path d="M12 3v13" />
+			<path d="m8 7 4-4 4 4" />
+			<path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
+		</svg>
+	);
+}
+
 function platformLabel(): string {
 	if (isIOS()) return "아이폰";
 	if (isAndroid()) return "안드로이드";
 	return "이 기기";
 }
 
-/** 플랫폼별 홈 화면 설치 단계 */
-function installSteps(): string[] {
+interface InstallStep {
+	icon: React.ReactNode;
+	text: string;
+}
+
+/** 플랫폼별 홈 화면 설치 단계(동작에 맞는 아이콘 포함) */
+function installSteps(): InstallStep[] {
 	if (isIOS())
 		return [
-			"Safari 하단의 공유 버튼(□↑)을 누르세요",
-			"'홈 화면에 추가'를 선택하세요",
-			"홈 화면의 '콕타임' 아이콘으로 다시 여세요",
+			{ icon: <IosShareIcon />, text: "Safari 하단의 공유 버튼을 누르세요" },
+			{ icon: <SquarePlus size={16} />, text: "'홈 화면에 추가'를 선택하세요" },
+			{
+				icon: <Smartphone size={16} />,
+				text: "홈 화면의 '콕타임' 아이콘으로 다시 여세요",
+			},
 		];
 	if (isAndroid())
 		return [
-			"Chrome 오른쪽 위 ⋮ 메뉴를 누르세요",
-			"'앱 설치'(또는 '홈 화면에 추가')를 선택하세요",
-			"설치된 '콕타임' 앱으로 다시 여세요",
+			{
+				icon: <EllipsisVertical size={16} />,
+				text: "Chrome 오른쪽 위 메뉴(⋮)를 누르세요",
+			},
+			{
+				icon: <Download size={16} />,
+				text: "'앱 설치'(또는 '홈 화면에 추가')를 선택하세요",
+			},
+			{
+				icon: <Smartphone size={16} />,
+				text: "설치된 '콕타임' 앱으로 다시 여세요",
+			},
 		];
-	return ["주소창 오른쪽의 설치 아이콘을 누르세요", "'설치'를 선택하세요"];
+	return [
+		{
+			icon: <MonitorDown size={16} />,
+			text: "주소창 오른쪽의 설치 아이콘을 누르세요",
+		},
+		{ icon: <Download size={16} />, text: "'설치'를 선택하세요" },
+	];
 }
 
 /** 권한 차단(denied) 시 해제 경로 안내 */
 function unblockHint(): string {
-	if (isIOS())
-		return "기기 설정 > 알림 > 콕타임에서 '알림 허용'을 켜주세요.";
+	if (isIOS()) return "기기 설정 > 알림 > 콕타임에서 '알림 허용'을 켜주세요.";
 	if (isAndroid())
 		return "기기 설정 > 앱 > 콕타임 > 알림에서 허용으로 바꿔주세요.";
 	return "브라우저 주소창의 자물쇠 아이콘 > 알림에서 허용으로 바꿔주세요.";
@@ -115,7 +166,7 @@ export default function PushSettingsSheet({ onClose }: Props) {
 		</p>
 	);
 
-	// 플랫폼별 "홈 화면에 앱 추가" 단계 안내(도움말)
+	// 플랫폼별 "홈 화면에 앱 추가" 단계 안내(각 단계 아이콘 포함)
 	const installGuide = (highlight: boolean) => (
 		<div
 			className={
@@ -126,19 +177,31 @@ export default function PushSettingsSheet({ onClose }: Props) {
 		>
 			<p
 				className="text-[#0f1724] dark:text-white"
-				style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}
+				style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}
 			>
 				📲 {platformLabel()}에서 앱으로 설치하기
 			</p>
-			<ol
-				className="text-[#0f1724] dark:text-[rgba(235,235,245,0.85)]"
-				style={{ fontSize: 13.5, fontWeight: 500, paddingLeft: 18, lineHeight: 1.9 }}
-			>
+			<div className="flex flex-col gap-2.5">
 				{installSteps().map((s) => (
-					<li key={s}>{s}</li>
+					<div key={s.text} className="flex items-center gap-2.5">
+						<span
+							className="flex items-center justify-center rounded-lg text-[#0b84ff] bg-[rgba(11,132,255,0.1)] dark:bg-[rgba(11,132,255,0.18)]"
+							style={{ width: 26, height: 26, flexShrink: 0 }}
+						>
+							{s.icon}
+						</span>
+						<span
+							className="text-[#0f1724] dark:text-[rgba(235,235,245,0.85)]"
+							style={{ fontSize: 13.5, fontWeight: 500, lineHeight: 1.4 }}
+						>
+							{s.text}
+						</span>
+					</div>
 				))}
-			</ol>
-			{note("설치한 뒤 이 화면에서 알림을 켜면 잠금화면으로 알림을 받아요.")}
+			</div>
+			<div style={{ marginTop: 8 }}>
+				{note("설치한 뒤 이 화면에서 알림을 켜면 잠금화면으로 알림을 받아요.")}
+			</div>
 		</div>
 	);
 
@@ -157,7 +220,6 @@ export default function PushSettingsSheet({ onClose }: Props) {
 			</div>
 		);
 	} else if (installState === "unsupported") {
-		// 구독 불가 — 미지원 안내
 		content = note(
 			"이 브라우저는 잠금화면 알림을 지원하지 않아요. 최신 Safari/Chrome에서 다시 시도해 주세요.",
 		);
@@ -176,11 +238,15 @@ export default function PushSettingsSheet({ onClose }: Props) {
 		content = (
 			<div className="flex flex-col gap-1.5">
 				{note("알림이 차단돼 있어 켤 수 없어요.")}
-				{note(unblockHint())}
+				<div className="flex items-start gap-2">
+					<span className="text-[#0b84ff]" style={{ flexShrink: 0, marginTop: 2 }}>
+						<Settings size={16} />
+					</span>
+					{note(unblockHint())}
+				</div>
 			</div>
 		);
 	} else if (subscribed) {
-		// 구독 중 — 끄기
 		content = (
 			<div className="flex flex-col gap-3">
 				{note("잠금화면 알림이 켜져 있어요.")}
