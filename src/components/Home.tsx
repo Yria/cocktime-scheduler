@@ -5,6 +5,7 @@ import type { CarpoolRole } from "../lib/supabase/types";
 import { appActions, useAppStore } from "../store/appStore";
 import { authActions, useAuthStore } from "../store/authStore";
 import { scheduleActions, useScheduleStore } from "../store/scheduleStore";
+import AppScreen from "./common/AppScreen";
 import HeaderMenu from "./common/HeaderMenu";
 import NotificationBell from "./common/NotificationBell";
 import ProfileSetup from "./ProfileSetup";
@@ -182,28 +183,17 @@ export default function Home({ onStart }: Props) {
 	const liveIds = new Set(liveSchedules.map((s) => s.id));
 
 	return (
-		<div
-			className="min-h-[100dvh] bg-[#fafbff] dark:bg-[#0f172a]"
-			style={{
-				padding: "1.25rem",
-				paddingTop: "max(1.25rem, env(safe-area-inset-top))",
-				paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))",
-			}}
+		<>
+		<AppScreen
+			logo
+			right={
+				<>
+					<NotificationBell />
+					<HeaderMenu onEditProfile={() => setEditingProfile(true)} />
+				</>
+			}
 		>
 			<div className="w-full max-w-sm mx-auto flex flex-col gap-4">
-				{/* 헤더 */}
-				<div className="flex items-center justify-between">
-					<img
-						src="logo.png"
-						className="h-7 w-auto object-contain dark:[filter:brightness(0)_invert(1)]"
-						alt="콕타임"
-					/>
-					<div className="flex items-center gap-0.5">
-						<NotificationBell />
-						<HeaderMenu onEditProfile={() => setEditingProfile(true)} />
-					</div>
-				</div>
-
 				{/* 진행 중 세션 이어하기 */}
 				{sessionMeta && (
 					<button
@@ -224,18 +214,6 @@ export default function Home({ onStart }: Props) {
 					>
 						진행 중 세션 이어하기
 					</button>
-				)}
-
-				{/* 프로필 성별 미입력 안내 */}
-				{/* 가입 후 프로필 미완(성별·출생년도·거주지) → 입력 모달 */}
-				{!!memberId &&
-					(myGender == null || myBirthYear == null || !myResidence) && (
-						<ProfileSetup />
-					)}
-
-				{/* 회원정보 수정 */}
-				{editingProfile && (
-					<ProfileSetup mode="edit" onClose={() => setEditingProfile(false)} />
 				)}
 
 				{/* 일정 섹션 헤더 */}
@@ -340,6 +318,16 @@ export default function Home({ onStart }: Props) {
 					매치 로그 보기
 				</button>
 			</div>
-		</div>
+		</AppScreen>
+
+			{/* 프로필 모달(고정 오버레이) — 셸 밖에 두어 pull-to-refresh transform 영향 차단 */}
+			{!!memberId &&
+				(myGender == null || myBirthYear == null || !myResidence) && (
+					<ProfileSetup />
+				)}
+			{editingProfile && (
+				<ProfileSetup mode="edit" onClose={() => setEditingProfile(false)} />
+			)}
+		</>
 	);
 }

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authActions, authDisplayName, useAuthStore } from "../../store/authStore";
 import ModalSheet from "./ModalSheet";
+import PushSettingsSheet from "./PushSettingsSheet";
 
 interface Props {
 	/** "내 정보" 선택 시 프로필 수정 모달 열기 */
@@ -15,6 +16,7 @@ export default function HeaderMenu({ onEditProfile }: Props) {
 	const isAdmin = useAuthStore((s) => s.isAdmin);
 	const myName = useAuthStore((s) => s.myName);
 	const [open, setOpen] = useState(false);
+	const [pushOpen, setPushOpen] = useState(false);
 
 	const close = () => setOpen(false);
 	const run = (fn: () => void) => () => {
@@ -41,8 +43,8 @@ export default function HeaderMenu({ onEditProfile }: Props) {
 				aria-label="메뉴"
 				className="flex items-center justify-center text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
 				style={{
-					width: 34,
-					height: 34,
+					width: 40,
+					height: 40,
 					background: "none",
 					border: "none",
 					cursor: "pointer",
@@ -79,6 +81,14 @@ export default function HeaderMenu({ onEditProfile }: Props) {
 					>
 						내 정보
 					</button>
+					<button
+						type="button"
+						onClick={run(() => setPushOpen(true))}
+						className={`${itemClass} text-[#0f1724] dark:text-white`}
+						style={itemStyle}
+					>
+						알림 설정
+					</button>
 					{isAdmin && (
 						<button
 							type="button"
@@ -99,6 +109,7 @@ export default function HeaderMenu({ onEditProfile }: Props) {
 					</button>
 				</ModalSheet>
 			)}
+			{pushOpen && <PushSettingsSheet onClose={() => setPushOpen(false)} />}
 		</>
 	);
 }

@@ -29,11 +29,25 @@ export default function NotificationBell() {
 	const items = useNotificationStore((s) => s.items);
 	const unreadCount = useNotificationStore((s) => s.unreadCount);
 	const [open, setOpen] = useState(false);
+	// 패널을 여는 순간의 미읽음 id 스냅샷. 일괄 읽음 처리 후에도
+	// 이번 열람 동안은 "새 알림" 점을 유지해 무엇이 새 알림이었는지 보이게 한다.
+	const [seenUnread, setSeenUnread] = useState<ReadonlySet<string>>(
+		() => new Set(),
+	);
 
 	const handleOpen = () => {
+		// markAllRead의 낙관적 갱신 전에 현재 미읽음을 캡처
+		setSeenUnread(
+			new Set(items.filter((n) => n.read_at == null).map((n) => n.id)),
+		);
 		setOpen(true);
-		// 패널을 여는 순간 미읽음을 일괄 읽음 처리
+		// 패널을 여는 순간 미읽음을 일괄 읽음 처리(서버 + 배지)
 		if (memberId) void notificationActions.markAllRead(memberId);
+	};
+
+	const handleClose = () => {
+		setOpen(false);
+		setSeenUnread(new Set());
 	};
 
 	return (
@@ -44,8 +58,8 @@ export default function NotificationBell() {
 				aria-label="알림"
 				className="relative flex items-center justify-center text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
 				style={{
-					width: 34,
-					height: 34,
+					width: 40,
+					height: 40,
 					background: "none",
 					border: "none",
 					cursor: "pointer",
@@ -74,7 +88,7 @@ export default function NotificationBell() {
 			</button>
 
 			{open && (
-				<ModalSheet position="bottom" onClose={() => setOpen(false)}>
+				<ModalSheet position="bottom" onClose={handleClose}>
 					<div className="px-5 pt-5 pb-3">
 						<h3
 							className="text-[#0f1724] dark:text-white"
@@ -107,8 +121,9 @@ export default function NotificationBell() {
 											height: 7,
 											borderRadius: 999,
 											flexShrink: 0,
-											background:
-												n.read_at == null ? "#0b84ff" : "transparent",
+											background: seenUnread.has(n.id)
+												? "#0b84ff"
+												: "transparent",
 										}}
 									/>
 									<div className="flex-1 min-w-0">

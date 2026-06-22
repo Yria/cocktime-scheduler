@@ -393,3 +393,10 @@ entrypoint = "./functions/sheets/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/sheets/*.html" ]
+
+# 웹푸시 발송 — notifications 트리거(net.http_post)가 호출. JWT 대신 x-push-secret 헤더로 검증.
+[functions.send-push]
+enabled = true
+verify_jwt = false
+import_map = "./functions/send-push/deno.json"
+entrypoint = "./functions/send-push/index.ts"

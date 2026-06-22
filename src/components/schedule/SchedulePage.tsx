@@ -21,6 +21,7 @@ import {
 	useAdminScheduleStore,
 } from "../../store/adminScheduleStore";
 import { useAuthStore } from "../../store/authStore";
+import AppScreen from "../common/AppScreen";
 import OccurrenceEditor from "./OccurrenceEditor";
 import RecurringRulesPanel from "./RecurringRulesPanel";
 import RuleEditor from "./ScheduleRuleEditor";
@@ -156,40 +157,10 @@ export default function SchedulePage() {
 	if (!ready) return null;
 
 	return (
-		<div
-			className="min-h-[100dvh] bg-[#fafbff] dark:bg-[#0f172a]"
-			style={{
-				padding: "1.25rem",
-				paddingTop: "max(1.25rem, env(safe-area-inset-top))",
-				paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))",
-			}}
-		>
-			<div className="w-full max-w-sm mx-auto flex flex-col gap-4">
-				{/* 헤더 */}
-				<div className="flex items-center justify-between">
-					<h1
-						className="text-[#0f1724] dark:text-white"
-						style={{ fontSize: 20, fontWeight: 800 }}
-					>
-						일정 관리
-					</h1>
-					<button
-						type="button"
-						onClick={() => navigate("/")}
-						className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-						style={{
-							background: "none",
-							border: "none",
-							fontSize: 14,
-							fontWeight: 600,
-							cursor: "pointer",
-						}}
-					>
-						닫기
-					</button>
-				</div>
-
-				<RecurringRulesPanel
+		<>
+			<AppScreen title="일정 관리" onBack={() => navigate(-1)}>
+				<div className="w-full max-w-sm mx-auto flex flex-col gap-4">
+					<RecurringRulesPanel
 					rules={rules}
 					placeName={placeName}
 					onAdd={() => setRuleModal({ rule: null })}
@@ -213,7 +184,8 @@ export default function SchedulePage() {
 					}
 					onAddOneOff={(date) => setOccModal({ occurrence: null, date })}
 				/>
-			</div>
+				</div>
+			</AppScreen>
 
 			{ruleModal && (
 				<RuleEditor
@@ -240,6 +212,6 @@ export default function SchedulePage() {
 					onClose={() => setOccModal(null)}
 				/>
 			)}
-		</div>
+		</>
 	);
 }

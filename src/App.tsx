@@ -18,6 +18,8 @@ import {
 import { appActions, useAppStore } from "./store/appStore";
 import { authActions, useAuthStore } from "./store/authStore";
 import { notificationActions } from "./store/notificationStore";
+import { pushActions } from "./store/pushStore";
+import { scheduleActions } from "./store/scheduleStore";
 import { useSessionStore } from "./store/sessionStore";
 import { toast } from "./store/toastStore";
 import type { Player, SessionSettings } from "./types";
@@ -35,6 +37,32 @@ export default function App() {
 	// 인증 세션 초기화/복원 (Phase 1: RLS 무변경, 로그인 기능만 도입)
 	useEffect(() => {
 		authActions.init();
+	}, []);
+
+	// 웹푸시: SW 멱등 등록 + 현재 권한/구독 상태 동기화(권한요청 없음)
+	useEffect(() => {
+		void pushActions.init();
+	}, []);
+
+	// 푸시 알림 클릭(SW) → 앱이 이미 열려 있으면 해당 경로로 라우팅
+	useEffect(() => {
+		if (!("serviceWorker" in navigator)) return;
+		const onMsg = (e: MessageEvent) => {
+			if (e.data?.type !== "push-navigate" || typeof e.data.url !== "string")
+				return;
+			try {
+				const path = new URL(e.data.url).pathname;
+				const base = import.meta.env.BASE_URL;
+				const route = path.startsWith(base)
+					? `/${path.slice(base.length)}`
+					: path;
+				navRef.current(route || "/");
+			} catch {
+				navRef.current("/");
+			}
+		};
+		navigator.serviceWorker.addEventListener("message", onMsg);
+		return () => navigator.serviceWorker.removeEventListener("message", onMsg);
 	}, []);
 
 	// 앱내 실시간 알림 (Phase 8): 자동승급·공지 → 종모양 목록 + 토스트
@@ -80,12 +108,23 @@ export default function App() {
 		check();
 	}, []);
 
-	// 페이지가 다시 활성화되었을 때(백그라운드 -> 포그라운드) 세션 동기화
+	// 페이지가 다시 활성화되었을 때(백그라운드 -> 포그라운드) 자동 재동기화.
+	// 백그라운드 동안 realtime broadcast/postgres_changes 를 놓쳤을 수 있으므로 권위 상태를 다시 읽는다.
 	const isVisible = usePageVisibility();
 	const wasVisibleRef = useRef(true);
 	useEffect(() => {
 		if (isVisible && !wasVisibleRef.current) {
 			appActions.checkActiveSession();
+			const mid = useAuthStore.getState().memberId;
+			if (mid) {
+				// 알림 + 일정/참석 갱신
+				void notificationActions.load(mid);
+				void scheduleActions.load();
+			}
+			// 보드 활성 중이면 코트 배정·보드 멤버십 권위 재조회(놓친 매치/팀 변경 수렴)
+			if (useAppStore.getState().sessionMeta) {
+				void useSessionStore.getState().resyncFromServer();
+			}
 		}
 		wasVisibleRef.current = isVisible;
 	}, [isVisible]);

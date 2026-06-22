@@ -256,3 +256,43 @@
 **Answer**: 헤더 알림 벨/메뉴 관련 추가 변경(NotificationBell·HeaderMenu·notificationStore 신규 + App/Home/notifications 연동)을 동일 경로(커밋→main push→CI 배포)로 배포. 지난 배포 실패(pnpm Node 요구) 재발 방지를 위해 로컬 build(tsc -b && vite build) 선검증 후 커밋·푸시. main fast-forward push로 deploy.yml 트리거.
 
 ---
+
+## #21
+
+**Prompt**: 우상단 메뉴를 합쳐줘. 알림을 볼 수 있는 종모양과 ... 을 눌러 내정보/회원관리/로그아웃 할수 있게.
+
+**Answer**: 요청한 헤더 통합(🔔 종모양 알림 + ⋯ 케밥 메뉴)은 이미 직전 작업(#20, 커밋 8c32b31 "헤더 알림 벨 + 메뉴 컴포넌트 추가")에 구현·배포돼 있음을 git 이력으로 확인. 동일 재구현분은 diff 0. 4차원(정합성·RLS/보안·UX/다크모드·React 패턴) adversarial 리뷰로 찾은 3가지 개선만 실제 변경으로 적용:
+- **NotificationBell 미읽음 점 보존**: 패널 open 시 markAllRead의 낙관적 갱신이 동기 실행돼, 미읽음 파란 점이 첫 렌더부터 사라져 "무엇이 새 알림인지" 못 보던 결함. 열람 시점 미읽음 id를 로컬 스냅샷으로 캡처해 이번 열람 동안 점을 유지(서버/배지 읽음 처리는 그대로). 닫을 때 스냅샷 초기화.
+- **터치 타깃 확대**: 종모양·케밥 버튼 히트영역 34→40px(아이콘 20 유지). 우상단 인접 소형 타깃 오탭 완화.
+- **포그라운드 복귀 재동기화**: App의 가시성 복귀 effect에서 알림 load 추가 — 백그라운드 동안 realtime이 놓쳤을 INSERT를 복구해 stale 방지.
+- 검증: tsc -b / eslint / vite build 모두 통과. 작업 중 발견된 App.tsx 선재 `react-hooks/refs` 에러(navRef 렌더 중 변경)도 effect로 옮겨 해결.
+
+---
+
+## #22
+
+**Prompt**: 네비 헤더를 분리해서 앱처럼 개선하고, 해당 헤더를 활용하는 구조로 변경해. 지금보니까 아래로 드래그하면 상단도 같이 내려오고, 일정관리 페이지도 독립된 페이지인데, 상단 네비의 이전버튼이 없고 그러네. 그렇게 하고 아래로 땡기면 리로드하게 해주고, foreground 복귀시 자동 재동기화도 같이해줘.
+
+**Answer**: 앱 스타일 공통 네비 헤더 + 고정 셸 + pull-to-refresh + foreground 재동기화를 구현. 기존엔 각 페이지가 자체 헤더를 스크롤 영역 안에 그려 함께 스크롤되고(아래로 당기면 상단도 내려옴), SchedulePage 등은 '닫기' 텍스트만 있고 표준 뒤로가기가 없었음.
+- **공통 컴포넌트 신설**: AppHeader(sticky 고정 네비 — 뒤로가기 화살표/타이틀/로고/우측 액션, safe-area-inset-top 흡수), AppScreen(h-100dvh flex 셸: 고정 헤더 + flex-1 overflow-y-auto overscroll-contain main → 헤더는 안 움직이고 main 만 스크롤), usePullToRefresh 훅(스크롤 최상단에서 당기면 임계 70px 넘어 location.reload, 고무줄 감쇠+스피너 인디케이터).
+- **페이지 적용**: Home(로고+알림벨/메뉴) / SchedulePage(뒤로가기+'일정 관리') / MemberAdminPage(뒤로가기+'회원 관리', 가상화 목록이라 AppHeader만)에 적용, '닫기' 텍스트 제거. LogPage는 이미 sticky 헤더+뒤로가기가 있고 콘텐츠가 자체 패딩이라 유지.
+- **모달 분리**: ProfileSetup(fixed 오버레이)이 pull-to-refresh transform의 containing block 영향을 받지 않도록 셸 밖으로 이동(SchedulePage 모달도 동일).
+- **foreground 재동기화**: App 가시성 복귀 effect에 sessionMeta 있으면 sessionStore.resyncFromServer(보드/코트 권위 재조회), 로그인 시 scheduleActions.load 추가(기존 checkActiveSession+알림 load에 더해).
+- 검증: tsc -b / vite build / eslint 통과. usePullToRefresh의 ref 미러를 단일 effect 내로 정리해 react-hooks/immutability 에러 해소.
+
+---
+
+## #23
+
+**Prompt**: 혹시 지금 대기였다가 참석으로 바뀔때 알림보내는거 구현됨? 내 아이폰에서 알림이 안오는데 뭘 봐야할까.
+
+**Answer**: 진단 결과 대기→참석 승급 알림은 DB(cancel_attendance/promote_waitlist RPC가 promoted INSERT) + 인앱 수신(realtime 종모양/토스트)까지 구현돼 있으나, **아이폰 잠금화면 네이티브 푸시는 미구현**이 원인 — realtime WebSocket은 앱 포그라운드에서만 살아있어 앱을 닫으면 도착 안 함. 사용자 요청으로 EXPANSION_SPEC Phase 8(웹푸시)를 구현:
+- **DB**: push_subscriptions 테이블(unique(member_id,endpoint), RLS 본인 CRUD) + pg_net 트리거(notifications AFTER INSERT → Vault 시크릿으로 send-push 호출, x-push-secret 헤더, 시크릿 미설정 시 조용히 통과).
+- **Edge Function send-push**: @negrel/webpush(Deno 네이티브, npm:web-push의 Node crypto 의존 회피)로 VAPID 서명+암호화 전송, 404/410 만료 구독 정리, notifications.sent 마킹, notificationMessage 이식. verify_jwt=false + 헤더 시크릿 검증.
+- **Service Worker(public/sw.js)**: push→showNotification(self.registration.scope 기준 base-aware), notificationclick→열린 창 focus+postMessage 또는 openWindow.
+- **클라이언트(src/lib/push/ platform·vapid·subscription·db) + pushStore + PushSettingsSheet**(HeaderMenu "알림 설정" 항목). iOS standalone 게이팅, 권한요청은 클릭 핸들러 첫 await(제스처 유지).
+- **App.tsx**: pushActions.init + push-navigate 라우팅(base prefix 제거). deploy.yml에 VITE_VAPID_PUBLIC_KEY.
+- **iOS 제약**: 16.4+ & 홈화면 설치 PWA에서만 동작. 배포 시 사용자 콘솔 작업 필요(@negrel/webpush로 VAPID 키 생성 / supabase secrets / Vault edge_function_url·push_send_secret / GitHub secret / db push / functions deploy send-push).
+- 검증: tsc -b / eslint / vite build / deno check 모두 통과. 작업 중 git 워킹트리 일시 변동이 있었으나 파일 손실 없이 복구 확인.
+
+---

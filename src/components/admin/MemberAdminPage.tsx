@@ -11,6 +11,7 @@ import {
 	updateMemberSkills,
 } from "../../lib/supabase/adminMembers";
 import { useAuthStore } from "../../store/authStore";
+import AppHeader from "../common/AppHeader";
 import type { PlayerSkills } from "../../types";
 import { SkillButton } from "../setup/SkillButton";
 
@@ -204,14 +205,23 @@ export default function MemberAdminPage() {
 	return (
 		<div
 			className="bg-[#fafbff] dark:bg-[#0f172a]"
-			style={{
-				height: "100dvh",
-				display: "flex",
-				flexDirection: "column",
-				paddingTop: "max(1rem, env(safe-area-inset-top))",
-				paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))",
-			}}
+			style={{ height: "100dvh", display: "flex", flexDirection: "column" }}
 		>
+			<AppHeader
+				title="회원 관리"
+				onBack={() => navigate(-1)}
+				right={
+					!loading && (
+						<span
+							className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+							style={{ fontSize: 14, fontWeight: 700, marginRight: 6 }}
+						>
+							{filtered.length}
+							{q ? `/${members.length}` : ""}
+						</span>
+					)
+				}
+			/>
 			<div
 				className="w-full max-w-sm mx-auto"
 				style={{
@@ -222,41 +232,10 @@ export default function MemberAdminPage() {
 					flexDirection: "column",
 					paddingLeft: "1.25rem",
 					paddingRight: "1.25rem",
+					paddingTop: "0.75rem",
+					paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))",
 				}}
 			>
-				{/* 헤더 */}
-				<div className="flex items-center justify-between" style={{ flexShrink: 0 }}>
-					<h1
-						className="text-[#0f1724] dark:text-white"
-						style={{ fontSize: 20, fontWeight: 800 }}
-					>
-						회원 관리
-						{!loading && (
-							<span
-								className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-								style={{ fontSize: 14, fontWeight: 600, marginLeft: 6 }}
-							>
-								{filtered.length}
-								{q ? `/${members.length}` : ""}
-							</span>
-						)}
-					</h1>
-					<button
-						type="button"
-						onClick={() => navigate("/")}
-						className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-						style={{
-							background: "none",
-							border: "none",
-							fontSize: 14,
-							fontWeight: 600,
-							cursor: "pointer",
-						}}
-					>
-						닫기
-					</button>
-				</div>
-
 				{/* 검색 */}
 				{!loading && members.length > 0 && (
 					<input

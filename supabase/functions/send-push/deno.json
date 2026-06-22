@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "@supabase/functions-js": "jsr:@supabase/functions-js@^2",
+    "@supabase/supabase-js": "jsr:@supabase/supabase-js@^2",
+    "@negrel/webpush": "jsr:@negrel/webpush@^0.3"
+  }
+}
