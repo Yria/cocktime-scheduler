@@ -13,8 +13,21 @@ const dtFmt = new Intl.DateTimeFormat("ko-KR", {
 	minute: "2-digit",
 });
 
+const timeOnlyFmt = new Intl.DateTimeFormat("ko-KR", {
+	timeZone: "Asia/Seoul",
+	hour: "numeric",
+	minute: "2-digit",
+});
+
 function fmt(iso: string | null): string {
 	return iso ? dtFmt.format(new Date(iso)) : "시간 미정";
+}
+
+/** "시작 ~ 종료" (종료 없으면 시작만). 예) "6월 25일 (수) 오후 7:00 ~ 오후 10:00" */
+function fmtRange(start: string | null, end: string | null): string {
+	const base = fmt(start);
+	if (!start || !end) return base;
+	return `${base} ~ ${timeOnlyFmt.format(new Date(end))}`;
 }
 
 interface Props {
@@ -24,10 +37,11 @@ interface Props {
 	attendances: AttendanceRow[];
 	memberId: string | null;
 	isAdmin: boolean;
+	/** 시작 시각이 지난 open 일정 — 맨 위로 분리·하이라이트 + 세션시작 버튼 노출 */
+	isLive: boolean;
 	busy: boolean;
 	onJoin: () => void;
 	onCancel: () => void;
-	onDelete: () => void;
 	onStartSession: () => void;
 	onSetCarpool: (role: CarpoolRole) => void;
 }
@@ -38,10 +52,10 @@ export default function ScheduleCard({
 	attendances,
 	memberId,
 	isAdmin,
+	isLive,
 	busy,
 	onJoin,
 	onCancel,
-	onDelete,
 	onStartSession,
 	onSetCarpool,
 }: Props) {
@@ -65,8 +79,21 @@ export default function ScheduleCard({
 
 	return (
 		<div
-			className="bg-white dark:bg-[rgba(30,30,35,0.8)] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.1)]"
-			style={{ borderRadius: 12, padding: "14px 16px" }}
+			className={
+				isLive
+					? "bg-white dark:bg-[rgba(30,30,35,0.92)]"
+					: "bg-white dark:bg-[rgba(30,30,35,0.8)] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.1)]"
+			}
+			style={{
+				borderRadius: 12,
+				padding: "14px 16px",
+				...(isLive
+					? {
+							border: "1.5px solid #2c7a57",
+							boxShadow: "0 4px 18px rgba(44,122,87,0.28)",
+						}
+					: null),
+			}}
 		>
 			<div className="flex items-start justify-between gap-2">
 				<div className="flex flex-col gap-1 min-w-0">
@@ -75,7 +102,7 @@ export default function ScheduleCard({
 							className="text-[#0f1724] dark:text-white truncate"
 							style={{ fontSize: 15, fontWeight: 700 }}
 						>
-							{s.title ?? "제목 없음"}
+							{fmtRange(s.scheduled_at, s.ends_at)}
 						</span>
 						{s.status === "active" && (
 							<span
@@ -93,34 +120,12 @@ export default function ScheduleCard({
 						)}
 					</div>
 					<span
-						className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
-						style={{ fontSize: 13, fontWeight: 500 }}
-					>
-						{fmt(s.scheduled_at)}
-					</span>
-					<span
 						className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.45)]"
-						style={{ fontSize: 12 }}
+						style={{ fontSize: 12.5 }}
 					>
 						{placeName ?? "장소 미정"}
 					</span>
 				</div>
-				{isAdmin && (
-					<button
-						type="button"
-						onClick={onDelete}
-						className="text-[#cbd2d9] dark:text-[rgba(235,235,245,0.3)]"
-						style={{
-							background: "none",
-							border: "none",
-							fontSize: 12,
-							cursor: "pointer",
-							flexShrink: 0,
-						}}
-					>
-						삭제
-					</button>
-				)}
 			</div>
 
 			{/* 참석 현황 + 버튼 */}
@@ -196,8 +201,8 @@ export default function ScheduleCard({
 				)}
 			</div>
 
-			{/* 카풀 의향 (참석자) */}
-			{attending && (
+			{/* 카풀 의향 (참석자) — 카풀 사용 일정에서만 */}
+			{attending && s.carpool_enabled && (
 				<div
 					className="flex items-center gap-1.5 mt-2.5"
 					style={{ fontSize: 12 }}
@@ -245,7 +250,7 @@ export default function ScheduleCard({
 			)}
 
 			{/* 카풀 집계 */}
-			{(canDrive > 0 || needRide > 0) && (
+			{s.carpool_enabled && (canDrive > 0 || needRide > 0) && (
 				<div
 					className="mt-1.5 text-[#64748b] dark:text-[rgba(235,235,245,0.5)]"
 					style={{ fontSize: 11.5, fontWeight: 500 }}
@@ -254,7 +259,8 @@ export default function ScheduleCard({
 				</div>
 			)}
 
-			{isAdmin && isOpen && (
+			{/* 세션 시작 버튼: 시작 시각이 지난(=isLive) open 일정에만 노출 */}
+			{isAdmin && isOpen && isLive && (
 				<button
 					type="button"
 					onClick={onStartSession}

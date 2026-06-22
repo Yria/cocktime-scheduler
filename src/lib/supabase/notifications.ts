@@ -13,6 +13,15 @@ export function notificationMessage(n: NotificationRow): string {
 			return "일정 모집이 마감되었어요";
 		case "carpool_muster":
 			return "카풀 집결 안내가 도착했어요";
+		case "schedule_added": {
+			const label =
+				n.payload && typeof n.payload.label === "string"
+					? n.payload.label
+					: null;
+			return label
+				? `새 일정이 추가되었어요: ${label}`
+				: "새 일정이 추가되었어요";
+		}
 		default:
 			return "새 알림이 있어요";
 	}

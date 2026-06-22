@@ -69,13 +69,29 @@ export default function SessionBoard() {
 		init(pool);
 	}, [pool, init]);
 
-	// 공유된 보드 멤버십(스냅샷/원격) → 로컬 적용(위치는 로컬). boardDrafts가 바뀔 때만(로컬 편집은 안 건드림).
+	// 공유된 보드 멤버십(스냅샷/원격) → 로컬 적용(위치는 로컬).
 	const boardDrafts = useSessionStore((s) => s.boardDrafts);
 	const applyRemoteDrafts = useBoardStore((s) => s.applyRemoteDrafts);
+	const isEditor = useSessionStore((s) => s.isEditor);
+	// 원인4 수정: 자석은 sessionPlayers에서 파생돼(useBoardPlayerPool→initializeFromPool) boardDrafts보다
+	// 늦게 로드될 수 있다. 과거엔 magnets.size===0이면 영구 bail + deps=[boardDrafts]라, 자석이 뒤늦게
+	// 채워져도 이 effect가 재실행되지 않아 관전자가 DB의 팀을 영영 못 그렸다(하드 새로고침해도 동일 — 원인4).
+	// magnetCount를 deps에 넣어 자석 로드/증감(누락 멤버 합류 포함) 시점에 마지막 boardDrafts를 재적용한다.
+	// (applyRemoteDrafts는 자석을 add/remove 안 하므로 magnetCount를 안 바꿔 재실행 루프 없음.)
+	//
+	// 편집자 보호(중요): broadcast self:false라 편집자의 sessionStore.boardDrafts는 자기 로컬 편집을 못 따라잡는
+	// STALE 값이다(자기 변경은 자기에게 안 돌아옴). 따라서 magnetCount만 바뀐 재적용(선수 합류/이탈)을 편집자에게
+	// 그대로 돌리면 방금 만든 팀이 STALE boardDrafts로 원복된다(데이터 손실). 그래서 "boardDrafts가 실제로 바뀐
+	// 경우"(로드/원격 수신)는 모두에게 적용하되, "magnetCount만 바뀐 수렴 재적용"은 관전자에게만 한다.
+	const magnetCount = useBoardStore((s) => s.magnets.size);
+	const lastAppliedDraftsRef = useRef<typeof boardDrafts | null>(null);
 	useEffect(() => {
-		if (useBoardStore.getState().magnets.size === 0) return; // 자석 준비 후
+		if (magnetCount === 0) return; // 자석 준비 전이면 보류 — 자석 로드 시 magnetCount 변화로 재실행되어 적용됨
+		const draftsChanged = lastAppliedDraftsRef.current !== boardDrafts;
+		if (!draftsChanged && isEditor) return; // 편집자: 멤버십 미수신 + magnetCount만 변한 재적용은 STALE 원복 위험 → 스킵
+		lastAppliedDraftsRef.current = boardDrafts;
 		applyRemoteDrafts(boardDrafts);
-	}, [boardDrafts, applyRemoteDrafts]);
+	}, [boardDrafts, applyRemoteDrafts, magnetCount, isEditor]);
 
 	// 실제 stage 크기를 store에 등록 — 흩어짐 바운더리 클램프용
 	const setStageSize = useBoardStore((s) => s.setStageSize);
@@ -110,7 +126,7 @@ export default function SessionBoard() {
 	const playingIds = useMemo(() => playingIdsFromCourts(courts), [courts]);
 	const occupiedCourts = useMemo(() => courts.filter((c) => c.match), [courts]);
 	const hasEmptyCourt = useMemo(() => courts.some((c) => !c.match), [courts]);
-	const isEditor = useSessionStore((s) => s.isEditor); // 보기 전용이면 추천 다이얼로그 차단
+	// isEditor는 위(보드 멤버십 적용 effect)에서 이미 구독 — 여기선 추천 다이얼로그 차단 등에 재사용.
 
 	// ── 보기 전용 자동 정렬 ──────────────────────────────────
 	// 뷰어는 직접 드래그/정렬을 못 하므로, 멤버십(팀·예약)이나 코트가 바뀔 때마다 rearrangeAll로

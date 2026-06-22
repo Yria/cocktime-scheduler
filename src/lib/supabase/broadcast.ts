@@ -25,6 +25,18 @@ export type BroadcastPayload =
 			};
 	  }
 	| {
+			event: "match_roster_updated";
+			// 경기 로스터 수정의 즉시성 전파(best-effort). 권위 수렴은 match_state_version 갭 → refetch.
+			// teamA/B는 session_players.id 참조, updatedPlayers는 상태가 바뀐 선수(waiting/playing).
+			payload: {
+				matchId: string;
+				courtId: number;
+				teamA: [string, string];
+				teamB: [string, string];
+				updatedPlayers: SessionPlayer[];
+			};
+	  }
+	| {
 			event: "player_updated";
 			payload: { player: SessionPlayer };
 	  }
@@ -34,7 +46,8 @@ export type BroadcastPayload =
 	  }
 	| {
 			event: "board_drafts_updated";
-			payload: import("../../types/board").BoardDraftsPayload;
+			// version: 낙관적 단조 가드 — 수신측이 자신의 버전보다 새 것만 적용(broadcast/catch-up 역전 방지).
+			payload: { drafts: import("../../types/board").BoardDraftsPayload; version: number };
 	  };
 
 export function createBroadcastChannel(

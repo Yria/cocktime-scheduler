@@ -1,0 +1,146 @@
+import { ruleSummary } from "../../lib/schedule/recurrence";
+import type { RecurringScheduleRow } from "../../lib/supabase/types";
+
+interface Props {
+	rules: RecurringScheduleRow[];
+	placeName: (id: number | null) => string | null;
+	onAdd: () => void;
+	onEdit: (rule: RecurringScheduleRow) => void;
+	onToggle: (rule: RecurringScheduleRow) => void;
+	onDelete: (rule: RecurringScheduleRow) => void;
+}
+
+export default function RecurringRulesPanel({
+	rules,
+	placeName,
+	onAdd,
+	onEdit,
+	onToggle,
+	onDelete,
+}: Props) {
+	return (
+		<div className="flex flex-col gap-2.5">
+			{/* 섹션 헤더 */}
+			<div className="flex items-center justify-between">
+				<h2
+					className="text-[#0f1724] dark:text-white"
+					style={{ fontSize: 18, fontWeight: 800 }}
+				>
+					반복 규칙
+				</h2>
+				<button
+					type="button"
+					onClick={onAdd}
+					style={{
+						fontSize: 13,
+						fontWeight: 700,
+						color: "#0b84ff",
+						background: "rgba(11,132,255,0.1)",
+						border: "none",
+						borderRadius: 8,
+						padding: "6px 12px",
+						cursor: "pointer",
+					}}
+				>
+					+ 규칙 추가
+				</button>
+			</div>
+
+			{rules.length === 0 ? (
+				<div
+					className="text-center text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+					style={{ fontSize: 13.5, padding: "20px 8px", lineHeight: 1.5 }}
+				>
+					반복 규칙이 없습니다. '+ 규칙 추가'로 매주 반복 일정을 만들어보세요.
+				</div>
+			) : (
+				rules.map((rule) => {
+					const active = rule.is_active;
+					return (
+						<button
+							key={rule.id}
+							type="button"
+							onClick={() => onEdit(rule)}
+							className="bg-white dark:bg-[rgba(30,30,35,0.8)] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.1)]"
+							style={{
+								borderRadius: 12,
+								padding: "12px 14px",
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "space-between",
+								gap: 10,
+								width: "100%",
+								textAlign: "left",
+								cursor: "pointer",
+								opacity: active ? 1 : 0.55,
+							}}
+						>
+							<div className="flex items-center gap-2 min-w-0">
+								<span
+									className="text-[#0f1724] dark:text-white truncate"
+									style={{ fontSize: 14, fontWeight: 600 }}
+								>
+									{ruleSummary(rule, placeName(rule.place_id))}
+								</span>
+								{!active && (
+									<span
+										style={{
+											fontSize: 10,
+											fontWeight: 700,
+											color: "#64748b",
+											background: "rgba(100,116,139,0.14)",
+											padding: "2px 6px",
+											borderRadius: 5,
+											flexShrink: 0,
+										}}
+									>
+										중지됨
+									</span>
+								)}
+							</div>
+
+							<div className="flex items-center gap-1.5 flex-shrink-0">
+								<button
+									type="button"
+									onClick={(e) => {
+										e.stopPropagation();
+										onToggle(rule);
+									}}
+									className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+									style={{
+										fontSize: 12.5,
+										fontWeight: 600,
+										background: "none",
+										border: "none",
+										cursor: "pointer",
+										padding: "2px 4px",
+									}}
+								>
+									{active ? "중지" : "켜기"}
+								</button>
+								<button
+									type="button"
+									onClick={(e) => {
+										e.stopPropagation();
+										onDelete(rule);
+									}}
+									style={{
+										fontSize: 12.5,
+										fontWeight: 600,
+										color: "#ef4444",
+										background: "none",
+										border: "none",
+										cursor: "pointer",
+										padding: "2px 4px",
+									}}
+								>
+									삭제
+								</button>
+							</div>
+						</button>
+					);
+				})
+			)}
+		</div>
+	);
+}

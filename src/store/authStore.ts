@@ -11,8 +11,14 @@ interface AuthState {
 	memberId: string | null;
 	/** 운영진 여부 */
 	isAdmin: boolean;
+	/** 내 이름(가입 시 카카오 이름으로 채워짐, 프로필에서 수정 가능) */
+	myName: string | null;
 	/** 내 프로필 성별(없으면 null → 세션 편입 전 입력 필요) */
 	myGender: "M" | "F" | null;
+	/** 내 출생년도(가입 후 입력) */
+	myBirthYear: number | null;
+	/** 내 거주지(동 단위, 가입 후 입력) */
+	myResidence: string | null;
 }
 
 export const useAuthStore = create<AuthState>(() => ({
@@ -21,7 +27,10 @@ export const useAuthStore = create<AuthState>(() => ({
 	ready: false,
 	memberId: null,
 	isAdmin: false,
+	myName: null,
 	myGender: null,
+	myBirthYear: null,
+	myResidence: null,
 }));
 
 let initialized = false;
@@ -37,14 +46,17 @@ async function loadMember(user: User) {
 		);
 	const { data: member } = await supabase
 		.from("members")
-		.select("id, gender")
+		.select("id, name, gender, birth_year, residence")
 		.eq("auth_user_id", user.id)
 		.maybeSingle();
 	const { data: admin } = await supabase.rpc("is_admin");
 	useAuthStore.setState({
 		memberId: (member?.id as string | undefined) ?? null,
 		isAdmin: admin === true,
+		myName: (member?.name as string | null | undefined) ?? null,
 		myGender: (member?.gender as "M" | "F" | null | undefined) ?? null,
+		myBirthYear: (member?.birth_year as number | null | undefined) ?? null,
+		myResidence: (member?.residence as string | null | undefined) ?? null,
 	});
 }
 
@@ -95,19 +107,46 @@ export const authActions = {
 		await supabase.auth.signOut();
 	},
 
-	/** 내 프로필 성별 설정(세션 편입 전 필수). */
-	async updateGender(gender: "M" | "F") {
+	/** 회원 탈퇴: 회원 데이터 + 인증 사용자 삭제 후 로컬 세션 정리(되돌릴 수 없음). */
+	async deleteAccount() {
+		const { error } = await supabase.rpc("delete_my_account");
+		if (error) {
+			console.error("deleteAccount:", error);
+			return false;
+		}
+		// 서버에서 사용자 삭제됨 → 로컬 세션 정리(onAuthStateChange가 로그인 화면으로 복귀)
+		await supabase.auth.signOut();
+		return true;
+	},
+
+	/** 가입 후 프로필 입력(이름·성별·출생년도·거주지). 세션 편입 전 필수. */
+	async updateProfile(profile: {
+		name: string;
+		gender: "M" | "F";
+		birthYear: number;
+		residence: string;
+	}) {
 		const user = useAuthStore.getState().user;
 		if (!user) return false;
 		const { error } = await supabase
 			.from("members")
-			.update({ gender })
+			.update({
+				name: profile.name,
+				gender: profile.gender,
+				birth_year: profile.birthYear,
+				residence: profile.residence,
+			})
 			.eq("auth_user_id", user.id);
 		if (error) {
-			console.error("updateGender:", error);
+			console.error("updateProfile:", error);
 			return false;
 		}
-		useAuthStore.setState({ myGender: gender });
+		useAuthStore.setState({
+			myName: profile.name,
+			myGender: profile.gender,
+			myBirthYear: profile.birthYear,
+			myResidence: profile.residence,
+		});
 		return true;
 	},
 };

@@ -219,6 +219,55 @@ create index idx_sp_member on public.session_players(member_id);
 
 > `matches`, `pair_history`는 **변경 없음**. 전부 `session_players.id`(UUID) 기준이라 무영향.
 
+### 4.3 반복 일정 (요일·주차 규칙) — 마이그레이션 `20260622010000`
+
+일정 생성을 단발 `scheduled_at` 입력에서 **반복 규칙 → 회차 자동 생성** 모델로 전환. 일정 입력 필드는 **요일·시간·최대인원·장소** 뿐(제목·코트수 제거 — 코트수는 보드에서 결정).
+
+```sql
+-- ① 반복 규칙: 운영진이 정의하는 원본
+create table public.recurring_schedules (
+  id bigserial primary key,
+  day_of_week   smallint not null check (day_of_week between 0 and 6), -- 0=일..6=토(dow)
+  week_ordinals smallint[] not null default '{1,2,3,4,5}',  -- 발생 주차(매주=1~5, 홀수주{1,3,5}, 짝수주{2,4})
+  include_last  boolean not null default false,             -- '마지막주' 포함
+  start_time    time not null,
+  capacity      int,                                        -- NULL=무제한
+  place_id      bigint references public.places(id) on delete set null,
+  is_active     boolean not null default true,
+  created_by    uuid references public.members(id) on delete set null,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+-- ② sessions 확장: 규칙↔회차 연결 + 개별 수정 플래그(멱등 키 (rule_id, occurrence_date))
+alter table public.sessions
+  add column recurring_schedule_id bigint references public.recurring_schedules(id) on delete set null,
+  add column occurrence_date date,
+  add column is_overridden boolean not null default false;
+```
+
+- **2계층 모델**: 규칙(`recurring_schedules`) = "원본", 회차(`sessions`) = 참석·카풀·보드가 붙는 "실제 모임". `recurring_valid_occurrences` 뷰가 활성 규칙 × 향후 56일의 유효 발생일을 계산.
+- **`sync_schedule_occurrences()` RPC**(SECURITY DEFINER, authenticated 호출 — 앱 로드 시 멱등 실행): A) 어제 이전 미진행 draft/open → `closed`, B) 누락 회차 `draft` 생성, C) 미오버라이드 draft 를 규칙 최신값으로 갱신, D) 규칙 변경/비활성으로 무효해진 미오버라이드 draft 삭제, E) **scheduled_at 이 KST 오늘~+7일이면 `draft`→`open`(1주 전 노출)**.
+- **상태기계 활용**: `draft`(운영진만, 미노출) → `open`(노출·참석시작, `join_session` 진입 조건) → `active`(보드) → `closed`/`cancelled`. 명절 등 예외는 해당 회차만 `cancelled`(행 유지 → 재생성 방지) 또는 개별 `is_overridden=true` 수정.
+- **편집 권한**: 회차 개별 수정/취소/일회성 추가는 `sessions` anon_all 정책 하 클라이언트 직접 쓰기(운영진 UI 게이트). 규칙 CRUD 는 `recurring_schedules` RLS(select authenticated / write `is_admin()`).
+- UI: 회원=노출 회차 목록(Home), 운영진=`/schedule` 달력+규칙 패널(요일·주차 규칙 등록 → 달력 자동 생성 → 회차별 예외 편집).
+
+### 4.4 끝시간 + 카풀 on/off — 마이그레이션 `20260622120000`
+
+일정에 **시작·종료 시간**과 **카풀 노출 토글**을 추가. 카풀(`attendances.carpool_role`)은 이제 일정별로 켜야 노출된다.
+
+```sql
+alter table public.recurring_schedules
+  add column end_time        time,                    -- 종료 시각(Asia/Seoul 벽시계)
+  add column carpool_enabled boolean not null default false;
+alter table public.sessions
+  add column ends_at         timestamptz,             -- 종료 시각
+  add column carpool_enabled boolean not null default false;  -- on이면 참석자가 카풀 가능/필요 선택
+-- 백필: 종료 = 시작+3h, 카풀 = 주말(토/일)만 on
+```
+
+- **종료 시각**: 규칙은 `end_time`, 회차는 `ends_at`. `recurring_valid_occurrences` 뷰가 `occ_ends_at`(종료<시작이면 다음날)을 계산, `sync` B/C 단계가 회차 `ends_at`·`carpool_enabled`를 규칙값으로 전파(미오버라이드 draft 한정).
+- **카풀 토글**: 회차 `carpool_enabled`가 true 일 때만 ScheduleCard 에 카풀 가능/필요 선택·집계 노출. 신규 일정 기본값은 **요일이 주말이면 on**(편집기에서 자동 추종, 운영진 수동 변경 가능).
+- **홈 진행 하이라이트**: 시작 시각(`scheduled_at`)이 지난 `open` 회차는 목록 맨 위로 분리·하이라이트되고 운영진에게 `세션 시작 · 보드 열기` 버튼 노출. 시작 전에는 버튼을 숨긴다(시작 이후 계속 유지). 30초 tick 으로 도달 감지.
+
 ---
 
 ## 5. RPC 계약 (시그니처 + 동작 + 동시성)

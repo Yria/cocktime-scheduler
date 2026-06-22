@@ -104,3 +104,147 @@
 - 집결 공지 운영진 입력 UI(place/time→announce_carpool_muster)는 RPC만 준비, UI 추후. 잔여 즉석 세션(53) 종료 정리.
 
 ---
+
+## #9
+
+**Prompt**: c
+
+**Answer**: 보드 팀 동기화 버그(관전자에게 팀 미표시·하드 새로고침해도 고착·이따금 이중 편집권)의 근본원인을 워크플로우 2회(가설 5개 적대적 반증 + 설계 3안 critique·통합)로 규명한 뒤, 사용자가 고른 통합 설계의 Phase 0(마이그레이션)·Phase 1(관전자 렌더 수정)을 구현.
+
+- 확정 근본원인: ①board_drafts가 broadcast 단일경로로만 전파(postgres_changes 핸들러가 board_drafts 무시 → DB 차원 catch-up 부재) ②편집락이 서버 권위 없이 presence 파생이라 부분 동기화 시 이중 편집권 ③board_drafts 통째 last-writer-wins 덮어쓰기 ④관전자가 DB값을 받고도 렌더 실패(SessionBoard effect가 자석 로드 전 영구 bail + deps에 자석 신호 없음).
+- Phase 0(무중단·dormant): 마이그레이션 20260622000000 — sessions에 editor_client_id/editor_name/editor_lease_until/board_drafts_version 컬럼, 서버 권위 lease 락 RPC 3종(claim/handoff/release) + 낙관적 버전 CAS 쓰기 RPC(board_save_drafts), sessions realtime publication 멱등 승격. 컬럼 nullable/DEFAULT라 기존 클라와 호환, RPC는 아직 미호출.
+- Phase 1(저위험·서버 무관): SessionBoard의 applyRemoteDrafts effect에 magnetCount 셀렉터를 deps로 추가하고 영구 bail 제거 → 자석이 boardDrafts보다 늦게 로드돼도 재적용되어 관전자가 팀을 그린다. 원인4 핵심 수정.
+- reconcileMembership 팀 drop은 분석상 Phase 1 수정만으로 수렴(부분 렌더 + session_players 동기화로 누락 멤버 자동 합류)하고, 자석 보장생성은 magnet 소스 이원화/scatter 상호작용 위험이 있어 Phase 1에서 의도적으로 제외.
+- 검증: tsc -b 통과, vitest 131 tests / 11 files 전부 통과.
+
+---
+
+## #10
+
+**Prompt**: 일단 해당 액션에서 해야할거 다 해
+
+**Answer**: Phase 0+1을 완결 상태로 마감 — 빌드·문서·적대적 자체 리뷰까지 수행하고 리뷰가 잡은 blocker를 수정.
+
+- 품질 게이트: tsc·**vite 프로덕션 빌드**·eslint(변경파일 0건)·vitest(131/131) 전부 통과.
+- 문서화: `DATABASE.md`(신규 컬럼 4개 + RPC 4종 + "보드 동기화 v2 롤아웃 현황표" + 원인2 presence 락 한계 명시), `docs/migration.sql`(publication 정식 승격 주석).
+- 적대적 자체 리뷰 워크플로우(SQL 실행정확성 / 락·CAS 의미론 / Phase1 React 회귀)로 미실행 마이그레이션 검증 → **blocker 1건 발견·수정**: SessionBoard의 applyRemoteDrafts effect에 편집자 가드가 없어, broadcast self:false 탓에 STALE한 sessionStore.boardDrafts가 선수 합류/이탈(magnetCount 변화) 시 편집자의 로컬 팀을 원복시키던 데이터 손실. → "boardDrafts가 실제로 바뀐 경우(로드/원격 수신)는 모두 적용, magnetCount만 변한 수렴 재적용은 관전자만"으로 수정(ref 비교 + isEditor 가드). 무한루프/위치출렁임/관전자수렴은 clean 확인.
+- 마이그레이션 보강(최근 컨벤션 정렬): 4개 SECURITY DEFINER 함수에 `SET search_path = ''` + `public.sessions` 한정, lease NULL 가드(`coalesce(...,20)`), Phase 3/4 배포순서 데드존 경고 헤더 주석. grant/revoke는 보드가 아직 anon 접근(로그인 필수 열람=Phase 9 미착수)이라 기존 보드 RPC처럼 PUBLIC 유지하고 사유 주석화.
+- 운영 DB 마이그레이션 적용은 supabase 원격 링크라 자동 실행하지 않음(`db push`=운영 직행 → 사용자 배포 결정에 위임).
+
+---
+
+## #11
+
+**Prompt**: step0 확인할 수 있는 사오항이 아니라서 이거 확인을 일단 했다고 가정하고 진행해
+
+**Answer**: step0(DB 실측)는 확인 불가 상황이라 근본원인 확정 가정하에 Phase 2(DB catch-up, 원인1) 구현·검증.
+
+- 분석 결과 Phase 2는 버전/락과 분리해 독립 적용 가능(단일 편집자 모델에선 catch-up이 broadcast와 멱등). Phase 3은 board_save_drafts의 editor WHERE 때문에 Phase 4 없이는 모든 쓰기가 거부되는 데드존이 있어 Phase 4와 묶어야 함 → 이번 턴은 Phase 2만.
+- Phase 2 변경: `api.dbLoadBoardDrafts`(단건 재조회) 추가 / `sessionChannels`의 sessions UPDATE 핸들러가 `board_drafts`도 읽어 `onBoardDraftsRow`로 전달 + meta 채널 SUBSCRIBED 시 `onResync` 훅 / `sessionStore`가 두 핸들러 배선(catch-up은 boardDrafts만 갱신, 보드 반영은 SessionBoard applyRemoteDrafts가 멱등 처리, 재구독 시 dbLoadBoardDrafts 1회 재조회).
+- 효과: broadcast(self:false, fire-and-forget) 누락·늦은 접속·순간 끊김에도 관전자가 DB로 수렴(원인1 해소). Phase 1(렌더)+Phase 2(수신)로 "관전자 미표시·새로고침 고착" 주 증상 구조적 해결.
+- 문서: DATABASE.md realtime 노트 + 롤아웃 표 Phase 2 ✅ 갱신.
+- 검증: tsc 0 · eslint 0 · vitest 131/131.
+- 남음: Phase 3+4(이중 편집권·쓰기 손실 — 락 모델 전면 교체, ~9파일, editLock 테스트 재작성, UX 변경)는 한 묶음으로 다음 단계.
+
+---
+
+## #12
+
+**Prompt**: 일정만들때 필요한건 날짜, 최대인원, 장소뿐이야. 코트수는 가봐야 알 수 있어. 그리고 매주 반복하는 일정이기때문에 월~일 등록해놓으면 다음주에 자연스럽게 반복되어야 해. 물론 일정이 수정될 수 있기때문에 일정수정 기능도 필요해. 제목은 딱히 필요없어. 디비마이그레이션도 필요하면 해. (후속 명확화: 1·3주/2·4주 같은 몇째 주 규칙 + 주차별 장소 가변, 달력 편집, 명절 등 예외 위해 회차는 1주 전 노출하고 그 전엔 운영자만 수정)
+
+**Answer**: 일정을 단발 `scheduled_at` 입력에서 "반복 규칙 → 회차 자동 생성" 2계층 모델로 재설계. 입력 방식은 사용자 확인 거쳐 "요일+시간", 이후 몇째 주 규칙·장소 가변·1주 전 노출 요구를 반영해 "반복 규칙 + 달력 하이브리드"로 확정. 코드 토대는 직접 작성, 운영진 UI 4개 컴포넌트는 워크플로로 병렬 작성 후 빌드/적대적 리뷰로 검증.
+- DB(`20260622010000`): `recurring_schedules`(요일·`week_ordinals`·`include_last`·시간·인원·장소) + `sessions`에 `recurring_schedule_id`/`occurrence_date`/`is_overridden`. `recurring_valid_occurrences` 뷰(향후 56일) + `sync_schedule_occurrences()` RPC(회차 생성/규칙반영/정리 + **1주 전 draft→open 노출** + 과거 종료, 멱등).
+- 상태기계: draft(운영진만)→open(노출·참석)→active(보드)→closed/cancelled. 명절 등은 해당 회차만 cancelled(행 유지로 재생성 차단) 또는 개별 override.
+- UI: 운영진 `/schedule` 달력+규칙 패널(규칙 CRUD·회차별 수정/취소/일회성), 회원은 노출 회차만 목록. 제목·코트수(보드에서 결정) 입력 제거, 구 `ScheduleForm` 삭제.
+- 검증: 적대적 리뷰로 결함 4건(당일 오전 회차 노출 누락→KST 날짜 하한, 일회성 노출 기준 클라/서버 불일치→sync에 단일 위임, 월 이동 시 선택일 미초기화, 과거 취소 회차 되돌리기 가드) 수정. tsc clean, 린트 신규 에러 0(기존 3건은 무관).
+- 적용 필요: Supabase에 마이그레이션 1건 적용해야 동작.
+
+---
+
+## #13
+
+**Prompt**: 계속해
+
+**Answer**: 보드 동기화 v2 Phase 3+4(쓰기 CAS + 서버 권위 편집 락) 구현 — 원인2(이중 편집권)·원인3/5(쓰기 손실·조용한 실패) 해소. 적대적 리뷰로 결함 잡아 수정.
+
+- Phase 4(서버 권위 락): presence 파생 락(`computePresence`/`nextClaimAt`) 폐기 → `sessions.editor_*` row가 단일 진실. editLock는 `computePresenceList`(접속자 목록)+`computeLockFromRow`(락 산정)로 축소(테스트 재작성). sessionStore에 락 생명주기(cachedEditor + 7s heartbeat + 4s reeval로 lease 만료/crash 회복 + visibilitychange/pagehide). claimEditor/claimEditingIfFree(첫 편집 시 낙관 점유)/handoffEditor(BoardToolbar "넘기기")/resyncFromServer. 동시 점유는 DB 조건부 UPDATE row-lock으로 1명만 성공 → 이중 편집권 구조적 불가.
+- Phase 3(쓰기 CAS): `board_save_drafts`에 **self-claim** 추가(쓰면서 락 획득 → Phase3/4 배포 데드존 제거). boardStore `pushDraftsToRemote`가 base_version 동반 + `draftsSaveInFlight`/`pendingDraftsPayload` 직렬화(자기충돌 방지) + 충돌 시 resync+toast. 통째 LWW `dbSaveBoardDrafts` 제거.
+- sessionChannels: sessions UPDATE를 단일 `onSessionRowUpdate(row)`로 통합(catch-up+락 동승). broadcast payload `{drafts, version}`.
+- 적대적 리뷰 수정: ① HIGH 크로스세션 락 오염(`wasEditorBeforeHidden` 모듈변수 → subscribe 클로저 지역) ② handoff/heartbeat stale .then(`lockEpoch` 가드) ③ 충돌 시 미저장 편집 유실(resync 강제 적용 + toast) ④ 자기-echo 깜빡임(`applyDraftsIfNewer` `<=` 멱등) ⑤ bigint 역직렬화 강건성(Number 정규화) ⑥ pagehide heartbeat 정지.
+- 검증: 내 변경 파일 tsc 0 · eslint 0 · vitest 132/132. (전체 빌드는 병렬 진행 중인 반복일정 작업의 미완성 코드 `PlaceLocationPicker` 누락 등 때문에 막혀 있으나 내 변경과 무관.)
+- 적용 필요: 마이그레이션 `20260622000000`을 운영 DB에 적용해야 Phase 0~4 전체 동작(supabase 원격 링크 — 사용자 배포).
+
+---
+
+## #14
+
+**Prompt**: 우리가 장소 입력할때 위치를 넣어야 하는데 lng, lat 를 따다 넣긴 그렇고, 네이버지도 링크를 넣으려고 하는데 이게 링크누르기전 미리보기 형태로 어디위치인지 보이게 만들 수 있을까 static map api 가 있는건 아는데 이거 따로 권한따야해서 다른 개발자들은 어떻게 처리하는지 궁금 (후속: 붙여넣는 링크가 네이버일수도 카카오일수도 있음, 거기서 lat/lng 추출 / 계속해)
+
+**Answer**: 장소 위치를 네이버/카카오 공유 링크에서 추출 + 지도 미리보기로 구현. 웹 조사로 확인: Static Map API는 Client Secret이 필요해 서버 프록시 필수지만, 지도 JS SDK는 도메인 제한 클라이언트 키로 충분(대부분의 정석). 단축링크(naver.me/kko)는 CORS로 클라에서 좌표 추출 불가, 네이버 URL 좌표는 EPSG:3857(Web Mercator). 그래서 서버·시크릿 없이 되는 **카카오 지도 JS SDK 임베드 picker**로 결정(링크 좌표 추출 + 장소명 검색 + 핀 드래그, 좌표는 항상 WGS84 저장).
+- DB: `places.map_url` 컬럼(`20260622020000`, 원격 적용 완료). lat/lng/address는 기존 컬럼 활용.
+- 신규: `mapLink.ts`(링크 좌표 파서 — WGS84/Web Mercator 변환, 한국 범위 가드로 오탐 차단), `kakaoMap.ts`(도메인 제한 JS 키 SDK 동적 로더), `PlaceLocationPicker.tsx`(카카오 지도 임베드 + 검색 + 드래그 핀).
+- `createPlace`를 `CreatePlaceInput` 객체로 통일(lat/lng/map_url 추가), 두 에디터의 인라인 장소추가 → picker 모달로 교체, 죽은 `scheduleStore.addPlace` 제거.
+- 워크플로(컴포넌트 작성 + 적대적 리뷰)로 결함 수정: 린트 `no-explicit-any`(파일 레벨 eslint-disable), SDK 로딩 레이스(`mapReady` 게이팅 + `coordsRef`로 스테일 클로저 회피), 저장 성공 후 `busy` 복구, 검색 결과없음/실패 구분, `c=` 머케이터 KR 범위 가드.
+- 검증: tsc 0, 린트 신규 에러 0(기존 3건 무관), 프로덕션 빌드 통과. 좌표 공식·계약 체인은 적대적 리뷰로 정확 확인.
+- 사용자 설정 필요: 카카오 개발자콘솔 JavaScript 키 발급 → `.env.local`의 `VITE_KAKAO_MAP_KEY` + Web 플랫폼 도메인 등록(localhost·배포 URL). 키 없어도 이름/링크 좌표추출 저장은 동작(지도 미리보기·검색만 비활성).
+
+---
+
+## #15
+
+**Prompt**: (pnpm 전환 / 장소등록할때 코트수는 필요없어 / 변경되는거 db 에서도 필요없으면 바로 마이그레이션해)
+
+**Answer**: `pnpm install`이 esbuild 빌드 스크립트 승인 게이트(pnpm v11)에 막혀 `run dev` 실패한 것 — 사용자 선택으로 npm→pnpm 전환 + 장소에서 코트 수 제거(UI·코드·DB).
+- **pnpm 전환**: pnpm v11은 package.json의 `pnpm` 필드를 무시하고 설정을 `pnpm-workspace.yaml`로 옮김. 또한 이 버전은 `allowBuilds`(패키지→불리언) 키를 씀(pnpm이 직접 스캐폴드). `pnpm-workspace.yaml`에 `allowBuilds: { esbuild: true }` 설정 → install 성공. `package.json`에 `packageManager: pnpm@11.8.0` 고정, `predeploy`(npm run build) 제거하고 `deploy`를 자기완결(`pnpm run build && gh-pages`)로(pnpm은 pre/post 스크립트 미실행 + `pnpm deploy` 빌트인 충돌 회피). `package-lock.json` 삭제(락파일 단일화), node_modules 클린 재설치. `.github/workflows/deploy.yml`을 `pnpm/action-setup` + `cache: pnpm` + `pnpm install --frozen-lockfile` + `pnpm run build`로 전환하고 빌드 env에 `VITE_KAKAO_MAP_KEY` 추가(배포본 지도용 — GH secret 등록 필요).
+- **코트 수 제거**: `PlaceLocationPicker`에서 코트 수 필드/상태/페이로드 제거. `CreatePlaceInput.defaultCourtCount`·`PlaceRow.default_court_count`·`createPlace` insert에서 제거.
+- **DB 마이그레이션**(`20260622030000`, 원격 적용): `recurring_valid_occurrences` 뷰의 `court_count`를 장소 기본값 `coalesce(p.default_court_count,4)` → 상수 `4`(보드에서 결정)로 교체 + places 조인 제거 → `places.default_court_count` 컬럼 DROP. (뷰 의존성 순서대로 REPLACE 후 DROP.)
+- 린트 부수 수정: picker `setSdkError` effect 동기 호출 → `useState` 초기화로 이동(`set-state-in-effect` 해소).
+- 검증: `pnpm run build`/`pnpm dev`(localhost:5174 HTTP 200) 정상, tsc 0, 린트 기존 3건만. 원격: default_court_count select→400(삭제 확인), 뷰·`sync_schedule_occurrences` RPC(204) 정상.
+
+---
+
+## #16
+
+**Prompt**: 디비 마이그레이션 해
+
+**Answer**: 보드 동기화 v2 마이그레이션을 운영 DB에 적용. `migration list` 확인 결과 `20260622000000`이 이미 원격 적용 기록(병렬 작업 db push에 순서상 함께 실려감)이었으나, 이후 같은 파일을 여러 번 수정(특히 board_save_drafts 4인자→6인자 self-claim)했고 db push는 적용된 버전을 재실행하지 않아 **원격에 구버전 함수가 잔존**했다.
+
+- service role 키로 원격 RPC probe(session_id=0 → 0행, 무변경): `board_save_drafts`가 옛 4인자, claim/handoff/release는 존재. 그대로면 클라 6인자 호출 → PGRST202 → 모든 보드 저장 실패.
+- forward-only 수렴 마이그레이션 `20260622040000_board_lock_v2_fix.sql`: 옛 4인자 board_save_drafts DROP + 4종 함수(claim/handoff/release/save_drafts)를 현재 최종 정의로 CREATE OR REPLACE(search_path·self-claim 포함). 컬럼/publication은 이미 적용돼 손대지 않음.
+- `supabase db push`로 040000 적용(병렬 030000은 그 사이 병렬 세션이 이미 적용 → 내 것만 pending). 재-probe로 6인자 board_save_drafts 정상(null)·옛 4인자 제거(PGRST202)·migration list 동기 확인. Phase 0~4 전체가 원격에서 동작(클라 배포 시).
+
+---
+
+## #17
+
+**Prompt**: 일정화면 일정관리에 시작시작-끝시간 넣을수 있게 해주고 지금 입력된 모든 일정엔 +3시간으로 끝시간으로 값넣어줘. 그리고 카풀 on/off 옵션 넣어서 카풀 on 하면 카풀가능/카풀필요 할 수 있게 해주고 홈화면에서 현재 열린 모든 일정이 보이고 시작/보드열기 버튼이 있는데 해당 버튼은 보이지 않게 하고, 일정시간이 시작되면 그 일정만 따로 똑 떼서 맨 위로 하이라이트해서 올려주고, 세션시작 버튼을 노출하게 해줘.
+
+**Answer**: 일정에 끝시간·카풀토글을 추가하고 홈화면 진행 하이라이트를 구현. 카풀 기본값(주말 on/평일 off)과 하이라이트 유지구간(시작 이후 계속)은 되돌리기 어려운 마이그레이션·UX 분기라 사전 확인 후 진행.
+
+- 마이그레이션 `20260622120000`: `sessions.ends_at/carpool_enabled`, `recurring_schedules.end_time/carpool_enabled` 추가. 백필=끝시간 시작+3h, 카풀 주말만 on. `recurring_valid_occurrences` 뷰에 occ_ends_at(자정 넘김 CASE)·carpool_enabled 추가, sync RPC B/C단계가 회차로 전파(미오버라이드 draft 한정). 운영 DB에 db push 적용 완료.
+- 편집기(Rule/Occurrence): 시작/끝 시간 분리 + 카풀 ON/OFF 토글. 신규는 선택 요일 주말이면 카풀 기본 on(touched flag로 수정 전까지 추종).
+- 홈/카드: 시간범위 표시, 카풀 섹션은 carpool_enabled일 때만, 세션시작 버튼은 시작시각 지난 open(=isLive)에만 노출. live 일정은 맨 위로 분리·하이라이트(30초 tick). 끝시간 무관하게 시작 이후 유지.
+- 검증: tsc/eslint/vite build/vitest(132) 통과 + 3차원(SQL·로직·커버리지) 적대적 검증 워크플로 확정결함 0건.
+
+---
+
+## #18
+
+**Prompt**: 일정보드에 "진행시간" 배지는 불필요해보여.
+
+**Answer**: ScheduleCard의 "● 진행 시간" 배지를 제거. 초록 테두리 하이라이트와 맨 위 정렬만으로 진행 상태가 충분히 드러나므로 배지는 군더더기로 판단. flex-wrap도 원복(active 배지만 남음). isLive prop은 카드 하이라이트·세션시작 버튼 게이팅에 계속 사용되어 그대로 유지.
+
+---
+
+## #19
+
+**Prompt**: 지금 내가 코트배정 동기화때문에 무척 골치가 아파. 누구는 팀으로 보이고 누군 안보이고 그래서 이 부분을 완벽하게 동기시키고 싶어. supabase 를 쓰니까 현실적 한계점을 감안해서 편집하는 사람만 편집하고 나머지는 lock 시켜 변화되는것만 감지하는 방식을 하고싶은데 이러한 목적에 서버로 옮겨도 되는 로직들이 부합한다면, 최초 목적을 상기해서 최적의 방법을 고민해봐
+
+**Answer**: 근본 원인부터 규명: board_drafts(팀 편성)는 broadcast + sessions postgres_changes catch-up + 재구독 refetch + 단조 version CAS의 다중 안전장치로 수렴하지만, matches(코트 배정)는 broadcast(self:false, fire-and-forget) 단일 경로에만 의존해 메시지를 놓치면 영영 미동기화됨이 증상의 원인(검증된 결함 H1~H5). 단일 편집자 + 읽기 전용 follower + 변경 감지 모델을 위해 board_drafts 패턴을 matches로 확장하는 A→B 안을 구현.
+- A-1: sessions.match_state_version 단조 컬럼 신설 + assign_match·complete_match·set_match_roster가 같은 트랜잭션에서 ++ (matches는 publication에 안 넣고 sessions row 신호로 catch-up → 부하 회피)
+- A-2: 경기 로스터 수정을 직접 UPDATE에서 set_match_roster RPC로 원자화 + match_roster_updated broadcast 추가(H3: 이전엔 편집자만 보임)
+- A-3: onSessionRowUpdate/onResync가 match_state_version 갭 감지 시 refetchMatches로 코트 권위 재조회 — broadcast 유실/역전·"선수는 playing인데 코트 빔"(H2)·재연결 공백 모두 수렴. broadcast는 즉시성 전용, 권위는 version 갭 refetch
+- B: load_session_state RPC로 board_drafts+matches+버전을 단일 트랜잭션 스냅샷으로 묶어 두 권위 시점 일치, resyncFromServer 통합(dbLoadSessionRow→dbLoadSessionState)
+- 추천/랭킹 등 무겁고 잦은 순수 계산은 클라 유지(연산량 분석 일관), 서버 이전은 가벼운 검증·원자적 다중행·권위 재조회에 한정. typecheck/build/test(132)/eslint 통과, DATABASE.md 갱신. 마이그레이션 2종은 배포(supabase db push) 시 적용 필요.
+
+---

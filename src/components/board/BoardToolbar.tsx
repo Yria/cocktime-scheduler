@@ -33,6 +33,7 @@ const BoardToolbar = memo(function BoardToolbar() {
 	const presenceList = useSessionStore((s) => s.presenceList);
 	const myClientId = useSessionStore((s) => s._clientId);
 	const claimEditor = useSessionStore((s) => s.claimEditor);
+	const handoffEditor = useSessionStore((s) => s.handoffEditor);
 	// 모달 표시는 공유 플래그(헤더 칩 + 보기전용 칩 둘 다 연다)
 	const showPresence = useBoardStore((s) => s.presenceModalOpen);
 	const setShowPresence = useBoardStore((s) => s.setPresenceModalOpen);
@@ -47,6 +48,14 @@ const BoardToolbar = memo(function BoardToolbar() {
 		claimEditor();
 		setShowPresence(false);
 	}, [claimEditor, setShowPresence]);
+
+	const onHandoff = useCallback(
+		(toClientId: string, toName: string) => {
+			void handoffEditor(toClientId, toName);
+			setShowPresence(false);
+		},
+		[handoffEditor, setShowPresence],
+	);
 
 	return (
 		<>
@@ -175,11 +184,23 @@ const BoardToolbar = memo(function BoardToolbar() {
 									<span className={`text-sm ${isMe ? "font-bold text-blue-600 dark:text-blue-400" : "font-medium text-gray-800 dark:text-gray-100"}`}>
 										{d.name}{isMe ? " (나)" : ""}
 									</span>
-									{holds && (
-										<span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-											편집 중
-										</span>
-									)}
+									<span className="flex items-center gap-1.5">
+										{holds && (
+											<span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+												편집 중
+											</span>
+										)}
+										{/* 내가 편집자이고 상대가 다른 기기면 편집권 넘기기(서버 권위 양도). */}
+										{isEditor && !isMe && (
+											<button
+												type="button"
+												onClick={() => onHandoff(d.clientId, d.name)}
+												className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-500/15 dark:text-blue-300"
+											>
+												넘기기
+											</button>
+										)}
+									</span>
 								</li>
 							);
 						})}

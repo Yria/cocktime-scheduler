@@ -1,50 +1,72 @@
 import { describe, expect, it } from "vitest";
-import { computePresence, nextClaimAt, type PresenceState } from "./editLock";
+import {
+	computeLockFromRow,
+	computePresenceList,
+	type PresenceState,
+} from "./editLock";
 
 function presence(
-	...entries: { clientId: string; name?: string; claimAt: number }[]
+	...entries: { clientId: string; name?: string }[]
 ): PresenceState {
 	const state: PresenceState = {};
 	entries.forEach((e, i) => {
-		state[`ref${i}`] = [{ clientId: e.clientId, name: e.name ?? e.clientId, claimAt: e.claimAt }];
+		state[`ref${i}`] = [{ clientId: e.clientId, name: e.name ?? e.clientId }];
 	});
 	return state;
 }
 
-describe("computePresence — 양도형 편집 락 보유자 산정", () => {
-	it("아무도 claim 안 하면 lockFree, 누구나 편집 가능", () => {
-		const info = computePresence(presence({ clientId: "a", claimAt: 0 }, { clientId: "b", claimAt: 0 }), "a", 0);
-		expect(info.lockFree).toBe(true);
-		expect(info.holderClientId).toBeNull();
-		expect(info.isEditor).toBe(true);
-		expect(info.presenceCount).toBe(2);
+describe("computePresenceList — 접속자 목록(편집권과 무관)", () => {
+	it("중복 clientId는 1개로, 이름 유지", () => {
+		const r = computePresenceList(presence({ clientId: "a", name: "기기A" }, { clientId: "b" }));
+		expect(r.presenceCount).toBe(2);
+		expect(r.presenceList).toEqual([
+			{ clientId: "a", name: "기기A" },
+			{ clientId: "b", name: "b" },
+		]);
 	});
 
-	it("claimAt이 가장 큰 기기가 보유자", () => {
-		const info = computePresence(presence({ clientId: "a", claimAt: 10 }, { clientId: "b", claimAt: 5 }), "b", 5);
-		expect(info.holderClientId).toBe("a");
-		expect(info.lockFree).toBe(false);
-		expect(info.isEditor).toBe(false); // 나(b)는 보유자 아님
-	});
-
-	it("claimAt 동률이면 clientId 작은 쪽이 보유자(결정적 타이브레이크)", () => {
-		const info = computePresence(presence({ clientId: "b", claimAt: 7 }, { clientId: "a", claimAt: 7 }), "a", 7);
-		expect(info.holderClientId).toBe("a");
-		expect(info.isEditor).toBe(true);
-	});
-
-	it("내 최신 claim이 presence에 늦게 반영돼도 로컬 myClaimAt로 보정", () => {
-		const info = computePresence(presence({ clientId: "a", claimAt: 3 }, { clientId: "me", claimAt: 1 }), "me", 9);
-		expect(info.holderClientId).toBe("me");
-		expect(info.isEditor).toBe(true);
+	it("clientId 누락 항목은 무시", () => {
+		const state: PresenceState = { ref0: [{ name: "noid" }], ref1: [{ clientId: "a", name: "A" }] };
+		const r = computePresenceList(state);
+		expect(r.presenceCount).toBe(1);
+		expect(r.presenceList).toEqual([{ clientId: "a", name: "A" }]);
 	});
 });
 
-describe("nextClaimAt — 보유자를 이기는 최소 claim", () => {
-	it("presence 최대 claimAt + 1", () => {
-		expect(nextClaimAt(presence({ clientId: "a", claimAt: 3 }, { clientId: "b", claimAt: 8 }), 2)).toBe(9);
+describe("computeLockFromRow — 서버 권위 편집 락", () => {
+	const NOW = 1000;
+
+	it("락이 비었으면(clientId null) lockFree, 누구도 보유자 아님", () => {
+		const r = computeLockFromRow({ clientId: null, name: null, leaseUntilMs: 0 }, "me", NOW);
+		expect(r.lockFree).toBe(true);
+		expect(r.holderClientId).toBeNull();
+		expect(r.isEditor).toBe(false);
 	});
-	it("내 claim이 더 크면 그 기준 +1", () => {
-		expect(nextClaimAt(presence({ clientId: "a", claimAt: 3 }), 20)).toBe(21);
+
+	it("유효 lease 보유자가 나면 isEditor=true", () => {
+		const r = computeLockFromRow({ clientId: "me", name: "내기기", leaseUntilMs: NOW + 5000 }, "me", NOW);
+		expect(r.holderClientId).toBe("me");
+		expect(r.holderName).toBe("내기기");
+		expect(r.lockFree).toBe(false);
+		expect(r.isEditor).toBe(true);
+	});
+
+	it("유효 lease 보유자가 남이면 isEditor=false(보기 전용)", () => {
+		const r = computeLockFromRow({ clientId: "other", name: "남", leaseUntilMs: NOW + 5000 }, "me", NOW);
+		expect(r.holderClientId).toBe("other");
+		expect(r.lockFree).toBe(false);
+		expect(r.isEditor).toBe(false);
+	});
+
+	it("lease 만료면 보유자 있어도 lockFree(crash 회복)", () => {
+		const r = computeLockFromRow({ clientId: "other", name: "남", leaseUntilMs: NOW - 1 }, "me", NOW);
+		expect(r.lockFree).toBe(true);
+		expect(r.holderClientId).toBeNull();
+		expect(r.isEditor).toBe(false);
+	});
+
+	it("myClientId가 null이면 절대 editor 아님", () => {
+		const r = computeLockFromRow({ clientId: "me", name: "x", leaseUntilMs: NOW + 5000 }, null, NOW);
+		expect(r.isEditor).toBe(false);
 	});
 });

@@ -219,6 +219,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 			matchAssignCount: 0,
 			lastGameType: {},
 			boardDrafts: { teams: [], reservations: [] },
+			boardDraftsVersion: 0,
+			matchStateVersion: 0,
 			cockCheckEnabled: settings.cockCheckEnabled,
 		});
 

@@ -58,21 +58,18 @@ function buildPairHistory(rows: PairHistoryRow[]): PairHistory {
 	return history;
 }
 
-export function snapshotToClientState(
-	snapshot: SessionSnapshot,
-): ClientSessionState {
-	const courtCount = snapshot.session.court_count;
-
-	// Courts — match.teamA/B는 session_players.id 참조
+/**
+ * 진행중 매치 row 배열을 코트 배열로 재구성(순수). 초기 스냅샷과 catch-up refetch(refetchMatches)가
+ * 동일 매핑을 공유하도록 추출 — courtCount 만큼 빈 코트를 만들고 진행중 매치를 코트에 배치한다.
+ */
+export function matchRowsToCourts(courtCount: number, matches: MatchRow[]): Court[] {
 	const courts: Court[] = Array.from({ length: courtCount }, (_, i) => ({
 		id: i + 1,
 		match: null,
 	}));
-
-	for (const m of snapshot.matches) {
+	for (const m of matches) {
 		const court = courts.find((c) => c.id === m.court_id);
 		if (!court) continue;
-
 		court.match = {
 			id: m.id,
 			courtId: m.court_id,
@@ -82,6 +79,16 @@ export function snapshotToClientState(
 			startedAt: m.started_at,
 		};
 	}
+	return courts;
+}
+
+export function snapshotToClientState(
+	snapshot: SessionSnapshot,
+): ClientSessionState {
+	const courtCount = snapshot.session.court_count;
+
+	// Courts — match.teamA/B는 session_players.id 참조
+	const courts = matchRowsToCourts(courtCount, snapshot.matches);
 
 	// PairHistory
 	const pairHistory = buildPairHistory(snapshot.pairHistory);
@@ -104,6 +111,7 @@ export function snapshotToClientState(
 		.map((p) => p.id);
 
 	const boardDrafts = snapshot.session.board_drafts ?? { teams: [], reservations: [] };
+	const boardDraftsVersion = snapshot.session.board_drafts_version ?? 0;
 
-	return { courts, players: snapshot.players, waitingIds, restingIds, pairHistory, matchAssignCount: snapshot.session.match_assign_count, lastGameType, boardDrafts, cockCheckEnabled: snapshot.session.cock_check_enabled ?? true };
+	return { courts, players: snapshot.players, waitingIds, restingIds, pairHistory, matchAssignCount: snapshot.session.match_assign_count, lastGameType, boardDrafts, boardDraftsVersion, matchStateVersion: snapshot.session.match_state_version ?? 0, cockCheckEnabled: snapshot.session.cock_check_enabled ?? true };
 }

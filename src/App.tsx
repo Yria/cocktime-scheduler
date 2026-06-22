@@ -5,7 +5,8 @@ import Toaster from "./components/common/Toaster";
 import Home from "./components/Home";
 import LogPage from "./components/LogPage";
 import SessionSetup from "./components/SessionSetup";
-import ScheduleForm from "./components/schedule/ScheduleForm";
+import MemberAdminPage from "./components/admin/MemberAdminPage";
+import SchedulePage from "./components/schedule/SchedulePage";
 import { useDarkMode } from "./hooks/useDarkMode";
 import { usePageVisibility } from "./hooks/usePageVisibility";
 import type { SessionRow } from "./lib/supabase";
@@ -145,7 +146,8 @@ export default function App() {
 					}
 				/>
 				<Route path="/session" element={sessionGuarded(<SessionBoard />)} />
-				<Route path="/schedule/new" element={<ScheduleForm />} />
+				<Route path="/schedule" element={<SchedulePage />} />
+				<Route path="/members" element={<MemberAdminPage />} />
 				<Route path="/logs" element={<LogPage />} />
 				<Route path="*" element={<Navigate to="/" replace />} />
 			</Routes>

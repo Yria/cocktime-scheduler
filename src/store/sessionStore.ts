@@ -3,8 +3,13 @@ import { create } from "zustand";
 import {
 	type BroadcastPayload,
 	dbAssignMatch,
+	dbBoardClaimEditor,
+	dbBoardHandoffEditor,
+	dbBoardReleaseEditor,
 	dbCompleteMatch,
 	dbEndSession,
+	dbLoadMatches,
+	dbLoadSessionState,
 	dbSetCockChecked,
 	dbSetMatchRoster,
 	dbSetPlayerResting,
@@ -13,13 +18,13 @@ import {
 } from "../lib/supabase";
 import type { ClientSessionState } from "../lib/supabase";
 import { createSessionChannels } from "../lib/supabase/sessionChannels";
-import { rowToSessionPlayer } from "../lib/supabase/transformers";
+import { matchRowsToCourts, rowToSessionPlayer } from "../lib/supabase/transformers";
 import type { SessionPlayerRow } from "../lib/supabase/types";
 import { matchPlayerIds } from "../lib/board/membership";
 import {
-	computePresence,
-	nextClaimAt,
-	type PresenceState,
+	computeLockFromRow,
+	computePresenceList,
+	type EditorCache,
 } from "../lib/editLock";
 import { recordTeam } from "../lib/pairHistory";
 import type {
@@ -49,15 +54,99 @@ function upsertPlayers(map: Map<string, SessionPlayer>, players: SessionPlayer[]
 	return next;
 }
 
-/** 편집 권한 점유/인계 — 현재 보유자보다 큰 claim을 부여(시계 오차 무관). 낙관적 즉시 반영. */
-function doClaim(get: GetFn, set: SetFn) {
-	const { _channel, _clientId, _myName, _myClaimAt } = get();
-	if (!_channel || !_clientId) return;
-	const state = _channel.presenceState() as unknown as PresenceState;
-	const myClaimAt = Math.max(Date.now(), nextClaimAt(state, _myClaimAt));
+// ── 서버 권위 편집 락 생명주기 (presence 파생 폐기 — 원인2) ──────────────
+// 편집 보유자는 sessions.editor_* 단일 row가 결정한다. 클라는 그 row를 cachedEditor에 캐시하고
+// computeLockFromRow로 isEditor/holder/lockFree를 산정한다. heartbeat가 lease를 연장하고,
+// reeval 타이머가 lease 만료(보유자 crash)를 로컬에서 감지해 lockFree로 떨군다.
+const LEASE_SECONDS = 20;
+const HEARTBEAT_MS = 7000;
+const REEVAL_MS = 4000;
+
+let cachedEditor: EditorCache = { clientId: null, name: null, leaseUntilMs: 0 };
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let reevalTimer: ReturnType<typeof setInterval> | null = null;
+let visibilityHandler: (() => void) | null = null;
+let pageHideHandler: (() => void) | null = null;
+// 락 세대(epoch) — 권위적 락 변경(claim/handoff/resync/row/세션경계)마다 증가. in-flight heartbeat RPC의
+// 늦은 .then이 그 사이 바뀐 상태를 덮어쓰지 않게(handoff/크로스세션 stale 콜백) 가드한다.
+let lockEpoch = 0;
+
+/** board_drafts 단조 적용 — 내가 아는 버전보다 새(>=) 것만 반영. broadcast/catch-up/저장성공이 공유. */
+function applyDraftsIfNewerImpl(
+	get: GetFn,
+	set: SetFn,
+	drafts: BoardDraftsPayload,
+	version: number,
+) {
+	// 멱등: 이미 아는 버전 이하(자기 echo·broadcast/catch-up 중복)는 무시 — 새 객체참조 set로 인한
+	// SessionBoard 재적용/깜빡임 방지. CAS라 version이 내용을 유일 식별(같은 버전=같은 멤버십).
+	if (version <= get().boardDraftsVersion) return;
+	set({ boardDrafts: drafts, boardDraftsVersion: version });
+}
+
+/** cachedEditor + 현재 시각으로 락 상태 재산정 + heartbeat 시작/정지 관리. */
+function recomputeLock(get: GetFn, set: SetFn) {
+	const info = computeLockFromRow(cachedEditor, get()._clientId, Date.now());
+	set(info);
+	if (info.isEditor) startHeartbeat(get, set);
+	else stopHeartbeat();
+}
+
+function startHeartbeat(get: GetFn, set: SetFn) {
+	if (heartbeatTimer) return; // 이미 동작 중
+	heartbeatTimer = setInterval(() => heartbeatTick(get, set), HEARTBEAT_MS);
+	heartbeatTick(get, set); // 즉시 1회 — 실제 서버 락 획득/연장
+}
+
+function stopHeartbeat() {
+	if (heartbeatTimer) {
+		clearInterval(heartbeatTimer);
+		heartbeatTimer = null;
+	}
+}
+
+/** lease 연장 RPC. 성공 시 cachedEditor 갱신, 실패(다른 사람이 유효 lease)면 서버 권위로 재동기화. */
+function heartbeatTick(get: GetFn, set: SetFn) {
+	const { _clientId, _myName } = get();
+	if (!_clientId) return;
 	const name = _myName ?? "기기";
-	void _channel.track({ clientId: _clientId, name, claimAt: myClaimAt });
-	set({ _myClaimAt: myClaimAt, isEditor: true, lockFree: false, holderClientId: _clientId, holderName: name });
+	const epoch = lockEpoch; // 이 tick 발사 시점의 세대
+	void dbBoardClaimEditor(getSessionId(), _clientId, name, LEASE_SECONDS).then((res) => {
+		// 그 사이 handoff/resync/세션전환 등 권위적 변경이 있었으면 이 늦은 결과는 폐기(stale).
+		if (epoch !== lockEpoch) return;
+		if (res) {
+			cachedEditor = {
+				clientId: _clientId,
+				name,
+				leaseUntilMs: res.leaseUntil ? Date.parse(res.leaseUntil) : Date.now() + LEASE_SECONDS * 1000,
+			};
+			recomputeLock(get, set);
+		} else {
+			void get().resyncFromServer(); // 점유 실패 — 진짜 보유자/자유를 서버에서 다시 읽음
+		}
+	});
+}
+
+/** 낙관적 점유 — cachedEditor를 나로 세팅 후 recomputeLock(→ heartbeat 즉시 실제 RPC). 충돌 시 heartbeat가 되돌림. */
+function claimNow(get: GetFn, set: SetFn) {
+	const { _clientId, _myName } = get();
+	if (!_clientId) return;
+	lockEpoch++; // 권위적 변경 — in-flight heartbeat .then 무효화
+	cachedEditor = { clientId: _clientId, name: _myName ?? "기기", leaseUntilMs: Date.now() + LEASE_SECONDS * 1000 };
+	recomputeLock(get, set);
+}
+
+function setCachedEditorFromRow(row: {
+	editor_client_id?: string | null;
+	editor_name?: string | null;
+	editor_lease_until?: string | null;
+}) {
+	lockEpoch++; // 서버 row가 권위 — in-flight heartbeat .then 무효화
+	cachedEditor = {
+		clientId: row.editor_client_id ?? null,
+		name: row.editor_name ?? null,
+		leaseUntilMs: row.editor_lease_until ? Date.parse(row.editor_lease_until) : 0,
+	};
 }
 
 /** sessionPlayers Map에서 waitingIds/restingIds 파생 상태를 동기 재계산 */
@@ -145,6 +234,27 @@ function handleMatchCompleted(payload: BroadcastPayloadData, set: SetFn) {
 	});
 }
 
+function handleMatchRosterUpdated(payload: BroadcastPayloadData, set: SetFn) {
+	// 경기 로스터 수정의 즉시성 반영(best-effort) — 코트의 teamA/B 참조 갱신 + 상태 바뀐 선수 upsert.
+	// 권위 수렴은 match_state_version 갭 → refetchMatches 가 별도로 보장(broadcast 유실/역전 무관).
+	const { courtId, teamA, teamB, updatedPlayers } = payload;
+	const tA = teamA as [string, string];
+	const tB = teamB as [string, string];
+	const safeCourtId = courtId as number;
+	set((state) => {
+		const newMap = upsertPlayers(state.sessionPlayers, (updatedPlayers as SessionPlayer[]) ?? []);
+		const { waitingIds, restingIds } = rebuildDerivedIds(newMap);
+		return {
+			sessionPlayers: newMap,
+			waitingIds,
+			restingIds,
+			courts: state.courts.map((c) =>
+				c.id === safeCourtId && c.match ? { ...c, match: { ...c.match, teamA: tA, teamB: tB } } : c,
+			),
+		};
+	});
+}
+
 function handlePlayerUpdated(payload: BroadcastPayloadData, set: SetFn) {
 	const { player } = payload as { player: SessionPlayer };
 	set((state) => {
@@ -170,9 +280,13 @@ function handleSessionRefreshRequired(_payload: BroadcastPayloadData, _set: SetF
 	}
 }
 
-function handleBoardDraftsUpdated(payload: BroadcastPayloadData, set: SetFn) {
-	// 캐시만 갱신. 실제 보드 반영은 SessionBoard가 boardDrafts 변화를 감지해 applyRemoteDrafts로 수행.
-	set({ boardDrafts: payload as unknown as BoardDraftsPayload });
+function handleBoardDraftsUpdated(payload: BroadcastPayloadData, set: SetFn, get: GetFn) {
+	// broadcast 페이로드는 { drafts, version }. 단조 가드로 새(>=) 버전만 반영(catch-up과 역전 방지).
+	// 실제 보드 반영은 SessionBoard가 boardDrafts 변화를 감지해 applyRemoteDrafts로 수행.
+	const { drafts, version } = payload as { drafts?: BoardDraftsPayload; version?: number };
+	if (drafts) {
+		applyDraftsIfNewerImpl(get, set, drafts, typeof version === "number" ? version : get().boardDraftsVersion);
+	}
 }
 
 export interface SessionState {
@@ -185,11 +299,15 @@ export interface SessionState {
 	matchAssignCount: number;
 	/** 보드 drafts/예약 멤버십(공유). 스냅샷에서 복원해 boardStore가 적용. */
 	boardDrafts: BoardDraftsPayload;
+	/** board_drafts 낙관적 동시성 버전 — 쓰기 CAS base + 수신 단조 가드 기준(원인3). */
+	boardDraftsVersion: number;
+	/** 코트 배정(matches) 동기화 단조 버전 — 수신 단조 가드 + 갭이면 refetchMatches 트리거. */
+	matchStateVersion: number;
 	/** 콕 체크 모드 on/off(세션 설정, 공유). on이면 cockChecked=false 선수는 매칭 대기 아님. */
 	cockCheckEnabled: boolean;
 
-	// ── 편집 락(presence, 양도형) ──────────────────────────
-	/** 편집 가능 여부(= 내가 보유자이거나 락이 비어있음). false면 보기 전용. */
+	// ── 편집 락(서버 권위 — sessions.editor_* row 기반, 원인2) ──────────────
+	/** 편집 가능 여부(= 내가 유효 lease 보유자). false면 보기 전용. */
 	isEditor: boolean;
 	/** 현재 접속 기기 수. */
 	presenceCount: number;
@@ -209,8 +327,6 @@ export interface SessionState {
 	_clientId: string | null;
 	/** 이 기기 이름. */
 	_myName: string | null;
-	/** 이 기기의 최신 claim 시각(ms, 0=미점유). */
-	_myClaimAt: number;
 
 	initialize: (initial: ClientSessionState) => void;
 	reset: () => void;
@@ -232,9 +348,19 @@ export interface SessionState {
 
 	notifySessionRefresh: () => void;
 
-	// 편집 락 — 명시적 인계(권한 가져오기) / 자유 상태에서 자동 점유
+	// 편집 락 — 명시적 점유(권한 가져오기) / 첫 편집 시 자유면 점유 / 보유자 본인의 명시 양도
 	claimEditor: () => void;
 	claimEditingIfFree: () => void;
+	handoffEditor: (toClientId: string, toName: string) => Promise<void>;
+	/** board_drafts를 단조(새 버전만) 반영 — boardStore 저장 성공/충돌 복구에서 호출. */
+	applyDraftsIfNewer: (drafts: BoardDraftsPayload, version: number) => void;
+	/** 서버에서 board_drafts+버전+편집 락을 다시 읽어 수렴(충돌 복구·재구독 catch-up). */
+	resyncFromServer: () => Promise<void>;
+	/**
+	 * 진행중 matches 를 권위 재조회해 courts 를 수렴시킨다(코트 배정 catch-up).
+	 * targetVersion 이 현재 matchStateVersion 이하면 멱등 skip(force=true 면 강제 — 재연결 복구용).
+	 */
+	refetchMatches: (targetVersion: number, force?: boolean) => Promise<void>;
 
 	/** 선수 정보(성별/스킬 등) 변경을 로컬 반영 + 다른 클라이언트로 브로드캐스트. */
 	broadcastPlayerUpdated: (player: SessionPlayer) => void;
@@ -254,6 +380,8 @@ const initialState = {
 	lastGameType: {} as Record<string, GameType>,
 	matchAssignCount: 0,
 	boardDrafts: { teams: [], reservations: [] } as BoardDraftsPayload,
+	boardDraftsVersion: 0,
+	matchStateVersion: 0,
 	cockCheckEnabled: true,
 	isEditor: false,
 	presenceCount: 0,
@@ -265,7 +393,6 @@ const initialState = {
 	_metaChannel: null as RealtimeChannel | null,
 	_clientId: null as string | null,
 	_myName: null as string | null,
-	_myClaimAt: 0,
 };
 
 export const useSessionStore = create<SessionState>((set, get) => ({
@@ -274,10 +401,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	initialize: (initial) => {
 		const playerMap = new Map(initial.players.map((p) => [p.id, p]));
 		const { waitingIds, restingIds } = rebuildDerivedIds(playerMap);
+		// 편집 락 캐시/heartbeat 리셋 — 구독 후 onResync가 서버 권위로 다시 채운다.
+		lockEpoch++;
+		cachedEditor = { clientId: null, name: null, leaseUntilMs: 0 };
+		stopHeartbeat();
 		set({
 			...initialState,
 			_channel: get()._channel,
 			_metaChannel: get()._metaChannel,
+			_clientId: get()._clientId,
+			_myName: get()._myName,
 			courts: initial.courts,
 			sessionPlayers: playerMap,
 			waitingIds,
@@ -286,6 +419,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			matchAssignCount: initial.matchAssignCount,
 			lastGameType: initial.lastGameType,
 			boardDrafts: initial.boardDrafts,
+			boardDraftsVersion: initial.boardDraftsVersion,
+			matchStateVersion: initial.matchStateVersion,
 			cockCheckEnabled: initial.cockCheckEnabled,
 		});
 	},
@@ -403,7 +538,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 
 	handleSetMatchRoster: async (courtId, teamA, teamB) => {
-		const { courts, isEditor } = get();
+		const { courts, isEditor, _channel } = get();
 		if (!isEditor) return; // 보기 전용 차단
 		const court = courts.find((c) => c.id === courtId);
 		if (!court?.match) return;
@@ -413,33 +548,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const added = newIds.filter((id) => !oldIds.includes(id));
 		if (removed.length === 0) return; // 변경 없음
 
-		const ok = await dbSetMatchRoster(court.match.id, teamA, teamB, removed, added);
-		if (!ok) {
+		const sessionId = getSessionId();
+		// set_match_roster RPC: 로스터 교체 + 선수 상태 + match_state_version++ 를 단일 트랜잭션 원자 처리.
+		const updatedPlayers = await dbSetMatchRoster(sessionId, court.match.id, teamA, teamB, removed, added);
+		if (!updatedPlayers) {
 			console.error(`[store] handleSetMatchRoster FAILED court=${courtId}`);
 			return;
 		}
-		// 동기화 안 함(결과만 서버 반영) — 편집자 로컬 상태만 갱신. 다른 기기는 다음 로드 시 반영.
-		set((state) => {
-			const newMap = new Map(state.sessionPlayers);
-			const nowIso = new Date().toISOString();
-			for (const id of removed) {
-				const p = newMap.get(id);
-				if (p) newMap.set(id, { ...p, status: "waiting", waitSince: nowIso });
-			}
-			for (const id of added) {
-				const p = newMap.get(id);
-				if (p) newMap.set(id, { ...p, status: "playing" });
-			}
-			const { waitingIds, restingIds } = rebuildDerivedIds(newMap);
-			return {
-				sessionPlayers: newMap,
-				waitingIds,
-				restingIds,
-				courts: state.courts.map((c) =>
-					c.id === courtId && c.match ? { ...c, match: { ...c.match, teamA, teamB } } : c,
-				),
-			};
-		});
+		// 즉시성 broadcast(match_roster_updated) — 다른 기기는 이걸로 즉시 반영하고, 놓쳐도 sessions
+		// match_state_version 갭으로 refetchMatches 가 수렴(H3 해결: 더 이상 "편집자만 보임"이 아님).
+		const payload: BroadcastPayload = {
+			event: "match_roster_updated",
+			payload: { matchId: court.match.id, courtId, teamA, teamB, updatedPlayers },
+		};
+		get().applyBroadcast(payload); // 발신측 로컬 반영(broadcast self:false)
+		if (_channel) sendBroadcast(_channel, payload);
 	},
 
 	handleEndSession: async (onEnd: () => void) => {
@@ -469,9 +592,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const handlers: Record<string, Handler> = {
 			match_started: (p, s) => handleMatchStarted(p, s),
 			match_completed: (p, s) => handleMatchCompleted(p, s),
+			match_roster_updated: (p, s) => handleMatchRosterUpdated(p, s),
 			player_updated: (p, s) => handlePlayerUpdated(p, s),
 			session_refresh_required: (p, s, g) => handleSessionRefreshRequired(p, s, g),
-			board_drafts_updated: (p, s) => handleBoardDraftsUpdated(p, s),
+			board_drafts_updated: (p, s, g) => handleBoardDraftsUpdated(p, s, g),
 		};
 
 		const evWithPayload = ev as { payload?: BroadcastPayloadData };
@@ -479,11 +603,66 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 
 	claimEditor: () => {
-		doClaim(get, set); // 명시적 인계(권한 가져오기)
+		// 명시 점유("편집권 가져오기"). 낙관적으로 잡고 heartbeat RPC가 실제 획득. 살아있는 lease면 RPC가
+		// 거부 → resyncFromServer로 진짜 보유자 복원(만료 lease면 획득 성공 = crash 회복).
+		if (get().isEditor || !get()._clientId) return;
+		claimNow(get, set);
 	},
 	claimEditingIfFree: () => {
-		if (!get().lockFree) return; // 자유일 때만 자동 점유(이미 점유됐으면 그대로)
-		doClaim(get, set);
+		// 첫 편집 시 자유 상태면 점유(boardStore.claimEdit 경로). 남이 유효 lease면 점유 안 함(보기 전용 유지).
+		const { isEditor, lockFree, _clientId } = get();
+		if (isEditor || !lockFree || !_clientId) return;
+		claimNow(get, set);
+	},
+	handoffEditor: async (toClientId, toName) => {
+		const { _clientId, isEditor } = get();
+		if (!isEditor || !_clientId) return;
+		const res = await dbBoardHandoffEditor(getSessionId(), _clientId, toClientId, toName, LEASE_SECONDS);
+		if (!res) return; // 양도 실패(이미 내가 보유자 아님)
+		lockEpoch++; // 권위적 변경 — in-flight heartbeat .then 무효화(양도 직후 stale 갱신 방지)
+		cachedEditor = {
+			clientId: res.clientId,
+			name: res.name,
+			leaseUntilMs: res.leaseUntil ? Date.parse(res.leaseUntil) : Date.now() + LEASE_SECONDS * 1000,
+		};
+		recomputeLock(get, set); // 새 보유자=상대 → 나는 보기 전용 + heartbeat 정지
+	},
+	applyDraftsIfNewer: (drafts, version) => applyDraftsIfNewerImpl(get, set, drafts, version),
+	resyncFromServer: async () => {
+		const sid = getSessionId();
+		if (!sid) return;
+		// load_session_state: board_drafts + matches + 버전 + 편집 락을 단일 트랜잭션 스냅샷으로 — 두 권위가
+		// 항상 같은 시점으로 수렴(옵션 B). 재구독 catch-up · board_save_drafts 충돌 복구 공용 경로.
+		const snap = await dbLoadSessionState(sid);
+		if (!snap) return;
+		lockEpoch++;
+		// 강제 적용(<= 멱등 가드 우회): 충돌 복구 시 미저장 로컬 편집을 서버값으로 되돌리려면 boardDrafts
+		// 객체참조를 반드시 갈아 SessionBoard의 applyRemoteDrafts(서버 멤버십 reconcile)를 트리거해야 한다.
+		// 코트(courts)도 같은 스냅샷의 matches 로 재구성해 board_drafts 와 시점 일치.
+		set({
+			boardDrafts: snap.drafts,
+			boardDraftsVersion: Math.max(get().boardDraftsVersion, snap.version),
+			courts: matchRowsToCourts(snap.courtCount || get().courts.length, snap.matches),
+			matchStateVersion: Math.max(get().matchStateVersion, snap.matchStateVersion),
+		});
+		cachedEditor = {
+			clientId: snap.editorClientId,
+			name: snap.editorName,
+			leaseUntilMs: snap.editorLeaseUntil ? Date.parse(snap.editorLeaseUntil) : 0,
+		};
+		recomputeLock(get, set);
+	},
+	refetchMatches: async (targetVersion, force = false) => {
+		// 멱등 단조 가드 — 이미 최신이면 중복 SELECT 회피(broadcast 정상 구간). force=true 면 우회(재연결).
+		if (!force && targetVersion <= get().matchStateVersion) return;
+		const sid = getSessionId();
+		if (!sid) return;
+		const rows = await dbLoadMatches(sid);
+		const courtCount = get().courts.length;
+		set({
+			courts: matchRowsToCourts(courtCount, rows),
+			matchStateVersion: Math.max(get().matchStateVersion, targetVersion),
+		});
 	},
 
 	subscribe: (sessionId: number, onEnd: () => void) => {
@@ -497,18 +676,32 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			myName,
 			{
 				onBroadcast: (payload) => get().applyBroadcast(payload),
-				onPresenceSync: (state) => {
-					const info = computePresence(state, myClientId, get()._myClaimAt);
-					set(info);
-					// 자유(아무도 점유 안 함) 상태면 접속자 중 clientId 최소 1명이 즉시 자동 점유 →
-					// "접속하면 곧바로 편집자 1명 확정, 나머지는 보기 전용". 보유자 이탈 시에도 남은 최소 1명이 인계.
-					if (info.lockFree && info.presenceList.length > 0) {
-						const lowest = info.presenceList.map((p) => p.clientId).sort()[0];
-						if (lowest === myClientId) doClaim(get, set);
-					}
-				},
+				// presence는 접속자 목록 표시 전용(편집권 election 아님 — 편집권은 서버 권위 락).
+				onPresenceSync: (state) => set(computePresenceList(state)),
 				onEnd,
-				onMetaUpdate: (matchAssignCount) => set({ matchAssignCount }),
+				// sessions row UPDATE → match_assign_count + board_drafts/version catch-up(원인1) + 편집 락(원인2).
+				onSessionRowUpdate: (row) => {
+					if (row.match_assign_count != null) set({ matchAssignCount: row.match_assign_count });
+					if (row.board_drafts !== undefined) {
+						applyDraftsIfNewerImpl(
+							get,
+							set,
+							row.board_drafts ?? { teams: [], reservations: [] },
+							row.board_drafts_version ?? 0,
+						);
+					}
+					// 코트 배정 catch-up: match_state_version 갭이면 matches 권위 재조회(H1/H2 해결).
+					// broadcast(match_started/completed/roster)를 놓친 기기도 이 sessions UPDATE 한 번이면 수렴.
+					if (row.match_state_version != null) {
+						void get().refetchMatches(row.match_state_version);
+					}
+					setCachedEditorFromRow(row);
+					recomputeLock(get, set);
+				},
+				// 재구독(재연결) 직후 1회 재조회 — SUBSCRIBED~첫 UPDATE 공백 보정(drafts+버전+락 모두).
+				onResync: () => {
+					void get().resyncFromServer();
+				},
 				// session_players row 변경(추가/삭제/상태)을 즉시 반영 — broadcast 누락/지연과 무관하게
 				// 모든 기기의 sessionPlayers가 DB와 수렴(중복·미동기화·다중상태 방지). 보드는 sessionPlayers
 				// 변경 시 initializeFromPool로 자동 재정합(삭제된 선수의 자석·예약 정리).
@@ -543,11 +736,58 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			},
 		);
 
-		set({ _channel: broadcastChannel, _metaChannel: metaChannel, _clientId: myClientId, _myName: myName, _myClaimAt: 0 });
+		set({ _channel: broadcastChannel, _metaChannel: metaChannel, _clientId: myClientId, _myName: myName });
+
+		// 편집 락 lifecycle 설치(서버 권위 락) — 매 구독마다 초기화.
+		lockEpoch++; // 세션 경계 — 이전 세션의 in-flight heartbeat .then 무효화
+		cachedEditor = { clientId: null, name: null, leaseUntilMs: 0 };
+		recomputeLock(get, set); // 초기 lockFree; SUBSCRIBED 후 onResync가 서버 권위로 채움
+		if (reevalTimer) clearInterval(reevalTimer);
+		// lease 만료(보유자 crash, row update 없음)를 로컬 시계로 감지해 lockFree로 떨군다.
+		reevalTimer = setInterval(() => recomputeLock(get, set), REEVAL_MS);
+		// 백그라운드: heartbeat 멈춤(불필요 RPC 방지), 복귀 시 편집자였으면 재점유 시도.
+		// wasEditor는 이 subscribe 클로저 지역 변수 — 세션 전환 시 새 핸들러로 리셋되어 크로스세션 오염 없음.
+		let wasEditorBeforeHidden = false;
+		if (visibilityHandler) document.removeEventListener("visibilitychange", visibilityHandler);
+		visibilityHandler = () => {
+			if (document.hidden) {
+				wasEditorBeforeHidden = get().isEditor;
+				stopHeartbeat();
+			} else if (wasEditorBeforeHidden) {
+				wasEditorBeforeHidden = false;
+				claimNow(get, set);
+			}
+		};
+		document.addEventListener("visibilitychange", visibilityHandler);
+		// 정상 이탈(탭 닫기/이동): 편집 락 즉시 해제 + heartbeat 정지(best-effort). crash/강제종료는 lease 만료가 백업.
+		if (pageHideHandler) window.removeEventListener("pagehide", pageHideHandler);
+		pageHideHandler = () => {
+			const { _clientId, isEditor } = get();
+			if (isEditor && _clientId) void dbBoardReleaseEditor(getSessionId(), _clientId);
+			stopHeartbeat();
+		};
+		window.addEventListener("pagehide", pageHideHandler);
 	},
 
 	unsubscribe: () => {
-		const { _channel, _metaChannel } = get();
+		const { _channel, _metaChannel, _clientId, isEditor } = get();
+		// 편집 보유자면 명시 해제(best-effort). 실패해도 lease 만료가 백업.
+		if (isEditor && _clientId) void dbBoardReleaseEditor(getSessionId(), _clientId);
+		stopHeartbeat();
+		if (reevalTimer) {
+			clearInterval(reevalTimer);
+			reevalTimer = null;
+		}
+		if (visibilityHandler) {
+			document.removeEventListener("visibilitychange", visibilityHandler);
+			visibilityHandler = null;
+		}
+		if (pageHideHandler) {
+			window.removeEventListener("pagehide", pageHideHandler);
+			pageHideHandler = null;
+		}
+		lockEpoch++;
+		cachedEditor = { clientId: null, name: null, leaseUntilMs: 0 };
 		if (_channel) supabase.removeChannel(_channel);
 		if (_metaChannel) supabase.removeChannel(_metaChannel);
 		set({
@@ -555,7 +795,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			_metaChannel: null,
 			_clientId: null,
 			_myName: null,
-			_myClaimAt: 0,
 			isEditor: false,
 			presenceCount: 0,
 			presenceList: [],

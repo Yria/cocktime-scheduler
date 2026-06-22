@@ -112,6 +112,9 @@ CREATE POLICY "anon_all" ON pair_history    FOR ALL USING (true) WITH CHECK (tru
 -- ── Realtime 활성화 ───────────────────────────────────────────
 -- Supabase 대시보드 > Database > Replication 에서 활성화 필요
 -- 또는 아래 쿼리 실행 (supabase_realtime publication에 테이블 추가)
+-- NOTE(2026-06-22): sessions/session_players publication 추가는 이제 추적 마이그레이션으로 정식 승격됨
+--   (session_players: 20260618000000, sessions: 20260622000000 — 둘 다 pg_publication_tables 멱등 가드).
+--   아래 수동 스크립트는 신규 환경 부트스트랩 참고용으로만 유지.
 
 ALTER PUBLICATION supabase_realtime ADD TABLE sessions;
 ALTER PUBLICATION supabase_realtime ADD TABLE session_players;

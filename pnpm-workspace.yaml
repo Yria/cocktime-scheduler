@@ -1,0 +1,4 @@
+# pnpm 설정 (pnpm 10+: package.json "pnpm" 필드 대신 여기서 읽음)
+# 의존성 빌드 스크립트 실행 허용 — esbuild 네이티브 바이너리 빌드(vite 의존).
+allowBuilds:
+  esbuild: true

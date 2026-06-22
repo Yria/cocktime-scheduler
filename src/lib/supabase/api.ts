@@ -366,22 +366,167 @@ export async function fetchSessionPlayerForConflictCheck(
 // ── 보드 drafts 저장 ──────────────────────────────────
 
 /**
- * 보드 "팀 구성중"(drafts)/예약 멤버십을 세션에 저장한다(위치 제외).
- * sessions.board_drafts JSONB 한 컬럼을 통째로 교체.
+ * board_drafts + matches + 버전 + 편집 락을 단일 트랜잭션 스냅샷으로 반환한다(load_session_state RPC).
+ * 재구독 catch-up / board_save_drafts 충돌 복구에서 두 권위(팀 편성·코트 배정)를 "같은 시점"으로 수렴.
  */
-export async function dbSaveBoardDrafts(
-	sessionId: number,
-	payload: BoardDraftsPayload,
-): Promise<boolean> {
-	const { error } = await supabase
-		.from("sessions")
-		.update({ board_drafts: payload })
-		.eq("id", sessionId);
+export interface SessionStateSnapshot {
+	drafts: BoardDraftsPayload;
+	version: number;
+	/** 코트 배정(matches) 동기화 단조 버전. */
+	matchStateVersion: number;
+	courtCount: number;
+	matches: MatchRow[];
+	editorClientId: string | null;
+	editorName: string | null;
+	editorLeaseUntil: string | null;
+}
 
-	if (error) {
-		console.error("dbSaveBoardDrafts:", error);
-		return false;
+export async function dbLoadSessionState(
+	sessionId: number,
+): Promise<SessionStateSnapshot | null> {
+	const { data, error } = await supabase.rpc("load_session_state", {
+		p_session_id: sessionId,
+	});
+	if (error || data == null) {
+		if (error) console.error("dbLoadSessionState:", error);
+		return null;
 	}
-	return true;
+	const d = data as {
+		board_drafts: BoardDraftsPayload | null;
+		board_drafts_version: number | null;
+		match_state_version: number | null;
+		court_count: number | null;
+		matches: MatchRow[] | null;
+		editor_client_id: string | null;
+		editor_name: string | null;
+		editor_lease_until: string | null;
+	};
+	return {
+		drafts: d.board_drafts ?? { teams: [], reservations: [] },
+		version: d.board_drafts_version ?? 0,
+		matchStateVersion: d.match_state_version ?? 0,
+		courtCount: d.court_count ?? 0,
+		matches: d.matches ?? [],
+		editorClientId: d.editor_client_id ?? null,
+		editorName: d.editor_name ?? null,
+		editorLeaseUntil: d.editor_lease_until ?? null,
+	};
+}
+
+/**
+ * 진행중(playing) 매치를 권위 재조회한다 — match_state_version 갭 감지(catch-up) 시 코트 배정 상태를
+ * DB 권위로 수렴시키는 가벼운 단일 SELECT. broadcast 유실/역전과 무관하게 정합 보장.
+ */
+export async function dbLoadMatches(sessionId: number): Promise<MatchRow[]> {
+	const { data, error } = await supabase
+		.from("matches")
+		.select("*")
+		.eq("session_id", sessionId)
+		.eq("status", "playing");
+	if (error) {
+		console.error("dbLoadMatches:", error);
+		return [];
+	}
+	return (data ?? []) as MatchRow[];
+}
+
+/** board_claim_editor/handoff RPC 결과(보유자 1행). 0행이면 null(획득/양도 실패). */
+export interface EditorLockResult {
+	clientId: string;
+	name: string | null;
+	leaseUntil: string | null;
+}
+
+function firstLockRow(data: unknown): EditorLockResult | null {
+	const rows = data as
+		| Array<{ o_client_id: string | null; o_name: string | null; o_lease_until: string | null }>
+		| null;
+	const row = rows?.[0];
+	if (!row?.o_client_id) return null;
+	return { clientId: row.o_client_id, name: row.o_name, leaseUntil: row.o_lease_until };
+}
+
+/**
+ * board_drafts 낙관적 버전 CAS 쓰기(+self-claim). 성공 시 새 version, 충돌(0행)이면 null.
+ * (Phase 3: last-writer-wins 손실·조용한 실패 차단 — 원인3/5)
+ */
+export async function dbBoardSaveDrafts(
+	sessionId: number,
+	clientId: string,
+	name: string,
+	payload: BoardDraftsPayload,
+	baseVersion: number,
+	leaseSeconds = 20,
+): Promise<number | null> {
+	const { data, error } = await supabase.rpc("board_save_drafts", {
+		p_session_id: sessionId,
+		p_client_id: clientId,
+		p_name: name,
+		p_payload: payload,
+		p_base_version: baseVersion,
+		p_lease_seconds: leaseSeconds,
+	});
+	if (error) {
+		console.error("dbBoardSaveDrafts:", error);
+		return null;
+	}
+	// 0행 → null(충돌/락 점유 실패). bigint가 number 또는 string("1")로 올 수 있어 Number로 정규화.
+	if (data == null) return null;
+	const v = Number(data);
+	return Number.isFinite(v) ? v : null;
+}
+
+/** 편집권 획득/연장(heartbeat) CAS. 성공 시 보유자 정보, 실패(다른 사람이 유효 lease)면 null. (Phase 4 — 원인2) */
+export async function dbBoardClaimEditor(
+	sessionId: number,
+	clientId: string,
+	name: string,
+	leaseSeconds = 20,
+): Promise<EditorLockResult | null> {
+	const { data, error } = await supabase.rpc("board_claim_editor", {
+		p_session_id: sessionId,
+		p_client_id: clientId,
+		p_name: name,
+		p_lease_seconds: leaseSeconds,
+	});
+	if (error) {
+		console.error("dbBoardClaimEditor:", error);
+		return null;
+	}
+	return firstLockRow(data);
+}
+
+/** 편집권 명시 양도(보유자 본인만). 성공 시 새 보유자, 실패면 null. (Phase 4) */
+export async function dbBoardHandoffEditor(
+	sessionId: number,
+	fromClientId: string,
+	toClientId: string,
+	toName: string,
+	leaseSeconds = 20,
+): Promise<EditorLockResult | null> {
+	const { data, error } = await supabase.rpc("board_handoff_editor", {
+		p_session_id: sessionId,
+		p_from_client_id: fromClientId,
+		p_to_client_id: toClientId,
+		p_to_name: toName,
+		p_lease_seconds: leaseSeconds,
+	});
+	if (error) {
+		console.error("dbBoardHandoffEditor:", error);
+		return null;
+	}
+	return firstLockRow(data);
+}
+
+/** 편집권 해제(보유자 본인). crash 시는 lease 만료가 백업. (Phase 4) */
+export async function dbBoardReleaseEditor(
+	sessionId: number,
+	clientId: string,
+): Promise<void> {
+	const { error } = await supabase.rpc("board_release_editor", {
+		p_session_id: sessionId,
+		p_client_id: clientId,
+	});
+	if (error) console.error("dbBoardReleaseEditor:", error);
 }
 

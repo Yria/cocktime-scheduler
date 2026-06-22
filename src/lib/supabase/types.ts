@@ -24,15 +24,48 @@ export interface SessionRow {
 	match_assign_count: number;
 	board_drafts: import("../../types/board").BoardDraftsPayload | null;
 	cock_check_enabled: boolean;
+	// 보드 동기화 v2 (마이그레이션 20260622000000): 서버 권위 편집 락 + 낙관적 버전.
+	// 편집 락 — "보유자" = editor_client_id != null && editor_lease_until > now(). presence 파생 대체.
+	editor_client_id: string | null;
+	editor_name: string | null;
+	editor_lease_until: string | null;
+	// board_drafts 낙관적 동시성(쓰기 CAS) + 수신측 단조성 가드 기준. DB NOT NULL DEFAULT 0.
+	board_drafts_version: number;
+	// 코트 배정(matches) 동기화 단조 우산(마이그레이션 20260622130000). 모든 매치 변경 RPC가 ++.
+	// 수신측은 이 값이 자신이 아는 것보다 크면 matches 를 권위 재조회(catch-up). DB NOT NULL DEFAULT 0.
+	match_state_version: number;
 	// Phase 4: 일정화 (일정 = 세션)
 	title: string | null;
 	scheduled_at: string | null;
+	ends_at: string | null; // 종료 시각(마이그레이션 20260622120000). 기존 데이터는 시작+3h 백필.
 	capacity: number | null;
 	place_id: number | null;
 	status: SessionStatus;
 	created_by: string | null;
+	carpool_enabled: boolean; // 카풀 노출 on/off. on이면 참석자가 카풀 가능/필요 선택(20260622120000)
 	carpool_muster_place_id: number | null;
 	carpool_muster_at: string | null;
+	// 반복 일정(마이그레이션 20260622010000): 규칙↔회차 연결 + 개별 수정 플래그
+	recurring_schedule_id: number | null;
+	occurrence_date: string | null; // YYYY-MM-DD (Asia/Seoul 달력 날짜)
+	is_overridden: boolean;
+}
+
+/** 반복 일정 규칙 (요일 + 주차패턴 + 시간 + 인원 + 장소). 회차(sessions)를 자동 생성. */
+export interface RecurringScheduleRow {
+	id: number;
+	day_of_week: number; // 0=일 .. 6=토
+	week_ordinals: number[]; // 발생 주차 (매주=[1,2,3,4,5])
+	include_last: boolean; // '마지막주' 포함
+	start_time: string; // "19:00:00"
+	end_time: string | null; // "22:00:00" (마이그레이션 20260622120000). 회차 ends_at 산출 기준.
+	carpool_enabled: boolean; // 이 규칙으로 깔린 회차의 카풀 노출 on/off(20260622120000)
+	capacity: number | null; // NULL=무제한
+	place_id: number | null;
+	is_active: boolean;
+	created_by: string | null;
+	created_at: string;
+	updated_at: string;
 }
 
 export interface PlaceRow {
@@ -41,10 +74,11 @@ export interface PlaceRow {
 	address: string | null;
 	lat: number | null;
 	lng: number | null;
-	default_court_count: number | null;
 	is_active: boolean;
 	created_by: string | null;
 	created_at: string;
+	// 지도 공유 링크(네이버/카카오) — 미리보기/길찾기 버튼용(마이그레이션 20260622020000)
+	map_url: string | null;
 }
 
 export type AttendanceStatus = "confirmed" | "waitlisted" | "cancelled";
@@ -140,6 +174,10 @@ export interface ClientSessionState {
 	lastGameType: Record<string, import("../../types").GameType>;
 	/** 보드 "팀 구성중"/예약 멤버십(공유). 위치는 클라이언트 로컬에서 결정. */
 	boardDrafts: import("../../types/board").BoardDraftsPayload;
+	/** board_drafts 낙관적 동시성 버전(쓰기 CAS base + 수신 단조 가드). */
+	boardDraftsVersion: number;
+	/** 코트 배정(matches) 동기화 단조 버전(수신 단조 가드 + 갭 시 refetch 기준). */
+	matchStateVersion: number;
 	/** 콕 체크 모드 on/off(세션 설정). */
 	cockCheckEnabled: boolean;
 }

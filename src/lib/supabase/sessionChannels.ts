@@ -8,12 +8,14 @@ import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/
 import type { PresenceState } from "../editLock";
 import { type BroadcastPayload, createBroadcastChannel } from "./broadcast";
 import { supabase } from "./client";
+import type { SessionRow } from "./types";
 
 export type SessionPlayersChange = RealtimePostgresChangesPayload<Record<string, unknown>>;
 
 const BROADCAST_EVENTS = [
 	"match_started",
 	"match_completed",
+	"match_roster_updated",
 	"player_updated",
 	"board_drafts_updated",
 	"session_refresh_required",
@@ -22,12 +24,18 @@ const BROADCAST_EVENTS = [
 export interface SessionChannelHandlers {
 	/** 브로드캐스트 수신 → 도메인 반영. */
 	onBroadcast: (payload: BroadcastPayload) => void;
-	/** presence(sync/join/leave) 변경 시 현재 presenceState 전달 → 보유자/자동점유 재산정. */
+	/** presence(sync/join/leave) 변경 시 현재 presenceState 전달 → 접속자 목록 재산정(편집권 election 아님). */
 	onPresenceSync: (state: PresenceState) => void;
 	/** 다른 클라이언트가 세션 종료(is_active=false). */
 	onEnd: () => void;
-	/** sessions.match_assign_count 변경. */
-	onMetaUpdate: (matchAssignCount: number) => void;
+	/**
+	 * sessions row UPDATE(is_active 제외) — match_assign_count + board_drafts/version(catch-up, 원인1) +
+	 * editor_*(서버 권위 편집 락, 원인2)를 한 row에서 전달. board_drafts_updated broadcast(self:false)를
+	 * 놓친 관전자도 이 DB UPDATE로 수렴하고, 편집 락 변화도 같은 이벤트에 동승해 전파된다.
+	 */
+	onSessionRowUpdate: (row: SessionRow) => void;
+	/** meta 채널 (재)구독 완료 — 재연결 직후 공백 보정용 단건 재조회 트리거. */
+	onResync: () => void;
 	/** session_players row 변경(INSERT/UPDATE/DELETE) — 선수 추가/삭제/상태가 row 단위로 즉시 전파. */
 	onSessionPlayersChange: (payload: SessionPlayersChange) => void;
 }
@@ -78,14 +86,14 @@ export function createSessionChannels(
 				filter: `id=eq.${sessionId}`,
 			},
 			(payload) => {
-				const row = payload.new as { is_active: boolean; match_assign_count?: number };
+				const row = payload.new as SessionRow;
 				if (!row.is_active) {
 					handlers.onEnd();
 					return;
 				}
-				if (row.match_assign_count !== undefined) {
-					handlers.onMetaUpdate(row.match_assign_count);
-				}
+				// payload.new는 UPDATE 시 전체 컬럼을 포함 — match_assign_count/board_drafts/version/editor_*를
+				// 한 번에 sessionStore로 전달. board_drafts 미변경 UPDATE에도 실려 오나 수신측이 멱등 처리.
+				handlers.onSessionRowUpdate(row);
 			},
 		)
 		.on(
@@ -98,7 +106,10 @@ export function createSessionChannels(
 			},
 			(payload) => handlers.onSessionPlayersChange(payload),
 		)
-		.subscribe();
+		.subscribe((status) => {
+			// 재연결/최초 구독 완료 시 board_drafts를 1회 재조회해 SUBSCRIBED~첫 UPDATE 공백을 메운다.
+			if (status === "SUBSCRIBED") handlers.onResync();
+		});
 
 	return { broadcastChannel: channel, metaChannel };
 }

@@ -89,47 +89,54 @@ export async function dbUpdateSessionPlayer(
 }
 
 /**
- * 경기 수정 — 진행중 매치의 최종 로스터를 설정(직접 테이블 UPDATE).
- * matches RLS(anon_all)가 직접 쓰기를 허용하므로 RPC 불필요. 동기화는 하지 않고 결과만 반영.
- * 카운트(game_count/mixed_count)는 경기 완료 시 최종 로스터 기준으로 집계되므로 여기서 건드리지 않는다.
+ * 경기 수정 — 진행중 매치의 최종 로스터를 set_match_roster RPC로 원자 설정(마이그레이션 20260622130000).
+ * 단일 트랜잭션: matches 로스터 교체 + 빠진 선수→waiting + 들어온 선수→playing + match_state_version++.
+ * version++ 가 sessions postgres_changes 신호를 만들어 다른 기기가 catch-up refetch 로 수렴한다(H3 해결).
+ * 카운트(game_count/mixed_count)는 경기 완료 시 최종 로스터 기준으로 집계되므로 여기선 건드리지 않는다.
+ * 반환: 변경된 선수(removed+added) — 호출자가 broadcast(match_roster_updated)로 즉시 전파. 실패 시 null.
  */
 export async function dbSetMatchRoster(
+	sessionId: number,
 	matchId: string,
 	teamA: [string, string],
 	teamB: [string, string],
 	removedIds: string[],
 	addedIds: string[],
-): Promise<boolean> {
-	const { error: mErr } = await supabase
-		.from("matches")
-		.update({ team_a_p1: teamA[0], team_a_p2: teamA[1], team_b_p1: teamB[0], team_b_p2: teamB[1] })
-		.eq("id", matchId);
-	if (mErr) {
-		console.error("dbSetMatchRoster matches:", mErr);
-		return false;
+): Promise<SessionPlayer[] | null> {
+	const { data, error } = await supabase.rpc("set_match_roster", {
+		p_match_id: matchId,
+		p_session_id: sessionId,
+		p_team_a_p1: teamA[0],
+		p_team_a_p2: teamA[1],
+		p_team_b_p1: teamB[0],
+		p_team_b_p2: teamB[1],
+		p_removed_ids: removedIds,
+		p_added_ids: addedIds,
+	});
+	if (error) {
+		console.error("dbSetMatchRoster:", error);
+		return null;
 	}
-	if (removedIds.length > 0) {
-		// 빠진 선수 → 대기(완료 전 이탈이라 game_count 변동 없음), 대기 시작 갱신
-		const { error } = await supabase
-			.from("session_players")
-			.update({ status: "waiting", wait_since: new Date().toISOString() })
-			.in("id", removedIds);
-		if (error) {
-			console.error("dbSetMatchRoster removed:", error);
-			return false;
-		}
+	return ((data ?? []) as SessionPlayerRow[]).map(rowToSessionPlayer);
+}
+
+/**
+ * 운영진 실력 편집 — session_players.skills + 연결된 members.skills(member_id 있으면) 동시 갱신.
+ * RPC(update_player_skill)가 is_admin 가드. 갱신된 session_player 반환(보드 broadcast 용).
+ */
+export async function dbUpdatePlayerSkill(
+	sessionPlayerId: string,
+	skills: PlayerSkills,
+): Promise<SessionPlayer | null> {
+	const { data, error } = await supabase.rpc("update_player_skill", {
+		p_session_player_id: sessionPlayerId,
+		p_skills: skills,
+	});
+	if (error) {
+		console.error("dbUpdatePlayerSkill:", error);
+		return null;
 	}
-	if (addedIds.length > 0) {
-		const { error } = await supabase
-			.from("session_players")
-			.update({ status: "playing" })
-			.in("id", addedIds);
-		if (error) {
-			console.error("dbSetMatchRoster added:", error);
-			return false;
-		}
-	}
-	return true;
+	return data ? rowToSessionPlayer(data as SessionPlayerRow) : null;
 }
 
 /** 콕 제출 확인 — session_players.cock_checked=true. 갱신 선수 반환. */

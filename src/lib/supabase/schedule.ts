@@ -1,15 +1,13 @@
 import { supabase } from "./client";
 import type { AttendanceRow, CarpoolRole, PlaceRow, SessionRow } from "./types";
 
-export interface CreateScheduleInput {
-	title: string;
-	scheduledAt: string; // ISO
-	courtCount: number;
-	capacity: number | null;
-	placeId: number | null;
+/** 반복 규칙 → 회차 동기화(생성/갱신/정리 + 1주 전 노출). 멱등 RPC. 앱 로드 시 호출. */
+export async function syncOccurrences(): Promise<void> {
+	const { error } = await supabase.rpc("sync_schedule_occurrences");
+	if (error) console.error("syncOccurrences:", error);
 }
 
-/** 예정/진행 중 일정 목록 (모집중 open + 진행중 active). 즉석 세션은 scheduled_at이 null이라 뒤로. */
+/** 예정/진행 중 일정 목록 (노출된 open + 진행중 active). 즉석 세션은 scheduled_at이 null이라 뒤로. */
 export async function fetchSchedules(): Promise<SessionRow[]> {
 	const { data, error } = await supabase
 		.from("sessions")
@@ -21,32 +19,6 @@ export async function fetchSchedules(): Promise<SessionRow[]> {
 		return [];
 	}
 	return (data ?? []) as SessionRow[];
-}
-
-/** 일정 생성(운영진). status='open'(모집), is_active=false(아직 진행 아님). */
-export async function createSchedule(
-	input: CreateScheduleInput,
-	createdBy: string | null,
-): Promise<SessionRow | null> {
-	const { data, error } = await supabase
-		.from("sessions")
-		.insert({
-			title: input.title,
-			scheduled_at: input.scheduledAt,
-			court_count: input.courtCount,
-			capacity: input.capacity,
-			place_id: input.placeId,
-			status: "open",
-			is_active: false,
-			created_by: createdBy,
-		})
-		.select()
-		.single();
-	if (error) {
-		console.error("createSchedule:", error);
-		return null;
-	}
-	return data as SessionRow;
 }
 
 export async function deleteSchedule(sessionId: number): Promise<boolean> {
@@ -74,18 +46,26 @@ export async function fetchPlaces(): Promise<PlaceRow[]> {
 	return (data ?? []) as PlaceRow[];
 }
 
+export interface CreatePlaceInput {
+	name: string;
+	address?: string | null;
+	lat?: number | null;
+	lng?: number | null;
+	mapUrl?: string | null;
+}
+
 export async function createPlace(
-	name: string,
-	address: string | null,
-	defaultCourtCount: number | null,
+	input: CreatePlaceInput,
 	createdBy: string | null,
 ): Promise<PlaceRow | null> {
 	const { data, error } = await supabase
 		.from("places")
 		.insert({
-			name,
-			address,
-			default_court_count: defaultCourtCount,
+			name: input.name,
+			address: input.address ?? null,
+			lat: input.lat ?? null,
+			lng: input.lng ?? null,
+			map_url: input.mapUrl ?? null,
 			created_by: createdBy,
 		})
 		.select()

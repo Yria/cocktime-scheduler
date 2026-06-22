@@ -1,15 +1,13 @@
 import { create } from "zustand";
 import {
-	type CreateScheduleInput,
 	cancelAttendance,
-	createPlace,
-	createSchedule,
 	deleteSchedule,
 	fetchAttendances,
 	fetchPlaces,
 	fetchSchedules,
 	joinSession,
 	setCarpoolRole,
+	syncOccurrences,
 } from "../lib/supabase/schedule";
 import type {
 	AttendanceRow,
@@ -34,10 +32,6 @@ export const useScheduleStore = create<ScheduleState>(() => ({
 	loaded: false,
 }));
 
-function byScheduled(a: SessionRow, b: SessionRow): number {
-	return (a.scheduled_at ?? "").localeCompare(b.scheduled_at ?? "");
-}
-
 async function reloadAttendances() {
 	const ids = useScheduleStore.getState().schedules.map((s) => s.id);
 	const attendances = await fetchAttendances(ids);
@@ -47,6 +41,8 @@ async function reloadAttendances() {
 export const scheduleActions = {
 	async load() {
 		useScheduleStore.setState({ loading: true });
+		// 규칙→회차 동기화 + 1주 전 노출 선반영 후 목록 조회
+		await syncOccurrences();
 		const [schedules, places] = await Promise.all([
 			fetchSchedules(),
 			fetchPlaces(),
@@ -62,16 +58,6 @@ export const scheduleActions = {
 	},
 
 	reloadAttendances,
-
-	async create(input: CreateScheduleInput, createdBy: string | null) {
-		const row = await createSchedule(input, createdBy);
-		if (row) {
-			useScheduleStore.setState((s) => ({
-				schedules: [...s.schedules, row].sort(byScheduled),
-			}));
-		}
-		return row;
-	},
 
 	async remove(sessionId: number) {
 		const ok = await deleteSchedule(sessionId);
@@ -100,23 +86,5 @@ export const scheduleActions = {
 		const res = await setCarpoolRole(sessionId, role);
 		if (res.ok) await reloadAttendances();
 		return res;
-	},
-
-	async addPlace(
-		name: string,
-		address: string | null,
-		defaultCourtCount: number | null,
-		createdBy: string | null,
-	) {
-		const place = await createPlace(
-			name,
-			address,
-			defaultCourtCount,
-			createdBy,
-		);
-		if (place) {
-			useScheduleStore.setState((s) => ({ places: [...s.places, place] }));
-		}
-		return place;
 	},
 };

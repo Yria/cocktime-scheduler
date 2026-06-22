@@ -14,8 +14,13 @@
 | started_at | TIMESTAMPTZ | 시작 시각 |
 | ended_at | TIMESTAMPTZ? | 종료 시각 |
 | match_assign_count | INT | 누적 코트 배정 횟수 (deficit 기산점) |
+| match_state_version | BIGINT | **코트 배정 동기화 v1**(2026-06-22, `20260622130000`). NOT NULL DEFAULT 0. 모든 매치 변경 RPC(`assign_match`/`complete_match`/`set_match_roster`)가 같은 트랜잭션에서 ++. board_drafts 와 동일하게 sessions row(이미 realtime publication 등록)에 두어, postgres_changes UPDATE 가 코트 배정의 신뢰성 있는 change-detection 신호가 된다 → 수신측은 version 갭이면 matches 권위 재조회(`refetchMatches`). broadcast 유실/역전과 무관하게 수렴(원인: matches 단일 broadcast 경로 의존). |
 | board_drafts | JSONB? | 보드 "팀 구성중" 멤버십 공유 드래프트 |
 | cock_check_enabled | BOOLEAN | **콕 체크 모드**(2026-06-19, `20260619000000`). 디폴트 true. on이면 선수가 콕 제출 확인을 받아야 매칭 대기 상태가 됨 |
+| board_drafts_version | BIGINT | **보드 동기화 v2**(2026-06-22, `20260622000000`). NOT NULL DEFAULT 0. board_drafts 낙관적 동시성(쓰기 CAS, `board_save_drafts`) + 수신측 단조성 가드 기준. 쓰기 경로는 `board_save_drafts` RPC(version CAS)로 배선됨(원인3 해소). |
+| editor_client_id | TEXT? | **서버 권위 편집 락**(2026-06-22, `20260622000000`). "보유자" = `editor_client_id != null AND editor_lease_until > now()`. presence 파생 락을 대체(배선 완료) — 편집 락 섹션 참고. |
+| editor_name | TEXT? | 편집 보유자 표시명(편집 락) |
+| editor_lease_until | TIMESTAMPTZ? | 편집 락 lease 만료 시각. heartbeat(`board_claim_editor` 본인 재호출)로 연장, crash 시 자연 만료로 자동 회수 |
 
 ### session_players
 | 컬럼 | 타입 | 설명 |
@@ -74,12 +79,18 @@
 
 | RPC | 시그니처 | 용도 |
 |---|---|---|
-| `assign_match` | (코트 배정 파라미터) | matches INSERT + players→playing + match_assign_count++. 코트 점유 시 `unique_violation`→`RAISE EXCEPTION 'court already assigned'`(dbAssignMatch=false 처리) |
-| `complete_match` | `(p_match_id UUID, p_session_id BIGINT, p_game_type TEXT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID)` | match→completed + **player_snapshot 기록**(2026-06-18) + pair_history UPSERT(같은 경기 4명 6쌍) + players→waiting(game_count++/혼복 남자 mixed_count++). 시그니처 불변(스냅샷은 RPC 내부에서 session_players로부터 생성) |
+| `assign_match` | (코트 배정 파라미터) | matches INSERT + players→playing + match_assign_count++ **+ match_state_version++**(2026-06-22, `20260622130000`: 코트 동기화 신호). 코트 점유 시 `unique_violation`→`RAISE EXCEPTION 'court already assigned'`(dbAssignMatch=false 처리) |
+| `complete_match` | `(p_match_id UUID, p_session_id BIGINT, p_game_type TEXT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID)` | match→completed + **player_snapshot 기록**(2026-06-18) + pair_history UPSERT(같은 경기 4명 6쌍) + players→waiting(game_count++/혼복 남자 mixed_count++) **+ match_state_version++**(`20260622130000`). 시그니처 불변(스냅샷은 RPC 내부에서 session_players로부터 생성) |
+| `set_match_roster` | `(p_match_id UUID, p_session_id BIGINT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID, p_removed_ids UUID[], p_added_ids UUID[])` | **경기 로스터 수정 원자 RPC**(2026-06-22, `20260622130000`, 기존 직접 UPDATE 대체). playing 매치의 4슬롯 교체 + removed→waiting + added→playing + match_state_version++ 를 단일 트랜잭션. 변경 선수(removed+added) 반환(클라 broadcast 용). game_count 는 완료 시점에만 집계하므로 미변경. |
+| `load_session_state` | `(p_session_id BIGINT)` | **세션 상태 단일 스냅샷**(2026-06-22, `20260622140000`). board_drafts+version+match_state_version+court_count+editor_*+진행중 matches 를 단일 SELECT(같은 MVCC 시점)로 JSONB 반환. 재구독 catch-up·CAS 충돌 복구에서 팀 편성/코트 배정 두 권위를 "같은 시점"으로 수렴. 클라 `dbLoadSessionState`(sessionStore `resyncFromServer`). |
 | `set_player_resting` | `(p_session_player_id UUID, p_session_id BIGINT, p_resting BOOLEAN)` | status 휴식/복귀 전환. 복귀 시 joined_at_match 를 휴식 구간만큼 전진(deficit 보정) + wait_since 리셋. 갱신 선수 반환 (`20260615130000`) |
+| `board_claim_editor` | `(p_session_id BIGINT, p_client_id TEXT, p_name TEXT, p_lease_seconds INT=20)` | **보드 동기화 v2**(2026-06-22, `20260622000000`). 편집권 획득/연장(heartbeat) CAS. 조건부 UPDATE `WHERE editor IS NULL OR lease<now() OR editor=client` → row-lock 직렬화로 동시 호출 중 정확히 1명만 비-0행 수신(이중 편집권 차단). 결과 row(o_client_id/o_name/o_lease_until) 반환, 0행=획득 실패. 클라 `dbBoardClaimEditor`+heartbeat(7s). |
+| `board_handoff_editor` | `(p_session_id BIGINT, p_from_client_id TEXT, p_to_client_id TEXT, p_to_name TEXT, p_lease_seconds INT=20)` | 편집권 명시 양도. 보유자 본인(`WHERE editor=from`)만 대상에게 이전. 클라 `dbBoardHandoffEditor`(BoardToolbar "넘기기"). |
+| `board_release_editor` | `(p_session_id BIGINT, p_client_id TEXT)` | 편집권 해제(정상 이탈: unsubscribe/pagehide). 보유자 본인만. crash 시는 lease 만료가 백업. |
+| `board_save_drafts` | `(p_session_id BIGINT, p_client_id TEXT, p_name TEXT, p_payload JSONB, p_base_version BIGINT, p_lease_seconds INT=20)` | board_drafts 낙관적 버전 CAS 쓰기 **+ self-claim**. `WHERE version=base AND (editor IS NULL OR lease<now() OR editor=client)` 통과 시 board_drafts 교체+version+1+editor_*=호출자(쓰면서 락 획득/연장). 새 version 반환, 0행이면 NULL(충돌/타인 점유) → 통째 last-writer-wins 손실·조용한 실패 차단. self-claim이라 사전 claim 없이 첫 쓰기가 락을 잡음(데드존 없음). 클라 `dbBoardSaveDrafts`(boardStore `pushDraftsToRemote`, 직렬화+충돌 시 resync). |
 
 > **제거된 RPC(deprecated)**: ~~`save_team_candidates(BIGINT, JSONB)`~~, ~~`save_match_queue(BIGINT, JSONB)`~~, ~~`activate_pending_player(BIGINT, UUID)`~~.
-> ~~`swap_match_player(UUID, BIGINT, TEXT, UUID, UUID)`~~ — `20260615140000` 에서 추가됐으나 미사용으로 `20260616000000_db_cleanup.sql` 에서 DROP. **경기 수정(선수 교체)은 RPC 없이 클라이언트가 matches/session_players 를 직접 UPDATE**(`dbSetMatchRoster`)한다.
+> ~~`swap_match_player(UUID, BIGINT, TEXT, UUID, UUID)`~~ — `20260615140000` 에서 추가됐으나 미사용으로 `20260616000000_db_cleanup.sql` 에서 DROP. **경기 수정(로스터 변경)은 `20260622130000` 부터 `set_match_roster` RPC**로 원자 처리(이전엔 클라가 matches/session_players 를 직접 UPDATE, 동기화 없음 — H3).
 
 ## API 함수 목록
 
@@ -96,7 +107,10 @@
 | `dbClearSessionLogs(sessionId)` | LogPage |
 | `fetchSessionSettingsForConflictCheck(...)` | SessionSetup |
 | `fetchSessionPlayerForConflictCheck(...)` | SessionSetup |
-| `dbSaveBoardDrafts(...)` | sessionStore (보드 드래프트 저장) |
+| `dbBoardSaveDrafts(sessionId, clientId, name, payload, baseVersion)` | boardStore `pushDraftsToRemote` (board_drafts version CAS 저장, →새 version\|null) |
+| `dbLoadSessionState(sessionId)` | sessionStore `resyncFromServer`/`onResync` — `load_session_state` RPC: board_drafts+version+matches+match_state_version+editor_* 단일 스냅샷 재조회(`dbLoadSessionRow` 대체) |
+| `dbLoadMatches(sessionId)` | sessionStore `refetchMatches` — 진행중 matches 단일 SELECT(match_state_version 갭 catch-up 시 코트 재구성) |
+| `dbBoardClaimEditor/HandoffEditor/ReleaseEditor(...)` | sessionStore 편집 락 (획득·heartbeat/양도/해제) |
 
 > **제거됨(deprecated)**: ~~`dbSaveTeamCandidates`~~, ~~`dbSaveMatchQueue`~~ (SessionMain 삭제로 호출처 소멸).
 
@@ -107,10 +121,10 @@
 | `dbCompleteMatch(...)` | sessionStore |
 | `dbUpdateSessionPlayer(id, gender, skills)` | appStore (선수 정보 변경 — gender/skills 직접 UPDATE) |
 | `dbSetPlayerResting(id, sessionId, resting)` | sessionStore (`setResting` → `set_player_resting` RPC) |
-| `dbSetMatchRoster(matchId, teamA, teamB, removed, added)` | sessionStore (`handleSetMatchRoster`: 경기 수정 — matches/session_players **직접 UPDATE**, 브로드캐스트 없이 결과만 반영) |
+| `dbSetMatchRoster(sessionId, matchId, teamA, teamB, removed, added)` | sessionStore (`handleSetMatchRoster`: 경기 로스터 수정 → `set_match_roster` RPC 원자 처리 + match_state_version++. 변경 선수 반환 → `match_roster_updated` broadcast + version 갭 catch-up 으로 모든 기기 수렴) |
 | `dbEndSession(sessionId)` | sessionStore (`handleEndSession`: `sessions.is_active=false`) |
 
-> **제거됨(deprecated)**: ~~`dbToggleResting`~~, ~~`dbToggleForceMixed`~~, ~~`dbToggleForceHardGame`~~, ~~`dbLogManualMatch`~~, ~~`dbActivatePendingPlayer`~~, ~~`dbSwapMatchPlayer`~~. 휴식 전환은 `dbSetPlayerResting`(RPC), 경기 수정은 `dbSetMatchRoster`(직접 UPDATE)로 분리.
+> **제거됨(deprecated)**: ~~`dbToggleResting`~~, ~~`dbToggleForceMixed`~~, ~~`dbToggleForceHardGame`~~, ~~`dbLogManualMatch`~~, ~~`dbActivatePendingPlayer`~~, ~~`dbSwapMatchPlayer`~~, ~~`dbLoadSessionRow`~~(→`dbLoadSessionState`로 통합). 휴식 전환은 `dbSetPlayerResting`(RPC), 경기 로스터 수정은 `dbSetMatchRoster`→`set_match_roster`(RPC)로 분리.
 > **재추가됨**: `dbEndSession` (세션 종료) — 보드 헤더 [세션 종료] 버튼 → `handleEndSession` → `is_active=false`. 다른 클라이언트는 `is_active` postgres watch 로 종료 감지(`session_ended` 브로드캐스트는 미사용).
 
 ---
@@ -165,12 +179,13 @@ sessionStore (휴식 토글)
 
 ## 브로드캐스트 이벤트
 
-`BroadcastPayload` 유니온(broadcast.ts) 5종. 채널은 `self: false`(자기 이벤트 미수신).
+`BroadcastPayload` 유니온(broadcast.ts) 6종. 채널은 `self: false`(자기 이벤트 미수신). **broadcast 는 즉시성(best-effort)만 담당 — 권위 수렴은 version(matches=match_state_version, board=board_drafts_version) 비교 → 갭이면 권위 재조회.**
 
 | 이벤트 | 발생 시점 | 수신 처리 |
 |---|---|---|
 | `match_started` | 매치 코트 배정 | 코트에 매치 추가, 대기열에서 선수 제거 |
 | `match_completed` | 게임 완료 | 코트 비움, 선수→대기열, pair_history 업데이트 (updatedPlayers) |
+| `match_roster_updated` | 경기 로스터 수정(`set_match_roster`) | 코트의 teamA/B 교체 + 상태 바뀐 선수 upsert (2026-06-22, H3 해결 — 이전엔 broadcast 없었음) |
 | `player_updated` | 선수 정보/상태 변경 (성별·스킬·휴식 토글) | 전체 목록에서 선수 정보 교체 |
 | `board_drafts_updated` | 보드 "팀 구성중" 멤버십 변경 | 드래프트 멤버십 교체 |
 | `session_refresh_required` | 설정 대변경 후 | DB 전체 재로드 |
@@ -178,14 +193,50 @@ sessionStore (휴식 토글)
 > **제거된 이벤트(deprecated)**: ~~`player_status_changed`~~(→ `player_updated` 로 통합), ~~`session_updated`~~,
 > ~~`player_force_mixed_changed`~~, ~~`player_force_hard_game_changed`~~, ~~`candidates_updated`~~, ~~`session_ended`~~, ~~`pending_team`~~.
 
-> **경기 수정(`dbSetMatchRoster`)은 브로드캐스트 안 함** — 결과만 DB 에 반영하고 편집자 로컬만 갱신. 다른 기기는 다음 스냅샷 로드 시 반영.
+> **매치 broadcast 는 즉시성 전용, 권위는 catch-up**(2026-06-22): `match_started`/`match_completed`/`match_roster_updated` 를 놓치거나 순서가 역전돼도, 모든 매치 RPC 가 올린 `sessions.match_state_version` 갭을 postgres_changes 가 감지해 `refetchMatches`(matches 권위 재조회)로 수렴한다. 따라서 broadcast 페이로드에는 version 단조 가드를 두지 않는다(refetch 가 항상 최신 DB 로 교정).
 
 ## Realtime postgres_changes (2026-06-18)
 
 `session-meta:{id}` 채널이 두 테이블을 row 단위로 감시한다.
-- `sessions` UPDATE: `is_active`(세션 종료) + `match_assign_count`.
+- `sessions` UPDATE → **단일 `onSessionRowUpdate(row)`**(2026-06-22): `is_active`(세션 종료) + `match_assign_count` + **`board_drafts`/`board_drafts_version`(catch-up, 원인1)** + **`match_state_version`(코트 배정 catch-up, `20260622130000`)** + **`editor_*`(서버 권위 편집 락, 원인2)**를 한 row에서 처리. board_drafts는 broadcast(self:false) 누락 시 이 DB UPDATE로 수렴하고(`applyDraftsIfNewer` 단조 가드); **match_state_version 갭이면 `refetchMatches`(matches 권위 SELECT)로 코트 배정을 수렴**(broadcast 유실/역전·H1/H2 해결). 편집 락 변화도 같은 이벤트에 동승(`setCachedEditorFromRow`→`recomputeLock`). 이중 도착·자기 echo는 version 단조(`<=` 스킵)로 멱등. meta 채널 SUBSCRIBED(재연결) 시 `onResync`→`resyncFromServer`(`dbLoadSessionState`)로 **board_drafts+matches+버전+락을 단일 트랜잭션 스냅샷으로 1회 재조회**(두 권위 시점 일치, 옵션 B)해 재구독 공백을 메운다.
 - **`session_players` `*`(INSERT/UPDATE/DELETE, filter `session_id`)**: 선수 추가/삭제/상태를 **즉시** 모든 기기에 전파(`sessionStore.onSessionPlayersChange`). DELETE→Map 제거+보드 자동 재정합(`initializeFromPool`), INSERT/UPDATE→`rowToSessionPlayer` upsert. broadcast(`player_updated` 등)와 이중 적용돼도 id 기반 upsert라 idempotent — broadcast 누락/지연·낙관적 반영 실패 시에도 DB 로 수렴(중복/미동기화/다중상태 방지). 코트(경기중)는 여전히 broadcast 가 담당(이 핸들러는 session_players Map 만 갱신).
 
-## 편집 락 (Realtime Presence, DB 미사용)
+> **`sessions` publication 정식 승격(2026-06-22, `20260622000000`)**: 기존엔 `docs/migration.sql` 수동 스크립트로만 `supabase_realtime` 에 추가돼 환경 드리프트가 있었다. Phase 0 마이그레이션이 `pg_publication_tables` 멱등 가드로 정식화. (sessions 는 UPDATE 만 구독·DELETE 필터 미사용이라 REPLICA IDENTITY 는 DEFAULT 로 충분 — payload.new 는 전체 컬럼 포함.)
 
-같은 `session-bc:{id}` 채널의 **Presence** 로 동시편집을 제어한다(DB 테이블 없음). 각 기기가 `{clientId, name, claimAt}` 를 track → 현재 접속자 중 `claimAt` 최댓값이 **편집자(보유자)**, 아무도 claim 안 했으면 자유(누구나 편집, 첫 편집이 자동 점유). 비편집자는 모든 변경 액션 차단(보기 전용)이되 위 브로드캐스트는 정상 수신. 헤더 칩 → 접속자 모달에서 "편집 권한 가져오기"로 즉시 인계. 보유자 이탈 시 presence 에서 사라져 자동 자유/인계(영구 잠금 없음).
+## 편집 락 (서버 권위 — sessions.editor_* 컬럼, 2026-06-22 board 동기화 v2)
+
+편집 보유자를 **단일 DB row(`sessions.editor_client_id`/`editor_name`/`editor_lease_until`)**가 결정한다. presence 다수결이 아니라 서버 권위라 presence 부분 동기화로 인한 **이중 편집권(원인2)이 구조적으로 불가능**하다. (이전 presence 파생 락 `computePresence`/`nextClaimAt`은 폐기.)
+
+- **보유자** = `editor_client_id != null AND editor_lease_until > now()`. `computeLockFromRow`로 `isEditor`/`holderClientId`/`holderName`/`lockFree` 산정.
+- **획득**: 자유/만료/본인이면 점유. (a) 첫 편집 시 자동(`claimEdit`→`claimEditingIfFree`→낙관 점유, 서버 락은 `board_save_drafts` self-claim 또는 heartbeat의 `board_claim_editor`가 확정), (b) 명시 "편집 권한 가져오기"(`claimEditor`). 동시 점유는 DB 조건부 UPDATE row-lock으로 1명만 성공.
+- **유지**: 보유자만 7s heartbeat(`board_claim_editor`)로 20s lease 연장. 백그라운드(visibilitychange) 시 heartbeat 정지, 복귀 시 재점유 시도.
+- **해제/회복**: 정상 이탈(unsubscribe/pagehide)→`board_release_editor`. crash/강제종료→20s lease 만료 후 자유(클라 4s `reeval` 타이머가 만료를 로컬 감지). presence leave 의존 없음.
+- **양도**: 보유자가 접속자 모달에서 "넘기기"(`board_handoff_editor`)로 명시 이전.
+- **stale 콜백 방어**: `lockEpoch`(권위 변경마다 증가)로 in-flight heartbeat의 늦은 `.then`이 handoff/세션전환 후 상태를 덮어쓰지 못하게 가드.
+- presence(`session-bc:{id}`)는 이제 **접속자 목록 표시 전용**(`computePresenceList`) — 편집권 election에 쓰지 않는다. 비편집자는 멤버십 변경 차단(보기 전용)이되 broadcast/catch-up은 정상 수신.
+
+
+## 보드 동기화 v2 롤아웃 현황 (2026-06-22)
+
+세션 보드 팀 동기화 버그(관전자 팀 미표시 · 하드 새로고침 고착 · 이따금 이중 편집권)의 근본 원인 4건을 단계적으로 수정 중. 단일 편집자 + 신뢰성 있는 실시간 관전 + DB 진실원천 모델(CRDT 미도입).
+
+| Phase | 내용 | 상태 |
+|---|---|---|
+| 0 | 마이그레이션 `20260622000000`: `editor_*`/`board_drafts_version` 컬럼 + 락/CAS RPC 4종 + sessions publication 멱등 승격. 클라 미사용(dormant). | ✅ 완료(스키마) |
+| 1 | **관전자 렌더 수정(원인4)**: `SessionBoard` 의 `applyRemoteDrafts` effect 가 자석(`magnets`) 로드 전 영구 bail 하던 것을 제거하고 `magnetCount` 를 deps 에 추가 → 자석이 `boardDrafts` 보다 늦게 로드돼도 재적용되어 관전자가 팀을 그린다. (자석은 `applyRemoteDrafts` 가 add/remove 안 하므로 재실행 루프 없음.) | ✅ 완료 |
+| 2 | **DB catch-up(원인1)**: `sessions` UPDATE 핸들러(`onSessionRowUpdate`)가 `board_drafts`/version을 읽어 broadcast 누락 보정 + 재구독 시 `onResync`→`resyncFromServer`(`dbLoadSessionRow`) 1회 재조회. version 단조 가드(`applyDraftsIfNewer`)로 broadcast/catch-up 역전·자기 echo 멱등. | ✅ 완료 |
+| 3 | **쓰기 CAS(원인3·5)**: `dbSaveBoardDrafts`(통째 LWW, 제거됨) → `board_save_drafts` RPC(version CAS + self-claim). `pushDraftsToRemote`가 base_version 동반 호출 + `draftsSaveInFlight`/`pendingDraftsPayload` 직렬화(자기충돌 방지) + 0행 충돌 시 `resyncFromServer`(서버 수렴 + toast). | ✅ 완료 |
+| 4 | **서버 권위 락(원인2)**: presence 파생 락 폐기(`computePresence`/`nextClaimAt` 삭제). `editor_*` row + `board_claim_editor`(heartbeat 7s)/`handoff`/`release`로 단일 편집자 보장. lease 20s + reeval 4s(crash 회복). board_save_drafts self-claim이라 Phase 3과 배포 데드존 없음. UX: 접속 즉시 자동 편집자 → "첫 편집 시 점유". | ✅ 완료 |
+
+## 코트 배정(matches) 동기화 v1 (2026-06-22, `20260622130000`/`20260622140000`)
+
+board_drafts(팀 편성)는 위 v2로 수렴했으나 **matches(코트 배정)는 broadcast 단일 경로 의존**이라 같은 부류의 미동기화가 남아 있었다(근본 원인 검증 H1~H5). board_drafts 패턴을 matches 로 확장한다.
+
+| Phase | 내용 | 상태 |
+|---|---|---|
+| A-1 | **단조 우산 신설**: `sessions.match_state_version` 컬럼 + 모든 매치 RPC(`assign_match`/`complete_match`/`set_match_roster`)가 같은 트랜잭션에서 ++. matches 를 publication 에 넣지 않고 sessions row 신호만으로 catch-up(부하 회피). | ✅ 완료 |
+| A-2 | **로스터 RPC 원자화(H3)**: 직접 UPDATE `dbSetMatchRoster` → `set_match_roster` RPC(matches+session_players+version 단일 트랜잭션) + `match_roster_updated` broadcast. 이전엔 "동기화 안 함"이라 편집자만 보였음. | ✅ 완료 |
+| A-3 | **version 갭 catch-up(H1/H2/H4/H5)**: `onSessionRowUpdate`/`onResync` 가 `match_state_version` 갭 감지 시 `refetchMatches`(matches 권위 SELECT)로 코트 재구성. broadcast 유실/역전·"선수는 playing인데 코트 빔"·재연결 공백 모두 수렴. broadcast 는 즉시성 전용. | ✅ 완료 |
+| B | **단일 스냅샷 통합(`20260622140000`)**: `load_session_state` RPC 로 board_drafts+matches+버전+락을 단일 트랜잭션 스냅샷으로 반환 → `resyncFromServer` 가 두 권위를 "같은 시점"으로 수렴(시점차 제거). `dbLoadSessionRow`→`dbLoadSessionState` 통합. | ✅ 완료 |
+
+> 클라 추천/랭킹/페어 계산은 서버로 옮기지 않는다(무겁고 잦은 순수 계산 → 분산 클라 유지). 서버 이전은 "가벼운 검증/원자적 다중행 변경/권위 재조회"에 한정.

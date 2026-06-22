@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { startSessionFromSchedule } from "../lib/supabase/schedule";
-import type { CarpoolRole, SessionRow } from "../lib/supabase/types";
+import type { CarpoolRole } from "../lib/supabase/types";
 import { appActions, useAppStore } from "../store/appStore";
 import { authActions, authDisplayName, useAuthStore } from "../store/authStore";
 import { scheduleActions, useScheduleStore } from "../store/scheduleStore";
+import ProfileSetup from "./ProfileSetup";
 import ScheduleCard from "./schedule/ScheduleCard";
 import Spinner from "./shared/Spinner";
 
@@ -33,7 +34,10 @@ export default function Home({ onStart }: Props) {
 	const authUser = useAuthStore((s) => s.user);
 	const isAdmin = useAuthStore((s) => s.isAdmin);
 	const memberId = useAuthStore((s) => s.memberId);
+	const myName = useAuthStore((s) => s.myName);
 	const myGender = useAuthStore((s) => s.myGender);
+	const myBirthYear = useAuthStore((s) => s.myBirthYear);
+	const myResidence = useAuthStore((s) => s.myResidence);
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
 	const schedules = useScheduleStore((s) => s.schedules);
 	const places = useScheduleStore((s) => s.places);
@@ -42,6 +46,14 @@ export default function Home({ onStart }: Props) {
 
 	const [authBusy, setAuthBusy] = useState(false);
 	const [busyId, setBusyId] = useState<number | null>(null);
+	const [editingProfile, setEditingProfile] = useState(false);
+
+	// 시작 시각 도달을 감지해 '진행 하이라이트'를 켜기 위한 시계(30초 tick)
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		const id = setInterval(() => setNow(Date.now()), 30_000);
+		return () => clearInterval(id);
+	}, []);
 
 	// 즉석 세션용 시트 연동(로그인 후 백그라운드) + 일정 로드
 	useEffect(() => {
@@ -58,11 +70,6 @@ export default function Home({ onStart }: Props) {
 		} catch {
 			setAuthBusy(false);
 		}
-	}, []);
-
-	const handleDelete = useCallback(async (s: SessionRow) => {
-		if (!confirm(`'${s.title ?? "일정"}'을(를) 삭제할까요?`)) return;
-		await scheduleActions.remove(s.id);
 	}, []);
 
 	const handleJoin = useCallback(async (sessionId: number) => {
@@ -162,6 +169,17 @@ export default function Home({ onStart }: Props) {
 	const placeName = (id: number | null) =>
 		id == null ? null : (places.find((p) => p.id === id)?.name ?? null);
 
+	// 진행 하이라이트: 시작 시각이 지난 open 일정. 분리해 맨 위로 올리고 하이라이트한다.
+	// (요청: 시작 이후 계속 유지 — 종료 시각과 무관. 시작 전이면 세션시작 버튼도 숨김)
+	const isLiveSchedule = (s: (typeof schedules)[number]) =>
+		s.status === "open" &&
+		s.scheduled_at != null &&
+		Date.parse(s.scheduled_at) <= now;
+	const liveSchedules = schedules.filter(isLiveSchedule);
+	const restSchedules = schedules.filter((s) => !isLiveSchedule(s));
+	const orderedSchedules = [...liveSchedules, ...restSchedules];
+	const liveIds = new Set(liveSchedules.map((s) => s.id));
+
 	return (
 		<div
 			className="min-h-[100dvh] bg-[#fafbff] dark:bg-[#0f172a]"
@@ -184,9 +202,37 @@ export default function Home({ onStart }: Props) {
 							className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
 							style={{ fontWeight: 600 }}
 						>
-							{authDisplayName(authUser)}
+							{myName || authDisplayName(authUser)}
 							{isAdmin ? " · 운영진" : ""}
 						</span>
+						<button
+							type="button"
+							onClick={() => setEditingProfile(true)}
+							className="text-[#0b84ff]"
+							style={{
+								background: "none",
+								border: "none",
+								fontWeight: 600,
+								cursor: "pointer",
+							}}
+						>
+							내 정보
+						</button>
+						{isAdmin && (
+							<button
+								type="button"
+								onClick={() => navigate("/members")}
+								className="text-[#0b84ff]"
+								style={{
+									background: "none",
+									border: "none",
+									fontWeight: 600,
+									cursor: "pointer",
+								}}
+							>
+								회원 관리
+							</button>
+						)}
 						<button
 							type="button"
 							onClick={() => authActions.signOut()}
@@ -226,59 +272,15 @@ export default function Home({ onStart }: Props) {
 				)}
 
 				{/* 프로필 성별 미입력 안내 */}
-				{myGender == null && (
-					<div
-						className="bg-[#fff7ed] dark:bg-[rgba(180,118,43,0.12)] border border-[rgba(180,118,43,0.25)]"
-						style={{
-							borderRadius: 12,
-							padding: "12px 14px",
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "space-between",
-							gap: 8,
-						}}
-					>
-						<span
-							className="text-[#9a3412] dark:text-[#f59e0b]"
-							style={{ fontSize: 13, fontWeight: 600 }}
-						>
-							성별을 선택하면 편성에 반영돼요
-						</span>
-						<div className="flex gap-1.5">
-							<button
-								type="button"
-								onClick={() => authActions.updateGender("M")}
-								style={{
-									fontSize: 13,
-									fontWeight: 700,
-									color: "#fff",
-									background: "#1366a6",
-									border: "none",
-									borderRadius: 8,
-									padding: "6px 14px",
-									cursor: "pointer",
-								}}
-							>
-								남
-							</button>
-							<button
-								type="button"
-								onClick={() => authActions.updateGender("F")}
-								style={{
-									fontSize: 13,
-									fontWeight: 700,
-									color: "#fff",
-									background: "#b4762b",
-									border: "none",
-									borderRadius: 8,
-									padding: "6px 14px",
-									cursor: "pointer",
-								}}
-							>
-								여
-							</button>
-						</div>
-					</div>
+				{/* 가입 후 프로필 미완(성별·출생년도·거주지) → 입력 모달 */}
+				{!!memberId &&
+					(myGender == null || myBirthYear == null || !myResidence) && (
+						<ProfileSetup />
+					)}
+
+				{/* 회원정보 수정 */}
+				{editingProfile && (
+					<ProfileSetup mode="edit" onClose={() => setEditingProfile(false)} />
 				)}
 
 				{/* 일정 섹션 헤더 */}
@@ -292,7 +294,7 @@ export default function Home({ onStart }: Props) {
 					{isAdmin && (
 						<button
 							type="button"
-							onClick={() => navigate("/schedule/new")}
+							onClick={() => navigate("/schedule")}
 							style={{
 								fontSize: 13,
 								fontWeight: 700,
@@ -304,7 +306,7 @@ export default function Home({ onStart }: Props) {
 								cursor: "pointer",
 							}}
 						>
-							+ 일정 추가
+							일정 관리
 						</button>
 					)}
 				</div>
@@ -325,7 +327,7 @@ export default function Home({ onStart }: Props) {
 					</div>
 				) : (
 					<div className="flex flex-col gap-2.5">
-						{schedules.map((s) => (
+						{orderedSchedules.map((s) => (
 							<ScheduleCard
 								key={s.id}
 								session={s}
@@ -333,10 +335,10 @@ export default function Home({ onStart }: Props) {
 								attendances={attendances.filter((a) => a.session_id === s.id)}
 								memberId={memberId}
 								isAdmin={isAdmin}
+								isLive={liveIds.has(s.id)}
 								busy={busyId === s.id}
 								onJoin={() => handleJoin(s.id)}
 								onCancel={() => handleCancel(s.id)}
-								onDelete={() => handleDelete(s)}
 								onStartSession={() => handleStartSession(s.id)}
 								onSetCarpool={(role) => handleSetCarpool(s.id, role)}
 							/>

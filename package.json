@@ -4,6 +4,7 @@
 	"version": "0.0.0",
 	"homepage": "https://Yria.github.io/cocktime-scheduler",
 	"type": "module",
+	"packageManager": "pnpm@11.8.0",
 	"scripts": {
 		"dev": "vite",
 		"build": "tsc -b && vite build",
@@ -11,13 +12,13 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"preview": "vite preview",
-		"predeploy": "npm run build",
-		"deploy": "gh-pages -d dist",
+		"deploy": "pnpm run build && gh-pages -d dist",
 		"photos": "scripts/.venv/bin/python -u scripts/fetch_photos.py",
 		"photos:dry": "scripts/.venv/bin/python -u scripts/fetch_photos.py --dry-run"
 	},
 	"dependencies": {
 		"@supabase/supabase-js": "^2.97.0",
+		"@tanstack/react-virtual": "^3.14.3",
 		"es-hangul": "^2.3.8",
 		"immer": "^11.1.4",
 		"konva": "^10.2.5",

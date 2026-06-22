@@ -2,10 +2,14 @@ import { useEffect, useState } from "react";
 import { useDebugStore } from "../../store/debugStore";
 import { useSessionStore } from "../../store/sessionStore";
 import { useAppStore } from "../../store/appStore";
+import { useAuthStore } from "../../store/authStore";
 import { skillScore as computeSkillScore } from "../../lib/teamSelection";
 import { fetchMatchLogs, type MatchLogEntry } from "../../lib/supabase/api";
+import { dbUpdatePlayerSkill } from "../../lib/supabase/actions";
+import { DEFAULT_SKILLS, SKILLS, SKILL_LEVELS } from "../../lib/constants";
+import { SkillButton } from "../setup/SkillButton";
 import ModalSheet from "../common/ModalSheet";
-import type { GameType } from "../../types";
+import type { GameType, PlayerSkills } from "../../types";
 
 const GAME_TYPE_STYLE: Record<GameType, string> = {
 	혼복: "bg-pink-100 text-pink-700 dark:bg-pink-500/15 dark:text-pink-300",
@@ -45,9 +49,17 @@ export default function DebugMatchModal() {
 	const closeDebug = useDebugStore((s) => s.closeDebug);
 	const sessionPlayers = useSessionStore((s) => s.sessionPlayers);
 	const sessionId = useAppStore((s) => s.sessionMeta?.sessionId);
+	const isAdmin = useAuthStore((s) => s.isAdmin);
 
 	// null = 아직 로드 전(로딩 표시용). 배열 = 현재 세션의 완료 경기 로그.
 	const [logs, setLogs] = useState<MatchLogEntry[] | null>(null);
+
+	// 운영진 실력 편집 상태. editTarget=편집 중인 선수 id → 대상 선수가 바뀌면 파생적으로 편집 종료.
+	const [editTarget, setEditTarget] = useState<string | null>(null);
+	const [draft, setDraft] = useState<PlayerSkills>(DEFAULT_SKILLS);
+	const [saving, setSaving] = useState(false);
+	const [editErr, setEditErr] = useState<string | null>(null);
+	const editing = editTarget != null && editTarget === debugPlayerId;
 
 	// 모달이 열릴 때(대상 선수 변경 시) 현재 세션의 완료 경기 로그를 가져온다.
 	useEffect(() => {
@@ -65,6 +77,27 @@ export default function DebugMatchModal() {
 	if (!debugPlayerId || !player) return null;
 
 	const myName = player.name;
+
+	const startEdit = () => {
+		setDraft({ ...DEFAULT_SKILLS, ...player.skills });
+		setEditErr(null);
+		setEditTarget(player.id);
+	};
+
+	const handleSaveSkill = async () => {
+		if (saving) return;
+		setSaving(true);
+		setEditErr(null);
+		const updated = await dbUpdatePlayerSkill(player.id, draft);
+		setSaving(false);
+		if (updated) {
+			// 보드 즉시 반영 + 타 기기 전파(members.skills 는 RPC가 함께 갱신)
+			useSessionStore.getState().broadcastPlayerUpdated(updated);
+			setEditTarget(null);
+		} else {
+			setEditErr("저장에 실패했어요. 운영진만 편집할 수 있어요.");
+		}
+	};
 
 	// 이 선수가 낀 경기만 추려 파트너/상대를 계산 (logs는 ended_at 최신순)
 	const history = (logs ?? []).flatMap((m) => {
@@ -105,12 +138,69 @@ export default function DebugMatchModal() {
 						</span>
 					</h3>
 				</div>
-				<button type="button" onClick={closeDebug} className="btn-icon-close">
-					✕
-				</button>
+				<div className="flex items-center gap-2">
+					{isAdmin && !editing && (
+						<button
+							type="button"
+							onClick={startEdit}
+							className="rounded-lg bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300"
+						>
+							실력 편집
+						</button>
+					)}
+					<button type="button" onClick={closeDebug} className="btn-icon-close">
+						✕
+					</button>
+				</div>
 			</div>
 
 			<div className="no-sb overflow-y-auto px-5 pb-5">
+				{editing ? (
+					<div className="flex flex-col gap-2">
+						<p className="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wide mb-1">
+							실력 편집
+						</p>
+						{SKILLS.map((skill) => (
+							<div key={skill} className="flex items-center gap-3">
+								<span className="text-sm text-gray-500 dark:text-gray-300 w-[60px] shrink-0">
+									{skill}
+								</span>
+								<div className="flex gap-1.5 flex-1">
+									{SKILL_LEVELS.map((level) => (
+										<SkillButton
+											key={level}
+											level={level}
+											active={draft[skill] === level}
+											onClick={() => setDraft((d) => ({ ...d, [skill]: level }))}
+										/>
+									))}
+								</div>
+							</div>
+						))}
+						{editErr && (
+							<p className="text-xs font-semibold text-red-500 mt-1">{editErr}</p>
+						)}
+						<div className="flex gap-2 mt-3">
+							<button
+								type="button"
+								onClick={handleSaveSkill}
+								disabled={saving}
+								className="flex-1 rounded-xl bg-blue-500 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+							>
+								{saving ? "저장 중…" : "저장"}
+							</button>
+							<button
+								type="button"
+								onClick={() => setEditTarget(null)}
+								disabled={saving}
+								className="rounded-xl bg-gray-100 dark:bg-white/10 px-5 py-2.5 text-sm font-bold text-gray-600 dark:text-gray-300 disabled:opacity-50"
+							>
+								취소
+							</button>
+						</div>
+					</div>
+				) : (
+					<>
 				{/* 플래그 — 설정된 것만 표시 */}
 				{player.allowMixedSingle && (
 					<div className="flex flex-wrap gap-1.5 mb-4">
@@ -204,6 +294,8 @@ export default function DebugMatchModal() {
 							</li>
 						))}
 					</ol>
+				)}
+					</>
 				)}
 			</div>
 		</ModalSheet>
