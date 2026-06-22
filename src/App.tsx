@@ -17,6 +17,7 @@ import {
 } from "./lib/supabase/notifications";
 import { appActions, useAppStore } from "./store/appStore";
 import { authActions, useAuthStore } from "./store/authStore";
+import { notificationActions } from "./store/notificationStore";
 import { useSessionStore } from "./store/sessionStore";
 import { toast } from "./store/toastStore";
 import type { Player, SessionSettings } from "./types";
@@ -24,7 +25,10 @@ import type { Player, SessionSettings } from "./types";
 export default function App() {
 	const navigate = useNavigate();
 	const navRef = useRef(navigate);
-	navRef.current = navigate;
+	// 최신 navigate를 ref에 동기화(렌더 중 ref 변경 금지 → effect로)
+	useEffect(() => {
+		navRef.current = navigate;
+	});
 
 	useDarkMode();
 
@@ -33,11 +37,16 @@ export default function App() {
 		authActions.init();
 	}, []);
 
-	// 앱내 실시간 알림 (Phase 8): 자동승급·공지 → 토스트
+	// 앱내 실시간 알림 (Phase 8): 자동승급·공지 → 종모양 목록 + 토스트
 	const memberId = useAuthStore((s) => s.memberId);
 	useEffect(() => {
-		if (!memberId) return;
+		if (!memberId) {
+			notificationActions.clear();
+			return;
+		}
+		void notificationActions.load(memberId);
 		const ch = subscribeNotifications(memberId, (n) => {
+			notificationActions.pushRealtime(n);
 			toast(notificationMessage(n), { variant: "success", duration: 6000 });
 		});
 		return () => {

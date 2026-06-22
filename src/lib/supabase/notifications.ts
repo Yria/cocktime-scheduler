@@ -27,6 +27,31 @@ export function notificationMessage(n: NotificationRow): string {
 	}
 }
 
+/** 본인 알림 목록을 최신순으로 조회한다. RLS로 본인 것만 반환된다. */
+export async function fetchNotifications(
+	memberId: string,
+	limit = 30,
+): Promise<NotificationRow[]> {
+	const { data, error } = await supabase
+		.from("notifications")
+		.select("*")
+		.eq("recipient_member_id", memberId)
+		.order("created_at", { ascending: false })
+		.limit(limit);
+	if (error) throw error;
+	return (data ?? []) as NotificationRow[];
+}
+
+/** 본인의 미읽음 알림을 모두 읽음 처리한다. */
+export async function markAllNotificationsRead(memberId: string): Promise<void> {
+	const { error } = await supabase
+		.from("notifications")
+		.update({ read_at: new Date().toISOString() })
+		.eq("recipient_member_id", memberId)
+		.is("read_at", null);
+	if (error) throw error;
+}
+
 /** 로그인 회원의 새 알림(INSERT)을 실시간 구독한다. */
 export function subscribeNotifications(
 	memberId: string,

@@ -248,3 +248,11 @@
 - 추천/랭킹 등 무겁고 잦은 순수 계산은 클라 유지(연산량 분석 일관), 서버 이전은 가벼운 검증·원자적 다중행·권위 재조회에 한정. typecheck/build/test(132)/eslint 통과, DATABASE.md 갱신. 마이그레이션 2종은 배포(supabase db push) 시 적용 필요.
 
 ---
+
+## #20
+
+**Prompt**: 변경점이 또 있는데 배포해줘
+
+**Answer**: 헤더 알림 벨/메뉴 관련 추가 변경(NotificationBell·HeaderMenu·notificationStore 신규 + App/Home/notifications 연동)을 동일 경로(커밋→main push→CI 배포)로 배포. 지난 배포 실패(pnpm Node 요구) 재발 방지를 위해 로컬 build(tsc -b && vite build) 선검증 후 커밋·푸시. main fast-forward push로 deploy.yml 트리거.
+
+---

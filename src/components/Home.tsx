@@ -3,8 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { startSessionFromSchedule } from "../lib/supabase/schedule";
 import type { CarpoolRole } from "../lib/supabase/types";
 import { appActions, useAppStore } from "../store/appStore";
-import { authActions, authDisplayName, useAuthStore } from "../store/authStore";
+import { authActions, useAuthStore } from "../store/authStore";
 import { scheduleActions, useScheduleStore } from "../store/scheduleStore";
+import HeaderMenu from "./common/HeaderMenu";
+import NotificationBell from "./common/NotificationBell";
 import ProfileSetup from "./ProfileSetup";
 import ScheduleCard from "./schedule/ScheduleCard";
 import Spinner from "./shared/Spinner";
@@ -34,7 +36,6 @@ export default function Home({ onStart }: Props) {
 	const authUser = useAuthStore((s) => s.user);
 	const isAdmin = useAuthStore((s) => s.isAdmin);
 	const memberId = useAuthStore((s) => s.memberId);
-	const myName = useAuthStore((s) => s.myName);
 	const myGender = useAuthStore((s) => s.myGender);
 	const myBirthYear = useAuthStore((s) => s.myBirthYear);
 	const myResidence = useAuthStore((s) => s.myResidence);
@@ -197,55 +198,9 @@ export default function Home({ onStart }: Props) {
 						className="h-7 w-auto object-contain dark:[filter:brightness(0)_invert(1)]"
 						alt="콕타임"
 					/>
-					<div className="flex items-center gap-2" style={{ fontSize: 12 }}>
-						<span
-							className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
-							style={{ fontWeight: 600 }}
-						>
-							{myName || authDisplayName(authUser)}
-							{isAdmin ? " · 운영진" : ""}
-						</span>
-						<button
-							type="button"
-							onClick={() => setEditingProfile(true)}
-							className="text-[#0b84ff]"
-							style={{
-								background: "none",
-								border: "none",
-								fontWeight: 600,
-								cursor: "pointer",
-							}}
-						>
-							내 정보
-						</button>
-						{isAdmin && (
-							<button
-								type="button"
-								onClick={() => navigate("/members")}
-								className="text-[#0b84ff]"
-								style={{
-									background: "none",
-									border: "none",
-									fontWeight: 600,
-									cursor: "pointer",
-								}}
-							>
-								회원 관리
-							</button>
-						)}
-						<button
-							type="button"
-							onClick={() => authActions.signOut()}
-							className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-							style={{
-								background: "none",
-								border: "none",
-								fontWeight: 600,
-								cursor: "pointer",
-							}}
-						>
-							로그아웃
-						</button>
+					<div className="flex items-center gap-0.5">
+						<NotificationBell />
+						<HeaderMenu onEditProfile={() => setEditingProfile(true)} />
 					</div>
 				</div>
 
