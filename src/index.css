@@ -60,6 +60,17 @@
 }
 
 /* ── Typography & Global ───────────────────────────────────── */
+/* iOS standalone PWA에서 safe-area(노치·home indicator) 영역은 <body>가
+   아니라 <html> 배경으로 칠해진다. 상단 노치는 AppHeader가 padding-top으로
+   직접 덮지만, 하단 home indicator는 덮는 요소가 없어 <html> 배경이 노출된다.
+   화면 배경색과 동일하게 맞춰 하단 빈 띠를 채운다. (.dark 는 <html>에 부착) */
+html {
+	background-color: #fafbff;
+}
+html.dark {
+	background-color: #0f172a;
+}
+
 body {
 	margin: 0;
 	background-color: #fafbff;

@@ -11,6 +11,10 @@ export function isIOS(): boolean {
 	);
 }
 
+export function isAndroid(): boolean {
+	return /Android/i.test(navigator.userAgent);
+}
+
 export function isStandalone(): boolean {
 	return (
 		("standalone" in navigator &&

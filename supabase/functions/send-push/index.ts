@@ -17,13 +17,20 @@ const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") ?? "mailto:sam@dooub.com";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-// ApplicationServer는 1회만 초기화(콜드스타트 시).
-const appServer = await webpush.ApplicationServer.new({
-  contactInformation: VAPID_SUBJECT,
-  vapidKeys: await webpush.importVapidKeys(JSON.parse(VAPID_KEYS), {
-    extractable: false,
-  }),
-});
+// 콜드스타트(top-level await) 실패가 함수 전체를 WORKER_ERROR로 죽이지 않도록
+// lazy 초기화 + 캐시. 초기화 오류는 요청 핸들러의 try/catch로 잡혀 응답에 노출된다.
+let _appServer: webpush.ApplicationServer | null = null;
+async function getAppServer(): Promise<webpush.ApplicationServer> {
+  if (!_appServer) {
+    _appServer = await webpush.ApplicationServer.new({
+      contactInformation: VAPID_SUBJECT,
+      vapidKeys: await webpush.importVapidKeys(JSON.parse(VAPID_KEYS), {
+        extractable: false,
+      }),
+    });
+  }
+  return _appServer;
+}
 
 interface NotificationPayload {
   id: string;
@@ -34,7 +41,6 @@ interface NotificationPayload {
 }
 
 // ⚠️ src/lib/supabase/notifications.ts 의 notificationMessage 와 반드시 동기화할 것.
-// 알림 type 추가/문구 변경 시 양쪽을 같이 수정한다.
 function buildBody(type: string, payload: Record<string, unknown> | null): string {
   switch (type) {
     case "promoted":
@@ -63,65 +69,66 @@ Deno.serve(async (req) => {
     return new Response("forbidden", { status: 401 });
   }
 
-  const n = (await req.json()) as NotificationPayload;
-  const sb = createClient(SUPABASE_URL, SERVICE_ROLE);
+  try {
+    const n = (await req.json()) as NotificationPayload;
+    const sb = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-  // 수신자의 모든 기기 구독 조회 (service_role → RLS 우회)
-  const { data: subs, error } = await sb
-    .from("push_subscriptions")
-    .select("endpoint, p256dh, auth")
-    .eq("member_id", n.recipient_member_id);
-  if (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
+    // 수신자의 모든 기기 구독 조회 (service_role → RLS 우회)
+    const { data: subs, error } = await sb
+      .from("push_subscriptions")
+      .select("endpoint, p256dh, auth")
+      .eq("member_id", n.recipient_member_id);
+    if (error) throw new Error(`push_subscriptions select: ${error.message}`);
+    if (!subs || subs.length === 0) {
+      return new Response(JSON.stringify({ sent: 0, reason: "no-subscriptions" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const appServer = await getAppServer();
+    const msg = JSON.stringify({
+      title: "콕타임",
+      body: buildBody(n.type, n.payload),
+      url: n.session_id ? "session" : "",
+      tag: `notif-${n.id}`,
+      type: n.type,
     });
-  }
-  if (!subs || subs.length === 0) {
-    return new Response(JSON.stringify({ sent: 0 }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
 
-  // SW가 그대로 showNotification에 사용할 payload.
-  // url은 scope 기준 상대경로 — SW가 self.registration.scope로 절대화한다(base path 무관).
-  const msg = JSON.stringify({
-    title: "콕타임",
-    body: buildBody(n.type, n.payload),
-    url: n.session_id ? "session" : "",
-    tag: `notif-${n.id}`,
-    type: n.type,
-  });
-
-  // 각 구독에 전송 + 만료(404/410) 정리
-  const stale: string[] = [];
-  await Promise.allSettled(
-    subs.map(async (s) => {
-      try {
-        const subscriber = appServer.subscribe({
-          endpoint: s.endpoint,
-          keys: { p256dh: s.p256dh, auth: s.auth },
-        });
-        await subscriber.pushTextMessage(msg, {});
-      } catch (e) {
-        if (
-          e instanceof webpush.PushMessageError &&
-          (e.isGone() || e.response.status === 404)
-        ) {
-          stale.push(s.endpoint);
+    const stale: string[] = [];
+    await Promise.allSettled(
+      subs.map(async (s) => {
+        try {
+          const subscriber = appServer.subscribe({
+            endpoint: s.endpoint,
+            keys: { p256dh: s.p256dh, auth: s.auth },
+          });
+          await subscriber.pushTextMessage(msg, {});
+        } catch (e) {
+          if (
+            e instanceof webpush.PushMessageError &&
+            (e.isGone() || e.response.status === 404)
+          ) {
+            stale.push(s.endpoint);
+          }
         }
-      }
-    }),
-  );
-  if (stale.length > 0) {
-    await sb.from("push_subscriptions").delete().in("endpoint", stale);
+      }),
+    );
+    if (stale.length > 0) {
+      await sb.from("push_subscriptions").delete().in("endpoint", stale);
+    }
+
+    await sb.from("notifications").update({ sent: true }).eq("id", n.id);
+
+    return new Response(
+      JSON.stringify({ sent: subs.length - stale.length }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  } catch (e) {
+    // 어떤 오류든 응답 본문에 노출 → net._http_response.content 로 진단 가능
+    return new Response(
+      JSON.stringify({ error: e instanceof Error ? e.message : String(e) }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
   }
-
-  await sb.from("notifications").update({ sent: true }).eq("id", n.id);
-
-  return new Response(
-    JSON.stringify({ sent: subs.length - stale.length }),
-    { status: 200, headers: { "Content-Type": "application/json" } },
-  );
 });
