@@ -1,4 +1,4 @@
-import { Bell } from "lucide-react";
+import { Bell, X } from "lucide-react";
 import { useState } from "react";
 import { notificationMessage } from "../../lib/supabase/notifications";
 import { useAuthStore } from "../../store/authStore";
@@ -50,6 +50,10 @@ export default function NotificationBell() {
 		setSeenUnread(new Set());
 	};
 
+	const handleClearAll = () => {
+		if (memberId) void notificationActions.clearAll(memberId);
+	};
+
 	return (
 		<>
 			<button
@@ -89,18 +93,31 @@ export default function NotificationBell() {
 
 			{open && (
 				<ModalSheet position="bottom" onClose={handleClose}>
-					<div className="px-5 pt-5 pb-3">
+					<div className="px-5 pt-5 pb-3 flex items-center justify-between">
 						<h3
 							className="text-[#0f1724] dark:text-white"
 							style={{ fontSize: 17, fontWeight: 800 }}
 						>
 							알림
 						</h3>
+						{items.length > 0 && (
+							<button
+								type="button"
+								onClick={handleClearAll}
+								className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+								style={{
+									background: "none",
+									border: "none",
+									fontSize: 13,
+									fontWeight: 600,
+									cursor: "pointer",
+								}}
+							>
+								모두 지우기
+							</button>
+						)}
 					</div>
-					<div
-						style={{ maxHeight: "60vh", overflowY: "auto" }}
-						className="pb-2"
-					>
+					<div style={{ maxHeight: "60vh", overflowY: "auto" }} className="pb-2">
 						{items.length === 0 ? (
 							<div
 								className="text-center text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
@@ -140,6 +157,24 @@ export default function NotificationBell() {
 											{timeAgo(n.created_at)}
 										</span>
 									</div>
+									<button
+										type="button"
+										onClick={() => void notificationActions.remove(n.id)}
+										aria-label="알림 삭제"
+										className="flex items-center justify-center text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+										style={{
+											width: 28,
+											height: 28,
+											marginTop: -2,
+											marginRight: -4,
+											flexShrink: 0,
+											background: "none",
+											border: "none",
+											cursor: "pointer",
+										}}
+									>
+										<X size={16} strokeWidth={2} />
+									</button>
 								</div>
 							))
 						)}

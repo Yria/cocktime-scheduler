@@ -52,6 +52,21 @@ export async function markAllNotificationsRead(memberId: string): Promise<void> 
 	if (error) throw error;
 }
 
+/** 본인 알림 1건 삭제. RLS로 본인 것만 삭제된다. */
+export async function deleteNotification(id: string): Promise<void> {
+	const { error } = await supabase.from("notifications").delete().eq("id", id);
+	if (error) throw error;
+}
+
+/** 본인 알림 전체 삭제. */
+export async function clearAllNotifications(memberId: string): Promise<void> {
+	const { error } = await supabase
+		.from("notifications")
+		.delete()
+		.eq("recipient_member_id", memberId);
+	if (error) throw error;
+}
+
 /** 로그인 회원의 새 알림(INSERT)을 실시간 구독한다. */
 export function subscribeNotifications(
 	memberId: string,

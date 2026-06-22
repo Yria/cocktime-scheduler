@@ -9,6 +9,8 @@
  */
 import { create } from "zustand";
 import {
+	clearAllNotifications,
+	deleteNotification,
 	fetchNotifications,
 	markAllNotificationsRead,
 } from "../lib/supabase/notifications";
@@ -67,6 +69,33 @@ export const notificationActions = {
 		});
 		try {
 			await markAllNotificationsRead(memberId);
+		} catch {
+			void notificationActions.load(memberId);
+		}
+	},
+
+	/** 알림 1건 삭제(낙관적, 실패 시 복구). */
+	async remove(id: string) {
+		const prev = useNotificationStore.getState().items;
+		const next = prev.filter((n) => n.id !== id);
+		useNotificationStore.setState({ items: next, unreadCount: countUnread(next) });
+		try {
+			await deleteNotification(id);
+		} catch {
+			useNotificationStore.setState({
+				items: prev,
+				unreadCount: countUnread(prev),
+			});
+		}
+	},
+
+	/** 알림 전체 삭제(낙관적, 실패 시 재로드). */
+	async clearAll(memberId: string) {
+		const prev = useNotificationStore.getState().items;
+		if (prev.length === 0) return;
+		useNotificationStore.setState({ items: [], unreadCount: 0 });
+		try {
+			await clearAllNotifications(memberId);
 		} catch {
 			void notificationActions.load(memberId);
 		}
