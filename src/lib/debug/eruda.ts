@@ -64,20 +64,35 @@ function props(el: Element) {
 
 /** safe-area 진단 덤프 — VIEWPORT 수치 + 부모효과 스캔 + 셸 조상 체인. */
 function dump(): void {
+	const fp = document.createElement("div");
+	fp.style.cssText = "position:fixed;inset:0;visibility:hidden;pointer-events:none";
+	document.body.appendChild(fp);
+	const fr = fp.getBoundingClientRect();
+	fp.remove();
+	const vv = window.visualViewport;
 	console.log(
 		"=== SAFE-AREA VIEWPORT ===",
 		JSON.stringify({
 			screenH: screen.height,
+			availH: screen.availHeight,
+			outerH: window.outerHeight,
 			innerH: innerHeight,
 			clientH: document.documentElement.clientHeight,
 			vh: measure("100vh"),
 			lvh: measure("100lvh"),
 			svh: measure("100svh"),
 			dvh: measure("100dvh"),
+			insetTop: measure("env(safe-area-inset-top)"),
+			insetBottom: measure("env(safe-area-inset-bottom)"),
+			visualVPH: Math.round(vv?.height ?? 0),
+			visualTop: Math.round(vv?.offsetTop ?? 0),
+			fixedTop: Math.round(fr.top),
+			fixedBot: Math.round(fr.bottom),
 			standalone: matchMedia("(display-mode: standalone)").matches,
 			ua: navigator.userAgent,
 		}),
 	);
+	paintProbe();
 
 	// 부모효과 스캔: containing-block 생성/overflow 요소
 	const flags: string[] = [];
@@ -117,4 +132,26 @@ function dump(): void {
 	} else {
 		console.log("(.app-shell-h / .app-shell-minh 가 이 화면엔 없음)");
 	}
+}
+
+/**
+ * 페인트 가능 영역 시각 테스트:
+ *  - 빨강 바: position:fixed; bottom:0 (뷰포트 바닥 = lvh 기준)
+ *  - 라임 바: top:(screen.height-4) (물리 화면 바닥 위치) — 보이면 웹뷰가 그 아래까지 그린다는 뜻
+ *  - 파랑 띠: env(safe-area-inset-bottom) 구역
+ * 라임 바가 빨강 아래로 보이면 → JS로 screen.height 강제 가능. 안 보이면 → 869 이 하드 한계.
+ */
+function paintProbe(): void {
+	document.getElementById("__sa_probe")?.remove();
+	const wrap = document.createElement("div");
+	wrap.id = "__sa_probe";
+	const z = "z-index:2147483647;pointer-events:none";
+	const red = document.createElement("div");
+	red.style.cssText = `position:fixed;left:0;right:0;bottom:0;height:4px;background:red;${z}`;
+	const lime = document.createElement("div");
+	lime.style.cssText = `position:fixed;left:0;right:0;top:${screen.height - 4}px;height:4px;background:#0f0;${z}`;
+	const blue = document.createElement("div");
+	blue.style.cssText = `position:fixed;left:0;right:0;bottom:0;height:env(safe-area-inset-bottom);background:rgba(0,90,255,0.4);z-index:2147483646;pointer-events:none`;
+	wrap.append(red, lime, blue);
+	document.body.appendChild(wrap);
 }
