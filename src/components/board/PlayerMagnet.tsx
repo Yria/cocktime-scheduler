@@ -135,24 +135,33 @@ const PlayerMagnet = memo(function PlayerMagnet({
 	const [image, imgStatus] = useImage(photoUrl, "anonymous");
 	const hasPhoto = imgStatus === "loaded" && image !== undefined;
 
-	// ── 롱프레스 → 디버그 매칭 모달 ──────────────────────────
-	// 누른 채 LONGPRESS_MS 유지하면 발동. 드래그 시작/손 뗌/이탈 시 취소.
-	// 발동 직후 따라오는 tap(추천 모달)은 longFired 플래그로 1회 무시한다.
-	const LONGPRESS_MS = 450;
-	const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const longFired = useRef(false);
+	// ── 더블탭 → 매칭 이력(디버그) 모달 ──────────────────────
+	// 두 번 연속 탭하면 매칭 이력을 연다. 단일 탭(추천/콕 확인)은 더블탭과 구분하려고
+	// DBLTAP_MS 만큼 지연 후 발동한다. 드래그 시작/언마운트 시 대기 중인 단일 탭은 취소.
+	// 터치 탭은 브라우저가 ~300ms 뒤 호환(ghost) click 을 추가로 쏠 수 있다(Konva가 보통 touchstart
+	// preventDefault로 막지만 보장 X). 그 호환 click 을 같은 입력의 중복으로 흡수하려고 마지막 "터치" 탭
+	// 시각(lastTouch)을 기록하고, 그 직후의 mouse/click 이벤트는 무시한다(타임스탬프만으로는 정상 더블탭과
+	// 구분 불가하므로 이벤트 modality 로 판별).
+	const DBLTAP_MS = 280;
+	const COMPAT_CLICK_MS = 500;
+	const tap = useRef<{ count: number; timer: ReturnType<typeof setTimeout> | null; lastTouch: number }>({
+		count: 0,
+		timer: null,
+		lastTouch: 0,
+	});
 
-	const clearLongPress = useCallback(() => {
-		if (longPressTimer.current !== null) {
-			clearTimeout(longPressTimer.current);
-			longPressTimer.current = null;
+	const clearTap = useCallback(() => {
+		if (tap.current.timer !== null) {
+			clearTimeout(tap.current.timer);
+			tap.current.timer = null;
 		}
+		tap.current.count = 0;
 	}, []);
 
-	useEffect(() => clearLongPress, [clearLongPress]);
+	useEffect(() => clearTap, [clearTap]);
 
 	// 드래그 중 이 컴포넌트가 언마운트되면(원격 팀 해체 등으로 부모 Group destroy) dragend가 안 와
-	// clearDrag가 누락돼 '팀에서 빼기' 드롭존이 고착될 수 있다 → 언마운트 시 내가 드래그 주인이면 정리.
+	// clearDrag가 누락돼 드롭존이 고착될 수 있다 → 언마운트 시 내가 드래그 주인이면 정리.
 	useEffect(
 		() => () => {
 			if (useBoardStore.getState().dragInfo?.playerId === playerId) useBoardStore.getState().clearDrag();
@@ -160,36 +169,42 @@ const PlayerMagnet = memo(function PlayerMagnet({
 		[playerId],
 	);
 
-	const handlePointerDown = useCallback(() => {
-		longFired.current = false;
-		clearLongPress();
-		longPressTimer.current = setTimeout(() => {
-			longFired.current = true;
-			longPressTimer.current = null;
-			if (typeof navigator !== "undefined") navigator.vibrate?.(30);
-			useDebugStore.getState().openDebug(playerId);
-		}, LONGPRESS_MS);
-	}, [playerId, clearLongPress]);
-
 	const handleClick = useCallback(
 		(e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-			// 롱프레스가 막 발동했으면 뒤따르는 탭은 1회 삼킨다(추천 모달 안 열림).
-			if (longFired.current) {
-				longFired.current = false;
-				e.cancelBubble = true;
-				return;
-			}
-			// 콕 미확인 자석 탭 → 추천 대신 콕 제출 확인 다이얼로그.
-			if (cockPending) {
-				e.cancelBubble = true;
-				onCockCheck?.(playerId);
-				return;
-			}
-			if (!onClick) return;
 			e.cancelBubble = true;
-			onClick(playerId);
+			// 터치 탭 직후 따라오는 호환(ghost) click 은 같은 입력의 중복 → 무시. (mouse/desktop click 은 그대로 처리.)
+			const ev = e.evt;
+			const isTouch =
+				"touches" in ev || ("pointerType" in ev && (ev as PointerEvent).pointerType === "touch");
+			const now = Date.now();
+			if (isTouch) {
+				tap.current.lastTouch = now;
+			} else if (now - tap.current.lastTouch < COMPAT_CLICK_MS) {
+				tap.current.lastTouch = 0; // 호환 click 은 탭당 1개 — 하나만 흡수하고 이후 실제 mouse click 은 통과
+				return; // 터치 탭 직후의 호환 click → 중복 흡수
+			}
+
+			tap.current.count += 1;
+			if (tap.current.count >= 2) {
+				// 더블탭 → 매칭 이력
+				clearTap();
+				if (typeof navigator !== "undefined") navigator.vibrate?.(30);
+				useDebugStore.getState().openDebug(playerId);
+				return;
+			}
+			// 첫 탭 → 더블탭 가능성을 잠시 기다렸다가 단일 탭 동작(콕 확인 / 추천).
+			if (tap.current.timer !== null) clearTimeout(tap.current.timer);
+			tap.current.timer = setTimeout(() => {
+				tap.current.timer = null;
+				tap.current.count = 0;
+				if (cockPending) {
+					onCockCheck?.(playerId);
+					return;
+				}
+				onClick?.(playerId);
+			}, DBLTAP_MS);
 		},
-		[onClick, onCockCheck, cockPending, playerId],
+		[onClick, onCockCheck, cockPending, playerId, clearTap],
 	);
 
 	const handleDragMove = useCallback(
@@ -203,10 +218,15 @@ const PlayerMagnet = memo(function PlayerMagnet({
 
 	const handleDragStart = useCallback(
 		(e: Konva.KonvaEventObject<DragEvent>) => {
-			clearLongPress(); // 드래그 의도 → 롱프레스 취소
-			// 드래그 정보 등록 — 팀 소속(anchor/ghost)이면 '팀에서 빼기' 드롭존 노출.
-			const teamBound = isGhost || !!useBoardStore.getState().magnets.get(playerId)?.teamId;
-			useBoardStore.getState().setDragInfo({ playerId, detachable: teamBound });
+			clearTap(); // 드래그 의도 → 대기 중 단일 탭 취소
+			const store = useBoardStore.getState();
+			// 드래그 정보 등록 — 팀 소속(anchor/ghost)이면 상단 '팀에서 빼기', 휴식 가능하면 하단 '휴식하기' 밴드 노출.
+			const teamBound = isGhost || !!store.magnets.get(playerId)?.teamId;
+			// 휴식 가능: 편집자의 free/anchor 대기 자석(예약/경기중/이미 휴식 제외).
+			const restable = useSessionStore.getState().isEditor && !isGhost && !playing && !resting;
+			// 드래그 시작 논리좌표 — 출발 존(빼기/휴식)에서 같은 존으로의 드롭을 무효화하는 가드용.
+			const from = absToStage(e.target);
+			store.setDragInfo({ playerId, detachable: teamBound, restable, from });
 			// 드래그 중인 자석을 항상 최상단으로: 자석을 부모 내 최상단으로 올리고,
 			// 팀/코트 카드 멤버라면 그 부모 그룹도 Layer 최상단으로 끌어올린다
 			// (안 그러면 멤버가 부모 그룹 안에서만 위로 가서 다른 자석/카드 아래에 깔린다).
@@ -214,7 +234,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 			const parent = e.target.getParent();
 			if (parent instanceof Konva.Group) parent.moveToTop();
 		},
-		[clearLongPress, isGhost, playerId],
+		[clearTap, isGhost, playing, resting, playerId],
 	);
 
 	const handleDragEnd = useCallback(
@@ -244,7 +264,9 @@ const PlayerMagnet = memo(function PlayerMagnet({
 				e.target.position({ x: mag.x, y: mag.y });
 				e.target.getLayer()?.batchDraw();
 			}
-			// 드래그 종료 — 드롭존/하이라이트 상태 초기화(모든 종류 공통)
+			// 드래그 종료 — 드롭존/하이라이트 상태 초기화(모든 종류 공통).
+			// 반드시 위 onDragEnd/onGhostDragEnd 콜백 "이후"에 호출해야 한다: 그 핸들러들이 출발 존 가드를
+			// 위해 dragInfo.from 을 읽는데, clearDrag 가 먼저 돌면 from 이 null 이 돼 가드가 무력화된다.
 			useBoardStore.getState().clearDrag();
 		},
 		[playerId, isGhost, playing, resting, reservationId, onDragEnd, onGhostDragEnd, onPlayingDragEnd, onRestingDragEnd, offsetX, offsetY],
@@ -279,9 +301,6 @@ const PlayerMagnet = memo(function PlayerMagnet({
 			onDragStart={handleDragStart}
 			onDragMove={handleDragMove}
 			onDragEnd={handleDragEnd}
-			onPointerDown={handlePointerDown}
-			onPointerUp={clearLongPress}
-			onPointerLeave={clearLongPress}
 			onClick={handleClick}
 			onTap={handleClick}
 		>

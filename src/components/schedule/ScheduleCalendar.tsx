@@ -236,7 +236,6 @@ export default function ScheduleCalendar({
 						<div className="flex flex-col gap-1.5">
 							{selectedList.map((o) => {
 								const st = statusStyle(o.status);
-								const cancelled = o.status === "cancelled";
 								const place = placeName(o.place_id);
 								return (
 									<button
@@ -254,7 +253,6 @@ export default function ScheduleCalendar({
 											borderRadius: 9,
 											padding: "9px 11px",
 											cursor: "pointer",
-											opacity: cancelled ? 0.55 : 1,
 										}}
 									>
 										<span
@@ -262,7 +260,6 @@ export default function ScheduleCalendar({
 											style={{
 												fontSize: 14,
 												fontWeight: 700,
-												textDecoration: cancelled ? "line-through" : "none",
 											}}
 										>
 											{o.scheduled_at ? isoToTimeKST(o.scheduled_at) : "--:--"}
@@ -273,7 +270,6 @@ export default function ScheduleCalendar({
 												fontSize: 12.5,
 												flex: 1,
 												minWidth: 0,
-												textDecoration: cancelled ? "line-through" : "none",
 											}}
 										>
 											{place ?? "장소 미정"}

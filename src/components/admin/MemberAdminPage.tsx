@@ -214,7 +214,7 @@ export default function MemberAdminPage() {
 					!loading && (
 						<span
 							className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-							style={{ fontSize: 14, fontWeight: 700, marginRight: 6 }}
+							style={{ fontSize: 14, fontWeight: 700 }}
 						>
 							{filtered.length}
 							{q ? `/${members.length}` : ""}

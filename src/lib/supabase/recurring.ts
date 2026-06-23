@@ -115,6 +115,7 @@ export async function fetchOccurrences(
 		.from("sessions")
 		.select("*")
 		.not("scheduled_at", "is", null)
+		.neq("status", "cancelled") // 삭제(취소)된 회차는 달력에서 숨김 — tombstone 은 재생성 방지용으로만 잔존
 		.gte("scheduled_at", fromISO)
 		.lte("scheduled_at", toISO)
 		.order("scheduled_at", { ascending: true });
@@ -157,7 +158,12 @@ export async function updateOccurrence(
 	return data as SessionRow;
 }
 
-/** 회차 건너뛰기(명절 등): status='cancelled'. 행은 남아 재생성 방지. */
+/**
+ * 반복 규칙 회차 삭제(tombstone): status='cancelled'. 행 자체는 남겨 sync 의 재생성을 막는다.
+ * (그냥 delete 하면 sync_schedule_occurrences B단계가 56일 창 안에서 다시 생성함)
+ * fetchOccurrences 가 cancelled 를 제외하므로 달력에는 노출되지 않아 "삭제된 것"처럼 보인다.
+ * 일회성 회차는 규칙이 없어 deleteSchedule 로 완전 삭제한다.
+ */
 export async function cancelOccurrence(
 	sessionId: number,
 ): Promise<SessionRow | null> {
@@ -169,27 +175,6 @@ export async function cancelOccurrence(
 		.single();
 	if (error) {
 		console.error("cancelOccurrence:", error);
-		return null;
-	}
-	return data as SessionRow;
-}
-
-/**
- * 취소 되돌리기. 규칙 회차면 is_overridden=false 로 돌려 sync 가 다시 관리(노출 포함).
- * status는 draft 로 두고, 다음 sync 가 1주 이내면 open 으로 올림.
- */
-export async function restoreOccurrence(
-	sessionId: number,
-	isRuleBased: boolean,
-): Promise<SessionRow | null> {
-	const { data, error } = await supabase
-		.from("sessions")
-		.update({ status: "draft", is_overridden: !isRuleBased })
-		.eq("id", sessionId)
-		.select()
-		.single();
-	if (error) {
-		console.error("restoreOccurrence:", error);
 		return null;
 	}
 	return data as SessionRow;

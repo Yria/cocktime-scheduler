@@ -9,10 +9,12 @@ import { useSessionStore } from "../store/sessionStore";
  * 보드 자석 드래그/드롭 핸들러 묶음.
  * - 드래그 이동 중: 휴식 필드 hover → hot, '팀에서 빼기' 드롭존 hover → detachHot, 겹침 대상 → hoverTarget(하이라이트).
  * - 드롭: 상단 드롭존(팀 소속) → detach / 하단 휴식 필드 → 휴식 / 그 외 → 자유 배치(handleDrop).
+ *   단, 자석이 그 존에서 "출발"했다면(dragInfo.from) 같은 존으로의 드롭은 무효(실패) — 존 안에 놓여 있던
+ *   자석을 살짝 움직였다고 의도치 않게 빼기/휴식되는 것 방지.
  * - ghost: 드롭존 → 예약 취소, 그 외 → handleGhostDrop.
- * 좌표(cx,cy)는 PlayerMagnet에서 줌/팬 보정된 논리 좌표.
+ * 좌표(cx,cy)는 PlayerMagnet에서 줌/팬 보정된 논리 좌표. viewH = 보이는 논리 영역 높이(stageH/scale).
  */
-export function useBoardDragHandlers(stageH: number, restZoneOpen: boolean) {
+export function useBoardDragHandlers(viewH: number, restZoneOpen: boolean) {
 	const setRestFieldHot = useBoardStore((s) => s.setRestFieldHot);
 	const restPlayer = useBoardStore((s) => s.restPlayer);
 	const unrestPlayer = useBoardStore((s) => s.unrestPlayer);
@@ -24,13 +26,13 @@ export function useBoardDragHandlers(stageH: number, restZoneOpen: boolean) {
 	// 드래그 이동 중: 휴식 hot + 빼기 드롭존 hot + 겹침 하이라이트.
 	const onMagnetDragMove = useCallback(
 		(playerId: string, cx: number, cy: number) => {
-			// 보기 전용은 자유 자석 로컬 이동만 — 멤버십 피드백(휴식/빼기/겹침) 없음.
+			// 읽기 모드는 자유 자석 로컬 이동만 — 멤버십 피드백(휴식/빼기/겹침) 없음.
 			if (!useSessionStore.getState().isEditor) return;
 			const point = { x: cx, y: cy };
 			const store = useBoardStore.getState();
 
 			// 휴식 필드 hot
-			const restHot = isInRestField(point, stageH, restZoneOpen);
+			const restHot = isInRestField(point, viewH, restZoneOpen);
 			if (restHot !== hotRef.current) {
 				hotRef.current = restHot;
 				setRestFieldHot(restHot);
@@ -60,7 +62,7 @@ export function useBoardDragHandlers(stageH: number, restZoneOpen: boolean) {
 							: null;
 			store.setHoverTarget(hover);
 		},
-		[stageH, restZoneOpen, setRestFieldHot],
+		[viewH, restZoneOpen, setRestFieldHot],
 	);
 
 	const clearHot = useCallback(() => {
@@ -76,40 +78,52 @@ export function useBoardDragHandlers(stageH: number, restZoneOpen: boolean) {
 			clearHot();
 			const point = { x: cx, y: cy };
 			const store = useBoardStore.getState();
-			// 보기 전용은 자유 자석 로컬 이동만(handleDrop이 viewer 분기로 처리) — 휴식/빼기/멤버십 없음.
+			// 읽기 모드는 자유 자석 로컬 이동만(handleDrop이 읽기 분기로 처리) — 휴식/빼기/멤버십 없음.
 			if (!useSessionStore.getState().isEditor) {
 				handleDrop(playerId, point);
 				return;
 			}
+			// 출발 존 가드: 같은 존에서 출발했다면 그 존으로의 드롭은 무효(빼기/휴식 안 함).
+			// 중요 — 막힌 경우 handleDrop으로 "폴백하지 않고" return한다: 폴백하면 resolveDropTarget이
+			// 빈 공간 앵커 드롭(상단 빼기존/하단 휴식밴드의 빈 영역)을 'detach'로 재해석해 가드를 우회,
+			// 멤버가 결국 빠져버린다. return하면 PlayerMagnet이 앵커=슬롯·자유=원위치로 스냅백한다.
+			const origin = store.dragInfo?.from ?? null;
+			const startedInDetach = origin != null && isInDetachZone(origin);
+			const startedInRest = origin != null && isInRestField(origin, viewH, restZoneOpen);
+
 			const mag = store.magnets.get(playerId);
 			if (mag && mag.teamId !== null && isInDetachZone(point)) {
-				store.detachMember(playerId, point);
+				if (!startedInDetach) store.detachMember(playerId, point); // 시작이 빼기존이면 무효(스냅백)
 				return;
 			}
-			if (isInRestField(point, stageH, restZoneOpen)) {
-				restPlayer(playerId);
+			if (isInRestField(point, viewH, restZoneOpen)) {
+				if (!startedInRest) restPlayer(playerId); // 시작이 휴식존이면 무효(스냅백)
 				return;
 			}
 			handleDrop(playerId, point);
 		},
-		[handleDrop, restZoneOpen, stageH, restPlayer, clearHot],
+		[handleDrop, restZoneOpen, viewH, restPlayer, clearHot],
 	);
 
 	// 휴식 자석 드래그-엔드: 패널 밖(위)으로 빼면 복귀, 패널 안이면 슬롯으로 스냅백(PlayerMagnet 처리).
 	const onRestingDragEnd = useCallback(
 		(playerId: string, cx: number, cy: number) => {
 			clearHot();
-			if (!isInRestField({ x: cx, y: cy }, stageH, true)) unrestPlayer(playerId, { x: cx, y: cy });
+			if (!isInRestField({ x: cx, y: cy }, viewH, true)) unrestPlayer(playerId, { x: cx, y: cy });
 		},
-		[stageH, unrestPlayer, clearHot],
+		[viewH, unrestPlayer, clearHot],
 	);
 
 	// ghost 드래그-엔드: 빼기존 → 예약 취소, 그 외 → handleGhostDrop.
+	// 빼기존에서 출발했으면 빼기존 드롭은 무효(예약 유지) — anchor와 동일한 출발 존 가드.
 	const onGhostDragEnd = useCallback(
 		(resId: string, cx: number, cy: number) => {
 			const point = { x: cx, y: cy };
+			const origin = useBoardStore.getState().dragInfo?.from ?? null;
+			const startedInDetach = origin != null && isInDetachZone(origin);
 			if (isInDetachZone(point)) {
-				useBoardStore.getState().cancelReservation(resId);
+				// 막힌 경우 handleGhostDrop으로 폴백하면 "빈 공간 = 예약취소" 규칙으로 가드가 무력화되므로 return.
+				if (!startedInDetach) useBoardStore.getState().cancelReservation(resId);
 				return;
 			}
 			handleGhostDrop(resId, point);

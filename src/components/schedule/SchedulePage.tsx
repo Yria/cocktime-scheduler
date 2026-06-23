@@ -137,21 +137,8 @@ export default function SchedulePage() {
 		[memberId],
 	);
 
-	const handleSkip = useCallback(async (sessionId: number) => {
-		await adminScheduleActions.skipOccurrence(sessionId);
-		setOccModal(null);
-	}, []);
-
-	const handleRestore = useCallback(
-		async (sessionId: number, isRuleBased: boolean) => {
-			await adminScheduleActions.restoreOcc(sessionId, isRuleBased);
-			setOccModal(null);
-		},
-		[],
-	);
-
-	const handleDeleteOcc = useCallback(async (sessionId: number) => {
-		await adminScheduleActions.deleteOcc(sessionId);
+	const handleRemoveOcc = useCallback(async (occurrence: SessionRow) => {
+		await adminScheduleActions.removeOccurrence(occurrence);
 		setOccModal(null);
 	}, []);
 
@@ -213,9 +200,7 @@ export default function SchedulePage() {
 					onAddPlace={handleAddPlace}
 					onOverride={handleOverride}
 					onCreateOneOff={handleCreateOneOff}
-					onSkip={handleSkip}
-					onRestore={handleRestore}
-					onDelete={handleDeleteOcc}
+					onDelete={handleRemoveOcc}
 					onClose={() => setOccModal(null)}
 				/>
 			)}

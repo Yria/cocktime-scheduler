@@ -25,6 +25,7 @@ import {
 	PlayerSelectionList,
 } from "./setup/PlayerSelectionList";
 import { SingleWomanSelector } from "./setup/SingleWomanSelector";
+import AppHeader from "./common/AppHeader";
 
 export default function SessionSetup({ onStart }: Props) {
 	const navigate = useNavigate();
@@ -162,34 +163,7 @@ export default function SessionSetup({ onStart }: Props) {
 			className="app-shell-minh md:max-w-sm md:mx-auto bg-[#fafbff] dark:bg-[#0f172a]"
 			style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
 		>
-			{/* Header */}
-			<div
-				className="flex items-center px-4 bg-white dark:bg-[#1c1c1e] border-b border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]"
-				style={{
-					position: "sticky",
-					top: 0,
-					zIndex: 50,
-					height: "calc(60px + env(safe-area-inset-top))",
-					paddingTop: "env(safe-area-inset-top)",
-				}}
-			>
-				<button
-					type="button"
-					onClick={handleBack}
-					aria-label="뒤로"
-					className="-ml-2 mr-1 p-2 text-[#0b84ff] flex items-center"
-				>
-					<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-						<polyline points="15 18 9 12 15 6" />
-					</svg>
-				</button>
-				<span
-					className="font-bold tracking-tight text-[#0f1724] dark:text-white"
-					style={{ fontSize: 17 }}
-				>
-					세션 설정
-				</span>
-			</div>
+			<AppHeader title="세션 설정" onBack={handleBack} />
 
 			<div style={{ padding: "16px 16px 0" }}>
 				<CourtCountSelector

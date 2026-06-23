@@ -201,8 +201,13 @@ export interface BoardState {
 	reservations: Map<string, Reservation>;
 	assigningTeamIds: Set<string>;
 	courtAnchors: Map<number, StagePoint>;
-	/** 보드 진입 후 정렬(자동/수동)이 한 번이라도 수행됐는지 — 첫 진입 자동 정렬 1회용 */
-	hasArranged: boolean;
+	/**
+	 * 편집자가 직접 드래그로 자석/팀/코트를 배치했는지. true가 되면 자동 정렬을 멈춘다(수동 배치가 진실).
+	 * false인 동안에는 뷰어와 동일하게 입력(자석 수·멤버십·뷰포트) 변화마다 재정렬 → 첫 접근 시 "정렬 버튼"
+	 * 결과로 수렴한다. 세션 진입마다 reset(false). 추천 다이얼로그 편성(commitTeammates)은 위치 선택이 아니라
+	 * 멤버십 변경이므로 manual로 치지 않는다(새 팀도 자동 정렬에 맡겨 그리드로 정돈).
+	 */
+	manualLayout: boolean;
 	/** 실제 stage(보드 캔버스) 크기 — 흩어짐 바운더리 클램프용. SessionBoard가 갱신. */
 	stageW: number;
 	stageH: number;
@@ -212,8 +217,13 @@ export interface BoardState {
 	restFieldHot: boolean;
 	/** 접속자/편집권한 모달 표시 — 헤더 칩 또는 보기전용 칩에서 연다. */
 	presenceModalOpen: boolean;
-	/** 드래그 중인 자석 정보(드롭존 표시·하이라이트용). null이면 드래그 안 함. detachable=팀 소속(anchor/ghost). */
-	dragInfo: { playerId: string; detachable: boolean } | null;
+	/**
+	 * 드래그 중인 자석 정보(드롭존 표시·하이라이트용). null이면 드래그 안 함.
+	 * - detachable=팀 소속(anchor/ghost) → 상단 '팀에서 빼기' 밴드 노출.
+	 * - restable=휴식 가능(편집자의 free/anchor 대기 자석) → 하단 '휴식하기' 밴드 노출.
+	 * - from=드래그 시작 논리좌표 → 출발 존(빼기/휴식)에서 같은 존으로의 드롭을 무효화하는 가드용.
+	 */
+	dragInfo: { playerId: string; detachable: boolean; restable: boolean; from: StagePoint } | null;
 	/** 드래그 중 현재 겹침 대상(하이라이트). team=그룹 박스, magnet=페어 상대. */
 	hoverTarget: { kind: "team" | "magnet"; id: string } | null;
 	/** 드래그가 상단 '팀에서 빼기' 드롭존 위에 있는지(hot). */
@@ -250,7 +260,7 @@ export interface BoardState {
 	/** 휴식 필드 액티베이트(hot) 상태 설정. */
 	setRestFieldHot: (hot: boolean) => void;
 	/** 드래그 시작/종료 시 드래그 정보 설정(null=종료). */
-	setDragInfo: (info: { playerId: string; detachable: boolean } | null) => void;
+	setDragInfo: (info: { playerId: string; detachable: boolean; restable: boolean; from: StagePoint } | null) => void;
 	/** 드래그 중 겹침 대상 하이라이트 설정(변화 시에만 반영). */
 	setHoverTarget: (t: { kind: "team" | "magnet"; id: string } | null) => void;
 	/** '팀에서 빼기' 드롭존 hot 설정(변화 시에만 반영). */
@@ -368,7 +378,7 @@ const creator = immer<BoardState>((set, get) => ({
 	reservations: new Map<string, Reservation>(),
 	assigningTeamIds: new Set<string>(),
 	courtAnchors: new Map<number, StagePoint>(),
-	hasArranged: false,
+	manualLayout: false,
 	stageW: 0,
 	stageH: 0,
 	restZoneOpen: false,
@@ -406,8 +416,9 @@ const creator = immer<BoardState>((set, get) => ({
 	},
 
 	handleDrop: (playerId, drop) => {
-		// 보기 전용: 공유 멤버십(팀/예약)은 못 바꾸지만, 자유 자석의 로컬 위치 이동은 허용(위치는 로컬 상태·미동기화).
+		// 보기 전용(읽기 모드): 공유 멤버십(팀/예약)은 못 바꾸지만, 자유 자석의 로컬 위치 이동은 허용(위치는 로컬 상태·미동기화).
 		// 멤버(anchor)는 슬롯 고정이라 스냅백, 팀 합류/페어 등 공유 변경은 일어나지 않는다.
+		// (세션 진입 시 자동 점유로 opener는 항상 isEditor=true → 여기 분기는 '남이 편집 중인' 읽기 모드 사용자만 탄다.)
 		if (!useSessionStore.getState().isEditor) {
 			set((s) => {
 				const m = s.magnets.get(playerId);
@@ -419,11 +430,11 @@ const creator = immer<BoardState>((set, get) => ({
 			});
 			return;
 		}
-		if (!claimEdit()) return; // 자유면 자동 점유
 		const ss = useSessionStore.getState();
 		const playingIds = playingIdsFromCourts(ss.courts);
 		const notReadyIds = cockPendingIds(ss.sessionPlayers.values(), ss.cockCheckEnabled);
 		set((s) => {
+			s.manualLayout = true; // 편집자가 직접 드래그로 배치/편성 → 이후 자동 정렬 중단(수동이 진실)
 			const target = resolveDropTarget(playerId, drop, s.magnets, s.drafts, s.reservations, playingIds, notReadyIds);
 			let source: DragSource | null = null;
 			switch (target.kind) {
@@ -663,14 +674,18 @@ const creator = immer<BoardState>((set, get) => ({
 	},
 
 	setTeamAnchor: (teamId, x, y) => {
+		const editing = useSessionStore.getState().isEditor;
 		set((s) => {
+			if (editing) s.manualLayout = true; // 편집자가 팀을 직접 옮기면 자동 정렬 중단(뷰어 로컬 이동은 자동 유지)
 			const t = s.drafts.get(teamId);
 			if (t) t.anchor = clampToStage(s, { x, y }); // 화면 안 어디든(코트 레인 제한 없음), 화면 밖만 방지
 		});
 	},
 
 	setCourtAnchor: (courtId, x, y) => {
+		const editing = useSessionStore.getState().isEditor;
 		set((s) => {
+			if (editing) s.manualLayout = true; // 편집자가 코트 카드를 직접 옮기면 자동 정렬 중단
 			s.courtAnchors.set(courtId, clampToStage(s, { x, y })); // 코트 카드도 화면 안 어디든
 		});
 	},
@@ -805,7 +820,6 @@ const creator = immer<BoardState>((set, get) => ({
 				viewW,
 				viewH,
 			});
-			s.hasArranged = true;
 		});
 	},
 
@@ -997,7 +1011,7 @@ const creator = immer<BoardState>((set, get) => ({
 			s.reservations = new Map();
 			s.assigningTeamIds = new Set();
 			s.courtAnchors = new Map();
-			s.hasArranged = false;
+			s.manualLayout = false;
 			s.stageW = 0;
 			s.stageH = 0;
 			s.restZoneOpen = false;

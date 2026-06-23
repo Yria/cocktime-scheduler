@@ -16,7 +16,6 @@ import {
 	fetchOccurrences,
 	fetchRecurringRules,
 	notifyScheduleAdded,
-	restoreOccurrence,
 	updateOccurrence,
 	updateRecurringRule,
 } from "../lib/supabase/recurring";
@@ -157,21 +156,6 @@ export const adminScheduleActions = {
 		return row;
 	},
 
-	async skipOccurrence(sessionId: number) {
-		const row = await cancelOccurrence(sessionId);
-		if (row) await reloadOccurrences();
-		return row;
-	},
-
-	async restoreOcc(sessionId: number, isRuleBased: boolean) {
-		const row = await restoreOccurrence(sessionId, isRuleBased);
-		if (row) {
-			await syncOccurrences(); // 노출 창 안이면 open 으로 승격
-			await reloadOccurrences();
-		}
-		return row;
-	},
-
 	async addOneOff(input: OneOffInput, createdBy: string | null) {
 		const row = await createOneOffOccurrence(input, createdBy);
 		if (row) {
@@ -183,8 +167,15 @@ export const adminScheduleActions = {
 		return row;
 	},
 
-	async deleteOcc(sessionId: number) {
-		const ok = await deleteSchedule(sessionId);
+	/**
+	 * 회차 삭제. 반복 규칙 회차는 그냥 delete 하면 sync 가 재생성하므로 tombstone(cancelled)으로
+	 * 남기고, 일회성 회차는 완전 삭제한다. 어느 쪽이든 fetchOccurrences 가 제외해 달력에서 사라진다.
+	 */
+	async removeOccurrence(occ: SessionRow) {
+		const ok =
+			occ.recurring_schedule_id != null
+				? (await cancelOccurrence(occ.id)) != null
+				: await deleteSchedule(occ.id);
 		if (ok) await reloadOccurrences();
 		return ok;
 	},

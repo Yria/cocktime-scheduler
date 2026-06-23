@@ -24,6 +24,7 @@ import PlayerMagnet from "./PlayerMagnet";
 import RestZonePanel from "./RestZonePanel";
 import TeamBackground from "./TeamBackground";
 import DetachZone from "./DetachZone";
+import RestZone from "./RestZone";
 import RecommendTeammateDialog from "./RecommendTeammateDialog";
 import ModalSheet from "../common/ModalSheet";
 import MatchEditModal from "./MatchEditModal";
@@ -33,11 +34,15 @@ import type { RecommendTarget } from "../../hooks/useTeammateRecommendations";
 
 const COURT_CARD_GAP = 20;
 
-// 줌(축소 전용) — 0.5~1배. arrange/drop은 논리 좌표(stageW×stageH 기준)라 줌과 무관하게 동작한다.
+// 줌(축소 전용) — 0.5~1배. arrange/drop·자석 이동범위는 보이는 논리영역(viewW×viewH=stage/scale) 기준이라
+// 축소하면 그 범위도 비율대로 넓어진다(좌상단 0,0 고정 줌이라 우/하단 빈 영역까지 포함).
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 1;
 const ZOOM_STEP = 0.1;
 const clampScale = (v: number) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(v * 100) / 100));
+
+// 줌 배율 영속 키 — 새로고침/재방문에도 마지막 배율 유지(localStorage).
+const SCALE_KEY = "cocktime-board-scale";
 
 const zoomBtnStyle: React.CSSProperties = {
 	width: 36,
@@ -62,6 +67,28 @@ export default function SessionBoard() {
 	const { w: cw, h: ch } = useContainerSize(stageContainerRef);
 	const stageW = cw || 390;
 	const stageH = ch || 600;
+
+	// ── 줌 배율 + 보이는 논리 영역 ───────────────────────────
+	// scale 0.5~1배 축소(Stage scale). 좌상단(0,0) 고정이라 보이는 논리 영역 = stage/scale.
+	// 정렬(rearrange)은 이 viewW×viewH를 기준으로 좌상단부터 하단 한계까지 채운다(아래 정렬 effect·버튼 공용).
+	const [scale, setScale] = useState(() => {
+		// 저장된 마지막 배율로 시작(없거나 불가 시 1배). clampScale로 범위 보정.
+		try {
+			const v = parseFloat(localStorage.getItem(SCALE_KEY) ?? "");
+			return Number.isFinite(v) ? clampScale(v) : 1;
+		} catch {
+			return 1;
+		}
+	});
+	useEffect(() => {
+		try {
+			localStorage.setItem(SCALE_KEY, String(scale));
+		} catch {
+			// localStorage 불가(시크릿 등) — 영속 생략
+		}
+	}, [scale]);
+	const viewW = stageW / scale;
+	const viewH = stageH / scale;
 
 	const pool = useBoardPlayerPool();
 	const init = useBoardStore((s) => s.initializeFromPool);
@@ -93,22 +120,16 @@ export default function SessionBoard() {
 		applyRemoteDrafts(boardDrafts);
 	}, [boardDrafts, applyRemoteDrafts, magnetCount, isEditor]);
 
-	// 실제 stage 크기를 store에 등록 — 흩어짐 바운더리 클램프용
+	// 보이는 논리 영역(viewW×viewH = stage/scale)을 store에 등록 — 흩어짐/드롭 클램프 범위가
+	// 줌(축소)에 따라 비율대로 커지도록(축소하면 보이는 영역이 넓어지고 자석 이동 가능 범위도 함께 넓어짐).
 	const setStageSize = useBoardStore((s) => s.setStageSize);
 	useEffect(() => {
-		if (cw > 0 && ch > 0) setStageSize(cw, ch);
-	}, [cw, ch, setStageSize]);
+		if (cw > 0 && ch > 0) setStageSize(viewW, viewH);
+	}, [cw, ch, viewW, viewH, setStageSize]);
 
-	// 첫 진입 시 자동 정렬 1회 — 풀이 로드되고 stage 크기가 측정된 뒤 한 번만.
-	// (위치는 boardStore 로컬 상태라 DB 동기화 없음. 한 세션에 한 번: hasArranged 플래그)
 	const rearrangeAll = useBoardStore((s) => s.rearrangeAll);
-	const hasArranged = useBoardStore((s) => s.hasArranged);
-	useEffect(() => {
-		if (hasArranged) return;
-		if (cw <= 0 || ch <= 0) return; // 실제 크기 측정 대기
-		if (pool.length === 0) return; // 풀(자석) 로드 대기
-		rearrangeAll(cw, ch);
-	}, [cw, ch, pool.length, hasArranged, rearrangeAll]);
+	// 편집자가 직접 드래그로 배치를 시작했는지 — 그 전(첫 접근 포함)까지는 뷰어와 동일하게 자동 정렬한다.
+	const manualLayout = useBoardStore((s) => s.manualLayout);
 
 	// 세션 Realtime 채널 구독 — 보드는 SessionMain 없이 단독 마운트되므로 직접 구독해야
 	// handleAssign/handleComplete가 동작한다(_channel 필요). 없으면 경기시작/완료가 무반응.
@@ -120,6 +141,17 @@ export default function SessionBoard() {
 		subscribe(sessionId, () => navigate("/"));
 		return () => unsubscribe();
 	}, [sessionId, subscribe, unsubscribe, navigate]);
+
+	// 세션 연 사람을 자동으로 편집자로 — 자유 상태(아무도 편집 중이 아님)면 즉시 점유한다.
+	// 남이 편집 중이면 claimEditingIfFree가 동작하지 않아(lockFree일 때만 점유) 읽기 모드로 시작.
+	// 편집자가 이탈해 락이 풀리면(lockFree) 남은 클라가 다시 점유 → "아무도 편집하지 않는 상태"가 지속되지 않는다.
+	// (서버 lease CAS가 진실 — 동시 점유 시 한쪽만 성공, 나머지는 resync로 읽기 모드 복귀.)
+	const lockFree = useSessionStore((s) => s.lockFree);
+	const clientId = useSessionStore((s) => s._clientId);
+	const claimEditingIfFree = useSessionStore((s) => s.claimEditingIfFree);
+	useEffect(() => {
+		if (clientId && lockFree && !isEditor) claimEditingIfFree();
+	}, [clientId, lockFree, isEditor, claimEditingIfFree]);
 
 	const courts = useSessionStore((s) => s.courts);
 	const restingIds = useSessionStore((s) => s.restingIds);
@@ -155,17 +187,23 @@ export default function SessionBoard() {
 			.join("|"),
 	);
 	useEffect(() => {
-		if (isEditor) return; // 편집자는 수동 배치가 진실의 원천 — 자동 정렬 안 함
-		if (stageW <= 0 || stageH <= 0) return;
-		rearrangeAll(stageW, stageH);
-		// deps의 membershipSig/courtSig가 바로 위에서 설명한 "트리거 키"다.
-	}, [isEditor, membershipSig, courtSig, stageW, stageH, rearrangeAll]);
+		// 편집자가 직접 드래그 배치를 시작하기 전까지는 자동 정렬(뷰어는 manualLayout이 늘 false → 항상 자동).
+		// 첫 접근 시 자석 수·멤버십·뷰포트(viewW/viewH)가 안정될 때까지 매 변화마다 재정렬 → "정렬 버튼" 결과로 수렴
+		// (예전 hasArranged 1회 고정은 데이터·뷰포트가 덜 settle된 시점에 박혀 버튼과 다른 레이아웃이 됐다).
+		if (manualLayout) return;
+		if (viewW <= 0 || viewH <= 0) return;
+		if (magnetCount === 0) return; // 자석이 store에 채워진 뒤 — 빈 정렬 방지
+		rearrangeAll(viewW, viewH);
+		// deps: membershipSig/courtSig(멤버·매치 변경) + magnetCount(선수 로드) + viewW/viewH(뷰포트·줌) = 안정화 트리거.
+	}, [manualLayout, membershipSig, courtSig, magnetCount, viewW, viewH, rearrangeAll]);
 
 	// 휴식 필드(하단 바) — 바 탭으로 패널 열고 닫음. 자석을 끌어 내리면 휴식, 빼면 복귀.
 	const restZoneOpen = useBoardStore((s) => s.restZoneOpen);
 	const restFieldHot = useBoardStore((s) => s.restFieldHot);
 	// 팀 소속 자석을 드래그하는 동안에만 상단 '팀에서 빼기' 드롭존 노출
 	const showDetach = useBoardStore((s) => s.dragInfo?.detachable ?? false);
+	// 휴식 가능한 자석을 드래그하는 동안에만 하단 '휴식하기' 드롭존 노출(휴식 패널 펼침 시엔 패널이 드롭존이라 제외)
+	const showRest = useBoardStore((s) => s.dragInfo?.restable ?? false) && !restZoneOpen;
 	const restingSet = useMemo(() => new Set(restingIds), [restingIds]);
 
 	// 자유 자석: 팀 미소속(teamId null) && 경기중 아님
@@ -200,14 +238,14 @@ export default function SessionBoard() {
 
 	const openTeamRecommend = useCallback(
 		(teamId: string) => {
-			if (!isEditor) return; // 보기 전용
+			if (!isEditor) return; // 읽기 모드 차단(opener는 진입 시 자동 점유로 editor)
 			setRecommendTarget({ teamId });
 		},
 		[isEditor],
 	);
 	const onMagnetClick = useCallback(
 		(playerId: string) => {
-			if (!isEditor) return; // 보기 전용
+			if (!isEditor) return; // 읽기 모드 차단(opener는 진입 시 자동 점유로 editor)
 			// 경기중 선수는 모달 없음(자유 자석은 비경기중이지만 안전하게 가드)
 			if (playingIds.has(playerId)) return;
 			setRecommendTarget({ seedId: playerId });
@@ -228,14 +266,13 @@ export default function SessionBoard() {
 
 	// 드래그/드롭 핸들러(휴식 hot 하이라이트·휴식 처리·자유 배치·예약 드롭)
 	const { onMagnetDragMove, onMagnetDragEnd, onRestingDragEnd, onGhostDragEnd } =
-		useBoardDragHandlers(stageH, restZoneOpen);
+		useBoardDragHandlers(viewH, restZoneOpen);
 
-	// ── 줌(0.5~1배 축소) ─────────────────────────────────────
-	// Stage scale로 콘텐츠를 화면 중앙 기준 축소. 논리 좌표는 그대로라 정렬·드롭·휴식 판정은 기존과 동일
-	// (드래그 좌표는 PlayerMagnet에서 absToStage로 논리 좌표 복원). 핀치(2손가락)·휠·버튼 지원.
-	const [scale, setScale] = useState(1);
-	const stageX = (stageW * (1 - scale)) / 2;
-	const stageY = (stageH * (1 - scale)) / 2;
+	// ── 줌 핸들러(휠/핀치) ───────────────────────────────────
+	// Stage scale로 콘텐츠를 좌상단(0,0) 기준으로 축소(중앙 정렬 안 함 → 좌상단 좌표 고정). 논리 좌표는
+	// 그대로라 정렬·드롭·휴식 판정은 기존과 동일(드래그 좌표는 PlayerMagnet의 absToStage로 복원). scale은 위에서 정의.
+	const stageX = 0;
+	const stageY = 0;
 	const pinchDist = useRef(0);
 	const onStageWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
 		e.evt.preventDefault();
@@ -280,8 +317,10 @@ export default function SessionBoard() {
 					onTouchEnd={onStageTouchEnd}
 				>
 					<Layer>
-						{/* '팀에서 빼기' 드롭존 — 배경 밴드(드래그 자석이 항상 위로). 드래그 중에만 노출 */}
-						{showDetach && <DetachZone stageW={stageW} />}
+						{/* 드롭존 밴드(배경 — 드래그 자석이 항상 위로). 드래그 중에만 노출.
+						    상단 '팀에서 빼기'(팀 소속) / 하단 '휴식하기'(휴식 가능). 좌표는 논리 viewW×viewH 기준. */}
+						{showDetach && <DetachZone stageW={viewW} />}
+						{showRest && <RestZone viewW={viewW} viewH={viewH} />}
 						{draftIds.map((id) => (
 							<TeamBackground
 								key={id}
@@ -311,8 +350,8 @@ export default function SessionBoard() {
 						    접힘 상태의 드래그 활성 피드백은 stage 밴드 없이 푸터(RestBar) 점등으로만 표현. */}
 						{restZoneOpen && (
 							<RestZonePanel
-								stageW={stageW}
-								stageH={stageH}
+								stageW={viewW}
+								stageH={viewH}
 								restingIds={restingIds}
 								restFieldHot={restFieldHot}
 								onRestingDragEnd={onRestingDragEnd}
@@ -373,7 +412,7 @@ export default function SessionBoard() {
 			{!restZoneOpen && (
 			<button
 				type="button"
-				onClick={() => rearrangeAll(stageW, stageH)}
+				onClick={() => rearrangeAll(viewW, viewH)}
 				aria-label="정렬"
 				style={{
 					position: "absolute",

@@ -86,6 +86,7 @@
 | `set_player_resting` | `(p_session_player_id UUID, p_session_id BIGINT, p_resting BOOLEAN)` | status 휴식/복귀 전환. 복귀 시 joined_at_match 를 휴식 구간만큼 전진(deficit 보정) + wait_since 리셋. 갱신 선수 반환 (`20260615130000`) |
 | `board_claim_editor` | `(p_session_id BIGINT, p_client_id TEXT, p_name TEXT, p_lease_seconds INT=20)` | **보드 동기화 v2**(2026-06-22, `20260622000000`). 편집권 획득/연장(heartbeat) CAS. 조건부 UPDATE `WHERE editor IS NULL OR lease<now() OR editor=client` → row-lock 직렬화로 동시 호출 중 정확히 1명만 비-0행 수신(이중 편집권 차단). 결과 row(o_client_id/o_name/o_lease_until) 반환, 0행=획득 실패. 클라 `dbBoardClaimEditor`+heartbeat(7s). |
 | `board_handoff_editor` | `(p_session_id BIGINT, p_from_client_id TEXT, p_to_client_id TEXT, p_to_name TEXT, p_lease_seconds INT=20)` | 편집권 명시 양도. 보유자 본인(`WHERE editor=from`)만 대상에게 이전. 클라 `dbBoardHandoffEditor`(BoardToolbar "넘기기"). |
+| `board_takeover_editor` | `(p_session_id BIGINT, p_client_id TEXT, p_name TEXT, p_lease_seconds INT=20)` | **편집권 강제 탈취**(2026-06-23, `20260623050000`). 명시 "편집 권한 가져오기" 전용. lease 조건 **없이**(`WHERE id=session`만) 호출자를 편집자로 덮어쓴다 — `board_claim_editor`(CAS)가 활성 보유자의 유효 lease를 못 뺏어 가져오기가 되돌아가는 문제 해결. 직전 보유자는 다음 heartbeat(CAS) 거부 + 실시간 row 수신으로 읽기 모드로 수렴. 클라 `dbBoardTakeoverEditor`(sessionStore `claimEditor`). |
 | `board_release_editor` | `(p_session_id BIGINT, p_client_id TEXT)` | 편집권 해제(정상 이탈: unsubscribe/pagehide). 보유자 본인만. crash 시는 lease 만료가 백업. |
 | `board_save_drafts` | `(p_session_id BIGINT, p_client_id TEXT, p_name TEXT, p_payload JSONB, p_base_version BIGINT, p_lease_seconds INT=20)` | board_drafts 낙관적 버전 CAS 쓰기 **+ self-claim**. `WHERE version=base AND (editor IS NULL OR lease<now() OR editor=client)` 통과 시 board_drafts 교체+version+1+editor_*=호출자(쓰면서 락 획득/연장). 새 version 반환, 0행이면 NULL(충돌/타인 점유) → 통째 last-writer-wins 손실·조용한 실패 차단. self-claim이라 사전 claim 없이 첫 쓰기가 락을 잡음(데드존 없음). 클라 `dbBoardSaveDrafts`(boardStore `pushDraftsToRemote`, 직렬화+충돌 시 resync). |
 
@@ -207,8 +208,9 @@ sessionStore (휴식 토글)
 
 편집 보유자를 **단일 DB row(`sessions.editor_client_id`/`editor_name`/`editor_lease_until`)**가 결정한다. presence 다수결이 아니라 서버 권위라 presence 부분 동기화로 인한 **이중 편집권(원인2)이 구조적으로 불가능**하다. (이전 presence 파생 락 `computePresence`/`nextClaimAt`은 폐기.)
 
+- **식별자**: `editor_client_id`에는 **로그인 사용자 id(`user.id`, 사람 단위)** 를 저장한다(2026-06-23). 같은 사람의 리로드·다른 탭·다른 기기는 같은 id라 `editor=client` 분기로 자기 lease를 즉시 재획득(자기 잠금 없음). 미로그인 등 부재 시에만 탭 단위 영속 `clientId`(sessionStorage) 폴백. (이전: 연결마다 randomUUID라 리로드 시 직전 lease에 묶여 20s 자기 잠금이 발생.)
 - **보유자** = `editor_client_id != null AND editor_lease_until > now()`. `computeLockFromRow`로 `isEditor`/`holderClientId`/`holderName`/`lockFree` 산정.
-- **획득**: 자유/만료/본인이면 점유. (a) 첫 편집 시 자동(`claimEdit`→`claimEditingIfFree`→낙관 점유, 서버 락은 `board_save_drafts` self-claim 또는 heartbeat의 `board_claim_editor`가 확정), (b) 명시 "편집 권한 가져오기"(`claimEditor`). 동시 점유는 DB 조건부 UPDATE row-lock으로 1명만 성공.
+- **획득**: (a) **진입 시 자동** — 세션 연 사람이 자유 상태(아무도 편집 안 함)면 즉시 낙관 점유(SessionBoard effect→`claimEditingIfFree`); 서버 락은 `board_save_drafts` self-claim 또는 heartbeat `board_claim_editor`(CAS: 자유/만료/본인)가 확정. 다른 사람이 유효 lease면 점유 안 됨(읽기 모드로 시작). 편집자 이탈 시 남은 클라가 재점유 → "아무도 편집 안 하는 상태"가 지속되지 않음. (b) **강제 탈취** — 명시 "편집 권한 가져오기"(`claimEditor`→`board_takeover_editor`)는 활성 보유자가 있어도 무조건 가져온다(CAS는 활성 lease를 못 뺏으므로 전용 함수). 직전 보유자는 다음 heartbeat 거부+실시간 수신으로 읽기 모드로 수렴.
 - **유지**: 보유자만 7s heartbeat(`board_claim_editor`)로 20s lease 연장. 백그라운드(visibilitychange) 시 heartbeat 정지, 복귀 시 재점유 시도.
 - **해제/회복**: 정상 이탈(unsubscribe/pagehide)→`board_release_editor`. crash/강제종료→20s lease 만료 후 자유(클라 4s `reeval` 타이머가 만료를 로컬 감지). presence leave 의존 없음.
 - **양도**: 보유자가 접속자 모달에서 "넘기기"(`board_handoff_editor`)로 명시 이전.

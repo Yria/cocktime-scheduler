@@ -5,7 +5,6 @@ import {
 	isoToTimeKST,
 	kstEndWallClockToISO,
 	kstWallClockToISO,
-	todayKST,
 } from "../../lib/schedule/calendar";
 import type {
 	OccurrencePatch,
@@ -13,6 +12,7 @@ import type {
 } from "../../lib/supabase/recurring";
 import type { CreatePlaceInput } from "../../lib/supabase/schedule";
 import type { PlaceRow, SessionRow } from "../../lib/supabase/types";
+import { Switch } from "../common/Switch";
 import PlaceLocationPicker from "./PlaceLocationPicker";
 import {
 	inputCls,
@@ -21,6 +21,7 @@ import {
 	labelStyle,
 	overlayStyle,
 	primaryBtnStyle,
+	selectStyle,
 	sheetCls,
 	sheetStyle,
 	statusStyle,
@@ -34,9 +35,7 @@ interface Props {
 	onAddPlace: (input: CreatePlaceInput) => Promise<PlaceRow | null>;
 	onOverride: (sessionId: number, patch: OccurrencePatch) => Promise<void>;
 	onCreateOneOff: (input: OneOffInput) => Promise<void>;
-	onSkip: (sessionId: number) => Promise<void>;
-	onRestore: (sessionId: number, isRuleBased: boolean) => Promise<void>;
-	onDelete: (sessionId: number) => Promise<void>;
+	onDelete: (occurrence: SessionRow) => Promise<void>;
 	onClose: () => void;
 }
 
@@ -48,8 +47,6 @@ export default function OccurrenceEditor({
 	onAddPlace,
 	onOverride,
 	onCreateOneOff,
-	onSkip,
-	onRestore,
 	onDelete,
 	onClose,
 }: Props) {
@@ -91,9 +88,6 @@ export default function OccurrenceEditor({
 	// 편집 가능 여부 (draft/open 만 편집)
 	const editable =
 		occurrence == null || status === "draft" || status === "open";
-
-	// 지난 날짜(KST) 회차: 되돌려도 sync 가 곧바로 종료시키므로 되돌리기 비노출
-	const isPast = occDate != null && occDate < todayKST();
 
 	function parseCapacity(): number | null {
 		const v = capacity.trim();
@@ -158,26 +152,11 @@ export default function OccurrenceEditor({
 		});
 	}
 
-	function handleSkip() {
-		if (!occurrence) return;
-		if (!confirm("이 회차를 취소할까요? (참석자에게 노출되지 않아요)")) return;
-		void run(async () => {
-			await onSkip(occurrence.id);
-		});
-	}
-
-	function handleRestore() {
-		if (!occurrence) return;
-		void run(async () => {
-			await onRestore(occurrence.id, isRuleBased);
-		});
-	}
-
 	function handleDelete() {
 		if (!occurrence) return;
-		if (!confirm("이 회차를 완전히 삭제할까요? 되돌릴 수 없어요.")) return;
+		if (!confirm("이 회차를 삭제할까요? 되돌릴 수 없어요.")) return;
 		void run(async () => {
-			await onDelete(occurrence.id);
+			await onDelete(occurrence);
 		});
 	}
 
@@ -264,48 +243,7 @@ export default function OccurrenceEditor({
 				</div>
 
 				{/* 본문 */}
-				{occurrence && status === "cancelled" ? (
-					// 취소된 회차: 되돌리기 (+ 일회성이면 삭제)
-					<div className="flex flex-col gap-3">
-						<p
-							className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
-							style={{ fontSize: 14 }}
-						>
-							취소된 회차입니다.
-							{isPast ? " 지난 날짜라 되돌릴 수 없어요." : ""}
-						</p>
-						{!isPast && (
-							<button
-								type="button"
-								onClick={handleRestore}
-								disabled={busy}
-								style={primaryBtnStyle(busy)}
-							>
-								{busy ? "처리 중…" : "되돌리기"}
-							</button>
-						)}
-						{!isRuleBased && (
-							<button
-								type="button"
-								onClick={handleDelete}
-								disabled={busy}
-								style={dangerBtnStyle(busy)}
-							>
-								삭제
-							</button>
-						)}
-						{isPast && (
-							<button type="button" onClick={onClose} style={neutralBtnStyle()}>
-								닫기
-							</button>
-						)}
-						{error && (
-							<p style={{ fontSize: 13, fontWeight: 600, color: "#ef4444" }}>
-								{error}
-							</p>
-						)}
-					</div>
-				) : occurrence && !editable ? (
+				{occurrence && !editable ? (
 					// active/closed: 편집 불가, 정보만
 					<div className="flex flex-col gap-3">
 						<dl className="flex flex-col gap-2">
@@ -352,9 +290,10 @@ export default function OccurrenceEditor({
 				) : (
 					// 신규 일회성 또는 draft/open 편집 폼
 					<div className="flex flex-col gap-4">
-						{/* 시간 (시작 ~ 종료) */}
+						{/* 시간 (시작 ~ 종료) — 래퍼·input(inputStyle) 모두 minWidth:0:
+						    네이티브 time 위젯(iOS Safari 등)의 intrinsic 폭이 모달 밖으로 밀지 못하게 */}
 						<div className="flex gap-3">
-							<div style={{ flex: 1 }}>
+							<div style={{ flex: 1, minWidth: 0 }}>
 								<label className={labelCls} style={labelStyle}>
 									시작 시간
 								</label>
@@ -367,7 +306,7 @@ export default function OccurrenceEditor({
 									style={inputStyle}
 								/>
 							</div>
-							<div style={{ flex: 1 }}>
+							<div style={{ flex: 1, minWidth: 0 }}>
 								<label className={labelCls} style={labelStyle}>
 									종료 시간
 								</label>
@@ -398,26 +337,12 @@ export default function OccurrenceEditor({
 									켜면 참석자가 카풀 가능/필요를 선택할 수 있어요
 								</span>
 							</div>
-							<button
-								type="button"
-								onClick={() => setCarpoolEnabled((v) => !v)}
+							<Switch
+								checked={carpoolEnabled}
+								onChange={setCarpoolEnabled}
 								disabled={busy}
-								aria-pressed={carpoolEnabled}
-								style={{
-									padding: "7px 16px",
-									borderRadius: 9,
-									fontSize: 13,
-									fontWeight: 700,
-									border: "none",
-									cursor: busy ? "not-allowed" : "pointer",
-									color: carpoolEnabled ? "#fff" : "#64748b",
-									background: carpoolEnabled
-										? "#2c7a57"
-										: "rgba(100,116,139,0.14)",
-								}}
-							>
-								{carpoolEnabled ? "ON" : "OFF"}
-							</button>
+								ariaLabel="카풀"
+							/>
 						</div>
 
 						{/* 인원 */}
@@ -453,7 +378,7 @@ export default function OccurrenceEditor({
 									}
 									disabled={busy}
 									className={inputCls}
-									style={{ ...inputStyle, flex: 1 }}
+									style={{ ...selectStyle, flex: 1 }}
 								>
 									<option value="">장소 미정</option>
 									{places.map((p) => (
@@ -502,26 +427,14 @@ export default function OccurrenceEditor({
 						</button>
 
 						{occurrence && (
-							<>
-								<button
-									type="button"
-									onClick={handleSkip}
-									disabled={busy}
-									style={dangerBtnStyle(busy)}
-								>
-									이 회차 취소
-								</button>
-								{!isRuleBased && (
-									<button
-										type="button"
-										onClick={handleDelete}
-										disabled={busy}
-										style={neutralBtnStyle()}
-									>
-										삭제
-									</button>
-								)}
-							</>
+							<button
+								type="button"
+								onClick={handleDelete}
+								disabled={busy}
+								style={dangerBtnStyle(busy)}
+							>
+								삭제
+							</button>
 						)}
 					</div>
 				)}

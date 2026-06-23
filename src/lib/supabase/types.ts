@@ -43,8 +43,6 @@ export interface SessionRow {
 	status: SessionStatus;
 	created_by: string | null;
 	carpool_enabled: boolean; // 카풀 노출 on/off. on이면 참석자가 카풀 가능/필요 선택(20260622120000)
-	carpool_muster_place_id: number | null;
-	carpool_muster_at: string | null;
 	// 반복 일정(마이그레이션 20260622010000): 규칙↔회차 연결 + 개별 수정 플래그
 	recurring_schedule_id: number | null;
 	occurrence_date: string | null; // YYYY-MM-DD (Asia/Seoul 달력 날짜)

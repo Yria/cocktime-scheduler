@@ -7,6 +7,7 @@ import {
 import type { RecurringRuleInput } from "../../lib/supabase/recurring";
 import type { CreatePlaceInput } from "../../lib/supabase/schedule";
 import type { PlaceRow, RecurringScheduleRow } from "../../lib/supabase/types";
+import { Switch } from "../common/Switch";
 import PlaceLocationPicker from "./PlaceLocationPicker";
 import {
 	inputCls,
@@ -15,6 +16,7 @@ import {
 	labelStyle,
 	overlayStyle,
 	primaryBtnStyle,
+	selectStyle,
 	sheetCls,
 	sheetStyle,
 } from "./styles";
@@ -322,9 +324,10 @@ export default function ScheduleRuleEditor({
 						)}
 					</div>
 
-					{/* 시간 (시작 ~ 종료) */}
+					{/* 시간 (시작 ~ 종료) — 래퍼·input(inputStyle) 모두 minWidth:0:
+					    네이티브 time 위젯(iOS Safari 등)의 intrinsic 폭이 모달 밖으로 밀지 못하게 */}
 					<div className="flex gap-3">
-						<div style={{ flex: 1 }}>
+						<div style={{ flex: 1, minWidth: 0 }}>
 							<span className={labelCls} style={labelStyle}>
 								시작 시간
 							</span>
@@ -339,7 +342,7 @@ export default function ScheduleRuleEditor({
 								style={inputStyle}
 							/>
 						</div>
-						<div style={{ flex: 1 }}>
+						<div style={{ flex: 1, minWidth: 0 }}>
 							<span className={labelCls} style={labelStyle}>
 								종료 시간
 							</span>
@@ -369,27 +372,15 @@ export default function ScheduleRuleEditor({
 								켜면 참석자가 카풀 가능/필요를 선택할 수 있어요
 							</span>
 						</div>
-						<button
-							type="button"
-							onClick={() => {
+						<Switch
+							checked={carpoolEnabled}
+							onChange={(v) => {
 								setError(null);
 								setCarpoolTouched(true);
-								setCarpoolEnabled((v) => !v);
+								setCarpoolEnabled(v);
 							}}
-							aria-pressed={carpoolEnabled}
-							style={{
-								padding: "7px 16px",
-								borderRadius: 9,
-								fontSize: 13,
-								fontWeight: 700,
-								border: "none",
-								cursor: "pointer",
-								color: carpoolEnabled ? "#fff" : "#64748b",
-								background: carpoolEnabled ? "#2c7a57" : "rgba(100,116,139,0.14)",
-							}}
-						>
-							{carpoolEnabled ? "ON" : "OFF"}
-						</button>
+							ariaLabel="카풀"
+						/>
 					</div>
 
 					{/* 최대인원 */}
@@ -424,7 +415,7 @@ export default function ScheduleRuleEditor({
 									);
 								}}
 								className={inputCls}
-								style={{ ...inputStyle, flex: 1 }}
+								style={{ ...selectStyle, flex: 1 }}
 							>
 								<option value="">장소 선택 안 함</option>
 								{places.map((p) => (

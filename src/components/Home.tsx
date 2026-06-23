@@ -18,6 +18,7 @@ interface Props {
 
 function joinErrorMsg(e?: string): string {
 	if (e?.includes("already joined")) return "이미 신청했습니다";
+	if (e?.includes("not open yet")) return "아직 신청 기간이 아닙니다";
 	if (e?.includes("not open")) return "모집 중이 아닙니다";
 	if (e?.includes("not authenticated")) return "로그인이 필요합니다";
 	return "신청에 실패했습니다";
@@ -137,12 +138,6 @@ export default function Home({ onStart }: Props) {
 						className="w-48 max-w-[80%] h-auto object-contain drop-shadow-[0_4px_12px_rgba(11,132,255,0.15)] dark:[filter:brightness(0)_invert(1)]"
 						alt="콕타임 배드민턴 클럽"
 					/>
-					<p
-						className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)] text-center"
-						style={{ fontSize: 14, fontWeight: 500 }}
-					>
-						로그인하고 일정을 확인하세요
-					</p>
 					<button
 						type="button"
 						onClick={handleKakaoLogin}
@@ -158,8 +153,19 @@ export default function Home({ onStart }: Props) {
 							border: "none",
 							cursor: authBusy ? "not-allowed" : "pointer",
 							opacity: authBusy ? 0.6 : 1,
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							gap: 8,
 						}}
 					>
+						{/* 카카오 말풍선 심볼 */}
+						<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+							<path
+								fill="#191600"
+								d="M12 3.5c-5.06 0-9.16 3.24-9.16 7.24 0 2.59 1.72 4.86 4.3 6.13-.19.69-.68 2.48-.78 2.86-.12.47.17.46.36.34.15-.1 2.39-1.62 3.36-2.28.62.09 1.26.13 1.92.13 5.06 0 9.16-3.24 9.16-7.24S17.06 3.5 12 3.5z"
+							/>
+						</svg>
 						{authBusy ? "이동 중…" : "카카오로 로그인"}
 					</button>
 				</div>

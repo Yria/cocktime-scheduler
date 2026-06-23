@@ -247,6 +247,7 @@ alter table public.sessions
 - **2계층 모델**: 규칙(`recurring_schedules`) = "원본", 회차(`sessions`) = 참석·카풀·보드가 붙는 "실제 모임". `recurring_valid_occurrences` 뷰가 활성 규칙 × 향후 56일의 유효 발생일을 계산.
 - **`sync_schedule_occurrences()` RPC**(SECURITY DEFINER, authenticated 호출 — 앱 로드 시 멱등 실행): A) 어제 이전 미진행 draft/open → `closed`, B) 누락 회차 `draft` 생성, C) 미오버라이드 draft 를 규칙 최신값으로 갱신, D) 규칙 변경/비활성으로 무효해진 미오버라이드 draft 삭제, E) **scheduled_at 이 KST 오늘~+7일이면 `draft`→`open`(1주 전 노출)**.
 - **상태기계 활용**: `draft`(운영진만, 미노출) → `open`(노출·참석시작, `join_session` 진입 조건) → `active`(보드) → `closed`/`cancelled`. 명절 등 예외는 해당 회차만 `cancelled`(행 유지 → 재생성 방지) 또는 개별 `is_overridden=true` 수정.
+- **`join_session` 노출 가드**: `status='open'` 체크에 더해, 서버시간 `now()` 기준 **상한** `scheduled_at <= now() + interval '7 days'`(sync E단계의 +7일 상한과 동일)를 RPC 안에서 직접 재검증한다. `status`는 sync 시점 캐시라 일정 이동/stale 시 1주보다 먼 회차가 `open`으로 남을 수 있어, 시각으로 직접 차단(`session not open yet`). 클라 시간은 신뢰하지 않는다. 마이그레이션 `20260623040000_join_session_reveal_window_guard.sql`. 단 sync E단계의 **하한**(KST 과거 날짜 제외)은 여기서 재검증하지 않는다 — 시작 시각이 지난 `open` 회차의 늦참(late join)은 홈 진행 하이라이트(아래)와 함께 의도적으로 허용한다.
 - **편집 권한**: 회차 개별 수정/취소/일회성 추가는 `sessions` anon_all 정책 하 클라이언트 직접 쓰기(운영진 UI 게이트). 규칙 CRUD 는 `recurring_schedules` RLS(select authenticated / write `is_admin()`).
 - UI: 회원=노출 회차 목록(Home), 운영진=`/schedule` 달력+규칙 패널(요일·주차 규칙 등록 → 달력 자동 생성 → 회차별 예외 편집).
 
@@ -277,7 +278,7 @@ alter table public.sessions
 | RPC | 시그니처 | 권한 | 동작 |
 |-----|---------|------|------|
 | `join_session` | `(p_session_id bigint) → attendances` | 로그인 회원 | 정원 여유면 confirmed, 아니면 waitlisted. 중복신청 차단, 취소후재신청은 같은 행 갱신 |
-| `cancel_attendance` | `(p_session_id bigint) → void` | 로그인 회원(본인) | 본인 취소(멱등). confirmed였으면 카운터 감소 + 대기 1순위 자동 승급 + 알림 |
+| `cancel_attendance` | `(p_session_id bigint) → void` | 로그인 회원(본인) | 본인 취소(멱등). 카풀 의향(`carpool_role`/`carpool_seats`) 함께 해제(재참석 시 부활 방지). confirmed였으면 카운터 감소 + 대기 1순위 자동 승급 + 알림 |
 | `promote_waitlist` | `(p_session_id bigint) → int` | 운영진 | 정원 상향 후 여유만큼 대기자 일괄 승급 + 각자 알림. 승급 수 반환 |
 | `cancel_session` | `(p_session_id bigint) → void` | 운영진 | status='cancelled' + 전체 참석자 알림 |
 | `bridge_confirmed_to_players` | `(p_session_id bigint) → void` | 운영진 | **Phase 6**: confirmed 참석자를 session_players로 일괄 INSERT(members→스냅샷, gender NULL 가드). 보드 로직 0변경 |

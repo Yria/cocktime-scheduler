@@ -496,6 +496,26 @@ export async function dbBoardClaimEditor(
 	return firstLockRow(data);
 }
 
+/** 편집권 강제 탈취(명시 "가져오기"). lease 조건 없이 호출자를 편집자로 덮어쓴다. 성공 시 보유자(=나), 실패면 null. */
+export async function dbBoardTakeoverEditor(
+	sessionId: number,
+	clientId: string,
+	name: string,
+	leaseSeconds = 20,
+): Promise<EditorLockResult | null> {
+	const { data, error } = await supabase.rpc("board_takeover_editor", {
+		p_session_id: sessionId,
+		p_client_id: clientId,
+		p_name: name,
+		p_lease_seconds: leaseSeconds,
+	});
+	if (error) {
+		console.error("dbBoardTakeoverEditor:", error);
+		return null;
+	}
+	return firstLockRow(data);
+}
+
 /** 편집권 명시 양도(보유자 본인만). 성공 시 새 보유자, 실패면 null. (Phase 4) */
 export async function dbBoardHandoffEditor(
 	sessionId: number,

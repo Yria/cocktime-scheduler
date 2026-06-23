@@ -6,6 +6,7 @@ import {
 	dbBoardClaimEditor,
 	dbBoardHandoffEditor,
 	dbBoardReleaseEditor,
+	dbBoardTakeoverEditor,
 	dbCompleteMatch,
 	dbEndSession,
 	dbLoadMatches,
@@ -36,7 +37,8 @@ import type {
 } from "../types";
 import type { BoardDraftsPayload } from "../types/board";
 import { useAppStore } from "./appStore";
-import { getDeviceName } from "../lib/deviceName";
+import { getClientId, getDeviceName } from "../lib/deviceName";
+import { useAuthStore } from "./authStore";
 
 function getSessionId(): number {
 	return useAppStore.getState().sessionMeta?.sessionId ?? 0;
@@ -602,11 +604,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		handlers[ev.event]?.(evWithPayload.payload ?? {}, set, get);
 	},
 
-	claimEditor: () => {
-		// 명시 점유("편집권 가져오기"). 낙관적으로 잡고 heartbeat RPC가 실제 획득. 살아있는 lease면 RPC가
-		// 거부 → resyncFromServer로 진짜 보유자 복원(만료 lease면 획득 성공 = crash 회복).
-		if (get().isEditor || !get()._clientId) return;
-		claimNow(get, set);
+	claimEditor: async () => {
+		// 명시 "편집 권한 가져오기" = 강제 탈취. board_claim_editor(CAS)는 활성 보유자의 유효 lease를 못 뺏으므로
+		// (그래서 가져오기가 직전 보유자로 되돌아간다) 전용 board_takeover_editor로 무조건 서버 row를 나로 덮어쓴다.
+		// 직전 보유자는 다음 heartbeat(CAS) 거부 + 실시간 row 수신으로 읽기 모드로 떨어진다(단일 편집자 수렴).
+		// RPC를 먼저 await 후 점유 확정 — 낙관적 선점이 직전 보유자 heartbeat row 갱신과 겹쳐 되돌아가는 레이스를 피한다.
+		const { _clientId, _myName, isEditor } = get();
+		if (isEditor || !_clientId) return;
+		const name = _myName ?? "기기";
+		const res = await dbBoardTakeoverEditor(getSessionId(), _clientId, name, LEASE_SECONDS);
+		if (!res) return; // 탈취 실패(네트워크 등) — 상태 변경 없음
+		lockEpoch++; // 권위적 변경 — in-flight heartbeat .then 무효화
+		cachedEditor = {
+			clientId: _clientId,
+			name,
+			leaseUntilMs: res.leaseUntil ? Date.parse(res.leaseUntil) : Date.now() + LEASE_SECONDS * 1000,
+		};
+		recomputeLock(get, set); // 나=보유자 → isEditor + heartbeat 시작(이후 board_claim_editor editor=me로 연장)
 	},
 	claimEditingIfFree: () => {
 		// 첫 편집 시 자유 상태면 점유(boardStore.claimEdit 경로). 남이 유효 lease면 점유 안 함(보기 전용 유지).
@@ -666,9 +680,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 
 	subscribe: (sessionId: number, onEnd: () => void) => {
-		// 편집 락용 presence 식별자 — 이 연결의 clientId + 기기 이름
-		const myClientId = crypto.randomUUID();
-		const myName = getDeviceName();
+		// 편집 락/연결 식별자 — 로그인 사용자 id(사람 단위). 같은 사람의 리로드·다른 탭·다른 기기는 같은 id라
+		// 서버 row의 editor=client 분기로 자기 lease를 즉시 재획득하고(자기 잠금 없음), 다른 사람은 다른 id라
+		// 단일 편집자(+"편집 권한 가져오기")가 유지된다. user.id 부재(미로그인 등) 시에만 탭 단위 clientId로 폴백.
+		// 보유자 이름도 실명(myName)으로 — "OO님이 편집 중" 표시. (presence/broadcast self-echo는 연결 단위라 무영향.)
+		const auth = useAuthStore.getState();
+		const myClientId = auth.user?.id ?? getClientId();
+		const myName = auth.myName ?? getDeviceName();
 
 		const { broadcastChannel, metaChannel } = createSessionChannels(
 			sessionId,
