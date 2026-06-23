@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import SessionBoard from "./components/board/SessionBoard";
+import DemoScheduleList from "./components/DemoScheduleList"; // ⚠️ 임시 디버그
 import Toaster from "./components/common/Toaster";
 import Home from "./components/Home";
 import LogPage from "./components/LogPage";
@@ -172,6 +173,15 @@ export default function App() {
 		},
 		[],
 	);
+
+	// ⚠️ [임시 디버그] 로그인 없이 일정 리스트 레이아웃 확인 (eruda 에서 cocktime_demo='1')
+	if (localStorage.getItem("cocktime_demo") === "1") {
+		return (
+			<div className="md:max-w-sm md:mx-auto md:shadow-[0_0_80px_rgba(0,0,0,0.4)]">
+				<DemoScheduleList />
+			</div>
+		);
+	}
 
 	if (!sessionChecked) {
 		return (
