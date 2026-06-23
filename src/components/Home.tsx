@@ -114,7 +114,7 @@ export default function Home({ onStart }: Props) {
 	// ── 초기 로딩 ──
 	if (!authReady) {
 		return (
-			<div className="min-h-[100dvh] flex items-center justify-center bg-[#fafbff] dark:bg-[#0f172a]">
+			<div className="app-shell-minh flex items-center justify-center bg-[#fafbff] dark:bg-[#0f172a]">
 				<Spinner size={18} />
 			</div>
 		);
@@ -124,7 +124,7 @@ export default function Home({ onStart }: Props) {
 	if (!authUser) {
 		return (
 			<div
-				className="min-h-[100dvh] flex flex-col items-center justify-center bg-[#fafbff] dark:bg-[#0f172a]"
+				className="app-shell-minh flex flex-col items-center justify-center bg-[#fafbff] dark:bg-[#0f172a]"
 				style={{
 					padding: "1.5rem",
 					paddingTop: "max(1.5rem, env(safe-area-inset-top))",

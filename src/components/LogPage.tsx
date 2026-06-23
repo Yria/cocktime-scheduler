@@ -87,8 +87,7 @@ export default function LogPage() {
 
 	return (
 		<div
-			className="md:max-w-sm md:mx-auto bg-[#fafbff] dark:bg-[#0f172a]"
-			style={{ minHeight: "100dvh" }}
+			className="app-shell-minh md:max-w-sm md:mx-auto bg-[#fafbff] dark:bg-[#0f172a]"
 		>
 			{/* Header */}
 			<div

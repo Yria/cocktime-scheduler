@@ -175,7 +175,7 @@ export default function App() {
 
 	if (!sessionChecked) {
 		return (
-			<div className="md:max-w-sm md:mx-auto min-h-[100dvh] flex items-center justify-center">
+			<div className="md:max-w-sm md:mx-auto app-shell-minh flex items-center justify-center">
 				<p className="text-gray-400 dark:text-gray-500 text-sm">연결 중...</p>
 			</div>
 		);

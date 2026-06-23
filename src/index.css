@@ -98,6 +98,18 @@ body {
 	}
 }
 
+/* min-height 버전 — 페이지 스크롤형 풀스크린 화면(로그인·로딩·로그·세션설정·배경)용.
+   셸과 동일 원칙: standalone 에선 lvh 로 화면 전체를 채워 하단 미충전(빈 띠)을 없앤다. */
+.app-shell-minh {
+	min-height: 100dvh;
+}
+@media all and (display-mode: standalone) {
+	.app-shell-minh {
+		min-height: 100vh; /* 구형 iOS 폴백 */
+		min-height: 100lvh; /* 설치형 PWA: full viewport = 화면 전체 */
+	}
+}
+
 /* PC(md+)에서는 body 배경을 다르게 — 모바일 뷰가 카드처럼 보이도록 */
 @media (min-width: 768px) {
 	body {
@@ -135,12 +147,19 @@ h4,
 	width: 100vw;
 	min-height: 100dvh;
 	position: relative;
+	/* standalone 에선 화면 전체(lvh)를 채워 하단 빈 띠 제거 — .app-shell-minh 와 동일 원칙 */
 	background:
 		radial-gradient(circle at 15% 15%, var(--bg-gradient-2), transparent 50%),
 		radial-gradient(circle at 85% 85%, var(--bg-gradient-3), transparent 50%),
 		radial-gradient(circle at 50% 50%, var(--bg-gradient-1), transparent 60%);
 	background-size: 200% 200%;
 	animation: liquidMove 20s ease infinite alternate;
+}
+@media all and (display-mode: standalone) {
+	.lq-bg {
+		min-height: 100vh;
+		min-height: 100lvh;
+	}
 }
 
 @keyframes liquidMove {

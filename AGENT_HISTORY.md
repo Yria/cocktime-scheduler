@@ -55,3 +55,17 @@
 - 디버그 오버레이 제거, tsc·vite build 통과. MemberAdminPage 모달 오버레이(fixed/inset:0)는 미변경(추후 필요시 정리).
 
 ---
+
+## #4
+
+**Prompt**: 아직도 여전히 pwa 하단 safearea 가 스크롤에 가리는데, 보통 사람들은 safearea 영역만큼 겹쳐져서 문제가 발생하는데 난 애초에 안겹쳐서 생기는 문제란말야. 인터넷에서 관련문제 검색하고, playwright 에서 렌더된 html 을 참고해서 뭐가 문제가 될 것 같은지 전체적으로 확인해봐. 그리고 네가 본격적으로 파악할 방법도 찾아보고.
+
+**Answer**: "콘텐츠가 safe area에 겹치는" 흔한 문제가 아니라 "렌더 영역 자체가 화면보다 작은" 반대 문제임을 사용자가 정확히 지적. 웹 리서치(5각도 병렬 워크플로우) + Playwright 배포본 DOM 검사로 근본 원인을 확정했습니다.
+
+- **확정 원인 A**: `black-translucent + viewport-fit=cover + standalone` 조합에서 WebKit이 레이아웃/비주얼 뷰포트 자체를 상단 inset(62px)만큼 축소 → `innerHeight=clientHeight=100dvh=100svh=894`, `100vh=100lvh=956`(풀스크린)만 화면 전체. 사양 동작(버그 아님), 5개 리서치 + 실측 1:1 일치.
+- **확정 원인 B(실제 트리거)**: Playwright로 DOM 체인에 높이/overflow 제약 없음 확인. 셸(`.app-shell-h`)은 이미 lvh로 정답이나, **셸을 안 쓰는 화면들이 `100dvh`(894)에 묶여** 하단 62px 미충전(`html{background}` 핵으로 색만 가리던 상태). 특히 사용자가 테스트한 로그인 화면(#4).
+- **처방 적용**: `.app-shell-minh` 유틸 신설(standalone에서 min-height lvh). `App.tsx`(로딩)·`Home.tsx`(로그인·로딩)·`SessionSetup`·`LogPage`·`.lq-bg`(배경)를 통일. black-translucent·매니페스트·viewport meta·theme-color는 트레이드오프 손해라 미변경.
+- **본격 진단법 제공**: macOS Safari 원격 웹 인스펙터로 설치형 PWA inspect + lvh/dvh/offsetHeight 측정 스크립트 + cold-start/회전/OS버전(26.1 회귀 가설) 배제 절차.
+- tsc·vite build 통과.
+
+---
