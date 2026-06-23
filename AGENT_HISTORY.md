@@ -42,3 +42,16 @@
 - #1의 html 배경은 보조 안전망으로 유지, 타입 체크 통과, 실제 효과는 iOS 실기기 PWA에서 확인 필요
 
 ---
+
+## #3
+
+**Prompt**: 지금 수정본 배포됐음에도 하단이 가려져 / 세션시작·보드열기 텍스트를 "경기 시작"으로, 참석 확정·취소를 참석중/대기중이 명확하게
+
+**Answer**: #2의 `position:fixed; inset:0` 수정으로도 실기기에서 하단이 계속 가려져, 추측을 멈추고 임시 디버그 오버레이(`SafeAreaDebug`)로 실기기 실측값을 수집해 근본 원인을 규명했습니다.
+
+- **실측 결과**: `scr:956` vs `vh:956 lvh:956` / `dvh:894 svh:894 clientHeight:894`. 즉 `position:fixed; inset:0`과 `100dvh`는 모두 `clientHeight(894)`에 갇혀 화면(956)보다 **상단 inset(62px)만큼 짧음** → #2의 fixed 방식도 사실상 dvh와 동일하게 짧았던 것. **`vh`/`lvh`(956)만 풀스크린**.
+- **처방**: `.app-shell-h` 클래스 신설 — 일반 브라우저는 `100dvh`(툴바 동적 반영), `@media (display-mode:standalone)`에서는 `100vh`→`100lvh`로 풀스크린 강제. AppScreen·SessionBoard(→position:relative)·MemberAdminPage의 `fixed/inset:0`을 `.app-shell-h`로 교체.
+- **ScheduleCard UI**: "세션 시작·보드 열기" → "경기 시작". 참석 확정/대기 상태를 색 점+pill 배지(참석 중 / 대기 N번째)로 시각화해 내 상태를 한눈에 구분.
+- 디버그 오버레이 제거, tsc·vite build 통과. MemberAdminPage 모달 오버레이(fixed/inset:0)는 미변경(추후 필요시 정리).
+
+---

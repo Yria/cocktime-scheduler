@@ -204,9 +204,8 @@ export default function MemberAdminPage() {
 
 	return (
 		<div
-			className="bg-[#fafbff] dark:bg-[#0f172a]"
-			// 100dvh 콜드스타트 버그 회피: layout viewport(safe-area 포함) 전체를 안정적으로 덮는다.
-			style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column" }}
+			className="app-shell-h bg-[#fafbff] dark:bg-[#0f172a]"
+			style={{ display: "flex", flexDirection: "column" }}
 		>
 			<AppHeader
 				title="회원 관리"

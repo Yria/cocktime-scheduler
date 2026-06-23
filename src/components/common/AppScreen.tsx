@@ -33,13 +33,7 @@ export default function AppScreen({
 	const { pull, refreshing } = usePullToRefresh(scrollRef, onRefresh);
 
 	return (
-		<div
-			className="flex flex-col bg-[#fafbff] dark:bg-[#0f172a]"
-			// iOS PWA에서 100dvh 는 콜드스타트 시 잘못된(작은) 값을 보고해 하단 home
-			// indicator 영역만큼 짧아진다 → 내부 스크롤 영역이 그만큼 안 그려진다.
-			// position:fixed; inset:0 은 layout viewport(safe-area 포함) 전체를 안정적으로 덮는다.
-			style={{ position: "fixed", inset: 0 }}
-		>
+		<div className="app-shell-h flex flex-col bg-[#fafbff] dark:bg-[#0f172a]">
 			<AppHeader title={title} onBack={onBack} logo={logo} right={right} />
 			<main
 				ref={scrollRef}

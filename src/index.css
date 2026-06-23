@@ -82,6 +82,22 @@ body {
 	background-color: #0f172a;
 }
 
+/* ── 앱 셸 풀스크린 높이 ─────────────────────────────────────────
+   iOS standalone PWA 는 dvh/svh/clientHeight 를 "화면 − 상단 inset" 으로
+   짧게 보고한다(실측: scr 956 vs dvh 894). 그래서 dvh·position:fixed 로는
+   하단이 화면 끝에 닿지 않는다. full viewport 인 lvh(=vh=956)만 화면 전체를
+   덮으므로, 설치형(standalone)에서는 lvh 를 강제한다.
+   일반 브라우저에서는 동적 툴바에 맞춰 dvh 를 유지한다. */
+.app-shell-h {
+	height: 100dvh; /* 일반 브라우저: 동적 뷰포트(툴바 반영) */
+}
+@media all and (display-mode: standalone) {
+	.app-shell-h {
+		height: 100vh; /* 구형 iOS 폴백 */
+		height: 100lvh; /* 설치형 PWA: full viewport = 화면 전체(956) */
+	}
+}
+
 /* PC(md+)에서는 body 배경을 다르게 — 모바일 뷰가 카드처럼 보이도록 */
 @media (min-width: 768px) {
 	body {

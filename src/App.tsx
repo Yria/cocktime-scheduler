@@ -81,6 +81,8 @@ export default function App() {
 				variant: "success",
 				duration: 6000,
 			});
+			// 알림이 의미하는 일정/참석 변경을 화면에 반영(재쿼리)
+			void scheduleActions.load();
 		});
 		return () => {
 			supabase.removeChannel(ch);

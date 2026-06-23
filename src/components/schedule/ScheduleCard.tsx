@@ -142,10 +142,9 @@ export default function ScheduleCard({
 				{isOpen ? (
 					mine?.status === "confirmed" ? (
 						<div className="flex items-center gap-2">
-							<span
-								style={{ fontSize: 12.5, fontWeight: 700, color: "#30d158" }}
-							>
-								참석 확정
+							<span style={statusBadge("#30d158", "rgba(52,199,89,0.14)")}>
+								<span style={statusDot("#30d158")} />
+								참석 중
 							</span>
 							<button
 								type="button"
@@ -158,9 +157,8 @@ export default function ScheduleCard({
 						</div>
 					) : mine?.status === "waitlisted" ? (
 						<div className="flex items-center gap-2">
-							<span
-								style={{ fontSize: 12.5, fontWeight: 700, color: "#f59e0b" }}
-							>
+							<span style={statusBadge("#f59e0b", "rgba(245,158,11,0.14)")}>
+								<span style={statusDot("#f59e0b")} />
 								대기 {myWaitRank}번째
 							</span>
 							<button
@@ -278,7 +276,7 @@ export default function ScheduleCard({
 						cursor: busy ? "not-allowed" : "pointer",
 					}}
 				>
-					세션 시작 · 보드 열기
+					경기 시작
 				</button>
 			)}
 		</div>
@@ -294,5 +292,31 @@ function chipBtn(color: string, busy: boolean): React.CSSProperties {
 		border: "none",
 		cursor: busy ? "not-allowed" : "pointer",
 		opacity: busy ? 0.5 : 1,
+	};
+}
+
+/** 내 참석 상태 배지 — 색 점 + pill 배경으로 "참석 중 / 대기" 를 한눈에 보이게 한다. */
+function statusBadge(color: string, bg: string): React.CSSProperties {
+	return {
+		display: "inline-flex",
+		alignItems: "center",
+		gap: 5,
+		fontSize: 12.5,
+		fontWeight: 700,
+		color,
+		background: bg,
+		padding: "5px 11px",
+		borderRadius: 999,
+		lineHeight: 1,
+	};
+}
+
+function statusDot(color: string): React.CSSProperties {
+	return {
+		width: 7,
+		height: 7,
+		borderRadius: 999,
+		background: color,
+		flexShrink: 0,
 	};
 }
