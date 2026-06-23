@@ -96,10 +96,10 @@ body {
 }
 @media all and (display-mode: standalone) {
 	.app-shell-h {
-		position: fixed; /* body 이중 스크롤 방지하며 화면 전체 고정 */
-		inset: 0 0 auto 0; /* top·left·right = 0, bottom = auto */
-		height: 100lvh; /* 폴백 */
-		height: var(--app-h, 100lvh); /* iOS26: screen.height 주입값 */
+		/* lvh = 레이아웃 뷰포트(가시 영역, 예 869). 셸은 이 안에 들어가고, 내부 콘텐츠는
+		   env(safe-area-inset-bottom) 패딩으로 홈 인디케이터를 피한다 → 잘림 없음.
+		   (홈 인디케이터 밑 물리 영역은 html 배경이 채운다) */
+		height: 100lvh;
 	}
 }
 
@@ -109,8 +109,7 @@ body {
 }
 @media all and (display-mode: standalone) {
 	.app-shell-minh {
-		min-height: 100lvh; /* 폴백 */
-		min-height: var(--app-h, 100lvh); /* iOS26: screen.height 주입값 */
+		min-height: 100lvh;
 	}
 }
 
@@ -162,7 +161,6 @@ h4,
 @media all and (display-mode: standalone) {
 	.lq-bg {
 		min-height: 100lvh;
-		min-height: var(--app-h, 100lvh);
 	}
 }
 
