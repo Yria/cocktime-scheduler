@@ -12,13 +12,13 @@ interface Props {
 }
 
 /**
- * 앱 스타일 상단 네비 바. AppScreen 의 flex 셸에서 flex-shrink-0 으로 고정되어 스크롤되지 않는다.
+ * 앱 스타일 상단 네비 바. body 자연 스크롤에서 sticky 로 상단에 고정된다(flex 셸에선 flex-shrink-0).
  * safe-area-inset-top 을 흡수해 노치/상태바 영역까지 덮는다.
  */
 export default function AppHeader({ title, onBack, logo, right }: Props) {
 	return (
 		<header
-			className="flex-shrink-0 bg-[#fafbff] dark:bg-[#0f172a] border-b border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
+			className="sticky top-0 z-50 flex-shrink-0 bg-[#fafbff] dark:bg-[#0f172a] border-b border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
 			style={{ paddingTop: "env(safe-area-inset-top)" }}
 		>
 			<div

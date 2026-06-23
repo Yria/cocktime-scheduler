@@ -16,9 +16,9 @@ interface Props {
 }
 
 /**
- * 앱 셸 — 고정 헤더(AppHeader) + 스크롤 영역(main). 헤더는 스크롤되지 않고 main 만 스크롤된다
- * (overscroll-contain 으로 body 바운스 차단 → "아래로 당기면 상단도 내려오는" 문제 해결).
- * main 최상단에서 당기면 pull-to-refresh(usePullToRefresh)로 새로고침한다.
+ * 앱 셸 — sticky 헤더(AppHeader) + body 자연 스크롤. 고정높이/내부 overflow 없이 일반 웹처럼
+ * 문서가 스크롤되므로 iOS safe-area 뷰포트 곡예가 불필요하다(헤더 padding-top·콘텐츠 padding-bottom
+ * 의 env() 로만 안전영역 처리). 최상단에서 당기면 pull-to-refresh(usePullToRefresh)로 새로고침.
  */
 export default function AppScreen({
 	title,
@@ -29,18 +29,17 @@ export default function AppScreen({
 	contentClassName,
 	children,
 }: Props) {
-	const scrollRef = useRef<HTMLElement>(null);
-	const { pull, refreshing } = usePullToRefresh(scrollRef, onRefresh);
+	const rootRef = useRef<HTMLDivElement>(null);
+	const { pull, refreshing } = usePullToRefresh(rootRef, onRefresh);
 
 	return (
-		<div className="app-shell-h flex flex-col bg-[#fafbff] dark:bg-[#0f172a]">
+		<div
+			ref={rootRef}
+			className="min-h-[100dvh] bg-[#fafbff] dark:bg-[#0f172a]"
+		>
 			<AppHeader title={title} onBack={onBack} logo={logo} right={right} />
-			<main
-				ref={scrollRef}
-				className="flex-1 overflow-y-auto overscroll-contain relative"
-				style={{ WebkitOverflowScrolling: "touch" }}
-			>
-				{/* 당김 인디케이터 — 당김 거리만큼 상단에 스피너 노출 */}
+			<div className="relative">
+				{/* 당김 인디케이터 — 당김 거리만큼 헤더 아래에 스피너 노출 */}
 				<div
 					className="absolute left-0 right-0 flex items-end justify-center pointer-events-none z-10"
 					style={{
@@ -72,7 +71,7 @@ export default function AppScreen({
 				>
 					{children}
 				</div>
-			</main>
+			</div>
 		</div>
 	);
 }

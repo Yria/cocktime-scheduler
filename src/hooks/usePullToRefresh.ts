@@ -2,8 +2,9 @@ import { type RefObject, useEffect, useRef, useState } from "react";
 
 /**
  * 당겨서 새로고침(pull-to-refresh) — iOS standalone PWA 처럼 브라우저 새로고침 UI 가 없는 환경용.
- * 스크롤 컨테이너가 최상단(scrollTop<=0)일 때 아래로 당기면 거리를 추적하고, 임계(THRESHOLD)를
- * 넘긴 채 놓으면 onRefresh 를 호출한다. 기본 onRefresh 는 location.reload(앱 코드까지 갱신).
+ * 문서(body)가 최상단(window.scrollY<=0)일 때 아래로 당기면 거리를 추적하고, 임계(THRESHOLD)를
+ * 넘긴 채 놓으면 onRefresh 를 호출한다. scrollRef 는 터치 리스너를 붙일 루트 요소.
+ * 기본 onRefresh 는 location.reload(앱 코드까지 갱신).
  *
  * 반환: pull(현재 당김 거리, 인디케이터용), refreshing(새로고침 트리거됨), ready(임계 도달).
  */
@@ -36,8 +37,8 @@ export function usePullToRefresh(
 		};
 
 		const onTouchStart = (e: TouchEvent) => {
-			// 스크롤 최상단에서 시작한 단일 터치만 당김 제스처 후보
-			if (el.scrollTop <= 0 && e.touches.length === 1) {
+			// 스크롤 최상단(문서 스크롤 기준)에서 시작한 단일 터치만 당김 제스처 후보
+			if (window.scrollY <= 0 && e.touches.length === 1) {
 				startY.current = e.touches[0].clientY;
 				activeRef.current = false;
 			} else {
@@ -56,8 +57,8 @@ export function usePullToRefresh(
 				}
 				return;
 			}
-			// 아래로 당기는 중 + 컨테이너가 여전히 최상단이면 당김 활성화
-			if (el.scrollTop <= 0) {
+			// 아래로 당기는 중 + 문서가 여전히 최상단이면 당김 활성화
+			if (window.scrollY <= 0) {
 				activeRef.current = true;
 				// 고무줄 저항: 당길수록 둔해지게(제곱근 감쇠)
 				const damped = Math.min(MAX_PULL, Math.sqrt(dy) * 7);
