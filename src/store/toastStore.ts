@@ -10,6 +10,7 @@
  *   toast("코트를 선점당했어요", { variant: "error" });
  */
 import { create } from "zustand";
+import { randomId } from "../lib/randomId";
 
 export type ToastVariant = "info" | "error" | "success";
 
@@ -31,10 +32,7 @@ interface ToastState {
 export const useToastStore = create<ToastState>((set) => ({
 	items: [],
 	push: (message, opts = {}) => {
-		const id =
-			typeof crypto !== "undefined" && "randomUUID" in crypto
-				? crypto.randomUUID()
-				: `toast_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+		const id = randomId();
 		const item: ToastItem = {
 			id,
 			message,

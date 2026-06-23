@@ -16,9 +16,6 @@ import type { PairHistory, PlayerSkills, SessionPlayer, SkillLevel } from "../..
 export interface RankContext {
 	/** 같은 4명 그룹으로 함께 뛴 누적 횟수. 직전 1게임이 아니라 전체 누적이므로 자주 뛴 상대일수록 회피된다. */
 	pairHistory: PairHistory;
-	totalMatchCount: number;
-	/** 세션 전체 활성 선수 목록 (deficit 기대 경기수 분모 계산용) */
-	allSessionPlayers: SessionPlayer[];
 }
 
 /** 점수 항목별 기여도(가중치까지 곱한 실제 가산값). 디버그 표시용. 합 = score. */
@@ -27,8 +24,8 @@ export interface ScoreBreakdown {
 	skill: number;
 	/** 동반 누적 횟수 × W_PAIR */
 	pair: number;
-	/** −deficit × W_GAME (참여율) */
-	deficit: number;
+	/** gameCount × W_GAME (적게 뛴 사람 우선 — 절대 판수). 늦참/휴식 복귀자는 합류 시점 평균 판수로 보정됨. */
+	game: number;
 	/** mixedCount × W_MIXED */
 	mixed: number;
 	/** −대기분 × W_WAIT */
@@ -82,31 +79,6 @@ export function skillScore(player: SessionPlayer): number {
 }
 
 // ─────────────────────────────────────────────
-// deficit 계산
-// ─────────────────────────────────────────────
-
-/**
- * 기대 경기수 대비 적자(deficit)를 계산한다.
- * deficit > 0: 기대보다 적게 뜀 (우선 선발 대상)
- * deficit = 0: 적정
- * deficit < 0: 기대보다 많이 뜀 (후순위)
- */
-function computeDeficit(
-	candidate: SessionPlayer,
-	totalMatchCount: number,
-	allPlayers: SessionPlayer[],
-): number {
-	const eligibleRounds = totalMatchCount - candidate.joinedAtMatch;
-	const totalEligible = allPlayers.reduce(
-		(sum, p) => sum + (totalMatchCount - p.joinedAtMatch), 0
-	);
-	if (totalEligible === 0 || totalMatchCount === 0) return 0;
-	const playProbability = (totalMatchCount * 4) / totalEligible;
-	const expectedGames = eligibleRounds * playProbability;
-	return expectedGames - candidate.gameCount;
-}
-
-// ─────────────────────────────────────────────
 // 점수 계산
 // ─────────────────────────────────────────────
 
@@ -116,20 +88,24 @@ function computeScore(
 	context: RankContext,
 	weights: Weights = DEFAULT_WEIGHTS,
 ): { score: number; breakdown: ScoreBreakdown } {
-	// confirmed가 0명이면 deficit + 대기시간만 반영
+	// 적게 뛴 사람 우선 — 절대 판수(gameCount) 기준 비용. 클수록 후순위(양수 가산).
+	// 늦참/휴식 복귀자는 합류(콕확인)·복귀 시점에 그때의 활성 평균 판수로 보정되어(set_cock_checked /
+	// set_player_resting RPC) 0판으로 과대 우선되지 않는다.
+	const gameCost = candidate.gameCount * weights.W_GAME;
+
+	// confirmed가 0명이면 판수 + 대기시간만 반영
 	if (confirmed.length === 0) {
 		const waitMinutes = candidate.waitSince
 			? (Date.now() - new Date(candidate.waitSince).getTime()) / 60000
 			: 0;
-		const deficit = computeDeficit(candidate, context.totalMatchCount, context.allSessionPlayers);
 		const breakdown: ScoreBreakdown = {
 			skill: 0,
 			pair: 0,
-			deficit: -deficit * weights.W_GAME,
+			game: gameCost,
 			mixed: candidate.mixedCount * weights.W_MIXED,
 			wait: -waitMinutes * weights.W_WAIT, // 오래 기다릴수록 점수 낮아져야 하므로 음수
 		};
-		return { score: breakdown.deficit + breakdown.mixed + breakdown.wait, breakdown };
+		return { score: breakdown.game + breakdown.mixed + breakdown.wait, breakdown };
 	}
 
 	// 실력 차이: confirmed 평균 skillScore와의 차이
@@ -148,16 +124,15 @@ function computeScore(
 		? (Date.now() - new Date(candidate.waitSince).getTime()) / 60000
 		: 0;
 
-	const deficit = computeDeficit(candidate, context.totalMatchCount, context.allSessionPlayers);
 	const breakdown: ScoreBreakdown = {
 		skill: skillDiff * weights.W_SKILL,
 		pair: pairOverlap * weights.W_PAIR,
-		deficit: -deficit * weights.W_GAME,
+		game: gameCost,
 		mixed: candidate.mixedCount * weights.W_MIXED,
 		wait: -waitMinutes * weights.W_WAIT,
 	};
 	return {
-		score: breakdown.skill + breakdown.pair + breakdown.deficit + breakdown.mixed + breakdown.wait,
+		score: breakdown.skill + breakdown.pair + breakdown.game + breakdown.mixed + breakdown.wait,
 		breakdown,
 	};
 }

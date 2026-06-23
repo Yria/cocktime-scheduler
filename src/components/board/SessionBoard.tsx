@@ -10,12 +10,14 @@ import { useAppStore } from "../../store/appStore";
 import { useBoardStore } from "../../store/boardStore";
 import { useSessionStore } from "../../store/sessionStore";
 import { playingIdsFromCourts } from "../../lib/board/membership";
+import { restZoneHeight } from "../../lib/board/geometry";
 import {
 	TOOLBAR_H,
 	COURT_BAR_H,
 	BG_BOARD,
 	TEAM_W,
 	TEAM_BOX_ABOVE,
+	REST_FIELD_H,
 } from "../../lib/board/constants";
 import BoardToolbar from "./BoardToolbar";
 import RestBar from "./RestBar";
@@ -23,7 +25,7 @@ import CourtMatchCard from "./CourtMatchCard";
 import PlayerMagnet from "./PlayerMagnet";
 import RestZonePanel from "./RestZonePanel";
 import TeamBackground from "./TeamBackground";
-import DetachZone from "./DetachZone";
+import DetachZoneOverlay from "./DetachZoneOverlay";
 import RestZone from "./RestZone";
 import RecommendTeammateDialog from "./RecommendTeammateDialog";
 import ModalSheet from "../common/ModalSheet";
@@ -197,6 +199,15 @@ export default function SessionBoard() {
 		// deps: membershipSig/courtSig(멤버·매치 변경) + magnetCount(선수 로드) + viewW/viewH(뷰포트·줌) = 안정화 트리거.
 	}, [manualLayout, membershipSig, courtSig, magnetCount, viewW, viewH, rearrangeAll]);
 
+	// ── 불변식 I2 자가 치유(편집자) — 코트 변화 시 경기중이 된 anchor를 예비팀에서 제거 + 영속화 ──
+	// 경기 시작/로스터 편입으로 코트에 올라간 선수가 동시편집 레이스(유실된 dissolve)나 setMatchRoster
+	// 경로(board_drafts 미변경)로 예비팀에 anchor로 남는 "팀에 있는데 게임중" 중복을 코트 변화 시점에 정리한다.
+	// (뷰어는 applyRemoteDrafts→reconcile이 화면을 정제하므로 편집자만 호출 → 영속화로 모두 수렴.)
+	const healPlayingAnchors = useBoardStore((s) => s.healPlayingAnchors);
+	useEffect(() => {
+		if (isEditor) healPlayingAnchors();
+	}, [courtSig, isEditor, healPlayingAnchors]);
+
 	// 휴식 필드(하단 바) — 바 탭으로 패널 열고 닫음. 자석을 끌어 내리면 휴식, 빼면 복귀.
 	const restZoneOpen = useBoardStore((s) => s.restZoneOpen);
 	const restFieldHot = useBoardStore((s) => s.restFieldHot);
@@ -264,9 +275,29 @@ export default function SessionBoard() {
 		[isEditor],
 	);
 
+	// ── 편집→보기 전환 시 진행 중 편집 액션 일괄 취소 ──────────────
+	// 편집 권한을 잃으면(양도/탈취/lease 만료로 isEditor true→false) 띄워둔 편집 모달(추천/경기수정/콕확인)과
+	// 드래그·배정중 부수상태를 모두 닫는다. prevIsEditor ref로 true→false 전이에서만 실행(마운트 false→false 무시).
+	// (접속자 모달·휴식 패널은 뷰어도 쓰는 보기용이라 유지.)
+	const cancelEditActions = useBoardStore((s) => s.cancelEditActions);
+	const prevIsEditor = useRef(isEditor);
+	useEffect(() => {
+		if (prevIsEditor.current && !isEditor) {
+			setRecommendTarget(null);
+			setEditMatchCourtId(null);
+			setCockTarget(null);
+			cancelEditActions();
+		}
+		prevIsEditor.current = isEditor;
+	}, [isEditor, cancelEditActions]);
+
+	// 휴식 필드 높이 — 펼침이면 인원수만큼 여러 줄로 확장(패널과 동일 산식), 접힘이면 캐치존 높이.
+	// 드롭 판정(useBoardDragHandlers)과 패널 렌더(RestZonePanel)가 같은 산식을 써 영역이 정확히 일치한다.
+	const restFieldH = restZoneOpen ? restZoneHeight(restingIds.length, viewW, viewH) : REST_FIELD_H;
+
 	// 드래그/드롭 핸들러(휴식 hot 하이라이트·휴식 처리·자유 배치·예약 드롭)
 	const { onMagnetDragMove, onMagnetDragEnd, onRestingDragEnd, onGhostDragEnd } =
-		useBoardDragHandlers(viewH, restZoneOpen);
+		useBoardDragHandlers(viewH, restFieldH);
 
 	// ── 줌 핸들러(휠/핀치) ───────────────────────────────────
 	// Stage scale로 콘텐츠를 좌상단(0,0) 기준으로 축소(중앙 정렬 안 함 → 좌상단 좌표 고정). 논리 좌표는
@@ -304,6 +335,8 @@ export default function SessionBoard() {
 			style={{ width: "100%", overflow: "hidden", background: BG_BOARD }}
 		>
 			<BoardToolbar />
+			{/* '팀에서 빼기' 드롭존 — 팀 소속 자석 드래그 중 네비 영역 위에 빨간 점선 오버레이로 표시. */}
+			{showDetach && <DetachZoneOverlay />}
 			<div ref={stageContainerRef} style={{ position: "absolute", top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top))`, left: 0, right: 0, bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px))`, touchAction: "none" }}>
 				<Stage
 					width={stageW}
@@ -317,9 +350,8 @@ export default function SessionBoard() {
 					onTouchEnd={onStageTouchEnd}
 				>
 					<Layer>
-						{/* 드롭존 밴드(배경 — 드래그 자석이 항상 위로). 드래그 중에만 노출.
-						    상단 '팀에서 빼기'(팀 소속) / 하단 '휴식하기'(휴식 가능). 좌표는 논리 viewW×viewH 기준. */}
-						{showDetach && <DetachZone stageW={viewW} />}
+						{/* 하단 '휴식하기' 드롭존(휴식 가능 자석 드래그 중). 좌표는 논리 viewW×viewH 기준.
+						    상단 '팀에서 빼기'는 Konva 밴드가 아니라 네비 영역 DOM 오버레이(DetachZoneOverlay)로 표시. */}
 						{showRest && <RestZone viewW={viewW} viewH={viewH} />}
 						{draftIds.map((id) => (
 							<TeamBackground

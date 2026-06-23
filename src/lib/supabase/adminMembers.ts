@@ -34,6 +34,7 @@ export async function fetchMembersForAdmin(): Promise<AdminMemberRow[]> {
 		.select(
 			"id, name, gender, birth_year, residence, skills, auth_user_id, is_active, user_roles(role)",
 		)
+		.eq("is_guest", false) // 게스트(계정 없는 RSVP 게스트)는 회원 명단에서 제외
 		.order("name", { ascending: true });
 	if (error) {
 		console.error("fetchMembersForAdmin:", error);

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { Gender, SessionPlayer } from "../../types";
 import { matchesQuery } from "../../lib/playerSearch";
 import { skillScore } from "../../lib/teamSelection";
+import { useDoubleTap } from "../../hooks/useDoubleTap";
 import FilterChip from "./FilterChip";
 
 const SIZES_MAP = { sm: 68, md: 84 } as const;
@@ -39,6 +40,11 @@ export interface PlayerPickerSortOption {
 interface PlayerPickerListProps {
 	players: PlayerPickerItem[];
 	onSelect: (player: SessionPlayer) => void;
+	/**
+	 * 항목 더블탭 콜백. 지정 시 단일탭(onSelect)은 더블탭 구분을 위해 ~280ms 지연 발동된다.
+	 * 미지정 시 단일탭 즉시 발동(기존 동작 보존).
+	 */
+	onItemDoubleTap?: (player: SessionPlayer) => void;
 
 	// 검색
 	showSearch?: boolean;
@@ -79,6 +85,7 @@ const DIVIDER = (
 export default function PlayerPickerList({
 	players,
 	onSelect,
+	onItemDoubleTap,
 	showSearch = false,
 	searchThreshold = 5,
 	showGenderFilter = true,
@@ -98,6 +105,9 @@ export default function PlayerPickerList({
 	const [sortBy, setSortBy] = useState<string>(sortOptions?.[0]?.value ?? "");
 	// 경과 시간 표시용 — 마운트 시 1회 캡처(렌더 중 Date.now 직접 호출 회피)
 	const [renderNow] = useState(() => Date.now());
+
+	// 더블탭(정보) 핸들러 — onItemDoubleTap이 있을 때만 단일/더블 구분(지연), 없으면 즉시 select.
+	const handleTap = useDoubleTap<SessionPlayer>(onSelect, (p) => onItemDoubleTap?.(p));
 
 	const hasEnoughForFilters = players.length >= searchThreshold;
 	const showSearchBar = showSearch && hasEnoughForFilters;
@@ -294,7 +304,7 @@ export default function PlayerPickerList({
 										size={photoSize}
 										selected={isSelected}
 										disabled={isDisabled?.(player, meta)}
-										onClick={() => onSelect(player)}
+										onClick={onItemDoubleTap ? () => handleTap(player.id, player) : () => onSelect(player)}
 									/>
 									{renderLeading?.(player, meta)}
 									{isPlaying && (

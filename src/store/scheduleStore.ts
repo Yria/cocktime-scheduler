@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import {
+	addGuestAttendance,
 	cancelAttendance,
+	cancelGuestAttendance,
 	deleteSchedule,
 	fetchAttendances,
 	fetchPlaces,
@@ -9,6 +11,7 @@ import {
 	setCarpoolRole,
 	syncOccurrences,
 } from "../lib/supabase/schedule";
+import type { Gender, PlayerSkills } from "../types";
 import type {
 	AttendanceRow,
 	CarpoolRole,
@@ -84,6 +87,21 @@ export const scheduleActions = {
 
 	async setCarpool(sessionId: number, role: CarpoolRole) {
 		const res = await setCarpoolRole(sessionId, role);
+		if (res.ok) await reloadAttendances();
+		return res;
+	},
+
+	async addGuest(
+		sessionId: number,
+		guest: { name: string; gender: Gender; skills: PlayerSkills },
+	) {
+		const res = await addGuestAttendance(sessionId, guest);
+		if (res.ok) await reloadAttendances();
+		return res;
+	},
+
+	async cancelGuest(sessionId: number, guestMemberId: string) {
+		const res = await cancelGuestAttendance(sessionId, guestMemberId);
 		if (res.ok) await reloadAttendances();
 		return res;
 	},

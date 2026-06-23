@@ -38,6 +38,7 @@ import type {
 import type { BoardDraftsPayload } from "../types/board";
 import { useAppStore } from "./appStore";
 import { getClientId, getDeviceName } from "../lib/deviceName";
+import { randomId } from "../lib/randomId";
 import { useAuthStore } from "./authStore";
 
 function getSessionId(): number {
@@ -136,6 +137,18 @@ function claimNow(get: GetFn, set: SetFn) {
 	lockEpoch++; // 권위적 변경 — in-flight heartbeat .then 무효화
 	cachedEditor = { clientId: _clientId, name: _myName ?? "기기", leaseUntilMs: Date.now() + LEASE_SECONDS * 1000 };
 	recomputeLock(get, set);
+}
+
+/**
+ * 혼자(접속자 ≤1) + 자유(아무도 편집 안 함) + 미편집이면 보기 전용 단계 없이 자동 점유.
+ * lockFree 가드가 활성 편집자를 절대 안 뺏고(=남이 편집 중이면 점유 안 함), presenceCount 가드가
+ * "혼자일 때만"을 보장한다. 멱등 — 이미 편집자/비자유면 no-op이라 반복 호출 안전.
+ */
+function maybeClaimIfAlone(get: GetFn, set: SetFn) {
+	const s = get();
+	if (s.presenceCount <= 1 && s.lockFree && !s.isEditor && s._clientId) {
+		claimNow(get, set);
+	}
 }
 
 function setCachedEditorFromRow(row: {
@@ -336,7 +349,7 @@ export interface SessionState {
 	// DB Actions
 	handleAssign: (team: GeneratedTeam, courtId: number) => Promise<void>;
 	handleComplete: (courtId: number) => Promise<void>;
-	/** 휴식 토글. resting=true 휴식 진입 / false 복귀(deficit 보정). player_updated 브로드캐스트. */
+	/** 휴식 토글. resting=true 휴식 진입 / false 복귀(평균 판수 보정). player_updated 브로드캐스트. */
 	setResting: (playerId: string, resting: boolean) => Promise<void>;
 	/** 콕 제출 확인 — cock_checked=true로 매칭 대기 상태로 전환(공유, 편집자만). */
 	confirmCock: (playerId: string) => Promise<void>;
@@ -433,20 +446,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
 	// ── DB Actions ──────────────────────────────────────────
 	handleAssign: async (team: GeneratedTeam, courtId: number) => {
-		const { courts, _channel, isEditor } = get();
+		const { courts, _channel, isEditor, _clientId, _myName } = get();
 		if (!_channel || !isEditor) { return; } // 보기 전용 차단
 
 		const court = courts.find((c) => c.id === courtId);
 		if (!court || court.match) { return; }
 
 		const sessionId = getSessionId();
-		const matchId = crypto.randomUUID();
+		const matchId = randomId();
 
 		const ok = await dbAssignMatch(
 			sessionId,
 			matchId,
 			team,
 			courtId,
+			_clientId,
+			_myName ?? "기기",
 		);
 
 		if (ok) {
@@ -469,19 +484,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			sendBroadcast(_channel, payload);
 		} else {
 			console.error(`[store] assign FAILED court=${courtId}`);
+			// 코트 선점/편집 락 미보유 등 실패 → 서버 권위로 수렴(코트·lease 재동기화, 낙관적 편집자는 보기 전용으로).
+			void get().resyncFromServer();
 		}
 	},
 
 	handleComplete: async (courtId: number) => {
-		const { courts, _channel, isEditor } = get();
+		const { courts, _channel, isEditor, _clientId, _myName } = get();
 		const court = courts.find((c) => c.id === courtId);
 		if (!court?.match || !_channel || !isEditor) return; // 보기 전용 차단
 
 		const sessionId = getSessionId();
 		const match = court.match;
 
-		const result = await dbCompleteMatch(sessionId, match);
-		if (!result) { console.error(`[store] handleComplete dbCompleteMatch FAILED court=${courtId}`); return; }
+		const result = await dbCompleteMatch(sessionId, match, _clientId, _myName ?? "기기");
+		if (!result) {
+			console.error(`[store] handleComplete dbCompleteMatch FAILED court=${courtId}`);
+			void get().resyncFromServer(); // 편집 락 미보유/이미 완료 등 → 서버 권위로 수렴
+			return;
+		}
 
 		// 브로드캐스트 페이로드에는 기존 형식(SessionPlayer 객체) 유지
 		const { sessionPlayers } = get();
@@ -540,7 +561,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 
 	handleSetMatchRoster: async (courtId, teamA, teamB) => {
-		const { courts, isEditor, _channel } = get();
+		const { courts, isEditor, _channel, _clientId, _myName } = get();
 		if (!isEditor) return; // 보기 전용 차단
 		const court = courts.find((c) => c.id === courtId);
 		if (!court?.match) return;
@@ -551,10 +572,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		if (removed.length === 0) return; // 변경 없음
 
 		const sessionId = getSessionId();
-		// set_match_roster RPC: 로스터 교체 + 선수 상태 + match_state_version++ 를 단일 트랜잭션 원자 처리.
-		const updatedPlayers = await dbSetMatchRoster(sessionId, court.match.id, teamA, teamB, removed, added);
+		// set_match_roster RPC: (편집 락 가드 +) 로스터 교체 + 선수 상태 + match_state_version++ 를 단일 트랜잭션 원자 처리.
+		const updatedPlayers = await dbSetMatchRoster(sessionId, court.match.id, teamA, teamB, removed, added, _clientId, _myName ?? "기기");
 		if (!updatedPlayers) {
 			console.error(`[store] handleSetMatchRoster FAILED court=${courtId}`);
+			void get().resyncFromServer(); // 편집 락 미보유 등 → 서버 권위로 수렴
 			return;
 		}
 		// 즉시성 broadcast(match_roster_updated) — 다른 기기는 이걸로 즉시 반영하고, 놓쳐도 sessions
@@ -571,6 +593,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		if (!get().isEditor) return; // 보기 전용 차단
 		const sessionId = getSessionId();
 		if (!sessionId) return;
+		// 진행 중인 경기는 먼저 자동 완료 처리 — complete_match RPC로 game_count/혼복/pair_history를 정상 집계하고
+		// 다른 클라이언트엔 match_completed 브로드캐스트로 코트를 비운다. (현재 코트 스냅샷으로 순회; handleComplete가
+		// 코트를 id로 재조회 + court.match 가드라 이미 비워진 코트는 안전하게 no-op.)
+		const activeCourtIds = get().courts.filter((c) => c.match).map((c) => c.id);
+		for (const courtId of activeCourtIds) {
+			await get().handleComplete(courtId);
+		}
 		// sessions.is_active=false → 다른 클라이언트는 meta 채널(postgres watch)로 종료 감지.
 		// 종료를 실행한 클라이언트는 onEnd로 즉시 이탈.
 		await dbEndSession(sessionId);
@@ -695,7 +724,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			{
 				onBroadcast: (payload) => get().applyBroadcast(payload),
 				// presence는 접속자 목록 표시 전용(편집권 election 아님 — 편집권은 서버 권위 락).
-				onPresenceSync: (state) => set(computePresenceList(state)),
+				// 단, 혼자뿐이면 보기 전용 단계 없이 자동 점유(아래 maybeClaimIfAlone, lockFree 가드로 안전).
+				onPresenceSync: (state) => {
+					set(computePresenceList(state));
+					maybeClaimIfAlone(get, set);
+				},
 				onEnd,
 				// sessions row UPDATE → match_assign_count + board_drafts/version catch-up(원인1) + 편집 락(원인2).
 				onSessionRowUpdate: (row) => {
@@ -717,8 +750,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					recomputeLock(get, set);
 				},
 				// 재구독(재연결) 직후 1회 재조회 — SUBSCRIBED~첫 UPDATE 공백 보정(drafts+버전+락 모두).
+				// 서버 권위 락이 확정된 뒤 혼자뿐이면 자동 점유(보기 전용 단계 생략).
 				onResync: () => {
-					void get().resyncFromServer();
+					void get().resyncFromServer().then(() => maybeClaimIfAlone(get, set));
 				},
 				// session_players row 변경(추가/삭제/상태)을 즉시 반영 — broadcast 누락/지연과 무관하게
 				// 모든 기기의 sessionPlayers가 DB와 수렴(중복·미동기화·다중상태 방지). 보드는 sessionPlayers
@@ -762,8 +796,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		recomputeLock(get, set); // 초기 lockFree; SUBSCRIBED 후 onResync가 서버 권위로 채움
 		if (reevalTimer) clearInterval(reevalTimer);
 		// lease 만료(보유자 crash, row update 없음)를 로컬 시계로 감지해 lockFree로 떨군다.
-		reevalTimer = setInterval(() => recomputeLock(get, set), REEVAL_MS);
-		// 백그라운드: heartbeat 멈춤(불필요 RPC 방지), 복귀 시 편집자였으면 재점유 시도.
+		// 떨군 직후 혼자뿐이면 자동 점유까지(직전 보유자가 나갔고 나 혼자 남은 경우 보기 전용 고착 방지).
+		reevalTimer = setInterval(() => {
+			recomputeLock(get, set);
+			maybeClaimIfAlone(get, set);
+		}, REEVAL_MS);
+		// 백그라운드: heartbeat 멈춤(불필요 RPC 방지). 복귀 시에는 "낙관 선점" 대신 서버 권위로 먼저
+		// 재동기화한다 — 백그라운드 동안 lease가 만료돼 다른 기기가 점유했을 수 있으므로, 무조건 claimNow하면
+		// "두 명이 편집자"인 윈도우가 생긴다(직전 버그). resync 후 내가 여전히 보유자면 isEditor 유지(heartbeat
+		// 재가동), 남이 점유했으면 보기 전용으로 정확히 떨어진다.
 		// wasEditor는 이 subscribe 클로저 지역 변수 — 세션 전환 시 새 핸들러로 리셋되어 크로스세션 오염 없음.
 		let wasEditorBeforeHidden = false;
 		if (visibilityHandler) document.removeEventListener("visibilitychange", visibilityHandler);
@@ -771,10 +812,18 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			if (document.hidden) {
 				wasEditorBeforeHidden = get().isEditor;
 				stopHeartbeat();
-			} else if (wasEditorBeforeHidden) {
-				wasEditorBeforeHidden = false;
-				claimNow(get, set);
+				return;
 			}
+			// 복귀: 항상 서버 권위로 재동기 우선.
+			const wasEditor = wasEditorBeforeHidden;
+			wasEditorBeforeHidden = false;
+			void get().resyncFromServer().then(() => {
+				const s = get();
+				// 직전에 내가 편집자였고 그 사이 아무도 안 가져가 자유면 끊김 없이 재점유.
+				if (wasEditor && s.lockFree && !s.isEditor && s._clientId) claimNow(get, set);
+				// 그 외(혼자뿐인 경우 포함)는 혼자-자동점유 규칙으로 일원화.
+				else maybeClaimIfAlone(get, set);
+			});
 		};
 		document.addEventListener("visibilitychange", visibilityHandler);
 		// 정상 이탈(탭 닫기/이동): 편집 락 즉시 해제 + heartbeat 정지(best-effort). crash/강제종료는 lease 만료가 백업.

@@ -62,16 +62,16 @@ skillScore(player) = Σ(7개 스킬 점수) / 7   → 범위 1.0 ~ 3.0
 
 ### 점수 공식 — computeScore
 
-**confirmed가 0명일 때** (첫 멤버 선발 기준): deficit + 혼복수 + 대기시간만 반영.
+**confirmed가 0명일 때** (첫 멤버 선발 기준): 판수 + 혼복수 + 대기시간만 반영.
 ```
-score = -deficit · W_GAME + mixedCount · W_MIXED - waitMinutes · W_WAIT
+score = gameCount · W_GAME + mixedCount · W_MIXED - waitMinutes · W_WAIT
 ```
 
 **confirmed가 1명 이상일 때**:
 ```
 score = skillDiff · W_SKILL
       + pairOverlap · W_PAIR
-      - deficit · W_GAME
+      + gameCount · W_GAME
       + mixedCount · W_MIXED
       - waitMinutes · W_WAIT
 ```
@@ -80,32 +80,34 @@ score = skillDiff · W_SKILL
 |----|------|------|
 | `skillDiff` | `\|skillScore(후보) − confirmed 평균 skillScore\|` | 작을수록 ↓ (실력 유사) |
 | `pairOverlap` | confirmed 각각과 함께 뛴 누적 동반 횟수(`pairHistory`) 합산 | 적을수록 ↓ (안 뛴 상대 우선) |
-| `deficit` | 기대 경기수 대비 적자 (아래 3절) | 클수록 ↓ (음수 반영, 우선 선발) |
+| `gameCount` | 절대 출전 판수 (`session_players.game_count`) (아래 3절) | 적을수록 ↓ (적게 뛴 사람 우선) |
 | `mixedCount` | 누적 혼복 출전 횟수 | 적을수록 ↓ |
 | `waitMinutes` | 대기 경과 분 = `(now − waitSince)/60000`, waitSince 없으면 0 | 클수록 ↓ (음수 반영) |
 
-> deficit·waitMinutes 는 클수록 우선 선발되어야 하므로 **음수 부호**로 점수를 낮춘다.
+> `gameCount` 는 클수록 후순위라 **양수 가산**, `waitMinutes` 는 클수록 우선이라 **음수 부호**로 점수를 낮춘다.
 
 ---
 
-## 3. 참여율(deficit) — computeDeficit
+## 3. 참여 판수 — gameCount + 합류 시점 평균 보정
 
-절대 경기수(gameCount) 대신 **기대 경기수 대비 적자(deficit)** 로 우선순위를 매긴다.
+**절대 경기수(`gameCount`)** 로 참여 균등 우선순위를 매긴다. 적게 뛴 선수일수록 점수가 낮아(우선 선발) `gameCount · W_GAME` 만큼 가산된다.
+
+> **deficit(기대 경기수 비례) 모델은 제거됨.** 이전에는 `joinedAtMatch`/`totalMatchCount` 기반 `eligibleRounds × playProbability − gameCount` 로 적자를 계산했으나, 합류 시점 평균 보정(아래)으로 단순화하면서 폐기했다. `joined_at_match` 컬럼·`totalMatchCount`/`allSessionPlayers` 컨텍스트는 더 이상 점수 계산에 쓰이지 않는다.
+
+### 늦참자 · 휴식 복귀자 보정 — 합류 시점 평균 판수
+
+절대 판수만 쓰면 늦게 합류했거나(0판) 휴식 후 복귀한(판수 정체) 선수가 무조건 추천 1순위로 튀어 불공정하다. 그래서 **합류 시점**에 `game_count` 를 그때의 활성 평균으로 보정한다(= 빠진 시간만큼 평균적으로 뛴 것으로 가정).
 
 ```
-eligibleRounds  = totalMatchCount − joinedAtMatch
-totalEligible   = Σ(모든 활성 선수의 eligibleRounds)
-playProbability = (totalMatchCount × 4) / totalEligible
-expectedGames   = eligibleRounds × playProbability
-deficit         = expectedGames − gameCount
+보정값 = GREATEST(game_count, 활성 평균 판수)
+활성 평균 판수 = AVG(game_count)  -- 같은 세션, status ≠ 'resting', 본인 제외. 없으면 0.
 ```
 
-- `totalEligible == 0` 또는 `totalMatchCount == 0` → `deficit = 0`
-- `deficit > 0`: 기대보다 적게 뜀(우선 선발 대상), `< 0`: 많이 뜀(후순위)
-- **늦참자 처리**: 늦게 합류하면 `joinedAtMatch`가 높아 `eligibleRounds`·`expectedGames`가 작아진다. gameCount=0이라도 적자가 과대평가되지 않아 기존 선수와 공정하게 경쟁한다.
-- **활성 선수 분모(`allSessionPlayers`)**: 휴식 등 비활성 선수를 분모에서 제외해 deficit 왜곡을 막는다.
+- **합류 기준 = 콕확인**: `set_cock_checked` RPC가 **최초** `cock_checked=false → true` 전환 시 1회 보정한다(멱등 — 이미 확인된 선수는 변경 없음). 콕체크 비활성 세션은 콕확인 이벤트가 없어 보정도 없다.
+- **휴식 복귀**: `set_player_resting(p_resting=false)` RPC가 복귀 시 동일하게 보정한다.
+- `GREATEST` 를 쓰므로 이미 평균보다 많이 뛴 선수의 판수는 **깎이지 않고**(올림만) 보정된다.
 
-> `totalMatchCount` 는 `sessions.match_assign_count`, `joinedAtMatch` 는 `session_players.joined_at_match` 에 대응한다.
+> `game_count` 는 `session_players.game_count` 에 대응하며, 매치 완료(`complete_match` 계열 RPC) 시 +1 증가한다.
 
 ---
 
@@ -173,7 +175,7 @@ score = intraDiff × 0.5 + interDiff × 1.5
 - `pool` = 세션 전체 − 확정 멤버 − 휴식(`resting`) − **자석 없는 선수** − 다른 보드 팀 anchor
   - `excludePlaying:true`(자동편성 전용)면 경기중 선수도 풀에서 제외
   - 자석(`MagnetPosition`) 없는 선수는 제외 — 멤버십 commit(`attachAnchor`)이 자석을 전제로 하기 때문
-- `ctx` = `pairHistory` / `totalMatchCount`(=`matchAssignCount`) / `allSessionPlayers` / `lastGameType` / `playingIds`(코트 기반)
+- `ctx` = `pairHistory` / `lastGameType` / `playingIds`(코트 기반)
 
 ### 추천 가중치 (RECOMMEND_WEIGHTS)
 
@@ -183,9 +185,9 @@ score = intraDiff × 0.5 + interDiff × 1.5
 |------|---:|------|
 | `W_SKILL` | 20.0 | 실력 유사 최우선 |
 | `W_PAIR` | 8.0 | 동반 회피(직전+과거 통합 누적) |
-| `W_GAME` | 1.0 | 참여수 균등(보조) |
+| `W_GAME` | 1.0 | 적게 뛴 사람 우선(절대 판수 `gameCount`, 보조) |
 | `W_MIXED` | 0 | 누적 혼복수는 로테이션(W_ROTATE)으로 대체 |
-| `W_WAIT` | 0 | 대기시간 미반영 — 참여율(`deficit`, `W_GAME`)과 상관이 높아 추천에선 deficit로 일원화(제외) |
+| `W_WAIT` | 0 | 대기시간 미반영 — 판수(`gameCount`, `W_GAME`)와 상관이 높아 추천에선 판수로 일원화(제외) |
 | `W_ROTATE` | 6.0 | 로테이션 보너스(직전과 **다른** 타입으로 전환하는 후보) |
 | `W_ROTATE_REPEAT` | 2.0 | 반복 페널티(직전과 **같은** 타입 반복) — 보너스보다 작게 |
 | `W_GENDER` | 50.0 | 혼복(2남2녀) 목표에서 성별 초과(3명+) 후보 페널티 |
@@ -209,11 +211,11 @@ score = intraDiff × 0.5 + interDiff × 1.5
 
 - `lastGameType: Record<string, GameType>` — `session_player.id` → 직전(또는 진행중) 게임 타입
 - `playingIds: ReadonlySet<string>` — 현재 코트에서 경기중인 `session_player.id`
-- (그 외 `pairHistory`, `totalMatchCount`, `allSessionPlayers` 는 `RankContext` 와 공유)
+- (그 외 `pairHistory` 는 `RankContext` 와 공유)
 
 ### 점수 분해 디버그 (ScoreBreakdown)
 
-- `RankedCandidate.breakdown`(`ScoreBreakdown`)에 항목별 기여도(가중치 적용 후 값)를 담는다: `skill`/`pair`/`deficit`/`mixed`/`wait`(base) + `rotate`/`gender`/`playing`(보드 특화). **합 = `score`**.
+- `RankedCandidate.breakdown`(`ScoreBreakdown`)에 항목별 기여도(가중치 적용 후 값)를 담는다: `skill`/`pair`/`game`/`mixed`/`wait`(base) + `rotate`/`gender`/`playing`(보드 특화). **합 = `score`**.
 - 추천 다이얼로그(`RecommendTeammateDialog`) 헤더의 🐛 토글로 후보별 점수 분해 테이블(각 항목 + 합계 + %)을 표시한다. "왜 이 후보가 N%인가"를 추측 없이 바로 확인하는 용도.
 
 ---
@@ -253,6 +255,16 @@ autoFillTeammates(confirmed, pool, ctx, count):
 - 페어 편성에서 `pairingScore` 가 완전히 동일한 최적 조합이 여러 개면 그중 **무작위**로 선택한다(`bestPairing`/`bestMixedPairing`).
 - 매칭 결과 고착화를 막고, 세션이 진행될수록 더 다양한 조합이 만들어지도록 보장한다.
 - `rankCandidates` 자체는 순수 함수(랜덤 없음)이며, 정렬은 안정 정렬로 동점 시 입력 순서를 유지한다.
+
+### 보드 멤버십 불변식 (reconcile — `remoteDrafts.ts` / `boardStore.ts`)
+팀 편성(`board_drafts`)과 코트 배정(`matches`)은 별도 권위로 비원자적으로 동기화되므로, 동시편집 레이스(유실된 dissolve, 핸드오프/탈취, 로스터 편입)로 멤버십이 어긋날 수 있다. 두 선행조건으로 막는다.
+
+**(가) 편집은 반드시 한 명만** — `board_save_drafts`뿐 아니라 경기 RPC(`assign_match`/`complete_match`/`set_match_roster`)도 `board_assert_editor`(editor lease self-claim CAS)로 서버에서 게이팅한다(마이그레이션 `20260624020000`). 유효 lease를 보유하지 않은 낙관적 편집자/stale 기기의 코트 변경을 'not editor'로 거부하고, 거부된 기기는 `resyncFromServer`로 보기 전용으로 수렴한다.
+
+**(나) 사람 유니크성** — 아래 불변식을 **파생 단계에서 항상 강제**해 "팀에 있는데 게임중"·"A팀·B팀 동시 소속" 중복 표시를 막는다.
+- **I1 — 단일 anchor**: 한 선수는 최대 한 예비팀의 anchor. `reconcileMembership`이 payload 팀을 `(createdMs↑, id↑)` 결정적 순서로 처리해 같은 선수가 둘 이상 팀에 있으면 **먼저 만들어진 팀**만 유지(모든 클라가 동일 결과로 수렴).
+- **I2 — 경기중은 anchor 아님**: `playingIds`(코트 기반)에 든 선수는 어느 예비팀의 anchor도 아니다. reconcile이 항상 제거하고, 편집자는 `healPlayingAnchors`(코트 변화 시) + reconcile 정제분을 `board_drafts`로 영속화해 서버까지 수렴(새로고침 시 "유령 팀" 부활 방지).
+- **ghost(예약)는 예외**: 경기중 선수를 예비팀에 `Reservation`(ghost)으로 빌려두는 것은 의도된 기능(§7 `handlePlayingMagnetDrop`)이라 I2가 건드리지 않는다. I2는 `anchorMemberIds`에만 적용.
 
 ---
 

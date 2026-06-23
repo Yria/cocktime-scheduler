@@ -14,7 +14,7 @@ import { useSessionStore } from "../store/sessionStore";
  * - ghost: 드롭존 → 예약 취소, 그 외 → handleGhostDrop.
  * 좌표(cx,cy)는 PlayerMagnet에서 줌/팬 보정된 논리 좌표. viewH = 보이는 논리 영역 높이(stageH/scale).
  */
-export function useBoardDragHandlers(viewH: number, restZoneOpen: boolean) {
+export function useBoardDragHandlers(viewH: number, restFieldH: number) {
 	const setRestFieldHot = useBoardStore((s) => s.setRestFieldHot);
 	const restPlayer = useBoardStore((s) => s.restPlayer);
 	const unrestPlayer = useBoardStore((s) => s.unrestPlayer);
@@ -32,10 +32,18 @@ export function useBoardDragHandlers(viewH: number, restZoneOpen: boolean) {
 			const store = useBoardStore.getState();
 
 			// 휴식 필드 hot
-			const restHot = isInRestField(point, viewH, restZoneOpen);
+			const restHot = isInRestField(point, viewH, restFieldH);
 			if (restHot !== hotRef.current) {
 				hotRef.current = restHot;
 				setRestFieldHot(restHot);
+			}
+
+			// 휴식 필드 위에선 드롭이 항상 휴식 우선(onMagnetDragEnd)이라 빼기/겹침 해석 결과가 버려진다.
+			// 매 프레임 resolveDropTarget(O(자석수))·cockPendingIds(O(선수수))를 도는 낭비를 생략 → 휴식존 프레임드랍 해소.
+			if (restHot) {
+				store.setDetachHot(false);
+				store.setHoverTarget(null); // 동일값(null)이면 store 가드로 리렌더 없음
+				return;
 			}
 
 			// '팀에서 빼기' 드롭존 hot — 팀 소속(anchor/ghost) 자석을 끌 때만 활성
@@ -62,7 +70,7 @@ export function useBoardDragHandlers(viewH: number, restZoneOpen: boolean) {
 							: null;
 			store.setHoverTarget(hover);
 		},
-		[viewH, restZoneOpen, setRestFieldHot],
+		[viewH, restFieldH, setRestFieldHot],
 	);
 
 	const clearHot = useCallback(() => {
@@ -89,29 +97,30 @@ export function useBoardDragHandlers(viewH: number, restZoneOpen: boolean) {
 			// 멤버가 결국 빠져버린다. return하면 PlayerMagnet이 앵커=슬롯·자유=원위치로 스냅백한다.
 			const origin = store.dragInfo?.from ?? null;
 			const startedInDetach = origin != null && isInDetachZone(origin);
-			const startedInRest = origin != null && isInRestField(origin, viewH, restZoneOpen);
+			const startedInRest = origin != null && isInRestField(origin, viewH, restFieldH);
 
 			const mag = store.magnets.get(playerId);
 			if (mag && mag.teamId !== null && isInDetachZone(point)) {
 				if (!startedInDetach) store.detachMember(playerId, point); // 시작이 빼기존이면 무효(스냅백)
 				return;
 			}
-			if (isInRestField(point, viewH, restZoneOpen)) {
+			if (isInRestField(point, viewH, restFieldH)) {
 				if (!startedInRest) restPlayer(playerId); // 시작이 휴식존이면 무효(스냅백)
 				return;
 			}
 			handleDrop(playerId, point);
 		},
-		[handleDrop, restZoneOpen, viewH, restPlayer, clearHot],
+		[handleDrop, restFieldH, viewH, restPlayer, clearHot],
 	);
 
 	// 휴식 자석 드래그-엔드: 패널 밖(위)으로 빼면 복귀, 패널 안이면 슬롯으로 스냅백(PlayerMagnet 처리).
 	const onRestingDragEnd = useCallback(
 		(playerId: string, cx: number, cy: number) => {
 			clearHot();
-			if (!isInRestField({ x: cx, y: cy }, viewH, true)) unrestPlayer(playerId, { x: cx, y: cy });
+			// 패널 열림 상태에서만 호출되므로 restFieldH = 펼침 패널 높이. 패널 밖(위)으로 빼면 복귀.
+			if (!isInRestField({ x: cx, y: cy }, viewH, restFieldH)) unrestPlayer(playerId, { x: cx, y: cy });
 		},
-		[viewH, unrestPlayer, clearHot],
+		[viewH, restFieldH, unrestPlayer, clearHot],
 	);
 
 	// ghost 드래그-엔드: 빼기존 → 예약 취소, 그 외 → handleGhostDrop.

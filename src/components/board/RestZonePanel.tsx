@@ -1,9 +1,8 @@
 import { memo } from "react";
 import { Path, Rect, Text } from "react-konva";
-import { restSlotOffset } from "../../lib/board/geometry";
+import { restSlotOffset, restZoneHeight } from "../../lib/board/geometry";
 import {
 	REST_ZONE_BG,
-	REST_ZONE_H,
 	REST_ZONE_HOT_BG,
 	REST_ZONE_HOT_LABEL,
 	REST_ZONE_HOT_STROKE,
@@ -33,7 +32,8 @@ const RestZonePanel = memo(function RestZonePanel({
 	onRestingDragEnd,
 	onMagnetDragMove,
 }: RestZonePanelProps) {
-	const fieldH = REST_ZONE_H;
+	// 휴식 인원수에 따라 여러 줄로 확장(자동 재패킹). 0~1줄이면 기존 높이와 동일.
+	const fieldH = restZoneHeight(restingIds.length, stageW, stageH);
 	const fieldTop = stageH - fieldH;
 	const midY = fieldTop + fieldH / 2;
 	const empty = restingIds.length === 0;
@@ -121,7 +121,7 @@ const RestZonePanel = memo(function RestZonePanel({
 				/>
 			)}
 			{restingIds.map((id, i) => {
-				const off = restSlotOffset(i, stageW, stageH);
+				const off = restSlotOffset(i, restingIds.length, stageW, stageH);
 				return (
 					<PlayerMagnet
 						key={`rest-${id}`}

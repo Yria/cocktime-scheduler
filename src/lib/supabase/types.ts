@@ -93,6 +93,10 @@ export interface AttendanceRow {
 	confirmed_at: string | null;
 	cancelled_at: string | null;
 	updated_at: string;
+	/** 게스트를 데려온 회원 id. 본인 참석은 null, null 아니면 그 회원이 신청한 게스트 행. */
+	invited_by: string | null;
+	/** fetchAttendances의 members 임베드(이름/게스트 여부 표시용). */
+	member?: { name: string; is_guest: boolean } | null;
 }
 
 export interface NotificationRow {

@@ -6,8 +6,6 @@ import {
 	TEAM_W,
 	TEAM_BOX_ABOVE,
 	TEAM_BOX_BELOW,
-	REST_ZONE_H,
-	REST_FIELD_H,
 	MAGNET_SIZE,
 	MAGNET_R,
 	TOOLBAR_H,
@@ -129,12 +127,11 @@ export function isInsideTeamBounds(
 }
 
 /**
- * 휴식 필드(하단) 안에 점이 있는지. stageH = 보드 캔버스 높이.
- * expanded=true(펼침)면 패널 높이, false(접힘)면 푸터 위 얇은 캐치존 기준.
+ * 휴식 필드(하단) 안에 점이 있는지. stageH = 보드 캔버스 높이, fieldH = 필드(드롭/패널) 높이.
+ * 접힘이면 REST_FIELD_H, 펼침이면 restZoneHeight(휴식 인원수에 따라 여러 줄로 확장)를 호출자가 넘긴다.
  */
-export function isInRestField(point: StagePoint, stageH: number, expanded: boolean): boolean {
-	const h = expanded ? REST_ZONE_H : REST_FIELD_H;
-	return point.y >= stageH - h;
+export function isInRestField(point: StagePoint, stageH: number, fieldH: number): boolean {
+	return point.y >= stageH - fieldH;
 }
 
 /** '팀에서 빼기' 드롭존(상단 밴드) 안에 점이 있는지 — 논리 좌표 기준. */
@@ -142,14 +139,40 @@ export function isInDetachZone(point: StagePoint): boolean {
 	return point.y <= DETACH_ZONE_H;
 }
 
-/** 휴식존 내부 자석 슬롯 좌표(절대, stage 기준). index 순서로 한 줄 배치(넘치면 줄바꿈). */
-export function restSlotOffset(index: number, stageW: number, stageH: number): StagePoint {
-	const step = MAGNET_SIZE + 10;
-	const perRow = Math.max(1, Math.floor((stageW - 16) / step));
+// 휴식존 펼침 패널 레이아웃 — 인원수에 따라 여러 줄로 확장(최소 1줄=기존 높이 108과 동일).
+const REST_STEP_X = MAGNET_SIZE + 10; // 자석 가로 간격(=74)
+const REST_ROW_H = MAGNET_SIZE + 6; // 줄 높이(=70)
+const REST_HEAD_H = 24; // 상단 라벨 영역
+const REST_PANEL_PAD = 14; // 하단 여백
+
+/** 한 줄에 들어가는 휴식 자석 수(stageW 기준). */
+export function restPerRow(stageW: number): number {
+	return Math.max(1, Math.floor((stageW - 16) / REST_STEP_X));
+}
+
+/**
+ * 휴식 펼침 패널 높이 — 인원수에 따라 줄 수만큼 확장. 0~1줄이면 기존 높이(108)와 동일.
+ * stageH - DETACH_ZONE_H 로 상한 클램프 — 극단 인원에서도 isInRestField 임계값(stageH - h)이 음수가 되어
+ * '보드 전체가 휴식 드롭존'이 되는 것을 막는다(상단 detach strip은 항상 비-휴식으로 보존).
+ * 감지(isInRestField)와 렌더(RestZonePanel)가 같은 값을 써야 영역이 일치하므로 양쪽 모두 이 함수를 호출한다.
+ */
+export function restZoneHeight(count: number, stageW: number, stageH: number): number {
+	const rows = Math.max(1, Math.ceil(count / restPerRow(stageW)));
+	const h = REST_HEAD_H + rows * REST_ROW_H + REST_PANEL_PAD;
+	return Math.min(h, Math.max(REST_HEAD_H + REST_ROW_H, stageH - DETACH_ZONE_H));
+}
+
+/**
+ * 휴식존 내부 자석 슬롯 좌표(절대, stage 기준). index 순서로 앞에서부터 빈칸 없이 채우고(자동 재패킹),
+ * 한 줄을 넘치면 다음 줄로. 패널은 인원수(count)에 따라 위로 확장되므로 panelTop을 count로 산정한다.
+ */
+export function restSlotOffset(index: number, count: number, stageW: number, stageH: number): StagePoint {
+	const perRow = restPerRow(stageW);
 	const col = index % perRow;
 	const row = Math.floor(index / perRow);
+	const panelTop = stageH - restZoneHeight(count, stageW, stageH);
 	return {
-		x: MAGNET_R + 12 + col * step,
-		y: stageH - REST_ZONE_H + MAGNET_R + 20 + row * (MAGNET_SIZE + 6),
+		x: MAGNET_R + 12 + col * REST_STEP_X,
+		y: panelTop + REST_HEAD_H + MAGNET_R + row * REST_ROW_H,
 	};
 }

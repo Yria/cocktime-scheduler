@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { SessionPlayer } from "../../types";
 import { useSessionStore } from "../../store/sessionStore";
 import { useBoardStore } from "../../store/boardStore";
+import { useDebugStore } from "../../store/debugStore";
 import { useTeammateRecommendations, type RecommendTarget } from "../../hooks/useTeammateRecommendations";
 import { skillScore } from "../../lib/teamSelection";
 import ModalSheet from "../common/ModalSheet";
@@ -152,6 +153,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 				<PlayerPickerList
 					players={pickerPlayers}
 					onSelect={(p) => toggle(p.id)}
+					onItemDoubleTap={(p) => useDebugStore.getState().openDebug(p.id)}
 					isDisabled={() => !canAddMore}
 					showSearch
 					searchThreshold={0}
@@ -195,7 +197,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 										<td className="text-right px-1">{fmtScore(b?.rotate)}</td>
 										<td className="text-right px-1">{fmtScore(b?.gender)}</td>
 										<td className="text-right px-1">{fmtScore(b?.playing)}</td>
-										<td className="text-right px-1">{fmtScore(b?.deficit)}</td>
+										<td className="text-right px-1">{fmtScore(b?.game)}</td>
 										<td className="text-right px-1 font-bold">{r.score.toFixed(1)}</td>
 										<td className="text-right pl-1 font-bold">{pct}%</td>
 									</tr>

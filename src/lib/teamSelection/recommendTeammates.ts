@@ -42,9 +42,9 @@ export interface RecommendWeights extends Weights {
 export const RECOMMEND_WEIGHTS: RecommendWeights = {
 	W_SKILL: 20.0, // 실력 유사 최우선
 	W_PAIR: 8.0, // 동반 회피 — 함께 뛴 누적 횟수(직전+과거 통합). 같이 안 뛴 사람 우선
-	W_GAME: 1.0, // 참여수 균등(보조)
+	W_GAME: 1.0, // 적게 뛴 사람 우선(절대 판수 gameCount, 보조)
 	W_MIXED: 0, // 누적 혼복수는 로테이션(W_ROTATE)으로 대체
-	W_WAIT: 0, // 대기시간 미반영 — 참여율(deficit, W_GAME)과 상관이 높아 추천에선 deficit로 일원화
+	W_WAIT: 0, // 대기시간 미반영 — 판수(gameCount, W_GAME)와 상관이 높아 추천에선 판수로 일원화
 	W_ROTATE: 6.0, // 로테이션 보너스(직전과 다른 타입으로 전환)
 	W_ROTATE_REPEAT: 2.0, // 반복 페널티(직전과 같은 타입 반복) — 보너스보다 작게 해 동성 시드의 동성 후보가 과하게 밀리지 않게
 	W_GENDER: 50.0, // 혼복 성별 초과 = 하위

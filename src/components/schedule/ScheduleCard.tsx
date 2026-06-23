@@ -1,8 +1,10 @@
+import type { Gender, PlayerSkills } from "../../types";
 import type {
 	AttendanceRow,
 	CarpoolRole,
 	SessionRow,
 } from "../../lib/supabase/types";
+import GuestSection from "./GuestSection";
 
 const dtFmt = new Intl.DateTimeFormat("ko-KR", {
 	timeZone: "Asia/Seoul",
@@ -44,6 +46,10 @@ interface Props {
 	onCancel: () => void;
 	onStartSession: () => void;
 	onSetCarpool: (role: CarpoolRole) => void;
+	/** 게스트 신청(성공/실패 반환). */
+	onAddGuest: (guest: { name: string; gender: Gender; skills: PlayerSkills }) => Promise<{ ok: boolean; error?: string }>;
+	/** 게스트 취소(초대 회원 본인). */
+	onCancelGuest: (guestMemberId: string) => void;
 }
 
 export default function ScheduleCard({
@@ -58,6 +64,8 @@ export default function ScheduleCard({
 	onCancel,
 	onStartSession,
 	onSetCarpool,
+	onAddGuest,
+	onCancelGuest,
 }: Props) {
 	const confirmed = attendances.filter((a) => a.status === "confirmed");
 	const waiting = attendances.filter((a) => a.status === "waitlisted");
@@ -256,6 +264,16 @@ export default function ScheduleCard({
 					🚗 운전 가능 {canDrive} · 탑승 필요 {needRide}
 				</div>
 			)}
+
+			{/* 게스트 신청 + 내가 데려온 게스트 목록 */}
+			<GuestSection
+				attendances={attendances}
+				memberId={memberId}
+				isOpen={isOpen}
+				busy={busy}
+				onAddGuest={onAddGuest}
+				onCancelGuest={onCancelGuest}
+			/>
 
 			{/* 세션 시작 버튼: 시작 시각이 지난(=isLive) open 일정에만 노출 */}
 			{isAdmin && isOpen && isLive && (

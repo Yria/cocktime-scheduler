@@ -1,4 +1,5 @@
 import { supabase } from "./client";
+import type { Gender, PlayerSkills } from "../../types";
 import type { AttendanceRow, CarpoolRole, PlaceRow, SessionRow } from "./types";
 
 /** 반복 규칙 → 회차 동기화(생성/갱신/정리 + 1주 전 노출). 멱등 RPC. 앱 로드 시 호출. */
@@ -84,9 +85,11 @@ export async function fetchAttendances(
 	sessionIds: number[],
 ): Promise<AttendanceRow[]> {
 	if (sessionIds.length === 0) return [];
+	// member 임베드 — 게스트 이름/게스트여부 표시용. attendances→members FK가 둘(member_id, invited_by)이라
+	// FK 컬럼(member_id)으로 명시 disambiguate해야 한다(없으면 PGRST201로 전체 조회가 실패).
 	const { data, error } = await supabase
 		.from("attendances")
-		.select("*")
+		.select("*, member:member_id(name, is_guest)")
 		.in("session_id", sessionIds)
 		.neq("status", "cancelled")
 		.order("position", { ascending: true });
@@ -95,6 +98,40 @@ export async function fetchAttendances(
 		return [];
 	}
 	return (data ?? []) as AttendanceRow[];
+}
+
+/** 게스트 신청. 회원이 게스트(이름+성별+실력)를 일정에 신청 — 정원 여유면 confirmed, 아니면 waitlisted(RPC 판정). */
+export async function addGuestAttendance(
+	sessionId: number,
+	guest: { name: string; gender: Gender; skills: PlayerSkills },
+): Promise<{ ok: boolean; error?: string }> {
+	const { error } = await supabase.rpc("add_guest_attendance", {
+		p_session_id: sessionId,
+		p_name: guest.name,
+		p_gender: guest.gender,
+		p_skills: guest.skills,
+	});
+	if (error) {
+		console.error("addGuestAttendance:", error);
+		return { ok: false, error: error.message };
+	}
+	return { ok: true };
+}
+
+/** 게스트 취소(초대 회원만). confirmed였으면 대기 1순위 자동 승급(RPC). */
+export async function cancelGuestAttendance(
+	sessionId: number,
+	guestMemberId: string,
+): Promise<{ ok: boolean; error?: string }> {
+	const { error } = await supabase.rpc("cancel_guest_attendance", {
+		p_session_id: sessionId,
+		p_guest_member_id: guestMemberId,
+	});
+	if (error) {
+		console.error("cancelGuestAttendance:", error);
+		return { ok: false, error: error.message };
+	}
+	return { ok: true };
 }
 
 /** 참석 신청. 정원 여유면 confirmed, 아니면 waitlisted (RPC가 판정). */

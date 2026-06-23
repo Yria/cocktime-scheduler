@@ -58,7 +58,7 @@ export function buildRecommendData(
 	inputs: RecommendPoolInputs,
 	options: { excludePlaying?: boolean } = {},
 ): RecommendData | null {
-	const { drafts, reservations, magnets, sessionPlayers, courts, pairHistory, lastGameType, matchAssignCount, cockCheckEnabled } = inputs;
+	const { drafts, reservations, magnets, sessionPlayers, courts, pairHistory, lastGameType, cockCheckEnabled } = inputs;
 	const teamId = target.teamId ?? null;
 	const seedId = target.seedId ?? null;
 
@@ -113,8 +113,6 @@ export function buildRecommendData(
 
 	const ctx: RecommendContext = {
 		pairHistory,
-		totalMatchCount: matchAssignCount,
-		allSessionPlayers: [...sessionPlayers.values()],
 		lastGameType,
 		playingIds,
 	};

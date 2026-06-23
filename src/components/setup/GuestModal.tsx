@@ -11,6 +11,10 @@ interface GuestModalProps {
 	onChangeName: (name: string) => void;
 	onChangeGender: (gender: Gender) => void;
 	onChangeSkill: (skill: keyof PlayerSkills, level: SkillLevel) => void;
+	/** 헤더 제목(기본 "게스트 추가"). */
+	title?: string;
+	/** 확정 버튼 라벨(기본 "추가"). */
+	ctaLabel?: string;
 }
 
 export function GuestModal({
@@ -22,12 +26,14 @@ export function GuestModal({
 	onChangeName,
 	onChangeGender,
 	onChangeSkill,
+	title = "게스트 추가",
+	ctaLabel = "추가",
 }: GuestModalProps) {
 	return (
 		<ModalSheet position="bottom" onClose={onClose} className="flex flex-col max-h-[90dvh]">
 			<div className="flex items-center justify-between px-5 pt-5 pb-3">
 				<h3 className="font-bold text-gray-800 dark:text-white text-lg">
-					게스트 추가
+					{title}
 				</h3>
 				<button
 					type="button"
@@ -84,7 +90,7 @@ export function GuestModal({
 					disabled={!guestName.trim()}
 					className="btn-lq-orange flex-1 py-3 text-sm"
 				>
-					추가
+					{ctaLabel}
 				</button>
 			</div>
 		</ModalSheet>

@@ -26,8 +26,6 @@ function player(
 function ctx(overrides: Partial<RecommendContext> = {}): RecommendContext {
 	return {
 		pairHistory: {},
-		totalMatchCount: 0, // deficit=0 으로 고정해 다른 요소 격리
-		allSessionPlayers: [],
 		lastGameType: {},
 		playingIds: new Set<string>(),
 		...overrides,
@@ -123,7 +121,7 @@ describe("recommendTeammates", () => {
 		);
 		const r = ranked[0];
 		const b = r.breakdown!;
-		const sum = b.skill + b.pair + b.deficit + b.mixed + b.wait + (b.rotate ?? 0) + (b.gender ?? 0) + (b.playing ?? 0);
+		const sum = b.skill + b.pair + b.game + b.mixed + b.wait + (b.rotate ?? 0) + (b.gender ?? 0) + (b.playing ?? 0);
 		expect(sum).toBeCloseTo(r.score, 5);
 	});
 
@@ -172,7 +170,7 @@ describe("autoFillTeammates — greedy 자동편성", () => {
 	});
 
 	it("매 라운드 재평가한다 — 한 명을 넣으면 동반 이력에 따라 다음 추천이 달라진다", () => {
-		// 전원 동일 실력/남성 → 점수 = 동반 누적(pairHistory)×W_PAIR 만 작동(deficit=0).
+		// 전원 동일 실력/남성 + gameCount=0 → 점수 = 동반 누적(pairHistory)×W_PAIR 만 작동.
 		const confirmed = [player("c1", "M")];
 		const a = player("a", "M");
 		const b = player("b", "M");

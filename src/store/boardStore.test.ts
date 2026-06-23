@@ -60,6 +60,9 @@ function mag(playerId: string, teamId: string | null, x = 0, y = 0): MagnetPosit
 function draft(id: string, anchorMemberIds: string[], x = 300, y = 500): DraftTeam {
 	return { id, anchorMemberIds, anchor: { x, y }, createdAt: 0 };
 }
+function res(id: string, playerId: string, teamId: string, createdAt = 0): Reservation {
+	return { id, playerId, teamId, createdAt };
+}
 function seed(opts: {
 	magnets?: MagnetPosition[];
 	drafts?: DraftTeam[];
@@ -761,5 +764,93 @@ describe("회귀 — applyRemoteDrafts는 사용자 배치 자유 자석을 건�
 		useBoardStore.getState().applyRemoteDrafts({ teams: [], reservations: [] });
 		expect(useBoardStore.getState().magnets.get("u")).toMatchObject({ x: 500, y: 500 });
 		expect(useBoardStore.getState().magnets.get("v")).toMatchObject({ x: 505, y: 500 });
+	});
+});
+
+// ── 불변식 I2 자가 치유: 경기중이 된 anchor 제거(healPlayingAnchors) ──
+describe("healPlayingAnchors — 경기중 anchor를 예비팀에서 제거 + 영속화(편집자)", () => {
+	it("팀 전원이 경기중이 되면 팀 해체 + anchor 해제(유실된 dissolve 복구)", () => {
+		// T의 a,b,c,d가 코트로 올라가(경기중) board_drafts에 유령으로 남은 상태
+		h.courts = [{ id: 1, match: { id: "m1", courtId: 1, gameType: "남복", teamA: ["a", "b"], teamB: ["c", "d"], startedAt: "" } }];
+		seed({
+			magnets: ["a", "b", "c", "d"].map((id) => mag(id, "T")),
+			drafts: [draft("T", ["a", "b", "c", "d"])],
+		});
+
+		useBoardStore.getState().healPlayingAnchors();
+
+		expect(useBoardStore.getState().drafts.size).toBe(0);
+		for (const id of ["a", "b", "c", "d"]) {
+			expect(useBoardStore.getState().magnets.get(id)!.teamId).toBeNull();
+		}
+	});
+
+	it("일부 멤버만 경기중이고 남은 인원 2명 이상이면 그 멤버만 빠지고 팀 유지", () => {
+		// a만 경기중(다른 코트), b·c는 대기 → T는 [b,c]로 유지
+		h.courts = [{ id: 1, match: { id: "m1", courtId: 1, gameType: "남복", teamA: ["a", "w"], teamB: ["y", "z"], startedAt: "" } }];
+		seed({
+			magnets: [mag("a", "T"), mag("b", "T"), mag("c", "T")],
+			drafts: [draft("T", ["a", "b", "c"])],
+		});
+
+		useBoardStore.getState().healPlayingAnchors();
+
+		const T = useBoardStore.getState().drafts.get("T");
+		expect(T).toBeDefined();
+		expect([...T!.anchorMemberIds].sort()).toEqual(["b", "c"]);
+		expect(useBoardStore.getState().magnets.get("a")!.teamId).toBeNull(); // 경기중 → anchor 아님
+		expect(useBoardStore.getState().magnets.get("b")!.teamId).toBe("T");
+	});
+
+	it("assigning(경기시작 진행중) 팀은 건드리지 않는다", () => {
+		h.courts = [{ id: 1, match: { id: "m1", courtId: 1, gameType: "남복", teamA: ["a", "b"], teamB: ["c", "d"], startedAt: "" } }];
+		seed({
+			magnets: ["a", "b", "c", "d"].map((id) => mag(id, "T")),
+			drafts: [draft("T", ["a", "b", "c", "d"])],
+		});
+		useBoardStore.setState({ assigningTeamIds: new Set(["T"]) });
+
+		useBoardStore.getState().healPlayingAnchors();
+
+		expect(useBoardStore.getState().drafts.size).toBe(1); // 진행중이라 보존
+	});
+
+	it("경기중 선수가 ghost(예약)일 뿐이면 팀을 건드리지 않는다(의도된 빌려주기 보존)", () => {
+		// p는 경기중이고 T에 ghost로 예약됨. T의 anchor(a,b)는 대기.
+		h.courts = [{ id: 1, match: { id: "m1", courtId: 1, gameType: "남복", teamA: ["p", "w"], teamB: ["y", "z"], startedAt: "" } }];
+		seed({
+			magnets: [mag("a", "T"), mag("b", "T"), mag("p", null)],
+			drafts: [draft("T", ["a", "b"])],
+			reservations: [res("r1", "p", "T")],
+		});
+
+		useBoardStore.getState().healPlayingAnchors();
+
+		const T = useBoardStore.getState().drafts.get("T");
+		expect(T).toBeDefined();
+		expect([...T!.anchorMemberIds].sort()).toEqual(["a", "b"]); // 변경 없음
+		expect(useBoardStore.getState().reservations.size).toBe(1); // 경기중 ghost 보존
+	});
+});
+
+// ── 편집→보기 전환: 진행중 편집 부수상태 일괄 취소(cancelEditActions) ──
+describe("cancelEditActions — 드래그/배정중/휴식핫 상태를 초기화", () => {
+	it("dragInfo·hoverTarget·detachHot·restFieldHot·assigningTeamIds를 모두 비운다", () => {
+		useBoardStore.setState({
+			dragInfo: { playerId: "a", detachable: true, restable: false, from: { x: 0, y: 0 } },
+			hoverTarget: { kind: "team", id: "T" },
+			detachHot: true,
+			restFieldHot: true,
+			assigningTeamIds: new Set(["T"]),
+		});
+
+		useBoardStore.getState().cancelEditActions();
+
+		const s = useBoardStore.getState();
+		expect(s.dragInfo).toBeNull();
+		expect(s.hoverTarget).toBeNull();
+		expect(s.detachHot).toBe(false);
+		expect(s.restFieldHot).toBe(false);
+		expect(s.assigningTeamIds.size).toBe(0);
 	});
 });

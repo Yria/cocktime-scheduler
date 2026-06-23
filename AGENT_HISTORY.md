@@ -199,3 +199,65 @@
 - 검증: `tsc -b` 0, `vitest` 132 passed, 변경 파일 eslint 0. 적대적 8시나리오 재검증 전부 PASS. eslint 기존 무관 3건은 범위 밖이라 미수정. (보드 캔버스는 Supabase 인증 필요로 실기기 시각 확인은 사용자 몫 — 줌 0.5배 우하단 드래그·휴식 밴드 외형.)
 
 ---
+
+## #15
+
+**Prompt**: 편집모드로 넘어갈때 너 이거 건드리면 다른사람이 편집못한다는 경고 알라트 띄우기
+자동편성 모달에서도 더블탭으로 정보띄우기
+정보모달에 디버그 테이블 진입안됨
+혼자 보고있으면 보기전용없이 바로 편집모드. 그리고 가끔 앱 내렸다 올릴때 보기전용 버튼 안눌러도 편집모드로 넘어갈 때 있음
+휴식존에서 드래그할때 프레임 너무 떨어짐
+늦참한 사람은 늦참한 시간만큼 경기 뛰었다고 가정(전체 판수 평균내면 될듯)
+게스트참가 양식이 필요. 사용자가 일정에 참여를 누를때 카풀선택을 하듯이, 게스트 신청을 할 수 있음. 사용자가 직접 게스트를 실력과 함께 입력하며, 이후 게스트만 일정을 취소또는 대기하는것도 가능해야함. 이거 개발할건데 어떻게 개발해야할지 고민해봐.
+
+**Answer**: 7개 작업을 이해→설계→구현→적대적 리뷰 워크플로우로 진행. 7영역 병렬 심층조사 후 결과가 갈리는 4건(더블탭 진입·늦참 보정 방식·혼자 기준·게스트 정원)을 사용자에게 확인하고, #6은 사용자가 deficit 모델 제거를 직접 지시. 구현 후 적대적 리뷰(에이전트 8개)가 critical 회귀 1건을 잡아 수정. 검증: tsc 0, vitest 132 passed, 변경 파일 eslint 0.
+
+- **#1 편집 진입 경고**: '편집 권한 가져오기'가 *남이 편집 중일 때만* 확인 모달(기존 ModalSheet 패턴) → 확정 시 탈취. 빈 자리(자유) 점유는 경고 없이 즉시(BoardToolbar). 자동 점유(lockFree)는 남을 안 쫓아내므로 경고 불필요로 판단.
+- **#2·#3 더블탭 정보**: `useDoubleTap` 훅 신규 추출(항목 키 기반, 다른 항목 전환 시 직전 단일탭 flush). `PlayerPickerList`에 `onItemDoubleTap`(있을 때만 단일탭 280ms 지연, 없으면 즉시 보존). RecommendTeammateDialog에서 선수 더블탭→`openDebug`(전역 DebugMatchModal은 이미 마운트). 🐛(인라인 점수표)는 유지.
+- **#4 혼자 자동편집 + 재개 버그**: (A) `presenceCount≤1 && lockFree && !isEditor`면 자동 점유(`maybeClaimIfAlone`, presence/resync/lease만료 틱에서 호출, lockFree 가드로 활성 편집자 안 뺏음). (B) 재개 핸들러의 무조건 낙관선점(claimNow) 제거 → `resyncFromServer` 먼저, '직전 편집자 && 자유'일 때만 재점유 → '두 명 편집' 윈도우 제거(근본 원인).
+- **#5 휴식존 프레임드랍**: `useBoardDragHandlers`가 restHot이면 early-return(휴식존에선 버려지는 `resolveDropTarget`/`cockPendingIds` 매프레임 계산 제거). `PlayerMagnet.handleDragMove`를 rAF 코얼레싱(프레임당 1회 hover 해석) + dragend/언마운트 시 `cancelAnimationFrame` 정리.
+- **#6 늦참 보정(알고리즘 변경)**: 사용자 지시로 deficit(라운드 비례 기대치) 모델을 제거하고 raw `gameCount` 기준으로 단순화. '콕확인=합류' 시점에 `game_count`를 그때의 활성 평균으로 보정(`set_cock_checked` RPC 신규, `GREATEST`로 실제 더 뛴 값은 안 깎음). 휴식 복귀도 같은 over-prioritize가 재발하므로 동일 보정으로 일반화(`set_player_resting` 교체). `ScoreBreakdown.deficit→game` 개명, `RankContext`에서 `totalMatchCount`/`allSessionPlayers` 제거. `docs/TEAM_GENERATION_RULES.md` 동기화(프로젝트 규칙). 마이그레이션 20260624000000.
+- **#7 게스트 RSVP(설계→구현)**: 핵심 발견 — `members.is_guest`가 이미 존재해 '계정 없는 회원' 모델이 의도됨. 게스트 = `is_guest` member + `attendances.invited_by`(데려온 회원). 보드 편입 브릿지(`start_session_from_schedule`가 members JOIN)가 자동 연동되어 편성/보드 코드 변경 0. 정원은 회원과 동일. `add_guest_attendance`/`cancel_guest_attendance` RPC(SECURITY DEFINER로 RLS 우회, join/cancel 패턴 복제, 게스트 승급 알림은 초대 회원에게). `ScheduleCard`에 `GuestSection`(신청 모달=GuestModal 재사용 + 내 게스트 목록/상태/취소). 회원관리(`fetchMembersForAdmin`)에 `is_guest=false` 필터로 명단 오염 방지. 마이그레이션 20260624010000.
+- **적대적 리뷰가 잡은 critical**: `invited_by` FK 추가로 attendances→members 관계가 둘이 되어 `fetchAttendances`의 member 임베드가 모호(PGRST201)→error 분기로 전체 빈배열 반환 = 모든 일정 카드 참석/대기/카풀이 통째로 깨지는 회귀. FK 컬럼 명시 임베드(`member:member_id(...)`)로 수정. (나머지 3개 리뷰 영역은 확정 이슈 0.)
+- **배포 의존성**: 마이그레이션 2건(20260624000000 콕확인 평균보정, 20260624010000 게스트) DB 적용 필요 — 미적용 시 콕확인/게스트 신청이 실패. 보드 실기기 확인(편집락·재개·휴식존 프레임)과 게스트 RSVP→경기 시작 편입은 사용자 몫.
+
+---
+
+## #16
+
+**Prompt**: 드래그할때, 하단으로 드래그하면 휴식, 상단으로 드래그하면 팀에서 해제인데, 상단 드래그 영역은 현재 보드(네비영역제외한)의 최상단인데, 네비영역인 부분이 빨간색 dot square 가 나오고 거기로 끌어가면 해제되게 해주고, 휴식패널 열고 드래그해서 사람 넣고 뺄때마다 휴식드랍존 내부에서 자동정렬시켜줘.
+
+**Answer**: 보드 드래그 시스템 2건을 구현하고 적대적 리뷰(에이전트 3개)로 low 1건을 잡아 수정. 좌표계(Stage 컨테이너가 네비 TOOLBAR_H 아래, 자석/존은 논리 viewW×viewH 좌표)를 먼저 확인한 게 핵심. 결정이 갈리는 두 지점(네비 detach 구현 방식·휴식 자동정렬 의미)은 먼저 사용자에게 확인.
+
+- **#1 팀 해제존 → 네비 영역**: Konva 캔버스가 네비(DOM) 바로 아래라 자석을 네비 안으로 직접 끌 수 없음 → "네비에 빨간 점선 DOM 오버레이" 방식 선택. 기존 stage 상단 Konva 밴드(`DetachZone`) 제거하고 신규 `DetachZoneOverlay`(DOM, 네비 위 z-index:30, pointerEvents:none, 팀 소속 자석 드래그 중 노출, `detachHot`이면 강조)로 교체. 드롭 감지는 그대로 `isInDetachZone`(보드 최상단 72px 논리좌표) — 즉 시각=네비 오버레이 / 감지=보드 최상단 strip 하이브리드(자석은 stage 상단까지만 가므로). 보드 콘텐츠 상단 공간 확보.
+- **#2 휴식존 다중 줄 자동정렬**: 휴식 자석은 이미 `restSlotOffset` 인덱스 격자라 넣고 빼면 빈칸 없이 재패킹됨(자동정렬). 추가로 1줄 고정이던 패널을 인원수만큼 **여러 줄로 자동 확장**: `REST_ZONE_H`(고정 108) 제거 → `restZoneHeight(count, stageW, stageH)`(줄 수만큼, 1줄=108 동일). `isInRestField` 시그니처 `(point, stageH, expanded:boolean)`→`(point, stageH, fieldH:number)`, `restSlotOffset(index, count, stageW, stageH)` 다중 줄. SessionBoard가 `restFieldH`를 산정해 `useBoardDragHandlers`·`RestZonePanel`이 **같은 산식**을 써 드롭 감지 영역 == 패널 영역 일치.
+- **적대적 리뷰**: detach 오버레이 0건. rest 1건(low) — `restZoneHeight`에 상한이 없어 극단 인원(약 41명+ 휴식)에서 패널이 viewH를 넘으면 `isInRestField` 임계값(`viewH−restFieldH`)이 음수가 되어 보드 전체가 휴식 드롭존이 됨 → `Math.min(h, stageH−DETACH_ZONE_H)`로 클램프(상단 detach strip 항상 보존, 감지·렌더 동일 적용으로 불변식 유지).
+- 검증: `tsc -b` 0, `vitest` 142 passed, 변경 파일 eslint 0. 네비 오버레이·다중 줄 패널의 실기기 시각 확인은 사용자 몫.
+
+---
+
+## #17
+
+**Prompt**: 가끔 팀편성하다보면 이미 팀에 소속되어 있는데 게임중이라고 뜨거나, A팀에도 들어있고 B팀에도 들어있는 경우가 있어. 아마 동시편집하면서 발생하는 문제같은데, 사용자의 처리를 유니크하게 처리해서 해당상황처럼 중복으로 들어가지 않게 처리하지 않았나? 다시한번 점검하고 편집->보기할때 뭔가 액션중인거 있으면 전부 취소시켜줘 예를 들어 팀편성 모달을 띄워놓았다던가 하는거. 그담에 세션종료하면 현재 게임중인 팀 있으면 자동으로 게임종료처리되고 세션종료해줘.
+
+**Answer**: 동시편집 중복/게임중 오표시의 근본 원인을 5개 적대 검증 에이전트로 확정했다 — 팀편성(board_drafts)과 코트배정(matches)이 별도 권위로 비원자적으로 동기화되는데, board_drafts 쓰기만 editor lease로 보호되고 경기 RPC는 lease 미검증이라, lease 없는 낙관적 편집자/핸드오프 레이스가 경기를 성공시키면 짝이 되는 팀 해체(dissolve)는 거부·롤백되어 선수가 "팀에 남은 채 게임중"이 됐다. 사용자가 요구한 두 선행조건(편집은 한 명만 + 사람 유니크성)을 모두 보장하도록 설계했다.
+
+- **수렴 불변식(유니크성)**: reconcile 단계에서 I1(한 선수=한 팀 anchor, createdMs→id 결정적 정렬로 먼저 만든 팀 유지)·I2(경기중 선수는 anchor 아님, 단 의도된 ghost 예약은 보존)를 항상 강제. 편집자는 정제 결과를 서버에 영속화(코트 변화 시 healPlayingAnchors + 원격 적용 후 차이나면 push)해 새로고침 시 "유령 팀" 부활까지 차단. 뷰어는 화면만 정제.
+- **편집은 한 명만(서버 강제)**: assign/complete/set_match_roster RPC에 board_assert_editor(lease self-claim CAS) 가드를 추가한 마이그레이션 신설. board_save_drafts와 동일한 관대한 술어로 혼자/heartbeat 공백은 통과, 다른 기기가 유효 lease 보유 시 'not editor'로 거부. 거부된 기기는 resync로 보기 전용 수렴. 클라이언트는 client_id/name을 RPC에 전달.
+- **편집→보기 취소**: isEditor true→false 전이 감지 시 추천/경기수정/콕확인 모달 닫기 + cancelEditActions로 드래그·hover·배정중 상태 초기화(접속자 모달·휴식 패널은 뷰어 공용이라 유지).
+- **세션종료 자동완료**: handleEndSession이 진행 중 코트를 complete_match로 먼저 정상 완료(판수·동반이력 집계)한 뒤 종료. 확인 다이얼로그 문구도 조건부 안내.
+- 검증: 신규 테스트(reconcile I1/I2/ghost·healPlayingAnchors·cancelEditActions) 포함 vitest 142 통과, tsc·eslint·prod build 통과, 문서(TEAM_GENERATION_RULES) 불변식 섹션 추가. 마이그레이션은 클라 배포보다 먼저 적용 필요(신규 client_id 인자) — db push는 사용자 몫.
+
+---
+
+## #18
+
+**Prompt**: 아니다 하지말고 상단 네비에 드랍영역 나타낼때, 네비의 글자가 오파시티값때문에 노출되는데 안보이게 해줘.
+
+**Answer**: 보드 chrome 전체를 Konva로 옮기는 큰 리팩터를 검토하다(줌이 Stage scale에 걸려 있어 absToStage 좌표계 재작성이 필요 — 줌을 콘텐츠 Layer로 내리면 absToStage 한 곳 수정으로 가능함을 사용자와 확인) 사용자가 중단을 선택하고, 작은 표시 버그만 수정으로 전환.
+
+- 증상: 팀 소속 자석 드래그 시 네비 위에 뜨는 `DetachZoneOverlay`(반투명 빨강, hot 상태 alpha 0.22)의 투명도 사이로 네비 글자(설정/로그/종료·코트 점)가 비쳐 보임.
+- 수정: `BoardToolbar`가 `dragInfo?.detachable`(= DetachZoneOverlay 노출 조건과 동일)을 구독해, 드래그 중 헤더 div를 `opacity:0`(+`pointerEvents:none`, 0.12s 트랜지션)로 숨김. 점선 드롭존 디자인은 유지하고 글자만 가림. 숨김 시 오버레이는 보드 배경(다크) 위에 표시됨.
+- 검증: tsc -b 0, 변경 파일 eslint 0. 시각 확인은 실기기 몫(Supabase 인증 필요).
+
+---

@@ -2,6 +2,8 @@
  * 기기 식별용 친근한 이름 — 편집 락에서 "누가 접속/편집 중인지" 표시용.
  * 실명 인증이 없으므로 localStorage에 안정적으로 저장되는 동물 이름 + 2자리 숫자를 쓴다.
  */
+import { randomId } from "./randomId";
+
 const ANIMALS = [
 	"토끼", "여우", "곰", "사자", "호랑이", "판다", "코알라", "수달",
 	"고양이", "강아지", "펭귄", "부엉이", "다람쥐", "고슴도치", "너구리", "사슴",
@@ -40,11 +42,11 @@ export function getClientId(): string {
 	try {
 		const saved = sessionStorage.getItem(CLIENT_ID_KEY);
 		if (saved) return saved;
-		const id = crypto.randomUUID();
+		const id = randomId();
 		sessionStorage.setItem(CLIENT_ID_KEY, id);
 		return id;
 	} catch {
 		// sessionStorage 불가 — 이 연결 한정 임시 id(리로드 재획득 이점은 없으나 동작은 유지)
-		return crypto.randomUUID();
+		return randomId();
 	}
 }

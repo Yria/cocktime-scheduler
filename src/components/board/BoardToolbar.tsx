@@ -37,7 +37,12 @@ const BoardToolbar = memo(function BoardToolbar() {
 	// 모달 표시는 공유 플래그(헤더 칩 + 보기전용 칩 둘 다 연다)
 	const showPresence = useBoardStore((s) => s.presenceModalOpen);
 	const setShowPresence = useBoardStore((s) => s.setPresenceModalOpen);
+	// 팀 소속 자석 드래그 중에는 네비 위에 detach 드롭존 오버레이(반투명)가 뜬다 → 그 사이로 네비 글자가
+	// 비쳐 보이므로, 드래그 동안 네비 내용을 숨긴다(드롭존 디자인은 유지, 글자만 가림). DetachZoneOverlay의 노출 조건과 동일.
+	const draggingTeamBound = useBoardStore((s) => s.dragInfo?.detachable ?? false);
 	const [confirmEnd, setConfirmEnd] = useState(false);
+	// 다른 기기가 편집 중일 때 권한을 "뺏는" 경우만 경고 확인. 빈 자리(자유) 점유는 경고 없음.
+	const [confirmTakeover, setConfirmTakeover] = useState(false);
 
 	const onConfirmEnd = useCallback(() => {
 		setConfirmEnd(false);
@@ -45,9 +50,21 @@ const BoardToolbar = memo(function BoardToolbar() {
 	}, [handleEndSession, navigate]);
 
 	const onTakeover = useCallback(() => {
-		claimEditor();
+		// 빈 자리(자유) 가져오기는 남을 쫓아내지 않으므로 경고 없이 즉시 점유.
+		if (lockFree || holderClientId === null) {
+			claimEditor();
+			setShowPresence(false);
+			return;
+		}
+		// 남이 편집 중 → 강제 탈취. 확인 경고를 띄운다(상대는 보기 전용으로 떨어짐).
 		setShowPresence(false);
-	}, [claimEditor, setShowPresence]);
+		setConfirmTakeover(true);
+	}, [lockFree, holderClientId, claimEditor, setShowPresence]);
+
+	const onConfirmTakeover = useCallback(() => {
+		setConfirmTakeover(false);
+		claimEditor();
+	}, [claimEditor]);
 
 	const onHandoff = useCallback(
 		(toClientId: string, toName: string) => {
@@ -71,6 +88,10 @@ const BoardToolbar = memo(function BoardToolbar() {
 					alignItems: "center",
 					padding: "env(safe-area-inset-top) 8px 0",
 					zIndex: 10,
+					// detach 드롭존이 뜨는 동안 네비 글자가 반투명 오버레이 사이로 비치지 않게 숨김.
+					opacity: draggingTeamBound ? 0 : 1,
+					pointerEvents: draggingTeamBound ? "none" : undefined,
+					transition: "opacity 0.12s ease",
 				}}
 			>
 				<button
@@ -143,7 +164,9 @@ const BoardToolbar = memo(function BoardToolbar() {
 						세션 종료
 					</h3>
 					<p className="text-sm text-gray-600 dark:text-gray-300 mb-5">
-						진행 중인 세션을 종료합니다. 모든 참가자의 세션이 종료됩니다.
+						{courts.some((c) => c.match)
+							? "진행 중인 경기는 자동으로 종료 처리된 뒤 세션이 종료됩니다. 모든 참가자의 세션이 종료됩니다."
+							: "진행 중인 세션을 종료합니다. 모든 참가자의 세션이 종료됩니다."}
 					</p>
 					<div className="flex gap-3">
 						<button
@@ -159,6 +182,33 @@ const BoardToolbar = memo(function BoardToolbar() {
 							className="btn-lq-red flex-1 py-3 text-sm"
 						>
 							종료
+						</button>
+					</div>
+				</ModalSheet>
+			)}
+
+			{confirmTakeover && (
+				<ModalSheet position="center" className="p-6" onClose={() => setConfirmTakeover(false)}>
+					<h3 className="font-bold text-gray-800 dark:text-white text-lg mb-1.5">
+						편집 권한 가져오기
+					</h3>
+					<p className="text-sm text-gray-600 dark:text-gray-300 mb-5">
+						{holderName ?? "다른 기기"}님이 편집 중입니다. 권한을 가져오면 상대는 보기 전용이 되어 편집할 수 없게 됩니다.
+					</p>
+					<div className="flex gap-3">
+						<button
+							type="button"
+							onClick={() => setConfirmTakeover(false)}
+							className="btn-lq-secondary flex-1 py-3 text-sm"
+						>
+							취소
+						</button>
+						<button
+							type="button"
+							onClick={onConfirmTakeover}
+							className="btn-lq-primary flex-1 py-3 text-sm"
+						>
+							가져오기
 						</button>
 					</div>
 				</ModalSheet>

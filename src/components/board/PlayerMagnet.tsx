@@ -207,11 +207,29 @@ const PlayerMagnet = memo(function PlayerMagnet({
 		[onClick, onCockCheck, cockPending, playerId, clearTap],
 	);
 
+	// dragmove는 pointermove마다(60~120Hz) 발사된다 — hover/휴식 해석을 화면 프레임(rAF)당 1회로 코얼레싱해
+	// 프레임드랍을 막는다. 최신 좌표만 보관하고 프레임당 마지막 좌표로 onDragMove를 1회 호출.
+	// (자석 시각 이동은 Konva가 직접 처리하므로 이 throttle과 무관 — 드래그 부드러움엔 영향 없음.)
+	const dragRaf = useRef<number | null>(null);
+	const lastDragPt = useRef<{ x: number; y: number } | null>(null);
+	const cancelDragRaf = useCallback(() => {
+		if (dragRaf.current !== null) {
+			cancelAnimationFrame(dragRaf.current);
+			dragRaf.current = null;
+		}
+	}, []);
+	useEffect(() => cancelDragRaf, [cancelDragRaf]); // 언마운트 시 대기 중 rAF 정리
+
 	const handleDragMove = useCallback(
 		(e: Konva.KonvaEventObject<DragEvent>) => {
 			if (!onDragMove) return;
-			const p = absToStage(e.target); // 줌/팬 보정 → 논리 좌표
-			onDragMove(playerId, p.x, p.y);
+			lastDragPt.current = absToStage(e.target); // 줌/팬 보정 → 논리 좌표(최신만 보관)
+			if (dragRaf.current !== null) return; // 이번 프레임 이미 예약됨 — 코얼레싱
+			dragRaf.current = requestAnimationFrame(() => {
+				dragRaf.current = null;
+				const p = lastDragPt.current;
+				if (p) onDragMove(playerId, p.x, p.y);
+			});
 		},
 		[onDragMove, playerId],
 	);
@@ -239,6 +257,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 
 	const handleDragEnd = useCallback(
 		(e: Konva.KonvaEventObject<DragEvent>) => {
+			cancelDragRaf(); // 드롭 후 늦은 hover 갱신 방지(대기 중 rAF 취소)
 			// 방금 드래그로 놓인 자석 본인은 흩어짐 트윈에서 제외(이미 드롭 위치에 있음)
 			justDragged.current = true;
 			const p = absToStage(e.target); // 줌/팬 보정 → 논리 좌표
@@ -269,7 +288,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 			// 위해 dragInfo.from 을 읽는데, clearDrag 가 먼저 돌면 from 이 null 이 돼 가드가 무력화된다.
 			useBoardStore.getState().clearDrag();
 		},
-		[playerId, isGhost, playing, resting, reservationId, onDragEnd, onGhostDragEnd, onPlayingDragEnd, onRestingDragEnd, offsetX, offsetY],
+		[playerId, isGhost, playing, resting, reservationId, onDragEnd, onGhostDragEnd, onPlayingDragEnd, onRestingDragEnd, offsetX, offsetY, cancelDragRaf],
 	);
 
 	if (!magnet || !player) return null;

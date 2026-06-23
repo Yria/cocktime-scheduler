@@ -29,6 +29,7 @@ import {
 	teamMembers,
 } from "../lib/board/membership";
 import { buildRecommendData } from "../lib/board/recommendPool";
+import { randomId } from "../lib/randomId";
 import { useSessionStore } from "./sessionStore";
 import { useAppStore } from "./appStore";
 import { autoFillTeammates, pairPlayers } from "../lib/teamSelection";
@@ -184,7 +185,7 @@ function pushDraftsToRemote(payload: BoardDraftsPayload) {
 }
 
 function newId(): string {
-	return crypto.randomUUID();
+	return randomId();
 }
 
 function nowMs(): number {
@@ -252,6 +253,15 @@ export interface BoardState {
 	settleBoard: (source: DragSource) => void;
 	/** 공유된 보드 멤버십(payload)을 로컬에 적용(위치는 로컬에서 결정). 스냅샷/브로드캐스트 수신용. */
 	applyRemoteDrafts: (payload: BoardDraftsPayload) => void;
+	/**
+	 * 불변식 I2 자가 치유(편집자 전용) — 경기중이 된 anchor를 모든 예비팀에서 제거하고, 그 결과 인원이
+	 * 부족해진 팀은 해체한다. 코트 변화(courtSig) 시 SessionBoard가 호출한다. 변경이 생기면 subscribe가
+	 * board_drafts로 영속화 → 모든 클라이언트가 수렴(유실된 dissolve / 로스터 편입 레이스 복구).
+	 * assigning(경기시작 진행중) 팀은 startMatch가 직접 dissolve+위치 인계하므로 건드리지 않는다.
+	 */
+	healPlayingAnchors: () => void;
+	/** 편집 권한 상실(편집→보기) 시 진행 중 편집 부수상태(드래그/배정중)를 일괄 취소. */
+	cancelEditActions: () => void;
 	/** 지정한 자석들을 소스로 방사형 흩어짐 + 정리(경기 완료로 그룹 해제된 자석용) */
 	scatterMagnets: (ids: string[]) => void;
 	rearrangeAll: (viewW: number, viewH: number) => void;
@@ -275,7 +285,7 @@ export interface BoardState {
 	setPresenceModalOpen: (open: boolean) => void;
 	/** 선수를 휴식 처리(보드 멤버십에서 제거 + status='resting'). */
 	restPlayer: (playerId: string) => void;
-	/** 휴식 선수를 복귀(status='waiting', deficit 보정) + 자유 자석으로 drop 위치에 배치. */
+	/** 휴식 선수를 복귀(status='waiting', 평균 판수 보정) + 자유 자석으로 drop 위치에 배치. */
 	unrestPlayer: (playerId: string, drop: StagePoint) => void;
 	startMatch: (teamId: string) => Promise<void>;
 	completeMatch: (courtId: number) => Promise<void>;
@@ -418,7 +428,7 @@ const creator = immer<BoardState>((set, get) => ({
 	handleDrop: (playerId, drop) => {
 		// 보기 전용(읽기 모드): 공유 멤버십(팀/예약)은 못 바꾸지만, 자유 자석의 로컬 위치 이동은 허용(위치는 로컬 상태·미동기화).
 		// 멤버(anchor)는 슬롯 고정이라 스냅백, 팀 합류/페어 등 공유 변경은 일어나지 않는다.
-		// (세션 진입 시 자동 점유로 opener는 항상 isEditor=true → 여기 분기는 '남이 편집 중인' 읽기 모드 사용자만 탄다.)
+		// (혼자뿐이면 자동 점유로 isEditor=true가 되고, 첫 편집 액션에서도 자유면 자동 점유한다 → 여기 분기는 '남이 편집 중인' 읽기 모드 사용자만 탄다.)
 		if (!useSessionStore.getState().isEditor) {
 			set((s) => {
 				const m = s.magnets.get(playerId);
@@ -707,6 +717,8 @@ const creator = immer<BoardState>((set, get) => ({
 		// 멤버십이 실제로 안 바뀐 재수신/스냅샷(handleBoardDraftsUpdated는 동일 멤버십도 매번 새 객체 set)이면
 		// 자석 위치를 전혀 만지지 않는다 — 자유 자석 위치는 로컬 전용이므로 보존되어야 한다.
 		if (canonicalizeDrafts(payload) === canonicalizeDrafts(serializeBoardDrafts(get()))) return;
+		// 불변식 I2(경기중 anchor 제거)·I1(중복 제거) 강제를 위해 reconcile에 넘긴다.
+		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 		applyingRemoteDrafts = true;
 		try {
 			set((s) => {
@@ -722,13 +734,12 @@ const creator = immer<BoardState>((set, get) => ({
 				const vh = s.stageH || DEFAULT_VIEWPORT.vh;
 
 				// 멤버십(drafts/reservations) 재구성 + 자석 teamId 재설정(위치는 아래에서 별도 처리)
-				const { drafts, reservations } = reconcileMembership(payload, s.magnets, oldAnchors, vw, vh);
+				const { drafts, reservations } = reconcileMembership(payload, s.magnets, oldAnchors, vw, vh, playingIds);
 				s.drafts = drafts;
 				s.reservations = reservations;
 
 				// 원격 변경으로 "새로 필드에 들어온" 자석(팀/예약 → 자유): 내가 드래그하지 않았어도
 				// 드롭과 동일하게 흩어짐을 적용 — 각 자석을 소스로 BFS 방사형으로 주변을 밀어낸다.
-				const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 				const r = MAGNET_SIZE / 2;
 				// 흩어짐/정리에서 "사용자가 직접 배치한(원래 필드에 있던) 자유 자석"은 제외해 위치를 보존한다.
 				// 이게 빠지면 원격 멤버십 동기화가 내가 방금 드롭한 자석을 밀어내 "가끔 원래자리로" 되돌아오는 버그가 난다.
@@ -758,6 +769,50 @@ const creator = immer<BoardState>((set, get) => ({
 		} finally {
 			applyingRemoteDrafts = false;
 		}
+		// 편집자: reconcile이 불변식 위반(경기중 anchor·중복)을 정제해 로컬이 수신 payload와 달라졌다면
+		// 그 정제 결과를 서버로 영속화한다 — 동시편집 레이스로 유실된 dissolve가 서버 board_drafts에 남아 있어도
+		// (화면은 위에서 이미 정제됨) 서버까지 수렴시켜 새로고침/재구독 시 "유령 팀" 부활을 막는다. 뷰어는 화면만 정제.
+		const ss = useSessionStore.getState();
+		if (ss.isEditor) {
+			const healed = serializeBoardDrafts(get());
+			if (canonicalizeDrafts(healed) !== canonicalizeDrafts(payload)) {
+				pushDraftsToRemote(healed);
+			}
+		}
+	},
+
+	healPlayingAnchors: () => {
+		// 편집자만 영속화(뷰어는 reconcile 파생으로 화면만 정제하므로 불필요 + CAS 충돌 방지).
+		if (!useSessionStore.getState().isEditor) return;
+		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
+		if (playingIds.size === 0) return;
+		set((s) => {
+			for (const [teamId, team] of [...s.drafts]) {
+				if (s.assigningTeamIds.has(teamId)) continue; // 경기시작 진행중 팀은 startMatch가 직접 처리
+				if (!team.anchorMemberIds.some((id) => playingIds.has(id))) continue; // 변경 없음 → 건드리지 않음(멱등)
+				// 경기중이 된 anchor를 팀에서 제거(자석 teamId 해제). ghost(예약)는 유지.
+				for (const id of team.anchorMemberIds) {
+					if (!playingIds.has(id)) continue;
+					const m = s.magnets.get(id);
+					if (m && m.teamId === teamId) m.teamId = null;
+				}
+				team.anchorMemberIds = team.anchorMemberIds.filter((id) => !playingIds.has(id));
+				// 제거 후 인원이 부족하면(원본 0명 또는 총 2명 미만) 팀 해체(남은 멤버는 자유 자석으로)
+				if (team.anchorMemberIds.length === 0 || teamMemberCount(teamId, s.drafts, s.reservations) < 2) {
+					dissolveDraft(s, teamId);
+				}
+			}
+		});
+	},
+
+	cancelEditActions: () => {
+		set((s) => {
+			s.dragInfo = null;
+			s.hoverTarget = null;
+			s.detachHot = false;
+			s.restFieldHot = false;
+			s.assigningTeamIds = new Set();
+		});
 	},
 
 	scatterMagnets: (ids) => {
@@ -906,13 +961,13 @@ const creator = immer<BoardState>((set, get) => ({
 				if (r.playerId === playerId) s.reservations.delete(rid);
 			}
 		});
-		// status='resting' (휴식 진입 — deficit 기준점 기록). 다른 클라이언트에 player_updated 전파.
+		// status='resting' (휴식 진입). 다른 클라이언트에 player_updated 전파.
 		void useSessionStore.getState().setResting(playerId, true);
 	},
 
 	unrestPlayer: (playerId, drop) => {
 		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
-		// status='waiting' 복귀(deficit 보정). 자유 자석으로 drop 위치에 배치.
+		// status='waiting' 복귀(평균 판수 보정). 자유 자석으로 drop 위치에 배치.
 		void useSessionStore.getState().setResting(playerId, false);
 		set((s) => {
 			const m = s.magnets.get(playerId);

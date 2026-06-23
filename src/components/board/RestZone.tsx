@@ -13,7 +13,7 @@ import {
 
 /**
  * '휴식하기' 드롭존 — 휴식 가능한 자석(편집자의 free/anchor 대기 자석)을 드래그하는 동안에만
- * 하단에 노출(상단 '팀에서 빼기' DetachZone 과 대칭). listening=false라 드래그 이벤트를 가로채지 않는다
+ * 하단에 노출(상단 '팀에서 빼기'는 네비 영역 DOM 오버레이 DetachZoneOverlay). listening=false라 드래그 이벤트를 가로채지 않는다
  * (드롭 판정은 좌표로: isInRestField). hot 여부는 store.restFieldHot.
  *
  * 밴드 높이는 닫힘 상태 캐치존(REST_FIELD_H)과 동일 — 보이는 영역 == 드롭 판정 영역.
