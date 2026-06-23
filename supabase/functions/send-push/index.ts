@@ -43,7 +43,8 @@ interface NotificationPayload {
 interface NotifCtx {
   sessionTitle?: string | null;
   scheduledAt?: string | null;
-  placeName?: string | null;
+  placeName?: string | null; // 일정 장소(session.place_id)
+  carpoolPlaceName?: string | null; // 카풀 집결지(payload.place_id)
 }
 
 /** ISO → "6월 25일 (목) 오후 7:00" (Asia/Seoul). */
@@ -68,10 +69,9 @@ function buildBody(
   ctx: NotifCtx,
 ): string {
   const when = formatWhen(ctx.scheduledAt);
-  // 제목 없으면 시각이라도, 둘 다 없으면 빈 문자열(기본 문구로 폴백)
-  const sess = ctx.sessionTitle
-    ? `'${ctx.sessionTitle}'${when ? ` (${when})` : ""}`
-    : when;
+  // 일정엔 '제목'이 없으므로 제목(있으면) 또는 장소명 + 시각으로 식별.
+  const head = ctx.sessionTitle ? `'${ctx.sessionTitle}'` : ctx.placeName;
+  const sess = head ? `${head}${when ? ` (${when})` : ""}` : when;
   switch (type) {
     case "promoted":
       return sess
@@ -85,12 +85,13 @@ function buildBody(
       const at = formatWhen(
         payload && typeof payload.at === "string" ? payload.at : null,
       );
-      const place = ctx.placeName;
+      const place = ctx.carpoolPlaceName;
       if (place && at) return `카풀 안내: '${place}'(으)로 ${at}까지 모여주세요`;
       if (place) return `카풀 안내: '${place}' 집결 안내가 도착했어요`;
       return "카풀 집결 안내가 도착했어요";
     }
     case "schedule_added": {
+      if (sess) return `새 일정이 추가됐어요: ${sess}`;
       const label =
         payload && typeof payload.label === "string" ? payload.label : null;
       return label ? `새 일정이 추가됐어요: ${label}` : "새 일정이 추가되었어요";
@@ -125,30 +126,38 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 메시지를 풍부하게: 세션 제목·시각, 카풀 집결 장소명 조회
+    // 메시지를 풍부하게: 세션 제목·시각·일정 장소 + 카풀 집결지 장소명 조회
     const ctx: NotifCtx = {};
+    let sessionPlaceId: number | null = null;
     if (n.session_id != null) {
       const { data: s } = await sb
         .from("sessions")
-        .select("title, scheduled_at")
+        .select("title, scheduled_at, place_id")
         .eq("id", n.session_id)
         .maybeSingle();
       if (s) {
         ctx.sessionTitle = s.title;
         ctx.scheduledAt = s.scheduled_at;
+        sessionPlaceId = s.place_id;
       }
     }
-    const placeId =
+    const carpoolPlaceId =
       n.payload && typeof n.payload.place_id === "number"
         ? n.payload.place_id
         : null;
-    if (placeId != null) {
-      const { data: p } = await sb
+    const placeIds = [sessionPlaceId, carpoolPlaceId].filter(
+      (x): x is number => x != null,
+    );
+    if (placeIds.length > 0) {
+      const { data: pls } = await sb
         .from("places")
-        .select("name")
-        .eq("id", placeId)
-        .maybeSingle();
-      if (p) ctx.placeName = p.name;
+        .select("id, name")
+        .in("id", placeIds);
+      const byId = new Map((pls ?? []).map((p) => [p.id, p.name]));
+      if (sessionPlaceId != null)
+        ctx.placeName = byId.get(sessionPlaceId) ?? null;
+      if (carpoolPlaceId != null)
+        ctx.carpoolPlaceName = byId.get(carpoolPlaceId) ?? null;
     }
 
     const appServer = await getAppServer();

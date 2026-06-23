@@ -6,7 +6,10 @@ import type { NotificationRow, PlaceRow, SessionRow } from "./types";
 export interface NotificationContext {
 	sessionTitle?: string | null;
 	scheduledAt?: string | null;
+	/** 일정 장소(session.place_id) */
 	placeName?: string | null;
+	/** 카풀 집결지(payload.place_id) */
+	carpoolPlaceName?: string | null;
 }
 
 /** ISO 시각 → "6월 25일 (목) 오후 7:00" 형식(Asia/Seoul). 없으면 빈 문자열. */
@@ -32,15 +35,25 @@ export function notificationContext(
 ): NotificationContext {
 	const sess =
 		n.session_id != null ? schedules.find((s) => s.id === n.session_id) : undefined;
-	const placeId =
+	// 일정 장소(세션의 place_id)
+	const sessPlace =
+		sess?.place_id != null
+			? places.find((p) => p.id === sess.place_id)
+			: undefined;
+	// 카풀 집결지(payload.place_id)
+	const carpoolPlaceId =
 		n.payload && typeof n.payload.place_id === "number"
 			? n.payload.place_id
 			: null;
-	const place = placeId != null ? places.find((p) => p.id === placeId) : undefined;
+	const carpoolPlace =
+		carpoolPlaceId != null
+			? places.find((p) => p.id === carpoolPlaceId)
+			: undefined;
 	return {
 		sessionTitle: sess?.title ?? null,
 		scheduledAt: sess?.scheduled_at ?? null,
-		placeName: place?.name ?? null,
+		placeName: sessPlace?.name ?? null,
+		carpoolPlaceName: carpoolPlace?.name ?? null,
 	};
 }
 
@@ -50,11 +63,10 @@ export function notificationMessage(
 	ctx?: NotificationContext,
 ): string {
 	const when = formatWhen(ctx?.scheduledAt);
-	// 제목+시각 → "'수요 정기모임' (6월 25일 (목) 오후 7:00)".
-	// 제목이 없으면 시각이라도, 둘 다 없으면 빈 문자열(기본 문구로 폴백).
-	const sess = ctx?.sessionTitle
-		? `'${ctx.sessionTitle}'${when ? ` (${when})` : ""}`
-		: when;
+	// 일정엔 '제목' 항목이 없으므로 제목(있으면) 또는 장소명 + 시각으로 식별한다.
+	// "○○체육관 (6월 25일 (목) 오후 7:00)". 둘 다 없으면 빈 문자열(기본 문구로 폴백).
+	const head = ctx?.sessionTitle ? `'${ctx.sessionTitle}'` : ctx?.placeName;
+	const sess = head ? `${head}${when ? ` (${when})` : ""}` : when;
 
 	switch (n.type) {
 		case "promoted":
@@ -69,13 +81,14 @@ export function notificationMessage(
 			const at = formatWhen(
 				n.payload && typeof n.payload.at === "string" ? n.payload.at : null,
 			);
-			const place = ctx?.placeName;
+			const place = ctx?.carpoolPlaceName;
 			if (place && at)
 				return `카풀 안내: '${place}'(으)로 ${at}까지 모여주세요`;
 			if (place) return `카풀 안내: '${place}' 집결 안내가 도착했어요`;
 			return "카풀 집결 안내가 도착했어요";
 		}
 		case "schedule_added": {
+			if (sess) return `새 일정이 추가됐어요: ${sess}`;
 			const label =
 				n.payload && typeof n.payload.label === "string"
 					? n.payload.label
