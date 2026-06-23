@@ -186,6 +186,7 @@ export default function Home({ onStart }: Props) {
 		<>
 		<AppScreen
 			logo
+			onRefresh={() => scheduleActions.load()}
 			right={
 				<>
 					<NotificationBell />

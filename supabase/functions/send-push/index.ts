@@ -68,9 +68,10 @@ function buildBody(
   ctx: NotifCtx,
 ): string {
   const when = formatWhen(ctx.scheduledAt);
+  // 제목 없으면 시각이라도, 둘 다 없으면 빈 문자열(기본 문구로 폴백)
   const sess = ctx.sessionTitle
     ? `'${ctx.sessionTitle}'${when ? ` (${when})` : ""}`
-    : "";
+    : when;
   switch (type) {
     case "promoted":
       return sess

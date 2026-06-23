@@ -99,6 +99,11 @@ export const adminScheduleActions = {
 		await reloadOccurrences();
 	},
 
+	/** 당겨서 새로고침: 현재 범위 기준 규칙·회차를 재조회(loading 토글 없이 조용히). */
+	async refresh() {
+		await Promise.all([reloadRules(), reloadOccurrences()]);
+	},
+
 	// ── 반복 규칙 ──
 	async addRule(input: RecurringRuleInput, createdBy: string | null) {
 		const row = await createRecurringRule(input, createdBy);

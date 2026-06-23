@@ -12,7 +12,7 @@ const MAX_PULL = 110; // 인디케이터 최대 당김(고무줄 저항감)
 
 export function usePullToRefresh(
 	scrollRef: RefObject<HTMLElement | null>,
-	onRefresh: () => void = () => window.location.reload(),
+	onRefresh: () => void | Promise<void> = () => window.location.reload(),
 ): { pull: number; refreshing: boolean; ready: boolean } {
 	const [pull, setPull] = useState(0);
 	const [refreshing, setRefreshing] = useState(false);
@@ -75,8 +75,14 @@ export function usePullToRefresh(
 			if (triggered) {
 				setRefreshing(true);
 				setDist(THRESHOLD); // 스피너 위치 고정
-				// 약간 지연 후 새로고침(스피너가 보이도록)
-				setTimeout(() => onRefreshRef.current(), 150);
+				// 약간 지연 후 새로고침(스피너가 보이도록).
+				// reload(동기)면 페이지가 사라지고, 재쿼리(async)면 완료 후 인디케이터 해제.
+				setTimeout(() => {
+					Promise.resolve(onRefreshRef.current()).finally(() => {
+						setRefreshing(false);
+						setDist(0);
+					});
+				}, 150);
 			} else {
 				setDist(0);
 			}

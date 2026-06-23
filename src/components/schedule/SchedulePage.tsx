@@ -85,6 +85,9 @@ export default function SchedulePage() {
 		goMonth(year, month);
 	}, [viewYear, viewMonth, goMonth]);
 
+	// 당겨서 새로고침 — 현재 월 규칙·회차 재조회(홈과 동일하게 재쿼리 방식)
+	const handleRefresh = useCallback(() => adminScheduleActions.refresh(), []);
+
 	const placeName = useCallback(
 		(id: number | null) =>
 			id == null ? null : (places.find((p) => p.id === id)?.name ?? null),
@@ -158,7 +161,11 @@ export default function SchedulePage() {
 
 	return (
 		<>
-			<AppScreen title="일정 관리" onBack={() => navigate(-1)}>
+			<AppScreen
+				title="일정 관리"
+				onBack={() => navigate(-1)}
+				onRefresh={handleRefresh}
+			>
 				<div className="w-full max-w-sm mx-auto flex flex-col gap-4">
 					<RecurringRulesPanel
 					rules={rules}

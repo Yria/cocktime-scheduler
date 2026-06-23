@@ -50,10 +50,11 @@ export function notificationMessage(
 	ctx?: NotificationContext,
 ): string {
 	const when = formatWhen(ctx?.scheduledAt);
-	// "'수요 정기모임' (6월 25일 (목) 오후 7:00)" 또는 제목만, 없으면 빈 문자열
+	// 제목+시각 → "'수요 정기모임' (6월 25일 (목) 오후 7:00)".
+	// 제목이 없으면 시각이라도, 둘 다 없으면 빈 문자열(기본 문구로 폴백).
 	const sess = ctx?.sessionTitle
 		? `'${ctx.sessionTitle}'${when ? ` (${when})` : ""}`
-		: "";
+		: when;
 
 	switch (n.type) {
 		case "promoted":

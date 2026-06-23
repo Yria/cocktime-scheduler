@@ -8,8 +8,8 @@ interface Props {
 	onBack?: () => void;
 	logo?: boolean;
 	right?: React.ReactNode;
-	/** 당겨서 새로고침 동작(기본: location.reload). */
-	onRefresh?: () => void;
+	/** 당겨서 새로고침 동작(기본: location.reload). 재쿼리(Promise) 시 완료까지 인디케이터 유지. */
+	onRefresh?: () => void | Promise<void>;
 	/** 콘텐츠 래퍼에 추가할 클래스(기본 패딩 외 커스텀). */
 	contentClassName?: string;
 	children: React.ReactNode;
