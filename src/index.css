@@ -83,30 +83,34 @@ body {
 }
 
 /* ── 앱 셸 풀스크린 높이 ─────────────────────────────────────────
-   iOS standalone PWA 는 dvh/svh/clientHeight 를 "화면 − 상단 inset" 으로
-   짧게 보고한다(실측: scr 956 vs dvh 894). 그래서 dvh·position:fixed 로는
-   하단이 화면 끝에 닿지 않는다. full viewport 인 lvh(=vh=956)만 화면 전체를
-   덮으므로, 설치형(standalone)에서는 lvh 를 강제한다.
-   일반 브라우저에서는 동적 툴바에 맞춰 dvh 를 유지한다. */
+   iOS 설치형 PWA(버전 무관 — iOS17 시뮬레이터~iOS26 실기기 모두 재현)는 CSS 뷰포트
+   단위(lvh/dvh/svh)를 레이아웃 뷰포트(예: 869)로 보고해 물리 화면(예: 956)에 못 닿는다.
+   반면 window.screen.height 는 진짜 956 을 주고, 그 값을 높이로 박으면 웹뷰가
+   화면 전체를 그린다(실측 확인).
+   → 설치형에선 JS(initAppHeight)가 --app-h = screen.height 를 주입한다.
+   일반 브라우저/구형 iOS 는 --app-h 가 없어 dvh/lvh 폴백을 쓴다(동적 툴바 반영).
+   콘텐츠 하단은 각 화면이 env(safe-area-inset-bottom) 패딩으로 홈 인디케이터를 피한다. */
 .app-shell-h {
-	height: 100dvh; /* 일반 브라우저: 동적 뷰포트(툴바 반영) */
+	height: 100dvh; /* 일반 브라우저: 동적 뷰포트 */
+	position: relative; /* 절대배치 자식 기준(SessionBoard) */
 }
 @media all and (display-mode: standalone) {
 	.app-shell-h {
-		height: 100vh; /* 구형 iOS 폴백 */
-		height: 100lvh; /* 설치형 PWA: full viewport = 화면 전체(956) */
+		position: fixed; /* body 이중 스크롤 방지하며 화면 전체 고정 */
+		inset: 0 0 auto 0; /* top·left·right = 0, bottom = auto */
+		height: 100lvh; /* 폴백 */
+		height: var(--app-h, 100lvh); /* iOS26: screen.height 주입값 */
 	}
 }
 
-/* min-height 버전 — 페이지 스크롤형 풀스크린 화면(로그인·로딩·로그·세션설정·배경)용.
-   셸과 동일 원칙: standalone 에선 lvh 로 화면 전체를 채워 하단 미충전(빈 띠)을 없앤다. */
+/* min-height 버전 — 페이지 스크롤형 풀스크린 화면(로그인·로딩·로그·세션설정·배경)용. */
 .app-shell-minh {
 	min-height: 100dvh;
 }
 @media all and (display-mode: standalone) {
 	.app-shell-minh {
-		min-height: 100vh; /* 구형 iOS 폴백 */
-		min-height: 100lvh; /* 설치형 PWA: full viewport = 화면 전체 */
+		min-height: 100lvh; /* 폴백 */
+		min-height: var(--app-h, 100lvh); /* iOS26: screen.height 주입값 */
 	}
 }
 
@@ -157,8 +161,8 @@ h4,
 }
 @media all and (display-mode: standalone) {
 	.lq-bg {
-		min-height: 100vh;
 		min-height: 100lvh;
+		min-height: var(--app-h, 100lvh);
 	}
 }
 

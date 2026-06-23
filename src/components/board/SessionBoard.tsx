@@ -264,7 +264,7 @@ export default function SessionBoard() {
 	return (
 		<div
 			className="app-shell-h"
-			style={{ position: "relative", width: "100%", overflow: "hidden", background: BG_BOARD }}
+			style={{ width: "100%", overflow: "hidden", background: BG_BOARD }}
 		>
 			<BoardToolbar />
 			<div ref={stageContainerRef} style={{ position: "absolute", top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top))`, left: 0, right: 0, bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px))`, touchAction: "none" }}>
