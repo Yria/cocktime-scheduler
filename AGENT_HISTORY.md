@@ -354,3 +354,16 @@
 - 프론트 변경만이라 supabase 배포 불필요. 커밋 후 git push → GitHub Pages 자동 배포.
 
 ---
+
+## #26
+
+**Prompt**: 세로로 너무 길 경우 스크롤이 모달안에서 이루어지지 않아. 모달 최대크기는 화면을 벗어나지 않게하고 내부에서 스크롤 일어나게 해. 끝나면 커밋하고 푸쉬
+
+**Answer**: 근본 원인은 공통 컴포넌트 ModalSheet의 시트에 **max-height가 없고 overflow-hidden**이라, 콘텐츠(긴 도움말 이미지)가 길어지면 시트가 무한정 늘어나 화면 밖으로 잘리고 자체 스크롤도 막힌 것이었다(.lq-sheet CSS엔 overflow/max-height 정의 없음). ModalSheet 한 곳만 고쳐 모든 모달에 공통 적용.
+
+- `overflow-hidden` → `overflow-y-auto no-sb`, 인라인 `maxHeight: '90dvh'` 추가. dvh라 모바일 주소창 변동에도 안전, no-sb로 스크롤바 숨김.
+- 검증: 임시 preview로 모달에 화면 초과 콘텐츠를 넣어 확인 — clientHeight 758px(≈90dvh)로 고정, scrollHeight 1460px, 내부 스크롤로 헤더↔하단 이동 정상, 둥근 모서리 유지. build·eslint 통과.
+- 짧은 모달은 90dvh 안이라 영향 없고, 내부 스크롤을 이미 가진 모달(SessionParticipantsModal 등)도 그대로 동작.
+- 프론트 변경만이라 supabase 배포 불필요. 커밋 후 git push → GitHub Pages 자동 배포.
+
+---

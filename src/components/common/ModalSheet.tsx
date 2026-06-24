@@ -22,7 +22,8 @@ export default function ModalSheet({
 			onClick={onClose}
 		>
 			<div
-				className={`lq-sheet w-full max-w-sm rounded-3xl overflow-hidden ${className}`}
+				className={`lq-sheet w-full max-w-sm rounded-3xl overflow-y-auto no-sb ${className}`}
+				style={{ maxHeight: "90dvh" }}
 				onClick={(e) => e.stopPropagation()}
 			>
 				{children}
