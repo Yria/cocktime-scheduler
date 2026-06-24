@@ -341,3 +341,16 @@
 - 검증/배포: tsc·eslint·build 통과. supabase db push(마이그레이션 3개)·functions deploy send-push 프로덕션 배포 완료. 실제 푸시는 실기기 구독 필요해 수동 확인 안내.
 
 ---
+
+## #25
+
+**Prompt**: 설정 푸쉬알림 도움말 이미지를 만들었어. ~/Downloads/and.png, ios.png 야. 이걸로 교체해줘 (잘되면 배포까지)
+
+**Answer**: PushSettingsSheet의 '홈 화면에 앱 설치하기' 안내가 텍스트+아이콘 단계(installSteps)로 되어 있었는데, 사용자가 만든 스크린샷 이미지(제목·단계·TIP 완결형)로 모바일 안내를 대체했다. 데스크톱은 이미지가 없어 기존 텍스트 단계를 fallback으로 유지.
+
+- 이미지 최적화: 원본 png 각 1MB를 cwebp(q85)로 webp 변환 → 64KB/74KB로 감소(도움말 텍스트 선명도 유지). src/assets에 push-install-ios.webp·push-install-android.webp로 배치, 컴포넌트에서 import(base path 안전).
+- installGuide를 isIOS→ios, isAndroid→and 이미지 분기로 교체. 모바일은 이미지만(자체 제목·TIP 포함), 데스크톱은 텍스트 유지. 미사용된 IosShareIcon 함수·아이콘 import(EllipsisVertical/Smartphone/SquarePlus)·모바일 installSteps 분기 정리.
+- 검증: build·eslint 통과, 임시 preview로 모바일 폭(390px) 텍스트 선명도 확인 후 임시파일 제거.
+- 프론트 변경만이라 supabase 배포 불필요. 커밋 후 git push → GitHub Pages 자동 배포.
+
+---
