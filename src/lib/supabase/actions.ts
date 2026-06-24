@@ -203,9 +203,14 @@ export async function dbSetPlayerResting(
 }
 
 export async function dbEndSession(sessionId: number): Promise<void> {
+	// status='closed'까지 함께 — active 상태로 남으면 일정 목록에서 "진행중"으로 영구 노출된다.
 	const { error } = await supabase
 		.from("sessions")
-		.update({ is_active: false, ended_at: new Date().toISOString() })
+		.update({
+			is_active: false,
+			status: "closed",
+			ended_at: new Date().toISOString(),
+		})
 		.eq("id", sessionId);
 	if (error) console.error("dbEndSession:", error);
 }

@@ -17,7 +17,6 @@ import {
 	BG_BOARD,
 	TEAM_W,
 	TEAM_BOX_ABOVE,
-	REST_FIELD_H,
 } from "../../lib/board/constants";
 import BoardToolbar from "./BoardToolbar";
 import RestBar from "./RestBar";
@@ -26,7 +25,7 @@ import PlayerMagnet from "./PlayerMagnet";
 import RestZonePanel from "./RestZonePanel";
 import TeamBackground from "./TeamBackground";
 import DetachZoneOverlay from "./DetachZoneOverlay";
-import RestZone from "./RestZone";
+import RestDropOverlay from "./RestDropOverlay";
 import RecommendTeammateDialog from "./RecommendTeammateDialog";
 import ModalSheet from "../common/ModalSheet";
 import MatchEditModal from "./MatchEditModal";
@@ -211,9 +210,9 @@ export default function SessionBoard() {
 	// 휴식 필드(하단 바) — 바 탭으로 패널 열고 닫음. 자석을 끌어 내리면 휴식, 빼면 복귀.
 	const restZoneOpen = useBoardStore((s) => s.restZoneOpen);
 	const restFieldHot = useBoardStore((s) => s.restFieldHot);
-	// 팀 소속 자석을 드래그하는 동안에만 상단 '팀에서 빼기' 드롭존 노출
+	// 팀 소속 자석을 드래그하는 동안에만 네비 영역 '팀에서 빼기' 드롭존 오버레이 노출
 	const showDetach = useBoardStore((s) => s.dragInfo?.detachable ?? false);
-	// 휴식 가능한 자석을 드래그하는 동안에만 하단 '휴식하기' 드롭존 노출(휴식 패널 펼침 시엔 패널이 드롭존이라 제외)
+	// 휴식 가능 자석을 드래그하는 동안에만 바텀 바 영역 '휴식하기' 드롭존 오버레이 노출(펼침 시엔 패널이 드롭존이라 제외)
 	const showRest = useBoardStore((s) => s.dragInfo?.restable ?? false) && !restZoneOpen;
 	const restingSet = useMemo(() => new Set(restingIds), [restingIds]);
 
@@ -291,9 +290,10 @@ export default function SessionBoard() {
 		prevIsEditor.current = isEditor;
 	}, [isEditor, cancelEditActions]);
 
-	// 휴식 필드 높이 — 펼침이면 인원수만큼 여러 줄로 확장(패널과 동일 산식), 접힘이면 캐치존 높이.
+	// 휴식 필드 높이 — 펼침이면 인원수만큼 여러 줄로 확장(패널과 동일 산식)해 패널 영역 전체가 드롭존,
+	// 접힘이면 0 → 자석을 칠판 하단 경계 너머 바텀 바(RestBar)까지 내려야(논리 y ≥ viewH) 휴식한다.
 	// 드롭 판정(useBoardDragHandlers)과 패널 렌더(RestZonePanel)가 같은 산식을 써 영역이 정확히 일치한다.
-	const restFieldH = restZoneOpen ? restZoneHeight(restingIds.length, viewW, viewH) : REST_FIELD_H;
+	const restFieldH = restZoneOpen ? restZoneHeight(restingIds.length, viewW, viewH) : 0;
 
 	// 드래그/드롭 핸들러(휴식 hot 하이라이트·휴식 처리·자유 배치·예약 드롭)
 	const { onMagnetDragMove, onMagnetDragEnd, onRestingDragEnd, onGhostDragEnd } =
@@ -335,8 +335,9 @@ export default function SessionBoard() {
 			style={{ width: "100%", overflow: "hidden", background: BG_BOARD }}
 		>
 			<BoardToolbar />
-			{/* '팀에서 빼기' 드롭존 — 팀 소속 자석 드래그 중 네비 영역 위에 빨간 점선 오버레이로 표시. */}
+			{/* 드롭존 오버레이(칠판 밖 DOM) — 상단 '팀에서 빼기'는 네비 영역, 하단 '휴식하기'는 바텀 바 영역에 점선 박스+문구로 표시. */}
 			{showDetach && <DetachZoneOverlay />}
+			{showRest && <RestDropOverlay />}
 			<div ref={stageContainerRef} style={{ position: "absolute", top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top))`, left: 0, right: 0, bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px))`, touchAction: "none" }}>
 				<Stage
 					width={stageW}
@@ -350,9 +351,8 @@ export default function SessionBoard() {
 					onTouchEnd={onStageTouchEnd}
 				>
 					<Layer>
-						{/* 하단 '휴식하기' 드롭존(휴식 가능 자석 드래그 중). 좌표는 논리 viewW×viewH 기준.
-						    상단 '팀에서 빼기'는 Konva 밴드가 아니라 네비 영역 DOM 오버레이(DetachZoneOverlay)로 표시. */}
-						{showRest && <RestZone viewW={viewW} viewH={viewH} />}
+						{/* 드롭존 시각 표시는 칠판(Konva) 밖 DOM에서: 상단 '팀에서 빼기'는 네비 영역 오버레이
+						    (DetachZoneOverlay), 하단 '휴식하기'는 바텀 바(RestBar) 점등. 칠판 안엔 밴드를 그리지 않는다. */}
 						{draftIds.map((id) => (
 							<TeamBackground
 								key={id}

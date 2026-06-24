@@ -81,6 +81,10 @@ function buildBody(
       return sess ? `${sess} 일정이 취소됐어요` : "참석 예정 일정이 취소되었어요";
     case "session_closed":
       return sess ? `${sess} 모집이 마감됐어요` : "일정 모집이 마감되었어요";
+    case "session_open":
+      return sess
+        ? `${sess} 일정이 열렸어요. 참석 신청하세요!`
+        : "새 일정이 열렸어요. 참석 신청하세요!";
     case "carpool_muster": {
       const at = formatWhen(
         payload && typeof payload.at === "string" ? payload.at : null,

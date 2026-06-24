@@ -94,9 +94,8 @@ export const RESERVATION_STROKE = "#A78BFA";
 export const RESERVATION_DASH = [5, 4];
 export const RESERVATION_BADGE_BG = "#7C3AED";
 
-// 휴식존(rest zone) — 하단 푸터가 곧 휴식 필드. 접힘 상태에선 푸터 위 얇은 캐치존,
-// 펼침(탭) 상태에선 패널이 위로 열려 휴식자 노출. 드래그로 넣고/빼서 휴식/복귀.
-export const REST_FIELD_H = 56; // 접힘 상태 드롭 캐치존(푸터 바로 위 stage 하단 strip)
+// 휴식존(rest zone) — 하단 푸터(RestBar)가 곧 휴식 드롭 영역. 접힘 상태에선 자석을 칠판 하단 경계
+// 너머 바텀 바까지 내려야 휴식(칠판 안엔 밴드 없음), 펼침(탭) 상태에선 패널이 위로 열려 휴식자 노출.
 export const REST_ZONE_H = MAGNET_SIZE + 44; // 펼침 패널 높이(라벨 + 자석 1줄)
 export const REST_ZONE_BG = "rgba(15,23,42,0.92)"; // 다크 슬레이트(반투명)
 export const REST_ZONE_STROKE = "#475569";
@@ -109,8 +108,9 @@ export const REST_ZONE_HOT_LABEL = "#7DD3FC";
 export const RESTING_OPACITY = 0.55;
 export const RESTING_BADGE_BG = "#475569";
 
-// 팀에서 빼기(detach) 드롭존 — 드래그 중에만 상단에 노출. 휴식존(하단)과 구분되는 레드/로즈.
-export const DETACH_ZONE_H = 72; // 상단 밴드 높이(논리)
+// 팀에서 빼기(detach) 드롭존 — 팀 소속 자석 드래그 중에만 네비 영역에 DOM 오버레이로 노출(휴식존과 구분되는 레드/로즈).
+// 판정 경계는 칠판 상단(y≤0); DETACH_ZONE_H는 펼침 휴식 패널이 칠판 최상단까지 차오르지 않게 하는 상단 안전 마진(restZoneHeight)으로만 쓰인다.
+export const DETACH_ZONE_H = 72; // 펼침 휴식 패널 상단 안전 마진(논리)
 export const DETACH_ZONE_BG = "rgba(76,29,29,0.92)"; // 다크 로즈(반투명)
 export const DETACH_ZONE_STROKE = "#7F1D1D";
 export const DETACH_ZONE_LABEL = "#FCA5A5";

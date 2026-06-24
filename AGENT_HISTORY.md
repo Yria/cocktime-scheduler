@@ -261,3 +261,83 @@
 - 검증: tsc -b 0, 변경 파일 eslint 0. 시각 확인은 실기기 몫(Supabase 인증 필요).
 
 ---
+
+## #19
+
+**Prompt**: 네비 상단으로 드래그해야 팀에서 빠지게 ui는 수정했는데 드래그 범위는 그대로인거같아. 칠판기준 상단이 아니고 네비영역으로 드래그해야 팀에서 빠지는거야. 그럼 기존 코드중 자석이 이미 상단에 있을때 드래그하면 취소, 이 로직이 필요없어지겠지? 확인해. 마찬가지로 휴식도 휴식드래그존이 바텀에 띠형태로 있고 그 위에 하나 더 있는 형태인데, 바텀의 띠형태만 드래그존으로 하는걸로 해줘
+
+**Answer**: detach 드롭존의 UI(네비 영역 오버레이)와 실제 판정 영역(칠판 상단 strip y≤72)이 불일치하던 문제를 진단해 판정 경계를 칠판 밖 네비 영역과 일치시켰다. 자석은 Konva 캔버스(칠판) 안에서만 그려지므로 네비/바텀바로 끌면 시각적으로 잘리지만 좌표는 음수/초과로 잡히며, 오버레이·바텀바 hot 점등이 피드백을 준다(BoardToolbar의 네비 글자 숨김도 이 동작을 전제한 기존 설계).
+
+- detach 판정을 `y ≤ 72` → `y ≤ 0`(칠판 상단 경계=네비 진입)으로 변경 — UI와 일치
+- "자석이 이미 상단에 있을 때 취소"(startedInDetach) 가드 제거 확인 — 존이 칠판 밖으로 옮겨가 자석이 거기서 출발할 수 없어 불필요(anchor·ghost 양쪽)
+- 휴식: 칠판 안에 그리던 밴드 컴포넌트(RestZone) 삭제, 접힘 상태 판정 높이를 0으로 → 자석을 칠판 하단 경계 너머 바텀 바까지 내려야(y ≥ viewH) 휴식
+- 휴식 출발 가드(startedInRest)는 펼침 패널 오작동 방지를 위해 유지 — 접힘 상태에선 높이 0이라 자동 비활성
+- 미사용 상수(REST_FIELD_H) 제거, DETACH_ZONE_H는 펼침 패널 상단 마진으로 의미 재정의, 관련 문서·테스트 갱신
+- 검증: 타입체크·ESLint·테스트 142개·프로덕션 빌드 모두 통과
+
+---
+
+## #20
+
+**Prompt**: 드래그 시작할때 드래그존이 상단, 하단 두개가 있는데 상단이 "여기로 끌어 팀에서 빼기" 가 보이듯이, 하단에도 마찬가지로 문구와 박스가 보이게 해줘.
+
+**Answer**: #19에서 칠판 안 휴식 밴드를 삭제하면서 하단은 바텀바 점등만 남아, 상단 detach 오버레이와 비대칭이 됐다. 상단 `DetachZoneOverlay`의 하단 대칭으로 바텀바 영역에 DOM 오버레이를 새로 만들어 점선 박스 + 문구를 드래그 시작 시 띄우도록 했다.
+
+- 새 컴포넌트 `RestDropOverlay` 추가 — 바텀바 영역에 점선 박스 + "↓ 여기로 끌어 휴식하기"(hot 시 "여기 놓으면 휴식합니다"), showRest(restable && 접힘) 조건, hot=restFieldHot
+- `SessionBoard`에서 showRest 복원 후 DetachZoneOverlay 옆에 RestDropOverlay 노출
+- `RestBar`는 드래그 중 라벨/chevron을 opacity:0로 숨김 — 오버레이 hot 반투명 사이로 바 내용 비침 방지(BoardToolbar의 detach 처리와 대칭)
+- 검증: 타입체크·ESLint 통과
+
+---
+
+## #21
+
+**Prompt**: 휴식존 드래그할때 dash square 가 밝아지는건 좋은데 top border 까지 밝아질필욘 없을거같아
+
+**Answer**: 휴식 영역 hot(restFieldHot) 시 RestDropOverlay 점선 박스와 RestBar의 top border가 함께 스카이로 밝아지던 것을, 오버레이가 hot 피드백을 전담하도록 바 쪽 top border hot만 껐다.
+
+- `RestBar`의 borderTop을 dragging(접힘 드래그) 중에는 transparent로 — 점선 박스만 밝아지고 바 top border는 그대로 유지
+- 펼침 상태(restZoneOpen) hot border는 dragging=false라 그대로 보존
+- 검증: 타입체크·ESLint 통과
+
+---
+
+## #22
+
+**Prompt**: 일정시간이 넘어가면 참석이 불가하고 노출도 안되게 해줘.
+
+**Answer**: "일정시간"의 기준이 기존 동작(시작 시각이 지난 open 일정을 일부러 유지)과 충돌해 사용자에게 확인했고, **종료 시각(ends_at) 기준**·**운영진 포함 전원**으로 확정했다. 종료된 일정은 참석/게스트신청/경기시작이 모두 불가하고 홈 목록에서 사라진다.
+
+- 서버: 새 마이그레이션 `20260624030000_attendance_end_time_guard.sql`에서 `join_session`·`add_guest_attendance`·`start_session_from_schedule` 세 RPC에 종료 상한 가드(`ends_at<=now()` → `session ended`) 추가. 각 함수 최신 본문은 그대로 보존하고 가드만 삽입, `ends_at` NULL(즉석/미정)은 통과. 클라 시계 대신 Postgres `now()` 기준이라 stale 윈도우 차단.
+- 클라(`Home.tsx`): `isPastSchedule`로 종료된 open 일정을 목록에서 제외(30초 tick 재평가), `active`(진행중)는 유지. `session ended`를 "이미 종료된 일정입니다"로 변환 — 참석·경기시작·게스트신청 모두.
+- 문서: `EXPANSION_SPEC.md`에 종료 상한 가드/홈 숨김 항목 추가, RPC 표 갱신.
+- 검증: 적대적 병렬 워크플로우(20에이전트)로 SQL 회귀·경계·NULL·다른 표면 점검. 17건 중 1건(게스트 에러 원문 노출)만 확정 → 수정. `tsc -b`·`eslint` 통과.
+
+---
+
+## #23
+
+**Prompt**: 일정 참가자 목록이 보였으면 좋겠음. 일반적으론 프로필 사진 작게 해서 현재 목록의 카드안에서 보이고, 특정 액션을 하면 모달로 띄워서 목록이 보이는거지. 액션은 어떻게 할지는 네가 고민해.
+
+**Answer**: 액션은 "카드 안 겹친 아바타 스택을 탭 → 바텀시트 모달"로 결정했고, 모달 표시 방식은 사용자 선택(리스트형)을 따랐다. 데이터는 이미 카드까지 일괄 전달되는 `attendances`(N+1 없음)와 이름 기반 `getPlayerPhotoUrl`을 그대로 재사용해 추가 fetch가 거의 없다. 사진 없는 회원의 fallback 색(성별 기반)을 정확히 그리려고 참석 임베드에 gender만 추가했다(skill은 목록 용도에 불필요해 제외).
+
+- 데이터: `fetchAttendances` 임베드 `member:member_id(name, is_guest, gender)`로 확장, `AttendanceRow.member` 타입에 `gender` 추가.
+- 신규 `PlayerAvatar` — PlayerCard에서 사진/성별링/이니셜 fallback만 떼어낸 라벨 없는 경량 원형 아바타(스택·리스트 공용).
+- 신규 `SessionParticipantsModal` — `ModalSheet`(bottom) 기반 리스트형. 확정/대기 그룹, 본인 `(나)`·게스트 뱃지·카풀 의향(🚗/🙋)·대기순번 표시.
+- `ScheduleCard` — 참석 현황 줄 아래에 확정자 우선 최대 6명 겹침 스택+`+N`+chevron 추가(탭→모달), 내부 시간 포맷은 공용 `lib/schedule/timeFmt.ts`로 추출해 카드·모달이 공유.
+- 검증: `tsc -b`·`eslint` 통과. 카카오 로그인 게이팅으로 실데이터 자동확인이 막혀, 소스 미오염 임시 미리보기 엔트리(mock)로 라이트/다크 모두 시각 검증 후 임시 파일 제거.
+
+---
+
+## #24
+
+**Prompt**: 일정 열릴때 전체 회원에게 푸쉬가능? 이거 작업 끝나고 커밋및 푸쉬
+
+**Answer**: 가능했다. 웹푸시 인프라(push_subscriptions → notifications INSERT 트리거 → send-push Edge Function)는 완비·배포돼 있고 '전체 회원 푸시'도 이미 있었으나, **운영진이 일정을 추가하는 순간**에만 발송됐다. 반복 회차가 7일 전 자동으로 draft→open 전환될 때는 알림이 없었다. 사용자와 확인해 **"열릴 때(open)로 통일"**로 결정(추가/자동 구분 없이 회차가 실제 모집 공개되는 시점에 1회).
+
+- DB: 새 마이그레이션 `20260624050000_notify_on_session_open.sql`에서 `sync_schedule_occurrences()` 재정의. E단계(draft→open UPDATE)를 CTE+RETURNING으로 감싸 새로 open된 회차마다 로그인 회원 전원에게 `session_open` 알림 INSERT. 단방향 전환 + not exists 가드로 멱등(앱 진입마다 sync가 돌아도 첫 호출만 발송).
+- 메시지: `notificationMessage`(클라)·`buildBody`(Edge Function) 두 빌더에 `session_open` 케이스 동일 추가("일정이 열렸어요. 참석 신청하세요!"). Edge 핸들러는 session_id로 세션·장소를 type 무관하게 조회하므로 추가 분기 불필요.
+- 일원화: `adminScheduleStore`의 addRule·addOneOff에서 기존 `notifyScheduleAdded`(추가 시점) 호출 제거 + 미사용 import/oneOffLabel 정리. notify RPC·schedule_added 케이스는 과거 알림 호환 위해 보존.
+- 검증/배포: tsc·eslint·build 통과. supabase db push(마이그레이션 3개)·functions deploy send-push 프로덕션 배포 완료. 실제 푸시는 실기기 구독 필요해 수동 확인 안내.
+
+---

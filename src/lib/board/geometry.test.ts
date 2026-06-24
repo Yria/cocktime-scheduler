@@ -96,11 +96,12 @@ describe("isOnEmptySlot", () => {
 });
 
 describe("isInDetachZone", () => {
-	it("상단 밴드 안(y ≤ DETACH_ZONE_H)이면 true", () => {
+	it("칠판 상단 경계를 넘어 네비 영역(y ≤ 0)이면 true", () => {
 		expect(isInDetachZone({ x: 100, y: 0 })).toBe(true);
-		expect(isInDetachZone({ x: 100, y: DETACH_ZONE_H })).toBe(true);
+		expect(isInDetachZone({ x: 100, y: -40 })).toBe(true);
 	});
-	it("밴드 아래면 false", () => {
-		expect(isInDetachZone({ x: 100, y: DETACH_ZONE_H + 1 })).toBe(false);
+	it("칠판 안(y > 0)이면 false — 예전 상단 strip(y≤72)은 더 이상 빼기존이 아님", () => {
+		expect(isInDetachZone({ x: 100, y: 1 })).toBe(false);
+		expect(isInDetachZone({ x: 100, y: DETACH_ZONE_H })).toBe(false);
 	});
 });

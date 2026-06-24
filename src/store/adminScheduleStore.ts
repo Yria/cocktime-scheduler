@@ -1,11 +1,5 @@
 import { create } from "zustand";
 import {
-	dateStrDow,
-	isoToDateKST,
-	isoToTimeKST,
-} from "../lib/schedule/calendar";
-import { WEEKDAY_LABELS, ruleSummary } from "../lib/schedule/recurrence";
-import {
 	type OccurrencePatch,
 	type OneOffInput,
 	type RecurringRuleInput,
@@ -15,7 +9,6 @@ import {
 	deleteRecurringRule,
 	fetchOccurrences,
 	fetchRecurringRules,
-	notifyScheduleAdded,
 	updateOccurrence,
 	updateRecurringRule,
 } from "../lib/supabase/recurring";
@@ -31,14 +24,6 @@ import type {
 	RecurringScheduleRow,
 	SessionRow,
 } from "../lib/supabase/types";
-
-/** 일회성 회차 알림용 라벨: "6월 25일 (수) 19:00" */
-function oneOffLabel(iso: string | null): string {
-	if (!iso) return "새 일정";
-	const d = isoToDateKST(iso); // "YYYY-MM-DD"
-	const [, mo, day] = d.split("-");
-	return `${Number(mo)}월 ${Number(day)}일 (${WEEKDAY_LABELS[dateStrDow(d)]}) ${isoToTimeKST(iso)}`;
-}
 
 interface AdminScheduleState {
 	rules: RecurringScheduleRow[];
@@ -109,11 +94,7 @@ export const adminScheduleActions = {
 		if (!row) return null;
 		await syncOccurrences();
 		await Promise.all([reloadRules(), reloadOccurrences()]);
-		// 전 회원 알림(추가한 본인 제외)
-		const placeName =
-			useAdminScheduleStore.getState().places.find((p) => p.id === row.place_id)
-				?.name ?? null;
-		await notifyScheduleAdded(null, ruleSummary(row, placeName));
+		// 회원 알림은 sync 의 E단계(draft→open)에서 'session_open' 으로 일원화됨.
 		return row;
 	},
 
@@ -159,10 +140,8 @@ export const adminScheduleActions = {
 	async addOneOff(input: OneOffInput, createdBy: string | null) {
 		const row = await createOneOffOccurrence(input, createdBy);
 		if (row) {
-			await syncOccurrences(); // draft → 1주 이내면 open 승격
+			await syncOccurrences(); // draft → 1주 이내면 open 승격(open 시 전 회원 'session_open' 알림)
 			await reloadOccurrences();
-			// 전 회원 알림(추가한 본인 제외)
-			await notifyScheduleAdded(row.id, oneOffLabel(row.scheduled_at));
 		}
 		return row;
 	},

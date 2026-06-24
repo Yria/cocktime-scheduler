@@ -1,36 +1,18 @@
+import { useState } from "react";
+import { ChevronRight } from "lucide-react";
 import type { Gender, PlayerSkills } from "../../types";
 import type {
 	AttendanceRow,
 	CarpoolRole,
 	SessionRow,
 } from "../../lib/supabase/types";
+import { fmtRange } from "../../lib/schedule/timeFmt";
 import GuestSection from "./GuestSection";
+import PlayerAvatar from "../shared/PlayerAvatar";
+import SessionParticipantsModal from "./SessionParticipantsModal";
 
-const dtFmt = new Intl.DateTimeFormat("ko-KR", {
-	timeZone: "Asia/Seoul",
-	month: "long",
-	day: "numeric",
-	weekday: "short",
-	hour: "numeric",
-	minute: "2-digit",
-});
-
-const timeOnlyFmt = new Intl.DateTimeFormat("ko-KR", {
-	timeZone: "Asia/Seoul",
-	hour: "numeric",
-	minute: "2-digit",
-});
-
-function fmt(iso: string | null): string {
-	return iso ? dtFmt.format(new Date(iso)) : "시간 미정";
-}
-
-/** "시작 ~ 종료" (종료 없으면 시작만). 예) "6월 25일 (수) 오후 7:00 ~ 오후 10:00" */
-function fmtRange(start: string | null, end: string | null): string {
-	const base = fmt(start);
-	if (!start || !end) return base;
-	return `${base} ~ ${timeOnlyFmt.format(new Date(end))}`;
-}
+/** 인라인 아바타 스택에 노출할 최대 인원(초과분은 +N 칩) */
+const STACK_MAX = 6;
 
 interface Props {
 	session: SessionRow;
@@ -67,8 +49,13 @@ export default function ScheduleCard({
 	onAddGuest,
 	onCancelGuest,
 }: Props) {
+	const [showParticipants, setShowParticipants] = useState(false);
 	const confirmed = attendances.filter((a) => a.status === "confirmed");
 	const waiting = attendances.filter((a) => a.status === "waitlisted");
+	// 인라인 스택 — 확정자 우선, 모자라면 대기자로 채움
+	const roster = [...confirmed, ...waiting];
+	const stackList = roster.slice(0, STACK_MAX);
+	const stackExtra = roster.length - stackList.length;
 	const mine = memberId
 		? attendances.find((a) => a.member_id === memberId)
 		: undefined;
@@ -207,6 +194,66 @@ export default function ScheduleCard({
 				)}
 			</div>
 
+			{/* 참가자 아바타 스택 — 탭하면 전체 목록 모달 */}
+			{roster.length > 0 && (
+				<button
+					type="button"
+					onClick={() => setShowParticipants(true)}
+					className="flex items-center gap-2 mt-2.5 w-full"
+					style={{
+						background: "none",
+						border: "none",
+						padding: 0,
+						cursor: "pointer",
+					}}
+					aria-label="참가자 목록 보기"
+				>
+					<div className="flex items-center">
+						{stackList.map((a, i) => {
+							// 대기자는 그레이스케일+감광으로 확정자와 구분.
+							const isWaiting = a.status === "waitlisted";
+							return (
+								<div
+									key={a.member_id}
+									className="rounded-full ring-2 ring-white dark:ring-[#1e1e23]"
+									style={{
+										position: "relative",
+										marginLeft: i === 0 ? 0 : -8,
+										zIndex: stackList.length - i,
+										filter: isWaiting ? "grayscale(1)" : undefined,
+										opacity: isWaiting ? 0.55 : 1,
+									}}
+								>
+									<PlayerAvatar
+										name={a.member?.name ?? "회원"}
+										gender={a.member?.gender ?? null}
+										size={28}
+									/>
+								</div>
+							);
+						})}
+						{stackExtra > 0 && (
+							<div
+								className="rounded-full ring-2 ring-white dark:ring-[#1e1e23] flex items-center justify-center text-[#64748b] dark:text-[rgba(235,235,245,0.7)] bg-[rgba(0,0,0,0.06)] dark:bg-white/10"
+								style={{
+									width: 28,
+									height: 28,
+									marginLeft: -8,
+									fontSize: 11,
+									fontWeight: 700,
+								}}
+							>
+								+{stackExtra}
+							</div>
+						)}
+					</div>
+					<ChevronRight
+						size={16}
+						className="ml-auto text-[#c0c6cf] dark:text-[rgba(235,235,245,0.35)]"
+					/>
+				</button>
+			)}
+
 			{/* 카풀 의향 (참석자) — 카풀 사용 일정에서만 */}
 			{attending && s.carpool_enabled && (
 				<div
@@ -270,6 +317,7 @@ export default function ScheduleCard({
 				attendances={attendances}
 				memberId={memberId}
 				isOpen={isOpen}
+				attending={attending}
 				busy={busy}
 				onAddGuest={onAddGuest}
 				onCancelGuest={onCancelGuest}
@@ -296,6 +344,16 @@ export default function ScheduleCard({
 				>
 					경기 시작
 				</button>
+			)}
+
+			{showParticipants && (
+				<SessionParticipantsModal
+					session={s}
+					placeName={placeName}
+					attendances={attendances}
+					memberId={memberId}
+					onClose={() => setShowParticipants(false)}
+				/>
 			)}
 		</div>
 	);

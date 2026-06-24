@@ -10,6 +10,8 @@ interface Props {
 	memberId: string | null;
 	/** 세션이 모집 중(open)인가 — 신청/취소 가능 여부 */
 	isOpen: boolean;
+	/** 본인이 이 세션에 참석(확정/대기) 중인가 — 게스트 신청은 참석자만 가능 */
+	attending: boolean;
 	busy: boolean;
 	/** 게스트 신청 — 성공/실패 반환(실패 시 모달 유지 + 알림). */
 	onAddGuest: (guest: { name: string; gender: Gender; skills: PlayerSkills }) => Promise<{ ok: boolean; error?: string }>;
@@ -24,6 +26,7 @@ export default function GuestSection({
 	attendances,
 	memberId,
 	isOpen,
+	attending,
 	busy,
 	onAddGuest,
 	onCancelGuest,
@@ -111,8 +114,8 @@ export default function GuestSection({
 				</div>
 			)}
 
-			{/* 게스트 신청 버튼 — 모집 중에만 */}
-			{isOpen && (
+			{/* 게스트 신청 버튼 — 모집 중 + 본인이 참석 중일 때만 */}
+			{isOpen && attending && (
 				<button
 					type="button"
 					onClick={openModal}

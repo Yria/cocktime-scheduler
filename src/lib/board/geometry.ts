@@ -128,15 +128,21 @@ export function isInsideTeamBounds(
 
 /**
  * 휴식 필드(하단) 안에 점이 있는지. stageH = 보드 캔버스 높이, fieldH = 필드(드롭/패널) 높이.
- * 접힘이면 REST_FIELD_H, 펼침이면 restZoneHeight(휴식 인원수에 따라 여러 줄로 확장)를 호출자가 넘긴다.
+ * 접힘이면 fieldH=0 → 자석이 칠판 하단 경계를 넘어 바텀 바(RestBar) 영역으로 내려가야(논리 y ≥ stageH) 휴식,
+ * 펼침이면 restZoneHeight(휴식 인원수에 따라 여러 줄로 확장)를 호출자가 넘겨 패널 영역 전체가 드롭존이 된다.
  */
 export function isInRestField(point: StagePoint, stageH: number, fieldH: number): boolean {
 	return point.y >= stageH - fieldH;
 }
 
-/** '팀에서 빼기' 드롭존(상단 밴드) 안에 점이 있는지 — 논리 좌표 기준. */
+/**
+ * '팀에서 빼기' 드롭존 — 자석이 칠판(stage) 상단 경계를 넘어 네비(헤더) 영역으로 올라갔는지(논리 좌표).
+ * 네비는 칠판 위(stage 컨테이너 top 바깥)에 있어 그 영역의 자석 중심은 논리 y가 0 이하가 된다(canvas 밖이라
+ * 시각적으론 잘리지만 좌표는 음수로 잡힘). 빼기 판정·detachHot·네비 DOM 오버레이(DetachZoneOverlay)가 모두
+ * 이 경계를 공유 → "칠판 상단 strip"이 아니라 "네비까지 끌어올려야" 빠진다.
+ */
 export function isInDetachZone(point: StagePoint): boolean {
-	return point.y <= DETACH_ZONE_H;
+	return point.y <= 0;
 }
 
 // 휴식존 펼침 패널 레이아웃 — 인원수에 따라 여러 줄로 확장(최소 1줄=기존 높이 108과 동일).

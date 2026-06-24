@@ -85,11 +85,11 @@ export async function fetchAttendances(
 	sessionIds: number[],
 ): Promise<AttendanceRow[]> {
 	if (sessionIds.length === 0) return [];
-	// member 임베드 — 게스트 이름/게스트여부 표시용. attendances→members FK가 둘(member_id, invited_by)이라
+	// member 임베드 — 게스트 이름/게스트여부/성별(아바타 색) 표시용. attendances→members FK가 둘(member_id, invited_by)이라
 	// FK 컬럼(member_id)으로 명시 disambiguate해야 한다(없으면 PGRST201로 전체 조회가 실패).
 	const { data, error } = await supabase
 		.from("attendances")
-		.select("*, member:member_id(name, is_guest)")
+		.select("*, member:member_id(name, is_guest, gender)")
 		.in("session_id", sessionIds)
 		.neq("status", "cancelled")
 		.order("position", { ascending: true });

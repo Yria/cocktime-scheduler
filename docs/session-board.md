@@ -160,7 +160,8 @@ interface BoardState {
 - **보기 전용(`!isEditor`)**: 버튼은 그대로 렌더하되 **편집자와 같은 라벨을 회색 비활성**으로 보여준다("보기 전용" 같은 별도 텍스트를 쓰지 않음). `ctaEnabled=false`라 클릭 무반응이며 `listening=false`(다만 보기 전용은 팀 자체가 `draggable=false`). 박스 높이는 권한과 무관하게 항상 풀사이즈(시각=히트영역 일치).
 - **코트 카드**(`CourtMatchCard`): 호박색, "N번 코트 · 경기중", 멤버 locked(드래그 불가), "경기완료" 버튼.
 - **겹침 하이라이트(드래그 중)**: 드래그 중 합류/페어 대상이 되는 자석·그룹을 스카이(`HILITE_STROKE`)로 강조 — 자석은 외곽 링, 그룹은 박스 스트로크/글로우. `resolveDropTarget` 결과를 `hoverTarget`(team|magnet)으로 store에 두고, 각 `PlayerMagnet`/`TeamBackground`가 "내가 대상인가" selector로 구독(대상만 리렌더).
-- **'팀에서 빼기' 드롭존**(`DetachZone`): 팀 소속(anchor/ghost) 자석을 드래그하는 동안에만 상단에 점선 로즈 밴드로 노출. 위로 끌어 놓으면 detach(자유)/예약 취소. 드래그 안 할 땐 숨김(`dragInfo.detachable`). `listening=false`라 드롭은 좌표(`isInDetachZone`)로 판정.
+- **'팀에서 빼기' 드롭존**(`DetachZoneOverlay`): 팀 소속(anchor/ghost) 자석을 드래그하는 동안에만 **네비(헤더) 영역**에 점선 로즈 DOM 오버레이로 노출. 칠판(Konva) 위 네비까지 자석을 끌어올려 놓으면 detach(자유)/예약 취소. 칠판 안엔 밴드를 그리지 않는다. 판정 경계는 **칠판 상단(논리 `y ≤ 0` = `isInDetachZone`)** — 자석 중심이 칠판을 벗어나 네비로 올라가야 빠진다("칠판 상단 strip"이 아님). 네비가 칠판 밖이라 자석이 거기서 "출발"할 수 없어 출발-존 가드가 없다. 드래그 안 할 땐 숨김(`dragInfo.detachable`).
+- **'휴식하기' 드롭존**: 휴식 가능 자석 드래그 중, 접힘 상태에선 **하단 바(`RestBar`)** 가 곧 드롭존(칠판 안 밴드 없음) — 자석을 칠판 하단 경계 너머 바까지 내리면(논리 `y ≥ viewH` = `isInRestField`, 접힘 `fieldH=0`) 휴식하고 바가 hot 점등. 펼침(탭) 상태에선 위로 열린 패널(`RestZonePanel`) 영역 전체가 드롭존이며, 패널 위 자유 자석 오작동을 막는 출발-존 가드(`startedInRest`)가 동작.
 - **줌(0.5~1배)**: 우상단 ＋/－ 버튼·휠·핀치로 Stage를 중앙 기준 축소. 콘텐츠만 스케일되고 논리 좌표는 그대로라 정렬·드롭·휴식/빼기 판정은 동일(드래그 좌표는 `absToStage`로 역변환 복원).
 - **좌상단 ＋ 버튼**: 빈 추천 모달(0명 선택)을 열어 추천 순으로 새 팀을 만든다(`recommendTarget={newTeam:true}` → `commitTeammates({newTeam})`). 편집자만 노출.
 
@@ -175,13 +176,14 @@ src/
 │  ├─ BoardToolbar.tsx     — 뒤로/정렬
 │  ├─ PlayerMagnet.tsx     — 자석(anchor/ghost/locked 시각 분기)
 │  ├─ TeamBackground.tsx   — 예비팀 박스 + 멤버 + CTA(구성중=자동편성 / 4명=경기시작) + 겹침 하이라이트
-│  ├─ DetachZone.tsx       — 드래그 중 상단 '팀에서 빼기' 드롭존(listening=false)
+│  ├─ DetachZoneOverlay.tsx — 드래그 중 네비 영역 '팀에서 빼기' DOM 오버레이(판정 y≤0)
+│  ├─ RestBar.tsx          — 하단 휴식 바(접힘 드롭존) / 탭하면 RestZonePanel 펼침
 │  ├─ CourtMatchCard.tsx   — 경기중 코트(읽기전용) + 경기완료
 │  └─ CourtStatusBar.tsx   — 하단 코트 현황 바
 ├─ lib/board/
 │  ├─ dropResolver.ts      — resolveDropTarget 상태머신 (순수)
 │  ├─ membership.ts        — teamMembers/deriveLifecycle/isTeamStartable (순수)
-│  ├─ geometry.ts          — 슬롯/히트/빼기존(isInDetachZone) (순수)
+│  ├─ geometry.ts          — 슬롯/히트/빼기존(isInDetachZone:y≤0)/휴식존(isInRestField) (순수)
 │  ├─ recommendPool.ts     — 추천/자동편성 입력(confirmed·pool·ctx) 빌드 (순수)
 │  ├─ konvaEvents.ts       — isSelfDrag/stopTap/absToStage(줌 좌표 역변환)
 │  ├─ collision.ts         — settleFreeMagnets (경기중 선수 제외)

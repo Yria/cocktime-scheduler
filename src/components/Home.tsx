@@ -20,6 +20,7 @@ interface Props {
 function joinErrorMsg(e?: string): string {
 	if (e?.includes("already joined")) return "이미 신청했습니다";
 	if (e?.includes("not open yet")) return "아직 신청 기간이 아닙니다";
+	if (e?.includes("session ended")) return "이미 종료된 일정입니다";
 	if (e?.includes("not open")) return "모집 중이 아닙니다";
 	if (e?.includes("not authenticated")) return "로그인이 필요합니다";
 	return "신청에 실패했습니다";
@@ -28,9 +29,21 @@ function joinErrorMsg(e?: string): string {
 function startErrorMsg(e?: string): string {
 	if (e?.includes("profile incomplete"))
 		return "성별 미입력 참석자가 있어 시작할 수 없습니다";
+	if (e?.includes("session ended")) return "이미 종료된 일정입니다";
 	if (e?.includes("not open")) return "이미 시작되었거나 모집 중이 아닙니다";
 	if (e?.includes("forbidden")) return "운영진만 시작할 수 있습니다";
 	return "세션 시작에 실패했습니다";
+}
+
+function guestErrorMsg(e?: string): string {
+	if (e?.includes("guest name required")) return "게스트 이름을 입력해 주세요";
+	if (e?.includes("guest gender required")) return "게스트 성별을 선택해 주세요";
+	if (e?.includes("must join first")) return "먼저 본인 참석 신청을 해주세요";
+	if (e?.includes("session ended")) return "이미 종료된 일정입니다";
+	if (e?.includes("not open yet")) return "아직 신청 기간이 아닙니다";
+	if (e?.includes("not open")) return "모집 중이 아닙니다";
+	if (e?.includes("not authenticated")) return "로그인이 필요합니다";
+	return "게스트 신청에 실패했습니다";
 }
 
 export default function Home({ onStart }: Props) {
@@ -114,10 +127,14 @@ export default function Home({ onStart }: Props) {
 	);
 
 	const handleAddGuest = useCallback(
-		(
+		async (
 			sessionId: number,
 			guest: { name: string; gender: Gender; skills: PlayerSkills },
-		) => scheduleActions.addGuest(sessionId, guest),
+		) => {
+			const res = await scheduleActions.addGuest(sessionId, guest);
+			// 서버 원문 에러를 친절 메시지로 변환(참석/경기시작과 동일 기준). 종료 일정은 "이미 종료된 일정입니다".
+			return res.ok ? res : { ok: false, error: guestErrorMsg(res.error) };
+		},
 		[],
 	);
 
@@ -195,14 +212,20 @@ export default function Home({ onStart }: Props) {
 	const placeName = (id: number | null) =>
 		id == null ? null : (places.find((p) => p.id === id)?.name ?? null);
 
+	// 종료된 일정 숨김: 종료 시각이 지난 open 일정은 참석 불가 + 미노출(서버 join 가드와 동일 기준).
+	// active(진행중)는 종료 시각과 무관하게 유지 — 운영 중인 세션을 목록에서 지우지 않는다.
+	const isPastSchedule = (s: (typeof schedules)[number]) =>
+		s.status === "open" && s.ends_at != null && Date.parse(s.ends_at) <= now;
+	const visibleSchedules = schedules.filter((s) => !isPastSchedule(s));
+
 	// 진행 하이라이트: 시작 시각이 지난 open 일정. 분리해 맨 위로 올리고 하이라이트한다.
-	// (요청: 시작 이후 계속 유지 — 종료 시각과 무관. 시작 전이면 세션시작 버튼도 숨김)
+	// (요청: 시작 이후 계속 유지 — 종료 시각 전까지. 시작 전이면 세션시작 버튼도 숨김)
 	const isLiveSchedule = (s: (typeof schedules)[number]) =>
 		s.status === "open" &&
 		s.scheduled_at != null &&
 		Date.parse(s.scheduled_at) <= now;
-	const liveSchedules = schedules.filter(isLiveSchedule);
-	const restSchedules = schedules.filter((s) => !isLiveSchedule(s));
+	const liveSchedules = visibleSchedules.filter(isLiveSchedule);
+	const restSchedules = visibleSchedules.filter((s) => !isLiveSchedule(s));
 	const orderedSchedules = [...liveSchedules, ...restSchedules];
 	const liveIds = new Set(liveSchedules.map((s) => s.id));
 
@@ -241,8 +264,8 @@ export default function Home({ onStart }: Props) {
 					</button>
 				)}
 
-				{/* 일정 섹션 헤더 */}
-				<div className="flex items-center justify-between mt-1">
+				{/* 일정 섹션 헤더 — minHeight로 '일정 관리' 버튼 유무(운영진/일반)에 따른 높이차 제거 */}
+				<div className="flex items-center justify-between mt-1 min-h-[32px]">
 					<h2
 						className="text-[#0f1724] dark:text-white"
 						style={{ fontSize: 18, fontWeight: 800 }}
@@ -274,7 +297,7 @@ export default function Home({ onStart }: Props) {
 					<div className="flex justify-center py-8">
 						<Spinner size={16} />
 					</div>
-				) : schedules.length === 0 ? (
+				) : visibleSchedules.length === 0 ? (
 					<div
 						className="text-center text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
 						style={{ fontSize: 14, padding: "32px 0" }}
