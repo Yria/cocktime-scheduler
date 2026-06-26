@@ -4,13 +4,13 @@ import { devtools } from "zustand/middleware";
 import { enableMapSet } from "immer";
 
 import type { SessionPlayer } from "../types";
-import type { BoardDraftsPayload, DraftTeam, MagnetPosition, Reservation, StagePoint } from "../types/board";
+import type { BoardDraftsPayload, DraftTeam, ForcedPair, MagnetPosition, Reservation, StagePoint } from "../types/board";
 import {
 	clampAnchor,
 	computeSlotOffset,
 	DEFAULT_VIEWPORT,
 	isInsideTeamBounds,
-	isOnEmptySlot,
+	slotIndexAt,
 } from "../lib/board/geometry";
 import { MAGNET_SIZE, TEAM_BOX_BELOW } from "../lib/board/constants";
 import { arrangeBoard } from "../lib/board/arrange";
@@ -20,6 +20,7 @@ import { settleFreeMagnets } from "../lib/board/settle";
 import { resolveDropTarget, nearestFreePartner } from "../lib/board/dropResolver";
 import {
 	cockPendingIds,
+	findReservation,
 	isMemberOf,
 	isTeamStartable,
 	matchPlayerIds,
@@ -32,11 +33,28 @@ import { buildRecommendData } from "../lib/board/recommendPool";
 import { randomId } from "../lib/randomId";
 import { useSessionStore } from "./sessionStore";
 import { useAppStore } from "./appStore";
-import { autoFillTeammates, pairPlayers } from "../lib/teamSelection";
+import { autoFillTeammates, pairPlayers, FORCED_WINDOW } from "../lib/teamSelection";
 import { toast } from "./toastStore";
 import { dbBoardSaveDrafts, sendBroadcast } from "../lib/supabase";
 
 enableMapSet();
+
+// ── 보드 줌(축소 전용) 0.5~1배 ─────────────────────────
+// 수동 줌(±·핀치)과 자동 fit 스케일이 공유하는 단일 상태. 이펙트에서 React setState 없이 store로 set하기 위해
+// scale을 store에 둔다(자동정렬 이펙트의 set-state-in-effect 회피). SessionBoard가 읽고/조절한다.
+export const ZOOM_MIN = 0.5;
+export const ZOOM_MAX = 1;
+export const ZOOM_STEP = 0.1;
+const SCALE_KEY = "cocktime-board-scale";
+const clampScale = (v: number) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(v * 100) / 100));
+function loadScale(): number {
+	try {
+		const v = parseFloat(localStorage.getItem(SCALE_KEY) ?? "");
+		return Number.isFinite(v) ? clampScale(v) : 1;
+	} catch {
+		return 1;
+	}
+}
 
 // ── grid layout for initial pool ─────────────────────────
 
@@ -102,26 +120,120 @@ function runSettle(s: SettleState, src: DragSource) {
 	scatterFromSource(source, s.magnets, s.drafts, vw, vh, playingIds, 0);
 }
 
+/**
+ * 복귀(그룹/휴식존에서 빠짐) 자석을 "정렬되는 위치"에 둔다.
+ * 클론에 arrangeBoard를 적용해 이 선수의 정렬 좌표만 읽어 본문에 반영 — 다른 자석/팀의 수동 배치는 보존
+ * (수동 레이아웃이라도 복귀 자석만은 자유 자석 격자의 제자리로 들어가게).
+ */
+function placeArranged(
+	s: {
+		magnets: Map<string, MagnetPosition>;
+		drafts: Map<string, DraftTeam>;
+		reservations: Map<string, Reservation>;
+		courtAnchors: Map<number, StagePoint>;
+		stageW: number;
+		stageH: number;
+		scale: number;
+	},
+	playerId: string,
+) {
+	const mag = s.magnets.get(playerId);
+	if (!mag || mag.teamId !== null) return; // 자유 자석만 정렬 배치
+	const ss = useSessionStore.getState();
+	const playingIds = playingIdsFromCourts(ss.courts);
+	const restingIds = new Set(ss.restingIds);
+	restingIds.delete(playerId); // 휴식 복귀 직후 restingIds 갱신 지연 대비 — 이 선수는 자유로 취급
+	const scale = s.scale || 1;
+	const viewW = (s.stageW || DEFAULT_VIEWPORT.vw) / scale;
+	const viewH = (s.stageH || DEFAULT_VIEWPORT.vh) / scale;
+	const magClone = new Map<string, MagnetPosition>();
+	for (const [k, v] of s.magnets) magClone.set(k, { ...v });
+	const draftClone = new Map<string, DraftTeam>();
+	for (const [k, v] of s.drafts) draftClone.set(k, { ...v, anchor: { ...v.anchor }, anchorMemberIds: [...v.anchorMemberIds] });
+	const resClone = new Map<string, Reservation>();
+	for (const [k, v] of s.reservations) resClone.set(k, { ...v });
+	const courtClone = new Map<number, StagePoint>();
+	for (const [k, v] of s.courtAnchors) courtClone.set(k, { ...v });
+	arrangeBoard({
+		magnets: magClone,
+		drafts: draftClone,
+		reservations: resClone,
+		courtAnchors: courtClone,
+		courts: ss.courts,
+		sessionPlayers: ss.sessionPlayers,
+		playingIds,
+		restingIds,
+		viewW,
+		viewH,
+	});
+	const pos = magClone.get(playerId);
+	if (pos) {
+		mag.x = pos.x;
+		mag.y = pos.y;
+	}
+	// 정렬 슬롯이 (수동 배치된) 실제 자석과 겹칠 수 있으므로 겹침 해소 — 이 자석을 소스로 겹친 자유 자석을 밀어낸다.
+	// (clone-arrange는 클론 기준 비겹침이라 실제 레이아웃에선 보장 안 됨.)
+	runSettle(s, { magnetId: playerId });
+}
+
 // ── 보드 멤버십 공유(drafts/reservations) ────────────────────
 // 원격 멤버십 적용 중에는 자체 브로드캐스트/저장을 막기 위한 플래그.
 let applyingRemoteDrafts = false;
 // 마지막으로 동기화한 멤버십 JSON — 위치만 바뀐 변경(정렬 등)은 재브로드캐스트하지 않기 위함.
 let lastSyncedDraftsJson = "";
 
-/** drafts/reservations 멤버십만 직렬화(위치 제외). */
-function serializeBoardDrafts(s: { drafts: Map<string, DraftTeam>; reservations: Map<string, Reservation> }): BoardDraftsPayload {
+/**
+ * 팀의 "의도적(고정배치로 묶은) 멤버" 중 현재 멤버(anchor + ghost)에 남아있는 것만. 2명 이상이면 의도적 그룹.
+ * memberIds = 현재 유효 멤버 id 집합(anchor + 예약 ghost) — 4명+예약 잠금 시 ghost도 포함되므로 anchor만으로 거르지 않는다.
+ */
+function effectiveForcedIds(t: DraftTeam, memberIds: ReadonlySet<string>): string[] {
+	if (!t.forcedIds?.length) return [];
+	return t.forcedIds.filter((id) => memberIds.has(id));
+}
+
+/** 의도적 그룹 경기 시작 시 재편성 회피 쌍 추가(같은 쌍은 최신 fromCount로 갱신). */
+function addForcedPair(s: { forcedPairs: ForcedPair[] }, a: string, b: string, fromCount: number) {
+	const f = s.forcedPairs.find((p) => (p.a === a && p.b === b) || (p.a === b && p.b === a));
+	if (f) f.fromCount = Math.max(f.fromCount, fromCount);
+	else s.forcedPairs.push({ a, b, fromCount });
+}
+
+/** decay 끝난(경과 ≥ FORCED_WINDOW) 쌍 제거 — 무한 증식 방지. */
+function pruneForcedPairs(s: { forcedPairs: ForcedPair[] }, currentCount: number) {
+	s.forcedPairs = s.forcedPairs.filter((p) => currentCount - p.fromCount < FORCED_WINDOW);
+}
+
+/** drafts/reservations 멤버십(+forcedIds/forcedPairs)만 직렬화(위치 제외). */
+function serializeBoardDrafts(s: {
+	drafts: Map<string, DraftTeam>;
+	reservations: Map<string, Reservation>;
+	forcedPairs: ForcedPair[];
+}): BoardDraftsPayload {
 	return {
-		teams: [...s.drafts.values()].map((t) => ({
-			id: t.id,
-			memberIds: [...t.anchorMemberIds],
-			createdMs: t.createdAt,
-		})),
-		reservations: [...s.reservations.values()].map((r) => ({
+		teams: [...s.drafts.values()].map((t) => {
+			const memberIds = new Set(teamMembers(t.id, s.drafts, s.reservations).map((m) => m.playerId));
+			const forcedIds = effectiveForcedIds(t, memberIds);
+			// 슬롯은 현재 멤버(anchor+ghost) 것만 동기화 — 취소된 예약 등 스테일 키 제거.
+			let slots: Record<string, number> | undefined;
+			if (t.slots && Object.keys(t.slots).length) {
+				const entries = Object.entries(t.slots).filter(([pid]) => memberIds.has(pid));
+				if (entries.length) slots = Object.fromEntries(entries);
+			}
+			return {
+				id: t.id,
+				memberIds: [...t.anchorMemberIds],
+				createdMs: t.createdAt,
+				...(forcedIds.length ? { forcedIds } : {}),
+				...(slots ? { slots } : {}),
+			};
+		}),
+		reservations: [...s.reservations.values()].filter((r) => s.drafts.has(r.teamId)).map((r) => ({
 			id: r.id,
 			playerId: r.playerId,
 			teamId: r.teamId,
 			createdMs: r.createdAt,
 		})),
+		...(s.forcedPairs.length ? { forcedPairs: s.forcedPairs } : {}),
 	};
 }
 
@@ -200,6 +312,8 @@ export interface BoardState {
 	magnets: Map<string, MagnetPosition>;
 	drafts: Map<string, DraftTeam>;
 	reservations: Map<string, Reservation>;
+	/** 의도적 그룹(드래그로 묶음)이 경기 시작 시 기록하는 재편성 회피 쌍. board_drafts jsonb로 동기·영속(컬럼 추가 없음). */
+	forcedPairs: ForcedPair[];
 	assigningTeamIds: Set<string>;
 	courtAnchors: Map<number, StagePoint>;
 	/**
@@ -225,8 +339,8 @@ export interface BoardState {
 	 * - from=드래그 시작 논리좌표 → 출발 존(빼기/휴식)에서 같은 존으로의 드롭을 무효화하는 가드용.
 	 */
 	dragInfo: { playerId: string; detachable: boolean; restable: boolean; from: StagePoint } | null;
-	/** 드래그 중 현재 겹침 대상(하이라이트). team=그룹 박스, magnet=페어 상대. */
-	hoverTarget: { kind: "team" | "magnet"; id: string } | null;
+	/** 드래그 중 현재 겹침 대상(하이라이트). slot=팀의 특정 칸(빈칸/교체), magnet=페어 상대. */
+	hoverTarget: { kind: "slot"; teamId: string; slotIndex: number } | { kind: "magnet"; id: string } | null;
 	/** 드래그가 상단 '팀에서 빼기' 드롭존 위에 있는지(hot). */
 	detachHot: boolean;
 
@@ -245,10 +359,21 @@ export interface BoardState {
 	 * 한 명 추가할 때마다 알고리즘을 다시 돌려 다음 추천 1명을 뽑는 greedy 방식.
 	 */
 	autoFillTeam: (teamId: string) => void;
+	/** 추천 모달의 "자동편성" — 팀/시드/새팀 대상의 나머지를 대기 선수로 채워 commit. extraIds=사용자 직접 선택분. */
+	autoFillTarget: (
+		target: { teamId?: string; seedId?: string; newTeam?: boolean },
+		extraIds?: string[],
+	) => void;
+	/** "고정배치" 토글 — 누르는 시점의 현재 멤버 전체를 🔒 잠금(재편성 회피 대상). 이미 잠겨있으면 해제. 시각/코스트만, 실제 락 아님(드래그로 빼서도 취소). */
+	toggleForced: (teamId: string) => void;
 	setTeamAnchor: (teamId: string, x: number, y: number) => void;
 	setCourtAnchor: (courtId: number, x: number, y: number) => void;
 	/** 실제 stage 크기 등록(흩어짐 바운더리용) */
 	setStageSize: (w: number, h: number) => void;
+	/** 보드 줌 배율(0.5~1). 수동 줌·자동 fit 공용. */
+	scale: number;
+	/** 줌 배율 설정(클램프 + localStorage 영속). 함수형 업데이트 지원. */
+	setScale: (v: number | ((prev: number) => number)) => void;
 	/** 드래그-엔드 후 소스(팀/코트)에서 겹친 자유 자석을 흩어지게 */
 	settleBoard: (source: DragSource) => void;
 	/** 공유된 보드 멤버십(payload)을 로컬에 적용(위치는 로컬에서 결정). 스냅샷/브로드캐스트 수신용. */
@@ -267,12 +392,14 @@ export interface BoardState {
 	rearrangeAll: (viewW: number, viewH: number) => void;
 	/** 휴식존 표시 토글. */
 	toggleRestZone: () => void;
+	/** 휴식 패널 접기(멱등) — 보드 자석 드래그 시작 시 가림 해소용. */
+	closeRestZone: () => void;
 	/** 휴식 필드 액티베이트(hot) 상태 설정. */
 	setRestFieldHot: (hot: boolean) => void;
 	/** 드래그 시작/종료 시 드래그 정보 설정(null=종료). */
 	setDragInfo: (info: { playerId: string; detachable: boolean; restable: boolean; from: StagePoint } | null) => void;
 	/** 드래그 중 겹침 대상 하이라이트 설정(변화 시에만 반영). */
-	setHoverTarget: (t: { kind: "team" | "magnet"; id: string } | null) => void;
+	setHoverTarget: (t: { kind: "slot"; teamId: string; slotIndex: number } | { kind: "magnet"; id: string } | null) => void;
 	/** '팀에서 빼기' 드롭존 hot 설정(변화 시에만 반영). */
 	setDetachHot: (hot: boolean) => void;
 	/** 드래그 종료 — dragInfo/hoverTarget/detachHot 일괄 초기화. */
@@ -281,6 +408,8 @@ export interface BoardState {
 	detachMember: (playerId: string, drop: StagePoint) => void;
 	/** 예약(ghost) 취소(드롭존). */
 	cancelReservation: (resId: string) => void;
+	/** 선수를 보드 그룹에서 제거(추천 모달 더블탭): ghost면 예약 취소, anchor면 팀에서 빼 자유 자석으로. */
+	removeMemberFromBoard: (playerId: string) => void;
 	/** 접속자/편집권한 모달 표시 토글. */
 	setPresenceModalOpen: (open: boolean) => void;
 	/** 선수를 휴식 처리(보드 멤버십에서 제거 + status='resting'). */
@@ -331,7 +460,7 @@ function dissolveDraftAfterAssign(s: Draft, teamId: string) {
 			const m = s.magnets.get(mem.playerId);
 			if (!m) continue;
 			m.teamId = null;
-			const off = computeSlotOffset(mem.slot, members.length);
+			const off = computeSlotOffset(mem.slot);
 			m.x = team.anchor.x + off.x;
 			m.y = team.anchor.y + off.y;
 		}
@@ -350,28 +479,86 @@ function detachAnchor(s: Draft, playerId: string) {
 	mag.teamId = null;
 	if (!team) return;
 	team.anchorMemberIds = team.anchorMemberIds.filter((id) => id !== playerId);
+	// 그룹에서 빠진 사람은 고정배치(forced)에서도 제거 → 다시 넣으면 잠금 리셋(고정 아님)
+	if (team.forcedIds?.length) {
+		team.forcedIds = team.forcedIds.filter((id) => id !== playerId);
+	}
+	// 슬롯 매핑에서도 제거 → 그 칸이 빈 슬롯으로 (다시 넣으면 새로 배치)
+	if (team.slots && playerId in team.slots) delete team.slots[playerId];
 	// 남은 인원이 너무 적으면(원본 0명 또는 총 2명 미만) 팀 해체
 	if (team.anchorMemberIds.length === 0 || teamMemberCount(teamId, s.drafts, s.reservations) < 2) {
 		dissolveDraft(s, teamId);
 	}
 }
 
-function attachAnchor(s: Draft, playerId: string, teamId: string) {
+function attachAnchor(s: Draft, playerId: string, teamId: string, slot?: number) {
 	const mag = s.magnets.get(playerId);
 	const team = s.drafts.get(teamId);
 	if (!mag || !team) return;
-	// ghost로 들어와 있던 예약이 있으면 승격(삭제 후 anchor로)
+	// anchor로 확정되면 이 선수는 어느 팀에서도 빌려질(ghost) 수 없다(anchor xor ghost). 모든 예약(타 팀 포함) 정제.
+	// — 원본(선수)이 anchor로 바뀌는데 복사본(ghost)이 다른 팀에 남는 구조적 결함 방지. ghost 승격도 이 경로로 처리.
 	for (const [rid, r] of [...s.reservations]) {
-		if (r.playerId === playerId && r.teamId === teamId) s.reservations.delete(rid);
+		if (r.playerId === playerId) s.reservations.delete(rid);
 	}
+	const setSlot = () => {
+		if (slot === undefined) return; // 미지정 → teamMembers fallback(빈칸 순서대로)
+		team.slots = team.slots ?? {};
+		team.slots[playerId] = slot;
+	};
 	if (team.anchorMemberIds.includes(playerId)) {
 		mag.teamId = teamId;
+		setSlot();
 		return;
 	}
 	if (teamMemberCount(teamId, s.drafts, s.reservations) >= 4) return;
 	if (mag.teamId && mag.teamId !== teamId) detachAnchor(s, playerId);
 	team.anchorMemberIds.push(playerId);
 	mag.teamId = teamId;
+	setSlot();
+}
+
+/**
+ * 점유된 슬롯에 다른 선수를 드롭 → 그 자리 멤버 교체(R4). 점유자는 자유 자석으로 흩어진다.
+ * anchor 점유자는 in-place 스왑(인원수 불변 → 해체 트리거 없음, 슬롯 위치 보존),
+ * ghost 점유자는 예약 취소 후 새 선수를 그 슬롯에 anchor로 합류.
+ * 단, 끌어온 선수가 "같은 팀" 멤버면(팀 내 재배치) 점유자를 빼지 않고 둘의 슬롯만 스왑한다.
+ */
+function replaceAtSlot(s: Draft, playerId: string, teamId: string, slotIndex: number) {
+	const team = s.drafts.get(teamId);
+	if (!team) return;
+	const members = teamMembers(teamId, s.drafts, s.reservations);
+	const occupant = members.find((m) => m.slot === slotIndex);
+	if (!occupant || occupant.playerId === playerId) return;
+	// 같은 팀 내 이동 — 두 멤버 슬롯 스왑(둘 다 그대로 유지). "이 그룹에 계속 들어감" 보장.
+	if (s.magnets.get(playerId)?.teamId === teamId) {
+		const selfSlot = members.find((m) => m.playerId === playerId)?.slot ?? slotIndex;
+		team.slots = team.slots ?? {};
+		team.slots[playerId] = slotIndex;
+		team.slots[occupant.playerId] = selfSlot;
+		return;
+	}
+	if (occupant.kind === "ghost") {
+		const r = findReservation(occupant.playerId, teamId, s.reservations);
+		if (r) s.reservations.delete(r.id);
+		if (team.slots && occupant.playerId in team.slots) delete team.slots[occupant.playerId];
+		attachAnchor(s, playerId, teamId, slotIndex); // 새 선수 합류(이동 시 기존 팀 자동 제거)
+		runSettle(s, { magnetId: occupant.playerId });
+		return;
+	}
+	// anchor 점유자 — in-place 스왑
+	const pmag = s.magnets.get(playerId);
+	if (pmag && pmag.teamId && pmag.teamId !== teamId) detachAnchor(s, playerId); // 새 선수를 기존 팀에서 빼냄(이동)
+	const idx = team.anchorMemberIds.indexOf(occupant.playerId);
+	if (idx >= 0) team.anchorMemberIds[idx] = playerId;
+	else team.anchorMemberIds.push(playerId);
+	const omag = s.magnets.get(occupant.playerId);
+	if (omag) omag.teamId = null;
+	if (pmag) pmag.teamId = teamId;
+	if (team.forcedIds?.length) team.forcedIds = team.forcedIds.filter((id) => id !== occupant.playerId);
+	team.slots = team.slots ?? {};
+	if (occupant.playerId in team.slots) delete team.slots[occupant.playerId];
+	team.slots[playerId] = slotIndex;
+	runSettle(s, { magnetId: occupant.playerId });
 }
 
 function addReservation(s: Draft, playerId: string, teamId: string) {
@@ -382,15 +569,39 @@ function addReservation(s: Draft, playerId: string, teamId: string) {
 	s.reservations.set(id, { id, playerId, teamId, createdAt: nowMs() });
 }
 
+/**
+ * 경기 종료/로스터 제외로 "자유가 된" 선수의 예약(ghost)을 해소한다 — 빌려뒀던 팀의 정식 멤버(anchor)로 승격.
+ * 원본(선수)이 경기중→자유로 바뀔 때 복사본(ghost)이 한 곳으로 수렴되게 하는 공통 처리. completeMatch/setMatchRoster 공용.
+ * 승격 대상은 잠금(forcedIds)된 팀 우선, 없으면 가장 오래된 예약. attachAnchor가 그 선수의 모든 예약을 정제하므로
+ * 다중 예약도 한 번에 정리된다. 대상 팀이 사라졌으면 고아 예약만 제거.
+ */
+function resolveFreedReservations(s: Draft, playerIds: readonly string[]) {
+	for (const pid of playerIds) {
+		const mag = s.magnets.get(pid);
+		if (!mag || mag.teamId !== null) continue; // 이미 어느 팀 anchor면 스킵
+		const myRes = [...s.reservations.values()].filter((r) => r.playerId === pid);
+		if (myRes.length === 0) continue;
+		myRes.sort((a, b) => a.createdAt - b.createdAt);
+		const target = myRes.find((r) => s.drafts.get(r.teamId)?.forcedIds?.includes(pid)) ?? myRes[0];
+		if (!s.drafts.get(target.teamId)) {
+			for (const [rid, r] of [...s.reservations]) if (r.playerId === pid) s.reservations.delete(rid);
+			continue;
+		}
+		attachAnchor(s, pid, target.teamId, s.drafts.get(target.teamId)?.slots?.[pid]); // 모든 예약 정제 + anchor 합류
+	}
+}
+
 const creator = immer<BoardState>((set, get) => ({
 	magnets: new Map<string, MagnetPosition>(),
 	drafts: new Map<string, DraftTeam>(),
 	reservations: new Map<string, Reservation>(),
+	forcedPairs: [],
 	assigningTeamIds: new Set<string>(),
 	courtAnchors: new Map<number, StagePoint>(),
 	manualLayout: false,
 	stageW: 0,
 	stageH: 0,
+	scale: loadScale(),
 	restZoneOpen: false,
 	restFieldHot: false,
 	presenceModalOpen: false,
@@ -460,7 +671,11 @@ const creator = immer<BoardState>((set, get) => ({
 					break;
 				}
 				case "attach":
-					attachAnchor(s, playerId, target.teamId);
+					attachAnchor(s, playerId, target.teamId, target.slot);
+					source = { teamId: target.teamId };
+					break;
+				case "replace":
+					replaceAtSlot(s, playerId, target.teamId, target.slot);
 					source = { teamId: target.teamId };
 					break;
 				case "detach": {
@@ -473,14 +688,12 @@ const creator = immer<BoardState>((set, get) => ({
 					source = { magnetId: playerId };
 					break;
 				}
-				case "reserve":
-					addReservation(s, playerId, target.toTeamId);
-					source = { teamId: target.toTeamId };
-					break;
 				case "createPair": {
 					const a = s.magnets.get(playerId);
 					const b = s.magnets.get(target.partnerId);
-					if (!a || !b || a.teamId !== null || b.teamId !== null) return;
+					// 파트너(b)는 자유 자석이어야 한다. 끌어낸 a는 자유이거나 팀구성중(이동)일 수 있다.
+					if (!a || !b || b.teamId !== null) return;
+					if (a.teamId !== null) detachAnchor(s, playerId); // 팀구성중 멤버 → 원본 팀에서 빠져 새 페어로 이동
 					const id = newId();
 					s.drafts.set(id, {
 						id,
@@ -490,25 +703,6 @@ const creator = immer<BoardState>((set, get) => ({
 					});
 					a.teamId = id;
 					b.teamId = id;
-					source = { teamId: id };
-					break;
-				}
-				case "reservePair": {
-					const dragged = s.magnets.get(playerId);
-					const partner = s.magnets.get(target.partnerId);
-					if (!dragged || !partner) return;
-					if (partner.teamId !== null || dragged.teamId === null) return;
-					const id = newId();
-					s.drafts.set(id, {
-						id,
-						anchorMemberIds: [target.partnerId],
-						anchor: clampToStage(s, target.anchor),
-						createdAt: nowMs(),
-					});
-					partner.teamId = id;
-					// 끌어낸 선수는 원본 팀에 anchor로 남고, 새 팀에는 ghost로 예약
-					const rid = newId();
-					s.reservations.set(rid, { id: rid, playerId, teamId: id, createdAt: nowMs() });
 					source = { teamId: id };
 					break;
 				}
@@ -564,16 +758,18 @@ const creator = immer<BoardState>((set, get) => ({
 			for (const d of s.drafts.values()) {
 				if (!isInsideTeamBounds(drop, d.anchor)) continue;
 				done = true; // 박스 안이면 새 팀 생성(2단계)으로 넘어가지 않음
-				const count = teamMemberCount(d.id, s.drafts, s.reservations);
-				if (
-					!isMemberOf(playerId, d.id, s.drafts, s.reservations) &&
-					count < 4 &&
-					isOnEmptySlot(drop, d.anchor, count)
-				) {
+				if (isMemberOf(playerId, d.id, s.drafts, s.reservations)) break;
+				const slotIdx = slotIndexAt(drop, d.anchor);
+				if (slotIdx < 0) break; // 박스 안이지만 슬롯 아님 → 복귀(no-op)
+				// 빈 슬롯에만 예약(점유 칸엔 경기중 선수 끼워넣기 안 함 — 복귀). 슬롯 위치 기록.
+				const occupied = teamMembers(d.id, s.drafts, s.reservations).some((m) => m.slot === slotIdx);
+				if (!occupied && teamMemberCount(d.id, s.drafts, s.reservations) < 4) {
 					addReservation(s, playerId, d.id);
+					d.slots = d.slots ?? {};
+					d.slots[playerId] = slotIdx;
 					source = { teamId: d.id };
-					break; // 슬롯에 예약 성공 → 종료
 				}
+				break; // 슬롯 판정 끝 → 종료(겹친 다른 팀 탐색 안 함: bounds 안이면 done)
 			}
 			// 2) 자유 자석 위 → 새 예비팀(파트너 anchor + 이 선수 ghost)
 			if (!done) {
@@ -649,13 +845,30 @@ const creator = immer<BoardState>((set, get) => ({
 		});
 	},
 
-	autoFillTeam: (teamId) => {
+	toggleForced: (teamId) => {
 		if (!claimEdit()) return; // 보기 전용 차단
-		const { drafts, reservations, magnets } = get();
+		set((s) => {
+			const team = s.drafts.get(teamId);
+			if (!team) return;
+			// 현재 멤버(anchor + ghost) 전체 — 4명+예약 잠금 시 예약(ghost)도 함께 락한다("4명 다 락").
+			const memberIds = teamMembers(teamId, s.drafts, s.reservations).map((m) => m.playerId);
+			const effective = (team.forcedIds ?? []).filter((id) => memberIds.includes(id));
+			// 이미 잠금(유효 2+)이면 해제, 아니면 "지금 그룹에 포함된 멤버" 전체를 잠금(이후 추가/제거는 효과 ∩ 또는 재토글).
+			team.forcedIds = effective.length >= 2 ? [] : memberIds;
+		});
+	},
+
+	autoFillTeam: (teamId) => get().autoFillTarget({ teamId }, []),
+
+	// 추천 모달의 "자동편성" 버튼 공용 — 팀/시드/새팀 어디서나 대기 선수로 나머지를 채워 commit.
+	// extraIds = 모달에서 사용자가 직접 고른 선수(고정으로 먼저 포함하고 나머지를 자동 채움).
+	autoFillTarget: (target, extraIds = []) => {
+		if (!claimEdit()) return; // 보기 전용 차단
+		const { drafts, reservations, magnets, forcedPairs } = get();
 		const ss = useSessionStore.getState();
 		const data = buildRecommendData(
-			{ teamId },
-			[],
+			target,
+			extraIds,
 			{
 				drafts,
 				reservations,
@@ -665,21 +878,22 @@ const creator = immer<BoardState>((set, get) => ({
 				pairHistory: ss.pairHistory,
 				lastGameType: ss.lastGameType,
 				matchAssignCount: ss.matchAssignCount,
+				forcedPairs,
 				cockCheckEnabled: ss.cockCheckEnabled,
 			},
 			{ excludePlaying: true }, // 자동편성은 대기 선수만으로 채운다(경기중 제외)
 		);
 		if (!data) return;
-		const slotsToFill = 4 - data.members.length;
-		if (slotsToFill <= 0) return; // 이미 가득 참
-		const picks = autoFillTeammates(data.confirmed, data.pool, data.ctx, slotsToFill);
-		if (picks.length === 0) {
+		const slotsToFill = 4 - data.confirmed.length; // confirmed = 기존 멤버 + extraIds
+		const picks = slotsToFill > 0 ? autoFillTeammates(data.confirmed, data.pool, data.ctx, slotsToFill) : [];
+		const ids = [...extraIds, ...picks.map((p) => p.id)];
+		if (ids.length === 0) {
 			toast("자동편성할 대기 선수가 없어요", { variant: "error" });
 			return;
 		}
-		get().commitTeammates({ teamId }, picks.map((p) => p.id));
+		get().commitTeammates(target, ids);
 		if (picks.length < slotsToFill) {
-			toast(`대기 선수가 부족해 ${picks.length}명만 채웠어요`);
+			toast(`대기 선수가 부족해 ${picks.length + extraIds.length}명만 채웠어요`);
 		}
 	},
 
@@ -705,6 +919,19 @@ const creator = immer<BoardState>((set, get) => ({
 			s.stageW = w;
 			s.stageH = h;
 		});
+	},
+
+	setScale: (v) => {
+		const next = clampScale(typeof v === "function" ? v(get().scale) : v);
+		if (next === get().scale) return;
+		set((s) => {
+			s.scale = next;
+		});
+		try {
+			localStorage.setItem(SCALE_KEY, String(next));
+		} catch {
+			// localStorage 불가(시크릿 등) — 영속 생략
+		}
 	},
 
 	settleBoard: (source) => {
@@ -737,6 +964,10 @@ const creator = immer<BoardState>((set, get) => ({
 				const { drafts, reservations } = reconcileMembership(payload, s.magnets, oldAnchors, vw, vh, playingIds);
 				s.drafts = drafts;
 				s.reservations = reservations;
+
+				// 의도적 그룹 재편성 회피 쌍 동기 + decay 끝난 것 정리(읽기 시점에도 정리해 무한 보존 방지).
+				s.forcedPairs = payload.forcedPairs ? [...payload.forcedPairs] : [];
+				pruneForcedPairs(s, useSessionStore.getState().matchAssignCount);
 
 				// 원격 변경으로 "새로 필드에 들어온" 자석(팀/예약 → 자유): 내가 드래그하지 않았어도
 				// 드롭과 동일하게 흩어짐을 적용 — 각 자석을 소스로 BFS 방사형으로 주변을 밀어낸다.
@@ -795,6 +1026,7 @@ const creator = immer<BoardState>((set, get) => ({
 					if (!playingIds.has(id)) continue;
 					const m = s.magnets.get(id);
 					if (m && m.teamId === teamId) m.teamId = null;
+					if (team.slots && id in team.slots) delete team.slots[id]; // 슬롯 매핑도 정리
 				}
 				team.anchorMemberIds = team.anchorMemberIds.filter((id) => !playingIds.has(id));
 				// 제거 후 인원이 부족하면(원본 0명 또는 총 2명 미만) 팀 해체(남은 멤버는 자유 자석으로)
@@ -884,6 +1116,12 @@ const creator = immer<BoardState>((set, get) => ({
 		});
 	},
 
+	closeRestZone: () => {
+		set((s) => {
+			if (s.restZoneOpen) s.restZoneOpen = false;
+		});
+	},
+
 	setRestFieldHot: (hot) => {
 		// 값이 같으면 immer가 동일 상태를 반환해 리렌더 없음(드래그 프레임마다 호출돼도 안전).
 		set((s) => {
@@ -901,7 +1139,10 @@ const creator = immer<BoardState>((set, get) => ({
 		// 객체는 immer가 내용 동일해도 새 참조면 리렌더하므로, 내용 비교로 무변경 시 스킵(드래그 프레임 다발 호출).
 		const cur = get().hoverTarget;
 		if (cur === t) return;
-		if (cur && t && cur.kind === t.kind && cur.id === t.id) return;
+		if (cur && t && cur.kind === t.kind) {
+			if (cur.kind === "magnet" && t.kind === "magnet" && cur.id === t.id) return;
+			if (cur.kind === "slot" && t.kind === "slot" && cur.teamId === t.teamId && cur.slotIndex === t.slotIndex) return;
+		}
 		set((s) => {
 			s.hoverTarget = t;
 		});
@@ -922,16 +1163,13 @@ const creator = immer<BoardState>((set, get) => ({
 		});
 	},
 
-	detachMember: (playerId, drop) => {
+	detachMember: (playerId) => {
 		if (!claimEdit()) return; // 보기 전용 차단
 		set((s) => {
 			const mag = s.magnets.get(playerId);
 			if (!mag || mag.teamId === null) return;
 			detachAnchor(s, playerId); // 팀에서 제거(+남은 인원 부족 시 팀 해체)
-			const p = clampToStage(s, drop);
-			mag.x = p.x;
-			mag.y = p.y;
-			runSettle(s, { magnetId: playerId }); // 드롭존 아래로 흩어져 보이게
+			placeArranged(s, playerId); // 복귀 자석은 정렬되는 위치로(드롭 지점 무시)
 		});
 	},
 
@@ -943,6 +1181,27 @@ const creator = immer<BoardState>((set, get) => ({
 			const teamId = r.teamId;
 			s.reservations.delete(resId);
 			if (s.drafts.get(teamId)) runSettle(s, { teamId });
+		});
+	},
+
+	removeMemberFromBoard: (playerId) => {
+		if (!claimEdit()) return; // 보기 전용 차단
+		set((s) => {
+			// ghost(예약)면 예약 취소
+			for (const [rid, r] of [...s.reservations]) {
+				if (r.playerId === playerId) {
+					const teamId = r.teamId;
+					s.reservations.delete(rid);
+					if (s.drafts.get(teamId)) runSettle(s, { teamId });
+					return;
+				}
+			}
+			// anchor면 팀에서 빼 자유 자석으로 → 정렬되는 위치로 복귀
+			const mag = s.magnets.get(playerId);
+			if (mag && mag.teamId !== null) {
+				detachAnchor(s, playerId);
+				placeArranged(s, playerId);
+			}
 		});
 	},
 
@@ -965,17 +1224,15 @@ const creator = immer<BoardState>((set, get) => ({
 		void useSessionStore.getState().setResting(playerId, true);
 	},
 
-	unrestPlayer: (playerId, drop) => {
+	unrestPlayer: (playerId) => {
 		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
-		// status='waiting' 복귀(평균 판수 보정). 자유 자석으로 drop 위치에 배치.
+		// status='waiting' 복귀(평균 판수 보정). 복귀 자석은 정렬되는 위치로 배치(드롭 지점 무시).
 		void useSessionStore.getState().setResting(playerId, false);
 		set((s) => {
 			const m = s.magnets.get(playerId);
 			if (!m) return;
 			m.teamId = null;
-			m.x = drop.x;
-			m.y = drop.y;
-			runSettle(s, { magnetId: playerId });
+			placeArranged(s, playerId);
 		});
 	},
 
@@ -1023,7 +1280,18 @@ const creator = immer<BoardState>((set, get) => ({
 			const placedIds = court?.match ? [...court.match.teamA, ...court.match.teamB] : [];
 			const ok = placedIds.length === 4 && placedIds.every((id) => ourIds.has(id));
 			if (ok) {
+				// 의도적 그룹(드래그로 2명+ 묶음)이 경기 시작 → 묶인 멤버들끼리 쌍을 재편성 회피로 기록.
+				const team = drafts.get(teamId);
+				const fourIds = new Set(members.map((m) => m.playerId));
+				const forced = team ? effectiveForcedIds(team, fourIds) : [];
+				const fromCount = useSessionStore.getState().matchAssignCount; // 이 경기 배정 후 값(decay 기준점)
 				set((s) => {
+					if (forced.length >= 2) {
+						for (let i = 0; i < forced.length; i++) {
+							for (let j = i + 1; j < forced.length; j++) addForcedPair(s, forced[i], forced[j], fromCount);
+						}
+					}
+					pruneForcedPairs(s, fromCount); // decay 끝난 오래된 쌍 정리
 					dissolveDraftAfterAssign(s, teamId);
 					// 코트 카드를 방금 그 그룹이 있던 자리에 그대로 표시(좌상단 점프 X)
 					if (teamAnchor) s.courtAnchors.set(empty.id, teamAnchor);
@@ -1044,7 +1312,10 @@ const creator = immer<BoardState>((set, get) => ({
 		const court = useSessionStore.getState().courts.find((c) => c.id === courtId);
 		const endedIds = matchPlayerIdsFromCourt(court);
 		await useSessionStore.getState().handleComplete(courtId);
-		// 그룹 해제로 자유 자석이 된 4명에 흩어짐 적용(방사형 + 겹침 정리)
+		// 경기 끝나 자유가 된 선수가 다른 팀에 예약(ghost)으로 잡혀 있었으면 → 그 팀의 정식 멤버(anchor)로 승격.
+		// (예: 경기중인 4번을 abc 팀에 끌어 abc4 예약·고정 → 4번 경기 끝나면 abc4가 4명 정식 팀이 되어 매칭확정 가능.)
+		set((s) => resolveFreedReservations(s, endedIds));
+		// 그룹 해제로 자유 자석이 된 선수에 흩어짐 적용(승격된 선수는 anchor라 scatterMagnets가 건드리지 않음)
 		get().scatterMagnets(endedIds);
 	},
 
@@ -1055,8 +1326,11 @@ const creator = immer<BoardState>((set, get) => ({
 		const newIds = matchPlayerIds({ teamA, teamB });
 		const removed = oldIds.filter((id) => !newIds.includes(id));
 		await useSessionStore.getState().handleSetMatchRoster(courtId, teamA, teamB);
-		// 빠진 선수는 자유 자석으로 보이게 흩어뜨림(들어온 선수는 playing→자동 숨김)
-		if (removed.length > 0) get().scatterMagnets(removed);
+		// 빠진 선수가 다른 팀 예약(ghost)이었으면 그 팀 정식 멤버로 승격(completeMatch와 동일 처리), 그 외엔 흩어뜨림.
+		if (removed.length > 0) {
+			set((s) => resolveFreedReservations(s, removed));
+			get().scatterMagnets(removed);
+		}
 	},
 
 	reset: () => {
@@ -1087,7 +1361,12 @@ export const useBoardStore = create<BoardState>()(
 // 위치(자석/anchor) 변경은 무시(로컬). 원격 적용 중에는 생략(피드백 루프 방지).
 useBoardStore.subscribe((state, prev) => {
 	if (applyingRemoteDrafts) return;
-	if (state.drafts === prev.drafts && state.reservations === prev.reservations) return;
+	if (
+		state.drafts === prev.drafts &&
+		state.reservations === prev.reservations &&
+		state.forcedPairs === prev.forcedPairs
+	)
+		return;
 	const payload = serializeBoardDrafts(state);
 	const json = JSON.stringify(payload);
 	if (json === lastSyncedDraftsJson) return; // 멤버십 동일(위치만 변경) → 생략

@@ -223,8 +223,11 @@ export default function MemberAdminPage() {
 				}
 			/>
 			<div
-				className="w-full max-w-sm mx-auto"
+				className="w-full mx-auto"
 				style={{
+					// 메인(AppScreen: 외부 패딩 + 내부 max-w-sm)과 본문 콘텐츠 폭을 동일하게 맞춘다.
+					// 384(max-w-sm) + 좌우 패딩 40 = 424 를 컨테이너 max 로 두고 안쪽에 1.25rem 패딩.
+					maxWidth: 424,
 					flex: 1,
 					minHeight: 0,
 					width: "100%",

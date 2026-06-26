@@ -16,6 +16,15 @@ import { MAGNET_SIZE, TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_W } from "./constants
 import { teamMemberCount } from "./membership";
 import { settleFreeMagnets } from "./settle";
 
+// 레이아웃 상수 — arrangeBoard 배치와 requiredBoardHeight(fit 계산)가 공유한다. 반드시 동기 유지.
+const PAD_X = 12; // 좌우 패딩
+const GAP_X = 16; // 그룹 가로 간격
+const GAP_Y = 16; // 그룹 세로 간격
+const GROUP_TOP = 10; // 그룹 격자 상단 시작 y
+const MAG_GAP = 10; // 자유 자석 간격
+const FREE_TOP_PAD = 8; // 그룹 영역 아래 자유 자석 시작 여백
+const GROUP_ROW_H = TEAM_BOX_ABOVE + TEAM_BOX_BELOW + GAP_Y;
+
 export interface ArrangeInput {
 	magnets: Map<string, MagnetPosition>;
 	drafts: Map<string, DraftTeam>;
@@ -44,12 +53,9 @@ export function arrangeBoard(input: ArrangeInput): void {
 	} = input;
 
 	const halfW = TEAM_W / 2;
-	const PAD_X = 12;
-	const GAP_X = 16;
-	const GAP_Y = 16;
 
 	const cols = Math.max(1, Math.floor((viewW - PAD_X * 2 + GAP_X) / (TEAM_W + GAP_X)));
-	const rowH = TEAM_BOX_ABOVE + TEAM_BOX_BELOW + GAP_Y;
+	const rowH = GROUP_ROW_H;
 	// 그룹(코트 카드·팀) 박스는 anchor 기준 위 TEAM_BOX_ABOVE / 아래 TEAM_BOX_BELOW,
 	// 좌우 halfW 만큼 뻗는다. 격자 좌표를 화면 경계 안으로 클램프해 어떤 그룹도 밖으로 넘지 않게 한다.
 	const maxAnchorY = Math.max(TEAM_BOX_ABOVE, viewH - TEAM_BOX_BELOW);
@@ -74,7 +80,6 @@ export function arrangeBoard(input: ArrangeInput): void {
 		if (cb !== ca) return cb - ca; // 그 외: 멤버 많은 순
 		return a.createdAt - b.createdAt;
 	});
-	const GROUP_TOP = 10;
 	let gi = 0;
 	for (const c of occupied) courtAnchors.set(c.id, gridAnchor(gi++, GROUP_TOP));
 	for (const t of teams) t.anchor = gridAnchor(gi++, GROUP_TOP);
@@ -92,15 +97,62 @@ export function arrangeBoard(input: ArrangeInput): void {
 			const gb = sessionPlayers.get(b.playerId)?.gameCount ?? 0;
 			return ga - gb;
 		});
-	const magCols = Math.max(1, Math.floor(viewW / (MAGNET_SIZE + 10)));
-	const freeStartY = groupAreaBottom + MAGNET_SIZE / 2 + 8;
+	const magCols = Math.max(1, Math.floor(viewW / (MAGNET_SIZE + MAG_GAP)));
+	const freeStartY = groupAreaBottom + MAGNET_SIZE / 2 + FREE_TOP_PAD;
 	freeMagnets.forEach((m, i) => {
 		const col = i % magCols;
 		const row = Math.floor(i / magCols);
-		m.x = MAGNET_SIZE / 2 + 8 + col * (MAGNET_SIZE + 10);
-		m.y = freeStartY + row * (MAGNET_SIZE + 10);
+		m.x = MAGNET_SIZE / 2 + FREE_TOP_PAD + col * (MAGNET_SIZE + MAG_GAP);
+		m.y = freeStartY + row * (MAGNET_SIZE + MAG_GAP);
 	});
 
 	// 3) 남은 겹침 정리 + 화면 바운더리 클램프 (그룹 영역 아래로)
 	settleFreeMagnets(magnets, drafts, viewW, viewH, playingIds, groupAreaBottom);
+}
+
+// 자동 스케일(렌더 없이 계산) — fit 판정의 하단 여백(settle 클램프 maxY ≈ viewH−MAG_R−4와 정합).
+const FIT_BOTTOM_MARGIN = 6;
+
+/**
+ * 렌더 없이(순수) 현재 구성이 차지하는 보드 세로 높이(px)를 계산한다 — arrangeBoard의 배치 공식과 동일.
+ * 그룹 격자 + 그 아래 자유 자석 격자의 최하단(자연 배치, settle 클램프 전 기준).
+ * @param groupCount 경기중 코트 + 팀(draft) 수 (arrangeBoard의 그룹 격자 항목 수와 동일)
+ * @param freeCount  자유 자석 수 (teamId=null·비경기중·비휴식 — arrangeBoard freeMagnets와 동일 기준)
+ * @param viewW      보이는 논리 가로(=stageW/scale) — 줄바꿈 열 수를 결정
+ */
+export function requiredBoardHeight(groupCount: number, freeCount: number, viewW: number): number {
+	const cols = Math.max(1, Math.floor((viewW - PAD_X * 2 + GAP_X) / (TEAM_W + GAP_X)));
+	const groupRows = groupCount > 0 ? Math.ceil(groupCount / cols) : 0;
+	// 마지막 그룹 줄의 박스 하단 = 상단 시작 + 위여백 + (줄−1)·행높이 + 아래여백
+	const groupExtent =
+		groupRows > 0 ? GROUP_TOP + TEAM_BOX_ABOVE + (groupRows - 1) * GROUP_ROW_H + TEAM_BOX_BELOW : 0;
+	if (freeCount <= 0) return groupExtent;
+	const groupAreaBottom = groupRows > 0 ? GROUP_TOP + groupRows * GROUP_ROW_H : GROUP_TOP;
+	const magCols = Math.max(1, Math.floor(viewW / (MAGNET_SIZE + MAG_GAP)));
+	const freeRows = Math.ceil(freeCount / magCols);
+	const freeStartY = groupAreaBottom + MAGNET_SIZE / 2 + FREE_TOP_PAD;
+	const freeBottom = freeStartY + (freeRows - 1) * (MAGNET_SIZE + MAG_GAP) + MAGNET_SIZE / 2;
+	return Math.max(groupExtent, freeBottom);
+}
+
+/**
+ * 렌더 없이 "모든 자석이 다 들어가는 가장 큰 배율"을 계산한다(min~max, 보통 0.5~1.0).
+ * scale↓ → 보이는 영역(view=stage/scale)↑ → 더 잘 들어간다. 큰 배율부터 step씩 내려가며
+ * requiredBoardHeight ≤ viewH(하단 여백 보정)인 첫(=가장 큰) 배율을 반환. 끝까지 안 들어가면 min.
+ */
+export function computeFitScale(
+	stageW: number,
+	stageH: number,
+	groupCount: number,
+	freeCount: number,
+	opts: { min: number; max: number; step?: number },
+): number {
+	const step = opts.step ?? 0.05;
+	for (let s = opts.max; s >= opts.min - 1e-9; s -= step) {
+		const scale = Math.round(s * 100) / 100;
+		const viewW = stageW / scale;
+		const viewH = stageH / scale;
+		if (requiredBoardHeight(groupCount, freeCount, viewW) <= viewH - FIT_BOTTOM_MARGIN) return scale;
+	}
+	return opts.min;
 }

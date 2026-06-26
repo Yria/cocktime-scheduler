@@ -76,10 +76,10 @@ export async function startSession(
 	singleWomanIds: string[],
 	cockCheckEnabled: boolean,
 ): Promise<{ sessionId: number; sessionPlayers: SessionPlayer[] } | null> {
-	// 기존 활성 세션 종료
+	// 기존 활성 세션 종료(status='closed'까지 — is_active만 끄면 'active'로 남아 일정 목록에 영구 "진행중" 노출).
 	await supabase
 		.from("sessions")
-		.update({ is_active: false, ended_at: new Date().toISOString() })
+		.update({ is_active: false, status: "closed", ended_at: new Date().toISOString() })
 		.eq("is_active", true);
 
 	const { data: session, error } = await supabase

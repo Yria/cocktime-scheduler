@@ -127,7 +127,7 @@ describe("그룹 생성 — 겹치는 자유 자석을 화면 안에서 흩어�
 
 // ── 요구5: 다중 예약 ──────────────────────────────────────
 describe("요구5 — 다중 예약(한 선수 여러 팀 동시 소속)", () => {
-	it("anchor 멤버를 다른 팀에 겹치면 원본 유지 + ghost 예약 추가, 여러 팀에 가능", () => {
+	it("팀구성중 멤버를 다른 팀에 겹치면 그 팀으로 이동(예약 아님, 원본에서 제거)", () => {
 		seed({
 			magnets: [
 				mag("a", "T1", 300, 500),
@@ -141,19 +141,80 @@ describe("요구5 — 다중 예약(한 선수 여러 팀 동시 소속)", () =>
 		});
 		const store = useBoardStore.getState();
 
-		// a를 T2 빈 슬롯 위로 → 예약(원본 T1 유지). T2(700,500) 2명 → 빈 슬롯 (735,535)
+		// a를 T2 빈 슬롯 위로 → 이동(T1에서 제거, T2 anchor로 합류). T2(700,500) 2명 → 빈 슬롯 (735,535)
 		store.handleDrop("a", { x: 735, y: 535 });
-		expect(useBoardStore.getState().magnets.get("a")!.teamId).toBe("T1"); // 원본 유지
+		expect(useBoardStore.getState().magnets.get("a")!.teamId).toBe("T2"); // 이동됨
 		const t2 = teamMembers("T2", useBoardStore.getState().drafts, useBoardStore.getState().reservations);
-		expect(t2.find((m) => m.playerId === "a")).toMatchObject({ kind: "ghost" });
+		expect(t2.find((m) => m.playerId === "a")).toMatchObject({ kind: "anchor" }); // ghost 아님
+		// T1은 a가 빠져 1명(b)만 남아 해체 → b는 자유 자석
+		expect(useBoardStore.getState().drafts.get("T1")).toBeUndefined();
+		expect(useBoardStore.getState().magnets.get("b")!.teamId).toBeNull();
 
-		// a를 T3 빈 슬롯 위로 → 또 다른 예약 (동시 다중 소속). T3(1100,500) → (1135,535)
+		// a를 다시 T3 빈 슬롯 위로 → 또 이동(T2에서 제거). T3(1100,500) → (1135,535)
 		store.handleDrop("a", { x: 1135, y: 535 });
-		const t3 = teamMembers("T3", useBoardStore.getState().drafts, useBoardStore.getState().reservations);
-		expect(t3.find((m) => m.playerId === "a")).toMatchObject({ kind: "ghost" });
-		// a는 T1 anchor + T2/T3 ghost = 예약 2개
+		expect(useBoardStore.getState().magnets.get("a")!.teamId).toBe("T3");
+		// 예약은 일절 생기지 않음(팀구성중 이동이므로)
 		const aRes = [...useBoardStore.getState().reservations.values()].filter((r) => r.playerId === "a");
-		expect(aRes.map((r) => r.teamId).sort()).toEqual(["T2", "T3"]);
+		expect(aRes).toHaveLength(0);
+	});
+});
+
+// ── R5/R4: 정확 슬롯 배치(가운데 빈칸 허용) + 점유 슬롯 교체 ──
+describe("슬롯 단위 드롭 — 정확 배치(R5) + 점유 슬롯 교체(R4)", () => {
+	it("빈 슬롯에 드롭하면 그 칸에 정확히 배치 — 가운데 빈칸 유지(스택 아님)", () => {
+		// T: a 1명(슬롯0). b를 슬롯3(anchor+35,+35=335,535)에 드롭 → b는 슬롯3, 슬롯1·2는 빈칸.
+		seed({
+			magnets: [mag("a", "T", 300, 500), mag("b", null, 900, 900)],
+			drafts: [draft("T", ["a"], 300, 500)],
+		});
+		useBoardStore.getState().handleDrop("b", { x: 335, y: 535 });
+		const drafts = useBoardStore.getState().drafts;
+		const team = drafts.get("T")!;
+		expect(team.slots?.b).toBe(3);
+		const members = teamMembers("T", drafts, useBoardStore.getState().reservations);
+		expect(members.find((m) => m.playerId === "a")!.slot).toBe(0);
+		expect(members.find((m) => m.playerId === "b")!.slot).toBe(3); // 끝칸에 정확히(다음칸으로 당겨지지 않음)
+	});
+
+	it("같은 팀 멤버를 다른 멤버 슬롯 위로 드롭 → 둘의 슬롯만 스왑(둘 다 유지)", () => {
+		// T=[a,b] (a@0, b@1, anchor 300,500). a를 b의 슬롯1(335,465) 위로 → 스왑
+		seed({
+			magnets: [mag("a", "T", 300, 500), mag("b", "T", 300, 500)],
+			drafts: [draft("T", ["a", "b"], 300, 500)],
+		});
+		useBoardStore.getState().handleDrop("a", { x: 335, y: 465 });
+		const st = useBoardStore.getState();
+		const team = st.drafts.get("T")!;
+		expect([...team.anchorMemberIds].sort()).toEqual(["a", "b"]); // 둘 다 팀 유지
+		expect(st.magnets.get("a")!.teamId).toBe("T");
+		expect(st.magnets.get("b")!.teamId).toBe("T");
+		const members = teamMembers("T", st.drafts, st.reservations);
+		expect(members.find((m) => m.playerId === "a")!.slot).toBe(1); // a↔b 슬롯 스왑
+		expect(members.find((m) => m.playerId === "b")!.slot).toBe(0);
+	});
+
+	it("정원 4명 팀의 점유 슬롯에 드롭 → 그 자리 멤버 교체(점유자는 자유 자석)", () => {
+		// T: a,b,c,d(슬롯0..3). e를 슬롯0(265,465)에 드롭 → a 교체, e가 슬롯0, a는 자유.
+		seed({
+			magnets: [
+				mag("a", "T", 300, 500),
+				mag("b", "T", 300, 500),
+				mag("c", "T", 300, 500),
+				mag("d", "T", 300, 500),
+				mag("e", null, 900, 900),
+			],
+			drafts: [draft("T", ["a", "b", "c", "d"], 300, 500)],
+		});
+		useBoardStore.getState().handleDrop("e", { x: 265, y: 465 });
+		const st = useBoardStore.getState();
+		const team = st.drafts.get("T")!;
+		expect(team.anchorMemberIds).toContain("e");
+		expect(team.anchorMemberIds).not.toContain("a");
+		expect(st.magnets.get("e")!.teamId).toBe("T");
+		expect(st.magnets.get("a")!.teamId).toBeNull(); // 교체된 점유자는 자유 자석
+		const members = teamMembers("T", st.drafts, st.reservations);
+		expect(members).toHaveLength(4); // 정원 유지
+		expect(members.find((m) => m.playerId === "e")!.slot).toBe(0); // 그 자리에
 	});
 });
 
@@ -619,6 +680,34 @@ describe("detachMember / cancelReservation — 드롭존", () => {
 	});
 });
 
+// ── N2: 4명+예약(ghost)도 함께 고정배치(전원 락) ──
+describe("고정배치 — 4명+예약(ghost) 전원 락(N2)", () => {
+	function seedFullWithGhost() {
+		h.players = new Map(["a", "b", "c", "g"].map((id) => [id, player(id)]));
+		seed({
+			magnets: [mag("a", "T"), mag("b", "T"), mag("c", "T"), mag("g", null)],
+			drafts: [draft("T", ["a", "b", "c"])],
+			reservations: [res("r1", "g", "T")],
+		});
+	}
+
+	it("toggleForced: anchor 3 + ghost 1 = 4명 전원을 forcedIds에 넣는다", () => {
+		seedFullWithGhost();
+		const st = useBoardStore.getState();
+		expect(teamMembers("T", st.drafts, st.reservations)).toHaveLength(4); // 4명(예약 포함)
+		st.toggleForced("T");
+		const fids = useBoardStore.getState().drafts.get("T")!.forcedIds ?? [];
+		expect([...fids].sort()).toEqual(["a", "b", "c", "g"]); // ghost도 락
+	});
+
+	it("toggleForced 재호출 시 해제", () => {
+		seedFullWithGhost();
+		useBoardStore.getState().toggleForced("T"); // 잠금
+		useBoardStore.getState().toggleForced("T"); // 해제
+		expect(useBoardStore.getState().drafts.get("T")!.forcedIds).toEqual([]);
+	});
+});
+
 // ── 요구4: 경기완료 → 프리 ─────────────────────────────────
 describe("요구4 — 경기완료(completeMatch → handleComplete DB 연동)", () => {
 	it("경기완료 클릭 → handleComplete(courtId) 호출", async () => {
@@ -635,6 +724,72 @@ describe("요구4 — 경기완료(completeMatch → handleComplete DB 연동)",
 
 		expect(h.handleComplete).toHaveBeenCalledWith(1);
 		expect(h.courts[0].match).toBeNull();
+	});
+
+	it("경기완료: 끝난 선수가 다른 팀 예약(ghost)이었으면 그 팀 anchor로 승격 + 예약 삭제", async () => {
+		// abc 팀 + 경기중 4를 예약(ghost)으로 잡아 abc4 구성·고정. 4의 경기가 끝나면 4가 abc 정식 멤버로.
+		h.players = new Map(["1", "2", "3", "4", "a", "b", "c"].map((id) => [id, player(id)]));
+		seed({
+			magnets: [
+				mag("1", null), mag("2", null), mag("3", null), mag("4", null),
+				mag("a", "T"), mag("b", "T"), mag("c", "T"),
+			],
+			drafts: [draft("T", ["a", "b", "c"], 300, 500)],
+			reservations: [res("r1", "4", "T")],
+		});
+		h.courts = [{ id: 1, match: { id: "m1", courtId: 1, gameType: "남복", teamA: ["1", "2"], teamB: ["3", "4"], startedAt: "" } }];
+		h.handleComplete.mockImplementation(async (courtId: number) => {
+			const c = h.courts.find((c) => c.id === courtId);
+			if (c) c.match = null;
+		});
+
+		await useBoardStore.getState().completeMatch(1);
+
+		const st = useBoardStore.getState();
+		expect(st.drafts.get("T")!.anchorMemberIds).toContain("4"); // 4 → anchor 승격
+		expect(st.magnets.get("4")!.teamId).toBe("T");
+		expect([...st.reservations.values()].filter((r) => r.playerId === "4")).toHaveLength(0); // 예약 삭제
+		expect(teamMembers("T", st.drafts, st.reservations)).toHaveLength(4); // 정식 4인 팀
+	});
+});
+
+// ── 예약(ghost) 정합 — 원본 상태변경 시 복사본 정리 ──
+describe("예약(ghost) 구조 정합 — anchor xor ghost / 중복 / 동기화 정제", () => {
+	it("attachAnchor: 선수가 anchor로 합류하면 다른 팀에 남은 그 선수의 ghost도 정리(cross-team)", () => {
+		h.players = new Map(["p", "x", "a"].map((id) => [id, player(id)]));
+		// T1=[x] + p의 ghost(예약), T2=[a]. p를 T2 빈 슬롯에 드롭 → T2 anchor 합류 + T1 ghost 제거.
+		seed({
+			magnets: [mag("p", null, 900, 900), mag("x", "T1", 300, 500), mag("a", "T2", 700, 500)],
+			drafts: [draft("T1", ["x"], 300, 500), draft("T2", ["a"], 700, 500)],
+			reservations: [res("r1", "p", "T1")],
+		});
+		useBoardStore.getState().handleDrop("p", { x: 735, y: 465 }); // T2 anchor(700,500) 슬롯1=(735,465)
+		const st = useBoardStore.getState();
+		expect(st.drafts.get("T2")!.anchorMemberIds).toContain("p"); // T2 anchor 합류
+		expect([...st.reservations.values()].filter((r) => r.playerId === "p")).toHaveLength(0); // T1 ghost 제거
+	});
+
+	it("reconcile: anchor로 확정된 선수의 ghost는 버리고(anchor xor ghost), 같은 (선수,팀) 중복 예약은 하나만", () => {
+		useBoardStore.getState().setStageSize(2000, 2000);
+		seed({
+			magnets: [mag("a", null, 100, 300), mag("p", null, 130, 300), mag("b", null, 900, 900), mag("g", null, 500, 500)],
+		});
+		useBoardStore.getState().applyRemoteDrafts({
+			teams: [
+				{ id: "T1", memberIds: ["a", "p"], createdMs: 1 },
+				{ id: "T2", memberIds: ["b"], createdMs: 2 },
+			],
+			reservations: [
+				{ id: "r1", playerId: "p", teamId: "T2", createdMs: 3 }, // p는 T1 anchor → ghost 버려야
+				{ id: "r2", playerId: "g", teamId: "T2", createdMs: 4 }, // g:T2 (유지될 것)
+				{ id: "r3", playerId: "g", teamId: "T2", createdMs: 5 }, // g:T2 중복 → 버려야
+			],
+		});
+		const st = useBoardStore.getState();
+		expect([...st.reservations.values()].filter((r) => r.playerId === "p")).toHaveLength(0); // anchor라 ghost 없음
+		const gRes = [...st.reservations.values()].filter((r) => r.playerId === "g");
+		expect(gRes).toHaveLength(1); // 중복 제거 → 하나만
+		expect(gRes[0].id).toBe("r2"); // 가장 오래된 것 유지
 	});
 });
 

@@ -4,6 +4,7 @@ import type { Gender, SessionPlayer } from "../../types";
 import { matchesQuery } from "../../lib/playerSearch";
 import { skillScore } from "../../lib/teamSelection";
 import { useDoubleTap } from "../../hooks/useDoubleTap";
+import { useLongPress } from "../../hooks/useLongPress";
 import FilterChip from "./FilterChip";
 
 const SIZES_MAP = { sm: 68, md: 84 } as const;
@@ -45,6 +46,8 @@ interface PlayerPickerListProps {
 	 * 미지정 시 단일탭 즉시 발동(기존 동작 보존).
 	 */
 	onItemDoubleTap?: (player: SessionPlayer) => void;
+	/** 항목 롱프레스(꾹 누르기) 콜백 — 디버그(매칭 이력) 등. 지정 시 롱프레스 뒤 잔상 click은 흡수. */
+	onItemLongPress?: (player: SessionPlayer) => void;
 
 	// 검색
 	showSearch?: boolean;
@@ -86,6 +89,7 @@ export default function PlayerPickerList({
 	players,
 	onSelect,
 	onItemDoubleTap,
+	onItemLongPress,
 	showSearch = false,
 	searchThreshold = 5,
 	showGenderFilter = true,
@@ -108,6 +112,8 @@ export default function PlayerPickerList({
 
 	// 더블탭(정보) 핸들러 — onItemDoubleTap이 있을 때만 단일/더블 구분(지연), 없으면 즉시 select.
 	const handleTap = useDoubleTap<SessionPlayer>(onSelect, (p) => onItemDoubleTap?.(p));
+	// 롱프레스(디버그 등) 핸들러 — onItemLongPress가 있을 때만 활성.
+	const longPress = useLongPress<SessionPlayer>((p) => onItemLongPress?.(p));
 
 	const hasEnoughForFilters = players.length >= searchThreshold;
 	const showSearchBar = showSearch && hasEnoughForFilters;
@@ -292,11 +298,17 @@ export default function PlayerPickerList({
 							}
 
 							return (
-								<div key={player.id} style={{
-									position: "relative",
-									opacity: isPlaying ? 0.7 : 1,
-									transition: "opacity 0.15s",
-								}}>
+								<div
+									key={player.id}
+									style={{
+										position: "relative",
+										opacity: isPlaying ? 0.7 : 1,
+										transition: "opacity 0.15s",
+									}}
+									onPointerDown={onItemLongPress ? () => longPress.start(player.id, player) : undefined}
+									onPointerUp={onItemLongPress ? longPress.cancel : undefined}
+									onPointerLeave={onItemLongPress ? longPress.cancel : undefined}
+								>
 									<PlayerCard
 										name={player.name}
 										gender={player.gender}
@@ -304,7 +316,11 @@ export default function PlayerPickerList({
 										size={photoSize}
 										selected={isSelected}
 										disabled={isDisabled?.(player, meta)}
-										onClick={onItemDoubleTap ? () => handleTap(player.id, player) : () => onSelect(player)}
+										onClick={() => {
+											if (onItemLongPress && longPress.didFire()) return; // 롱프레스 뒤 잔상 click 흡수
+											if (onItemDoubleTap) handleTap(player.id, player);
+											else onSelect(player);
+										}}
 									/>
 									{renderLeading?.(player, meta)}
 									{isPlaying && (

@@ -61,14 +61,11 @@ export function useBoardDragHandlers(viewH: number, restFieldH: number) {
 			const playingIds = playingIdsFromCourts(ss.courts);
 			const notReadyIds = cockPendingIds(ss.sessionPlayers.values(), ss.cockCheckEnabled);
 			const target = resolveDropTarget(playerId, point, store.magnets, store.drafts, store.reservations, playingIds, notReadyIds);
-			const hover =
-				target.kind === "attach"
-					? { kind: "team" as const, id: target.teamId }
-					: target.kind === "reserve"
-						? { kind: "team" as const, id: target.toTeamId }
-						: target.kind === "createPair" || target.kind === "reservePair"
-							? { kind: "magnet" as const, id: target.partnerId }
-							: null;
+			// 슬롯 단위 하이라이트 — 합류(빈칸)/교체(점유) 모두 가리킨 칸을 하이라이트. 페어는 상대 자석.
+			let hover: { kind: "slot"; teamId: string; slotIndex: number } | { kind: "magnet"; id: string } | null = null;
+			if (target.kind === "attach" && target.slot !== undefined) hover = { kind: "slot", teamId: target.teamId, slotIndex: target.slot };
+			else if (target.kind === "replace") hover = { kind: "slot", teamId: target.teamId, slotIndex: target.slot };
+			else if (target.kind === "createPair") hover = { kind: "magnet", id: target.partnerId };
 			store.setHoverTarget(hover);
 		},
 		[viewH, restFieldH, setRestFieldHot],

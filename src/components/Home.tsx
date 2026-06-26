@@ -235,10 +235,12 @@ export default function Home({ onStart }: Props) {
 			logo
 			onRefresh={() => scheduleActions.load()}
 			right={
-				<>
+				// 아이콘 버튼(40px·중앙정렬)은 글리프가 버튼 안쪽에 있어 거터선보다 들어온다.
+				// 음수 마진으로 마지막 아이콘(⋮)의 우측을 본문 우측 거터선에 맞춘다(좌측 로고와 대칭).
+				<div className="flex items-center gap-0.5" style={{ marginRight: -18 }}>
 					<NotificationBell />
 					<HeaderMenu onEditProfile={() => setEditingProfile(true)} />
-				</>
+				</div>
 			}
 		>
 			<div className="w-full max-w-sm mx-auto flex flex-col gap-4">

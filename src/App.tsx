@@ -130,7 +130,7 @@ export default function App() {
 			}
 			// 보드 활성 중이면 코트 배정·보드 멤버십 권위 재조회(놓친 매치/팀 변경 수렴)
 			if (useAppStore.getState().sessionMeta) {
-				void useSessionStore.getState().resyncFromServer();
+				void useSessionStore.getState().resyncFromServer({ indicate: true });
 			}
 		}
 		wasVisibleRef.current = isVisible;

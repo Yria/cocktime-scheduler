@@ -3,6 +3,8 @@ import type { SessionPlayer } from "../../types";
 import { useSessionStore } from "../../store/sessionStore";
 import { useBoardStore } from "../../store/boardStore";
 import { useDebugStore } from "../../store/debugStore";
+import { useDoubleTap } from "../../hooks/useDoubleTap";
+import { useLongPress } from "../../hooks/useLongPress";
 import { useTeammateRecommendations, type RecommendTarget } from "../../hooks/useTeammateRecommendations";
 import { skillScore } from "../../lib/teamSelection";
 import ModalSheet from "../common/ModalSheet";
@@ -27,6 +29,8 @@ const fmtScore = (n?: number): string => (n === undefined || Math.abs(n) < 0.05 
 
 export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClose }: Props) {
 	const commitTeammates = useBoardStore((s) => s.commitTeammates);
+	const autoFillTarget = useBoardStore((s) => s.autoFillTarget);
+	const removeMemberFromBoard = useBoardStore((s) => s.removeMemberFromBoard);
 	const sessionPlayers = useSessionStore((s) => s.sessionPlayers);
 
 	// 진행 중 다중선택
@@ -68,6 +72,16 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 		});
 	};
 
+	// 상단 4칸 제스처 — 더블탭하면 빠짐(확정 멤버=팀에서 제거 / 선택분=선택 해제), 롱프레스=디버그. 단일탭은 무동작.
+	const topLong = useLongPress<string>((id) => useDebugStore.getState().openDebug(id));
+	const topTap = useDoubleTap<{ kind: "member" | "selected"; id: string }>(
+		() => {},
+		(arg) => {
+			if (arg.kind === "member") removeMemberFromBoard(arg.id);
+			else toggle(arg.id);
+		},
+	);
+
 	const pickerPlayers = useMemo((): PlayerPickerItem[] =>
 		ranked.map((item, index) => ({
 			player: item.player,
@@ -86,6 +100,12 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 	const handleConfirm = () => {
 		if (selectedIds.length === 0) return;
 		commitTeammates({ teamId: teamId ?? undefined, seedId: seedId ?? undefined, newTeam }, selectedIds);
+		onClose();
+	};
+
+	// 자동편성 — 직접 고른 선수(selectedIds)는 그대로 두고 나머지 빈 자리를 추천 대기 선수로 채워 commit.
+	const handleAutoFill = () => {
+		autoFillTarget({ teamId: teamId ?? undefined, seedId: seedId ?? undefined, newTeam }, selectedIds);
 		onClose();
 	};
 
@@ -114,18 +134,34 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 				{/* 현재 팀(확정 멤버 + 선택분) — 자석(원형) 형태, 가운데 정렬 */}
 				<div className="flex justify-center items-start gap-2 mt-3">
 					{members.map((p) => (
-						<PlayerCard key={p.id} name={p.name} gender={p.gender} skillScore={skillScore(p)} size="sm" />
+						<div
+							key={p.id}
+							style={{ cursor: "pointer" }}
+							onPointerDown={() => topLong.start(p.id, p.id)}
+							onPointerUp={topLong.cancel}
+							onPointerLeave={topLong.cancel}
+							onClick={() => {
+								if (topLong.didFire()) return;
+								topTap(p.id, { kind: "member", id: p.id });
+							}}
+						>
+							<PlayerCard name={p.name} gender={p.gender} skillScore={skillScore(p)} size="sm" />
+						</div>
 					))}
 					{selectedPlayers.map((p) => (
-						<PlayerCard
+						<div
 							key={p.id}
-							name={p.name}
-							gender={p.gender}
-							skillScore={skillScore(p)}
-							size="sm"
-							selected
-							onClick={() => toggle(p.id)}
-						/>
+							style={{ cursor: "pointer" }}
+							onPointerDown={() => topLong.start(p.id, p.id)}
+							onPointerUp={topLong.cancel}
+							onPointerLeave={topLong.cancel}
+							onClick={() => {
+								if (topLong.didFire()) return;
+								topTap(p.id, { kind: "selected", id: p.id });
+							}}
+						>
+							<PlayerCard name={p.name} gender={p.gender} skillScore={skillScore(p)} size="sm" selected />
+						</div>
 					))}
 					{Array.from({ length: emptyCount }).map((_, i) => (
 						<div key={`empty-${i}`} style={{ width: 68, display: "flex", justifyContent: "center" }}>
@@ -153,7 +189,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 				<PlayerPickerList
 					players={pickerPlayers}
 					onSelect={(p) => toggle(p.id)}
-					onItemDoubleTap={(p) => useDebugStore.getState().openDebug(p.id)}
+					onItemLongPress={(p) => useDebugStore.getState().openDebug(p.id)}
 					isDisabled={() => !canAddMore}
 					showSearch
 					searchThreshold={0}
@@ -208,10 +244,18 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 				</div>
 			)}
 
-			{/* 확인 / 취소 */}
+			{/* 취소 / 자동편성(나머지 자동 채움) / 확인(직접 고른 것만) */}
 			<div className="shrink-0 px-5 pb-5 border-t border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] pt-4 flex gap-3">
 				<button type="button" onClick={onClose} className="btn-lq-ghost flex-1 py-3 text-sm">
 					취소
+				</button>
+				<button
+					type="button"
+					onClick={handleAutoFill}
+					disabled={!canAddMore || ranked.length === 0}
+					className="btn-lq-ghost flex-1 py-3 text-sm disabled:opacity-40"
+				>
+					자동편성
 				</button>
 				<button
 					type="button"

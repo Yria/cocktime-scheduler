@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { GameType, SessionPlayer, SkillLevel } from "../../types";
-import { recommendTeammates, autoFillTeammates, RECOMMEND_WEIGHTS, type RecommendContext } from "./recommendTeammates";
+import { recommendTeammates, autoFillTeammates, RECOMMEND_WEIGHTS, FORCED_WINDOW, type RecommendContext } from "./recommendTeammates";
 
 function player(
 	id: string,
@@ -86,6 +86,19 @@ describe("recommendTeammates", () => {
 		expect(male.score - female.score).toBeGreaterThanOrEqual(RECOMMEND_WEIGHTS.W_GENDER - 0.01);
 	});
 
+	it("'남복 편성 허용' 여성은 3남 그룹 추천에서 성별 페널티 면제(allowMixedSingle)", () => {
+		// confirmed 3남 + 여성 후보 = 1F3M → 보통은 성별 초과 페널티. allowMixedSingle 여성은 면제되어 상위.
+		const confirmed = [player("m1", "M"), player("m2", "M"), player("m3", "M")];
+		const allowed: SessionPlayer = { ...player("wAllowed", "F"), allowMixedSingle: true };
+		const notAllowed = player("wNo", "F"); // allowMixedSingle=false
+		const ranked = recommendTeammates(confirmed, [notAllowed, allowed], ctx());
+		expect(ranked[0].player.id).toBe("wAllowed");
+		const a = ranked.find((r) => r.player.id === "wAllowed")!;
+		const n = ranked.find((r) => r.player.id === "wNo")!;
+		// 면제 여성이 페널티만큼 더 상위(낮은 점수)
+		expect(n.score - a.score).toBeGreaterThanOrEqual(RECOMMEND_WEIGHTS.W_GENDER - 0.01);
+	});
+
 	it("경기중 후보는 동일 조건의 대기 후보보다 하위로 밀린다", () => {
 		const confirmed = [player("c1", "M")];
 		const waiting = player("waiting", "M");
@@ -155,6 +168,67 @@ describe("recommendTeammates", () => {
 		const ro = ranked.find((r) => r.player.id === "rotateOut")!;
 		// 두 후보는 confirmed·성별이 같아 시드 항·W_MIXED_COMPLETE가 공통 → 격차는 후보 시점 로테이션뿐: 대칭 2×W_ROTATE
 		expect(rm.score - ro.score).toBeCloseTo(2 * RECOMMEND_WEIGHTS.W_ROTATE, 5);
+	});
+
+	it("혼복 그룹에선 남자 후보 실력차는 무시되고(skill 0) 여자 후보만 실력으로 균형된다", () => {
+		// 여자 시드(2.0) + 양성 후보 → 혼복 목표. 남자는 실력 균형 대상 아님, 여자만 시드와 맞춘다.
+		const confirmed = [player("f1", "F", "V")]; // 2.0
+		const mHigh = player("mHigh", "M", "O"); // 3.0
+		const mLow = player("mLow", "M", "X"); // 1.0
+		const fClose = player("fClose", "F", "V"); // 2.0 (시드와 일치)
+		const fFar = player("fFar", "F", "O"); // 3.0
+		const ranked = recommendTeammates(confirmed, [mHigh, mLow, fClose, fFar], ctx());
+		const get = (id: string) => ranked.find((r) => r.player.id === id)!;
+		// 남자: 혼복 목표라 실력 균형 대상 아님 → skill 기여 0(실력이 달라도 동일)
+		expect(get("mHigh").breakdown!.skill).toBe(0);
+		expect(get("mLow").breakdown!.skill).toBe(0);
+		// 여자: 시드(여자)와 실력 균형 → 가까운 여자가 먼 여자보다 skill 점수 낮음(우대)
+		expect(get("fClose").breakdown!.skill).toBeLessThan(get("fFar").breakdown!.skill);
+	});
+
+	it("의도적으로 묶였던 쌍(forcedPairs)은 재편성 추천에서 강하게 하위로 밀린다", () => {
+		const confirmed = [player("seed", "M")];
+		const wasForced = player("wasForced", "M"); // seed와 의도적으로 묶였던 상대
+		const fresh = player("fresh", "M");
+		const ranked = recommendTeammates(confirmed, [wasForced, fresh], ctx({
+			forcedPairs: [{ a: "seed", b: "wasForced", fromCount: 10 }],
+			matchAssignCount: 10, // 경과 0 → full 페널티
+		}));
+		expect(ranked[0].player.id).toBe("fresh");
+		const wf = ranked.find((r) => r.player.id === "wasForced")!;
+		const fr = ranked.find((r) => r.player.id === "fresh")!;
+		expect(wf.score - fr.score).toBeCloseTo(RECOMMEND_WEIGHTS.W_FORCED, 5);
+	});
+
+	it("forced 페널티는 라운드 경과로 선형 decay하고 FORCED_WINDOW 경과 후 0", () => {
+		const confirmed = [player("seed", "M")];
+		const wasForced = player("wasForced", "M");
+		const fresh = player("fresh", "M");
+		const fp = [{ a: "seed", b: "wasForced", fromCount: 0 }];
+		const diffAt = (count: number) => {
+			const r = recommendTeammates(confirmed, [wasForced, fresh], ctx({ forcedPairs: fp, matchAssignCount: count }));
+			const wf = r.find((x) => x.player.id === "wasForced")!;
+			const fr = r.find((x) => x.player.id === "fresh")!;
+			return wf.score - fr.score;
+		};
+		// 절반 경과 → 페널티 절반
+		expect(diffAt(FORCED_WINDOW / 2)).toBeCloseTo(RECOMMEND_WEIGHTS.W_FORCED * 0.5, 5);
+		// 윈도우 경과 → 0(차이 없음)
+		expect(diffAt(FORCED_WINDOW)).toBeCloseTo(0, 5);
+	});
+
+	it("같은 조건이면 더 오래 기다린(대기시간 긴) 후보가 우선된다(W_WAIT)", () => {
+		const confirmed = [player("c1", "M")];
+		const longWait = player("longWait", "M");
+		const shortWait = player("shortWait", "M");
+		longWait.waitSince = new Date(Date.now() - 30 * 60000).toISOString(); // 30분 전부터 대기
+		shortWait.waitSince = new Date(Date.now() - 5 * 60000).toISOString(); // 5분 전부터 대기
+		const ranked = recommendTeammates(confirmed, [shortWait, longWait], ctx());
+		expect(ranked[0].player.id).toBe("longWait");
+		const lw = ranked.find((r) => r.player.id === "longWait")!;
+		const sw = ranked.find((r) => r.player.id === "shortWait")!;
+		// 대기 25분 차 × W_WAIT 만큼 점수 차(낮을수록 우선)
+		expect(sw.score - lw.score).toBeCloseTo(25 * RECOMMEND_WEIGHTS.W_WAIT, 0);
 	});
 });
 

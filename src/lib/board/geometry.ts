@@ -65,32 +65,38 @@ const GRID_OFFSETS: readonly StagePoint[] = [
 	{ x: +H_HALF, y: +V_HALF },
 ];
 
-export function computeSlotOffset(index: number, total: number): StagePoint {
-	if (index < 0 || index >= total) return { x: 0, y: 0 };
+/** 슬롯 인덱스(0..3)의 anchor 기준 오프셋. 슬롯은 멤버 위치와 1:1(밀집 가정 없음). */
+export function computeSlotOffset(index: number): StagePoint {
 	return GRID_OFFSETS[index] ?? { x: 0, y: 0 };
 }
 
-export function computeEmptySlots(memberCount: number): StagePoint[] {
-	if (memberCount === 1) return [GRID_OFFSETS[1], GRID_OFFSETS[2], GRID_OFFSETS[3]];
-	if (memberCount === 2) return [GRID_OFFSETS[2], GRID_OFFSETS[3]];
-	if (memberCount === 3) return [GRID_OFFSETS[3]];
-	return [];
+/** 점유된 슬롯 집합을 빼고 남은 빈 슬롯 인덱스(0..3)들. */
+export function emptySlotIndices(occupied: ReadonlySet<number>): number[] {
+	const out: number[] = [];
+	for (let i = 0; i < 4; i++) if (!occupied.has(i)) out.push(i);
+	return out;
 }
 
 /**
- * 드롭 점이 팀의 빈 슬롯(구멍) 중 하나에 충분히 가까운지(중심거리 ≤ radius).
- * 그룹 합류/예약은 이때만 허용 — 박스 안 아무 곳이 아니라 "구멍에 정확히 놓을 때만" 반응.
+ * 드롭 점이 어느 슬롯(0..3) 중심에 충분히 가까운지(중심거리 ≤ radius) → 그 슬롯 인덱스, 없으면 -1.
+ * 빈/점유 무관한 순수 위치 판정 — 호출자가 점유 여부로 합류(빈칸)/교체(점유)를 가른다.
  */
-export function isOnEmptySlot(
+export function slotIndexAt(
 	point: StagePoint,
 	anchor: StagePoint,
-	memberCount: number,
 	radius: number = SLOT_SNAP_R,
-): boolean {
-	for (const off of computeEmptySlots(memberCount)) {
-		if (distance(point, { x: anchor.x + off.x, y: anchor.y + off.y }) <= radius) return true;
+): number {
+	let best = -1;
+	let bestD = radius;
+	for (let i = 0; i < 4; i++) {
+		const off = GRID_OFFSETS[i];
+		const d = distance(point, { x: anchor.x + off.x, y: anchor.y + off.y });
+		if (d <= bestD) {
+			bestD = d;
+			best = i;
+		}
 	}
-	return false;
+	return best;
 }
 
 export interface TeamRect {

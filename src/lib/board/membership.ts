@@ -54,13 +54,14 @@ export function teamMembers(
 	const team = drafts.get(teamId);
 	if (!team) return [];
 
+	const slotMap = team.slots ?? {};
 	const seen = new Set<string>();
-	const out: TeamMember[] = [];
+	const entries: { playerId: string; kind: TeamMember["kind"] }[] = [];
 
 	for (const pid of team.anchorMemberIds) {
 		if (seen.has(pid)) continue;
 		seen.add(pid);
-		out.push({ playerId: pid, kind: "anchor", slot: out.length });
+		entries.push({ playerId: pid, kind: "anchor" });
 	}
 
 	const ghosts = [...reservations.values()]
@@ -69,7 +70,27 @@ export function teamMembers(
 	for (const r of ghosts) {
 		if (seen.has(r.playerId)) continue;
 		seen.add(r.playerId);
-		out.push({ playerId: r.playerId, kind: "ghost", slot: out.length });
+		entries.push({ playerId: r.playerId, kind: "ghost" });
+	}
+
+	// 슬롯 배정: 명시 슬롯(0..3·미사용) 우선, 못 받은 멤버는 빈 슬롯을 순서대로 채움(하위호환).
+	const out: TeamMember[] = new Array(entries.length);
+	const used = new Set<number>();
+	const pending: number[] = [];
+	entries.forEach((e, i) => {
+		const s = slotMap[e.playerId];
+		if (typeof s === "number" && s >= 0 && s < 4 && !used.has(s)) {
+			used.add(s);
+			out[i] = { playerId: e.playerId, kind: e.kind, slot: s };
+		} else {
+			pending.push(i);
+		}
+	});
+	let free = 0;
+	for (const i of pending) {
+		while (used.has(free)) free++;
+		used.add(free);
+		out[i] = { playerId: entries[i].playerId, kind: entries[i].kind, slot: free };
 	}
 
 	return out;

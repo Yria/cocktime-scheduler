@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { Group, Circle, Arc, Image as KonvaImage, Rect, Text } from "react-konva";
+import { Group, Circle, Arc, Image as KonvaImage, Path, Rect, Text } from "react-konva";
 import useImage from "use-image";
 import Konva from "konva";
 import { useBoardStore } from "../../store/boardStore";
@@ -65,6 +65,8 @@ interface Props {
 	playing?: boolean;
 	/** 휴식존에 들어간 휴식 선수 — 흐리게+배지, 존 밖으로 드래그 시 복귀 */
 	resting?: boolean;
+	/** 의도적 그룹(드래그로 직접 묶은) 멤버 — "고정" 배지 표시 */
+	forced?: boolean;
 	onDragEnd?: (playerId: string, cx: number, cy: number) => void;
 	onGhostDragEnd?: (resId: string, cx: number, cy: number) => void;
 	onPlayingDragEnd?: (playerId: string, cx: number, cy: number) => void;
@@ -86,6 +88,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 	reservationId,
 	playing = false,
 	resting = false,
+	forced = false,
 	onDragEnd,
 	onGhostDragEnd,
 	onPlayingDragEnd,
@@ -106,6 +109,9 @@ const PlayerMagnet = memo(function PlayerMagnet({
 	const cockPending = cockCheckEnabled && !isGhost && !playing && !resting && player != null && !player.cockChecked;
 	// 드래그 중 다른 자석이 이 자석에 겹쳐 페어 대상이 되면 하이라이트
 	const isHovered = useBoardStore((s) => s.hoverTarget?.kind === "magnet" && s.hoverTarget.id === playerId);
+	// 드래그 중에는 그림자(shadowBlur) 렌더를 끈다 — 드래그는 매 프레임 Layer 전체를 다시 그리는데
+	// shadowBlur가 캔버스에서 가장 비싼 연산이라 구기기에서 프레임 드랍의 주원인. start/end 시 1회만 토글.
+	const dragging = useBoardStore((s) => s.dragInfo != null);
 
 	// 렌더 목표 좌표(자유 자석=magnet.x/y, 팀/코트 멤버=슬롯 offset)
 	const rx = offsetX ?? magnet?.x ?? 0;
@@ -135,6 +141,22 @@ const PlayerMagnet = memo(function PlayerMagnet({
 	const [image, imgStatus] = useImage(photoUrl, "anonymous");
 	const hasPhoto = imgStatus === "loaded" && image !== undefined;
 
+	// 예약(ghost=경기중 빌려온 선수) 사진은 그레이스케일로 — opacity만으론 한눈에 구분이 약해 색을 죽인다.
+	// Konva 필터는 노드 cache 필요 → 이미지 로드/ghost 여부 변할 때 캐시+필터 토글.
+	const photoRef = useRef<Konva.Image>(null);
+	useEffect(() => {
+		const node = photoRef.current;
+		if (!node) return;
+		if (isGhost && hasPhoto) {
+			node.cache();
+			node.filters([Konva.Filters.Grayscale]);
+		} else {
+			node.clearCache();
+			node.filters([]);
+		}
+		node.getLayer()?.batchDraw();
+	}, [isGhost, hasPhoto, image]);
+
 	// ── 더블탭 → 매칭 이력(디버그) 모달 ──────────────────────
 	// 두 번 연속 탭하면 매칭 이력을 연다. 단일 탭(추천/콕 확인)은 더블탭과 구분하려고
 	// DBLTAP_MS 만큼 지연 후 발동한다. 드래그 시작/언마운트 시 대기 중인 단일 탭은 취소.
@@ -160,6 +182,73 @@ const PlayerMagnet = memo(function PlayerMagnet({
 
 	useEffect(() => clearTap, [clearTap]);
 
+	// ── 더블탭 → "어딘가에서 빠짐"(해체/예약취소/휴식복귀) ──────────────────
+	// 그룹 anchor → 팀에서 빼기, ghost → 예약 취소, 휴식 → 복귀. 자유 자석/경기중은 빠질 곳이 없어 무동작.
+	// 현재 렌더 위치(slot offset 반영)를 drop으로 넘겨 그 자리에서 자연스럽게 흩어지게 한다.
+	const removeFromGroup = useCallback(() => {
+		const store = useBoardStore.getState();
+		const node = groupRef.current;
+		const fallback = store.magnets.get(playerId);
+		const pos = node ? absToStage(node) : { x: fallback?.x ?? 0, y: fallback?.y ?? 0 };
+		if (isGhost) {
+			if (reservationId) store.cancelReservation(reservationId);
+		} else if (resting) {
+			store.unrestPlayer(playerId, pos);
+		} else if (!playing && store.magnets.get(playerId)?.teamId != null) {
+			store.detachMember(playerId, pos);
+		}
+	}, [isGhost, reservationId, resting, playing, playerId]);
+
+	// ── 롱프레스 → 매칭 이력(디버그) 모달 ──────────────────────
+	// "제자리에서 꾹" 만 롱프레스 — 누른 뒤 LONGPRESS_MOVE_TOL(px) 넘게 움직이면(=드래그 의도) 즉시 취소한다.
+	// (Konva 드래그 임계(3px)·dragstart보다 먼저 움직임을 잡아, 천천히 잡고 끌 때 롱프레스가 잘못 발동하는 것 방지.)
+	// fired=true면 뒤따르는 탭(touchend의 onTap)은 같은 입력의 잔상 → 흡수.
+	const LONGPRESS_MS = 500;
+	const LONGPRESS_MOVE_TOL = 8; // 누른 지점에서 이만큼(px) 넘게 이동하면 롱프레스 취소
+	const longPress = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean; x: number; y: number }>({
+		timer: null,
+		fired: false,
+		x: 0,
+		y: 0,
+	});
+	const clearLongPress = useCallback(() => {
+		if (longPress.current.timer !== null) {
+			clearTimeout(longPress.current.timer);
+			longPress.current.timer = null;
+		}
+	}, []);
+	useEffect(() => clearLongPress, [clearLongPress]);
+	const handlePointerDown = useCallback(
+		(e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+			longPress.current.fired = false;
+			clearLongPress();
+			const p = e.target.getStage()?.getPointerPosition();
+			longPress.current.x = p?.x ?? 0;
+			longPress.current.y = p?.y ?? 0;
+			longPress.current.timer = setTimeout(() => {
+				longPress.current.timer = null;
+				longPress.current.fired = true;
+				clearTap(); // 대기 중 단일 탭 취소
+				if (typeof navigator !== "undefined") navigator.vibrate?.(30);
+				useDebugStore.getState().openDebug(playerId);
+			}, LONGPRESS_MS);
+		},
+		[clearLongPress, clearTap, playerId],
+	);
+	// 누른 채 일정 거리 이상 움직이면(드래그 의도) 롱프레스 취소 — Konva dragstart보다 먼저 잡는다.
+	const handlePointerMove = useCallback(
+		(e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+			if (longPress.current.timer === null) return;
+			const p = e.target.getStage()?.getPointerPosition();
+			if (!p) return;
+			const dx = p.x - longPress.current.x;
+			const dy = p.y - longPress.current.y;
+			if (dx * dx + dy * dy > LONGPRESS_MOVE_TOL * LONGPRESS_MOVE_TOL) clearLongPress();
+		},
+		[clearLongPress],
+	);
+	const handlePointerUp = useCallback(() => clearLongPress(), [clearLongPress]);
+
 	// 드래그 중 이 컴포넌트가 언마운트되면(원격 팀 해체 등으로 부모 Group destroy) dragend가 안 와
 	// clearDrag가 누락돼 드롭존이 고착될 수 있다 → 언마운트 시 내가 드래그 주인이면 정리.
 	useEffect(
@@ -172,6 +261,11 @@ const PlayerMagnet = memo(function PlayerMagnet({
 	const handleClick = useCallback(
 		(e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
 			e.cancelBubble = true;
+			// 롱프레스로 이미 디버그를 열었으면 뒤따르는 탭은 같은 입력의 잔상 → 흡수.
+			if (longPress.current.fired) {
+				longPress.current.fired = false;
+				return;
+			}
 			// 터치 탭 직후 따라오는 호환(ghost) click 은 같은 입력의 중복 → 무시. (mouse/desktop click 은 그대로 처리.)
 			const ev = e.evt;
 			const isTouch =
@@ -186,10 +280,10 @@ const PlayerMagnet = memo(function PlayerMagnet({
 
 			tap.current.count += 1;
 			if (tap.current.count >= 2) {
-				// 더블탭 → 매칭 이력
+				// 더블탭 → 그룹/예약/휴식에서 빠짐(없으면 무동작)
 				clearTap();
 				if (typeof navigator !== "undefined") navigator.vibrate?.(30);
-				useDebugStore.getState().openDebug(playerId);
+				removeFromGroup();
 				return;
 			}
 			// 첫 탭 → 더블탭 가능성을 잠시 기다렸다가 단일 탭 동작(콕 확인 / 추천).
@@ -204,7 +298,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 				onClick?.(playerId);
 			}, DBLTAP_MS);
 		},
-		[onClick, onCockCheck, cockPending, playerId, clearTap],
+		[onClick, onCockCheck, cockPending, playerId, clearTap, removeFromGroup],
 	);
 
 	// dragmove는 pointermove마다(60~120Hz) 발사된다 — hover/휴식 해석을 화면 프레임(rAF)당 1회로 코얼레싱해
@@ -237,6 +331,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 	const handleDragStart = useCallback(
 		(e: Konva.KonvaEventObject<DragEvent>) => {
 			clearTap(); // 드래그 의도 → 대기 중 단일 탭 취소
+			clearLongPress(); // 드래그면 롱프레스(디버그) 아님
 			const store = useBoardStore.getState();
 			// 드래그 정보 등록 — 팀 소속(anchor/ghost)이면 상단 '팀에서 빼기', 휴식 가능하면 하단 '휴식하기' 밴드 노출.
 			const teamBound = isGhost || !!store.magnets.get(playerId)?.teamId;
@@ -245,6 +340,9 @@ const PlayerMagnet = memo(function PlayerMagnet({
 			// 드래그 시작 논리좌표 — 출발 존(빼기/휴식)에서 같은 존으로의 드롭을 무효화하는 가드용.
 			const from = absToStage(e.target);
 			store.setDragInfo({ playerId, detachable: teamBound, restable, from });
+			// 휴식 패널이 열려 있으면 보드 자석 드래그 시작 시 접는다(가림 해소 + 접힘 휴식 밴드로 자연 전환).
+			// 휴식 자석(패널 내부 출발)은 유지 — 드래그 대상이 패널 안이라 접으면 안 됨.
+			if (!resting && store.restZoneOpen) store.closeRestZone();
 			// 드래그 중인 자석을 항상 최상단으로: 자석을 부모 내 최상단으로 올리고,
 			// 팀/코트 카드 멤버라면 그 부모 그룹도 Layer 최상단으로 끌어올린다
 			// (안 그러면 멤버가 부모 그룹 안에서만 위로 가서 다른 자석/카드 아래에 깔린다).
@@ -252,7 +350,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 			const parent = e.target.getParent();
 			if (parent instanceof Konva.Group) parent.moveToTop();
 		},
-		[clearTap, isGhost, playing, resting, playerId],
+		[clearTap, clearLongPress, isGhost, playing, resting, playerId],
 	);
 
 	const handleDragEnd = useCallback(
@@ -314,22 +412,30 @@ const PlayerMagnet = memo(function PlayerMagnet({
 			id={`magnet-${playerId}`}
 			x={rx}
 			y={ry}
-			opacity={cockPending ? 0.5 : isGhost ? RESERVATION_OPACITY : resting ? RESTING_OPACITY : 1}
 			draggable={(isEditor || isFreeMagnet) && !cockPending}
 			listening
 			onDragStart={handleDragStart}
 			onDragMove={handleDragMove}
 			onDragEnd={handleDragEnd}
+			onMouseDown={handlePointerDown}
+			onTouchStart={handlePointerDown}
+			onMouseMove={handlePointerMove}
+			onTouchMove={handlePointerMove}
+			onMouseUp={handlePointerUp}
+			onTouchEnd={handlePointerUp}
 			onClick={handleClick}
 			onTap={handleClick}
 		>
+			{/* 자석 본체 — 예약/콕/휴식이면 흐리게(opacity). 상태 배지(예약·콕·휴식·잠금)는 이 그룹 밖에 둬 흐려지지 않게 한다. */}
+			<Group opacity={cockPending ? 0.5 : isGhost ? RESERVATION_OPACITY : resting ? RESTING_OPACITY : 1}>
 			{/* 히트 영역 — 시각 반경보다 작게(MAGNET_HIT_R): 자석 주변/프레임은 부모 그룹 드래그로 떨어짐 */}
 			<Circle radius={MAGNET_HIT_R} fill="transparent" />
 
-			{/* 사진(또는 사진 없을 때 성별 light 배경 + 이니셜) — PlayerCard와 동일 */}
+			{/* 사진(또는 사진 없을 때 성별 light 배경 + 이니셜) — PlayerCard와 동일. ghost는 그레이스케일/회색으로 죽임. */}
 			{hasPhoto ? (
 				<Group clipFunc={clipCircle}>
 					<KonvaImage
+						ref={photoRef}
 						x={-innerR}
 						y={-innerR}
 						width={innerR * 2}
@@ -341,7 +447,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 				</Group>
 			) : (
 				<>
-					<Circle radius={innerR} fill={lightColor} listening={false} perfectDrawEnabled={false} />
+					<Circle radius={innerR} fill={isGhost ? "#D1D5DB" : lightColor} listening={false} perfectDrawEnabled={false} />
 					<Text
 						x={-innerR}
 						y={-innerR}
@@ -351,7 +457,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 						fontSize={innerR * 0.8}
 						fontStyle="bold"
 						fontFamily="Inter, system-ui, sans-serif"
-						fill={magnetGenderInk(player.gender)}
+						fill={isGhost ? "#6B7280" : magnetGenderInk(player.gender)}
 						align="center"
 						verticalAlign="middle"
 						listening={false}
@@ -377,10 +483,10 @@ const PlayerMagnet = memo(function PlayerMagnet({
 				</Group>
 			)}
 
-			{/* 성별 링 — 사진 바깥 가장자리 안쪽(아크 밴드 잠식 안 함) */}
+			{/* 성별 링 — 사진 바깥 가장자리 안쪽(아크 밴드 잠식 안 함). ghost는 회색. */}
 			<Circle
 				radius={innerR - MAGNET_GENDER_RING_W / 2}
-				stroke={color}
+				stroke={isGhost ? "#9CA3AF" : color}
 				strokeWidth={MAGNET_GENDER_RING_W}
 				listening={false}
 				perfectDrawEnabled={false}
@@ -402,7 +508,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 					outerRadius={MAGNET_R}
 					angle={skillAngle}
 					rotation={-90}
-					fill={RING_FG_COLOR}
+					fill={isGhost ? "#9CA3AF" : RING_FG_COLOR}
 					listening={false}
 					perfectDrawEnabled={false}
 				/>
@@ -421,6 +527,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 				shadowColor="rgba(0,0,0,0.6)"
 				shadowBlur={3}
 				shadowOffsetY={1}
+				shadowEnabled={!dragging}
 				listening={false}
 				perfectDrawEnabled={false}
 			/>
@@ -445,17 +552,38 @@ const PlayerMagnet = memo(function PlayerMagnet({
 
 			{/* 겹침 하이라이트 — 드래그 중 페어 대상이 되면 스카이 링 */}
 			{isHovered && (
-				<Circle radius={MAGNET_R + 3} stroke={HILITE_STROKE} strokeWidth={3} shadowColor={HILITE_STROKE} shadowBlur={10} listening={false} perfectDrawEnabled={false} />
+				<Circle radius={MAGNET_R + 3} stroke={HILITE_STROKE} strokeWidth={3} shadowColor={HILITE_STROKE} shadowBlur={10} shadowEnabled={!dragging} listening={false} perfectDrawEnabled={false} />
 			)}
+			</Group>
 
+			{/* ── 상태 배지(opacity 미적용 — 본체가 흐려도 상태는 또렷이) ── */}
 			{/* 콕 미확인 배지 */}
 			{cockPending && <MagnetBadge text="콕?" fill={COCK_PENDING_COLOR} />}
 
-			{/* 예약 뱃지 */}
-			{isGhost && <MagnetBadge text="예약" fill={RESERVATION_BADGE_BG} />}
+			{/* 예약(경기중 빌려온 선수) 뱃지 — "경기중"으로 표시 */}
+			{isGhost && <MagnetBadge text="경기중" fill={RESERVATION_BADGE_BG} />}
 
 			{/* 휴식 뱃지 */}
 			{resting && <MagnetBadge text="휴식" fill={RESTING_BADGE_BG} />}
+
+			{/* 잠금 뱃지 — "고정배치"로 잠근 그룹 멤버(시각 전용, 실제 잠금 아님 — 드래그로 빼서 취소).
+			    인디고 원 배지 + 흰색 자물쇠 글리프(이모지 대신 벡터 Path로 깔끔하게).
+			    anchor + ghost(4명+예약 잠금)에 전달 — 예약/휴식/콕 배지(우상단)와 겹치지 않게 우하단에 둔다. */}
+			{forced && (
+				<Group x={MAGNET_R - 8} y={MAGNET_R - 8} listening={false}>
+					<Circle radius={9} fill="#6366F1" stroke="#FFFFFF" strokeWidth={1.5} listening={false} perfectDrawEnabled={false} />
+					<Path
+						data="M12 1.6a4.4 4.4 0 0 0-4.4 4.4V9.2A2.4 2.4 0 0 0 5.2 11.6v7.6A2.4 2.4 0 0 0 7.6 21.6h8.8a2.4 2.4 0 0 0 2.4-2.4v-7.6A2.4 2.4 0 0 0 16.4 9.2V6A4.4 4.4 0 0 0 12 1.6Zm2.4 7.6H9.6V6a2.4 2.4 0 0 1 4.8 0v3.2Z"
+						fill="#FFFFFF"
+						scaleX={0.46}
+						scaleY={0.46}
+						offsetX={12}
+						offsetY={12}
+						listening={false}
+						perfectDrawEnabled={false}
+					/>
+				</Group>
+			)}
 		</Group>
 	);
 });

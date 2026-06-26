@@ -45,6 +45,8 @@ const CourtMatchCard = memo(function CourtMatchCard({ court, x, y, onEditMatch }
 	const settleBoard = useBoardStore((s) => s.settleBoard);
 	const stored = useBoardStore((s) => s.courtAnchors.get(court.id));
 	const isEditor = useSessionStore((s) => s.isEditor); // 보기 전용이면 드래그/경기완료 비활성(락 = 전부 차단)
+	// 드래그 중 그림자 비활성 — 매 프레임 Layer redraw 시 코트 카드 shadowBlur 재계산을 피한다(구기기 프레임 드랍 방지).
+	const dragging = useBoardStore((s) => s.dragInfo != null);
 	const match = court.match;
 
 	const handleComplete = useCallback(() => {
@@ -113,6 +115,7 @@ const CourtMatchCard = memo(function CourtMatchCard({ court, x, y, onEditMatch }
 				shadowColor="rgba(0,0,0,0.3)"
 				shadowBlur={12}
 				shadowOffsetY={4}
+				shadowEnabled={!dragging}
 				perfectDrawEnabled={false}
 			/>
 
@@ -167,7 +170,7 @@ const CourtMatchCard = memo(function CourtMatchCard({ court, x, y, onEditMatch }
 			/>
 
 			{ids.map((pid, i) => {
-				const off = computeSlotOffset(i, 4);
+				const off = computeSlotOffset(i);
 				return (
 					<PlayerMagnet
 						key={pid}

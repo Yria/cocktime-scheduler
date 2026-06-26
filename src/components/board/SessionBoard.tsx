@@ -7,9 +7,10 @@ import { useBoardDragHandlers } from "../../hooks/useBoardDragHandlers";
 import { useBoardPlayerPool } from "../../hooks/useBoardPlayerPool";
 import { useContainerSize } from "../../hooks/useContainerSize";
 import { useAppStore } from "../../store/appStore";
-import { useBoardStore } from "../../store/boardStore";
+import { useBoardStore, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP } from "../../store/boardStore";
 import { useSessionStore } from "../../store/sessionStore";
 import { playingIdsFromCourts } from "../../lib/board/membership";
+import { computeFitScale } from "../../lib/board/arrange";
 import { restZoneHeight } from "../../lib/board/geometry";
 import {
 	TOOLBAR_H,
@@ -28,6 +29,7 @@ import DetachZoneOverlay from "./DetachZoneOverlay";
 import RestDropOverlay from "./RestDropOverlay";
 import RecommendTeammateDialog from "./RecommendTeammateDialog";
 import ModalSheet from "../common/ModalSheet";
+import Spinner from "../shared/Spinner";
 import MatchEditModal from "./MatchEditModal";
 import ViewerLockOverlay from "./ViewerLockOverlay";
 import DebugMatchModal from "./DebugMatchModal";
@@ -35,15 +37,8 @@ import type { RecommendTarget } from "../../hooks/useTeammateRecommendations";
 
 const COURT_CARD_GAP = 20;
 
-// 줌(축소 전용) — 0.5~1배. arrange/drop·자석 이동범위는 보이는 논리영역(viewW×viewH=stage/scale) 기준이라
-// 축소하면 그 범위도 비율대로 넓어진다(좌상단 0,0 고정 줌이라 우/하단 빈 영역까지 포함).
-const ZOOM_MIN = 0.5;
-const ZOOM_MAX = 1;
-const ZOOM_STEP = 0.1;
-const clampScale = (v: number) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(v * 100) / 100));
-
-// 줌 배율 영속 키 — 새로고침/재방문에도 마지막 배율 유지(localStorage).
-const SCALE_KEY = "cocktime-board-scale";
+// 줌(축소 전용) — 0.5~1배. 상태/클램프/영속은 boardStore(scale·setScale)로 일원화(수동 줌·자동 fit 공용).
+// arrange/drop·자석 이동범위는 보이는 논리영역(viewW×viewH=stage/scale) 기준이라 축소하면 그 범위도 비례 확대.
 
 const zoomBtnStyle: React.CSSProperties = {
 	width: 36,
@@ -72,22 +67,9 @@ export default function SessionBoard() {
 	// ── 줌 배율 + 보이는 논리 영역 ───────────────────────────
 	// scale 0.5~1배 축소(Stage scale). 좌상단(0,0) 고정이라 보이는 논리 영역 = stage/scale.
 	// 정렬(rearrange)은 이 viewW×viewH를 기준으로 좌상단부터 하단 한계까지 채운다(아래 정렬 effect·버튼 공용).
-	const [scale, setScale] = useState(() => {
-		// 저장된 마지막 배율로 시작(없거나 불가 시 1배). clampScale로 범위 보정.
-		try {
-			const v = parseFloat(localStorage.getItem(SCALE_KEY) ?? "");
-			return Number.isFinite(v) ? clampScale(v) : 1;
-		} catch {
-			return 1;
-		}
-	});
-	useEffect(() => {
-		try {
-			localStorage.setItem(SCALE_KEY, String(scale));
-		} catch {
-			// localStorage 불가(시크릿 등) — 영속 생략
-		}
-	}, [scale]);
+	// 줌 배율 — boardStore 공용 상태(수동 줌·자동 fit). viewW/viewH = stage/scale(보이는 논리 영역).
+	const scale = useBoardStore((s) => s.scale);
+	const setScale = useBoardStore((s) => s.setScale);
 	const viewW = stageW / scale;
 	const viewH = stageH / scale;
 
@@ -187,16 +169,38 @@ export default function SessionBoard() {
 			.map((c) => (c.match ? `${c.id}:${c.match.teamA.join("")}/${c.match.teamB.join("")}` : `${c.id}:-`))
 			.join("|"),
 	);
+	// 자동 스케일 + 정렬 — 렌더 없이 "다 들어가는 최대 배율"을 계산해 적용한 뒤 그 배율의 뷰로 정렬한다.
+	// (자석이 화면을 넘치면 자동 축소, 여유 있으면 1배까지 키움 — "최대가 베스트"). 자동정렬 effect와 정렬 버튼 공용.
+	// 카운트는 arrangeBoard와 동일 기준(그룹=경기중 코트+팀, 자유=teamId null·비경기중·비휴식)으로 fresh 계산.
+	const fitAndArrange = useCallback(() => {
+		if (stageW <= 0 || stageH <= 0) return;
+		const bs = useBoardStore.getState();
+		const ss = useSessionStore.getState();
+		const playing = playingIdsFromCourts(ss.courts);
+		const resting = new Set(ss.restingIds);
+		let freeCount = 0;
+		for (const m of bs.magnets.values()) {
+			if (m.teamId === null && !playing.has(m.playerId) && !resting.has(m.playerId)) freeCount++;
+		}
+		const groupCount = ss.courts.filter((c) => c.match).length + bs.drafts.size;
+		const fit = computeFitScale(stageW, stageH, groupCount, freeCount, {
+			min: ZOOM_MIN,
+			max: ZOOM_MAX,
+			step: 0.05,
+		});
+		setScale(fit); // store가 클램프·영속
+		rearrangeAll(stageW / fit, stageH / fit);
+	}, [stageW, stageH, rearrangeAll, setScale]);
+
 	useEffect(() => {
 		// 편집자가 직접 드래그 배치를 시작하기 전까지는 자동 정렬(뷰어는 manualLayout이 늘 false → 항상 자동).
-		// 첫 접근 시 자석 수·멤버십·뷰포트(viewW/viewH)가 안정될 때까지 매 변화마다 재정렬 → "정렬 버튼" 결과로 수렴
-		// (예전 hasArranged 1회 고정은 데이터·뷰포트가 덜 settle된 시점에 박혀 버튼과 다른 레이아웃이 됐다).
+		// 멤버십/코트/자석수/뷰포트가 바뀔 때마다 자동 스케일+정렬로 수렴. scale은 fitAndArrange가 직접 set하므로
+		// deps에서 viewW/viewH(=stage/scale)를 빼 자기 set으로 인한 재실행 루프를 막는다(수동 줌도 여기서 안 건드림).
 		if (manualLayout) return;
-		if (viewW <= 0 || viewH <= 0) return;
+		if (stageW <= 0 || stageH <= 0) return;
 		if (magnetCount === 0) return; // 자석이 store에 채워진 뒤 — 빈 정렬 방지
-		rearrangeAll(viewW, viewH);
-		// deps: membershipSig/courtSig(멤버·매치 변경) + magnetCount(선수 로드) + viewW/viewH(뷰포트·줌) = 안정화 트리거.
-	}, [manualLayout, membershipSig, courtSig, magnetCount, viewW, viewH, rearrangeAll]);
+		fitAndArrange();
+	}, [manualLayout, membershipSig, courtSig, magnetCount, stageW, stageH, fitAndArrange]);
 
 	// ── 불변식 I2 자가 치유(편집자) — 코트 변화 시 경기중이 된 anchor를 예비팀에서 제거 + 영속화 ──
 	// 경기 시작/로스터 편입으로 코트에 올라간 선수가 동시편집 레이스(유실된 dissolve)나 setMatchRoster
@@ -210,6 +214,8 @@ export default function SessionBoard() {
 	// 휴식 필드(하단 바) — 바 탭으로 패널 열고 닫음. 자석을 끌어 내리면 휴식, 빼면 복귀.
 	const restZoneOpen = useBoardStore((s) => s.restZoneOpen);
 	const restFieldHot = useBoardStore((s) => s.restFieldHot);
+	// 포어그라운드 복귀/재연결 시 서버 권위 재동기화 진행 표시.
+	const boardSyncing = useSessionStore((s) => s.boardSyncing);
 	// 팀 소속 자석을 드래그하는 동안에만 네비 영역 '팀에서 빼기' 드롭존 오버레이 노출
 	const showDetach = useBoardStore((s) => s.dragInfo?.detachable ?? false);
 	// 휴식 가능 자석을 드래그하는 동안에만 바텀 바 영역 '휴식하기' 드롭존 오버레이 노출(펼침 시엔 패널이 드롭존이라 제외)
@@ -307,8 +313,8 @@ export default function SessionBoard() {
 	const pinchDist = useRef(0);
 	const onStageWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
 		e.evt.preventDefault();
-		setScale((s) => clampScale(s + (e.evt.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP)));
-	}, []);
+		setScale((s) => s + (e.evt.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP));
+	}, [setScale]);
 	const onStageTouchMove = useCallback((e: Konva.KonvaEventObject<TouchEvent>) => {
 		const t = e.evt.touches;
 		if (t.length !== 2) return; // 두 손가락 핀치만(한 손가락은 드래그)
@@ -316,10 +322,10 @@ export default function SessionBoard() {
 		const dist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
 		if (pinchDist.current > 0) {
 			const ratio = dist / pinchDist.current;
-			setScale((s) => clampScale(s * ratio));
+			setScale((s) => s * ratio);
 		}
 		pinchDist.current = dist;
-	}, []);
+	}, [setScale]);
 	const onStageTouchEnd = useCallback(() => {
 		pinchDist.current = 0;
 	}, []);
@@ -335,6 +341,32 @@ export default function SessionBoard() {
 			style={{ width: "100%", overflow: "hidden", background: BG_BOARD }}
 		>
 			<BoardToolbar />
+			{/* 동기화 중 표시 — 포어그라운드 복귀/재연결 시 서버 권위 재동기화 동안 상단 중앙에 잠깐 노출. */}
+			{boardSyncing && (
+				<div
+					style={{
+						position: "absolute",
+						top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top) + 10px)`,
+						left: "50%",
+						transform: "translateX(-50%)",
+						display: "inline-flex",
+						alignItems: "center",
+						gap: 7,
+						padding: "6px 12px",
+						borderRadius: 999,
+						background: "rgba(15,23,42,0.82)",
+						color: "#fff",
+						fontSize: 12,
+						fontWeight: 600,
+						boxShadow: "0 4px 14px rgba(0,0,0,0.3)",
+						zIndex: 30,
+						pointerEvents: "none",
+					}}
+				>
+					<Spinner size={13} />
+					<span>동기화 중…</span>
+				</div>
+			)}
 			{/* 드롭존 오버레이(칠판 밖 DOM) — 상단 '팀에서 빼기'는 네비 영역, 하단 '휴식하기'는 바텀 바 영역에 점선 박스+문구로 표시. */}
 			{showDetach && <DetachZoneOverlay />}
 			{showRest && <RestDropOverlay />}
@@ -437,14 +469,14 @@ export default function SessionBoard() {
 					zIndex: 20,
 				}}
 			>
-				<button type="button" onClick={() => setScale((s) => clampScale(s + ZOOM_STEP))} aria-label="확대" style={zoomBtnStyle}>＋</button>
-				<button type="button" onClick={() => setScale((s) => clampScale(s - ZOOM_STEP))} aria-label="축소" style={zoomBtnStyle}>－</button>
+				<button type="button" onClick={() => setScale((s) => s + ZOOM_STEP)} aria-label="확대" style={zoomBtnStyle}>＋</button>
+				<button type="button" onClick={() => setScale((s) => s - ZOOM_STEP)} aria-label="축소" style={zoomBtnStyle}>－</button>
 			</div>
 				{/* 우하단 플로팅 정렬 버튼 — 휴식 패널 열림 시 숨김(겹침 방지) */}
 			{!restZoneOpen && (
 			<button
 				type="button"
-				onClick={() => rearrangeAll(viewW, viewH)}
+				onClick={fitAndArrange}
 				aria-label="정렬"
 				style={{
 					position: "absolute",

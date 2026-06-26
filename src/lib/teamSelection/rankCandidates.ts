@@ -36,6 +36,8 @@ export interface ScoreBreakdown {
 	gender?: number;
 	/** 경기중 페널티 — recommendTeammates에서만 채움 */
 	playing?: number;
+	/** 의도적 그룹 재편성 회피 페널티(decay) — recommendTeammates에서만 채움 */
+	forced?: number;
 }
 
 export interface RankedCandidate {
@@ -108,10 +110,31 @@ function computeScore(
 		return { score: breakdown.game + breakdown.mixed + breakdown.wait, breakdown };
 	}
 
-	// 실력 차이: confirmed 평균 skillScore와의 차이
-	const confirmedAvgSkill =
-		confirmed.reduce((sum, p) => sum + skillScore(p), 0) / confirmed.length;
-	const skillDiff = Math.abs(skillScore(candidate) - confirmedAvgSkill);
+	// 실력 차이: confirmed 평균 skillScore와의 차이.
+	// 혼복(남녀 혼합) 목표 그룹은 "여자만" 실력 균형을 본다 — 혼복은 남녀 실력을 동시에 맞추기 어려우니
+	// 남자는 실력 무시하고 넣어도 되고, 여자만 서로 실력을 맞춘다(기획 요구). 즉 그룹이 양성이면:
+	//   · 남자 후보 → skillDiff 0 (실력 균형 대상 아님)
+	//   · 여자 후보 → 확정된 여자들 평균과의 차이 (여자끼리 균형, 확정 여자 없으면 0)
+	// 단일 성별(남복/여복) 그룹은 기존대로 전체 평균과의 차이.
+	const hasFemale = candidate.gender === "F" || confirmed.some((p) => p.gender === "F");
+	const hasMale = candidate.gender === "M" || confirmed.some((p) => p.gender === "M");
+	const mixedTarget = hasFemale && hasMale;
+	let skillDiff: number;
+	if (mixedTarget && candidate.gender === "M") {
+		skillDiff = 0;
+	} else if (mixedTarget) {
+		const womenConfirmed = confirmed.filter((p) => p.gender === "F");
+		skillDiff = womenConfirmed.length
+			? Math.abs(
+					skillScore(candidate) -
+						womenConfirmed.reduce((sum, p) => sum + skillScore(p), 0) / womenConfirmed.length,
+				)
+			: 0;
+	} else {
+		const confirmedAvgSkill =
+			confirmed.reduce((sum, p) => sum + skillScore(p), 0) / confirmed.length;
+		skillDiff = Math.abs(skillScore(candidate) - confirmedAvgSkill);
+	}
 
 	// 동반 회피: 같은 4명 그룹으로 함께 뛴 누적 횟수(confirmed 각각과의 합산).
 	// 직전 1게임을 따로 보지 않고 누적만으로 판단 — 자주 함께 뛴 상대일수록 회피된다.

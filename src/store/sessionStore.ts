@@ -335,6 +335,9 @@ export interface SessionState {
 	/** 락이 비어있는지(아무도 점유 안 함). */
 	lockFree: boolean;
 
+	/** 서버 권위 재동기화(resyncFromServer) 진행 중 — 포어그라운드 복귀/재연결 시 "동기화 중" 표시용. */
+	boardSyncing: boolean;
+
 	// Internal channel reference (not reactive)
 	_channel: RealtimeChannel | null;
 	_metaChannel: RealtimeChannel | null;
@@ -370,7 +373,7 @@ export interface SessionState {
 	/** board_drafts를 단조(새 버전만) 반영 — boardStore 저장 성공/충돌 복구에서 호출. */
 	applyDraftsIfNewer: (drafts: BoardDraftsPayload, version: number) => void;
 	/** 서버에서 board_drafts+버전+편집 락을 다시 읽어 수렴(충돌 복구·재구독 catch-up). */
-	resyncFromServer: () => Promise<void>;
+	resyncFromServer: (opts?: { indicate?: boolean }) => Promise<void>;
 	/**
 	 * 진행중 matches 를 권위 재조회해 courts 를 수렴시킨다(코트 배정 catch-up).
 	 * targetVersion 이 현재 matchStateVersion 이하면 멱등 skip(force=true 면 강제 — 재연결 복구용).
@@ -404,6 +407,7 @@ const initialState = {
 	holderClientId: null as string | null,
 	holderName: null as string | null,
 	lockFree: true,
+	boardSyncing: false,
 	_channel: null as RealtimeChannel | null,
 	_metaChannel: null as RealtimeChannel | null,
 	_clientId: null as string | null,
@@ -638,11 +642,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		// (그래서 가져오기가 직전 보유자로 되돌아간다) 전용 board_takeover_editor로 무조건 서버 row를 나로 덮어쓴다.
 		// 직전 보유자는 다음 heartbeat(CAS) 거부 + 실시간 row 수신으로 읽기 모드로 떨어진다(단일 편집자 수렴).
 		// RPC를 먼저 await 후 점유 확정 — 낙관적 선점이 직전 보유자 heartbeat row 갱신과 겹쳐 되돌아가는 레이스를 피한다.
-		const { _clientId, _myName, isEditor } = get();
+		const { _clientId, _myName, isEditor, presenceCount } = get();
 		if (isEditor || !_clientId) return;
 		const name = _myName ?? "기기";
+		// 체감 지연의 원인: 본래 takeover RPC 왕복을 await한 뒤에야 편집 모드로 전환했다(직전 보유자 heartbeat와
+		// 겹쳐 되돌아가는 레이스 회피용). 그런데 혼자(presenceCount<=1)면 경쟁 보유자가 없어 그 레이스가 없으므로,
+		// 즉시 낙관적으로 편집 모드로 전환해 버튼 지연을 없앤다. 단 heartbeat(CAS)는 takeover 확정 전엔 띄우지 않는다 —
+		// 직전 보유자의 유효 lease를 board_claim_editor(CAS)로는 못 뺏어 즉시 resync로 되돌려지기 때문.
+		const solo = presenceCount <= 1;
+		if (solo) {
+			lockEpoch++;
+			cachedEditor = { clientId: _clientId, name, leaseUntilMs: Date.now() + LEASE_SECONDS * 1000 };
+			set(computeLockFromRow(cachedEditor, _clientId, Date.now())); // isEditor 즉시 true (heartbeat는 아직 X)
+		}
 		const res = await dbBoardTakeoverEditor(getSessionId(), _clientId, name, LEASE_SECONDS);
-		if (!res) return; // 탈취 실패(네트워크 등) — 상태 변경 없음
+		if (!res) {
+			// 탈취 실패(네트워크 등) — 낙관 선점했다면 서버 권위로 되돌리고, 아니면 상태 변경 없음.
+			if (solo) void get().resyncFromServer();
+			return;
+		}
 		lockEpoch++; // 권위적 변경 — in-flight heartbeat .then 무효화
 		cachedEditor = {
 			clientId: _clientId,
@@ -671,12 +689,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		recomputeLock(get, set); // 새 보유자=상대 → 나는 보기 전용 + heartbeat 정지
 	},
 	applyDraftsIfNewer: (drafts, version) => applyDraftsIfNewerImpl(get, set, drafts, version),
-	resyncFromServer: async () => {
+	resyncFromServer: async (opts) => {
 		const sid = getSessionId();
 		if (!sid) return;
 		// load_session_state: board_drafts + matches + 버전 + 편집 락을 단일 트랜잭션 스냅샷으로 — 두 권위가
 		// 항상 같은 시점으로 수렴(옵션 B). 재구독 catch-up · board_save_drafts 충돌 복구 공용 경로.
-		const snap = await dbLoadSessionState(sid);
+		// indicate=true(포어그라운드 복귀·재연결 catch-up)일 때만 "동기화 중" pill 노출. 실패/충돌 복구
+		// resync는 순간적이라 깜빡임을 피하려 표시하지 않는다.
+		const indicate = opts?.indicate ?? false;
+		let snap: Awaited<ReturnType<typeof dbLoadSessionState>>;
+		if (indicate) set({ boardSyncing: true });
+		try {
+			snap = await dbLoadSessionState(sid);
+		} finally {
+			if (indicate) set({ boardSyncing: false });
+		}
 		if (!snap) return;
 		lockEpoch++;
 		// 강제 적용(<= 멱등 가드 우회): 충돌 복구 시 미저장 로컬 편집을 서버값으로 되돌리려면 boardDrafts
@@ -752,7 +779,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				// 재구독(재연결) 직후 1회 재조회 — SUBSCRIBED~첫 UPDATE 공백 보정(drafts+버전+락 모두).
 				// 서버 권위 락이 확정된 뒤 혼자뿐이면 자동 점유(보기 전용 단계 생략).
 				onResync: () => {
-					void get().resyncFromServer().then(() => maybeClaimIfAlone(get, set));
+					void get().resyncFromServer({ indicate: true }).then(() => maybeClaimIfAlone(get, set));
 				},
 				// session_players row 변경(추가/삭제/상태)을 즉시 반영 — broadcast 누락/지연과 무관하게
 				// 모든 기기의 sessionPlayers가 DB와 수렴(중복·미동기화·다중상태 방지). 보드는 sessionPlayers
@@ -817,7 +844,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			// 복귀: 항상 서버 권위로 재동기 우선.
 			const wasEditor = wasEditorBeforeHidden;
 			wasEditorBeforeHidden = false;
-			void get().resyncFromServer().then(() => {
+			void get().resyncFromServer({ indicate: true }).then(() => {
 				const s = get();
 				// 직전에 내가 편집자였고 그 사이 아무도 안 가져가 자유면 끊김 없이 재점유.
 				if (wasEditor && s.lockFree && !s.isEditor && s._clientId) claimNow(get, set);

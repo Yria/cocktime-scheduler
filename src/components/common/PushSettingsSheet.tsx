@@ -121,20 +121,18 @@ export default function PushSettingsSheet({ onClose }: Props) {
 	const installGuide = (highlight: boolean) => {
 		const img = isIOS() ? pushInstallIos : isAndroid() ? pushInstallAndroid : null;
 		if (img) {
+			// 스크린샷 이미지가 설치 절차를 전부 설명하므로 부가 텍스트는 두지 않는다(이미지만).
 			return (
-				<div className="flex flex-col gap-2">
-					<img
-						src={img}
-						alt={`${platformLabel()} 앱 설치 안내`}
-						style={{
-							width: "100%",
-							height: "auto",
-							borderRadius: 14,
-							display: "block",
-						}}
-					/>
-					{note("설치한 뒤 이 화면에서 알림을 켜면 잠금화면으로 알림을 받아요.")}
-				</div>
+				<img
+					src={img}
+					alt={`${platformLabel()} 앱 설치 안내`}
+					style={{
+						width: "100%",
+						height: "auto",
+						borderRadius: 14,
+						display: "block",
+					}}
+				/>
 			);
 		}
 		// 데스크톱: 이미지가 없어 텍스트 단계로 안내
@@ -196,15 +194,8 @@ export default function PushSettingsSheet({ onClose }: Props) {
 			"이 브라우저는 잠금화면 알림을 지원하지 않아요. 최신 Safari/Chrome에서 다시 시도해 주세요.",
 		);
 	} else if (installState === "ios-needs-install") {
-		// 구독 불가 — iOS는 홈 화면 설치 필요 → 설치 도움말
-		content = (
-			<div className="flex flex-col gap-2">
-				{note(
-					"아이폰은 홈 화면에 추가해야 잠금화면 알림을 받을 수 있어요. 아래 순서로 설치해 주세요.",
-				)}
-				{installGuide(true)}
-			</div>
-		);
+		// 구독 불가 — iOS는 홈 화면 설치 필요 → 스크린샷 안내(이미지가 절차를 모두 설명, 텍스트 생략)
+		content = installGuide(true);
 	} else if (permission === "denied") {
 		// 구독 불가 — 권한 차단됨 → 해제 도움말
 		content = (

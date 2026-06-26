@@ -12,7 +12,7 @@ import { PlayerConflictDialog } from "./setup/PlayerConflictDialog";
 import { SessionConflictDialog } from "./setup/SessionConflictDialog";
 
 interface Props {
-	onStart: (selected: Player[], settings: SessionSettings) => void;
+	onStart: (selected: Player[], settings: SessionSettings) => void | Promise<void>;
 }
 
 import { useAppStore } from "../store/appStore";
@@ -109,6 +109,19 @@ export default function SessionSetup({ onStart }: Props) {
 		selectedPlayers: Player[];
 		settings: SessionSettings;
 	} | null>(null);
+	// 더블 서브밋 가드: 시작/업데이트 in-flight 동안 재진입 차단(동시 startSession 으로 쌍둥이 active 세션 생성 방지).
+	const [submitting, setSubmitting] = useState(false);
+
+	// 실제 시작/업데이트 실행 — 동시 호출 차단 + 완료까지 버튼 비활성.
+	async function runStart(selectedPlayers: Player[], settings: SessionSettings) {
+		if (submitting) return;
+		setSubmitting(true);
+		try {
+			await onStart(selectedPlayers, settings);
+		} finally {
+			setSubmitting(false);
+		}
+	}
 
 	function toggleSingleWoman(id: string) {
 		setSingleWomanIds((prev) => {
@@ -124,6 +137,7 @@ export default function SessionSetup({ onStart }: Props) {
 	);
 
 	async function handleStart() {
+		if (submitting) return;
 		const selectedPlayers = allPlayers.filter((p) => selected.has(p.id));
 
 		const validSingleWomanIds = selectedPlayers
@@ -155,7 +169,7 @@ export default function SessionSetup({ onStart }: Props) {
 			}
 		}
 
-		onStart(selectedPlayers, settings);
+		await runStart(selectedPlayers, settings);
 	}
 
 	return (
@@ -163,7 +177,30 @@ export default function SessionSetup({ onStart }: Props) {
 			className="app-shell-minh md:max-w-sm md:mx-auto bg-[#fafbff] dark:bg-[#0f172a]"
 			style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
 		>
-			<AppHeader title="세션 설정" onBack={handleBack} />
+			<AppHeader
+				title="세션 설정"
+				onBack={handleBack}
+				right={
+					// 세션 진행 중엔 뒤로가기가 보드로 복귀하므로, 홈으로 빠져나갈 경로를 따로 둔다(세션은 종료하지 않고 유지).
+					sessionMeta ? (
+						<button
+							type="button"
+							onClick={() => navigate("/")}
+							style={{
+								fontSize: 14,
+								fontWeight: 600,
+								color: "#0b84ff",
+								background: "none",
+								border: "none",
+								padding: "6px 0 6px 8px",
+								cursor: "pointer",
+							}}
+						>
+							나가기
+						</button>
+					) : undefined
+				}
+			/>
 
 			<div style={{ padding: "16px 16px 0" }}>
 				<CourtCountSelector
@@ -223,7 +260,7 @@ export default function SessionSetup({ onStart }: Props) {
 				<button
 					type="button"
 					onClick={handleStart}
-					disabled={selectedCount < 4}
+					disabled={selectedCount < 4 || submitting}
 					style={{
 						width: "100%",
 						padding: "16px",
@@ -239,7 +276,14 @@ export default function SessionSetup({ onStart }: Props) {
 							selectedCount >= 4 ? "0 4px 16px rgba(11,132,255,0.25)" : "none",
 					}}
 				>
-					{isUpdating ? "세션 업데이트" : "세션 시작"} ({selectedCount}명)
+					{submitting
+						? isUpdating
+							? "업데이트 중…"
+							: "시작 중…"
+						: isUpdating
+							? "세션 업데이트"
+							: "세션 시작"}{" "}
+					({selectedCount}명)
 				</button>
 			</div>
 
@@ -289,7 +333,7 @@ export default function SessionSetup({ onStart }: Props) {
 						if (pendingStartRef.current) {
 							const { selectedPlayers, settings } = pendingStartRef.current;
 							pendingStartRef.current = null;
-							onStart(selectedPlayers, settings);
+							void runStart(selectedPlayers, settings);
 						}
 					}}
 					onCancel={() => {

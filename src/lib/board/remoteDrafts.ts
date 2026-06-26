@@ -13,15 +13,24 @@ import type {
 } from "../../types/board";
 import { centroidAnchor, clampAnchor } from "./geometry";
 
-/** drafts/reservations를 멤버십만으로 정규화한 비교용 문자열(위치·순서 무시). */
+/** drafts/reservations를 멤버십만으로 정규화한 비교용 문자열(위치·순서 무시). forcedIds·forcedPairs도 포함해 그 변경도 동기되게 한다. */
 export function canonicalizeDrafts(p: BoardDraftsPayload): string {
 	return JSON.stringify({
 		teams: [...p.teams]
-			.map((t) => ({ id: t.id, memberIds: [...t.memberIds].sort(), createdMs: t.createdMs }))
+			.map((t) => ({
+				id: t.id,
+				memberIds: [...t.memberIds].sort(),
+				createdMs: t.createdMs,
+				forcedIds: [...(t.forcedIds ?? [])].sort(),
+				slots: Object.entries(t.slots ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+			}))
 			.sort((a, b) => a.id.localeCompare(b.id)),
 		reservations: [...p.reservations]
 			.map((r) => ({ id: r.id, playerId: r.playerId, teamId: r.teamId, createdMs: r.createdMs }))
 			.sort((a, b) => a.id.localeCompare(b.id)),
+		forcedPairs: [...(p.forcedPairs ?? [])]
+			.map((f) => ({ a: f.a, b: f.b, fromCount: f.fromCount }))
+			.sort((x, y) => (x.a + x.b).localeCompare(y.a + y.b)),
 	});
 }
 
@@ -63,11 +72,23 @@ export function reconcileMembership(
 		if (memberIds.length === 0) continue;
 		for (const id of memberIds) assignedAnchor.add(id);
 		const anchor = oldAnchors.get(team.id) ?? centroidAnchor(memberIds, magnets);
+		// forcedIds는 살아남은 멤버(anchor + 이 팀의 예약 ghost)와의 교집합만 유지(빠진 멤버 자동 제외 → ≥2 판정이 현재 멤버 기준).
+		// ghost도 포함해야 "4명+예약 잠금"의 ghost 락이 동기 후에도 보존된다.
+		const ghostIds = payload.reservations
+			.filter((r) => r.teamId === team.id && magnets.has(r.playerId))
+			.map((r) => r.playerId);
+		const forcedIds = (team.forcedIds ?? []).filter((id) => memberIds.includes(id) || ghostIds.includes(id));
+		// 슬롯 위치 — 자석이 살아있는 멤버 것만 유지(스테일 키는 teamMembers가 무시하므로 안전).
+		const slots = team.slots
+			? Object.fromEntries(Object.entries(team.slots).filter(([pid]) => magnets.has(pid)))
+			: undefined;
 		drafts.set(team.id, {
 			id: team.id,
 			anchorMemberIds: memberIds,
 			anchor: clampAnchor(anchor, vw, vh),
 			createdAt: team.createdMs,
+			...(forcedIds.length ? { forcedIds } : {}),
+			...(slots && Object.keys(slots).length ? { slots } : {}),
 		});
 		for (const id of memberIds) {
 			const m = magnets.get(id);
@@ -75,10 +96,22 @@ export function reconcileMembership(
 		}
 	}
 
+	// 예약(ghost) 재구성 — 동기화 경계 방어:
+	//  · anchor로 확정된 선수(assignedAnchor)는 ghost가 될 수 없다(anchor xor ghost) → 스킵해 stale "anchor+ghost" 모순 제거.
+	//    (경기중 선수는 I2로 anchor에서 빠져 assignedAnchor에 없으므로, "경기중 + ghost" 의도된 빌려주기는 보존된다.)
+	//  · 같은 (선수, 팀) 쌍 중복 예약은 가장 오래된 것 하나만(동시 생성·stale 재유입 정리). createdMs↑·id↑로 결정적.
 	const reservations = new Map<string, Reservation>();
-	for (const r of payload.reservations) {
+	const seenPairs = new Set<string>();
+	const sortedRes = [...payload.reservations].sort(
+		(a, b) => a.createdMs - b.createdMs || a.id.localeCompare(b.id),
+	);
+	for (const r of sortedRes) {
 		if (!drafts.has(r.teamId)) continue;
 		if (!magnets.has(r.playerId)) continue;
+		if (assignedAnchor.has(r.playerId)) continue; // anchor 확정 선수는 ghost 불가
+		const pairKey = `${r.playerId}:${r.teamId}`;
+		if (seenPairs.has(pairKey)) continue; // 같은 선수·팀 중복 예약 제거
+		seenPairs.add(pairKey);
 		reservations.set(r.id, {
 			id: r.id,
 			playerId: r.playerId,

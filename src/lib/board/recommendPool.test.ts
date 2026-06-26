@@ -49,6 +49,7 @@ function makeInputs(opts: {
 		pairHistory: {},
 		lastGameType: {},
 		matchAssignCount: 0,
+		forcedPairs: [],
 		cockCheckEnabled: opts.cockCheckEnabled ?? false,
 	};
 }

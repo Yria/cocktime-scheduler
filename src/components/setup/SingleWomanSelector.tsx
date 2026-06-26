@@ -34,7 +34,7 @@ export function SingleWomanSelector({
 						whiteSpace: "nowrap",
 					}}
 				>
-					혼복 허용 여성
+					남복 편성 허용 여성
 				</p>
 				{selectedFemales.map((p) => {
 					const isOn = singleWomanIds.has(p.id);

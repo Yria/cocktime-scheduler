@@ -20,6 +20,26 @@ export interface DraftTeam {
 	anchorMemberIds: string[]; // 이 팀을 원본 소속으로 가진 멤버 (magnet.teamId === this.id)
 	anchor: StagePoint;
 	createdAt: number;
+	/**
+	 * 운영진이 "드래그로 직접 묶은" 멤버 id (자동편성·추천 픽 제외). 2명 이상이면 "의도적 그룹".
+	 * 실효값은 항상 현재 멤버와의 교집합으로 해석(멤버가 빠지면 자동 제외 — serialize/reconcile에서 필터).
+	 */
+	forcedIds?: string[];
+	/**
+	 * 멤버의 슬롯 위치(playerId → 0..3). 드롭한 칸에 정확히 배치(가운데 빈칸 허용)하기 위한 맵.
+	 * 멤버십(anchorMemberIds)과 분리 — 없거나 매핑 안 된 멤버는 빈 슬롯을 순서대로 채움(하위호환).
+	 */
+	slots?: Record<string, number>;
+}
+
+/**
+ * "의도적으로 같이 넣은" 쌍의 재편성 회피 상태(추천 페널티용). fromCount=묶일 때 matchAssignCount.
+ * 추천 시 (현재 matchAssignCount − fromCount) 경과 라운드로 선형 decay. board_drafts jsonb에 함께 저장(동기·영속).
+ */
+export interface ForcedPair {
+	a: string;
+	b: string;
+	fromCount: number;
 }
 
 /** 예약(ghost) — "이 선수를 이 예비팀에 빌려줌". 한 선수가 여러 개 가질 수 있다. */
@@ -36,8 +56,10 @@ export interface Reservation {
  * 위치(anchor x/y)는 각 클라이언트 로컬이므로 포함하지 않는다.
  */
 export interface BoardDraftsPayload {
-	teams: { id: string; memberIds: string[]; createdMs: number }[];
+	teams: { id: string; memberIds: string[]; createdMs: number; forcedIds?: string[]; slots?: Record<string, number> }[];
 	reservations: { id: string; playerId: string; teamId: string; createdMs: number }[];
+	/** 의도적 그룹의 재편성 회피 상태(per-rule 컬럼 대신 board_drafts jsonb에 함께 동기·영속). */
+	forcedPairs?: ForcedPair[];
 }
 
 /** 선수 상태(파생). playing=코트 배치 / anchored=예비팀 원본 소속 / free=자유. */
