@@ -37,6 +37,7 @@ export function rowToSessionPlayer(row: SessionPlayerRow): SessionPlayer {
 	return {
 		id: row.id,
 		playerId: row.player_id,
+		memberId: row.member_id ?? null,
 		name: row.name,
 		gender: row.gender,
 		skills: row.skills,

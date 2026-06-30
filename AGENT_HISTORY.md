@@ -670,3 +670,31 @@
 - 검증: tsc·eslint(변경분)·prod 빌드·테스트 162개 통과
 
 ---
+
+## #50
+
+**Prompt**: 편집권한 뺏길때도 누구한테 뺐겼는데 다이얼로그 띄워줘
+
+**Answer**: 편집권을 다른 사람에게 뺏기면 누구에게 뺏겼는지 다이얼로그로 알리는 기능. 모든 편집권 전이가 거치는 단일 지점(recomputeLock)에서 "내가 편집자였다→아니게 됨 & 새 보유자가 타인" 전이만 잡는 것이 핵심.
+
+- 순수 헬퍼 detectEditorLoss(editLock.ts) — 뺏김 전이면 가져간 사람 이름 반환(이름 없으면 "다른 사용자"), 테스트 6개
+- recomputeLock에서 감지 → editorTakenBy 세팅, 내가 재획득하면 자동 닫힘. dismissEditorTakenNotice 액션
+- takeover(claimEditor)만 알림 — 자발적 양도(handoffEditor)는 suppressLossNotice로 억제(오탐 방지). lease 만료(자유)는 뺏김 아님
+- EditorTakenNotice 모달(ModalSheet) — SessionBoard에 마운트
+- 프론트 전용(마이그레이션 없음)
+
+---
+
+## #51
+
+**Prompt**: 창이 액티브 될때 인원이 3명 이상인데도 자꾸 뺏어가는게 있는데 이것좀 체크좀 / 각 회원들이 매달 콕 한개씩 지원받는걸 하려고 하는데, 콕체크 누를때 그 달 콕지원을 받지 않았다면 이사람 콕 안내도 된다또는 한개만 내도된다 노출하게 해줘. 반사적으로 확인누르는 사람도 있을테니 눈에 잘 띄게 해주고, 매달 콕 내는 양을 설정 어딘가 적을 수 있게 해줘. 남자는 2개 여자는 1개야. / 끝나면 커밋하고 푸쉬해
+
+**Answer**: 두 작업. (1) 편집권 자동점유 버그: 자동 점유 경로 중 presence 가드가 없던 두 곳(창 복귀 재점유 sessionStore:870, 마운트 자동점유 SessionBoard:137)이 인원수와 무관하게 자유 락을 낚아채 "뺏기는 것처럼" 보였다. 사용자 확정대로 "혼자일 때만(presenceCount<=1) 자동 점유"로 일원화 — 복귀 핸들러의 무조건 재점유 제거(maybeClaimIfAlone로), 마운트 effect에 presence 가드 추가. 명시 점유(드래그)·"가져오기"는 유지.
+
+(2) 월별 콕 지원: 회원당 매달 콕 1개 지원, 콕체크 시 그 달 미사용이면 "남:1개만/여:안 내도 됨"을 크게 노출(반사적 확인 방지로 조회 끝날 때까지 확인 비활성), 확인 시 그 달 지원 소진. 콕량(남2/여1)·지원량 설정은 회원관리>"콕 설정".
+- DB(20260630030000): group_settings 싱글톤(쿼터 남2/여1+월지원1) + cock_support_grants(member_id,ym PK 멱등) + RLS(읽기 authenticated/그룹설정 쓰기 is_admin). 원격 적용 완료
+- 단위 확정(사용자): 콕량=세션 콕체크 1회당, 지원 소진=콕체크 확인 시 자동(멱등 upsert), 설정=관리자 그룹설정
+- SessionPlayer.memberId 노출(타입+트랜스포머), calendar.monthKST(), clubSettings.ts API, CockCheckModal/GroupSettingsModal 신규
+- 검증: tsc·eslint(변경분)·prod 빌드·테스트 168개 통과
+
+---

@@ -28,10 +28,11 @@ import TeamBackground from "./TeamBackground";
 import DetachZoneOverlay from "./DetachZoneOverlay";
 import RestDropOverlay from "./RestDropOverlay";
 import RecommendTeammateDialog from "./RecommendTeammateDialog";
-import ModalSheet from "../common/ModalSheet";
+import CockCheckModal from "./CockCheckModal";
 import Spinner from "../shared/Spinner";
 import MatchEditModal from "./MatchEditModal";
 import ViewerLockOverlay from "./ViewerLockOverlay";
+import EditorTakenNotice from "./EditorTakenNotice";
 import DebugMatchModal from "./DebugMatchModal";
 import type { RecommendTarget } from "../../hooks/useTeammateRecommendations";
 
@@ -131,10 +132,13 @@ export default function SessionBoard() {
 	// (서버 lease CAS가 진실 — 동시 점유 시 한쪽만 성공, 나머지는 resync로 읽기 모드 복귀.)
 	const lockFree = useSessionStore((s) => s.lockFree);
 	const clientId = useSessionStore((s) => s._clientId);
+	const presenceCount = useSessionStore((s) => s.presenceCount);
 	const claimEditingIfFree = useSessionStore((s) => s.claimEditingIfFree);
+	// 자동 점유는 "혼자일 때만"(presenceCount<=1). 2명 이상이면 들어와도/창 액티브로도 자동 점유하지 않고
+	// 보기 전용으로 시작 — 편집은 직접 드래그(boardStore.claimEditingIfFree)나 '편집 권한 가져오기'로만.
 	useEffect(() => {
-		if (clientId && lockFree && !isEditor) claimEditingIfFree();
-	}, [clientId, lockFree, isEditor, claimEditingIfFree]);
+		if (clientId && lockFree && !isEditor && presenceCount <= 1) claimEditingIfFree();
+	}, [clientId, lockFree, isEditor, presenceCount, claimEditingIfFree]);
 
 	const courts = useSessionStore((s) => s.courts);
 	const restingIds = useSessionStore((s) => s.restingIds);
@@ -269,8 +273,7 @@ export default function SessionBoard() {
 		[playingIds, isEditor],
 	);
 
-	// 콕 제출 확인 다이얼로그 대상(편집자만). 자유 자석 비활성(콕 미확인) 탭 → 여기로.
-	const confirmCock = useSessionStore((s) => s.confirmCock);
+	// 콕 제출 확인 다이얼로그 대상(편집자만). 자유 자석 비활성(콕 미확인) 탭 → 여기로(CockCheckModal).
 	const [cockTarget, setCockTarget] = useState<string | null>(null);
 	const onCockCheck = useCallback(
 		(playerId: string) => {
@@ -514,29 +517,10 @@ export default function SessionBoard() {
 				<MatchEditModal courtId={editMatchCourtId} onClose={() => setEditMatchCourtId(null)} />
 			)}
 			{cockTarget && (
-				<ModalSheet position="center" className="p-6" onClose={() => setCockTarget(null)}>
-					<h3 className="font-bold text-gray-800 dark:text-white text-lg mb-1.5">콕 제출 확인</h3>
-					<p className="text-sm text-gray-600 dark:text-gray-300 mb-5">
-						<b>{useSessionStore.getState().sessionPlayers.get(cockTarget)?.name ?? "이 선수"}</b> 님의 콕 제출을 확인했나요? 확인하면 매칭 대기 상태가 됩니다.
-					</p>
-					<div className="flex gap-3">
-						<button type="button" onClick={() => setCockTarget(null)} className="btn-lq-secondary flex-1 py-3 text-sm">
-							취소
-						</button>
-						<button
-							type="button"
-							onClick={() => {
-								void confirmCock(cockTarget);
-								setCockTarget(null);
-							}}
-							className="btn-lq-primary flex-1 py-3 text-sm"
-						>
-							확인
-						</button>
-					</div>
-				</ModalSheet>
+				<CockCheckModal playerId={cockTarget} onClose={() => setCockTarget(null)} />
 			)}
 			<ViewerLockOverlay />
+			<EditorTakenNotice />
 			<DebugMatchModal />
 		</div>
 	);

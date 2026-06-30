@@ -13,6 +13,7 @@ function player(
 	return {
 		id,
 		playerId: id,
+		memberId: null,
 		name: id,
 		gender,
 		skills: { 클리어: "V", 스매시: "V", 로테이션: "V", 드랍: "V", 헤어핀: "V", 푸시: "V" },

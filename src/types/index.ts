@@ -24,6 +24,7 @@ export interface Player {
 export interface SessionPlayer {
 	id: string; // UUID (session_players.id)
 	playerId: string; // 원본 player_id (Player.id)
+	memberId: string | null; // 회원 링크(members.id). 게스트·구 Sheets 선수는 null.
 	name: string;
 	gender: Gender;
 	skills: PlayerSkills;
@@ -74,3 +75,20 @@ export interface SessionSettings {
 	/** 콕 체크 모드 — on이면 선수가 콕 제출 확인을 받아야 매칭 대기 상태가 된다. 디폴트 on. */
 	cockCheckEnabled: boolean;
 }
+
+/** 클럽 전역 설정(group_settings 싱글톤, 마이그레이션 20260630030000). 회원관리에서 편집. */
+export interface GroupSettings {
+	/** 세션 콕체크 1회당 남자가 내는 콕 수. */
+	cockQuotaMale: number;
+	/** 세션 콕체크 1회당 여자가 내는 콕 수. */
+	cockQuotaFemale: number;
+	/** 회원당 매달 콕 지원 수(그 달 첫 콕체크에서 차감). */
+	cockSupportPerMonth: number;
+}
+
+/** group_settings 미로딩/부재 시 폴백 기본값(남2/여1/지원1). */
+export const DEFAULT_GROUP_SETTINGS: GroupSettings = {
+	cockQuotaMale: 2,
+	cockQuotaFemale: 1,
+	cockSupportPerMonth: 1,
+};

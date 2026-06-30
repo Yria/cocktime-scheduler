@@ -18,6 +18,11 @@ export function todayKST(): string {
 	return ymdFmt.format(new Date());
 }
 
+/** 이번 달(KST) "YYYY-MM" — 월별 콕 지원 등 월 단위 키. */
+export function monthKST(): string {
+	return ymdFmt.format(new Date()).slice(0, 7);
+}
+
 /** ISO 순간 → KST 달력 날짜 "YYYY-MM-DD" */
 export function isoToDateKST(iso: string): string {
 	return ymdFmt.format(new Date(iso));

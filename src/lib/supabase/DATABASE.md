@@ -28,6 +28,7 @@
 | id | UUID PK | 세션 내 선수 ID |
 | session_id | BIGINT FK | 세션 |
 | player_id | TEXT | 원본 선수 ID |
+| member_id | UUID FK? | 회원 링크(members, 마이그레이션 `20260621060000`, `ON DELETE SET NULL`). 게스트·구 Sheets 선수는 NULL. 월별 콕 지원 판정에 사용(`SessionPlayer.memberId`) |
 | name | TEXT | 이름 |
 | gender | TEXT | M/F |
 | skills | JSONB | 7개 스킬 |
@@ -73,6 +74,30 @@
 | count | INT | 동반 횟수 |
 
 > **제거된 테이블(deprecated)**: ~~`team_candidates`~~, ~~`manual_match_logs`~~ (마이그레이션 `20260612120000_remove_legacy_team_formation.sql` 에서 DROP).
+
+### group_settings (2026-06-30, `20260630030000`)
+클럽 전역 설정 싱글톤(`id=1`). 회원관리>"콕 설정"(`GroupSettingsModal`)에서 편집.
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| id | INT PK | 항상 1 (`check (id=1)`) |
+| cock_quota_male | INT | 세션 콕체크 1회당 남자가 내는 콕 수(기본 2) |
+| cock_quota_female | INT | 세션 콕체크 1회당 여자가 내는 콕 수(기본 1) |
+| cock_support_per_month | INT | 회원당 매달 콕 지원 수(기본 1) |
+| updated_at | TIMESTAMPTZ | |
+
+RLS: select=authenticated 전체, write=`is_admin()`.
+
+### cock_support_grants (2026-06-30, `20260630030000`)
+회원이 어느 달(ym)에 콕 지원을 소진했는지 1행. 그 달 첫 콕체크 확인이 upsert로 소진(멱등).
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| member_id | UUID FK | members (`ON DELETE CASCADE`) |
+| ym | TEXT | 'YYYY-MM' (KST) |
+| session_id | BIGINT FK? | 소진된 세션(참고, `ON DELETE SET NULL`) |
+| granted_at | TIMESTAMPTZ | |
+| | PK | (member_id, ym) = 멱등 |
+
+RLS: select=authenticated 전체, insert=authenticated(보드 편집자가 콕체크로 소진). 클라: `clubSettings.ts`(fetchGroupSettings/updateGroupSettings/fetchCockSupportUsed/grantCockSupport). 콕체크 모달(`CockCheckModal`)이 회원 단건 조회로 "이번 달 지원 미사용 → 남:1개만/여:안 내도 됨" 노출, `confirmCock` 가 소진.
 
 ---
 
@@ -211,8 +236,8 @@ sessionStore (휴식 토글)
 
 - **식별자**: `editor_client_id`에는 **로그인 사용자 id(`user.id`, 사람 단위)** 를 저장한다(2026-06-23). 같은 사람의 리로드·다른 탭·다른 기기는 같은 id라 `editor=client` 분기로 자기 lease를 즉시 재획득(자기 잠금 없음). 미로그인 등 부재 시에만 탭 단위 영속 `clientId`(sessionStorage) 폴백. (이전: 연결마다 randomUUID라 리로드 시 직전 lease에 묶여 20s 자기 잠금이 발생.)
 - **보유자** = `editor_client_id != null AND editor_lease_until > now()`. `computeLockFromRow`로 `isEditor`/`holderClientId`/`holderName`/`lockFree` 산정.
-- **획득**: (a) **진입 시 자동** — 세션 연 사람이 자유 상태(아무도 편집 안 함)면 즉시 낙관 점유(SessionBoard effect→`claimEditingIfFree`); 서버 락은 `board_save_drafts` self-claim 또는 heartbeat `board_claim_editor`(CAS: 자유/만료/본인)가 확정. 다른 사람이 유효 lease면 점유 안 됨(읽기 모드로 시작). 편집자 이탈 시 남은 클라가 재점유 → "아무도 편집 안 하는 상태"가 지속되지 않음. (b) **강제 탈취** — 명시 "편집 권한 가져오기"(`claimEditor`→`board_takeover_editor`)는 활성 보유자가 있어도 무조건 가져온다(CAS는 활성 lease를 못 뺏으므로 전용 함수). 직전 보유자는 다음 heartbeat 거부+실시간 수신으로 읽기 모드로 수렴.
-- **유지**: 보유자만 7s heartbeat(`board_claim_editor`)로 20s lease 연장. 백그라운드(visibilitychange) 시 heartbeat 정지, 복귀 시 재점유 시도.
+- **획득**: (a) **자동 점유는 "혼자일 때만"(presenceCount<=1)** (2026-06-30 변경) — 자유 상태에서 접속자가 나뿐이면 즉시 낙관 점유(SessionBoard effect→`claimEditingIfFree`, maybeClaimIfAlone). **2명 이상이면 진입·창 액티브로 자동 점유하지 않는다** — 인원수와 무관히 자유 락을 낚아채 "뺏기는 것처럼" 보이던 버그(특히 창 복귀 시 무조건 재점유) 제거. 서버 락은 `board_save_drafts` self-claim 또는 heartbeat `board_claim_editor`(CAS: 자유/만료/본인)가 확정. (b) **명시 점유** — 직접 드래그 편집(`boardStore`→`claimEditingIfFree`, 자유 락만)과 **강제 탈취** "편집 권한 가져오기"(`claimEditor`→`board_takeover_editor`, 활성 보유자도 무조건). 직전 보유자는 다음 heartbeat 거부+실시간 수신으로 읽기 모드로 수렴(+뺏긴 쪽엔 `EditorTakenNotice` 다이얼로그).
+- **유지**: 보유자만 7s heartbeat(`board_claim_editor`)로 20s lease 연장. 백그라운드(visibilitychange) 시 heartbeat 정지, 복귀 시엔 **서버 재동기만** 하고 자동 점유는 "혼자일 때만" 규칙을 따른다(여럿이면 재점유 안 함).
 - **해제/회복**: 정상 이탈(unsubscribe/pagehide)→`board_release_editor`. crash/강제종료→20s lease 만료 후 자유(클라 4s `reeval` 타이머가 만료를 로컬 감지). presence leave 의존 없음.
 - **양도**: 보유자가 접속자 모달에서 "넘기기"(`board_handoff_editor`)로 명시 이전.
 - **stale 콜백 방어**: `lockEpoch`(권위 변경마다 증가)로 in-flight heartbeat의 늦은 `.then`이 handoff/세션전환 후 상태를 덮어쓰지 못하게 가드.

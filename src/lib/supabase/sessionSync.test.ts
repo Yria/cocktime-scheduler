@@ -19,6 +19,7 @@ function row(over: Partial<SessionPlayerRow> & { player_id: string }): SessionPl
 	return {
 		id: `sp-${over.player_id}`,
 		session_id: 1,
+		member_id: null,
 		name: over.player_id,
 		gender: "M",
 		skills: SKILLS,

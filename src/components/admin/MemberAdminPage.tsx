@@ -12,6 +12,7 @@ import {
 } from "../../lib/supabase/adminMembers";
 import { useAuthStore } from "../../store/authStore";
 import AppHeader from "../common/AppHeader";
+import GroupSettingsModal from "./GroupSettingsModal";
 import type { PlayerSkills } from "../../types";
 import { SkillButton } from "../setup/SkillButton";
 
@@ -73,6 +74,7 @@ export default function MemberAdminPage() {
 	const [busyId, setBusyId] = useState<string | null>(null);
 	// 검색 키워드(이름/성별/지역 대상)
 	const [query, setQuery] = useState("");
+	const [showGroupSettings, setShowGroupSettings] = useState(false);
 	// 확인 다이얼로그(승급/해제/삭제). null=닫힘.
 	const [confirmState, setConfirmState] = useState<{
 		message: string;
@@ -239,6 +241,30 @@ export default function MemberAdminPage() {
 					paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))",
 				}}
 			>
+				{/* 그룹(콕) 설정 — 운영진 전용 전역 설정 */}
+				{!loading && (
+					<button
+						type="button"
+						onClick={() => setShowGroupSettings(true)}
+						className="w-full bg-white dark:bg-[rgba(30,30,35,0.8)] text-[#0f1724] dark:text-white border border-[rgba(0,0,0,0.1)] dark:border-[rgba(255,255,255,0.12)]"
+						style={{
+							marginTop: 12,
+							padding: "11px 13px",
+							borderRadius: 10,
+							fontSize: 14,
+							fontWeight: 600,
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							cursor: "pointer",
+							flexShrink: 0,
+						}}
+					>
+						<span>⚙️ 콕 설정 (콕량·월 지원)</span>
+						<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]" style={{ fontSize: 18 }}>›</span>
+					</button>
+				)}
+
 				{/* 검색 */}
 				{!loading && members.length > 0 && (
 					<input
@@ -618,6 +644,10 @@ export default function MemberAdminPage() {
 						</div>
 					</div>
 				</div>
+			)}
+
+			{showGroupSettings && (
+				<GroupSettingsModal onClose={() => setShowGroupSettings(false)} />
 			)}
 		</div>
 	);

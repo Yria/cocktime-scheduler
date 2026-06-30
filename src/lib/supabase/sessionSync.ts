@@ -9,7 +9,7 @@ import type { SessionPlayerRow } from "./types";
 /** session_players insert 행(서버가 채우는 id/game_count/mixed_count/joined_at/cock_checked 제외). */
 export type SessionPlayerInsert = Omit<
 	SessionPlayerRow,
-	"id" | "game_count" | "mixed_count" | "joined_at" | "cock_checked"
+	"id" | "member_id" | "game_count" | "mixed_count" | "joined_at" | "cock_checked"
 >;
 
 export interface SessionPlayerDiff {

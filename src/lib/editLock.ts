@@ -65,3 +65,23 @@ export function computeLockFromRow(
 		isEditor: active && editor.clientId === myClientId,
 	};
 }
+
+/**
+ * 편집권 "뺏김" 감지 — 내가 편집자였는데(prevIsEditor) 더는 아니고(next.isEditor=false),
+ * 그 자리를 다른 사람이 가져간(next.holderClientId 존재 && 나 아님) 전이일 때 그 사람 이름을 반환한다.
+ * lease 만료로 자유(holder=null)가 되거나 내가 계속 보유 중이면 null(뺏김 아님).
+ * 자발적 양도(handoffEditor)는 호출측에서 별도로 억제한다(이 함수는 전이만 본다).
+ */
+export function detectEditorLoss(
+	prevIsEditor: boolean,
+	next: LockInfo,
+	myClientId: string | null,
+): string | null {
+	const lostToOther =
+		prevIsEditor &&
+		!next.isEditor &&
+		next.holderClientId !== null &&
+		next.holderClientId !== myClientId;
+	if (!lostToOther) return null;
+	return next.holderName ?? "다른 사용자";
+}

@@ -25,6 +25,7 @@ import { matchPlayerIds } from "../lib/board/membership";
 import {
 	computeLockFromRow,
 	computePresenceList,
+	detectEditorLoss,
 	type EditorCache,
 } from "../lib/editLock";
 import { recordTeam } from "../lib/pairHistory";
@@ -32,10 +33,13 @@ import type {
 	Court,
 	GameType,
 	GeneratedTeam,
+	GroupSettings,
 	PairHistory,
 	SessionPlayer,
 } from "../types";
 import type { BoardDraftsPayload } from "../types/board";
+import { fetchGroupSettings, grantCockSupport } from "../lib/supabase/clubSettings";
+import { monthKST } from "../lib/schedule/calendar";
 import { useAppStore } from "./appStore";
 import { getClientId, getDeviceName } from "../lib/deviceName";
 import { randomId } from "../lib/randomId";
@@ -87,12 +91,25 @@ function applyDraftsIfNewerImpl(
 	set({ boardDrafts: drafts, boardDraftsVersion: version });
 }
 
-/** cachedEditor + 현재 시각으로 락 상태 재산정 + heartbeat 시작/정지 관리. */
-function recomputeLock(get: GetFn, set: SetFn) {
-	const info = computeLockFromRow(cachedEditor, get()._clientId, Date.now());
+/**
+ * cachedEditor + 현재 시각으로 락 상태 재산정 + heartbeat 시작/정지 관리.
+ * 편집자였다가 다른 사람에게 뺏긴 전이면 editorTakenBy(다이얼로그용)를 세팅한다.
+ * suppressLossNotice=true(자발적 양도)면 그 알림을 띄우지 않는다.
+ */
+function recomputeLock(get: GetFn, set: SetFn, opts?: { suppressLossNotice?: boolean }) {
+	const myClientId = get()._clientId;
+	const prevIsEditor = get().isEditor;
+	const info = computeLockFromRow(cachedEditor, myClientId, Date.now());
 	set(info);
 	if (info.isEditor) startHeartbeat(get, set);
 	else stopHeartbeat();
+	if (info.isEditor) {
+		// 내가 (다시) 편집자가 되면 떠 있던 뺏김 알림은 닫는다.
+		if (get().editorTakenBy) set({ editorTakenBy: null });
+	} else if (!opts?.suppressLossNotice) {
+		const takenBy = detectEditorLoss(prevIsEditor, info, myClientId);
+		if (takenBy) set({ editorTakenBy: takenBy });
+	}
 }
 
 function startHeartbeat(get: GetFn, set: SetFn) {
@@ -320,6 +337,8 @@ export interface SessionState {
 	matchStateVersion: number;
 	/** 콕 체크 모드 on/off(세션 설정, 공유). on이면 cockChecked=false 선수는 매칭 대기 아님. */
 	cockCheckEnabled: boolean;
+	/** 클럽 전역 설정(콕 쿼터/월 지원량). 콕체크 모달의 지원 안내에 사용. 미로딩 시 null. */
+	groupSettings: GroupSettings | null;
 
 	// ── 편집 락(서버 권위 — sessions.editor_* row 기반, 원인2) ──────────────
 	/** 편집 가능 여부(= 내가 유효 lease 보유자). false면 보기 전용. */
@@ -334,6 +353,8 @@ export interface SessionState {
 	holderName: string | null;
 	/** 락이 비어있는지(아무도 점유 안 함). */
 	lockFree: boolean;
+	/** 편집권을 다른 사람에게 뺏겼을 때 그 사람 이름(다이얼로그 표시용). null=알림 없음. */
+	editorTakenBy: string | null;
 
 	/** 서버 권위 재동기화(resyncFromServer) 진행 중 — 포어그라운드 복귀/재연결 시 "동기화 중" 표시용. */
 	boardSyncing: boolean;
@@ -370,6 +391,8 @@ export interface SessionState {
 	claimEditor: () => void;
 	claimEditingIfFree: () => void;
 	handoffEditor: (toClientId: string, toName: string) => Promise<void>;
+	/** 편집권 뺏김 다이얼로그 닫기(editorTakenBy=null). */
+	dismissEditorTakenNotice: () => void;
 	/** board_drafts를 단조(새 버전만) 반영 — boardStore 저장 성공/충돌 복구에서 호출. */
 	applyDraftsIfNewer: (drafts: BoardDraftsPayload, version: number) => void;
 	/** 서버에서 board_drafts+버전+편집 락을 다시 읽어 수렴(충돌 복구·재구독 catch-up). */
@@ -401,12 +424,14 @@ const initialState = {
 	boardDraftsVersion: 0,
 	matchStateVersion: 0,
 	cockCheckEnabled: true,
+	groupSettings: null as GroupSettings | null,
 	isEditor: false,
 	presenceCount: 0,
 	presenceList: [] as { clientId: string; name: string }[],
 	holderClientId: null as string | null,
 	holderName: null as string | null,
 	lockFree: true,
+	editorTakenBy: null as string | null,
 	boardSyncing: false,
 	_channel: null as RealtimeChannel | null,
 	_metaChannel: null as RealtimeChannel | null,
@@ -442,6 +467,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			matchStateVersion: initial.matchStateVersion,
 			cockCheckEnabled: initial.cockCheckEnabled,
 		});
+		// 클럽 전역 설정(콕 쿼터/지원량) 로드 — 콕체크 모달 지원 안내용. 비차단(실패 시 null→모달이 기본값 폴백).
+		void fetchGroupSettings().then((gs) => set({ groupSettings: gs }));
 	},
 	reset: () => {
 		get().unsubscribe();
@@ -549,10 +576,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
 	confirmCock: async (playerId: string) => {
 		if (!get().isEditor) return; // 보기 전용 차단(공유 변경)
+		const player = get().sessionPlayers.get(playerId);
 		const updated = await dbSetCockChecked(playerId);
 		if (!updated) {
 			console.error(`[store] confirmCock FAILED player=${playerId}`);
 			return;
+		}
+		// 월별 콕 지원 소진 — 회원이고 지원량>0이면 이번 달 첫 콕체크에서 1회 소진(upsert 멱등 → 같은 달 재확인 no-op).
+		const support = get().groupSettings?.cockSupportPerMonth ?? 0;
+		if (player?.memberId && support > 0) {
+			void grantCockSupport(player.memberId, monthKST(), getSessionId());
 		}
 		get().broadcastPlayerUpdated(updated); // 로컬 반영 + 타 기기 전파(postgres_changes도 백업)
 	},
@@ -686,8 +719,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			name: res.name,
 			leaseUntilMs: res.leaseUntil ? Date.parse(res.leaseUntil) : Date.now() + LEASE_SECONDS * 1000,
 		};
-		recomputeLock(get, set); // 새 보유자=상대 → 나는 보기 전용 + heartbeat 정지
+		recomputeLock(get, set, { suppressLossNotice: true }); // 자발적 양도 → 보기 전용(뺏김 알림 X)
 	},
+	dismissEditorTakenNotice: () => set({ editorTakenBy: null }),
 	applyDraftsIfNewer: (drafts, version) => applyDraftsIfNewerImpl(get, set, drafts, version),
 	resyncFromServer: async (opts) => {
 		const sid = getSessionId();
@@ -832,25 +866,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		// 재동기화한다 — 백그라운드 동안 lease가 만료돼 다른 기기가 점유했을 수 있으므로, 무조건 claimNow하면
 		// "두 명이 편집자"인 윈도우가 생긴다(직전 버그). resync 후 내가 여전히 보유자면 isEditor 유지(heartbeat
 		// 재가동), 남이 점유했으면 보기 전용으로 정확히 떨어진다.
-		// wasEditor는 이 subscribe 클로저 지역 변수 — 세션 전환 시 새 핸들러로 리셋되어 크로스세션 오염 없음.
-		let wasEditorBeforeHidden = false;
 		if (visibilityHandler) document.removeEventListener("visibilitychange", visibilityHandler);
 		visibilityHandler = () => {
 			if (document.hidden) {
-				wasEditorBeforeHidden = get().isEditor;
 				stopHeartbeat();
 				return;
 			}
-			// 복귀: 항상 서버 권위로 재동기 우선.
-			const wasEditor = wasEditorBeforeHidden;
-			wasEditorBeforeHidden = false;
-			void get().resyncFromServer({ indicate: true }).then(() => {
-				const s = get();
-				// 직전에 내가 편집자였고 그 사이 아무도 안 가져가 자유면 끊김 없이 재점유.
-				if (wasEditor && s.lockFree && !s.isEditor && s._clientId) claimNow(get, set);
-				// 그 외(혼자뿐인 경우 포함)는 혼자-자동점유 규칙으로 일원화.
-				else maybeClaimIfAlone(get, set);
-			});
+			// 복귀: 서버 권위로 재동기만. 자동 점유는 "혼자일 때만"(maybeClaimIfAlone, presenceCount<=1)으로 일원화한다.
+			// 2명 이상이면 창 액티브만으로는 편집권을 자동으로 가져오지 않는다 — 인원수와 무관하게 자유 락을 낚아채
+			// 다른 사람에게서 뺏기는 것처럼 보이던 재점유 경로 제거. 명시 점유(드래그 편집)/"편집 권한 가져오기"로만 편집자가 된다.
+			void get().resyncFromServer({ indicate: true }).then(() => maybeClaimIfAlone(get, set));
 		};
 		document.addEventListener("visibilitychange", visibilityHandler);
 		// 정상 이탈(탭 닫기/이동): 편집 락 즉시 해제 + heartbeat 정지(best-effort). crash/강제종료는 lease 만료가 백업.
@@ -895,6 +920,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			holderClientId: null,
 			holderName: null,
 			lockFree: true,
+			editorTakenBy: null,
 		});
 	},
 }));

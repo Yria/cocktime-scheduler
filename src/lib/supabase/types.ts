@@ -134,6 +134,8 @@ export interface SessionPlayerRow {
 	id: string;
 	session_id: number;
 	player_id: string;
+	/** 회원 링크(마이그레이션 20260621060000). 게스트·구 Sheets 선수는 null. */
+	member_id: string | null;
 	name: string;
 	gender: Gender;
 	skills: PlayerSkills;
