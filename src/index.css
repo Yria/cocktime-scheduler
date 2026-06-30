@@ -519,16 +519,22 @@ h4,
 
 /* ── Overlays ──────────────────────────────────────────────── */
 .lq-overlay {
-	background: rgba(0, 0, 0, 0.25);
+	/* 모달 뒤 배경 딤. blur 가 약/미지원이어도 뒤 페이지가 충분히 가려지도록 딤을 진하게. */
+	background: rgba(0, 0, 0, 0.5);
 	backdrop-filter: blur(8px) saturate(120%);
 	-webkit-backdrop-filter: blur(8px) saturate(120%);
 }
+.dark .lq-overlay {
+	background: rgba(0, 0, 0, 0.6);
+}
 
 .lq-sheet {
+	/* 기본 불투명도를 높게 유지 — backdrop-filter blur 가 약하거나 미지원인 환경에서도
+	   뒤 페이지 내용이 비쳐 읽히지 않도록(블러는 가장자리 질감용). */
 	background: linear-gradient(
 		160deg,
-		rgba(255, 255, 255, 0.82),
-		rgba(255, 255, 255, 0.65)
+		rgba(255, 255, 255, 0.96),
+		rgba(255, 255, 255, 0.92)
 	);
 	backdrop-filter: blur(40px) saturate(200%);
 	-webkit-backdrop-filter: blur(40px) saturate(200%);
@@ -540,8 +546,8 @@ h4,
 .dark .lq-sheet {
 	background: linear-gradient(
 		160deg,
-		rgba(30, 30, 44, 0.72),
-		rgba(20, 20, 32, 0.62)
+		rgba(30, 30, 44, 0.95),
+		rgba(20, 20, 32, 0.91)
 	);
 	border: 1px solid rgba(255, 255, 255, 0.13);
 	box-shadow:

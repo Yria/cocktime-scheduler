@@ -54,6 +54,12 @@ export interface SessionRow {
 	notice_md: string | null; // 회원에게 보여줄 본문(마크다운, GFM 표). 운영진 수동 작성.
 }
 
+/**
+ * 단건 조회용 세션 + 장소명. 직접 진입·새로고침 시 스토어 places 가 비어 있어도
+ * 장소명을 표시할 수 있도록 fetchSessionById 가 places(name) 을 join 해 평탄화한다.
+ */
+export type SessionWithPlace = SessionRow & { place_name: string | null };
+
 /** 반복 일정 규칙 (요일 + 주차패턴 + 시간 + 인원 + 장소). 회차(sessions)를 자동 생성. */
 export interface RecurringScheduleRow {
 	id: number;

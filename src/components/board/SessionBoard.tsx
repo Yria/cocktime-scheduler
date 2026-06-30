@@ -38,6 +38,12 @@ import type { RecommendTarget } from "../../hooks/useTeammateRecommendations";
 
 const COURT_CARD_GAP = 20;
 
+// 보드 캔버스 좌우 안전 거터(화면 px). 모바일 브라우저 탭에서 화면 좌/우 가장자리는 OS의 '뒤로/앞으로'
+// 스와이프 제스처 영역이라, 그 위에 놓인 자석을 잡으면 드래그 대신 페이지 네비게이션이 발동한다
+// (touch-action:none 으로도 시스템 엣지 제스처는 못 막음). 캔버스를 가장자리에서 띄워 드래그 영역을
+// 제스처 밴드 밖으로 보낸다. 거터 strip 은 같은 보드 배경색이라 시각적으로 이음매 없음. 줌과 무관(화면 px 고정).
+const EDGE_GUTTER = 16;
+
 // 줌(축소 전용) — 0.5~1배. 상태/클램프/영속은 boardStore(scale·setScale)로 일원화(수동 줌·자동 fit 공용).
 // arrange/drop·자석 이동범위는 보이는 논리영역(viewW×viewH=stage/scale) 기준이라 축소하면 그 범위도 비례 확대.
 
@@ -195,6 +201,13 @@ export default function SessionBoard() {
 		setScale(fit); // store가 클램프·영속
 		rearrangeAll(stageW / fit, stageH / fit);
 	}, [stageW, stageH, rearrangeAll, setScale]);
+
+	// 정렬 버튼(수동): 현재 줌은 그대로 두고 지금 보이는 화면 크기(viewW×viewH = stage/scale) 기준으로만 정렬한다.
+	// fitAndArrange처럼 줌을 '다 들어가는 최대 배율'로 바꾸지 않으므로, 축소해 둔 상태에서 정렬해도 확대되지 않는다.
+	const arrangeAtCurrentScale = useCallback(() => {
+		if (stageW <= 0 || stageH <= 0) return;
+		rearrangeAll(viewW, viewH);
+	}, [stageW, stageH, viewW, viewH, rearrangeAll]);
 
 	useEffect(() => {
 		// 편집자가 직접 드래그 배치를 시작하기 전까지는 자동 정렬(뷰어는 manualLayout이 늘 false → 항상 자동).
@@ -373,7 +386,7 @@ export default function SessionBoard() {
 			{/* 드롭존 오버레이(칠판 밖 DOM) — 상단 '팀에서 빼기'는 네비 영역, 하단 '휴식하기'는 바텀 바 영역에 점선 박스+문구로 표시. */}
 			{showDetach && <DetachZoneOverlay />}
 			{showRest && <RestDropOverlay />}
-			<div ref={stageContainerRef} style={{ position: "absolute", top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top))`, left: 0, right: 0, bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px))`, touchAction: "none" }}>
+			<div ref={stageContainerRef} style={{ position: "absolute", top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top))`, left: `max(${EDGE_GUTTER}px, env(safe-area-inset-left))`, right: `max(${EDGE_GUTTER}px, env(safe-area-inset-right))`, bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px))`, touchAction: "none" }}>
 				<Stage
 					width={stageW}
 					height={stageH}
@@ -479,7 +492,7 @@ export default function SessionBoard() {
 			{!restZoneOpen && (
 			<button
 				type="button"
-				onClick={fitAndArrange}
+				onClick={arrangeAtCurrentScale}
 				aria-label="정렬"
 				style={{
 					position: "absolute",

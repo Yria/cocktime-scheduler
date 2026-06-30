@@ -709,3 +709,35 @@
 - 검증: tsc·eslint(변경분) 통과
 
 ---
+
+## #53
+
+**Prompt**: https://yria.github.io/cocktime-scheduler/notice/101 이거 주소로 들어가니까 장소미정으로 뜨는데 이거 메모리로 관리해? / 아니 웹에서 메인페이지에 나오고, 대진표 눌러서 나오면 에이트민턴 장소 제대로 나와. 다만 그 페이지에서 새로고침하면 장소가 날아가 / 해줘
+
+**Answer**: 메모리가 아니라 Supabase 데이터 문제. 정모 안내 페이지(RegularNoticePage)가 장소명을 scheduleStore.places에서 매핑하는데, 이 목록은 메인 페이지의 load()에서만 채워진다. 그래서 그 페이지에서 새로고침(직접 진입)하면 store가 비어 fetchSessionById는 세션 본문만 가져오고 places는 못 가져와 placeName이 null → "장소 미정". 근본 원인은 단건 조회가 장소명을 함께 안 가져오는 것.
+- fetchSessionById가 `*, places(name)` 조인 후 place_name으로 평탄화하도록 변경(FK sessions_place_id_fkey 존재 확인, carpool_muster FK는 이미 drop돼 관계 유일 → embed 비모호).
+- SessionWithPlace 타입 추가, RegularNoticePage는 스토어 매핑 실패 시 fetched.place_name 폴백. 비활성 장소도 조인으로 잡힘.
+
+---
+
+## #54
+
+**Prompt**: 모달떴을때 모달에 가려지는 부분이 보여. 이거 해결 (알림 모달, 뒤 내용 비침) / 그거 외에도 다른 모달도 똑같이 되게 적용해줘. 지금 세션종료 모달도 뒤가 너무 투명
+
+**Answer**: 모든 모달이 공용 ModalSheet(lq-sheet/lq-overlay)를 공유. 비침의 근본 원인은 시트/딤 불투명도가 backdrop-filter blur에만 의존 — blur가 약하거나 미지원인 환경에선 뒤 페이지가 그대로 읽힘.
+- lq-sheet 기본 불투명도 상향: 라이트 0.82~0.65 → 0.96~0.92, 다크 0.72~0.62 → 0.95~0.91 (blur는 가장자리 질감용으로 유지).
+- lq-overlay(모달 뒤 딤) 상향: 0.25 → 0.5, 다크 전용 0.6 추가. center 모달(세션종료 등)은 화면 대부분이 이 딤이라 효과 큼.
+- ModalSheet 미사용 모달(일정/프로필/회원관리)은 이미 솔리드 배경+0.45~0.5 딤이라 비침 없음 → 톤 일관.
+
+---
+
+## #55
+
+**Prompt**: 화면 축소한 상태에서 정렬버튼 누를때, 자꾸 확대되는데 ... 그거 취소하고 축소한상태로 정렬하면 그 화면크기에 맞게 정렬되게 해줘. 그리고 자석 왼쪽에 딱 붙어있으면 드래그 잘 안되던데 이것도 원인확인 / 모바일에서 겪었음. pwa인진 기억안남
+
+**Answer**: 보드 두 가지.
+(1) 정렬 버튼이 fitAndArrange를 호출 → setScale(fit)로 줌을 "다 들어가는 최대 배율"로 강제 변경하던 게 확대 원인. 버튼 전용 arrangeAtCurrentScale 추가(현재 줌 유지, 보이는 화면 크기 viewW×viewH 기준만 정렬)로 교체. fitAndArrange는 첫 진입/뷰어 자동정렬 effect 전용으로 유지.
+(2) 자석 왼쪽 끝 드래그 안 됨: 좌/우/상/하 클램프는 대칭인데 유독 왼쪽만 문제 → 모바일 브라우저의 좌측 화면-가장자리 뒤로가기 시스템 제스처가 터치를 가로챔(touch-action:none으로도 못 막음). 보드 캔버스 컨테이너에 좌우 EDGE_GUTTER=16px(가로 노치 시 safe-area-inset) 거터를 둬 드래그 영역을 제스처 밴드 밖으로 이동. 화면 px 고정이라 줌 무관, PWA에서도 무해.
+- 검증: tsc 통과.
+
+---

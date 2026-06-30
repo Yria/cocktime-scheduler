@@ -1,6 +1,12 @@
 import { supabase } from "./client";
 import type { Gender, PlayerSkills } from "../../types";
-import type { AttendanceRow, CarpoolRole, PlaceRow, SessionRow } from "./types";
+import type {
+	AttendanceRow,
+	CarpoolRole,
+	PlaceRow,
+	SessionRow,
+	SessionWithPlace,
+} from "./types";
 
 /** 반복 규칙 → 회차 동기화(생성/갱신/정리 + 1주 전 노출). 멱등 RPC. 앱 로드 시 호출. */
 export async function syncOccurrences(): Promise<void> {
@@ -11,17 +17,22 @@ export async function syncOccurrences(): Promise<void> {
 /** 회차 단건 조회(정모 안내 페이지 직접 진입/새로고침 대비). 없으면 null. */
 export async function fetchSessionById(
 	sessionId: number,
-): Promise<SessionRow | null> {
+): Promise<SessionWithPlace | null> {
+	// places(name) 을 join 해서 스토어가 비어 있어도 장소명을 함께 받는다.
 	const { data, error } = await supabase
 		.from("sessions")
-		.select("*")
+		.select("*, places(name)")
 		.eq("id", sessionId)
 		.maybeSingle();
 	if (error) {
 		console.error("fetchSessionById:", error);
 		return null;
 	}
-	return (data ?? null) as SessionRow | null;
+	if (!data) return null;
+	const { places, ...row } = data as SessionRow & {
+		places: { name: string } | null;
+	};
+	return { ...row, place_name: places?.name ?? null };
 }
 
 /** 예정/진행 중 일정 목록 (노출된 open + 진행중 active). 즉석 세션은 scheduled_at이 null이라 뒤로. */

@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 import { fetchSessionById } from "../../lib/supabase/schedule";
 import { fmtRange } from "../../lib/schedule/timeFmt";
-import type { SessionRow } from "../../lib/supabase/types";
+import type { SessionWithPlace } from "../../lib/supabase/types";
 import { useAuthStore } from "../../store/authStore";
 import { useScheduleStore } from "../../store/scheduleStore";
 import AppScreen from "../common/AppScreen";
@@ -29,7 +29,7 @@ export default function RegularNoticePage() {
 	);
 	const places = useScheduleStore((s) => s.places);
 
-	const [fetched, setFetched] = useState<SessionRow | null>(null);
+	const [fetched, setFetched] = useState<SessionWithPlace | null>(null);
 	const [fetchDone, setFetchDone] = useState(false);
 
 	// 비로그인 차단
@@ -56,8 +56,12 @@ export default function RegularNoticePage() {
 
 	const placeName = useMemo(() => {
 		if (!session?.place_id) return null;
-		return places.find((p) => p.id === session.place_id)?.name ?? null;
-	}, [session, places]);
+		// 메인 경유 진입: 스토어 places 로 매핑.
+		const byStore = places.find((p) => p.id === session.place_id)?.name;
+		if (byStore) return byStore;
+		// 직접 진입·새로고침: 단건 조회가 함께 가져온 장소명 사용(스토어가 비어 있을 때).
+		return fetched?.place_name ?? null;
+	}, [session, places, fetched]);
 
 	const title = session ? fmtRange(session.scheduled_at, session.ends_at) : "대진표";
 	const md = session?.notice_md?.trim() ?? "";

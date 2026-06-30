@@ -1,0 +1,413 @@
+<title>배드민턴 복식 대진표</title>
+
+<style>
+:root{
+  --bg:#FBFCFA; --panel:#FFFFFF; --ink:#15201A; --muted:#5E6E64;
+  --line:#E2E8E2; --line2:#EEF2EE; --accent:#1C7A48; --accent-deep:#115C34;
+  --w-tx:#B0306A; --w-bg:#FAE9F0; --w-bd:#F1CCDD;
+  --m-tx:#9A6711; --m-bg:#FAF1DA; --m-bd:#EDDFB4;
+  --n-tx:#2360A8; --n-bg:#E7F0FA; --n-bd:#CDDFF2;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Apple SD Gothic Neo","Pretendard",-apple-system,system-ui,"Malgun Gothic",sans-serif;
+  line-height:1.5;-webkit-font-smoothing:antialiased;}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 28px 80px;}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,"Cascadia Code",monospace;font-variant-numeric:tabular-nums;}
+
+/* masthead */
+.mast{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;
+  flex-wrap:wrap;padding-bottom:22px;border-bottom:2px solid var(--ink);}
+.mast .kicker{font-size:12px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--accent);font-weight:700;margin-bottom:8px;}
+.mast h1{margin:0;font-size:31px;font-weight:800;letter-spacing:-.02em;line-height:1.05;}
+.mast h1 small{display:block;font-size:14px;font-weight:500;color:var(--muted);letter-spacing:0;margin-top:7px;}
+.stats{display:flex;gap:10px;flex-wrap:wrap;}
+.stat{border:1px solid var(--line);border-radius:9px;background:var(--panel);
+  padding:8px 13px;text-align:center;min-width:62px;}
+.stat b{display:block;font-size:20px;font-weight:800;letter-spacing:-.01em;}
+.stat span{font-size:11px;color:var(--muted);letter-spacing:.04em;}
+
+/* sections */
+section{margin-top:44px;}
+.sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:16px;}
+.sec-head .no{font-family:ui-monospace,monospace;font-size:12px;color:var(--accent);
+  font-weight:700;border:1px solid var(--n-bd);border-color:#CFE2D4;border-radius:6px;
+  padding:2px 7px;background:#EEF6F0;}
+.sec-head h2{margin:0;font-size:18px;font-weight:800;letter-spacing:-.01em;}
+.sec-head p{margin:0;color:var(--muted);font-size:13px;}
+
+/* roster */
+.roster{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;}
+.gcard{border:1px solid var(--line);border-radius:11px;background:var(--panel);overflow:hidden;}
+.gcard h3{margin:0;padding:9px 13px;font-size:14px;font-weight:800;
+  background:var(--accent);color:#fff;letter-spacing:.02em;
+  display:flex;justify-content:space-between;align-items:center;}
+.gcard h3 span{font-weight:500;font-size:11px;opacity:.85;}
+.gcard ul{list-style:none;margin:0;padding:6px 0;}
+.gcard li{display:flex;align-items:center;gap:9px;padding:4px 13px;font-size:13.5px;}
+.gcard li .pos{font-family:ui-monospace,monospace;font-size:11px;width:20px;text-align:center;
+  border-radius:4px;padding:1px 0;font-weight:700;flex:none;}
+.pos.f{background:var(--w-bg);color:var(--w-tx);}
+.pos.mm{background:var(--n-bg);color:var(--n-tx);}
+
+/* grid table */
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px;background:var(--panel);}
+table.grid{border-collapse:collapse;width:100%;min-width:760px;}
+table.grid th,table.grid td{border-bottom:1px solid var(--line2);padding:9px 11px;text-align:left;}
+table.grid thead th{background:#F2F6F2;font-size:11px;letter-spacing:.08em;color:var(--muted);
+  font-weight:700;text-transform:uppercase;border-bottom:1px solid var(--line);}
+table.grid tbody tr:last-child td{border-bottom:none;}
+table.grid td.rd{font-weight:800;color:var(--accent-deep);background:#F7FAF7;
+  font-family:ui-monospace,monospace;width:48px;}
+table.grid td.code{font-family:ui-monospace,monospace;font-size:13px;white-space:nowrap;}
+table.grid td.code .vs{color:var(--muted);font-size:11px;padding:0 3px;}
+
+/* round cards */
+.rounds{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;}
+.rcard{border:1px solid var(--line);border-radius:12px;background:var(--panel);
+  overflow:hidden;break-inside:avoid;}
+.rcard .rh{display:flex;align-items:baseline;gap:9px;padding:10px 14px;
+  border-bottom:1px solid var(--line);background:#F7FAF7;}
+.rcard .rh b{font-family:ui-monospace,monospace;font-size:15px;font-weight:800;color:var(--accent-deep);}
+.rcard .rh span{font-size:12.5px;color:var(--muted);}
+.rcard .crt{display:grid;grid-template-columns:24px 40px 1fr;align-items:center;gap:9px;
+  padding:8px 14px;border-bottom:1px solid var(--line2);font-size:13.5px;}
+.rcard .crt:last-child{border-bottom:none;}
+.rcard .cn{font-family:ui-monospace,monospace;font-size:11px;color:var(--muted);font-weight:700;}
+.chip{font-size:10.5px;font-weight:700;text-align:center;border-radius:5px;padding:2px 0;letter-spacing:.02em;}
+.chip.w{background:var(--w-bg);color:var(--w-tx);border:1px solid var(--w-bd);}
+.chip.m{background:var(--m-bg);color:var(--m-tx);border:1px solid var(--m-bd);}
+.chip.n{background:var(--n-bg);color:var(--n-tx);border:1px solid var(--n-bd);}
+.match .vs{color:var(--muted);font-size:11px;padding:0 5px;font-weight:600;}
+.match .tm{font-weight:600;}
+
+/* player schedule */
+.psched{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;}
+.pcard{border:1px solid var(--line);border-radius:11px;background:var(--panel);overflow:hidden;}
+.pcard h4{margin:0;padding:7px 12px;font-size:12.5px;font-weight:800;color:#fff;background:var(--accent-deep);}
+.pcard table{border-collapse:collapse;width:100%;}
+.pcard td{padding:4px 12px;font-size:12.5px;border-bottom:1px solid var(--line2);}
+.pcard tr:last-child td{border-bottom:none;}
+.pcard td.nm{font-weight:600;white-space:nowrap;}
+.pcard td.rs{font-family:ui-monospace,monospace;font-size:11px;color:var(--muted);text-align:right;}
+
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--muted);}
+.legend .li{display:flex;align-items:center;gap:6px;}
+
+/* principles */
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:22px;}
+.rule{border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;
+  background:var(--panel);padding:10px 13px;}
+.rule .t{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:7px;}
+.rule .t .ck{color:var(--accent);font-weight:800;}
+.rule .d{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.45;}
+.rule.warn{border-left-color:var(--m-tx);}
+.rule.warn .ck{color:var(--m-tx);}
+.foot{margin-top:54px;padding-top:18px;border-top:1px solid var(--line);
+  font-size:12px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+
+@media (max-width:560px){
+  .wrap{padding:26px 16px 60px;}
+  .mast h1{font-size:25px;}
+}
+@media print{
+  body{background:#fff;}
+  .wrap{max-width:none;padding:0;}
+  section{margin-top:28px;}
+  .rcard,.gcard,.pcard,.tablewrap{break-inside:avoid;box-shadow:none;}
+}
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <div>
+    <div class="kicker">Badminton · 복식 토너먼트</div>
+    <h1>대진표
+      <small>6개 조 · 페어별 2회 · 1인 8경기 · 조별 상대 4경기 균등 편성</small>
+    </h1>
+  </div>
+  <div class="stats">
+    <div class="stat"><b>30</b><span>선수</span></div>
+    <div class="stat"><b>60</b><span>경기</span></div>
+    <div class="stat"><b>12</b><span>라운드</span></div>
+    <div class="stat"><b>5</b><span>코트</span></div>
+  </div>
+</header>
+
+<div class="rules">
+  <div class="rule"><div class="t"><span class="ck">✓</span> 페어 2회 · 1인 8경기</div>
+    <div class="d">조마다 10개 페어를 각 2회씩 사용 → 전원 정확히 8경기.</div></div>
+  <div class="rule"><div class="t"><span class="ck">✓</span> 조별 상대 4경기 균등</div>
+    <div class="d">자기 조 제외 5개 조와 각 4경기. 타입(여복·혼복·남복)끼리만 대결.</div></div>
+  <div class="rule"><div class="t"><span class="ck">✓</span> 같은 페어의 상대 재회 0건</div>
+    <div class="d">모든 페어의 2회를 서로 다른 조에 배정 — 한 페어가 같은 상대(개인·페어)를 두 번 만나지 않음.</div></div>
+  <div class="rule warn"><div class="t"><span class="ck">≈</span> 개인 재대결 19건 (불가피분)</div>
+    <div class="d">여–여 6 (이론상 최소) · 남–남 11 · 혼성 2. ‘페어 2회+여복 규칙’상 두 사람이 다른 페어로 재회하는 건 0으로 만들 수 없어 최소화함.</div></div>
+</div>
+<section><div class="sec-head"><span class="no">01</span><h2>조 편성</h2><p>1·2번 여자 · 3·4·5번 남자</p></div><div class="roster">
+<div class="gcard"><h3>A조 <span>5명</span></h3><ul>
+<li><span class="pos f">1</span>박현아</li>
+<li><span class="pos f">2</span>이한비</li>
+<li><span class="pos mm">3</span>오상진</li>
+<li><span class="pos mm">4</span>오용진</li>
+<li><span class="pos mm">5</span>차성민</li>
+</ul></div>
+<div class="gcard"><h3>B조 <span>5명</span></h3><ul>
+<li><span class="pos f">1</span>김주영</li>
+<li><span class="pos f">2</span>황영민</li>
+<li><span class="pos mm">3</span>남필립</li>
+<li><span class="pos mm">4</span>손형일</li>
+<li><span class="pos mm">5</span>이재원</li>
+</ul></div>
+<div class="gcard"><h3>C조 <span>5명</span></h3><ul>
+<li><span class="pos f">1</span>심유진</li>
+<li><span class="pos f">2</span>윤지윤</li>
+<li><span class="pos mm">3</span>김길환</li>
+<li><span class="pos mm">4</span>심상욱</li>
+<li><span class="pos mm">5</span>최양회</li>
+</ul></div>
+<div class="gcard"><h3>D조 <span>5명</span></h3><ul>
+<li><span class="pos f">1</span>송수민</li>
+<li><span class="pos f">2</span>이지인</li>
+<li><span class="pos mm">3</span>강민규</li>
+<li><span class="pos mm">4</span>김태혁</li>
+<li><span class="pos mm">5</span>우창형</li>
+</ul></div>
+<div class="gcard"><h3>E조 <span>5명</span></h3><ul>
+<li><span class="pos f">1</span>엄지현</li>
+<li><span class="pos f">2</span>장한별</li>
+<li><span class="pos mm">3</span>강우석</li>
+<li><span class="pos mm">4</span>송유현</li>
+<li><span class="pos mm">5</span>이후섭</li>
+</ul></div>
+<div class="gcard"><h3>F조 <span>5명</span></h3><ul>
+<li><span class="pos f">1</span>노보람</li>
+<li><span class="pos f">2</span>이규웅</li>
+<li><span class="pos mm">3</span>박세경</li>
+<li><span class="pos mm">4</span>이홍희</li>
+<li><span class="pos mm">5</span>정현민</li>
+</ul></div>
+</div></section>
+<section><div class="sec-head"><span class="no">02</span><h2>코드 대진표</h2><p>가로 = 코트 · 세로 = 라운드 · 표기 <span class="mono">조번호·조번호 vs 조번호·조번호</span></p></div>
+<div class="tablewrap"><table class="grid"><thead><tr><th>R</th><th>코트 1</th><th>코트 2</th><th>코트 3</th><th>코트 4</th><th>코트 5</th></tr></thead><tbody>
+<tr><td class="rd">1</td>
+<td class="code">B1·B2<span class="vs">vs</span>C1·C2</td>
+<td class="code">A2·A3<span class="vs">vs</span>E2·E3</td>
+<td class="code">A4·A5<span class="vs">vs</span>F3·F5</td>
+<td class="code">B4·B5<span class="vs">vs</span>E4·E5</td>
+<td class="code">C3·C4<span class="vs">vs</span>D4·D5</td>
+</tr>
+<tr><td class="rd">2</td>
+<td class="code">A1·A4<span class="vs">vs</span>C2·C4</td>
+<td class="code">B2·B4<span class="vs">vs</span>D2·D4</td>
+<td class="code">C1·C5<span class="vs">vs</span>E2·E5</td>
+<td class="code">D1·D5<span class="vs">vs</span>F2·F4</td>
+<td class="code">B3·B5<span class="vs">vs</span>E3·E4</td>
+</tr>
+<tr><td class="rd">3</td>
+<td class="code">A1·A3<span class="vs">vs</span>D1·D4</td>
+<td class="code">B1·B5<span class="vs">vs</span>D2·D3</td>
+<td class="code">C1·C5<span class="vs">vs</span>F1·F5</td>
+<td class="code">E1·E4<span class="vs">vs</span>F2·F3</td>
+<td class="code">A4·A5<span class="vs">vs</span>B3·B4</td>
+</tr>
+<tr><td class="rd">4</td>
+<td class="code">A1·A2<span class="vs">vs</span>B1·B2</td>
+<td class="code">C1·C2<span class="vs">vs</span>D1·D2</td>
+<td class="code">E1·E2<span class="vs">vs</span>F1·F2</td>
+<td class="code">B4·B5<span class="vs">vs</span>C3·C4</td>
+<td class="code">E4·E5<span class="vs">vs</span>F4·F5</td>
+</tr>
+<tr><td class="rd">5</td>
+<td class="code">A2·A5<span class="vs">vs</span>C2·C5</td>
+<td class="code">B2·B3<span class="vs">vs</span>D1·D3</td>
+<td class="code">B1·B5<span class="vs">vs</span>F2·F5</td>
+<td class="code">C1·C4<span class="vs">vs</span>E1·E3</td>
+<td class="code">D2·D4<span class="vs">vs</span>F1·F4</td>
+</tr>
+<tr><td class="rd">6</td>
+<td class="code">A2·A4<span class="vs">vs</span>D2·D5</td>
+<td class="code">B1·B4<span class="vs">vs</span>F1·F3</td>
+<td class="code">C2·C5<span class="vs">vs</span>F2·F5</td>
+<td class="code">A3·A5<span class="vs">vs</span>B3·B5</td>
+<td class="code">D3·D4<span class="vs">vs</span>E3·E4</td>
+</tr>
+<tr><td class="rd">7</td>
+<td class="code">A2·A4<span class="vs">vs</span>B2·B5</td>
+<td class="code">A1·A5<span class="vs">vs</span>C1·C3</td>
+<td class="code">D2·D5<span class="vs">vs</span>E1·E4</td>
+<td class="code">D1·D3<span class="vs">vs</span>F1·F5</td>
+<td class="code">E3·E5<span class="vs">vs</span>F3·F4</td>
+</tr>
+<tr><td class="rd">8</td>
+<td class="code">A1·A5<span class="vs">vs</span>E2·E4</td>
+<td class="code">B2·B3<span class="vs">vs</span>F2·F4</td>
+<td class="code">C2·C3<span class="vs">vs</span>E1·E5</td>
+<td class="code">A3·A4<span class="vs">vs</span>D3·D4</td>
+<td class="code">C4·C5<span class="vs">vs</span>F3·F5</td>
+</tr>
+<tr><td class="rd">9</td>
+<td class="code">A2·A5<span class="vs">vs</span>E1·E5</td>
+<td class="code">A1·A3<span class="vs">vs</span>F1·F3</td>
+<td class="code">B1·B3<span class="vs">vs</span>D1·D5</td>
+<td class="code">B2·B4<span class="vs">vs</span>E2·E3</td>
+<td class="code">C3·C5<span class="vs">vs</span>F4·F5</td>
+</tr>
+<tr><td class="rd">10</td>
+<td class="code">A1·A2<span class="vs">vs</span>F1·F2</td>
+<td class="code">B1·B3<span class="vs">vs</span>E2·E5</td>
+<td class="code">A3·A4<span class="vs">vs</span>F3·F4</td>
+<td class="code">C1·C3<span class="vs">vs</span>D1·D4</td>
+<td class="code">C4·C5<span class="vs">vs</span>D3·D5</td>
+</tr>
+<tr><td class="rd">11</td>
+<td class="code">D1·D2<span class="vs">vs</span>E1·E2</td>
+<td class="code">A2·A3<span class="vs">vs</span>C1·C4</td>
+<td class="code">B1·B4<span class="vs">vs</span>C2·C3</td>
+<td class="code">B2·B5<span class="vs">vs</span>F1·F4</td>
+<td class="code">D3·D5<span class="vs">vs</span>E3·E5</td>
+</tr>
+<tr><td class="rd">12</td>
+<td class="code">A1·A4<span class="vs">vs</span>E1·E3</td>
+<td class="code">C2·C4<span class="vs">vs</span>E2·E4</td>
+<td class="code">D2·D3<span class="vs">vs</span>F2·F3</td>
+<td class="code">A3·A5<span class="vs">vs</span>D4·D5</td>
+<td class="code">B3·B4<span class="vs">vs</span>C3·C5</td>
+</tr>
+</tbody></table></div></section>
+<section><div class="sec-head"><span class="no">03</span><h2>라운드별 경기 (선수명)</h2><p>앞 두 명이 한 팀</p></div>
+<div class="legend"><span class="li"><span class="chip w" style="width:34px">여복</span> 여자복식</span><span class="li"><span class="chip m" style="width:34px">혼복</span> 혼합복식</span><span class="li"><span class="chip n" style="width:34px">남복</span> 남자복식</span></div>
+<div class="rounds" style="margin-top:14px">
+<div class="rcard"><div class="rh"><b>R1</b><span>라운드 1</span></div>
+<div class="crt"><span class="cn">C1</span><span class="chip w">여복</span><span class="match"><span class="tm">김주영·황영민</span><span class="vs">vs</span><span class="tm">심유진·윤지윤</span></span></div>
+<div class="crt"><span class="cn">C2</span><span class="chip m">혼복</span><span class="match"><span class="tm">이한비·오상진</span><span class="vs">vs</span><span class="tm">장한별·강우석</span></span></div>
+<div class="crt"><span class="cn">C3</span><span class="chip n">남복</span><span class="match"><span class="tm">오용진·차성민</span><span class="vs">vs</span><span class="tm">박세경·정현민</span></span></div>
+<div class="crt"><span class="cn">C4</span><span class="chip n">남복</span><span class="match"><span class="tm">손형일·이재원</span><span class="vs">vs</span><span class="tm">송유현·이후섭</span></span></div>
+<div class="crt"><span class="cn">C5</span><span class="chip n">남복</span><span class="match"><span class="tm">김길환·심상욱</span><span class="vs">vs</span><span class="tm">김태혁·우창형</span></span></div>
+</div>
+<div class="rcard"><div class="rh"><b>R2</b><span>라운드 2</span></div>
+<div class="crt"><span class="cn">C1</span><span class="chip m">혼복</span><span class="match"><span class="tm">박현아·오용진</span><span class="vs">vs</span><span class="tm">윤지윤·심상욱</span></span></div>
+<div class="crt"><span class="cn">C2</span><span class="chip m">혼복</span><span class="match"><span class="tm">황영민·손형일</span><span class="vs">vs</span><span class="tm">이지인·김태혁</span></span></div>
+<div class="crt"><span class="cn">C3</span><span class="chip m">혼복</span><span class="match"><span class="tm">심유진·최양회</span><span class="vs">vs</span><span class="tm">장한별·이후섭</span></span></div>
+<div class="crt"><span class="cn">C4</span><span class="chip m">혼복</span><span class="match"><span class="tm">송수민·우창형</span><span class="vs">vs</span><span class="tm">이규웅·이홍희</span></span></div>
+<div class="crt"><span class="cn">C5</span><span class="chip n">남복</span><span class="match"><span class="tm">남필립·이재원</span><span class="vs">vs</span><span class="tm">강우석·송유현</span></span></div>
+</div>
+<div class="rcard"><div class="rh"><b>R3</b><span>라운드 3</span></div>
+<div class="crt"><span class="cn">C1</span><span class="chip m">혼복</span><span class="match"><span class="tm">박현아·오상진</span><span class="vs">vs</span><span class="tm">송수민·김태혁</span></span></div>
+<div class="crt"><span class="cn">C2</span><span class="chip m">혼복</span><span class="match"><span class="tm">김주영·이재원</span><span class="vs">vs</span><span class="tm">이지인·강민규</span></span></div>
+<div class="crt"><span class="cn">C3</span><span class="chip m">혼복</span><span class="match"><span class="tm">심유진·최양회</span><span class="vs">vs</span><span class="tm">노보람·정현민</span></span></div>
+<div class="crt"><span class="cn">C4</span><span class="chip m">혼복</span><span class="match"><span class="tm">엄지현·송유현</span><span class="vs">vs</span><span class="tm">이규웅·박세경</span></span></div>
+<div class="crt"><span class="cn">C5</span><span class="chip n">남복</span><span class="match"><span class="tm">오용진·차성민</span><span class="vs">vs</span><span class="tm">남필립·손형일</span></span></div>
+</div>
+<div class="rcard"><div class="rh"><b>R4</b><span>라운드 4</span></div>
+<div class="crt"><span class="cn">C1</span><span class="chip w">여복</span><span class="match"><span class="tm">박현아·이한비</span><span class="vs">vs</span><span class="tm">김주영·황영민</span></span></div>
+<div class="crt"><span class="cn">C2</span><span class="chip w">여복</span><span class="match"><span class="tm">심유진·윤지윤</span><span class="vs">vs</span><span class="tm">송수민·이지인</span></span></div>
+<div class="crt"><span class="cn">C3</span><span class="chip w">여복</span><span class="match"><span class="tm">엄지현·장한별</span><span class="vs">vs</span><span class="tm">노보람·이규웅</span></span></div>
+<div class="crt"><span class="cn">C4</span><span class="chip n">남복</span><span class="match"><span class="tm">손형일·이재원</span><span class="vs">vs</span><span class="tm">김길환·심상욱</span></span></div>
+<div class="crt"><span class="cn">C5</span><span class="chip n">남복</span><span class="match"><span class="tm">송유현·이후섭</span><span class="vs">vs</span><span class="tm">이홍희·정현민</span></span></div>
+</div>
+<div class="rcard"><div class="rh"><b>R5</b><span>라운드 5</span></div>
+<div class="crt"><span class="cn">C1</span><span class="chip m">혼복</span><span class="match"><span class="tm">이한비·차성민</span><span class="vs">vs</span><span class="tm">윤지윤·최양회</span></span></div>
+<div class="crt"><span class="cn">C2</span><span class="chip m">혼복</span><span class="match"><span class="tm">황영민·남필립</span><span class="vs">vs</span><span class="tm">송수민·강민규</span></span></div>
+<div class="crt"><span class="cn">C3</span><span class="chip m">혼복</span><span class="match"><span class="tm">김주영·이재원</span><span class="vs">vs</span><span class="tm">이규웅·정현민</span></span></div>
+<div class="crt"><span class="cn">C4</span><span class="chip m">혼복</span><span class="match"><span class="tm">심유진·심상욱</span><span class="vs">vs</span><span class="tm">엄지현·강우석</span></span></div>
+<div class="crt"><span class="cn">C5</span><span class="chip m">혼복</span><span class="match"><span class="tm">이지인·김태혁</span><span class="vs">vs</span><span class="tm">노보람·이홍희</span></span></div>
+</div>
+<div class="rcard"><div class="rh"><b>R6</b><span>라운드 6</span></div>
+<div class="crt"><span class="cn">C1</span><span class="chip m">혼복</span><span class="match"><span class="tm">이한비·오용진</span><span class="vs">vs</span><span class="tm">이지인·우창형</span></span></div>
+<div class="crt"><span class="cn">C2</span><span class="chip m">혼복</span><span class="match"><span class="tm">김주영·손형일</span><span class="vs">vs</span><span class="tm">노보람·박세경</span></span></div>
+<div class="crt"><span class="cn">C3</span><span class="chip m">혼복</span><span class="match"><span class="tm">윤지윤·최양회</span><span class="vs">vs</span><span class="tm">이규웅·정현민</span></span></div>
+<div class="crt"><span class="cn">C4</span><span class="chip n">남복</span><span class="match"><span class="tm">오상진·차성민</span><span class="vs">vs</span><span class="tm">남필립·이재원</span></span></div>
+<div class="crt"><span class="cn">C5</span><span class="chip n">남복</span><span class="match"><span class="tm">강민규·김태혁</span><span class="vs">vs</span><span class="tm">강우석·송유현</span></span></div>
+</div>
+<div class="rcard"><div class="rh"><b>R7</b><span>라운드 7</span></div>
+<div class="crt"><span class="cn">C1</span><span class="chip m">혼복</span><span class="match"><span class="tm">이한비·오용진</span><span class="vs">vs</span><span class="tm">황영민·이재원</span></span></div>
+<div class="crt"><span class="cn">C2</span><span class="chip m">혼복</span><span class="match"><span class="tm">박현아·차성민</span><span class="vs">vs</span><span class="tm">심유진·김길환</span></span></div>
+<div class="crt"><span class="cn">C3</span><span class="chip m">혼복</span><span class="match"><span class="tm">이지인·우창형</span><span class="vs">vs</span><span class="tm">엄지현·송유현</span></span></div>
+<div class="crt"><span class="cn">C4</span><span class="chip m">혼복</span><span class="match"><span class="tm">송수민·강민규</span><span class="vs">vs</span><span class="tm">노보람·정현민</span></span></div>
+<div class="crt"><span class="cn">C5</span><span class="chip n">남복</span><span class="match"><span class="tm">강우석·이후섭</span><span class="vs">vs</span><span class="tm">박세경·이홍희</span></span></div>
+</div>
+<div class="rcard"><div class="rh"><b>R8</b><span>라운드 8</span></div>
+<div class="crt"><span class="cn">C1</span><span class="chip m">혼복</span><span class="match"><span class="tm">박현아·차성민</span><span class="vs">vs</span><span class="tm">장한별·송유현</span></span></div>
+<div class="crt"><span class="cn">C2</span><span class="chip m">혼복</span><span class="match"><span class="tm">황영민·남필립</span><span class="vs">vs</span><span class="tm">이규웅·이홍희</span></span></div>
+<div class="crt"><span class="cn">C3</span><span class="chip m">혼복</span><span class="match"><span class="tm">윤지윤·김길환</span><span class="vs">vs</span><span class="tm">엄지현·이후섭</span></span></div>
+<div class="crt"><span class="cn">C4</span><span class="chip n">남복</span><span class="match"><span class="tm">오상진·오용진</span><span class="vs">vs</span><span class="tm">강민규·김태혁</span></span></div>
+<div class="crt"><span class="cn">C5</span><span class="chip n">남복</span><span class="match"><span class="tm">심상욱·최양회</span><span class="vs">vs</span><span class="tm">박세경·정현민</span></span></div>
+</div>
+<div class="rcard"><div class="rh"><b>R9</b><span>라운드 9</span></div>
+<div class="crt"><span class="cn">C1</span><span class="chip m">혼복</span><span class="match"><span class="tm">이한비·차성민</span><span class="vs">vs</span><span class="tm">엄지현·이후섭</span></span></div>
+<div class="crt"><span class="cn">C2</span><span class="chip m">혼복</span><span class="match"><span class="tm">박현아·오상진</span><span class="vs">vs</span><span class="tm">노보람·박세경</span></span></div>
+<div class="crt"><span class="cn">C3</span><span class="chip m">혼복</span><span class="match"><span class="tm">김주영·남필립</span><span class="vs">vs</span><span class="tm">송수민·우창형</span></span></div>
+<div class="crt"><span class="cn">C4</span><span class="chip m">혼복</span><span class="match"><span class="tm">황영민·손형일</span><span class="vs">vs</span><span class="tm">장한별·강우석</span></span></div>
+<div class="crt"><span class="cn">C5</span><span class="chip n">남복</span><span class="match"><span class="tm">김길환·최양회</span><span class="vs">vs</span><span class="tm">이홍희·정현민</span></span></div>
+</div>
+<div class="rcard"><div class="rh"><b>R10</b><span>라운드 10</span></div>
+<div class="crt"><span class="cn">C1</span><span class="chip w">여복</span><span class="match"><span class="tm">박현아·이한비</span><span class="vs">vs</span><span class="tm">노보람·이규웅</span></span></div>
+<div class="crt"><span class="cn">C2</span><span class="chip m">혼복</span><span class="match"><span class="tm">김주영·남필립</span><span class="vs">vs</span><span class="tm">장한별·이후섭</span></span></div>
+<div class="crt"><span class="cn">C3</span><span class="chip n">남복</span><span class="match"><span class="tm">오상진·오용진</span><span class="vs">vs</span><span class="tm">박세경·이홍희</span></span></div>
+<div class="crt"><span class="cn">C4</span><span class="chip m">혼복</span><span class="match"><span class="tm">심유진·김길환</span><span class="vs">vs</span><span class="tm">송수민·김태혁</span></span></div>
+<div class="crt"><span class="cn">C5</span><span class="chip n">남복</span><span class="match"><span class="tm">심상욱·최양회</span><span class="vs">vs</span><span class="tm">강민규·우창형</span></span></div>
+</div>
+<div class="rcard"><div class="rh"><b>R11</b><span>라운드 11</span></div>
+<div class="crt"><span class="cn">C1</span><span class="chip w">여복</span><span class="match"><span class="tm">송수민·이지인</span><span class="vs">vs</span><span class="tm">엄지현·장한별</span></span></div>
+<div class="crt"><span class="cn">C2</span><span class="chip m">혼복</span><span class="match"><span class="tm">이한비·오상진</span><span class="vs">vs</span><span class="tm">심유진·심상욱</span></span></div>
+<div class="crt"><span class="cn">C3</span><span class="chip m">혼복</span><span class="match"><span class="tm">김주영·손형일</span><span class="vs">vs</span><span class="tm">윤지윤·김길환</span></span></div>
+<div class="crt"><span class="cn">C4</span><span class="chip m">혼복</span><span class="match"><span class="tm">황영민·이재원</span><span class="vs">vs</span><span class="tm">노보람·이홍희</span></span></div>
+<div class="crt"><span class="cn">C5</span><span class="chip n">남복</span><span class="match"><span class="tm">강민규·우창형</span><span class="vs">vs</span><span class="tm">강우석·이후섭</span></span></div>
+</div>
+<div class="rcard"><div class="rh"><b>R12</b><span>라운드 12</span></div>
+<div class="crt"><span class="cn">C1</span><span class="chip m">혼복</span><span class="match"><span class="tm">박현아·오용진</span><span class="vs">vs</span><span class="tm">엄지현·강우석</span></span></div>
+<div class="crt"><span class="cn">C2</span><span class="chip m">혼복</span><span class="match"><span class="tm">윤지윤·심상욱</span><span class="vs">vs</span><span class="tm">장한별·송유현</span></span></div>
+<div class="crt"><span class="cn">C3</span><span class="chip m">혼복</span><span class="match"><span class="tm">이지인·강민규</span><span class="vs">vs</span><span class="tm">이규웅·박세경</span></span></div>
+<div class="crt"><span class="cn">C4</span><span class="chip n">남복</span><span class="match"><span class="tm">오상진·차성민</span><span class="vs">vs</span><span class="tm">김태혁·우창형</span></span></div>
+<div class="crt"><span class="cn">C5</span><span class="chip n">남복</span><span class="match"><span class="tm">남필립·손형일</span><span class="vs">vs</span><span class="tm">김길환·최양회</span></span></div>
+</div>
+</div></section>
+<section><div class="sec-head"><span class="no">04</span><h2>선수별 출전 라운드</h2><p>각 8경기</p></div><div class="psched">
+<div class="pcard"><h4>A조</h4><table>
+<tr><td class="nm">박현아</td><td class="rs">2 3 4 7 8 9 10 12</td></tr>
+<tr><td class="nm">이한비</td><td class="rs">1 4 5 6 7 9 10 11</td></tr>
+<tr><td class="nm">오상진</td><td class="rs">1 3 6 8 9 10 11 12</td></tr>
+<tr><td class="nm">오용진</td><td class="rs">1 2 3 6 7 8 10 12</td></tr>
+<tr><td class="nm">차성민</td><td class="rs">1 3 5 6 7 8 9 12</td></tr>
+</table></div>
+<div class="pcard"><h4>B조</h4><table>
+<tr><td class="nm">김주영</td><td class="rs">1 3 4 5 6 9 10 11</td></tr>
+<tr><td class="nm">황영민</td><td class="rs">1 2 4 5 7 8 9 11</td></tr>
+<tr><td class="nm">남필립</td><td class="rs">2 3 5 6 8 9 10 12</td></tr>
+<tr><td class="nm">손형일</td><td class="rs">1 2 3 4 6 9 11 12</td></tr>
+<tr><td class="nm">이재원</td><td class="rs">1 2 3 4 5 6 7 11</td></tr>
+</table></div>
+<div class="pcard"><h4>C조</h4><table>
+<tr><td class="nm">심유진</td><td class="rs">1 2 3 4 5 7 10 11</td></tr>
+<tr><td class="nm">윤지윤</td><td class="rs">1 2 4 5 6 8 11 12</td></tr>
+<tr><td class="nm">김길환</td><td class="rs">1 4 7 8 9 10 11 12</td></tr>
+<tr><td class="nm">심상욱</td><td class="rs">1 2 4 5 8 10 11 12</td></tr>
+<tr><td class="nm">최양회</td><td class="rs">2 3 5 6 8 9 10 12</td></tr>
+</table></div>
+<div class="pcard"><h4>D조</h4><table>
+<tr><td class="nm">송수민</td><td class="rs">2 3 4 5 7 9 10 11</td></tr>
+<tr><td class="nm">이지인</td><td class="rs">2 3 4 5 6 7 11 12</td></tr>
+<tr><td class="nm">강민규</td><td class="rs">3 5 6 7 8 10 11 12</td></tr>
+<tr><td class="nm">김태혁</td><td class="rs">1 2 3 5 6 8 10 12</td></tr>
+<tr><td class="nm">우창형</td><td class="rs">1 2 6 7 9 10 11 12</td></tr>
+</table></div>
+<div class="pcard"><h4>E조</h4><table>
+<tr><td class="nm">엄지현</td><td class="rs">3 4 5 7 8 9 11 12</td></tr>
+<tr><td class="nm">장한별</td><td class="rs">1 2 4 8 9 10 11 12</td></tr>
+<tr><td class="nm">강우석</td><td class="rs">1 2 5 6 7 9 11 12</td></tr>
+<tr><td class="nm">송유현</td><td class="rs">1 2 3 4 6 7 8 12</td></tr>
+<tr><td class="nm">이후섭</td><td class="rs">1 2 4 7 8 9 10 11</td></tr>
+</table></div>
+<div class="pcard"><h4>F조</h4><table>
+<tr><td class="nm">노보람</td><td class="rs">3 4 5 6 7 9 10 11</td></tr>
+<tr><td class="nm">이규웅</td><td class="rs">2 3 4 5 6 8 10 12</td></tr>
+<tr><td class="nm">박세경</td><td class="rs">1 3 6 7 8 9 10 12</td></tr>
+<tr><td class="nm">이홍희</td><td class="rs">2 4 5 7 8 9 10 11</td></tr>
+<tr><td class="nm">정현민</td><td class="rs">1 3 4 5 6 7 8 9</td></tr>
+</table></div>
+</div></section>
+<div class="foot"><span>배드민턴 복식 대진표</span><span>여복 6 · 혼복 36 · 남복 18 = 60경기</span></div>
+</div>
