@@ -8,6 +8,22 @@ export async function syncOccurrences(): Promise<void> {
 	if (error) console.error("syncOccurrences:", error);
 }
 
+/** 회차 단건 조회(정모 안내 페이지 직접 진입/새로고침 대비). 없으면 null. */
+export async function fetchSessionById(
+	sessionId: number,
+): Promise<SessionRow | null> {
+	const { data, error } = await supabase
+		.from("sessions")
+		.select("*")
+		.eq("id", sessionId)
+		.maybeSingle();
+	if (error) {
+		console.error("fetchSessionById:", error);
+		return null;
+	}
+	return (data ?? null) as SessionRow | null;
+}
+
 /** 예정/진행 중 일정 목록 (노출된 open + 진행중 active). 즉석 세션은 scheduled_at이 null이라 뒤로. */
 export async function fetchSchedules(): Promise<SessionRow[]> {
 	const { data, error } = await supabase

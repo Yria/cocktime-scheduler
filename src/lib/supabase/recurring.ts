@@ -132,9 +132,11 @@ export interface OccurrencePatch {
 	carpoolEnabled?: boolean;
 	placeId?: number | null;
 	capacity?: number | null;
+	isRegular?: boolean; // 정모 여부
+	noticeMd?: string | null; // 정모 안내/대진표 본문(마크다운)
 }
 
-/** 한 회차만 개별 수정(장소/시간/인원/카풀). is_overridden=true 로 sync 덮어쓰기 방지. */
+/** 한 회차만 개별 수정(장소/시간/인원/카풀/정모). is_overridden=true 로 sync 덮어쓰기 방지. */
 export async function updateOccurrence(
 	sessionId: number,
 	patch: OccurrencePatch,
@@ -145,6 +147,8 @@ export async function updateOccurrence(
 	if (patch.carpoolEnabled != null) row.carpool_enabled = patch.carpoolEnabled;
 	if (patch.placeId !== undefined) row.place_id = patch.placeId;
 	if (patch.capacity !== undefined) row.capacity = patch.capacity;
+	if (patch.isRegular != null) row.is_regular = patch.isRegular;
+	if (patch.noticeMd !== undefined) row.notice_md = patch.noticeMd;
 	const { data, error } = await supabase
 		.from("sessions")
 		.update(row)
@@ -188,6 +192,8 @@ export interface OneOffInput {
 	placeId: number | null;
 	capacity: number | null;
 	courtCount?: number;
+	isRegular?: boolean; // 정모 여부
+	noticeMd?: string | null; // 정모 안내/대진표 본문(마크다운)
 }
 
 /**
@@ -213,6 +219,8 @@ export async function createOneOffOccurrence(
 			is_active: false,
 			is_overridden: false,
 			recurring_schedule_id: null,
+			is_regular: input.isRegular ?? false,
+			notice_md: input.noticeMd ?? null,
 			created_by: createdBy,
 		})
 		.select()

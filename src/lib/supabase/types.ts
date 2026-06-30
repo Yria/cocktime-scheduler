@@ -49,6 +49,9 @@ export interface SessionRow {
 	is_overridden: boolean;
 	// 카풀 편성(공지 빌더, 마이그레이션 20260629010000). null=미편성.
 	carpool_groups: CarpoolGroups | null;
+	// 정모(정기모임) + 회원 열람용 안내/대진표(마이그레이션 20260630010000)
+	is_regular: boolean; // 이 회차가 정모인가
+	notice_md: string | null; // 회원에게 보여줄 본문(마크다운, GFM 표). 운영진 수동 작성.
 }
 
 /** 반복 일정 규칙 (요일 + 주차패턴 + 시간 + 인원 + 장소). 회차(sessions)를 자동 생성. */

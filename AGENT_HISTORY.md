@@ -628,3 +628,30 @@
 **Answer**: 프로필 아바타 UI 후속 정리. 카메라 배지가 부모 버튼의 overflow:hidden(원형 크롭용)에 잘리던 문제를 먼저 클립 래퍼 분리로 해결했으나, 하단 '다른 사진 선택' 텍스트로 의미가 충분하다는 판단에 배지 자체를 제거하고 구조를 단순 원형으로 환원. 용량 축소 로직은 이미 처리됨을 확인: 업로드 전 512×512 중앙크롭 + JPEG 품질 0.85 재인코딩으로 원본 수 MB 사진도 수십 KB로 떨어진다.
 
 ---
+
+## #47
+
+**Prompt**: 일정생성에 정모체크박스 넣을수 있게 하고 체크된 일정은 들어가면 지금 만든 페이지 볼 수 있게 해줘. 현재 페이지를 일반인 회원이 보는 양식으로 변경해주고, 페이지 작성은 매번 수동으로 할게.
+
+**Answer**: 정모(정기모임) 회차에 회원 열람용 대진표·안내 페이지를 붙이는 기능 추가. 설계 결정은 사용자 확인을 거쳐 콘텐츠는 마크다운(react-markdown + remark-gfm), 정모 지정은 회차 단위(OccurrenceEditor)로 확정.
+
+- DB: sessions에 is_regular(정모 여부)·notice_md(마크다운 본문) 컬럼 + 부분 인덱스 마이그레이션 추가·적용
+- 운영진: OccurrenceEditor 카풀 아래에 정모 토글, 켜면 마크다운 입력란 노출(일회성 추가·회차 편집 양쪽 저장 연동). 정모/notice는 회차 override라 is_overridden=true로 sync 덮어쓰기 방지
+- 회원: /notice/:sessionId 신규 페이지(로그인 필수, 비로그인 홈으로). 스토어 우선 + 단건 조회 폴백. notice_md를 앱 테마(코트 그린)+다크모드로 렌더, 표는 가로 스크롤 래퍼로 모바일 대응
+- 진입: 정모 ScheduleCard에 '정모' 배지 + '대진표·안내 보기' 버튼 → /notice/:id
+- 백워드 세이프: 마이그레이션 전엔 is_regular undefined→falsy라 기능 미노출일 뿐 무해. react-markdown은 기본 원시 HTML 비렌더라 XSS 안전
+- 검증: tsc·lint(변경분)·prod 빌드·테스트 162개 통과. 마이그레이션은 supabase db push로 적용 완료
+
+---
+
+## #48
+
+**Prompt**: (콘솔) `<button> cannot be a descendant of <button>` — RecurringRulesPanel.tsx hydration 에러
+
+**Answer**: 반복 규칙 카드의 버튼 중첩으로 인한 React DOM nesting/hydration 에러 수정. 바깥 카드 전체가 `<button>`(클릭=편집)인데 그 안에 중지/켜기·삭제 액션 `<button>` 두 개가 있어 HTML 사양 위반이었다.
+
+- 바깥 카드 `<button>` → `<div role="button" tabIndex={0}>`로 변경, 안쪽 액션 버튼(stopPropagation)은 그대로 유지
+- `<button>`이 기본 제공하던 키보드 활성화(Enter/Space)를 onKeyDown 핸들러로 보존해 접근성 유지
+- 코드베이스에 기존 클릭 카드 패턴이 없어 접근성 패턴을 직접 적용. tsc 통과 확인
+
+---

@@ -57,10 +57,17 @@ export default function RecurringRulesPanel({
 				rules.map((rule) => {
 					const active = rule.is_active;
 					return (
-						<button
+						<div
 							key={rule.id}
-							type="button"
+							role="button"
+							tabIndex={0}
 							onClick={() => onEdit(rule)}
+							onKeyDown={(e) => {
+								if (e.key === "Enter" || e.key === " ") {
+									e.preventDefault();
+									onEdit(rule);
+								}
+							}}
 							className="bg-white dark:bg-[rgba(30,30,35,0.8)] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.1)]"
 							style={{
 								borderRadius: 12,
@@ -137,7 +144,7 @@ export default function RecurringRulesPanel({
 									삭제
 								</button>
 							</div>
-						</button>
+						</div>
 					);
 				})
 			)}

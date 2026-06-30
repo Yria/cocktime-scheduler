@@ -33,6 +33,8 @@ interface Props {
 	onAddGuest: (guest: { name: string; gender: Gender; skills: PlayerSkills }) => Promise<{ ok: boolean; error?: string }>;
 	/** 게스트 취소(초대 회원 본인). */
 	onCancelGuest: (guestMemberId: string) => void;
+	/** 정모 회차: 대진표·안내 페이지로 진입. */
+	onOpenNotice?: () => void;
 }
 
 export default function ScheduleCard({
@@ -49,6 +51,7 @@ export default function ScheduleCard({
 	onSetCarpool,
 	onAddGuest,
 	onCancelGuest,
+	onOpenNotice,
 }: Props) {
 	const [showParticipants, setShowParticipants] = useState(false);
 	const [showCarpoolBuilder, setShowCarpoolBuilder] = useState(false);
@@ -115,6 +118,21 @@ export default function ScheduleCard({
 								진행중
 							</span>
 						)}
+						{s.is_regular && (
+							<span
+								style={{
+									fontSize: 10,
+									fontWeight: 800,
+									color: "#fff",
+									background: "#2c7a57",
+									padding: "2px 7px",
+									borderRadius: 5,
+									letterSpacing: "0.02em",
+								}}
+							>
+								정모
+							</span>
+						)}
 					</div>
 					<span
 						className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.45)]"
@@ -124,6 +142,29 @@ export default function ScheduleCard({
 					</span>
 				</div>
 			</div>
+
+			{/* 정모: 대진표·안내 진입 */}
+			{s.is_regular && onOpenNotice && (
+				<button
+					type="button"
+					onClick={onOpenNotice}
+					className="flex items-center justify-between w-full mt-3"
+					style={{
+						background: "rgba(44,122,87,0.1)",
+						border: "1px solid rgba(44,122,87,0.25)",
+						borderRadius: 10,
+						padding: "9px 13px",
+						cursor: "pointer",
+					}}
+				>
+					<span
+						style={{ fontSize: 13.5, fontWeight: 700, color: "#2c7a57" }}
+					>
+						🏸 대진표 · 안내 보기
+					</span>
+					<ChevronRight size={17} color="#2c7a57" />
+				</button>
+			)}
 
 			{/* 참석 현황 + 버튼 */}
 			<div className="flex items-center justify-between mt-3 pt-3 border-t border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]">

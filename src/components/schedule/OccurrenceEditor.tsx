@@ -80,6 +80,12 @@ export default function OccurrenceEditor({
 	const [placeId, setPlaceId] = useState<number | null>(
 		occurrence?.place_id ?? null,
 	);
+	const [isRegular, setIsRegular] = useState<boolean>(
+		() => occurrence?.is_regular ?? false,
+	);
+	const [noticeMd, setNoticeMd] = useState<string>(
+		() => occurrence?.notice_md ?? "",
+	);
 	const [showPicker, setShowPicker] = useState(false);
 
 	const [busy, setBusy] = useState(false);
@@ -133,6 +139,8 @@ export default function OccurrenceEditor({
 				occurrenceDate: occDate,
 				placeId,
 				capacity: parseCapacity(),
+				isRegular,
+				noticeMd: noticeMd.trim() ? noticeMd : null,
 			});
 		});
 	}
@@ -148,6 +156,8 @@ export default function OccurrenceEditor({
 				carpoolEnabled,
 				placeId,
 				capacity: parseCapacity(),
+				isRegular,
+				noticeMd: noticeMd.trim() ? noticeMd : null,
 			});
 		});
 	}
@@ -267,6 +277,10 @@ export default function OccurrenceEditor({
 								label="카풀"
 								value={occurrence.carpool_enabled ? "사용" : "사용 안 함"}
 							/>
+							<InfoRow
+								label="정모"
+								value={occurrence.is_regular ? "지정됨" : "아니오"}
+							/>
 						</dl>
 						<p
 							className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
@@ -344,6 +358,67 @@ export default function OccurrenceEditor({
 								ariaLabel="카풀"
 							/>
 						</div>
+
+						{/* 정모 on/off + 안내(대진표) 본문 */}
+						<div className="flex items-center justify-between">
+							<div className="flex flex-col gap-0.5">
+								<span
+									className={labelCls}
+									style={{ ...labelStyle, marginBottom: 0 }}
+								>
+									정모
+								</span>
+								<span
+									className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+									style={{ fontSize: 11.5 }}
+								>
+									켜면 회원이 일정에서 대진표·안내 페이지를 볼 수 있어요
+								</span>
+							</div>
+							<Switch
+								checked={isRegular}
+								onChange={setIsRegular}
+								disabled={busy}
+								ariaLabel="정모"
+							/>
+						</div>
+
+						{isRegular && (
+							<div>
+								<label className={labelCls} style={labelStyle}>
+									안내 · 대진표 (마크다운)
+								</label>
+								<textarea
+									value={noticeMd}
+									onChange={(e) => setNoticeMd(e.target.value)}
+									disabled={busy}
+									rows={10}
+									placeholder={
+										"## 1라운드\n| 코트 | 경기 |\n|---|---|\n| 1 | 박현아·오상진 vs 심유진·심상욱 |\n| 2 | … |"
+									}
+									className={inputCls}
+									style={{
+										...inputStyle,
+										height: "auto",
+										minHeight: 180,
+										resize: "vertical",
+										fontFamily:
+											'ui-monospace, "SF Mono", Menlo, monospace',
+										fontSize: 13,
+										lineHeight: 1.5,
+										whiteSpace: "pre",
+										overflowWrap: "normal",
+									}}
+								/>
+								<p
+									className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+									style={{ fontSize: 11.5, marginTop: 4 }}
+								>
+									제목(##), 표(| … |), 굵게(**…**) 등 마크다운으로 매번 직접
+									작성합니다. 비워두면 회원에겐 “준비 중”으로 보여요.
+								</p>
+							</div>
+						)}
 
 						{/* 인원 */}
 						<div>

@@ -326,6 +326,7 @@ export default function Home({ onStart }: Props) {
 								onSetCarpool={(role) => handleSetCarpool(s.id, role)}
 								onAddGuest={(guest) => handleAddGuest(s.id, guest)}
 								onCancelGuest={(gid) => handleCancelGuest(s.id, gid)}
+								onOpenNotice={() => navigate(`/notice/${s.id}`)}
 							/>
 						))}
 					</div>

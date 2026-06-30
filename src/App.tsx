@@ -6,6 +6,7 @@ import Home from "./components/Home";
 import LogPage from "./components/LogPage";
 import SessionSetup from "./components/SessionSetup";
 import MemberAdminPage from "./components/admin/MemberAdminPage";
+import RegularNoticePage from "./components/schedule/RegularNoticePage";
 import SchedulePage from "./components/schedule/SchedulePage";
 import { useDarkMode } from "./hooks/useDarkMode";
 import { usePageVisibility } from "./hooks/usePageVisibility";
@@ -202,6 +203,7 @@ export default function App() {
 				/>
 				<Route path="/session" element={sessionGuarded(<SessionBoard />)} />
 				<Route path="/schedule" element={<SchedulePage />} />
+				<Route path="/notice/:sessionId" element={<RegularNoticePage />} />
 				<Route path="/members" element={<MemberAdminPage />} />
 				<Route path="/logs" element={<LogPage />} />
 				<Route path="*" element={<Navigate to="/" replace />} />
