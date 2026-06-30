@@ -655,3 +655,18 @@
 - 코드베이스에 기존 클릭 카드 패턴이 없어 접근성 패턴을 직접 적용. tsc 통과 확인
 
 ---
+
+## #49
+
+**Prompt**: 로그쌓을때 팀편성 누가헀는지도 같이 기록가능? / (기준 확정) 경기시작 버튼 누른사람, 로그카드에만 작게 표현 / 니가다해
+
+**Answer**: 매치 로그에 "경기 시작(편성)한 사람"을 기록하는 기능 추가. 핵심 통찰은 편집자 실명(_myName=auth.myName)이 이미 lease 가드용으로 assign_match RPC의 p_name으로 전달되는데 저장만 안 되고 버려지고 있었다는 점 — 새 데이터 배선 없이 저장만 추가하면 되는 저비용 작업이었다.
+
+- 의미 확정(사용자): 기준=경기 시작 누른 사람(assign_match), 표시=로그카드에만 작게. set_match_roster(이후 팀 편집)는 안 건드려 "최초 편성자" 고정
+- DB: matches.assigned_by(text, nullable) 컬럼 + assign_match RPC가 INSERT 시 p_name 저장(시그니처 동일·CREATE OR REPLACE·기존 동작 보존). supabase db push로 원격 적용 완료
+- 클라: MatchRow.assigned_by, MatchLogEntry.assignedBy + fetchMatchLogs 매핑, MatchCard 헤더 시간 아래 "편성 OO" 작게(값 있을 때만)
+- 백워드 세이프: select("*")라 컬럼 없으면 undefined→미표시, 적용 전엔 구 RPC가 편성자만 안 남길 뿐 무해 → 배포 순서 위험 없음
+- 문서/픽스처 동기화(DATABASE.md, transformers.test.ts에 assigned_by 추가)
+- 검증: tsc·eslint(변경분)·prod 빌드·테스트 162개 통과
+
+---

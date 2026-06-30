@@ -60,10 +60,17 @@ export default function MatchCard({
 						{log.gameType}
 					</span>
 				</div>
-				<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]" style={{ fontSize: 12, fontWeight: 500 }}>
-					{formatTime(log.startedAt)}
-					{log.endedAt ? ` → ${formatTime(log.endedAt)}` : ""}
-				</span>
+				<div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+					<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]" style={{ fontSize: 12, fontWeight: 500 }}>
+						{formatTime(log.startedAt)}
+						{log.endedAt ? ` → ${formatTime(log.endedAt)}` : ""}
+					</span>
+					{log.assignedBy ? (
+						<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]" style={{ fontSize: 11, fontWeight: 500, opacity: 0.85 }}>
+							편성 {log.assignedBy}
+						</span>
+					) : null}
+				</div>
 			</div>
 
 			{/* Teams */}

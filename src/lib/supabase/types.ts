@@ -169,6 +169,8 @@ export interface MatchRow {
 	ended_at: string | null;
 	/** [team_a_p1, team_a_p2, team_b_p1, team_b_p2] 순서의 시점 스냅샷. 구 매치는 null. */
 	player_snapshot: (PlayerSnapshotEntry | null)[] | null;
+	/** 경기 시작(편성)한 편집자 실명(마이그레이션 20260630020000). 구 매치/미전달은 null. */
+	assigned_by: string | null;
 }
 
 export interface PairHistoryRow {

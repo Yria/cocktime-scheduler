@@ -59,6 +59,7 @@
 | started_at | TIMESTAMPTZ | 시작 시각 |
 | ended_at | TIMESTAMPTZ? | 종료 시각 |
 | player_snapshot | JSONB? | **경기 시점 선수 스냅샷**(2026-06-18, `20260618000100`). `[team_a_p1, team_a_p2, team_b_p1, team_b_p2]` 순서 `{id,name,gender,skills}` 배열. 완료 시 `complete_match` 가 기록. 로그/디버그가 이걸로 이름을 표시하므로 선수가 삭제돼도 "?" 대신 당시 이름 유지(인스턴스 미참조). 구 매치는 null → 현재 선수 맵 폴백 → "?" |
+| assigned_by | TEXT? | **경기 시작(편성)한 편집자 실명**(2026-06-30, `20260630020000`). `assign_match` 가 `p_name`(=auth.myName, 경기 시작 누른 사람)을 INSERT 시 기록. 로그(MatchCard)에 "편성 OO" 작게 표시. set_match_roster(팀 편집)는 미변경 → "최초 편성자" 고정. 구 매치/미전달은 null → UI 미표시 |
 
 > **코트 이중배정 방지(2026-06-15)**: 부분 유니크 인덱스 `uq_matches_active_court (session_id, court_id) WHERE status='playing'` — 코트당 진행중 매치 최대 1개. 마이그레이션 `20260615120000_prevent_court_double_booking.sql`. 완료(completed) 매치는 대상 아님(코트 재사용 정상).
 > **FK 정책(2026-06-16, `20260616000000_db_cleanup.sql`)**: team_*_p* 는 `ON DELETE SET NULL`(NULL 허용) — 선수 삭제 시 매치 기록은 보존되고 참조만 NULL. 진행중(playing) 매치 선수는 `updateSession` 이 `status != 'playing'` 필터로 삭제 제외하므로 활성 매치엔 NULL 이 생기지 않음. `pair_history` FK 는 `ON DELETE CASCADE`. 이로써 선수 삭제가 FK 로 막히지 않음.
@@ -79,7 +80,7 @@
 
 | RPC | 시그니처 | 용도 |
 |---|---|---|
-| `assign_match` | (코트 배정 파라미터) | matches INSERT + players→playing + match_assign_count++ **+ match_state_version++**(2026-06-22, `20260622130000`: 코트 동기화 신호). 코트 점유 시 `unique_violation`→`RAISE EXCEPTION 'court already assigned'`(dbAssignMatch=false 처리) |
+| `assign_match` | (코트 배정 파라미터) | matches INSERT(**assigned_by=p_name**, 2026-06-30 `20260630020000`: 경기 시작 누른 편집자 실명 기록) + players→playing + match_assign_count++ **+ match_state_version++**(2026-06-22, `20260622130000`: 코트 동기화 신호). 코트 점유 시 `unique_violation`→`RAISE EXCEPTION 'court already assigned'`(dbAssignMatch=false 처리) |
 | `complete_match` | `(p_match_id UUID, p_session_id BIGINT, p_game_type TEXT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID)` | match→completed + **player_snapshot 기록**(2026-06-18) + pair_history UPSERT(같은 경기 4명 6쌍) + players→waiting(game_count++/혼복 남자 mixed_count++) **+ match_state_version++**(`20260622130000`). 시그니처 불변(스냅샷은 RPC 내부에서 session_players로부터 생성) |
 | `set_match_roster` | `(p_match_id UUID, p_session_id BIGINT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID, p_removed_ids UUID[], p_added_ids UUID[])` | **경기 로스터 수정 원자 RPC**(2026-06-22, `20260622130000`, 기존 직접 UPDATE 대체). playing 매치의 4슬롯 교체 + removed→waiting + added→playing + match_state_version++ 를 단일 트랜잭션. 변경 선수(removed+added) 반환(클라 broadcast 용). game_count 는 완료 시점에만 집계하므로 미변경. |
 | `load_session_state` | `(p_session_id BIGINT)` | **세션 상태 단일 스냅샷**(2026-06-22, `20260622140000`). board_drafts+version+match_state_version+court_count+editor_*+진행중 matches 를 단일 SELECT(같은 MVCC 시점)로 JSONB 반환. 재구독 catch-up·CAS 충돌 복구에서 팀 편성/코트 배정 두 권위를 "같은 시점"으로 수렴. 클라 `dbLoadSessionState`(sessionStore `resyncFromServer`). |

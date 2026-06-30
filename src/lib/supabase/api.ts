@@ -25,6 +25,8 @@ export interface MatchLogEntry {
 	teamB: { name: string; gender: Gender; skills?: PlayerSkills }[];
 	startedAt: string;
 	endedAt: string | null;
+	/** 경기 시작(편성)한 사람 실명. 구 매치/미기록은 null. */
+	assignedBy: string | null;
 }
 
 export async function fetchActiveSession(): Promise<SessionRow | null> {
@@ -252,6 +254,7 @@ export async function fetchMatchLogs(
 			teamB,
 			startedAt: m.started_at,
 			endedAt: m.ended_at,
+			assignedBy: m.assigned_by ?? null,
 		};
 	});
 }

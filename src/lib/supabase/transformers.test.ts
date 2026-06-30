@@ -22,6 +22,7 @@ function match(over: Partial<MatchRow>): MatchRow {
 		started_at: "",
 		ended_at: "",
 		player_snapshot: null,
+		assigned_by: null,
 		...over,
 	};
 }
