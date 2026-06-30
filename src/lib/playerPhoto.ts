@@ -4,7 +4,8 @@
  */
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const BUCKET = "player-photos";
+/** 선수 사진 Storage 버킷명(공개 읽기). 업로드 유틸에서도 사용. */
+export const PLAYER_PHOTO_BUCKET = "player-photos";
 
 function md5(str: string): string {
 	const k = new Uint32Array([
@@ -73,7 +74,43 @@ function md5(str: string): string {
 	return hex(a0) + hex(b0) + hex(c0) + hex(d0);
 }
 
+/** 이름 → Storage 파일명(md5 앞 12자 + .jpg). 비ASCII 키 회피용 해시 규약(scripts/fetch_photos.py와 동일). */
+export function playerPhotoFilename(name: string): string {
+	return `${md5(name).slice(0, 12)}.jpg`;
+}
+
+// ─── 캐시 무효화 ──────────────────────────────────────────────
+// 사진 URL은 이름 기반으로 고정이라 upsert 후에도 브라우저가 옛 이미지를 캐시한다.
+// 업로드한 본인이 즉시(그리고 새로고침 후에도) 새 사진을 보도록, 올린 이름별 버전을
+// localStorage에 기록하고 URL에 ?v= 로 덧붙인다. 다른 사용자는 cacheControl 만료 후 갱신된다.
+const PHOTO_VERSION_LS_KEY = "cocktime:photoVersions";
+let versionCache: Record<string, number> | null = null;
+
+function loadVersions(): Record<string, number> {
+	if (versionCache) return versionCache;
+	try {
+		versionCache = JSON.parse(
+			localStorage.getItem(PHOTO_VERSION_LS_KEY) || "{}",
+		) as Record<string, number>;
+	} catch {
+		versionCache = {};
+	}
+	return versionCache;
+}
+
+/** 사진 업로드 성공 후 호출: 해당 이름의 캐시 버전을 갱신해 URL ?v= 가 바뀌게 한다. */
+export function bumpPlayerPhotoVersion(name: string): void {
+	const map = loadVersions();
+	map[name] = Date.now();
+	try {
+		localStorage.setItem(PHOTO_VERSION_LS_KEY, JSON.stringify(map));
+	} catch {
+		/* 저장 실패는 무시(프라이빗 모드 등) */
+	}
+}
+
 export function getPlayerPhotoUrl(name: string): string {
-	const hash = md5(name).slice(0, 12);
-	return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${hash}.jpg`;
+	const base = `${SUPABASE_URL}/storage/v1/object/public/${PLAYER_PHOTO_BUCKET}/${playerPhotoFilename(name)}`;
+	const v = loadVersions()[name];
+	return v ? `${base}?v=${v}` : base;
 }

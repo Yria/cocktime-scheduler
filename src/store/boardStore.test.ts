@@ -993,7 +993,7 @@ describe("cancelEditActions — 드래그/배정중/휴식핫 상태를 초기�
 	it("dragInfo·hoverTarget·detachHot·restFieldHot·assigningTeamIds를 모두 비운다", () => {
 		useBoardStore.setState({
 			dragInfo: { playerId: "a", detachable: true, restable: false, from: { x: 0, y: 0 } },
-			hoverTarget: { kind: "team", id: "T" },
+			hoverTarget: { kind: "magnet", id: "a" },
 			detachHot: true,
 			restFieldHot: true,
 			assigningTeamIds: new Set(["T"]),

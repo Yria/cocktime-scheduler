@@ -230,6 +230,22 @@ describe("recommendTeammates", () => {
 		// 대기 25분 차 × W_WAIT 만큼 점수 차(낮을수록 우선)
 		expect(sw.score - lw.score).toBeCloseTo(25 * RECOMMEND_WEIGHTS.W_WAIT, 0);
 	});
+
+	it("선발 우선순위는 경기수 > 중복 회피 > 실력 (W_GAME > W_PAIR > W_SKILL)", () => {
+		// 이 서비스는 '같은 경기 할 4명'을 뽑는 것이고 2v2 실력 균형은 pairPlayers가 따로 잡으므로,
+		// 선발 가중치는 경기수가 최우선, 실력이 최하위여야 한다(회귀 가드).
+		expect(RECOMMEND_WEIGHTS.W_GAME).toBeGreaterThan(RECOMMEND_WEIGHTS.W_PAIR);
+		expect(RECOMMEND_WEIGHTS.W_PAIR).toBeGreaterThan(RECOMMEND_WEIGHTS.W_SKILL);
+	});
+
+	it("경기수가 실력을 이긴다 — 더 뛴 '실력 쌍둥이'보다 덜 뛴 후보가 우선 선발된다", () => {
+		const confirmed = [player("seed", "M", "V")]; // 실력 2.0
+		const similar = { ...player("similar", "M", "V"), gameCount: 2 }; // 실력 동일하지만 2판 더 뜀
+		const fewGames = { ...player("fewGames", "M", "X"), gameCount: 0 }; // 실력 다르지만 0판
+		const ranked = recommendTeammates(confirmed, [similar, fewGames], ctx());
+		// 실력만 봤다면 similar가 1순위였겠지만, 경기수 우선이라 덜 뛴 fewGames가 앞선다.
+		expect(ranked[0].player.id).toBe("fewGames");
+	});
 });
 
 describe("autoFillTeammates — greedy 자동편성", () => {

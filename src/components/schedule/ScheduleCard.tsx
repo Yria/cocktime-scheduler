@@ -9,6 +9,7 @@ import type {
 import { fmtRange } from "../../lib/schedule/timeFmt";
 import GuestSection from "./GuestSection";
 import PlayerAvatar from "../shared/PlayerAvatar";
+import CarpoolAnnounceBuilder from "./carpool/CarpoolAnnounceBuilder";
 import SessionParticipantsModal from "./SessionParticipantsModal";
 
 /** 인라인 아바타 스택에 노출할 최대 인원(초과분은 +N 칩) */
@@ -50,6 +51,7 @@ export default function ScheduleCard({
 	onCancelGuest,
 }: Props) {
 	const [showParticipants, setShowParticipants] = useState(false);
+	const [showCarpoolBuilder, setShowCarpoolBuilder] = useState(false);
 	const confirmed = attendances.filter((a) => a.status === "confirmed");
 	const waiting = attendances.filter((a) => a.status === "waitlisted");
 	// 인라인 스택 — 확정자 우선, 모자라면 대기자로 채움
@@ -302,14 +304,25 @@ export default function ScheduleCard({
 				</div>
 			)}
 
-			{/* 카풀 집계 */}
-			{s.carpool_enabled && (canDrive > 0 || needRide > 0) && (
-				<div
-					className="mt-1.5 text-[#64748b] dark:text-[rgba(235,235,245,0.5)]"
-					style={{ fontSize: 11.5, fontWeight: 500 }}
+			{/* 운영자: 카풀 공지 빌더 진입 */}
+			{isAdmin && s.carpool_enabled && (canDrive > 0 || needRide > 0) && (
+				<button
+					type="button"
+					onClick={() => setShowCarpoolBuilder(true)}
+					style={{
+						marginTop: 8,
+						padding: "7px 12px",
+						borderRadius: 9,
+						fontSize: 12.5,
+						fontWeight: 700,
+						color: "#0b84ff",
+						background: "rgba(11,132,255,0.12)",
+						border: "none",
+						cursor: "pointer",
+					}}
 				>
-					🚗 운전 가능 {canDrive} · 탑승 필요 {needRide}
-				</div>
+					🚗 카풀 공지 만들기
+				</button>
 			)}
 
 			{/* 게스트 신청 + 내가 데려온 게스트 목록 */}
@@ -353,6 +366,14 @@ export default function ScheduleCard({
 					attendances={attendances}
 					memberId={memberId}
 					onClose={() => setShowParticipants(false)}
+				/>
+			)}
+
+			{showCarpoolBuilder && (
+				<CarpoolAnnounceBuilder
+					session={s}
+					placeName={placeName}
+					onClose={() => setShowCarpoolBuilder(false)}
 				/>
 			)}
 		</div>

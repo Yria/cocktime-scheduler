@@ -606,3 +606,25 @@
 - 기존 RESERVATION_OPACITY는 유지(그레이스케일+흐림 이중).
 
 ---
+
+## #45
+
+**Prompt**: 프로필편집에 사진업로드도 가능하게 해줘.
+
+**Answer**: ProfileSetup(가입/회원정보 수정)에 프로필 사진 업로드를 추가하고, 다각도 적대적 리뷰(5관점·재검증)에서 확정된 결함 4건을 수정했다. 기존 player-photos 버킷이 md5(name)[:12].jpg 규약으로 service_role 스크립트로만 채워지던 구조를, 클라이언트(authenticated)도 업로드할 수 있게 확장.
+- 신규 playerPhotoUpload.ts: <img>+canvas로 512px 정사각 중앙크롭 JPEG 생성 후 Storage upsert.
+- playerPhoto.ts: 버킷/파일명 export + localStorage 버전맵 기반 ?v= 캐시버스팅(이름고정 URL의 캐시 문제 해결, 영속되어 새로고침 후에도 신사진 표시).
+- ProfileSetup: 편집 가능한 원형 아바타(로컬 프리뷰/원격/이니셜 분기) + 카메라 배지 + 파일 선택. 저장 시 사진 먼저 업로드 후 프로필 update(가입모드 언마운트 경쟁 회피).
+- storage RLS 마이그레이션: 버킷 idempotent 보장 + authenticated insert/update + public read. delete 정책은 제거(키 추측 삭제 공격면 차단, 정리는 service_role 우회).
+- 리뷰 수정: ①photoFailed가 로컬 프리뷰까지 가리던 버그(렌더 분기 분리+선택 시 초기화) ②RLS delete 제거 ③성별 미선택 시 중립 회색 ④배지 테두리 다크모드 대응.
+- 배포 시 supabase db push 필요(미적용 시 업로드 RLS 거부).
+
+---
+
+## #46
+
+**Prompt**: 우하단 카메라가 사진선택할수있단 의미인거같은데 이렇게 잘리니까 더 이상해 / 하단에 다른 사진 선택 텍스트 있으니 카메라 없어도 될거같아. 그리고 사진 올릴때 용량 줄이는 로직이 있니?
+
+**Answer**: 프로필 아바타 UI 후속 정리. 카메라 배지가 부모 버튼의 overflow:hidden(원형 크롭용)에 잘리던 문제를 먼저 클립 래퍼 분리로 해결했으나, 하단 '다른 사진 선택' 텍스트로 의미가 충분하다는 판단에 배지 자체를 제거하고 구조를 단순 원형으로 환원. 용량 축소 로직은 이미 처리됨을 확인: 업로드 전 512×512 중앙크롭 + JPEG 품질 0.85 재인코딩으로 원본 수 MB 사진도 수십 KB로 떨어진다.
+
+---

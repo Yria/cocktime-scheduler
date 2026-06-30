@@ -48,9 +48,11 @@ export interface RankedCandidate {
 }
 
 export interface Weights {
+	/** 실력 유사 — 후순위. 4명 안의 2v2 실력 균형은 pairPlayers가 따로 잡으므로 선발 단계에선 약하게 본다. */
 	W_SKILL: number;
-	/** 동반 회피 — 같은 4명 그룹으로 함께 뛴 누적 횟수(pairHistory)에 대한 가중. 직전/과거를 통합한 단일 지표. */
+	/** 중복 회피 — 같은 4명 그룹으로 함께 뛴 누적 횟수(pairHistory)에 대한 가중. 직전/과거를 통합한 단일 지표. */
 	W_PAIR: number;
+	/** 경기수 — 최우선. 적게 뛴 사람(절대 판수 gameCount)부터 선발. */
 	W_GAME: number;
 	W_MIXED: number;
 	W_WAIT: number;
@@ -60,7 +62,10 @@ export interface Weights {
 // 가중치 프로필
 // ─────────────────────────────────────────────
 
-const DEFAULT_WEIGHTS: Weights = { W_SKILL: 4.0, W_PAIR: 6.0, W_GAME: 1.0, W_MIXED: 0, W_WAIT: 0 };
+// 우선순위: 경기수(W_GAME) > 중복 회피(W_PAIR) > 실력(W_SKILL).
+// 4명 선발 단계에선 적게 뛴 사람 우선(경기수)과 같은 4명 반복 회피(중복)가 우선이고,
+// 실력 균형은 2v2 페어 편성(pairPlayers)이 따로 잡으므로 가장 약하게만 본다.
+const DEFAULT_WEIGHTS: Weights = { W_SKILL: 3.0, W_PAIR: 8.0, W_GAME: 10.0, W_MIXED: 0, W_WAIT: 0 };
 
 // ─────────────────────────────────────────────
 // 스킬 점수 유틸

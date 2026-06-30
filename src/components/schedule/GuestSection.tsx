@@ -46,6 +46,11 @@ export default function GuestSection({
 
 	if (!memberId) return null;
 
+	const showAddButton = isOpen && attending;
+	// 보여줄 게스트도 없고 신청 버튼도 안 뜨면 아무것도 렌더하지 않는다.
+	// (빈 wrapper의 mt-2.5가 카드 하단에 유령 여백을 만들던 문제 방지)
+	if (myGuests.length === 0 && !showAddButton) return null;
+
 	const openModal = () => {
 		setName("");
 		setGender("M");
@@ -115,7 +120,7 @@ export default function GuestSection({
 			)}
 
 			{/* 게스트 신청 버튼 — 모집 중 + 본인이 참석 중일 때만 */}
-			{isOpen && attending && (
+			{showAddButton && (
 				<button
 					type="button"
 					onClick={openModal}

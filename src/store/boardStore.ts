@@ -523,7 +523,14 @@ function attachAnchor(s: Draft, playerId: string, teamId: string, slot?: number)
  * ghost 점유자는 예약 취소 후 새 선수를 그 슬롯에 anchor로 합류.
  * 단, 끌어온 선수가 "같은 팀" 멤버면(팀 내 재배치) 점유자를 빼지 않고 둘의 슬롯만 스왑한다.
  */
-function replaceAtSlot(s: Draft, playerId: string, teamId: string, slotIndex: number) {
+// runSettle(geometry 필요)을 호출하므로 멤버십(Draft) + stage geometry(SettleState)를 함께 받는다.
+// 실제 호출부는 full BoardState immer 드래프트라 두 조건을 모두 만족.
+function replaceAtSlot(
+	s: Draft & SettleState,
+	playerId: string,
+	teamId: string,
+	slotIndex: number,
+) {
 	const team = s.drafts.get(teamId);
 	if (!team) return;
 	const members = teamMembers(teamId, s.drafts, s.reservations);

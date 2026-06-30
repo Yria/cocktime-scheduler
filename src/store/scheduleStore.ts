@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { setCarpoolGroups } from "../lib/supabase/carpool";
 import {
 	addGuestAttendance,
 	cancelAttendance,
@@ -14,6 +15,7 @@ import {
 import type { Gender, PlayerSkills } from "../types";
 import type {
 	AttendanceRow,
+	CarpoolGroups,
 	CarpoolRole,
 	PlaceRow,
 	SessionRow,
@@ -89,6 +91,19 @@ export const scheduleActions = {
 		const res = await setCarpoolRole(sessionId, role);
 		if (res.ok) await reloadAttendances();
 		return res;
+	},
+
+	/** 운영자: 카풀 편성 저장(공지 빌더). 저장 성공 시 스토어의 세션 carpool_groups 갱신. */
+	async saveCarpoolGroups(sessionId: number, groups: CarpoolGroups) {
+		const ok = await setCarpoolGroups(sessionId, groups);
+		if (ok) {
+			useScheduleStore.setState((s) => ({
+				schedules: s.schedules.map((x) =>
+					x.id === sessionId ? { ...x, carpool_groups: groups } : x,
+				),
+			}));
+		}
+		return ok;
 	},
 
 	async addGuest(

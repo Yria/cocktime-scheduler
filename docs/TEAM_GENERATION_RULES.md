@@ -19,6 +19,20 @@
 코트에 들어갈 **4명**을 구성하고, 그 안에서 두 **페어**(2v2)로 편성하는 데 쓰이는 점수 로직.
 4명 자동 선발은 더 이상 하지 않으며, 관리자가 보드에서 멤버를 채울 때 **후보 순위 추천**과 **페어 편성**만 제공한다.
 
+### 핵심 철학 — "4명을 뽑는다 / 2v2는 나중에 나눈다"
+
+이 서비스가 추천·자동편성으로 하는 일은 **"같은 경기를 할 4명"을 고르는 것**이다. 그 4명을 2v2로 어떻게 가를지는 별도 단계(`pairPlayers`, 6절)가 실력 균형(`interDiff`/`intraDiff`)으로 책임진다. 두 단계의 역할이 다르므로 우선순위도 다르다.
+
+**선발(4명 고르기)의 가중치 우선순위 — 경기수 > 중복 회피 > 실력**
+
+| 순위 | 항 | 가중치 | 이유 |
+|---|---|---|---|
+| 1 | **경기수** | `W_GAME` | 적게 뛴 사람부터 — 모두가 비슷한 판수를 뛰는 게 가장 중요 |
+| 2 | **중복 회피** | `W_PAIR` | 같은 4명이 반복되지 않게 — 매번 새로운 조합 |
+| 3 | **실력** | `W_SKILL` | 가장 약하게만 본다. **4명 안의 2v2 실력 균형은 `pairPlayers`가 따로 잡으므로** 선발 단계에서 실력을 앞세울 필요가 없다 |
+
+> 이 우선순위는 `W_GAME > W_PAIR > W_SKILL` 로 코드(`RECOMMEND_WEIGHTS`·`DEFAULT_WEIGHTS`)에 반영돼 있다(7절·2절). 과거엔 `W_SKILL`이 최우선(20)이라 실력이 비슷한 사람끼리 반복해서 같은 경기에 뽑히는 부작용이 있었다.
+
 ### 용어 정의
 - **팀**: 한 코트에서 경기하는 4명 전체
 - **페어**: 팀 안에서 같은 편인 2명 (복식 파트너)
@@ -55,7 +69,7 @@ skillScore(player) = Σ(7개 스킬 점수) / 7   → 범위 1.0 ~ 3.0
 
 `W_SKILL, W_PAIR, W_GAME, W_MIXED, W_WAIT` 5개.
 
-기본값(`DEFAULT_WEIGHTS`): `W_SKILL 4.0, W_PAIR 6.0, W_GAME 1.0, W_MIXED 0, W_WAIT 0`.
+기본값(`DEFAULT_WEIGHTS`): `W_GAME 10.0, W_PAIR 8.0, W_SKILL 3.0, W_MIXED 0, W_WAIT 0`. (우선순위 **경기수 > 중복 회피 > 실력** — 위 핵심 철학 참조. `DEFAULT_WEIGHTS`는 `rankCandidates`를 weights 없이 호출할 때의 폴백이며, 실제 추천/자동편성은 `RECOMMEND_WEIGHTS`(7절)를 쓴다.)
 
 > **제거됨(deprecated)**: 가중치 프로필 상수 `WEIGHT_PROFILES`(자동 다전략 후보 생성용 5개 프로필 — `gameCountBalanced`/`newCombination`/`skillBalanced`/`mixedCountBalanced`/`waitTimePriority`)는 소비자가 전부 삭제되어 **코드에서 완전히 제거**되었다.
 > 현재 유지되는 가중치는 `recommendTeammates` 의 `RECOMMEND_WEIGHTS`(7절)와 `rankCandidates` 내부 기본값 `DEFAULT_WEIGHTS` 뿐이다.
@@ -193,9 +207,9 @@ score = intraDiff × 0.5 + interDiff × 1.5
 
 | 상수 | 값 | 의미 |
 |------|---:|------|
-| `W_SKILL` | 20.0 | 실력 유사 최우선 |
-| `W_PAIR` | 8.0 | 동반 회피(직전+과거 통합 누적) |
-| `W_GAME` | 1.0 | 적게 뛴 사람 우선(절대 판수 `gameCount`, 보조) |
+| `W_GAME` | 10.0 | **경기수 최우선** — 적게 뛴 사람부터(절대 판수 `gameCount`) |
+| `W_PAIR` | 8.0 | **중복 회피(2순위)** — 같은 4명으로 함께 뛴 누적(직전+과거 통합). 같이 안 뛴 사람 우선 |
+| `W_SKILL` | 3.0 | **실력은 후순위(3순위)** — 4명 안의 2v2 실력 균형은 페어 편성(`pairPlayers`)이 보정하므로 약하게만 본다 |
 | `W_MIXED` | 0 | 누적 혼복수는 로테이션(W_ROTATE)으로 대체 |
 | `W_WAIT` | 1.0 | **오래 쉰(대기) 사람 강한 우선** — 연속 휴식 편차 완화(아래) |
 | `W_ROTATE` | 6.0 | 로테이션 보너스(직전과 **다른** 타입으로 전환하는 후보) |

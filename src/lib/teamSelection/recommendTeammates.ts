@@ -73,9 +73,13 @@ export interface RecommendWeights extends Weights {
 }
 
 export const RECOMMEND_WEIGHTS: RecommendWeights = {
-	W_SKILL: 20.0, // 실력 유사 최우선
-	W_PAIR: 8.0, // 동반 회피 — 함께 뛴 누적 횟수(직전+과거 통합). 같이 안 뛴 사람 우선
-	W_GAME: 1.0, // 적게 뛴 사람 우선(절대 판수 gameCount, 보조)
+	// ── 선발 핵심 3축 우선순위: 경기수(W_GAME) > 중복회피(W_PAIR) > 실력(W_SKILL) ──
+	// 이 서비스는 "같은 경기를 할 4명"을 뽑는 것이고, 그 4명의 2v2 실력 균형은 페어 편성(pairPlayers)이
+	// interDiff/intraDiff로 따로 잡는다. 따라서 선발 단계에선 ① 적게 뛴 사람부터(경기수 균등) ② 같은 4명이
+	// 반복되지 않게(중복 회피)가 우선이고, 실력 유사는 가장 약하게만 본다(페어 편성이 보정하므로).
+	W_GAME: 10.0, // 경기수 최우선 — 적게 뛴 사람부터(절대 판수 gameCount)
+	W_PAIR: 8.0, // 중복 회피 — 같은 4명으로 함께 뛴 누적 횟수(직전+과거 통합). 같이 안 뛴 사람 우선
+	W_SKILL: 3.0, // 실력은 후순위 — 4명 안의 2v2 실력 균형은 pairPlayers가 맡는다
 	W_MIXED: 0, // 누적 혼복수는 로테이션(W_ROTATE)으로 대체
 	// 오래 쉰(대기) 사람 강한 우선 — 연속 휴식 편차(누군 2번 쉬고 누군 2번 연속) 완화. 대기 분(分)에 비례해
 	// 점수를 낮춘다(−waitMinutes×W_WAIT). waitSince는 경기 완료/휴식 복귀로 대기 진입할 때 갱신되므로,

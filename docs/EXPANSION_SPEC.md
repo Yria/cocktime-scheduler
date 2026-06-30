@@ -19,7 +19,7 @@
 | 4 | **일정 = 세션 통합** | 별도 events 없음. `sessions`를 상태기계로 확장. 하루 여러 모임 = 행 여러 개 |
 | 5 | **로그인해야 열람** | 최종 RLS: 로그인 사용자 read + 운영진 write |
 | 6 | **places = 좌표 테이블** | 모임 코트 위치 + 카풀 집결지 공용. name·address·lat·lng 수준 |
-| 7 | **카풀 = 표시만** | `attendances.carpool_role` + 운영진 수동 매칭. 좌석 매칭 테이블 없음 |
+| 7 | **카풀 = 의향 + 운영진 수동 편성** | `attendances.carpool_role` + `sessions.carpool_groups`(jsonb) 공지 빌더. 배정 테이블 없음. 상세: `CARPOOL_MATCHING_DESIGN.md` |
 | 8 | **정원 상향 시 자동 승급** | `promote_waitlist` RPC |
 | 9 | **콕 체크는 운영진만** | 별도 본인검증 RPC 불필요 |
 | 10 | **마이그레이션 자유** | 개발 중이라 백필/파괴적 정리 부담 낮음. 이중운영 최소화 |
@@ -377,6 +377,6 @@ alter table public.sessions
 
 ## 11. 향후/보류
 
-- 카풀 매칭 보조 툴(누가 누구 차에) — 지금은 운영진 수동, 후순위.
+- 카풀 매칭 보조 툴(누가 누구 차에) — **라이트 구현 완료**: 운영자 지도 편성 + 공지 텍스트 생성·복사(`sessions.carpool_groups`, `CARPOOL_MATCHING_DESIGN.md`). 확장 여지: 인앱 탑승자 결과 화면 · 배정 푸시.
 - 한 일정 다중 세션(오전/오후) — 현재 1 sessions 행 = 1 모임으로 충분(하루 여러 모임은 행 여러 개).
 - Google Sheets/googleAuth 완전 폐지 시점 — sheet_player_id 백필 충분 후 점진.

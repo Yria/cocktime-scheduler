@@ -47,6 +47,8 @@ export interface SessionRow {
 	recurring_schedule_id: number | null;
 	occurrence_date: string | null; // YYYY-MM-DD (Asia/Seoul 달력 날짜)
 	is_overridden: boolean;
+	// 카풀 편성(공지 빌더, 마이그레이션 20260629010000). null=미편성.
+	carpool_groups: CarpoolGroups | null;
 }
 
 /** 반복 일정 규칙 (요일 + 주차패턴 + 시간 + 인원 + 장소). 회차(sessions)를 자동 생성. */
@@ -81,6 +83,21 @@ export interface PlaceRow {
 
 export type AttendanceStatus = "confirmed" | "waitlisted" | "cancelled";
 export type CarpoolRole = "none" | "can_drive" | "need_ride";
+
+/** 카풀 편성(공지 빌더). sessions.carpool_groups jsonb. 탑승자 id는 한 그룹에만. */
+export interface CarpoolGroup {
+	driver_member_id: string;
+	rider_member_ids: string[];
+}
+/** 마이그레이션 20260629010000. null=미편성. */
+export interface CarpoolGroups {
+	v: 1;
+	groups: CarpoolGroup[];
+	/** 공지 헤더 override(운영자 수정 시). null이면 세션정보로 자동 생성. */
+	header?: string | null;
+	/** 고정 안내문 override. null이면 기본 템플릿. */
+	footer?: string | null;
+}
 
 export interface AttendanceRow {
 	session_id: number;
