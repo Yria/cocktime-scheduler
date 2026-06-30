@@ -79,6 +79,10 @@ export const TEAM_READY_BG = "#052E16";
 export const TEAM_READY_STROKE = "#22C55E";
 export const TEAM_PLAYING_BG = "#451A03";
 export const TEAM_PLAYING_STROKE = "#F59E0B";
+// 4명이지만 예약자가 아직 경기중이라 대기 중인 팀 박스("예약 포함(경기중)") — 실제 경기중 코트(주황)와
+// 헷갈리지 않도록 예약 색 규칙(보라)을 따른다. 박스 안의 보라색 예약(ghost) 자석과도 시각적으로 연결.
+export const TEAM_RESERVED_BG = "#2E1065";
+export const TEAM_RESERVED_STROKE = "#A78BFA";
 export const TEAM_QUEUED_BG = "#1E293B";
 export const TEAM_QUEUED_STROKE = "#3B82F6";
 

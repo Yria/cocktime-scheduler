@@ -26,8 +26,8 @@ import {
 	TEAM_FORMING_STROKE,
 	TEAM_READY_BG,
 	TEAM_READY_STROKE,
-	TEAM_PLAYING_BG,
-	TEAM_PLAYING_STROKE,
+	TEAM_RESERVED_BG,
+	TEAM_RESERVED_STROKE,
 	TEXT_SECONDARY,
 	STROKE_DEFAULT,
 	CTA_START_COLOR,
@@ -113,11 +113,11 @@ const TeamBackground = memo(function TeamBackground({
 	//   "자동편성"(자동 채움)은 그룹박스에서 제거되어 추천 모달 안 버튼으로 이동. 구성 중 채움은 빈 슬롯 탭→모달.
 	const ctaEnabled = canStart ? hasEmptyCourt && isEditor : isEditor && count >= 2;
 
-	// 박스 스타일: 시작 가능=초록 / 4명이지만 대기=호박 / 구성 중=회색
+	// 박스 스타일: 시작 가능=초록 / 4명이지만 예약자 경기중=보라(실제 경기중 코트 주황과 구분) / 구성 중=회색
 	const style = startable
 		? { fill: TEAM_READY_BG, stroke: TEAM_READY_STROKE }
 		: isFull
-			? { fill: TEAM_PLAYING_BG, stroke: TEAM_PLAYING_STROKE }
+			? { fill: TEAM_RESERVED_BG, stroke: TEAM_RESERVED_STROKE }
 			: { fill: TEAM_FORMING_BG, stroke: TEAM_FORMING_STROKE };
 
 	const labelText = !isFull
@@ -125,7 +125,7 @@ const TeamBackground = memo(function TeamBackground({
 		: canStart
 			? "팀 완성 · 4/4"
 			: "4/4 · 예약 포함(경기중)";
-	const labelColor = startable ? TEAM_READY_STROKE : isFull ? TEAM_PLAYING_STROKE : TEXT_SECONDARY;
+	const labelColor = startable ? TEAM_READY_STROKE : isFull ? TEAM_RESERVED_STROKE : TEXT_SECONDARY;
 
 	// 라벨: 매칭확정 가능하면 상태 기준(매칭확정/코트 대기), 그 외(구성 중·4명+예약)는 고정 토글.
 	const ctaLabel = canStart

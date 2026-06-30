@@ -698,3 +698,14 @@
 - 검증: tsc·eslint(변경분)·prod 빌드·테스트 168개 통과
 
 ---
+
+## #52
+
+**Prompt**: 예약포함 경기중 그룹이 경기중과 완전히 같아 헷갈려 다른색 해줘 / 끝나면 커밋하고 푸쉬
+
+**Answer**: 보드에서 실제 경기중 코트(CourtMatchCard)와 "4/4 · 예약 포함(경기중)" 팀 박스(TeamBackground)가 둘 다 동일한 주황색(TEAM_PLAYING_BG #451A03 / TEAM_PLAYING_STROKE #F59E0B)을 써서 구분이 안 되던 게 근본 원인. 실제 경기중 코트는 주황 유지하고, 예약 대기 팀 박스만 색을 분리.
+- 프로젝트 색 규칙("경기중=주황·예약=보라")에 맞춰 예약 팀 박스 전용 색 추가: TEAM_RESERVED_BG #2E1065 / TEAM_RESERVED_STROKE #A78BFA(보라). 박스 안의 보라색 예약(ghost) 자석과 시각적으로 연결되어 의미도 일치.
+- TeamBackground.tsx의 isFull(4명이지만 예약자 경기중) 분기 box style·labelColor를 새 보라 상수로 교체. CourtMatchCard는 그대로 주황.
+- 검증: tsc·eslint(변경분) 통과
+
+---
