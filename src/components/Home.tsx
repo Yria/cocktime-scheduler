@@ -167,7 +167,7 @@ export default function Home({ onStart }: Props) {
 					paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
 				}}
 			>
-				<div className="w-full max-w-sm flex flex-col gap-5 items-center">
+				<div className="app-card flex flex-col gap-5 items-center">
 					<img
 						src="logo.png"
 						className="w-48 max-w-[80%] h-auto object-contain drop-shadow-[0_4px_12px_rgba(11,132,255,0.15)] dark:[filter:brightness(0)_invert(1)]"
@@ -243,7 +243,7 @@ export default function Home({ onStart }: Props) {
 				</div>
 			}
 		>
-			<div className="w-full max-w-sm mx-auto flex flex-col gap-4">
+			<div className="app-card flex flex-col gap-4">
 				{/* 진행 중 세션 이어하기 */}
 				{sessionMeta && (
 					<button

@@ -153,7 +153,7 @@ export default function SchedulePage() {
 				onBack={() => navigate(-1)}
 				onRefresh={handleRefresh}
 			>
-				<div className="w-full max-w-sm mx-auto flex flex-col gap-4">
+				<div className="app-card flex flex-col gap-4">
 					<RecurringRulesPanel
 					rules={rules}
 					placeName={placeName}

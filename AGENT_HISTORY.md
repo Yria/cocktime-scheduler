@@ -754,3 +754,96 @@
 - 검증: 주차식 60개월 전수(매주 누락 0·첫월요일=1주 위반 0), tsc 통과, 테스트 168건 통과, 적대적검증 3관점(SQL·프론트 pass, 마이그레이션 concerns는 draft=회원 미노출 오판으로 무효). EXPANSION_SPEC §4.3 갱신. DB는 supabase db push 로 원격 적용 완료.
 
 ---
+
+## #57
+
+**Prompt**: min-width 가 너무 작은거같아 일부 폰, 타블렛에서 너무 좁게나와. 기본 min width 를 넓혀주고, 자석이 있는 세션화면은 min-width 를 없애줘 pc만 좀 더 널게 해주고
+
+**Answer**: 앱 전체가 md+(≥768px)에서 max-w-sm(384px) 카드로 고정돼 태블릿이 좁은 띠로 나오던 문제를 반응형 폭 토큰으로 전환. 사용자가 말한 "min-width"는 실제로는 모바일 카드의 max-width 제약이었음(레이아웃에 min-width 없음). 구체 수치는 시각 영향이 커서 옵션 제시 후 확정(태블릿 448 / PC 512, 보드 풀폭+PC 1280 상한).
+- 폭 토큰 --card-max 도입: 태블릿(768~1023) 448px, PC(≥1024) 512px — 단일 소스로 모든 계층이 참조.
+- .app-card(본문·헤더 콘텐츠 폭, 전 폭 중앙정렬+캡) / .app-card-shell(md+ 카드 경계=폭캡+중앙+그림자) / .app-board-shell(자석 세션 풀폭, 초광각 PC만 1280 상한) 유틸 신설.
+- App 최상위 래퍼가 /session 여부로 셸 분기 → 보드는 폭 제한 없이 풀폭. 기존 max-w-sm 본문은 .app-card 로, 중복 자체 카드 셸(SessionSetup·LogPage)은 제거, MemberAdmin 폭·글래스 바텀바 폭도 토큰 연동. 모달/시트는 384px 의도적 유지.
+- dead variable --bottom-bar-width(소비처 없음) 정리. tsc·vite build 통과, 독립 리뷰어 4관점(누락·보드 브레이크아웃·CSS 캐스케이드·정렬/패딩) 전원 통과.
+
+---
+
+## #58
+
+**Prompt**: 알림설정에 도움말 있잖아, 그거 항상 나오게 해줘.
+
+**Answer**: 잠금화면 알림 시트(PushSettingsSheet)의 "📲 앱으로 설치하는 방법" 접히는 도움말이, 앱 미설치(!standalone) + 알림 켜기 전(구독 가능) 상태에서만 노출돼 알림을 켜거나 앱을 설치하면 사라지던 것이 원인이었음. "항상"의 범위를 물어 사용자가 '무조건 항상'을 선택.
+- 도움말 <details>를 구독 가능 분기 안에서 빼내 시트 하단에 상시 렌더 → 구독/설치(standalone)/권한 상태와 무관하게 항상 노출.
+- 단 iOS 미설치 상태(ios-needs-install)는 본문이 이미 설치 안내 이미지를 전면 표시하므로 중복 회피 위해 그 상태에서만 하단 도움말 생략.
+- !standalone 게이팅 제거로 불필요해진 standalone/isStandalone import·변수 정리. tsc·eslint 통과.
+
+---
+
+## #59
+
+**Prompt**: 카풀매칭 UX 를 좀 더 편하게 해야할듯. 미배정 동승자를 누르면 지도에 그 사람만 남고, 카풀가능사람은 다 보이게 하고 지도 확대도 같이했으면해
+
+**Answer**: 카풀 공지 빌더의 지도(CarpoolMap)가 roster 전체만 받고 선택 상태를 몰라 전원 마커만 그리던 것이 원인. 선택 상태를 지도까지 전달해 필터링·강조·확대를 지도에서 처리하도록 개선.
+- CarpoolMap에 selected prop 추가: 선택된 동승자가 있으면 운전자는 전부 유지하되 동승자는 선택한 사람만 남기고(나머지 미배정/배정 동승자 마커 숨김), 그 범위에 맞춰 setBounds로 자동 확대(여백 48px, 같은 동끼리 붙어 과확대되는 것 방지 위해 하한 레벨 4).
+- 선택된 동승자 마커는 파란 테두리·확대·최상단(zIndex)으로 강조(makePin에 highlighted 인자). 선택 해제 시 전체 표시로 복귀. 마커 갱신 effect 의존성에 selected 추가.
+- CarpoolAnnounceBuilder에서 지도에 selected 전달, toggleSelect에서 접힌 지도 자동 펼침(effect 내 setState 린트 위반 회피 위해 이벤트 핸들러에서 직접 호출).
+- 다중 선택도 그대로 지원. tsc·eslint 통과.
+
+---
+
+## #60
+
+**Prompt**: 앱으로설치를 권장이 아닌 필수로 해줘
+
+**Answer**: 잠금화면 알림을 켜려면 홈 화면 앱 설치(standalone)를 '필수'로 강제. 문구만 바꿀지 기능까지 강제할지 물어 사용자가 '기능 강제 + 안드로이드·아이폰 둘 다 설치 필요'를 선택, 설치 감지 정확성 검증도 요청.
+- getInstallState()가 iOS뿐 아니라 안드로이드·데스크톱도 미설치(비 standalone)면 needs-install 로 강제(상태명 ios-needs-install→needs-install 일반화). '알림 켜기' 버튼은 설치형(supported)에서만 노출되고, 미설치 상태는 설치 안내만 전면 표시.
+- 감지 정확성: isStandalone()이 display-mode:standalone 만 보던 것을 fullscreen·minimal-ui·window-controls-overlay 까지 인정하도록 확장(삼성 인터넷 등 설치형이 minimal-ui 로 실행될 때 설치했는데 오탐 락아웃되는 것 방지). 매니페스트 display=standalone·navigator.standalone(iOS) 확인.
+- 적대 검증 2관점(락아웃 감지 / 상태머신·UX)에서 나온 엣지케이스 보강: 브라우저 탭에서 설치해도 그 탭은 standalone 이 안 되므로 "설치 후 홈 화면 앱 아이콘으로 열어야 켤 수 있어요" 안내 추가, 카카오톡 등 인앱 브라우저는 설치 불가라 Chrome·Safari 로 열도록 안내(needs-install·unsupported 문구). "(권장)" 문구·직전에 넣었던 하단 상시 도움말 제거(설치 필수 전면 안내로 대체), installGuide 의 highlight 죽은 분기 정리.
+- 알려진 한계(문서화): PC까지 강제라 데스크톱은 설치 안 하면 브라우저 알림도 불가(원하면 PC만 제외 가능). tsc·eslint·build 통과.
+
+---
+
+## #61
+
+**Prompt**: 회원가입할때 이름, 성별, 출생년도, 사는곳 필수로 입력하게 하고, 사는곳 입력하는데에 이 정보는 카풀할때 쓰는거고 저장은 동단위로 한다고 명시해줘.
+
+**Answer**: 회원가입/프로필 폼(ProfileSetup)을 확인하니 네 필드(이름·성별·출생년도·사는곳)는 이미 handleSave에서 전부 필수 검증(미입력 시 저장 차단)되고 있었으나, UI에 필수 표시가 없고 사는곳 안내도 없어 그 두 가지를 보강.
+- 네 라벨에 빨간 별표(requiredMark) 추가로 필수 항목을 명시(프로필 사진만 선택사항이라 별표로 구분).
+- 사는 곳(동) 라벨 아래에 "카풀 매칭에만 쓰이는 정보예요. 동 단위로만 저장됩니다." 안내 문구 추가.
+- 검증 로직은 이미 충분해 그대로 두고 표시/문구만 변경. tsc·eslint·build 통과.
+
+---
+
+## #62
+
+**Prompt**: 지금 사람 선택하면 선택한 누구 여기 태우기가 활성화되는데 그거대신 지도를 크게 만들고 거기서 사람누르면 거기배정하게 해줄 수 있나? 그리고 지도에 사람이름만 있는데 거기 현재 몇명타고있는지 보여주면 더 좋을듯.
+
+**Answer**: 2탭('선택 → 여기 태우기' 버튼) 편성을 지도 마커 탭 배정으로 대체. 미배정 동승자를 고르면 지도가 커지고(180→340px, relayout+bounds 재조정), 운전자 마커가 클릭 가능(파란 강조)해져 누르면 선택된 동승자가 그 차에 배정된다. 운전자 마커 라벨에 현재 탑승 인원을 좌석 대비로 표시(n/좌석 또는 n명, 초과 시 경고색).
+- CarpoolMap: assignedCount·onAssignToDriver·onReady prop 추가. 선택 모드에서 운전자 CustomOverlay를 clickable+pointer-events로 만들고 content에 click 리스너로 배정 콜백 연결. 상단에 "태울 운전자를 누르세요" 힌트 배너. 지도 로드 성공/실패를 onReady로 부모에 통지.
+- CarpoolAnnounceBuilder: assignSelectedTo를 useCallback(selected 의존)으로 안정화해 지도·버튼 공용, assignedCount useMemo, mapActive 상태. 지도로 배정 가능(showMap&&mapActive)하면 DriverGroupCard의 '여기 태우기' 버튼 숨김.
+- fallback 보존: 지도 미가용(키 없음/로드 실패)이거나 거주지 미상 운전자(지도에 마커 없음) 카드는 버튼 유지. 안내 문구도 지도/버튼 상황에 맞게 분기.
+- 렌더 중 setState·ref 접근 린트 위반을 이벤트 핸들러/effect로 회피. tsc·eslint 통과.
+
+---
+
+## #63
+
+**Prompt**: 처음 입장하면 지도엔 배정안된 사람만 보이게 해줘. 만약 전부 다 배정되어있음 지도는 디폴트 접기로
+
+**Answer**: 선택 전 초기 지도 표시를 '운전자 전부 + 미배정 동승자만'으로 좁히고, 전원 배정 시 지도를 기본 접힘으로.
+- CarpoolMap: assignedRiderIds prop 추가. 표시 필터를 운전자=항상, 동승자=선택 모드면 선택된 사람만·선택 전이면 미배정(assignedRiderIds에 없는)만으로 변경. 배정된 동승자는 초기 지도에서 숨김(인원은 운전자 마커 배지로 확인).
+- CarpoolAnnounceBuilder: assignedRiderIds=useMemo(Object.keys(assignment)) 계산해 지도에 전달. 명단 로드 then에서 미배정 동승자 유무(need_ride 중 미배정) 판단해 없으면 setShowMap(false)로 기본 접기(초기 로드 1회).
+- 배정 완료 후 selected 클리어 → 초기 모드 복귀 시 방금 배정된 동승자가 지도에서 자연히 사라져 남은 미배정만 남음. tsc·eslint·build 통과.
+
+---
+
+## #64
+
+**Prompt**: 직접입력도 정규화해줘. 인풋에 입력하면 자동완성시켜주는것도.
+
+**Answer**: 앞서 확인한 대로 동단위 정규화는 KakaoLocationSearch의 검색→선택 경로에만 있었고 직접입력은 정규화 없이 저장되던 문제를, 정규화 유틸 추출 + 자동완성 단일 필드 통합으로 해결.
+- dongFromAddress를 공용 유틸(src/lib/carpool/dong.ts)로 추출. handleSave에서 residence를 이 함수로 정규화해 저장 → 직접입력·검색선택 모두 동 단위로 저장.
+- KakaoLocationSearch를 자동완성+직접입력 겸용 단일 필드로 리팩터: 타이핑 시 300ms 디바운스로 자동 검색(검색 버튼 제거, Enter 즉시), value/onChangeText 제어형 지원. SDK 미로딩/키 없음이어도 입력은 항상 활성(직접입력 폴백 → 거주지 필수값 못 넣어 가입 막히는 회귀 방지).
+- ProfileSetup: 중복이던 별도 직접입력 칸 제거하고 단일 필드로 통합(value=residence, onChangeText, onPick).
+- 적대 검증 2관점 pass. 지적된 minor 2건 반영: dongFromAddress 정규식에서 '로' 제거(테헤란로 등 도로명 오탐 방지, 동/읍/면/가는 유지), 자동완성 검색에 seq 가드 추가(겹친 요청의 stale 응답 폐기·선택 후 무효화). tsc·eslint·build 통과.
+
+---

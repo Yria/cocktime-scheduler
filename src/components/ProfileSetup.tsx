@@ -14,6 +14,7 @@ import {
 	magnetGenderRing,
 } from "../lib/magnetStyle";
 import KakaoLocationSearch from "./common/KakaoLocationSearch";
+import { dongFromAddress } from "../lib/carpool/dong";
 
 // 프로필 입력 모달. 두 모드:
 //   - "signup"(기본): 가입 후 미완 프로필 입력. 닫기 없음(필수). 저장 성공 시 store 갱신으로 Home 이 언마운트.
@@ -94,6 +95,16 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 	const bgColor = gender ? magnetGenderBg(gender) : "#e2e8f0";
 	const inkColor = gender ? magnetGenderInk(gender) : "#64748b";
 
+	// 필수 입력 표시(빨간 별표) — 이름·성별·출생년도·사는곳 모두 필수(프로필 사진만 선택).
+	const requiredMark = (
+		<span
+			style={{ color: "#ef4444", marginLeft: 3, fontWeight: 700 }}
+			aria-hidden="true"
+		>
+			*
+		</span>
+	);
+
 	const handleSave = async () => {
 		if (busy) return;
 		const yearNum = Number(birthYear);
@@ -118,6 +129,8 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 			setError("사는 곳(동)을 입력하세요.");
 			return;
 		}
+		// 검색 선택·직접입력 모두 저장 시 동 단위로 정규화(상세주소·건물명 등 제거).
+		const finalResidence = dongFromAddress(residence);
 		setError(null);
 		setBusy(true);
 		const finalName = name.trim();
@@ -136,7 +149,7 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 			name: finalName,
 			gender,
 			birthYear: yearNum,
-			residence: residence.trim(),
+			residence: finalResidence,
 		});
 		if (ok) {
 			// signup: store 갱신 → Home 이 언마운트. edit: 명시적으로 닫기.
@@ -333,7 +346,7 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 					{/* 이름 (카카오에서 가져온 값 prefill) */}
 					<div>
 						<label className={labelCls} style={labelStyle} htmlFor="ps-name">
-							이름
+							이름{requiredMark}
 						</label>
 						<input
 							id="ps-name"
@@ -353,7 +366,7 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 					{/* 성별 */}
 					<div>
 						<span className={labelCls} style={labelStyle}>
-							성별
+							성별{requiredMark}
 						</span>
 						<div className="flex gap-2">
 							<button
@@ -376,7 +389,7 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 					{/* 출생년도 */}
 					<div>
 						<label className={labelCls} style={labelStyle} htmlFor="ps-year">
-							출생년도
+							출생년도{requiredMark}
 						</label>
 						<input
 							id="ps-year"
@@ -392,24 +405,23 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 						/>
 					</div>
 
-					{/* 사는 곳(동) — 지도 검색으로 선택(동 자동 추출), 직접 입력도 가능 */}
+					{/* 사는 곳(동) — 자동완성 검색 + 직접입력 겸용 단일 필드(동 자동 추출). 저장 시 동 단위로 정규화. */}
 					<div>
-						<label className={labelCls} style={labelStyle} htmlFor="ps-res">
-							사는 곳 (동)
-						</label>
+						<span className={labelCls} style={labelStyle}>
+							사는 곳 (동){requiredMark}
+						</span>
+						<p
+							className="text-[#64748b] dark:text-[rgba(235,235,245,0.55)]"
+							style={{ fontSize: 12, lineHeight: 1.5, marginTop: 2, marginBottom: 8 }}
+						>
+							카풀 매칭에만 쓰이는 정보예요. 동 단위로만 저장됩니다.
+						</p>
 						<KakaoLocationSearch
-							placeholder="동/장소 이름으로 검색 (예: 역삼동)"
+							placeholder="동/장소 이름 입력 (예: 역삼동) → 목록에서 선택"
 							heightPx={170}
-							onPick={(r) => setResidence(r.region)}
-						/>
-						<input
-							id="ps-res"
-							type="text"
 							value={residence}
-							onChange={(e) => setResidence(e.target.value)}
-							placeholder="검색해서 선택하거나 동을 직접 입력"
-							className={inputCls}
-							style={{ ...inputStyle, marginTop: 8 }}
+							onChangeText={setResidence}
+							onPick={(r) => setResidence(r.region)}
 						/>
 					</div>
 

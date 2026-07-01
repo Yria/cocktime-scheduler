@@ -1,9 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- 카카오 지도 SDK는 전역 주입 + 공식 타입 없음 */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { dongFromAddress } from "../../lib/carpool/dong";
 import { hasKakaoKey, loadKakaoMaps } from "../../lib/kakaoMap";
 
-// 카카오 지도 임베드 + 장소 키워드 검색 + 핀 미리보기 공용 컴포넌트.
+// 카카오 지도 임베드 + 장소 키워드 자동완성(타이핑에 따라 디바운스 검색) + 핀 미리보기 공용 컴포넌트.
 // 결과 선택 시 onPick 으로 {이름, 주소, 좌표, 행정구역(동)}을 넘긴다.
+// value/onChangeText 를 주면 이 검색창이 곧 그 텍스트 필드를 겸한다(자동완성 + 직접입력 → 별도 입력칸 불필요).
+// SDK 미로딩/키 없음이어도 입력 자체는 항상 가능(직접입력 폴백); 이때 자동완성만 비활성.
 
 export interface PickedLocation {
 	placeName: string;
@@ -26,6 +29,10 @@ interface Props {
 	onPick: (loc: PickedLocation) => void;
 	placeholder?: string;
 	heightPx?: number;
+	/** 제어형 입력값 — 지정 시 검색창이 이 텍스트 필드를 겸한다(자동완성 + 직접입력). */
+	value?: string;
+	/** 입력 텍스트 변경(직접 타이핑) 콜백. */
+	onChangeText?: (v: string) => void;
 }
 
 const SEOUL = { lat: 37.5666, lng: 126.9784 };
@@ -39,20 +46,16 @@ const inputStyle: React.CSSProperties = {
 	outline: "none",
 };
 
-/** 주소 문자열에서 "구 동" 대략 추출(역지오코딩 실패 시 폴백). */
-function dongFromAddress(addr: string): string {
-	const parts = addr.split(/\s+/);
-	const gu = parts.find((p) => /[구군]$/.test(p));
-	const dong = parts.find((p) => /[동읍면로가]$/.test(p));
-	return [gu, dong].filter(Boolean).join(" ") || addr;
-}
-
 export default function KakaoLocationSearch({
 	onPick,
 	placeholder = "장소·동 이름으로 검색",
 	heightPx = 200,
+	value,
+	onChangeText,
 }: Props) {
-	const [query, setQuery] = useState("");
+	const [internalQuery, setInternalQuery] = useState("");
+	// 제어형(value 지정)이면 입력값은 부모가 소유, 아니면 내부 상태.
+	const query = value !== undefined ? value : internalQuery;
 	const [results, setResults] = useState<KakaoPlace[]>([]);
 	const [sdkError, setSdkError] = useState<string | null>(() =>
 		hasKakaoKey()
@@ -68,6 +71,18 @@ export default function KakaoLocationSearch({
 	const markerRef = useRef<any>(null);
 	const placesRef = useRef<any>(null);
 	const geocoderRef = useRef<any>(null);
+	const debounceRef = useRef<number | null>(null);
+	// 검색 요청 순번 — 겹친 요청의 늦게 도착한 stale 응답을 폐기(최신 응답만 반영).
+	const searchSeqRef = useRef(0);
+
+	// 입력 텍스트 갱신 — 제어형이면 부모로, 아니면 내부 상태.
+	const setText = useCallback(
+		(v: string) => {
+			if (onChangeText) onChangeText(v);
+			else setInternalQuery(v);
+		},
+		[onChangeText],
+	);
 
 	const showOnMap = useCallback((lat: number, lng: number) => {
 		const kakao = kakaoRef.current;
@@ -114,14 +129,22 @@ export default function KakaoLocationSearch({
 		};
 	}, []);
 
-	const handleSearch = () => {
-		const q = query.trim();
-		if (!q) return;
+	// 디바운스 타이머 정리(언마운트).
+	useEffect(
+		() => () => {
+			if (debounceRef.current) window.clearTimeout(debounceRef.current);
+		},
+		[],
+	);
+
+	const runSearch = useCallback((q: string) => {
 		const places = placesRef.current;
 		const kakao = kakaoRef.current;
-		if (!places || !kakao) return;
+		if (!q || !places || !kakao) return;
+		const seq = ++searchSeqRef.current;
 		setHint(null);
 		places.keywordSearch(q, (data: KakaoPlace[], status: any) => {
+			if (seq !== searchSeqRef.current) return; // 늦게 온 stale 응답 폐기
 			const S = kakao.maps.services.Status;
 			if (status === S.OK) {
 				setResults(data.slice(0, 7));
@@ -133,6 +156,19 @@ export default function KakaoLocationSearch({
 				setHint("검색에 실패했어요. 잠시 후 다시 시도해 주세요.");
 			}
 		});
+	}, []);
+
+	// 타이핑 → 입력 반영 + 디바운스 자동완성(300ms). SDK 미준비면 검색만 생략(입력은 유지).
+	const onType = (v: string) => {
+		setText(v);
+		if (debounceRef.current) window.clearTimeout(debounceRef.current);
+		const q = v.trim();
+		if (!q) {
+			setResults([]);
+			setHint(null);
+			return;
+		}
+		debounceRef.current = window.setTimeout(() => runSearch(q), 300);
 	};
 
 	const selectResult = (r: KakaoPlace) => {
@@ -141,10 +177,15 @@ export default function KakaoLocationSearch({
 		const address = r.road_address_name || r.address_name;
 		showOnMap(lat, lng);
 		setResults([]);
+		if (debounceRef.current) window.clearTimeout(debounceRef.current);
+		searchSeqRef.current++; // 선택 후 뒤늦게 오는 검색 응답이 목록을 되살리지 않게 무효화
 		const kakao = kakaoRef.current;
 		const geocoder = geocoderRef.current;
-		const emit = (region: string) =>
+		const emit = (region: string) => {
+			// 제어형은 onPick 이 부모 value 를 바꿔 입력창에 동이 표시됨. 비제어형은 직접 표시.
+			if (value === undefined) setInternalQuery(region);
 			onPick({ placeName: r.place_name, address, lat, lng, region });
+		};
 		if (kakao && geocoder) {
 			// 좌표 → 행정구역(동) 변환. 법정동(B) 우선.
 			geocoder.coord2RegionCode(lng, lat, (res: any[], status: any) => {
@@ -164,46 +205,23 @@ export default function KakaoLocationSearch({
 		}
 	};
 
-	const searchDisabled = !!sdkError || !mapReady;
-
 	return (
 		<div>
-			<div className="flex gap-2">
-				<input
-					type="text"
-					value={query}
-					onChange={(e) => setQuery(e.target.value)}
-					onKeyDown={(e) => {
-						if (e.key === "Enter") {
-							e.preventDefault();
-							handleSearch();
-						}
-					}}
-					placeholder={placeholder}
-					disabled={searchDisabled}
-					className={inputCls}
-					style={{ ...inputStyle, flex: 1 }}
-				/>
-				<button
-					type="button"
-					onClick={handleSearch}
-					disabled={searchDisabled}
-					style={{
-						padding: "0 16px",
-						borderRadius: 10,
-						fontSize: 14,
-						fontWeight: 700,
-						color: "#0b84ff",
-						background: "rgba(11,132,255,0.12)",
-						border: "none",
-						cursor: searchDisabled ? "not-allowed" : "pointer",
-						opacity: searchDisabled ? 0.5 : 1,
-						whiteSpace: "nowrap",
-					}}
-				>
-					검색
-				</button>
-			</div>
+			<input
+				type="text"
+				value={query}
+				onChange={(e) => onType(e.target.value)}
+				onKeyDown={(e) => {
+					if (e.key === "Enter") {
+						e.preventDefault();
+						if (debounceRef.current) window.clearTimeout(debounceRef.current);
+						runSearch(query.trim());
+					}
+				}}
+				placeholder={placeholder}
+				className={inputCls}
+				style={{ ...inputStyle, width: "100%" }}
+			/>
 
 			{!sdkError && !mapReady && (
 				<p
@@ -214,7 +232,7 @@ export default function KakaoLocationSearch({
 				</p>
 			)}
 
-			{/* 검색 결과 */}
+			{/* 자동완성 결과 */}
 			{results.length > 0 && (
 				<ul
 					className="mt-2 bg-white dark:bg-[rgba(30,30,35,0.8)] border border-[rgba(0,0,0,0.12)] dark:border-[rgba(255,255,255,0.12)]"

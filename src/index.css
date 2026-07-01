@@ -123,17 +123,53 @@ body {
 	}
 }
 
-/* ── Fixed bottom bar widths ───────────────────────────────── */
-/* full: 768px 미만 = 100vw / 768px 이상 = 384px (컨테이너와 동일) */
-/* glass: full에서 좌우 16px씩 뺀 값 (floating 덮개용) */
+/* ── 앱 카드 폭 토큰 ─────────────────────────────────────────
+   일반 화면(홈·일정·설정·로그 등) 카드 폭. 기본 448(md+ 태블릿), PC(≥1024)에서 512.
+   모바일(<768)에선 카드 셸(.app-card-shell)을 적용하지 않아 풀블리드이고,
+   본문 콘텐츠 폭(.app-card)만 이 값으로 캡(폰 폭보다 커서 사실상 풀폭).
+   글래스 바텀바 폭(--glass-bar-width)도 이 토큰에 연동한다. */
 :root {
-	--bottom-bar-width: 100vw;
+	--card-max: 28rem; /* 448px */
+}
+@media (min-width: 1024px) {
+	:root {
+		--card-max: 32rem; /* 512px */
+	}
+}
+
+/* 페이지 본문 콘텐츠 — 모든 폭에서 중앙 정렬 + 카드 폭 캡(헤더·본문 정렬 기준 통일). */
+.app-card {
+	width: 100%;
+	max-width: var(--card-max);
+	margin-left: auto;
+	margin-right: auto;
+}
+
+/* 카드 셸 — md+ 에서만 카드 경계(폭 캡 + 중앙 + 그림자)로 떠 보이게. 모바일은 풀블리드. */
+@media (min-width: 768px) {
+	.app-card-shell {
+		max-width: var(--card-max);
+		margin-left: auto;
+		margin-right: auto;
+		box-shadow: 0 0 80px rgba(0, 0, 0, 0.4);
+	}
+}
+
+/* 보드(자석 세션) 셸 — 폭 제한 없이 풀폭, 초광각 PC에서만 1280 상한(중앙 정렬). */
+.app-board-shell {
+	max-width: 1280px;
+	margin-left: auto;
+	margin-right: auto;
+}
+
+/* ── Glass bottom bar width ───────────────────────────────── */
+/* floating 바텀 덮개(SessionSetup 등): 768px 미만 = 100vw-32px / 768px 이상 = 카드 폭(--card-max)-32px */
+:root {
 	--glass-bar-width: calc(100vw - 32px);
 }
 @media (min-width: 768px) {
 	:root {
-		--bottom-bar-width: 384px;
-		--glass-bar-width: 352px;
+		--glass-bar-width: calc(var(--card-max) - 32px);
 	}
 }
 

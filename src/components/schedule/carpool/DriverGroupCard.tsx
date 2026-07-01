@@ -2,11 +2,14 @@ import PlayerAvatar from "../../shared/PlayerAvatar";
 import type { CarpoolMember } from "../../../lib/supabase/carpool";
 
 // 운전자 1명 + 그 차에 배정된 동승자 칩. 선택된 동승자가 있으면 '여기 태우기' 노출.
+// 단 지도로 배정 가능한 상태(showAssignButton=false)면 버튼을 숨기고 지도 마커 탭으로 배정한다.
 
 interface Props {
 	driver: CarpoolMember;
 	riders: CarpoolMember[];
 	selectedCount: number;
+	/** 지도가 없어 지도 배정이 불가할 때만 '여기 태우기' 버튼 노출(기본 true) */
+	showAssignButton?: boolean;
 	onAssignSelected: () => void;
 	onRemoveRider: (riderId: string) => void;
 }
@@ -15,6 +18,7 @@ export default function DriverGroupCard({
 	driver,
 	riders,
 	selectedCount,
+	showAssignButton = true,
 	onAssignSelected,
 	onRemoveRider,
 }: Props) {
@@ -91,7 +95,7 @@ export default function DriverGroupCard({
 				</div>
 			)}
 
-			{selectedCount > 0 && (
+			{selectedCount > 0 && showAssignButton && (
 				<button
 					type="button"
 					onClick={onAssignSelected}

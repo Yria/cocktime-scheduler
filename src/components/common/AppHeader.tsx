@@ -15,9 +15,9 @@ interface Props {
  * 앱 스타일 상단 네비 바. body 자연 스크롤에서 sticky 로 상단에 고정된다(flex 셸에선 flex-shrink-0).
  * safe-area-inset-top 을 흡수해 노치/상태바 영역까지 덮는다.
  *
- * 가로 정렬: 본문 콘텐츠와 동일한 중첩 컨테이너(외부 1.25rem 좌우 패딩 + 내부 max-w-sm mx-auto)를
- * 써서 모든 화면폭에서 nav 내용이 본문 거터(20px)와 정확히 맞물린다. max-w-sm 를 패딩 안쪽에서
- * 캡하므로(384px 초과 폰에서도) 본문과 같은 기준으로 중앙 정렬되어 좌우가 어긋나지 않는다.
+ * 가로 정렬: 본문 콘텐츠와 동일한 중첩 컨테이너(외부 1.25rem 좌우 패딩 + 내부 .app-card)를
+ * 써서 모든 화면폭에서 nav 내용이 본문 거터(20px)와 정확히 맞물린다. .app-card 가 카드 폭
+ * (--card-max)을 패딩 안쪽에서 캡하므로 본문과 같은 기준으로 중앙 정렬되어 좌우가 어긋나지 않는다.
  */
 export default function AppHeader({ title, onBack, logo, right }: Props) {
 	return (
@@ -27,7 +27,7 @@ export default function AppHeader({ title, onBack, logo, right }: Props) {
 		>
 			<div style={{ paddingLeft: "1.25rem", paddingRight: "1.25rem" }}>
 				<div
-					className="w-full max-w-sm mx-auto flex items-center"
+					className="app-card flex items-center"
 					style={{ height: 52 }}
 				>
 					{onBack && (

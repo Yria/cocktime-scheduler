@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import SessionBoard from "./components/board/SessionBoard";
 import Toaster from "./components/common/Toaster";
 import Home from "./components/Home";
@@ -28,6 +28,7 @@ import type { Player, SessionSettings } from "./types";
 
 export default function App() {
 	const navigate = useNavigate();
+	const location = useLocation();
 	const navRef = useRef(navigate);
 	// 최신 navigate를 ref에 동기화(렌더 중 ref 변경 금지 → effect로)
 	useEffect(() => {
@@ -176,7 +177,7 @@ export default function App() {
 
 	if (!sessionChecked) {
 		return (
-			<div className="md:max-w-sm md:mx-auto app-shell-minh flex items-center justify-center">
+			<div className="app-card-shell app-shell-minh flex items-center justify-center">
 				<p className="text-gray-400 dark:text-gray-500 text-sm">연결 중...</p>
 			</div>
 		);
@@ -187,8 +188,12 @@ export default function App() {
 	const sessionGuarded = (element: React.ReactNode) =>
 		sessionMeta ? element : <Navigate to="/" replace />;
 
+	// 보드(자석 세션)는 폭 제한 없이 풀폭(초광각 PC만 1280 상한) — .app-board-shell.
+	// 그 외 일반 화면은 md+ 카드 셸(--card-max 폭 + 그림자) — .app-card-shell.
+	const isBoard = location.pathname.startsWith("/session");
+
 	return (
-		<div className="md:max-w-sm md:mx-auto md:shadow-[0_0_80px_rgba(0,0,0,0.4)]">
+		<div className={isBoard ? "app-board-shell" : "app-card-shell"}>
 			<Routes>
 				<Route path="/" element={<Home onStart={handleHomeStart} />} />
 				<Route

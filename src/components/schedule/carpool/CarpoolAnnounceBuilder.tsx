@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { hasKakaoKey } from "../../../lib/kakaoMap";
 import { fmtRange } from "../../../lib/schedule/timeFmt";
 import {
 	type CarpoolMember,
@@ -58,6 +59,7 @@ export default function CarpoolAnnounceBuilder({
 		() => s.carpool_groups?.footer ?? DEFAULT_FOOTER,
 	);
 	const [showMap, setShowMap] = useState(true);
+	const [mapActive, setMapActive] = useState(() => hasKakaoKey());
 	const [copied, setCopied] = useState(false);
 	// 마운트 시점의 저장 편성만 사용 — 저장→스토어 갱신으로 prop 이 바뀌어도 편성을 리셋하지 않도록.
 	const savedRef = useRef(s.carpool_groups);
@@ -82,6 +84,11 @@ export default function CarpoolAnnounceBuilder({
 			}
 			setAssignment(a);
 			setRoster(r);
+			// 처음 입장 시 미배정 동승자가 없으면(전원 배정/동승자 없음) 지도는 기본 접기
+			const hasUnassigned = r.some(
+				(m) => m.role === "need_ride" && !(m.member_id in a),
+			);
+			if (!hasUnassigned) setShowMap(false);
 		});
 		return () => {
 			cancelled = true;
@@ -109,6 +116,20 @@ export default function CarpoolAnnounceBuilder({
 		() => riders.filter((r) => !(r.member_id in assignment)),
 		[riders, assignment],
 	);
+	// 이미 배정된 동승자 id(선택 전 초기 지도에서 미배정만 남기는 데 사용)
+	const assignedRiderIds = useMemo(
+		() => new Set(Object.keys(assignment)),
+		[assignment],
+	);
+	// 지도 운전자 마커에 표시할 현재 탑승 인원(driver_member_id → 배정 수)
+	const assignedCount = useMemo(() => {
+		const c: Record<string, number> = {};
+		for (const d of drivers)
+			c[d.member_id] = ridersByDriver.get(d.member_id)?.length ?? 0;
+		return c;
+	}, [drivers, ridersByDriver]);
+	// 지도가 보이고 사용 가능하면 지도 마커 탭으로 배정 → 카드의 '여기 태우기' 버튼 숨김
+	const mapAssign = showMap && mapActive;
 
 	const announceGroups: AnnounceGroup[] = useMemo(
 		() =>
@@ -152,22 +173,28 @@ export default function CarpoolAnnounceBuilder({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [assignment, header, footer, roster]);
 
-	const toggleSelect = (id: string) =>
+	const toggleSelect = (id: string) => {
 		setSelected((prev) => {
 			const next = new Set(prev);
 			if (next.has(id)) next.delete(id);
 			else next.add(id);
 			return next;
 		});
-	const assignSelectedTo = (driverId: string) => {
-		if (selected.size === 0) return;
-		setAssignment((prev) => {
-			const next = { ...prev };
-			for (const id of selected) next[id] = driverId;
-			return next;
-		});
-		setSelected(new Set());
+		// 동승자를 고르면 지도에서 주변 운전자를 바로 확인할 수 있게 접힌 지도를 펼친다.
+		setShowMap(true);
 	};
+	const assignSelectedTo = useCallback(
+		(driverId: string) => {
+			if (selected.size === 0) return;
+			setAssignment((prev) => {
+				const next = { ...prev };
+				for (const id of selected) next[id] = driverId;
+				return next;
+			});
+			setSelected(new Set());
+		},
+		[selected],
+	);
 	const removeRider = (id: string) =>
 		setAssignment((prev) => {
 			const next = { ...prev };
@@ -245,7 +272,16 @@ export default function CarpoolAnnounceBuilder({
 									{showMap ? "지도 접기 ⌃" : "지도 펼치기 ⌄"}
 								</button>
 							</div>
-							{showMap && <CarpoolMap roster={roster} />}
+							{showMap && (
+				<CarpoolMap
+					roster={roster}
+					selected={selected}
+					assignedRiderIds={assignedRiderIds}
+					assignedCount={assignedCount}
+					onAssignToDriver={assignSelectedTo}
+					onReady={setMapActive}
+				/>
+			)}
 						</div>
 
 						{/* 그룹 편성 */}
@@ -274,6 +310,8 @@ export default function CarpoolAnnounceBuilder({
 										driver={d}
 										riders={ridersByDriver.get(d.member_id) ?? []}
 										selectedCount={selected.size}
+										// 거주지 미상 운전자는 지도에 마커가 없어 지도 배정 불가 → 버튼 유지
+										showAssignButton={!mapAssign || !d.residence?.trim()}
 										onAssignSelected={() => assignSelectedTo(d.member_id)}
 										onRemoveRider={removeRider}
 									/>
@@ -291,7 +329,9 @@ export default function CarpoolAnnounceBuilder({
 									className="text-[#0a5cb0] dark:text-[#7ab6ff]"
 									style={{ fontSize: 12, fontWeight: 700 }}
 								>
-									{selected.size}명 선택됨 · 위 운전자 카드의 '여기 태우기'를 누르세요
+									{mapAssign
+										? `${selected.size}명 선택됨 · 지도에서 태울 운전자를 누르세요`
+										: `${selected.size}명 선택됨 · 위 운전자 카드의 '여기 태우기'를 누르세요`}
 								</div>
 							)}
 							<RiderPool

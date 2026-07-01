@@ -174,7 +174,7 @@ export default function SessionSetup({ onStart }: Props) {
 
 	return (
 		<div
-			className="app-shell-minh md:max-w-sm md:mx-auto bg-[#fafbff] dark:bg-[#0f172a]"
+			className="app-shell-minh bg-[#fafbff] dark:bg-[#0f172a]"
 			style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
 		>
 			<AppHeader

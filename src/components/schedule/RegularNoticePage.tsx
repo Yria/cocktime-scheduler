@@ -69,7 +69,7 @@ export default function RegularNoticePage() {
 	return (
 		<AppScreen title="대진표 · 안내" onBack={() => navigate(-1)}>
 			<style>{NOTICE_CSS}</style>
-			<div className="w-full max-w-md mx-auto flex flex-col gap-4">
+			<div className="app-card flex flex-col gap-4">
 				{/* 회차 헤더 */}
 				<div className="flex flex-col gap-1">
 					<div className="flex items-center gap-2">

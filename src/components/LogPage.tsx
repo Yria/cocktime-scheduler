@@ -88,7 +88,7 @@ export default function LogPage() {
 
 	return (
 		<div
-			className="app-shell-minh md:max-w-sm md:mx-auto bg-[#fafbff] dark:bg-[#0f172a]"
+			className="app-shell-minh bg-[#fafbff] dark:bg-[#0f172a]"
 		>
 			<AppHeader
 				title="매치 로그"

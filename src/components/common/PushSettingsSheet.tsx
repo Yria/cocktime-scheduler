@@ -2,7 +2,7 @@ import { Download, MonitorDown, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import pushInstallAndroid from "../../assets/push-install-android.webp";
 import pushInstallIos from "../../assets/push-install-ios.webp";
-import { isAndroid, isIOS, isStandalone } from "../../lib/push/platform";
+import { isAndroid, isIOS } from "../../lib/push/platform";
 import { useAuthStore } from "../../store/authStore";
 import { pushActions, usePushStore } from "../../store/pushStore";
 import { toast } from "../../store/toastStore";
@@ -73,7 +73,6 @@ export default function PushSettingsSheet({ onClose }: Props) {
 	const permission = usePushStore((s) => s.permission);
 	const subscribed = usePushStore((s) => s.subscribed);
 	const busy = usePushStore((s) => s.busy);
-	const standalone = isStandalone();
 
 	// 모달을 열 때 현재 구독 가능 상태를 최신으로 다시 파악(권한·구독·설치 여부).
 	const [checking, setChecking] = useState(true);
@@ -118,7 +117,7 @@ export default function PushSettingsSheet({ onClose }: Props) {
 
 	// 플랫폼별 "홈 화면에 앱 추가" 안내. 모바일(iOS/안드로이드)은 스크린샷 이미지,
 	// 데스크톱은 텍스트 단계로 안내한다.
-	const installGuide = (highlight: boolean) => {
+	const installGuide = () => {
 		const img = isIOS() ? pushInstallIos : isAndroid() ? pushInstallAndroid : null;
 		if (img) {
 			// 스크린샷 이미지가 설치 절차를 전부 설명하므로 부가 텍스트는 두지 않는다(이미지만).
@@ -137,13 +136,7 @@ export default function PushSettingsSheet({ onClose }: Props) {
 		}
 		// 데스크톱: 이미지가 없어 텍스트 단계로 안내
 		return (
-			<div
-				className={
-					highlight
-						? "rounded-xl p-3.5 bg-[rgba(11,132,255,0.06)] dark:bg-[rgba(11,132,255,0.12)]"
-						: ""
-				}
-			>
+			<div className="rounded-xl p-3.5 bg-[rgba(11,132,255,0.06)] dark:bg-[rgba(11,132,255,0.12)]">
 				<p
 					className="text-[#0f1724] dark:text-white"
 					style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}
@@ -191,11 +184,20 @@ export default function PushSettingsSheet({ onClose }: Props) {
 		);
 	} else if (installState === "unsupported") {
 		content = note(
-			"이 브라우저는 잠금화면 알림을 지원하지 않아요. 최신 Safari/Chrome에서 다시 시도해 주세요.",
+			"이 브라우저는 잠금화면 알림을 지원하지 않아요. 카카오톡 등 인앱 브라우저라면 Chrome·Safari로 열어 주세요.",
 		);
-	} else if (installState === "ios-needs-install") {
-		// 구독 불가 — iOS는 홈 화면 설치 필요 → 스크린샷 안내(이미지가 절차를 모두 설명, 텍스트 생략)
-		content = installGuide(true);
+	} else if (installState === "needs-install") {
+		// 알림 필수 조건 — 홈 화면에 앱 설치 필요(iOS·Android·데스크톱 공통).
+		// 필수 안내 문구 + 플랫폼별 설치 안내(모바일=스크린샷 이미지, 데스크톱=단계) + 후속 안내.
+		content = (
+			<div className="flex flex-col gap-2.5">
+				{note("잠금화면 알림을 받으려면 먼저 홈 화면에 앱을 설치해야 해요.")}
+				{installGuide()}
+				{note(
+					"설치한 뒤에는 브라우저가 아니라 홈 화면의 앱 아이콘으로 열어야 알림을 켤 수 있어요. (카카오톡 등 인앱 브라우저에서는 설치가 안 되니 Chrome·Safari로 열어 주세요.)",
+				)}
+			</div>
+		);
 	} else if (permission === "denied") {
 		// 구독 불가 — 권한 차단됨 → 해제 도움말
 		content = (
@@ -224,7 +226,7 @@ export default function PushSettingsSheet({ onClose }: Props) {
 			</div>
 		);
 	} else {
-		// 구독 가능 — 켜기 (+ 미설치면 설치 권장 도움말)
+		// 구독 가능 — 여기 도달하면 이미 홈 화면 설치(standalone) 상태이므로 바로 켜기만 안내.
 		content = (
 			<div className="flex flex-col gap-3">
 				{note("앱을 닫아도 대기→참석 확정, 일정 변경 알림을 받을 수 있어요.")}
@@ -236,17 +238,6 @@ export default function PushSettingsSheet({ onClose }: Props) {
 				>
 					{busy ? "처리 중…" : "잠금화면 알림 켜기"}
 				</button>
-				{!standalone && (
-					<details className="mt-1">
-						<summary
-							className="text-[#0b84ff] cursor-pointer"
-							style={{ fontSize: 13, fontWeight: 600, listStyle: "none" }}
-						>
-							📲 앱으로 설치하는 방법 (권장)
-						</summary>
-						<div className="mt-2">{installGuide(false)}</div>
-					</details>
-				)}
 			</div>
 		);
 	}
