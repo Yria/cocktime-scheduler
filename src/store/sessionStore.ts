@@ -675,6 +675,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		// (그래서 가져오기가 직전 보유자로 되돌아간다) 전용 board_takeover_editor로 무조건 서버 row를 나로 덮어쓴다.
 		// 직전 보유자는 다음 heartbeat(CAS) 거부 + 실시간 row 수신으로 읽기 모드로 떨어진다(단일 편집자 수렴).
 		// RPC를 먼저 await 후 점유 확정 — 낙관적 선점이 직전 보유자 heartbeat row 갱신과 겹쳐 되돌아가는 레이스를 피한다.
+		// 편집 권한 획득은 운영진(isAdmin)만 — 일반 회원은 읽기 전용이라 점유/탈취 불가.
+		if (!useAuthStore.getState().isAdmin) return;
 		const { _clientId, _myName, isEditor, presenceCount } = get();
 		if (isEditor || !_clientId) return;
 		const name = _myName ?? "기기";
@@ -704,6 +706,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 	claimEditingIfFree: () => {
 		// 첫 편집 시 자유 상태면 점유(boardStore.claimEdit 경로). 남이 유효 lease면 점유 안 함(보기 전용 유지).
+		// 편집 권한 획득은 운영진(isAdmin)만 — 일반 회원은 자유 상태여도 점유하지 않고 읽기 전용 유지.
+		if (!useAuthStore.getState().isAdmin) return;
 		const { isEditor, lockFree, _clientId } = get();
 		if (isEditor || !lockFree || !_clientId) return;
 		claimNow(get, set);

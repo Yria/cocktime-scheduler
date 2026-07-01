@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import ModalSheet from "../common/ModalSheet";
 import { useSessionStore } from "../../store/sessionStore";
 import { useBoardStore } from "../../store/boardStore";
+import { useAuthStore } from "../../store/authStore";
 import { TOOLBAR_H } from "../../lib/board/constants";
 
 export { TOOLBAR_H };
@@ -34,6 +35,8 @@ const BoardToolbar = memo(function BoardToolbar() {
 	const myClientId = useSessionStore((s) => s._clientId);
 	const claimEditor = useSessionStore((s) => s.claimEditor);
 	const handoffEditor = useSessionStore((s) => s.handoffEditor);
+	// 편집 권한 획득은 운영진만 — 일반 회원은 읽기 전용(가져오기 버튼 숨김).
+	const isAdmin = useAuthStore((s) => s.isAdmin);
 	// 모달 표시는 공유 플래그(헤더 칩 + 보기전용 칩 둘 다 연다)
 	const showPresence = useBoardStore((s) => s.presenceModalOpen);
 	const setShowPresence = useBoardStore((s) => s.setPresenceModalOpen);
@@ -256,13 +259,16 @@ const BoardToolbar = memo(function BoardToolbar() {
 						})}
 					</ul>
 					<p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-						{lockFree
-							? "현재 아무도 편집하지 않습니다. 편집하면 자동으로 권한을 갖습니다."
-							: isEditor
-								? "내가 편집 권한을 갖고 있습니다."
-								: `${holderName ?? "다른 기기"}님이 편집 중입니다. 권한을 가져오면 상대는 보기 전용이 됩니다.`}
+						{!isAdmin
+							? "편집은 운영진만 가능합니다. 일반 회원은 보기 전용입니다."
+							: lockFree
+								? "현재 아무도 편집하지 않습니다. 편집하면 자동으로 권한을 갖습니다."
+								: isEditor
+									? "내가 편집 권한을 갖고 있습니다."
+									: `${holderName ?? "다른 기기"}님이 편집 중입니다. 권한을 가져오면 상대는 보기 전용이 됩니다.`}
 					</p>
-					{!isEditor && (
+					{/* 편집 권한 가져오기는 운영진만 — 일반 회원은 읽기 전용이라 버튼 노출 안 함. */}
+					{!isEditor && isAdmin && (
 						<button type="button" onClick={onTakeover} className="btn-lq-primary w-full py-3 text-sm">
 							편집 권한 가져오기
 						</button>

@@ -847,3 +847,39 @@
 - 적대 검증 2관점 pass. 지적된 minor 2건 반영: dongFromAddress 정규식에서 '로' 제거(테헤란로 등 도로명 오탐 방지, 동/읍/면/가는 유지), 자동완성 검색에 seq 가드 추가(겹친 요청의 stale 응답 폐기·선택 후 무효화). tsc·eslint·build 통과.
 
 ---
+
+## #65
+
+**Prompt**: 편집권한 가져오는거 운영진만 하게 해줘. 일반회원은 읽기만 가능해
+
+**Answer**: 편집권한을 얻는 유일한 두 근본 경로에서 운영진(isAdmin) 게이팅을 추가해 일반 회원은 읽기 전용으로 고정했다.
+- sessionStore의 claimEditor(명시적 '편집 권한 가져오기'/강제 탈취)와 claimEditingIfFree(자유 상태 자동 점유·드래그 첫 편집) 두 함수 시작에서 useAuthStore.getState().isAdmin이 false면 즉시 return.
+- 이 두 함수가 편집권을 얻는 유일한 진입점이므로 일반 회원은 isEditor가 절대 true가 되지 않음 → 이미 isEditor로 게이팅된 모든 편집 액션(드래그 배치·경기 시작/완료·콕확인·저장·세션 종료)이 자동 차단. 서버 lease row를 건드리지 않아 단일 편집자 동시편집 불변식에도 영향 없음.
+- BoardToolbar에 isAdmin 구독 추가: 접속자/편집권한 모달의 '편집 권한 가져오기' 버튼을 운영진에게만 노출, 일반 회원에겐 '편집은 운영진만 가능합니다. 일반 회원은 보기 전용입니다.' 안내 문구 표시.
+- tsc 통과, claim 함수 참조 테스트 없어 영향 없음.
+
+---
+
+## #65
+
+**Prompt**: 현재 프로필사진없을때 이름으로 하는데 성빼고 이름첫번째로 하게 해줘.
+
+**Answer**: 프로필 사진이 없을 때 아바타 이니셜을 '성을 제외한 이름 첫 글자'로 변경. 기존에는 4곳에서 `name.charAt(0)`(성 표시)을 각각 사용 중이었음.
+- `src/lib/player.ts`에 공용 유틸 `getNameInitial()` 신설: 한글 이름은 성(1글자, 복성은 2글자)을 뺀 첫 글자(김민수→민, 남궁민수→민), 성만 있는 1글자·영문 이름은 첫 글자 그대로.
+- 복성 리스트(남궁·황보·제갈·선우·독고·동방·사공·서문)로 2글자 성 판별.
+- PlayerAvatar·PlayerCard·PlayerMagnet·ProfileSetup 4곳의 `charAt(0)`을 `getNameInitial()`로 교체(ProfileSetup은 `|| "+"` 유지).
+- 다른 아바타 폴백 위치 없음 확인, tsc 통과.
+
+---
+
+## #66
+
+**Prompt**: 서버 RPC에도 is_admin 강제 넣어줘
+
+**Answer**: 클라이언트 게이팅에 이어 편집권을 '설정'하는 모든 서버 RPC에 public.is_admin() 강제를 추가하는 마이그레이션을 작성했다(forward-only, replay-safe).
+- 대상 5개 함수 재정의(CREATE OR REPLACE, 시그니처 유지): board_claim_editor(점유/heartbeat), board_takeover_editor(탈취), board_handoff_editor(양도), board_save_drafts(저장+self-claim), board_assert_editor(경기 RPC assign/complete/set_roster의 self-claim 가드).
+- 게이팅 방식: 각 함수의 UPDATE WHERE 절에 public.is_admin()을 AND로 추가. 비운영진이면 0행 → 기존 실패 경로로 수렴(SQL 함수는 RETURNING 빈 결과→클라 null 처리·resync, board_assert_editor는 'not editor' 예외로 롤백). 콘솔 에러가 안 쌓이도록 exception 대신 조용한 0행 실패 채택.
+- board_release_editor(해제)는 권한 포기라 게이팅 제외. is_admin()은 SECURITY DEFINER 중첩 호출에서도 auth.uid()가 원 호출자를 가리켜 정확히 판정, search_path='' 이므로 public. 스키마 한정 호출.
+- Docker 미실행으로 로컬 supabase 적용 검증은 못 함(문법 리스크는 낮음). 배포 시 supabase db push 필요.
+
+---
