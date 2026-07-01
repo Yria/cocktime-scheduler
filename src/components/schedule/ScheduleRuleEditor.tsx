@@ -200,7 +200,8 @@ export default function ScheduleRuleEditor({
 							요일
 						</span>
 						<div className="flex gap-1.5">
-							{WEEKDAY_LABELS.map((label, dow) => {
+							{[1, 2, 3, 4, 5, 6, 0].map((dow) => {
+								const label = WEEKDAY_LABELS[dow];
 								const active = dow === dayOfWeek;
 								return (
 									<button

@@ -741,3 +741,16 @@
 - 검증: tsc 통과.
 
 ---
+
+## #56
+
+**Prompt**: 일정 자동추가하는데 홀수주, 짝수주조건이 제대로 작동하지 않는것같아 확인해봐 (후속: 주차 기준을 "첫번째 월요일이 있는 주=1주차"로, 달력을 월~일 시작으로 변경)
+
+**Answer**: 반복일정 홀수주/짝수주 오작동 근본원인 규명 및 월요일 기준 주차로 전환.
+- 근본원인: 뷰 recurring_valid_occurrences 의 주차식이 floor((day-1)/7)+1 = "그 달의 N번째 해당요일"이라, 사용자가 달력에서 보는 주차와 매월 1일 시작요일에 따라 어긋나(홀/짝이 통째로 뒤집힘) 달마다 다르게 동작. RPC(sync_schedule_occurrences)·재동기화·타임존은 정상이었음.
+- 새 정의(월요일 기준): 각 날짜가 속한 월~일 주의 '그 주 월요일'의 day-of-month 로 주차 매김(floor((weekMondayDay-1)/7)+1). 첫 월요일 주=1주차, 선행 부분주는 그 주 월요일이 전달에 있어 전달 마지막주(4·5)로 편입 → 매주{1,2,3,4,5} 누락 0. 신규 마이그레이션 20260701010000 로 뷰 재정의(security_invoker=on·anon/authenticated REVOKE 유지).
+- 초기 first_monday 가드식은 첫 월요일 이전 날을 "0주"로 제외해 "매주" 첫 발생을 누락시키는 결함이 있어 week_monday 방식으로 교체(검증으로 발견).
+- 달력 UI 월~일 시작: calendar.ts monthGrid(mondayOffset=(startDow+6)%7), ScheduleCalendar 요일헤더/ScheduleRuleEditor 요일버튼을 [1..6,0] 순서로 렌더(실제 dow 매핑 유지).
+- 검증: 주차식 60개월 전수(매주 누락 0·첫월요일=1주 위반 0), tsc 통과, 테스트 168건 통과, 적대적검증 3관점(SQL·프론트 pass, 마이그레이션 concerns는 draft=회원 미노출 오판으로 무효). EXPANSION_SPEC §4.3 갱신. DB는 supabase db push 로 원격 적용 완료.
+
+---

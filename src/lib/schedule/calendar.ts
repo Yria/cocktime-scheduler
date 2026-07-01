@@ -62,13 +62,18 @@ export interface GridCell {
 	inMonth: boolean;
 }
 
-/** 월 달력 6주(42칸) 그리드. 일요일 시작. UTC 산술로 DST 영향 제거. */
+/**
+ * 월 달력 6주(42칸) 그리드. 월요일 시작. UTC 산술로 DST 영향 제거.
+ * 월요일 시작은 반복 규칙 주차(week_ordinals)의 "월요일 기준 주차" 정의와 동일 기준
+ * (마이그레이션 20260701010000 · recurring_valid_occurrences 뷰).
+ */
 export function monthGrid(year: number, month: number): GridCell[] {
 	const first = new Date(Date.UTC(year, month, 1));
-	const startDow = first.getUTCDay(); // 0=일
+	const startDow = first.getUTCDay(); // 0=일 .. 6=토
+	const mondayOffset = (startDow + 6) % 7; // 1일부터 그 주 월요일까지의 선행 칸 수
 	const cells: GridCell[] = [];
 	for (let i = 0; i < 42; i++) {
-		const d = new Date(Date.UTC(year, month, 1 - startDow + i));
+		const d = new Date(Date.UTC(year, month, 1 - mondayOffset + i));
 		cells.push({
 			date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`,
 			day: d.getUTCDate(),

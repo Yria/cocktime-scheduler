@@ -121,11 +121,11 @@ export default function ScheduleCalendar({
 				</button>
 			</div>
 
-			{/* 요일 헤더 */}
+			{/* 요일 헤더 (월~일) */}
 			<div className="grid grid-cols-7 mb-1">
-				{WEEKDAY_LABELS.map((label, dow) => (
+				{[1, 2, 3, 4, 5, 6, 0].map((dow) => (
 					<div
-						key={label}
+						key={dow}
 						style={{
 							textAlign: "center",
 							fontSize: 12,
@@ -134,7 +134,7 @@ export default function ScheduleCalendar({
 							color: dowColor(dow),
 						}}
 					>
-						{label}
+						{WEEKDAY_LABELS[dow]}
 					</div>
 				))}
 			</div>
