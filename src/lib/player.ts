@@ -18,3 +18,23 @@ export function makeGuestId(): string {
 export function isGuestId(id: string): boolean {
 	return id.startsWith(GUEST_ID_PREFIX);
 }
+
+/** 흔한 2글자 성(복성). 성을 제외한 이름 첫 글자를 뽑을 때 성 길이 판별에 쓴다. */
+const COMPOUND_SURNAMES = [
+	"남궁", "황보", "제갈", "선우", "독고", "동방", "사공", "서문",
+];
+
+/**
+ * 프로필 사진이 없을 때 아바타에 표시할 이니셜(성을 제외한 이름의 첫 글자).
+ * - 한글 이름: 성(1글자, 복성은 2글자)을 뺀 이름의 첫 글자. 예) 김민수 → "민", 남궁민수 → "민"
+ * - 성만 있는 1글자 이름·비한글 이름: 첫 글자를 그대로 사용.
+ */
+export function getNameInitial(name: string): string {
+	const trimmed = name.trim();
+	if (!trimmed) return "";
+	// 한글로 시작하지 않으면(영문 등) 성 개념이 없으므로 첫 글자 사용.
+	if (!/^[가-힣]/.test(trimmed)) return trimmed.charAt(0);
+	const surnameLen = COMPOUND_SURNAMES.some((s) => trimmed.startsWith(s)) ? 2 : 1;
+	// 성만 있는 이름은 성 글자를 그대로 표시.
+	return trimmed.length > surnameLen ? trimmed.charAt(surnameLen) : trimmed.charAt(0);
+}

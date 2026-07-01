@@ -7,6 +7,7 @@ import { useSessionStore } from "../../store/sessionStore";
 import { useDebugStore } from "../../store/debugStore";
 import { skillScore as computeSkillScore } from "../../lib/teamSelection";
 import { getPlayerPhotoUrl } from "../../lib/playerPhoto";
+import { getNameInitial } from "../../lib/player";
 import { absToStage } from "../../lib/board/konvaEvents";
 import { magnetGenderInk, magnetSkillAngle, MAGNET_SKILL_ARC_RATIO, MAGNET_GENDER_RING_W } from "../../lib/magnetStyle";
 import {
@@ -453,7 +454,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 						y={-innerR}
 						width={innerR * 2}
 						height={innerR * 2}
-						text={player.name.charAt(0)}
+						text={getNameInitial(player.name)}
 						fontSize={innerR * 0.8}
 						fontStyle="bold"
 						fontFamily="Inter, system-ui, sans-serif"

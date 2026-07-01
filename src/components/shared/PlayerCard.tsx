@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Gender } from "../../types";
 import { getPlayerPhotoUrl } from "../../lib/playerPhoto";
+import { getNameInitial } from "../../lib/player";
 import {
 	MAGNET_SKILL_ARC_RATIO,
 	MAGNET_GENDER_RING_W,
@@ -105,7 +106,7 @@ export default function PlayerCard({
 								fontWeight: 700,
 							}}
 						>
-							{name.charAt(0)}
+							{getNameInitial(name)}
 						</div>
 					) : (
 						<img

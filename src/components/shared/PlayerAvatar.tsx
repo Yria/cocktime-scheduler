@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Gender } from "../../types";
 import { getPlayerPhotoUrl } from "../../lib/playerPhoto";
+import { getNameInitial } from "../../lib/player";
 import { magnetGenderRing, magnetGenderBg, magnetGenderInk } from "../../lib/magnetStyle";
 
 interface PlayerAvatarProps {
@@ -54,7 +55,7 @@ export default function PlayerAvatar({
 						fontWeight: 700,
 					}}
 				>
-					{name.charAt(0)}
+					{getNameInitial(name)}
 				</div>
 			) : (
 				<img

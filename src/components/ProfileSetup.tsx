@@ -15,6 +15,7 @@ import {
 } from "../lib/magnetStyle";
 import KakaoLocationSearch from "./common/KakaoLocationSearch";
 import { dongFromAddress } from "../lib/carpool/dong";
+import { getNameInitial } from "../lib/player";
 
 // 프로필 입력 모달. 두 모드:
 //   - "signup"(기본): 가입 후 미완 프로필 입력. 닫기 없음(필수). 저장 성공 시 store 갱신으로 Home 이 언마운트.
@@ -315,7 +316,7 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 										fontWeight: 700,
 									}}
 								>
-									{name.trim().charAt(0) || "+"}
+									{getNameInitial(name) || "+"}
 								</span>
 							)}
 						</button>
