@@ -261,20 +261,7 @@ export default function SessionSetup({ onStart }: Props) {
 					type="button"
 					onClick={handleStart}
 					disabled={selectedCount < 4 || submitting}
-					style={{
-						width: "100%",
-						padding: "16px",
-						borderRadius: 12,
-						fontSize: 17,
-						fontWeight: 600,
-						color: "#fff",
-						background:
-							selectedCount >= 4 ? "#0b84ff" : "rgba(11,132,255,0.35)",
-						border: "none",
-						cursor: selectedCount >= 4 ? "pointer" : "not-allowed",
-						boxShadow:
-							selectedCount >= 4 ? "0 4px 16px rgba(11,132,255,0.25)" : "none",
-					}}
+					className="btn-solid-blue p-4 text-[17px]"
 				>
 					{submitting
 						? isUpdating

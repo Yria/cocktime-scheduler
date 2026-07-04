@@ -5,7 +5,7 @@ import {
 } from "../../lib/supabase/clubSettings";
 import { toast } from "../../store/toastStore";
 import { DEFAULT_GROUP_SETTINGS, type GroupSettings } from "../../types";
-import ModalSheet from "../common/ModalSheet";
+import ConfirmDialog from "../common/ConfirmDialog";
 
 const FIELDS: { label: string; hint: string; field: keyof GroupSettings }[] = [
 	{ label: "남자 콕", hint: "콕체크 1회당 (개)", field: "cockQuotaMale" },
@@ -53,43 +53,46 @@ export default function GroupSettingsModal({ onClose }: { onClose: () => void })
 	};
 
 	return (
-		<ModalSheet position="center" className="p-6" onClose={onClose}>
-			<h3 className="font-bold text-gray-800 dark:text-white text-lg mb-1">콕 설정</h3>
+		<ConfirmDialog
+			title="콕 설정"
+			confirmLabel="저장"
+			busy={saving}
+			busyLabel="저장 중…"
+			onConfirm={() => {
+				// 초기 로드 완료 전 저장 방지(기본값으로 덮어쓰기 사고 방지)
+				if (!loading) void onSave();
+			}}
+			onCancel={onClose}
+			onDismiss={onClose}
+		>
 			<p className="text-sm text-gray-600 dark:text-gray-300 mb-4 leading-relaxed">
 				콕체크 1회당 내는 콕 수와, 회원당 매달 지원하는 콕 수입니다. 그 달 첫 콕체크에서 지원분만큼 차감돼요.
 			</p>
 
-			{FIELDS.map(({ label, hint, field }) => (
-				<div key={field} className="flex items-center justify-between gap-3" style={{ marginBottom: 12 }}>
-					<div>
-						<div className="text-[#0f1724] dark:text-white" style={{ fontSize: 14, fontWeight: 600 }}>
-							{label}
+			<div style={{ marginBottom: 8 }}>
+				{FIELDS.map(({ label, hint, field }) => (
+					<div key={field} className="flex items-center justify-between gap-3" style={{ marginBottom: 12 }}>
+						<div>
+							<div className="text-strong" style={{ fontSize: 14, fontWeight: 600 }}>
+								{label}
+							</div>
+							<div className="text-faint" style={{ fontSize: 12 }}>
+								{hint}
+							</div>
 						</div>
-						<div className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.45)]" style={{ fontSize: 12 }}>
-							{hint}
-						</div>
+						<input
+							type="number"
+							min={0}
+							inputMode="numeric"
+							value={s[field]}
+							onChange={setNum(field)}
+							disabled={loading || saving}
+							className="bg-white dark:bg-[rgba(30,30,35,0.8)] text-strong border border-[rgba(0,0,0,0.12)] dark:border-[rgba(255,255,255,0.12)]"
+							style={{ width: 72, padding: "8px 10px", borderRadius: 8, fontSize: 15, textAlign: "center", outline: "none", flexShrink: 0 }}
+						/>
 					</div>
-					<input
-						type="number"
-						min={0}
-						inputMode="numeric"
-						value={s[field]}
-						onChange={setNum(field)}
-						disabled={loading || saving}
-						className="bg-white dark:bg-[rgba(30,30,35,0.8)] text-[#0f1724] dark:text-white border border-[rgba(0,0,0,0.12)] dark:border-[rgba(255,255,255,0.12)]"
-						style={{ width: 72, padding: "8px 10px", borderRadius: 8, fontSize: 15, textAlign: "center", outline: "none", flexShrink: 0 }}
-					/>
-				</div>
-			))}
-
-			<div className="flex gap-3" style={{ marginTop: 8 }}>
-				<button type="button" onClick={onClose} disabled={saving} className="btn-lq-secondary flex-1 py-3 text-sm">
-					취소
-				</button>
-				<button type="button" onClick={onSave} disabled={loading || saving} className="btn-lq-primary flex-1 py-3 text-sm">
-					{saving ? "저장 중…" : "저장"}
-				</button>
+				))}
 			</div>
-		</ModalSheet>
+		</ConfirmDialog>
 	);
 }

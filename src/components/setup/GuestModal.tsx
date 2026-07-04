@@ -30,20 +30,12 @@ export function GuestModal({
 	ctaLabel = "추가",
 }: GuestModalProps) {
 	return (
-		<ModalSheet position="bottom" onClose={onClose} className="flex flex-col max-h-[90dvh]">
-			<div className="flex items-center justify-between px-5 pt-5 pb-3">
-				<h3 className="font-bold text-gray-800 dark:text-white text-lg">
-					{title}
-				</h3>
-				<button
-					type="button"
-					onClick={onClose}
-					className="btn-icon-close"
-				>
-					✕
-				</button>
-			</div>
-
+		<ModalSheet
+			position="bottom"
+			onClose={onClose}
+			title={title}
+			className="flex flex-col max-h-[90dvh]"
+		>
 			<div className="no-sb overflow-y-auto px-5 pb-2">
 				<div className="mb-4">
 					<p className="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wide mb-2">
@@ -80,7 +72,7 @@ export function GuestModal({
 				<button
 					type="button"
 					onClick={onClose}
-					className="btn-lq-secondary flex-1 py-3 text-sm"
+					className="btn-lq-secondary flex-1"
 				>
 					취소
 				</button>
@@ -88,7 +80,7 @@ export function GuestModal({
 					type="button"
 					onClick={onAdd}
 					disabled={!guestName.trim()}
-					className="btn-lq-orange flex-1 py-3 text-sm"
+					className="btn-lq-orange flex-1"
 				>
 					{ctaLabel}
 				</button>

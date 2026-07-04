@@ -140,7 +140,7 @@ export const adminScheduleActions = {
 	async addOneOff(input: OneOffInput, createdBy: string | null) {
 		const row = await createOneOffOccurrence(input, createdBy);
 		if (row) {
-			await syncOccurrences(); // draft → 1주 이내면 open 승격(open 시 전 회원 'session_open' 알림)
+			await syncOccurrences(); // draft → 공개 창(~다음 일요일) 이내면 open 승격(open 시 전 회원 'session_open' 알림)
 			await reloadOccurrences();
 		}
 		return row;

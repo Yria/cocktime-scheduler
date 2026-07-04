@@ -30,12 +30,12 @@ export function EditModal({
 	const isGuest = isGuestId(player.id);
 
 	return (
-		<ModalSheet position="bottom" onClose={onClose} className="flex flex-col max-h-[90dvh]">
-			<div className="flex items-center justify-between px-5 pt-5 pb-3">
-				<div className="flex items-center gap-2">
-					<h3 className="font-bold text-gray-800 dark:text-white text-lg">
-						{player.name}
-					</h3>
+		<ModalSheet
+			position="bottom"
+			onClose={onClose}
+			title={
+				<span className="flex items-center gap-2">
+					{player.name}
 					{isGuest && (
 						<span
 							className="text-xs font-semibold rounded px-1.5 py-0.5"
@@ -44,16 +44,10 @@ export function EditModal({
 							게스트
 						</span>
 					)}
-				</div>
-				<button
-					type="button"
-					onClick={onClose}
-					className="btn-icon-close"
-				>
-					✕
-				</button>
-			</div>
-
+				</span>
+			}
+			className="flex flex-col max-h-[90dvh]"
+		>
 			<div className="no-sb overflow-y-auto px-5 pb-2">
 				<PlayerAttributesForm
 					gender={editGender}
@@ -84,7 +78,7 @@ export function EditModal({
 				<button
 					type="button"
 					onClick={onClose}
-					className="btn-lq-secondary flex-1 py-3 text-sm"
+					className="btn-lq-secondary flex-1"
 				>
 					취소
 				</button>
@@ -92,7 +86,7 @@ export function EditModal({
 					type="button"
 					onClick={onSave}
 					disabled={editSaving}
-					className="btn-lq-primary flex-1 py-3 text-sm"
+					className="btn-lq-primary flex-1"
 				>
 					{editSaving ? "저장 중…" : "저장"}
 				</button>

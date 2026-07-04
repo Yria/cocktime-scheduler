@@ -3,7 +3,7 @@ import { fetchCockSupportUsed } from "../../lib/supabase/clubSettings";
 import { monthKST } from "../../lib/schedule/calendar";
 import { useSessionStore } from "../../store/sessionStore";
 import { DEFAULT_GROUP_SETTINGS } from "../../types";
-import ModalSheet from "../common/ModalSheet";
+import ConfirmDialog from "../common/ConfirmDialog";
 
 /**
  * 콕 제출 확인 모달.
@@ -49,11 +49,25 @@ export default function CockCheckModal({
 	const payAmount = supportAvailable ? Math.max(0, quota - support) : quota;
 
 	return (
-		<ModalSheet position="center" className="p-6" onClose={onClose}>
-			<h3 className="font-bold text-gray-800 dark:text-white text-lg mb-1.5">
-				콕 제출 확인
-			</h3>
-
+		<ConfirmDialog
+			title="콕 제출 확인"
+			message={
+				<>
+					<b>{player?.name ?? "이 선수"}</b> 님의 콕 제출을 확인했나요? 확인하면 매칭 대기 상태가 됩니다.
+					{supportAvailable && " 확인 시 이번 달 콕 지원 1회가 사용 처리됩니다."}
+				</>
+			}
+			confirmLabel="확인"
+			busy={loading}
+			busyLabel="확인 중…"
+			cancelDisabled={false}
+			onConfirm={() => {
+				void confirmCock(playerId);
+				onClose();
+			}}
+			onCancel={onClose}
+			onDismiss={onClose}
+		>
 			{supportAvailable && (
 				<div
 					style={{
@@ -77,33 +91,6 @@ export default function CockCheckModal({
 					</div>
 				</div>
 			)}
-
-			<p className="text-sm text-gray-600 dark:text-gray-300 mb-5 leading-relaxed">
-				<b>{player?.name ?? "이 선수"}</b> 님의 콕 제출을 확인했나요? 확인하면 매칭 대기 상태가 됩니다.
-				{supportAvailable && " 확인 시 이번 달 콕 지원 1회가 사용 처리됩니다."}
-			</p>
-
-			<div className="flex gap-3">
-				<button
-					type="button"
-					onClick={onClose}
-					className="btn-lq-secondary flex-1 py-3 text-sm"
-				>
-					취소
-				</button>
-				<button
-					type="button"
-					disabled={loading}
-					onClick={() => {
-						void confirmCock(playerId);
-						onClose();
-					}}
-					className="btn-lq-primary flex-1 py-3 text-sm"
-					style={loading ? { opacity: 0.6, cursor: "default" } : undefined}
-				>
-					{loading ? "확인 중…" : "확인"}
-				</button>
-			</div>
-		</ModalSheet>
+		</ConfirmDialog>
 	);
 }

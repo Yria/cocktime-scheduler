@@ -46,7 +46,7 @@ async function reloadAttendances() {
 export const scheduleActions = {
 	async load() {
 		useScheduleStore.setState({ loading: true });
-		// 규칙→회차 동기화 + 1주 전 노출 선반영 후 목록 조회
+		// 규칙→회차 동기화 + 노출(일요일 18:00 일괄 공개) 선반영 후 목록 조회
 		await syncOccurrences();
 		const [schedules, places] = await Promise.all([
 			fetchSchedules(),

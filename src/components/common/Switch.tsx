@@ -3,10 +3,18 @@ interface Props {
 	onChange: (checked: boolean) => void;
 	disabled?: boolean;
 	ariaLabel?: string;
+	/** on 상태 배경색(기본 카풀 그린 #2c7a57 — 현행 유지). CockCheckToggle 은 "var(--ios-green, #34c759)" 전달 */
+	onColor?: string;
 }
 
 /** iOS 스타일 on/off 스위치(CockCheckToggle 과 동일 톤, on 색은 카풀 그린). */
-export function Switch({ checked, onChange, disabled = false, ariaLabel }: Props) {
+export function Switch({
+	checked,
+	onChange,
+	disabled = false,
+	ariaLabel,
+	onColor = "#2c7a57",
+}: Props) {
 	return (
 		<button
 			type="button"
@@ -26,7 +34,7 @@ export function Switch({ checked, onChange, disabled = false, ariaLabel }: Props
 				cursor: disabled ? "not-allowed" : "pointer",
 				opacity: disabled ? 0.5 : 1,
 				transition: "background 0.18s",
-				background: checked ? "#2c7a57" : "rgba(120,120,128,0.32)",
+				background: checked ? onColor : "rgba(120,120,128,0.32)",
 			}}
 		>
 			<span

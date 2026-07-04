@@ -1,6 +1,7 @@
 import type { AttendanceRow, SessionRow } from "../../lib/supabase/types";
 import { fmtRange } from "../../lib/schedule/timeFmt";
 import ModalSheet from "../common/ModalSheet";
+import EmptyState from "../shared/EmptyState";
 import PlayerAvatar from "../shared/PlayerAvatar";
 
 interface Props {
@@ -31,19 +32,19 @@ export default function SessionParticipantsModal({
 			{/* 헤더 */}
 			<div className="px-5 pt-5 pb-3">
 				<div
-					className="text-[#0f1724] dark:text-white"
+					className="text-strong"
 					style={{ fontSize: 15.5, fontWeight: 800 }}
 				>
 					{fmtRange(s.scheduled_at, s.ends_at)}
 				</div>
 				<div
-					className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.45)] mt-0.5"
+					className="text-faint mt-0.5"
 					style={{ fontSize: 12.5 }}
 				>
 					{placeName ?? "장소 미정"}
 				</div>
 				<div
-					className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)] mt-1.5"
+					className="text-muted mt-1.5"
 					style={{ fontSize: 12.5, fontWeight: 600 }}
 				>
 					확정 {confirmed.length}
@@ -55,12 +56,7 @@ export default function SessionParticipantsModal({
 			{/* 리스트 (스크롤) */}
 			<div className="px-3 pb-5 overflow-y-auto no-sb" style={{ maxHeight: "60vh" }}>
 				{confirmed.length === 0 && waiting.length === 0 ? (
-					<div
-						className="text-center text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-						style={{ fontSize: 13.5, padding: "24px 0" }}
-					>
-						아직 참가자가 없습니다.
-					</div>
+					<EmptyState>아직 참가자가 없습니다.</EmptyState>
 				) : (
 					<>
 						{confirmed.length > 0 && (
@@ -105,7 +101,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 	return (
 		<div>
 			<div
-				className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)] px-2 pt-1.5 pb-1"
+				className="text-faint px-2 pt-1.5 pb-1"
 				style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.2 }}
 			>
 				{title}
@@ -144,13 +140,13 @@ function ParticipantRow({
 				<PlayerAvatar name={name} gender={a.member?.gender ?? null} size={34} />
 			</div>
 			<span
-				className="text-[#0f1724] dark:text-gray-100 truncate"
+				className="text-strong truncate"
 				style={{ fontSize: 13.5, fontWeight: 600 }}
 			>
 				{name}
 				{isMe && (
 					<span
-						className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.45)] ml-1"
+						className="text-faint ml-1"
 						style={{ fontSize: 12, fontWeight: 500 }}
 					>
 						(나)

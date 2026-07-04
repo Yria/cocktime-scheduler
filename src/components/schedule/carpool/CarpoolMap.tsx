@@ -204,7 +204,7 @@ export default function CarpoolMap({
 	if (err) {
 		return (
 			<div
-				className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+				className="text-muted"
 				style={{
 					fontSize: 12.5,
 					lineHeight: 1.5,

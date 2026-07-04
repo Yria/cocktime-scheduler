@@ -8,34 +8,11 @@ import { pushActions, usePushStore } from "../../store/pushStore";
 import { toast } from "../../store/toastStore";
 import Spinner from "../shared/Spinner";
 import ModalSheet from "./ModalSheet";
+import SheetHeader from "./SheetHeader";
 
 interface Props {
 	onClose: () => void;
 }
-
-const primaryBtn: React.CSSProperties = {
-	width: "100%",
-	padding: "14px",
-	borderRadius: 12,
-	fontSize: 15,
-	fontWeight: 700,
-	color: "#fff",
-	background: "#0b84ff",
-	border: "none",
-	cursor: "pointer",
-};
-
-const secondaryBtn: React.CSSProperties = {
-	width: "100%",
-	padding: "14px",
-	borderRadius: 12,
-	fontSize: 15,
-	fontWeight: 700,
-	color: "#ff3b30",
-	background: "rgba(255,59,48,0.1)",
-	border: "none",
-	cursor: "pointer",
-};
 
 function platformLabel(): string {
 	if (isIOS()) return "아이폰";
@@ -107,10 +84,7 @@ export default function PushSettingsSheet({ onClose }: Props) {
 	};
 
 	const note = (text: string) => (
-		<p
-			className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
-			style={{ fontSize: 13, lineHeight: 1.6 }}
-		>
+		<p className="text-muted" style={{ fontSize: 13, lineHeight: 1.6 }}>
 			{text}
 		</p>
 	);
@@ -138,7 +112,7 @@ export default function PushSettingsSheet({ onClose }: Props) {
 		return (
 			<div className="rounded-xl p-3.5 bg-[rgba(11,132,255,0.06)] dark:bg-[rgba(11,132,255,0.12)]">
 				<p
-					className="text-[#0f1724] dark:text-white"
+					className="text-strong"
 					style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}
 				>
 					📲 {platformLabel()}에서 앱으로 설치하기
@@ -174,10 +148,7 @@ export default function PushSettingsSheet({ onClose }: Props) {
 		content = (
 			<div className="flex items-center gap-2 py-3">
 				<Spinner size={14} />
-				<span
-					className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
-					style={{ fontSize: 13 }}
-				>
+				<span className="text-muted" style={{ fontSize: 13 }}>
 					알림 사용 가능 여부 확인 중…
 				</span>
 			</div>
@@ -219,7 +190,7 @@ export default function PushSettingsSheet({ onClose }: Props) {
 					type="button"
 					onClick={handleDisable}
 					disabled={busy}
-					style={{ ...secondaryBtn, opacity: busy ? 0.6 : 1 }}
+					className="btn-tint-red"
 				>
 					{busy ? "처리 중…" : "알림 끄기"}
 				</button>
@@ -234,7 +205,7 @@ export default function PushSettingsSheet({ onClose }: Props) {
 					type="button"
 					onClick={handleEnable}
 					disabled={busy}
-					style={{ ...primaryBtn, opacity: busy ? 0.6 : 1 }}
+					className="btn-solid-blue text-[15px]"
 				>
 					{busy ? "처리 중…" : "잠금화면 알림 켜기"}
 				</button>
@@ -244,15 +215,9 @@ export default function PushSettingsSheet({ onClose }: Props) {
 
 	return (
 		<ModalSheet position="bottom" onClose={onClose}>
-			<div className="px-5 pt-5 pb-6 flex flex-col gap-3">
-				<h3
-					className="text-[#0f1724] dark:text-white"
-					style={{ fontSize: 17, fontWeight: 800 }}
-				>
-					잠금화면 알림
-				</h3>
-				{content}
-			</div>
+			{/* 닫기는 기존대로 배경 클릭 — ✕ 칩 없이 제목만(SheetHeader onClose 미전달) */}
+			<SheetHeader title="잠금화면 알림" />
+			<div className="px-5 pb-6 flex flex-col gap-3">{content}</div>
 		</ModalSheet>
 	);
 }

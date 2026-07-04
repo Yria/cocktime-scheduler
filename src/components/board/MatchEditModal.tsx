@@ -3,6 +3,7 @@ import { useSessionStore } from "../../store/sessionStore";
 import { useBoardStore } from "../../store/boardStore";
 import { skillScore } from "../../lib/teamSelection";
 import ModalSheet from "../common/ModalSheet";
+import EmptyState from "../shared/EmptyState";
 import PlayerCard from "../shared/PlayerCard";
 
 type Props = { courtId: number; onClose: () => void };
@@ -145,7 +146,7 @@ export default function MatchEditModal({ courtId, onClose }: Props) {
 			<div className="flex-1 min-h-0 overflow-auto px-5 pb-2 border-t border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] pt-3">
 				<p className="text-xs font-semibold text-gray-500 dark:text-gray-300 mb-2">교체할 선수 ({benchIds.length})</p>
 				{benchIds.length === 0 ? (
-					<p className="text-sm text-gray-400 dark:text-gray-500 py-3 text-center">교체 가능한 선수가 없습니다</p>
+					<EmptyState style={{ padding: "12px 0" }}>교체 가능한 선수가 없습니다</EmptyState>
 				) : (
 					<div className="flex flex-wrap justify-center gap-2">
 						{benchIds.map((id) => (
@@ -156,14 +157,14 @@ export default function MatchEditModal({ courtId, onClose }: Props) {
 			</div>
 
 			<div className="shrink-0 px-5 pb-5 border-t border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] pt-4 flex gap-3">
-				<button type="button" onClick={onClose} className="btn-lq-ghost flex-1 py-3 text-sm">
+				<button type="button" onClick={onClose} className="btn-lq-ghost flex-1">
 					취소
 				</button>
 				<button
 					type="button"
 					onClick={apply}
 					disabled={!changed}
-					className="btn-lq-primary flex-1 py-3 text-sm disabled:opacity-40"
+					className="btn-lq-primary flex-1 disabled:opacity-40"
 				>
 					수정하기
 				</button>

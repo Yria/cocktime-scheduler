@@ -11,6 +11,7 @@ import HeaderMenu from "./common/HeaderMenu";
 import NotificationBell from "./common/NotificationBell";
 import ProfileSetup from "./ProfileSetup";
 import ScheduleCard from "./schedule/ScheduleCard";
+import EmptyState from "./shared/EmptyState";
 import Spinner from "./shared/Spinner";
 
 interface Props {
@@ -249,18 +250,7 @@ export default function Home({ onStart }: Props) {
 					<button
 						type="button"
 						onClick={() => navigate("/session")}
-						style={{
-							width: "100%",
-							padding: "14px",
-							borderRadius: 12,
-							fontSize: 15,
-							fontWeight: 700,
-							color: "#fff",
-							background: "#0b84ff",
-							border: "none",
-							cursor: "pointer",
-							boxShadow: "0 4px 16px rgba(11,132,255,0.3)",
-						}}
+						className="btn-solid-blue text-[15px]"
 					>
 						진행 중 세션 이어하기
 					</button>
@@ -268,26 +258,14 @@ export default function Home({ onStart }: Props) {
 
 				{/* 일정 섹션 헤더 — minHeight로 '일정 관리' 버튼 유무(운영진/일반)에 따른 높이차 제거 */}
 				<div className="flex items-center justify-between mt-1 min-h-[32px]">
-					<h2
-						className="text-[#0f1724] dark:text-white"
-						style={{ fontSize: 18, fontWeight: 800 }}
-					>
+					<h2 className="text-strong" style={{ fontSize: 18, fontWeight: 800 }}>
 						일정
 					</h2>
 					{isAdmin && (
 						<button
 							type="button"
 							onClick={() => navigate("/schedule")}
-							style={{
-								fontSize: 13,
-								fontWeight: 700,
-								color: "#0b84ff",
-								background: "rgba(11,132,255,0.1)",
-								border: "none",
-								borderRadius: 8,
-								padding: "6px 12px",
-								cursor: "pointer",
-							}}
+							className="btn-tint-blue"
 						>
 							일정 관리
 						</button>
@@ -296,18 +274,13 @@ export default function Home({ onStart }: Props) {
 
 				{/* 일정 목록 */}
 				{scheduleLoading && schedules.length === 0 ? (
-					<div className="flex justify-center py-8">
-						<Spinner size={16} />
-					</div>
+					<EmptyState loading spinnerSize={16} style={{ padding: "32px 0" }} />
 				) : visibleSchedules.length === 0 ? (
-					<div
-						className="text-center text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-						style={{ fontSize: 14, padding: "32px 0" }}
-					>
+					<EmptyState style={{ fontSize: 14, padding: "32px 0" }}>
 						{isAdmin
 							? "아직 일정이 없습니다. '일정 추가'로 만들어보세요."
 							: "예정된 일정이 없습니다."}
-					</div>
+					</EmptyState>
 				) : (
 					<div className="flex flex-col gap-2.5">
 						{orderedSchedules.map((s) => (
@@ -337,7 +310,7 @@ export default function Home({ onStart }: Props) {
 					<button
 						type="button"
 						onClick={onStart}
-						className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)] border border-dashed border-[rgba(0,0,0,0.12)] dark:border-[rgba(255,255,255,0.15)]"
+						className="text-muted border border-dashed border-[rgba(0,0,0,0.12)] dark:border-[rgba(255,255,255,0.15)]"
 						style={{
 							width: "100%",
 							padding: "12px",
@@ -357,7 +330,7 @@ export default function Home({ onStart }: Props) {
 				<button
 					type="button"
 					onClick={() => navigate("/logs")}
-					className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+					className="text-faint"
 					style={{
 						background: "none",
 						border: "none",

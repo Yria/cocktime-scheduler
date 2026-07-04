@@ -35,7 +35,7 @@ export default function AppHeader({ title, onBack, logo, right }: Props) {
 							type="button"
 							onClick={onBack}
 							aria-label="뒤로"
-							className="flex items-center justify-center text-[#0f1724] dark:text-white"
+							className="flex items-center justify-center text-strong"
 							style={{
 								width: 40,
 								height: 40,
@@ -58,7 +58,7 @@ export default function AppHeader({ title, onBack, logo, right }: Props) {
 						/>
 					) : (
 						<h1
-							className="text-[#0f1724] dark:text-white truncate"
+							className="text-strong truncate"
 							style={{ fontSize: 18, fontWeight: 800, marginLeft: onBack ? 4 : 0 }}
 						>
 							{title}

@@ -99,7 +99,7 @@ export default function ScheduleCard({
 				<div className="flex flex-col gap-1 min-w-0">
 					<div className="flex items-center gap-2">
 						<span
-							className="text-[#0f1724] dark:text-white truncate"
+							className="text-strong truncate"
 							style={{ fontSize: 15, fontWeight: 700 }}
 						>
 							{fmtRange(s.scheduled_at, s.ends_at)}
@@ -135,7 +135,7 @@ export default function ScheduleCard({
 						)}
 					</div>
 					<span
-						className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.45)]"
+						className="text-faint"
 						style={{ fontSize: 12.5 }}
 					>
 						{placeName ?? "장소 미정"}
@@ -169,7 +169,7 @@ export default function ScheduleCard({
 			{/* 참석 현황 + 버튼 */}
 			<div className="flex items-center justify-between mt-3 pt-3 border-t border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]">
 				<span
-					className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+					className="text-muted"
 					style={{ fontSize: 12.5, fontWeight: 600 }}
 				>
 					확정 {confirmed.length}
@@ -229,7 +229,7 @@ export default function ScheduleCard({
 					)
 				) : (
 					<span
-						className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+						className="text-faint"
 						style={{ fontSize: 12 }}
 					>
 						모집 마감
@@ -277,7 +277,7 @@ export default function ScheduleCard({
 						})}
 						{stackExtra > 0 && (
 							<div
-								className="rounded-full ring-2 ring-white dark:ring-[#1e1e23] flex items-center justify-center text-[#64748b] dark:text-[rgba(235,235,245,0.7)] bg-[rgba(0,0,0,0.06)] dark:bg-white/10"
+								className="rounded-full ring-2 ring-white dark:ring-[#1e1e23] flex items-center justify-center text-muted bg-[rgba(0,0,0,0.06)] dark:bg-white/10"
 								style={{
 									width: 28,
 									height: 28,
@@ -304,7 +304,7 @@ export default function ScheduleCard({
 					style={{ fontSize: 12 }}
 				>
 					<span
-						className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.45)]"
+						className="text-faint"
 						style={{ fontWeight: 600 }}
 					>
 						카풀
@@ -350,17 +350,7 @@ export default function ScheduleCard({
 				<button
 					type="button"
 					onClick={() => setShowCarpoolBuilder(true)}
-					style={{
-						marginTop: 8,
-						padding: "7px 12px",
-						borderRadius: 9,
-						fontSize: 12.5,
-						fontWeight: 700,
-						color: "#0b84ff",
-						background: "rgba(11,132,255,0.12)",
-						border: "none",
-						cursor: "pointer",
-					}}
+					className="btn-tint-blue mt-2"
 				>
 					🚗 카풀 공지 만들기
 				</button>

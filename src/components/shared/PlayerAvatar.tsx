@@ -11,6 +11,18 @@ interface PlayerAvatarProps {
 	size?: number;
 	/** 성별색 테두리 링 */
 	ring?: boolean;
+	/** 로컬 파일 프리뷰 등 — 원격(이름 기반) URL 보다 우선하며 onError fallback 없이 항상 표시 */
+	previewSrc?: string;
+	/** 이니셜이 비어 있을 때 대신 표시할 문자(ProfileSetup 의 "+") */
+	fallbackChar?: string;
+	/** 링 색 오버라이드 — 성별 미선택 시 중립 회색(#cbd5e1) 처리 등. 미지정 시 성별색 */
+	ringColor?: string;
+	/** 배경색 오버라이드(성별 미선택 시 #e2e8f0). 미지정 시 성별색 */
+	bgColor?: string;
+	/** 이니셜 글자색 오버라이드(성별 미선택 시 #64748b). 미지정 시 성별색 */
+	inkColor?: string;
+	/** 링 두께(px, 기본 2 — ProfileSetup 대형 아바타는 3) */
+	ringWidth?: number;
 }
 
 /**
@@ -24,10 +36,19 @@ export default function PlayerAvatar({
 	gender,
 	size = 32,
 	ring = true,
+	previewSrc,
+	fallbackChar,
+	ringColor,
+	bgColor,
+	inkColor,
+	ringWidth = 2,
 }: PlayerAvatarProps) {
 	const [imgFailed, setImgFailed] = useState(false);
 	const url = getPlayerPhotoUrl(name);
 	const g = gender ?? "M";
+	// 로컬 프리뷰는 onError fallback 대상이 아님 — imgFailed 는 원격 URL 전용.
+	// 이름이 비어 있으면 원격 URL 시도(무의미한 404 + onError까지 빈 이미지) 없이 즉시 이니셜/fallback.
+	const showInitial = previewSrc == null && (imgFailed || name.trim() === "");
 
 	return (
 		<div
@@ -38,11 +59,13 @@ export default function PlayerAvatar({
 				borderRadius: "50%",
 				overflow: "hidden",
 				flexShrink: 0,
-				background: magnetGenderBg(g),
-				border: ring ? `2px solid ${magnetGenderRing(g)}` : undefined,
+				background: bgColor ?? magnetGenderBg(g),
+				border: ring
+					? `${ringWidth}px solid ${ringColor ?? magnetGenderRing(g)}`
+					: undefined,
 			}}
 		>
-			{imgFailed ? (
+			{showInitial ? (
 				<div
 					style={{
 						width: "100%",
@@ -50,18 +73,18 @@ export default function PlayerAvatar({
 						display: "flex",
 						alignItems: "center",
 						justifyContent: "center",
-						color: magnetGenderInk(g),
+						color: inkColor ?? magnetGenderInk(g),
 						fontSize: size * 0.42,
 						fontWeight: 700,
 					}}
 				>
-					{getNameInitial(name)}
+					{getNameInitial(name) || fallbackChar}
 				</div>
 			) : (
 				<img
-					src={url}
+					src={previewSrc ?? url}
 					alt={name}
-					onError={() => setImgFailed(true)}
+					onError={previewSrc != null ? undefined : () => setImgFailed(true)}
 					loading="lazy"
 					draggable={false}
 					style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}

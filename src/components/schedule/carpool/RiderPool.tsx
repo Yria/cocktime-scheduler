@@ -47,12 +47,12 @@ export default function RiderPool({ riders, selected, onToggle }: Props) {
 			{ordered.map(([dong, members]) => (
 				<div key={dong}>
 					<div
-						className="text-[#64748b] dark:text-[rgba(235,235,245,0.55)] mb-1.5 flex items-center gap-1.5"
+						className="text-muted mb-1.5 flex items-center gap-1.5"
 						style={{ fontSize: 12, fontWeight: 800 }}
 					>
 						{dong === UNKNOWN ? `📍 ${UNKNOWN}` : dong}
 						<span
-							className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+							className="text-faint"
 							style={{ fontSize: 11, fontWeight: 700 }}
 						>
 							· {members.length}명

@@ -9,9 +9,8 @@ export function CourtCountSelector({
 }: Props) {
 	return (
 		<div
-			className="bg-white dark:bg-[#1c1c1e] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
+			className="card-lq"
 			style={{
-				borderRadius: 12,
 				padding: "10px 16px",
 				marginBottom: 12,
 				display: "flex",
@@ -20,7 +19,7 @@ export function CourtCountSelector({
 			}}
 		>
 			<p
-				className="text-[#64748b] dark:text-[rgba(235,235,245,0.5)]"
+				className="text-muted"
 				style={{
 					fontSize: 11,
 					fontWeight: 600,
@@ -50,7 +49,7 @@ export function CourtCountSelector({
 						className={
 							courtCount === n
 								? "bg-white dark:bg-[#2c2c2e] text-[#0b84ff]"
-								: "bg-transparent text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+								: "bg-transparent text-faint"
 						}
 						style={{
 							flex: 1,

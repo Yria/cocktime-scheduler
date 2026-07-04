@@ -69,7 +69,7 @@ export function PlayerRow({
 				</span>
 				<GenderDot gender={player.gender} size={9} />
 				<span
-					className="text-[#0f1724] dark:text-white"
+					className="text-strong"
 					style={{
 						fontSize: 14,
 						fontWeight: 500,

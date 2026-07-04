@@ -103,14 +103,14 @@ export function PlayerConflictDialog({
 				<button
 					type="button"
 					onClick={onForceOverwrite}
-					className="btn-lq-primary w-full py-3 text-sm"
+					className="btn-lq-primary w-full"
 				>
 					내 수정으로 덮어쓰기
 				</button>
 				<button
 					type="button"
 					onClick={onCancel}
-					className="btn-lq-secondary w-full py-3 text-sm"
+					className="btn-lq-secondary w-full"
 				>
 					취소 (서버 값 유지)
 				</button>

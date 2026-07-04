@@ -37,13 +37,13 @@ export default function DriverGroupCard({
 				<PlayerAvatar name={driver.name} gender={driver.gender} size={34} />
 				<div className="min-w-0 flex-1">
 					<div
-						className="text-[#0f1724] dark:text-white truncate"
+						className="text-strong truncate"
 						style={{ fontSize: 14, fontWeight: 800 }}
 					>
 						🚗 {driver.name}
 					</div>
 					<div
-						className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.45)]"
+						className="text-faint"
 						style={{ fontSize: 11.5 }}
 					>
 						{driver.residence ?? "동네 미상"}

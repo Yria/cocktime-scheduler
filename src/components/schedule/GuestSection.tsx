@@ -82,7 +82,7 @@ export default function GuestSection({
 								key={g.member_id}
 								className="flex items-center justify-between rounded-lg px-3 py-1.5 bg-[rgba(0,0,0,0.035)] dark:bg-white/5"
 							>
-								<span className="text-[#0f1724] dark:text-gray-100" style={{ fontSize: 12.5, fontWeight: 600 }}>
+								<span className="text-strong" style={{ fontSize: 12.5, fontWeight: 600 }}>
 									🎫 {g.member?.name ?? "게스트"}
 									<span
 										className="ml-1.5"

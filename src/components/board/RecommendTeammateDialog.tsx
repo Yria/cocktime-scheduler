@@ -246,14 +246,14 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 
 			{/* 취소 / 자동편성(나머지 자동 채움) / 확인(직접 고른 것만) */}
 			<div className="shrink-0 px-5 pb-5 border-t border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)] pt-4 flex gap-3">
-				<button type="button" onClick={onClose} className="btn-lq-ghost flex-1 py-3 text-sm">
+				<button type="button" onClick={onClose} className="btn-lq-ghost flex-1">
 					취소
 				</button>
 				<button
 					type="button"
 					onClick={handleAutoFill}
 					disabled={!canAddMore || ranked.length === 0}
-					className="btn-lq-ghost flex-1 py-3 text-sm disabled:opacity-40"
+					className="btn-lq-ghost flex-1 disabled:opacity-40"
 				>
 					자동편성
 				</button>
@@ -261,7 +261,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 					type="button"
 					onClick={handleConfirm}
 					disabled={selectedIds.length === 0}
-					className="btn-lq-primary flex-1 py-3 text-sm disabled:opacity-40"
+					className="btn-lq-primary flex-1 disabled:opacity-40"
 				>
 					확인{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
 				</button>

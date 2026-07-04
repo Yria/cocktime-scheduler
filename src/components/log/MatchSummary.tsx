@@ -1,6 +1,7 @@
 import { skillScoreOf } from "../../lib/teamSelection";
 import type { MatchLogEntry } from "../../lib/supabase/api";
 import type { Gender, PlayerSkills } from "../../types";
+import PlayerBadge from "../shared/PlayerBadge";
 
 interface Participant {
 	name: string;
@@ -30,7 +31,7 @@ export default function MatchSummary({
 		>
 			{/* Match count */}
 			<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-				<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.5)]" style={{ fontSize: 12, fontWeight: 500 }}>
+				<span className="text-faint" style={{ fontSize: 12, fontWeight: 500 }}>
 					총 경기
 				</span>
 				<span
@@ -50,53 +51,19 @@ export default function MatchSummary({
 			{/* Participant list */}
 			{participants.length > 0 && (
 				<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-					<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.5)]" style={{ fontSize: 12, fontWeight: 500 }}>
+					<span className="text-faint" style={{ fontSize: 12, fontWeight: 500 }}>
 						참가자 {participants.length}명
 					</span>
 					<div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-						{participants.map((p) => {
-							// 스킬 스코어 기반 그라데이션 배경
-							const score = skillScoreOf(p.skills);
-							const scorePercent = ((score - 1.0) / 2.0) * 100;
-							const baseColorLight = p.gender === "F" ? "#fee2e2" : "#e0f2fe";
-							const baseColorDark = p.gender === "F" ? "#fca5a5" : "#7dd3fc";
-							const backgroundGradient = `linear-gradient(to right, ${baseColorDark} 0%, ${baseColorDark} ${scorePercent}%, ${baseColorLight} ${scorePercent}%, ${baseColorLight} 100%)`;
-
-							return (
-								<div
-									key={p.name}
-									style={{
-										display: "inline-flex",
-										alignItems: "center",
-										gap: 5,
-										padding: "4px 10px",
-										background: backgroundGradient,
-										borderRadius: 14,
-										fontSize: 13,
-										color: p.gender === "F" ? "#991b1b" : "#075985",
-										fontWeight: 600,
-									}}
-								>
-									{p.name}
-									<span
-										style={{
-											marginLeft: 2,
-											fontSize: 11,
-											fontWeight: 700,
-											color: p.gender === "F" ? "#be123c" : "#0369a1",
-											background:
-												p.gender === "F"
-													? "rgba(190,18,60,0.1)"
-													: "rgba(3,105,161,0.1)",
-											borderRadius: 8,
-											padding: "1px 5px",
-										}}
-									>
-										{p.game_count}
-									</span>
-								</div>
-							);
-						})}
+						{participants.map((p) => (
+							<PlayerBadge
+								key={p.name}
+								name={p.name}
+								gender={p.gender}
+								skillScore={skillScoreOf(p.skills)}
+								count={p.game_count}
+							/>
+						))}
 					</div>
 				</div>
 			)}

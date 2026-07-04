@@ -15,16 +15,15 @@ export function SingleWomanSelector({
 
 	return (
 		<div
-			className="bg-white dark:bg-[#1c1c1e] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
+			className="card-lq"
 			style={{
-				borderRadius: 12,
 				padding: "10px 16px",
 				marginBottom: 12,
 			}}
 		>
 			<div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
 				<p
-					className="text-[#64748b] dark:text-[rgba(235,235,245,0.5)]"
+					className="text-muted"
 					style={{
 						fontSize: 11,
 						fontWeight: 600,
@@ -45,7 +44,7 @@ export function SingleWomanSelector({
 							onClick={() => onToggle(p.id)}
 							className={
 								isOn
-									? "text-[#0f1724] dark:text-white bg-[rgba(255,149,0,0.07)] dark:bg-[rgba(255,149,0,0.18)]"
+									? "text-strong bg-[rgba(255,149,0,0.07)] dark:bg-[rgba(255,149,0,0.18)]"
 									: "text-[#0f1724] dark:text-[rgba(235,235,245,0.9)] bg-[rgba(255,255,255,0.72)] dark:bg-[rgba(255,255,255,0.1)]"
 							}
 							style={{

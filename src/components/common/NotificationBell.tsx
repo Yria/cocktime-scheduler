@@ -10,7 +10,9 @@ import {
 	useNotificationStore,
 } from "../../store/notificationStore";
 import { useScheduleStore } from "../../store/scheduleStore";
+import EmptyState from "../shared/EmptyState";
 import ModalSheet from "./ModalSheet";
+import SheetHeader from "./SheetHeader";
 
 /** 알림 생성 시각 → 상대시간 표기 */
 function timeAgo(iso: string): string {
@@ -66,7 +68,7 @@ export default function NotificationBell() {
 				type="button"
 				onClick={handleOpen}
 				aria-label="알림"
-				className="relative flex items-center justify-center text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+				className="relative flex items-center justify-center text-muted"
 				style={{
 					width: 40,
 					height: 40,
@@ -99,38 +101,33 @@ export default function NotificationBell() {
 
 			{open && (
 				<ModalSheet position="bottom" onClose={handleClose}>
-					<div className="px-5 pt-5 pb-3 flex items-center justify-between">
-						<h3
-							className="text-[#0f1724] dark:text-white"
-							style={{ fontSize: 17, fontWeight: 800 }}
-						>
-							알림
-						</h3>
-						{items.length > 0 && (
-							<button
-								type="button"
-								onClick={handleClearAll}
-								className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-								style={{
-									background: "none",
-									border: "none",
-									fontSize: 13,
-									fontWeight: 600,
-									cursor: "pointer",
-								}}
-							>
-								모두 지우기
-							</button>
-						)}
-					</div>
+					{/* 닫기는 기존대로 배경 클릭 — ✕ 칩 없이 액션("모두 지우기")만 */}
+					<SheetHeader
+						title="알림"
+						action={
+							items.length > 0 ? (
+								<button
+									type="button"
+									onClick={handleClearAll}
+									className="text-faint"
+									style={{
+										background: "none",
+										border: "none",
+										fontSize: 13,
+										fontWeight: 600,
+										cursor: "pointer",
+									}}
+								>
+									모두 지우기
+								</button>
+							) : undefined
+						}
+					/>
 					<div style={{ maxHeight: "60vh", overflowY: "auto" }} className="pb-2">
 						{items.length === 0 ? (
-							<div
-								className="text-center text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-								style={{ fontSize: 14, padding: "32px 0 40px" }}
-							>
+							<EmptyState style={{ fontSize: 14, padding: "32px 0 40px" }}>
 								알림이 없어요
-							</div>
+							</EmptyState>
 						) : (
 							items.map((n) => (
 								<div
@@ -151,7 +148,7 @@ export default function NotificationBell() {
 									/>
 									<div className="flex-1 min-w-0">
 										<p
-											className="text-[#0f1724] dark:text-white"
+											className="text-strong"
 											style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.4 }}
 										>
 											{notificationMessage(
@@ -159,10 +156,7 @@ export default function NotificationBell() {
 												notificationContext(n, schedules, places),
 											)}
 										</p>
-										<span
-											className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-											style={{ fontSize: 12 }}
-										>
+										<span className="text-faint" style={{ fontSize: 12 }}>
 											{timeAgo(n.created_at)}
 										</span>
 									</div>
@@ -170,7 +164,7 @@ export default function NotificationBell() {
 										type="button"
 										onClick={() => void notificationActions.remove(n.id)}
 										aria-label="알림 삭제"
-										className="flex items-center justify-center text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+										className="flex items-center justify-center text-faint"
 										style={{
 											width: 28,
 											height: 28,

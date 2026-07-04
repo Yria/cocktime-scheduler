@@ -17,6 +17,21 @@ const timeOnlyFmt = new Intl.DateTimeFormat("ko-KR", {
 	minute: "2-digit",
 });
 
+// 24시간제 HH:mm — MatchCard·DebugMatchModal·SessionSelector 의 로컬 포맷터 대체용.
+const hmFmt = new Intl.DateTimeFormat("ko-KR", {
+	timeZone: "Asia/Seoul",
+	hour: "2-digit",
+	minute: "2-digit",
+	hourCycle: "h23",
+});
+
+// "M/D" — ko-KR 은 "6. 25." 로 찍혀 en-US 로 고정(월/일 숫자 그대로, 패딩 없음).
+const mdFmt = new Intl.DateTimeFormat("en-US", {
+	timeZone: "Asia/Seoul",
+	month: "numeric",
+	day: "numeric",
+});
+
 export function fmt(iso: string | null): string {
 	return iso ? dtFmt.format(new Date(iso)) : "시간 미정";
 }
@@ -26,4 +41,14 @@ export function fmtRange(start: string | null, end: string | null): string {
 	const base = fmt(start);
 	if (!start || !end) return base;
 	return `${base} ~ ${timeOnlyFmt.format(new Date(end))}`;
+}
+
+/** 24시간제 "19:05" (KST 고정 — 디바이스 타임존을 쓰던 로컬 구현들과 달리 fmt/fmtRange 와 일관) */
+export function fmtHM(iso: string): string {
+	return hmFmt.format(new Date(iso));
+}
+
+/** "6/25 19:05" (KST 고정 — SessionSelector.formatSessionLabel 대체) */
+export function fmtMDHM(iso: string): string {
+	return `${mdFmt.format(new Date(iso))} ${fmtHM(iso)}`;
 }

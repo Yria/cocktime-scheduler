@@ -41,7 +41,7 @@ export default function HeaderMenu({ onEditProfile }: Props) {
 				type="button"
 				onClick={() => setOpen(true)}
 				aria-label="메뉴"
-				className="flex items-center justify-center text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+				className="flex items-center justify-center text-muted"
 				style={{
 					width: 40,
 					height: 40,
@@ -58,7 +58,7 @@ export default function HeaderMenu({ onEditProfile }: Props) {
 					{/* 사용자 정보 헤더 */}
 					<div className="px-5 pt-5 pb-3">
 						<p
-							className="text-[#0f1724] dark:text-white"
+							className="text-strong"
 							style={{ fontSize: 16, fontWeight: 800 }}
 						>
 							{myName || authDisplayName(authUser)}
@@ -76,7 +76,7 @@ export default function HeaderMenu({ onEditProfile }: Props) {
 					<button
 						type="button"
 						onClick={run(onEditProfile)}
-						className={`${itemClass} text-[#0f1724] dark:text-white`}
+						className={`${itemClass} text-strong`}
 						style={itemStyle}
 					>
 						내 정보
@@ -84,7 +84,7 @@ export default function HeaderMenu({ onEditProfile }: Props) {
 					<button
 						type="button"
 						onClick={run(() => setPushOpen(true))}
-						className={`${itemClass} text-[#0f1724] dark:text-white`}
+						className={`${itemClass} text-strong`}
 						style={itemStyle}
 					>
 						알림 설정
@@ -93,7 +93,7 @@ export default function HeaderMenu({ onEditProfile }: Props) {
 						<button
 							type="button"
 							onClick={run(() => navigate("/members"))}
-							className={`${itemClass} text-[#0f1724] dark:text-white`}
+							className={`${itemClass} text-strong`}
 							style={itemStyle}
 						>
 							회원 관리

@@ -1,5 +1,5 @@
 import { useSessionStore } from "../../store/sessionStore";
-import ModalSheet from "../common/ModalSheet";
+import ConfirmDialog from "../common/ConfirmDialog";
 
 /**
  * 편집권 뺏김 알림 — 내가 편집 중이었는데 다른 사람이 "편집 권한 가져오기"로 가져가면
@@ -12,21 +12,18 @@ export default function EditorTakenNotice() {
 	if (!takenBy) return null;
 
 	return (
-		<ModalSheet position="center" className="p-6" onClose={dismiss}>
-			<h3 className="font-bold text-gray-800 dark:text-white text-lg mb-1.5">
-				편집 권한이 넘어갔어요
-			</h3>
-			<p className="text-sm text-gray-600 dark:text-gray-300 mb-5 leading-relaxed">
-				<b>{takenBy}</b> 님이 편집 권한을 가져갔어요. 지금은 <b>보기 전용</b>이며, 다시
-				편집하려면 하단의 ‘보기 전용’ 버튼으로 권한을 가져오세요.
-			</p>
-			<button
-				type="button"
-				onClick={dismiss}
-				className="btn-lq-primary w-full py-3 text-sm"
-			>
-				확인
-			</button>
-		</ModalSheet>
+		<ConfirmDialog
+			title="편집 권한이 넘어갔어요"
+			message={
+				<>
+					<b>{takenBy}</b> 님이 편집 권한을 가져갔어요. 지금은 <b>보기 전용</b>이며, 다시
+					편집하려면 하단의 ‘보기 전용’ 버튼으로 권한을 가져오세요.
+				</>
+			}
+			confirmLabel="확인"
+			hideCancel
+			onConfirm={dismiss}
+			onDismiss={dismiss}
+		/>
 	);
 }

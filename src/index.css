@@ -59,6 +59,32 @@
 	--text-tertiary: rgba(235, 235, 245, 0.5);
 }
 
+/* ── Text Tone Tokens (text-strong / text-muted / text-faint) ──
+   하드코딩 반복 패턴을 대체하는 텍스트 색 토큰:
+     text-strong ← text-[#0f1724] dark:text-white
+     text-muted  ← text-[#64748b] dark:text-[rgba(235,235,245,0.5~0.7)]
+     text-faint  ← text-[#98a0ab] dark:text-[rgba(235,235,245,0.4~0.5)]
+   .dark 변수 스왑(--text-secondary 등과 같은 패턴) + @theme inline 조합이라
+   dark: variant 없이 단일 클래스로 라이트/다크 모두 대응한다.
+   다크 알파 통일 결정: faint=0.4, muted=0.6 (기존 산포의 최빈값). */
+:root {
+	--tone-strong: #0f1724;
+	--tone-muted: #64748b;
+	--tone-faint: #98a0ab;
+}
+.dark {
+	--tone-strong: #ffffff;
+	--tone-muted: rgba(235, 235, 245, 0.6);
+	--tone-faint: rgba(235, 235, 245, 0.4);
+}
+/* inline 필수 — inline 이 아니면 :root 에서 var 가 라이트 값으로 먼저 굳어
+   .dark 하위에서 스왑되지 않는다. */
+@theme inline {
+	--color-strong: var(--tone-strong);
+	--color-muted: var(--tone-muted);
+	--color-faint: var(--tone-faint);
+}
+
 /* ── Typography & Global ───────────────────────────────────── */
 /* iOS standalone PWA에서 safe-area(노치·home indicator) 영역은 <body>가
    아니라 <html> 배경으로 칠해진다. 상단 노치는 AppHeader가 padding-top으로
@@ -284,6 +310,13 @@ h4,
 }
 
 /* ── Buttons (iOS Style) ───────────────────────────────────── */
+/* 사이징 폴딩: btn-lq-* 사용처 26곳 전부가 "py-3 text-sm"과 함께 쓰여
+   padding-block(0.75rem)과 line-height(1.25rem = text-sm 의 행높이)를 기본값으로 흡수했다.
+   → 사용처의 py-3 text-sm 은 제거해도 시각 동일(후속 정리 대상).
+   주의(cascade layers): 이 클래스들은 unlayered 라 @layer utilities 의 text-sm(14px)보다
+   항상 우선한다. 즉 primary(17px)/secondary(15px)는 text-sm 이 원래부터 죽어 있었고
+   실제 렌더가 17/15px 이므로 font-size 를 14px 로 폴딩하면 안 된다(시각 변경).
+   font-size 미선언이던 green/red/orange/ghost 만 text-sm 의 14px 를 폴딩했다. */
 .btn-lq-primary {
 	background: var(--ios-blue);
 	color: white;
@@ -291,6 +324,8 @@ h4,
 	border-radius: 99px; /* Pill */
 	font-weight: 600;
 	font-size: 17px;
+	padding-block: 0.75rem;
+	line-height: 1.25rem;
 	box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
 	transition:
 		transform 0.2s cubic-bezier(0.25, 1, 0.5, 1),
@@ -316,6 +351,8 @@ h4,
 	border-radius: 99px;
 	font-weight: 600;
 	font-size: 15px;
+	padding-block: 0.75rem;
+	line-height: 1.25rem;
 	transition: background 0.2s;
 }
 .dark .btn-lq-secondary {
@@ -331,6 +368,9 @@ h4,
 	border: none;
 	border-radius: 99px;
 	font-weight: 600;
+	font-size: 0.875rem;
+	padding-block: 0.75rem;
+	line-height: 1.25rem;
 	box-shadow: 0 4px 12px rgba(52, 199, 89, 0.3);
 	transition: transform 0.2s;
 }
@@ -349,6 +389,9 @@ h4,
 	border: none;
 	border-radius: 99px;
 	font-weight: 600;
+	font-size: 0.875rem;
+	padding-block: 0.75rem;
+	line-height: 1.25rem;
 	box-shadow: 0 4px 12px rgba(255, 59, 48, 0.3);
 	transition: transform 0.2s;
 }
@@ -362,6 +405,9 @@ h4,
 	border: none;
 	border-radius: 99px;
 	font-weight: 600;
+	font-size: 0.875rem;
+	padding-block: 0.75rem;
+	line-height: 1.25rem;
 	box-shadow: 0 4px 14px rgba(255, 140, 0, 0.3);
 	transition:
 		transform 0.2s cubic-bezier(0.25, 1, 0.5, 1),
@@ -383,6 +429,9 @@ h4,
 	border: none;
 	border-radius: 99px;
 	font-weight: 600;
+	font-size: 0.875rem;
+	padding-block: 0.75rem;
+	line-height: 1.25rem;
 	transition: opacity 0.15s;
 }
 .btn-lq-ghost:active {
@@ -419,6 +468,103 @@ h4,
 .btn-toggle-active {
 	background: var(--ios-blue);
 	color: white;
+}
+
+/* ── 인라인 버튼/카드 스타일 흡수용 공용 유틸리티 ─────────────────
+   btn-lq-*(unlayered)와 달리 @utility 로 정의 — utilities 레이어에 들어가므로
+   사용처에서 Tailwind 유틸리티(py-*, text-*, rounded-* 등)로 부분 덮어쓰기가 가능하다.
+   (btn-lq-* 는 unlayered 라 유틸리티로 덮어쓸 수 없음 — 주의) */
+
+/* 파랑 솔리드 CTA — schedule/styles.ts primaryBtnStyle 값을 표준으로 승격
+   (#0b84ff · radius 12 · 14px 패딩 · 16px/700). busy 시각(반투명 배경·그림자 제거·커서)은
+   :disabled 로 흡수 — 사용처는 disabled={busy} 만 주면 primaryBtnStyle(busy)와 동일. */
+@utility btn-solid-blue {
+	width: 100%;
+	padding: 14px;
+	border: none;
+	border-radius: 12px;
+	font-size: 16px;
+	font-weight: 700;
+	color: #fff;
+	background: #0b84ff;
+	box-shadow: 0 4px 16px rgba(11, 132, 255, 0.3);
+	cursor: pointer;
+	&:disabled {
+		background: rgba(11, 132, 255, 0.5);
+		box-shadow: none;
+		cursor: not-allowed;
+	}
+}
+
+/* 파랑 틴트 보조 버튼 — 지배 변형(Home '일정 관리' 계열: radius 8 · 6x12 · 13px · bg 0.1) 기준.
+   radius 10 · 0x16 · 14px · bg 0.12 계열(OccurrenceEditor '새 장소' 등 입력행 버튼)은
+   사용처에서 유틸리티로 덮어쓰거나 통일 시 미세 시각 변화를 감수한다. */
+@utility btn-tint-blue {
+	border: none;
+	border-radius: 8px;
+	padding: 6px 12px;
+	font-size: 13px;
+	font-weight: 700;
+	color: #0b84ff;
+	background: rgba(11, 132, 255, 0.1);
+	cursor: pointer;
+	&:disabled {
+		cursor: not-allowed;
+	}
+}
+
+/* 빨강 틴트 danger — 빨강은 btn-lq-red 와 같은 var(--ios-red)(#ff3b30)로 통일
+   (OccurrenceEditor dangerBtnStyle 의 #ef4444 계열은 이 색으로 수렴).
+   기준 값은 PushSettingsSheet secondaryBtn(14px 패딩 · radius 12 · 15px/700). */
+@utility btn-tint-red {
+	width: 100%;
+	padding: 14px;
+	border: none;
+	border-radius: 12px;
+	font-size: 15px;
+	font-weight: 700;
+	color: var(--ios-red);
+	background: rgba(255, 59, 48, 0.1);
+	cursor: pointer;
+	&:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+}
+
+/* 회색 틴트 neutral — OccurrenceEditor neutralBtnStyle 값 그대로 승격(13px 패딩 · radius 12). */
+@utility btn-tint-neutral {
+	width: 100%;
+	padding: 13px;
+	border: none;
+	border-radius: 12px;
+	font-size: 15px;
+	font-weight: 700;
+	color: #64748b;
+	background: rgba(100, 116, 139, 0.1);
+	cursor: pointer;
+	&:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+}
+
+/* ── 카드 컨테이너 (card-lq) ─────────────────────────────────
+   'bg-white dark:bg-[#1c1c1e] border …' 복붙 8곳의 지배값(setup/log 계열).
+   radius 변형(r8 MatchCard · r14 DriverGroupCard)은 사용처에서 rounded-* 로 덮어쓴다.
+   schedule 계열의 다크 배경 rgba(30,30,35,0.6~0.8)·border 0.1 은 통일 시 미세 톤 변화. */
+:root {
+	--card-lq-bg: #ffffff;
+	--card-lq-border: rgba(0, 0, 0, 0.06);
+}
+.dark {
+	--card-lq-bg: #1c1c1e;
+	--card-lq-border: rgba(255, 255, 255, 0.08);
+}
+@utility card-lq {
+	background: var(--card-lq-bg);
+	border: 1px solid var(--card-lq-border);
+	border-radius: 12px;
 }
 
 /* ── Badges ────────────────────────────────────────────────── */

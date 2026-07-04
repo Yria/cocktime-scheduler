@@ -1,4 +1,4 @@
-import ModalSheet from "../common/ModalSheet";
+import ConfirmDialog from "../common/ConfirmDialog";
 
 interface ClearConfirmModalProps {
 	clearing: boolean;
@@ -12,32 +12,15 @@ export default function ClearConfirmModal({
 	setShowClearConfirm,
 }: ClearConfirmModalProps) {
 	return (
-		<ModalSheet position="center" className="p-6">
-			<h3 className="font-bold text-gray-800 dark:text-white text-lg mb-1.5">
-				로그 클리어
-			</h3>
-			<p className="text-sm text-gray-600 dark:text-gray-300 mb-5 leading-relaxed">
-				현재 세션의 모든 매치 기록을 삭제하고 게임 횟수를 초기화합니다. 이
-				작업은 되돌릴 수 없습니다.
-			</p>
-			<div className="flex gap-3">
-				<button
-					type="button"
-					onClick={() => setShowClearConfirm(false)}
-					disabled={clearing}
-					className="btn-lq-secondary flex-1 py-3 text-sm"
-				>
-					취소
-				</button>
-				<button
-					type="button"
-					onClick={handleClear}
-					disabled={clearing}
-					className="btn-lq-red flex-1 py-3 text-sm"
-				>
-					{clearing ? "처리 중…" : "클리어"}
-				</button>
-			</div>
-		</ModalSheet>
+		<ConfirmDialog
+			title="로그 클리어"
+			message="현재 세션의 모든 매치 기록을 삭제하고 게임 횟수를 초기화합니다. 이 작업은 되돌릴 수 없습니다."
+			confirmLabel="클리어"
+			tone="danger"
+			busy={clearing}
+			busyLabel="처리 중…"
+			onConfirm={handleClear}
+			onCancel={() => setShowClearConfirm(false)}
+		/>
 	);
 }

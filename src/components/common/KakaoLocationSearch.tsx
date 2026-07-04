@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dongFromAddress } from "../../lib/carpool/dong";
 import { hasKakaoKey, loadKakaoMaps } from "../../lib/kakaoMap";
+import EmptyState from "../shared/EmptyState";
+import { inputCls, inputStyle } from "./fieldStyles";
 
 // 카카오 지도 임베드 + 장소 키워드 자동완성(타이핑에 따라 디바운스 검색) + 핀 미리보기 공용 컴포넌트.
 // 결과 선택 시 onPick 으로 {이름, 주소, 좌표, 행정구역(동)}을 넘긴다.
@@ -36,15 +38,6 @@ interface Props {
 }
 
 const SEOUL = { lat: 37.5666, lng: 126.9784 };
-
-const inputCls =
-	"w-full bg-white dark:bg-[rgba(30,30,35,0.8)] text-[#0f1724] dark:text-white border border-[rgba(0,0,0,0.12)] dark:border-[rgba(255,255,255,0.12)]";
-const inputStyle: React.CSSProperties = {
-	padding: "11px 13px",
-	borderRadius: 10,
-	fontSize: 15,
-	outline: "none",
-};
 
 export default function KakaoLocationSearch({
 	onPick,
@@ -224,12 +217,7 @@ export default function KakaoLocationSearch({
 			/>
 
 			{!sdkError && !mapReady && (
-				<p
-					className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.45)]"
-					style={{ fontSize: 12, marginTop: 6 }}
-				>
-					지도 불러오는 중…
-				</p>
+				<EmptyState loading spinnerSize={16} style={{ padding: "6px 0 0" }} />
 			)}
 
 			{/* 자동완성 결과 */}
@@ -261,13 +249,13 @@ export default function KakaoLocationSearch({
 								}}
 							>
 								<span
-									className="text-[#0f1724] dark:text-white block"
+									className="text-strong block"
 									style={{ fontSize: 14, fontWeight: 700 }}
 								>
 									{r.place_name}
 								</span>
 								<span
-									className="text-[#64748b] dark:text-[rgba(235,235,245,0.55)] block"
+									className="text-muted block"
 									style={{ fontSize: 12.5, marginTop: 2 }}
 								>
 									{r.road_address_name || r.address_name}
@@ -280,7 +268,7 @@ export default function KakaoLocationSearch({
 
 			{hint && (
 				<p
-					className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+					className="text-muted"
 					style={{ fontSize: 12.5, lineHeight: 1.5, marginTop: 6 }}
 				>
 					{hint}
@@ -290,7 +278,7 @@ export default function KakaoLocationSearch({
 			{/* 지도 미리보기 / 키 없음 안내 */}
 			{sdkError ? (
 				<p
-					className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+					className="text-muted"
 					style={{
 						fontSize: 13,
 						lineHeight: 1.5,

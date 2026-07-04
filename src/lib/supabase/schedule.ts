@@ -8,7 +8,7 @@ import type {
 	SessionWithPlace,
 } from "./types";
 
-/** 반복 규칙 → 회차 동기화(생성/갱신/정리 + 1주 전 노출). 멱등 RPC. 앱 로드 시 호출. */
+/** 반복 규칙 → 회차 동기화(생성/갱신/정리 + 일요일 18:00 KST 일괄 노출). 멱등 RPC. 앱 로드 시 호출(+pg_cron 일 18:00). */
 export async function syncOccurrences(): Promise<void> {
 	const { error } = await supabase.rpc("sync_schedule_occurrences");
 	if (error) console.error("syncOccurrences:", error);

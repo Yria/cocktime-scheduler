@@ -1,5 +1,6 @@
 import { skillScoreOf } from "../../lib/teamSelection";
 import type { MatchLogEntry } from "../../lib/supabase/api";
+import { fmtHM } from "../../lib/schedule/timeFmt";
 import type { GameType } from "../../types";
 import SharedPlayerBadge from "../shared/PlayerBadge";
 
@@ -9,13 +10,6 @@ const GAME_TYPE_CONFIG: Record<GameType, { bg: string; color: string }> = {
 	여복: { bg: "#fee2e2", color: "#991b1b" },
 	혼합: { bg: "#f3e8ff", color: "#6b21a8" },
 };
-
-function formatTime(iso: string): string {
-	const d = new Date(iso);
-	const h = d.getHours().toString().padStart(2, "0");
-	const m = d.getMinutes().toString().padStart(2, "0");
-	return `${h}:${m}`;
-}
 
 export default function MatchCard({
 	log,
@@ -27,9 +21,8 @@ export default function MatchCard({
 	const typeConfig = GAME_TYPE_CONFIG[log.gameType];
 	return (
 		<div
-			className="bg-white dark:bg-[#1c1c1e] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
+			className="card-lq rounded-lg"
 			style={{
-				borderRadius: 8,
 				overflow: "hidden",
 			}}
 		>
@@ -44,7 +37,7 @@ export default function MatchCard({
 				}}
 			>
 				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-					<span className="text-[#0f1724] dark:text-white" style={{ fontSize: 14, fontWeight: 600 }}>
+					<span className="text-strong" style={{ fontSize: 14, fontWeight: 600 }}>
 						#{index} · {log.courtId}번 코트
 					</span>
 					<span
@@ -61,12 +54,12 @@ export default function MatchCard({
 					</span>
 				</div>
 				<div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-					<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]" style={{ fontSize: 12, fontWeight: 500 }}>
-						{formatTime(log.startedAt)}
-						{log.endedAt ? ` → ${formatTime(log.endedAt)}` : ""}
+					<span className="text-faint" style={{ fontSize: 12, fontWeight: 500 }}>
+						{fmtHM(log.startedAt)}
+						{log.endedAt ? ` → ${fmtHM(log.endedAt)}` : ""}
 					</span>
 					{log.assignedBy ? (
-						<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]" style={{ fontSize: 11, fontWeight: 500, opacity: 0.85 }}>
+						<span className="text-faint" style={{ fontSize: 11, fontWeight: 500, opacity: 0.85 }}>
 							편성 {log.assignedBy}
 						</span>
 					) : null}
@@ -78,7 +71,7 @@ export default function MatchCard({
 				{/* Team A */}
 				<div style={{ display: "flex", gap: 12, alignItems: "center" }}>
 					<span
-						className="text-[#0f1724] dark:text-white"
+						className="text-strong"
 						style={{
 							fontSize: 14,
 							fontWeight: 600,
@@ -105,7 +98,7 @@ export default function MatchCard({
 				>
 					<div className="bg-[rgba(0,0,0,0.08)] dark:bg-[rgba(255,255,255,0.1)]" style={{ flex: 1, height: 1 }} />
 					<span
-						className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+						className="text-faint"
 						style={{
 							fontSize: 12,
 							fontWeight: 700,
@@ -120,7 +113,7 @@ export default function MatchCard({
 				{/* Team B */}
 				<div style={{ display: "flex", gap: 12, alignItems: "center" }}>
 					<span
-						className="text-[#0f1724] dark:text-white"
+						className="text-strong"
 						style={{
 							fontSize: 14,
 							fontWeight: 600,

@@ -97,14 +97,14 @@ export default function ScheduleCalendar({
 				</button>
 				<div className="flex items-center gap-2">
 					<span
-						className="text-[#0f1724] dark:text-white"
+						className="text-strong"
 						style={{ fontSize: 16, fontWeight: 800 }}
 					>
 						{year}년 {month + 1}월
 					</span>
 					{loading && (
 						<span
-							className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+							className="text-faint"
 							style={{ fontSize: 11, fontWeight: 600 }}
 						>
 							불러오는 중…
@@ -202,7 +202,7 @@ export default function ScheduleCalendar({
 								))}
 								{extra > 0 && (
 									<span
-										className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+										className="text-faint"
 										style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}
 									>
 										+{extra}
@@ -218,7 +218,7 @@ export default function ScheduleCalendar({
 			{selectedDate && (
 				<div className="mt-3 pt-3 border-t border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]">
 					<div
-						className="text-[#0f1724] dark:text-white mb-2"
+						className="text-strong mb-2"
 						style={{ fontSize: 14, fontWeight: 700 }}
 					>
 						{Number(selectedDate.slice(5, 7))}월 {Number(selectedDate.slice(8, 10))}일 (
@@ -227,7 +227,7 @@ export default function ScheduleCalendar({
 
 					{selectedList.length === 0 ? (
 						<div
-							className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+							className="text-faint"
 							style={{ fontSize: 13, padding: "10px 0" }}
 						>
 							이 날 일정 없음
@@ -256,7 +256,7 @@ export default function ScheduleCalendar({
 										}}
 									>
 										<span
-											className="text-[#0f1724] dark:text-white"
+											className="text-strong"
 											style={{
 												fontSize: 14,
 												fontWeight: 700,
@@ -265,7 +265,7 @@ export default function ScheduleCalendar({
 											{o.scheduled_at ? isoToTimeKST(o.scheduled_at) : "--:--"}
 										</span>
 										<span
-											className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)] truncate"
+											className="text-muted truncate"
 											style={{
 												fontSize: 12.5,
 												flex: 1,
@@ -275,7 +275,7 @@ export default function ScheduleCalendar({
 											{place ?? "장소 미정"}
 										</span>
 										<span
-											className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.45)]"
+											className="text-faint"
 											style={{ fontSize: 11.5, fontWeight: 500, flexShrink: 0 }}
 										>
 											{o.capacity != null ? `최대 ${o.capacity}명` : "무제한"}

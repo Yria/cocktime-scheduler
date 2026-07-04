@@ -7,8 +7,10 @@ import { skillScore as computeSkillScore } from "../../lib/teamSelection";
 import { fetchMatchLogs, type MatchLogEntry } from "../../lib/supabase/api";
 import { dbUpdatePlayerSkill } from "../../lib/supabase/actions";
 import { DEFAULT_SKILLS, SKILLS, SKILL_LEVELS } from "../../lib/constants";
+import { fmtHM } from "../../lib/schedule/timeFmt";
 import { SkillButton } from "../setup/SkillButton";
 import ModalSheet from "../common/ModalSheet";
+import EmptyState from "../shared/EmptyState";
 import type { GameType, PlayerSkills } from "../../types";
 
 const GAME_TYPE_STYLE: Record<GameType, string> = {
@@ -21,10 +23,8 @@ const GAME_TYPE_STYLE: Record<GameType, string> = {
 // 혼성(혼복·혼합) 먼저 — 디버그 관심사 우선
 const GAME_TYPE_ORDER: GameType[] = ["혼복", "혼합", "남복", "여복"];
 
-function formatTime(iso: string): string {
-	return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-}
-
+// lib/magnetStyle의 잉크색은 inline style이라 다크모드 스왑이 안 됨 — 다크 배경 가독성을 위해
+// Tailwind 클래스 쌍(라이트 600/다크 300)을 유지한다(디버그 모달 전용).
 function genderInk(gender?: string): string {
 	return gender === "F" ? "text-rose-600 dark:text-rose-300" : "text-sky-600 dark:text-sky-300";
 }
@@ -253,11 +253,9 @@ export default function DebugMatchModal() {
 					</>
 				)}
 				{logs === null ? (
-					<p className="text-sm text-gray-400 dark:text-gray-500 py-3 text-center">불러오는 중…</p>
+					<EmptyState loading style={{ padding: "12px 0" }} />
 				) : history.length === 0 ? (
-					<p className="text-sm text-gray-400 dark:text-gray-500 py-3 text-center">
-						완료된 경기 기록 없음
-					</p>
+					<EmptyState style={{ padding: "12px 0" }}>완료된 경기 기록 없음</EmptyState>
 				) : (
 					<ol className="flex flex-col gap-2">
 						{history.map((h, i) => (
@@ -268,7 +266,7 @@ export default function DebugMatchModal() {
 								<div className="flex items-center justify-between mb-1">
 									<span className="text-xs font-bold text-gray-400 dark:text-gray-500">
 										#{history.length - i}
-										<span className="ml-1.5 font-medium">{formatTime(h.at)}</span>
+										<span className="ml-1.5 font-medium">{fmtHM(h.at)}</span>
 									</span>
 									<span
 										className={`rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${GAME_TYPE_STYLE[h.gameType]}`}
@@ -278,7 +276,7 @@ export default function DebugMatchModal() {
 								</div>
 								<div className="text-sm">
 									<span className="text-gray-400 dark:text-gray-500">파트너 </span>
-									<span className={`font-bold ${genderInk(h.partner?.gender)}`}>
+									<span className={`font-bold ${genderInk(h.partner?.gender ?? "M")}`}>
 										{h.partner?.name ?? "—"}
 									</span>
 									<span className="mx-1.5 text-gray-300 dark:text-gray-600">vs</span>

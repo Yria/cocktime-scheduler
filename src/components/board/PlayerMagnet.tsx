@@ -4,7 +4,9 @@ import useImage from "use-image";
 import Konva from "konva";
 import { useBoardStore } from "../../store/boardStore";
 import { useSessionStore } from "../../store/sessionStore";
-import { useDebugStore } from "../../store/debugStore";
+import { usePlayerMagnetGestures } from "../../hooks/usePlayerMagnetGestures";
+import { usePlayerMagnetDrag } from "../../hooks/usePlayerMagnetDrag";
+import { MagnetBadge } from "./MagnetBadge";
 import { skillScore as computeSkillScore } from "../../lib/teamSelection";
 import { getPlayerPhotoUrl } from "../../lib/playerPhoto";
 import { getNameInitial } from "../../lib/player";
@@ -32,27 +34,6 @@ import {
 
 const GRAD_H = MAGNET_SIZE * 0.7;
 const NAME_FONT = 11;
-
-/** 자석 우상단 라운드 배지(예약/휴식 공용). 캔버스 출력 동일성을 위해 폰트/perfectDraw 고정. */
-const MagnetBadge = ({ text, fill }: { text: string; fill: string }) => (
-	<Group x={MAGNET_R - 8} y={-MAGNET_R + 8} listening={false}>
-		<Rect x={-16} y={-9} width={32} height={18} cornerRadius={9} fill={fill} perfectDrawEnabled={false} />
-		<Text
-			x={-16}
-			y={-9}
-			width={32}
-			height={18}
-			text={text}
-			fontSize={10}
-			fontStyle="bold"
-			fontFamily="Inter, system-ui, sans-serif"
-			fill="#FFFFFF"
-			align="center"
-			verticalAlign="middle"
-			perfectDrawEnabled={false}
-		/>
-	</Group>
-);
 
 interface Props {
 	playerId: string;
@@ -158,31 +139,6 @@ const PlayerMagnet = memo(function PlayerMagnet({
 		node.getLayer()?.batchDraw();
 	}, [isGhost, hasPhoto, image]);
 
-	// ── 더블탭 → 매칭 이력(디버그) 모달 ──────────────────────
-	// 두 번 연속 탭하면 매칭 이력을 연다. 단일 탭(추천/콕 확인)은 더블탭과 구분하려고
-	// DBLTAP_MS 만큼 지연 후 발동한다. 드래그 시작/언마운트 시 대기 중인 단일 탭은 취소.
-	// 터치 탭은 브라우저가 ~300ms 뒤 호환(ghost) click 을 추가로 쏠 수 있다(Konva가 보통 touchstart
-	// preventDefault로 막지만 보장 X). 그 호환 click 을 같은 입력의 중복으로 흡수하려고 마지막 "터치" 탭
-	// 시각(lastTouch)을 기록하고, 그 직후의 mouse/click 이벤트는 무시한다(타임스탬프만으로는 정상 더블탭과
-	// 구분 불가하므로 이벤트 modality 로 판별).
-	const DBLTAP_MS = 280;
-	const COMPAT_CLICK_MS = 500;
-	const tap = useRef<{ count: number; timer: ReturnType<typeof setTimeout> | null; lastTouch: number }>({
-		count: 0,
-		timer: null,
-		lastTouch: 0,
-	});
-
-	const clearTap = useCallback(() => {
-		if (tap.current.timer !== null) {
-			clearTimeout(tap.current.timer);
-			tap.current.timer = null;
-		}
-		tap.current.count = 0;
-	}, []);
-
-	useEffect(() => clearTap, [clearTap]);
-
 	// ── 더블탭 → "어딘가에서 빠짐"(해체/예약취소/휴식복귀) ──────────────────
 	// 그룹 anchor → 팀에서 빼기, ghost → 예약 취소, 휴식 → 복귀. 자유 자석/경기중은 빠질 곳이 없어 무동작.
 	// 현재 렌더 위치(slot offset 반영)를 drop으로 넘겨 그 자리에서 자연스럽게 흩어지게 한다.
@@ -200,195 +156,28 @@ const PlayerMagnet = memo(function PlayerMagnet({
 		}
 	}, [isGhost, reservationId, resting, playing, playerId]);
 
-	// ── 롱프레스 → 매칭 이력(디버그) 모달 ──────────────────────
-	// "제자리에서 꾹" 만 롱프레스 — 누른 뒤 LONGPRESS_MOVE_TOL(px) 넘게 움직이면(=드래그 의도) 즉시 취소한다.
-	// (Konva 드래그 임계(3px)·dragstart보다 먼저 움직임을 잡아, 천천히 잡고 끌 때 롱프레스가 잘못 발동하는 것 방지.)
-	// fired=true면 뒤따르는 탭(touchend의 onTap)은 같은 입력의 잔상 → 흡수.
-	const LONGPRESS_MS = 500;
-	const LONGPRESS_MOVE_TOL = 8; // 누른 지점에서 이만큼(px) 넘게 이동하면 롱프레스 취소
-	const longPress = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean; x: number; y: number }>({
-		timer: null,
-		fired: false,
-		x: 0,
-		y: 0,
+	// 탭/더블탭/롱프레스 제스처 — 단일 탭(추천/콕 확인)·더블탭(빠짐)·롱프레스(디버그) 분기는 훅 내부.
+	const { handleClick, handlePointerDown, handlePointerMove, handlePointerUp, clearTap, clearLongPress } =
+		usePlayerMagnetGestures({ playerId, cockPending, onClick, onCockCheck, removeFromGroup });
+
+	// 드래그 핸들러(rAF 코얼레싱·드롭 분기·슬롯 스냅백) — justDragged는 위 흩어짐 트윈과 공유하는 같은 ref.
+	const { handleDragStart, handleDragMove, handleDragEnd } = usePlayerMagnetDrag({
+		playerId,
+		isGhost,
+		playing,
+		resting,
+		reservationId,
+		offsetX,
+		offsetY,
+		onDragEnd,
+		onGhostDragEnd,
+		onPlayingDragEnd,
+		onRestingDragEnd,
+		onDragMove,
+		clearTap,
+		clearLongPress,
+		justDragged,
 	});
-	const clearLongPress = useCallback(() => {
-		if (longPress.current.timer !== null) {
-			clearTimeout(longPress.current.timer);
-			longPress.current.timer = null;
-		}
-	}, []);
-	useEffect(() => clearLongPress, [clearLongPress]);
-	const handlePointerDown = useCallback(
-		(e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-			longPress.current.fired = false;
-			clearLongPress();
-			const p = e.target.getStage()?.getPointerPosition();
-			longPress.current.x = p?.x ?? 0;
-			longPress.current.y = p?.y ?? 0;
-			longPress.current.timer = setTimeout(() => {
-				longPress.current.timer = null;
-				longPress.current.fired = true;
-				clearTap(); // 대기 중 단일 탭 취소
-				if (typeof navigator !== "undefined") navigator.vibrate?.(30);
-				useDebugStore.getState().openDebug(playerId);
-			}, LONGPRESS_MS);
-		},
-		[clearLongPress, clearTap, playerId],
-	);
-	// 누른 채 일정 거리 이상 움직이면(드래그 의도) 롱프레스 취소 — Konva dragstart보다 먼저 잡는다.
-	const handlePointerMove = useCallback(
-		(e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-			if (longPress.current.timer === null) return;
-			const p = e.target.getStage()?.getPointerPosition();
-			if (!p) return;
-			const dx = p.x - longPress.current.x;
-			const dy = p.y - longPress.current.y;
-			if (dx * dx + dy * dy > LONGPRESS_MOVE_TOL * LONGPRESS_MOVE_TOL) clearLongPress();
-		},
-		[clearLongPress],
-	);
-	const handlePointerUp = useCallback(() => clearLongPress(), [clearLongPress]);
-
-	// 드래그 중 이 컴포넌트가 언마운트되면(원격 팀 해체 등으로 부모 Group destroy) dragend가 안 와
-	// clearDrag가 누락돼 드롭존이 고착될 수 있다 → 언마운트 시 내가 드래그 주인이면 정리.
-	useEffect(
-		() => () => {
-			if (useBoardStore.getState().dragInfo?.playerId === playerId) useBoardStore.getState().clearDrag();
-		},
-		[playerId],
-	);
-
-	const handleClick = useCallback(
-		(e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-			e.cancelBubble = true;
-			// 롱프레스로 이미 디버그를 열었으면 뒤따르는 탭은 같은 입력의 잔상 → 흡수.
-			if (longPress.current.fired) {
-				longPress.current.fired = false;
-				return;
-			}
-			// 터치 탭 직후 따라오는 호환(ghost) click 은 같은 입력의 중복 → 무시. (mouse/desktop click 은 그대로 처리.)
-			const ev = e.evt;
-			const isTouch =
-				"touches" in ev || ("pointerType" in ev && (ev as PointerEvent).pointerType === "touch");
-			const now = Date.now();
-			if (isTouch) {
-				tap.current.lastTouch = now;
-			} else if (now - tap.current.lastTouch < COMPAT_CLICK_MS) {
-				tap.current.lastTouch = 0; // 호환 click 은 탭당 1개 — 하나만 흡수하고 이후 실제 mouse click 은 통과
-				return; // 터치 탭 직후의 호환 click → 중복 흡수
-			}
-
-			tap.current.count += 1;
-			if (tap.current.count >= 2) {
-				// 더블탭 → 그룹/예약/휴식에서 빠짐(없으면 무동작)
-				clearTap();
-				if (typeof navigator !== "undefined") navigator.vibrate?.(30);
-				removeFromGroup();
-				return;
-			}
-			// 첫 탭 → 더블탭 가능성을 잠시 기다렸다가 단일 탭 동작(콕 확인 / 추천).
-			if (tap.current.timer !== null) clearTimeout(tap.current.timer);
-			tap.current.timer = setTimeout(() => {
-				tap.current.timer = null;
-				tap.current.count = 0;
-				if (cockPending) {
-					onCockCheck?.(playerId);
-					return;
-				}
-				onClick?.(playerId);
-			}, DBLTAP_MS);
-		},
-		[onClick, onCockCheck, cockPending, playerId, clearTap, removeFromGroup],
-	);
-
-	// dragmove는 pointermove마다(60~120Hz) 발사된다 — hover/휴식 해석을 화면 프레임(rAF)당 1회로 코얼레싱해
-	// 프레임드랍을 막는다. 최신 좌표만 보관하고 프레임당 마지막 좌표로 onDragMove를 1회 호출.
-	// (자석 시각 이동은 Konva가 직접 처리하므로 이 throttle과 무관 — 드래그 부드러움엔 영향 없음.)
-	const dragRaf = useRef<number | null>(null);
-	const lastDragPt = useRef<{ x: number; y: number } | null>(null);
-	const cancelDragRaf = useCallback(() => {
-		if (dragRaf.current !== null) {
-			cancelAnimationFrame(dragRaf.current);
-			dragRaf.current = null;
-		}
-	}, []);
-	useEffect(() => cancelDragRaf, [cancelDragRaf]); // 언마운트 시 대기 중 rAF 정리
-
-	const handleDragMove = useCallback(
-		(e: Konva.KonvaEventObject<DragEvent>) => {
-			if (!onDragMove) return;
-			lastDragPt.current = absToStage(e.target); // 줌/팬 보정 → 논리 좌표(최신만 보관)
-			if (dragRaf.current !== null) return; // 이번 프레임 이미 예약됨 — 코얼레싱
-			dragRaf.current = requestAnimationFrame(() => {
-				dragRaf.current = null;
-				const p = lastDragPt.current;
-				if (p) onDragMove(playerId, p.x, p.y);
-			});
-		},
-		[onDragMove, playerId],
-	);
-
-	const handleDragStart = useCallback(
-		(e: Konva.KonvaEventObject<DragEvent>) => {
-			clearTap(); // 드래그 의도 → 대기 중 단일 탭 취소
-			clearLongPress(); // 드래그면 롱프레스(디버그) 아님
-			const store = useBoardStore.getState();
-			// 드래그 정보 등록 — 팀 소속(anchor/ghost)이면 상단 '팀에서 빼기', 휴식 가능하면 하단 '휴식하기' 밴드 노출.
-			const teamBound = isGhost || !!store.magnets.get(playerId)?.teamId;
-			// 휴식 가능: 편집자의 free/anchor 대기 자석(예약/경기중/이미 휴식 제외).
-			const restable = useSessionStore.getState().isEditor && !isGhost && !playing && !resting;
-			// 드래그 시작 논리좌표 — 출발 존(빼기/휴식)에서 같은 존으로의 드롭을 무효화하는 가드용.
-			const from = absToStage(e.target);
-			store.setDragInfo({ playerId, detachable: teamBound, restable, from });
-			// 휴식 패널이 열려 있으면 보드 자석 드래그 시작 시 접는다(가림 해소 + 접힘 휴식 밴드로 자연 전환).
-			// 휴식 자석(패널 내부 출발)은 유지 — 드래그 대상이 패널 안이라 접으면 안 됨.
-			if (!resting && store.restZoneOpen) store.closeRestZone();
-			// 드래그 중인 자석을 항상 최상단으로: 자석을 부모 내 최상단으로 올리고,
-			// 팀/코트 카드 멤버라면 그 부모 그룹도 Layer 최상단으로 끌어올린다
-			// (안 그러면 멤버가 부모 그룹 안에서만 위로 가서 다른 자석/카드 아래에 깔린다).
-			e.target.moveToTop();
-			const parent = e.target.getParent();
-			if (parent instanceof Konva.Group) parent.moveToTop();
-		},
-		[clearTap, clearLongPress, isGhost, playing, resting, playerId],
-	);
-
-	const handleDragEnd = useCallback(
-		(e: Konva.KonvaEventObject<DragEvent>) => {
-			cancelDragRaf(); // 드롭 후 늦은 hover 갱신 방지(대기 중 rAF 취소)
-			// 방금 드래그로 놓인 자석 본인은 흩어짐 트윈에서 제외(이미 드롭 위치에 있음)
-			justDragged.current = true;
-			const p = absToStage(e.target); // 줌/팬 보정 → 논리 좌표
-			if (isGhost && reservationId) onGhostDragEnd?.(reservationId, p.x, p.y);
-			else if (playing) onPlayingDragEnd?.(playerId, p.x, p.y);
-			else if (resting) onRestingDragEnd?.(playerId, p.x, p.y);
-			else onDragEnd?.(playerId, p.x, p.y);
-
-			// 슬롯 복귀: ghost/playing/resting이거나, 드롭 후에도 여전히 팀 anchor면 슬롯(offset)으로.
-			// 애니메이션(.to) 대신 즉시 위치 설정 — reserve/reservePair로 인한 동시 re-render와
-			// 트윈이 충돌해 자석이 떨리며 튀는 현상을 방지한다.
-			const mag = useBoardStore.getState().magnets.get(playerId);
-			const stillAnchored = !!mag?.teamId;
-			if (isGhost || playing || resting || stillAnchored) {
-				e.target.position({ x: offsetX ?? 0, y: offsetY ?? 0 });
-				e.target.getLayer()?.batchDraw();
-			} else if (mag && !(e.target.getParent() instanceof Konva.Group)) {
-				// 자유 자석(Layer 직속)만 스토어 좌표로 정합. 드롭 거부(none)면 원위치 복귀,
-				// 자유 이동(move)이면 드롭 위치 그대로(스토어와 동일 좌표라 무동작).
-				// 거부 시엔 상태 변화가 없어 re-render가 안 일어나므로 여기서 직접 되돌려야 한다.
-				// (방금 detach된 멤버는 아직 팀 Group 자식이라 제외 — 여기서 잡으면 team.anchor만큼
-				//  어긋나 한 프레임 튄다. React 재마운트가 자유 자석으로 올바른 위치에 놓는다.)
-				e.target.position({ x: mag.x, y: mag.y });
-				e.target.getLayer()?.batchDraw();
-			}
-			// 드래그 종료 — 드롭존/하이라이트 상태 초기화(모든 종류 공통).
-			// 반드시 위 onDragEnd/onGhostDragEnd 콜백 "이후"에 호출해야 한다: 그 핸들러들이 출발 존 가드를
-			// 위해 dragInfo.from 을 읽는데, clearDrag 가 먼저 돌면 from 이 null 이 돼 가드가 무력화된다.
-			useBoardStore.getState().clearDrag();
-		},
-		[playerId, isGhost, playing, resting, reservationId, onDragEnd, onGhostDragEnd, onPlayingDragEnd, onRestingDragEnd, offsetX, offsetY, cancelDragRaf],
-	);
 
 	if (!magnet || !player) return null;
 

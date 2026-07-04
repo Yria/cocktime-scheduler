@@ -1,31 +1,23 @@
-import { useMemo, useState } from "react";
-import {
-	dateStrDow,
-	isoToDateKST,
-	isoToTimeKST,
-	kstEndWallClockToISO,
-	kstWallClockToISO,
-} from "../../lib/schedule/calendar";
+import { useState } from "react";
 import type {
 	OccurrencePatch,
 	OneOffInput,
 } from "../../lib/supabase/recurring";
 import type { CreatePlaceInput } from "../../lib/supabase/schedule";
 import type { PlaceRow, SessionRow } from "../../lib/supabase/types";
-import { Switch } from "../common/Switch";
-import PlaceLocationPicker from "./PlaceLocationPicker";
 import {
 	inputCls,
 	inputStyle,
 	labelCls,
 	labelStyle,
-	overlayStyle,
-	primaryBtnStyle,
 	selectStyle,
-	sheetCls,
-	sheetStyle,
-	statusStyle,
-} from "./styles";
+} from "../common/fieldStyles";
+import ModalSheet from "../common/ModalSheet";
+import { Switch } from "../common/Switch";
+import OccurrenceInfoView from "./OccurrenceInfoView";
+import PlaceLocationPicker from "./PlaceLocationPicker";
+import { statusStyle } from "./styles";
+import { useOccurrenceForm } from "./useOccurrenceForm";
 
 interface Props {
 	occurrence: SessionRow | null; // null = 신규 일회성
@@ -50,125 +42,36 @@ export default function OccurrenceEditor({
 	onDelete,
 	onClose,
 }: Props) {
-	const isRuleBased = occurrence?.recurring_schedule_id != null;
-	const status = occurrence?.status ?? null;
+	const {
+		isRuleBased,
+		editable,
+		occDate,
+		time,
+		setTime,
+		endTime,
+		setEndTime,
+		carpoolEnabled,
+		setCarpoolEnabled,
+		capacity,
+		setCapacity,
+		placeId,
+		setPlaceId,
+		isRegular,
+		setIsRegular,
+		noticeMd,
+		setNoticeMd,
+		busy,
+		error,
+		handleCreate,
+		handleOverride,
+		handleDelete,
+	} = useOccurrenceForm(occurrence, date, {
+		onOverride,
+		onCreateOneOff,
+		onDelete,
+	});
 
-	// 대상 날짜: 기존 회차면 scheduled_at(KST), 아니면 신규 대상일
-	const occDate = useMemo(() => {
-		if (occurrence?.scheduled_at) return isoToDateKST(occurrence.scheduled_at);
-		return date;
-	}, [occurrence, date]);
-
-	// 폼 상태 prefill
-	const [time, setTime] = useState<string>(() => {
-		if (occurrence?.scheduled_at) return isoToTimeKST(occurrence.scheduled_at);
-		return "19:00";
-	});
-	const [endTime, setEndTime] = useState<string>(() => {
-		if (occurrence?.ends_at) return isoToTimeKST(occurrence.ends_at);
-		return "22:00";
-	});
-	const [carpoolEnabled, setCarpoolEnabled] = useState<boolean>(() => {
-		if (occurrence) return occurrence.carpool_enabled;
-		// 신규 일회성: 대상일이 주말(토/일)이면 카풀 기본 on
-		const dow = occDate ? dateStrDow(occDate) : -1;
-		return dow === 0 || dow === 6;
-	});
-	const [capacity, setCapacity] = useState<string>(() =>
-		occurrence?.capacity != null ? String(occurrence.capacity) : "",
-	);
-	const [placeId, setPlaceId] = useState<number | null>(
-		occurrence?.place_id ?? null,
-	);
-	const [isRegular, setIsRegular] = useState<boolean>(
-		() => occurrence?.is_regular ?? false,
-	);
-	const [noticeMd, setNoticeMd] = useState<string>(
-		() => occurrence?.notice_md ?? "",
-	);
 	const [showPicker, setShowPicker] = useState(false);
-
-	const [busy, setBusy] = useState(false);
-	const [error, setError] = useState<string | null>(null);
-
-	// 편집 가능 여부 (draft/open 만 편집)
-	const editable =
-		occurrence == null || status === "draft" || status === "open";
-
-	function parseCapacity(): number | null {
-		const v = capacity.trim();
-		return v ? Number(v) : null;
-	}
-
-	async function run(fn: () => Promise<void>) {
-		if (busy) return;
-		setBusy(true);
-		setError(null);
-		try {
-			await fn();
-		} catch (e) {
-			setError(e instanceof Error ? e.message : "처리에 실패했어요.");
-			setBusy(false);
-		}
-	}
-
-	function validTimes(): boolean {
-		if (!time || !endTime) {
-			setError("시작·종료 시간을 입력하세요.");
-			return false;
-		}
-		if (time === endTime) {
-			setError("종료 시간이 시작 시간과 같아요.");
-			return false;
-		}
-		return true;
-	}
-
-	// 저장: 신규 일회성 생성
-	function handleCreate() {
-		if (!occDate) {
-			setError("대상 날짜가 없어요.");
-			return;
-		}
-		if (!validTimes()) return;
-		void run(async () => {
-			await onCreateOneOff({
-				scheduledAt: kstWallClockToISO(occDate, time),
-				endsAt: kstEndWallClockToISO(occDate, time, endTime),
-				carpoolEnabled,
-				occurrenceDate: occDate,
-				placeId,
-				capacity: parseCapacity(),
-				isRegular,
-				noticeMd: noticeMd.trim() ? noticeMd : null,
-			});
-		});
-	}
-
-	// 저장: 기존 회차 수정
-	function handleOverride() {
-		if (!occurrence || !occDate) return;
-		if (!validTimes()) return;
-		void run(async () => {
-			await onOverride(occurrence.id, {
-				scheduledAt: kstWallClockToISO(occDate, time),
-				endsAt: kstEndWallClockToISO(occDate, time, endTime),
-				carpoolEnabled,
-				placeId,
-				capacity: parseCapacity(),
-				isRegular,
-				noticeMd: noticeMd.trim() ? noticeMd : null,
-			});
-		});
-	}
-
-	function handleDelete() {
-		if (!occurrence) return;
-		if (!confirm("이 회차를 삭제할까요? 되돌릴 수 없어요.")) return;
-		void run(async () => {
-			await onDelete(occurrence);
-		});
-	}
 
 	// 헤더 제목/태그
 	const title =
@@ -180,127 +83,59 @@ export default function OccurrenceEditor({
 
 	return (
 		<>
-		<div
-			style={overlayStyle}
-			onClick={onClose}
-			onKeyDown={(e) => {
-				if (e.key === "Escape") onClose();
-			}}
-		>
-			<div
-				className={sheetCls}
-				style={sheetStyle}
-				onClick={(e) => e.stopPropagation()}
-			>
-				{/* 헤더 */}
-				<div className="flex items-start justify-between gap-2 mb-4">
-					<div className="flex flex-col gap-1.5 min-w-0">
-						<h2
-							className="text-[#0f1724] dark:text-white"
-							style={{ fontSize: 17, fontWeight: 800 }}
+		<ModalSheet
+			position="bottom"
+			onClose={onClose}
+			// 위에 새 장소 picker 가 떠 있을 땐 Escape 가 최상단 시트만 닫히게 잠시 끈다
+			closeOnEscape={!showPicker}
+			title={title}
+			subtitle={
+				occurrence ? (
+					<div className="flex items-center gap-1.5 flex-wrap">
+						{st && (
+							<span
+								style={{
+									fontSize: 11,
+									fontWeight: 700,
+									color: st.color,
+									background: st.bg,
+									padding: "2px 8px",
+									borderRadius: 6,
+								}}
+							>
+								{st.label}
+							</span>
+						)}
+						<span
+							className="text-muted"
+							style={{ fontSize: 11.5, fontWeight: 600 }}
 						>
-							{title}
-						</h2>
-						{occurrence && (
-							<div className="flex items-center gap-1.5 flex-wrap">
-								{st && (
-									<span
-										style={{
-											fontSize: 11,
-											fontWeight: 700,
-											color: st.color,
-											background: st.bg,
-											padding: "2px 8px",
-											borderRadius: 6,
-										}}
-									>
-										{st.label}
-									</span>
-								)}
-								<span
-									className="text-[#64748b] dark:text-[rgba(235,235,245,0.55)]"
-									style={{ fontSize: 11.5, fontWeight: 600 }}
-								>
-									{isRuleBased ? "반복" : "일회성"}
-								</span>
-								{occurrence.status === "draft" && (
-									<span
-										className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-										style={{ fontSize: 11.5, fontWeight: 600 }}
-									>
-										· 미노출
-									</span>
-								)}
-							</div>
+							{isRuleBased ? "반복" : "일회성"}
+						</span>
+						{occurrence.status === "draft" && (
+							<span
+								className="text-faint"
+								style={{ fontSize: 11.5, fontWeight: 600 }}
+							>
+								· 미노출
+							</span>
 						)}
 					</div>
-					<button
-						type="button"
-						onClick={onClose}
-						className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-						style={{
-							background: "none",
-							border: "none",
-							fontSize: 22,
-							lineHeight: 1,
-							cursor: "pointer",
-							padding: "0 2px",
-						}}
-						aria-label="닫기"
-					>
-						×
-					</button>
-				</div>
-
+				) : undefined
+			}
+		>
+			<div className="px-5 pb-5">
 				{/* 본문 */}
 				{occurrence && !editable ? (
-					// active/closed: 편집 불가, 정보만
-					<div className="flex flex-col gap-3">
-						<dl className="flex flex-col gap-2">
-							<InfoRow
-								label="시간"
-								value={`${occDate ?? ""} ${time}~${endTime}`}
-							/>
-							<InfoRow
-								label="장소"
-								value={placeName(occurrence.place_id) ?? "장소 미정"}
-							/>
-							<InfoRow
-								label="정원"
-								value={
-									occurrence.capacity != null
-										? `${occurrence.capacity}명`
-										: "무제한"
-								}
-							/>
-							<InfoRow
-								label="카풀"
-								value={occurrence.carpool_enabled ? "사용" : "사용 안 함"}
-							/>
-							<InfoRow
-								label="정모"
-								value={occurrence.is_regular ? "지정됨" : "아니오"}
-							/>
-						</dl>
-						<p
-							className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-							style={{ fontSize: 12.5 }}
-						>
-							진행 중이거나 종료된 회차는 수정할 수 없어요.
-						</p>
-						<button
-							type="button"
-							onClick={onClose}
-							style={neutralBtnStyle()}
-						>
-							닫기
-						</button>
-						{error && (
-							<p style={{ fontSize: 13, fontWeight: 600, color: "#ef4444" }}>
-								{error}
-							</p>
-						)}
-					</div>
+					<OccurrenceInfoView
+						occurrence={occurrence}
+						occDate={occDate}
+						time={time}
+						endTime={endTime}
+						placeName={placeName}
+						error={error}
+						onClose={onClose}
+					/>
 				) : (
 					// 신규 일회성 또는 draft/open 편집 폼
 					<div className="flex flex-col gap-4">
@@ -345,7 +180,7 @@ export default function OccurrenceEditor({
 									카풀
 								</span>
 								<span
-									className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+									className="text-faint"
 									style={{ fontSize: 11.5 }}
 								>
 									켜면 참석자가 카풀 가능/필요를 선택할 수 있어요
@@ -369,7 +204,7 @@ export default function OccurrenceEditor({
 									정모
 								</span>
 								<span
-									className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+									className="text-faint"
 									style={{ fontSize: 11.5 }}
 								>
 									켜면 회원이 일정에서 대진표·안내 페이지를 볼 수 있어요
@@ -411,7 +246,7 @@ export default function OccurrenceEditor({
 									}}
 								/>
 								<p
-									className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+									className="text-faint"
 									style={{ fontSize: 11.5, marginTop: 4 }}
 								>
 									제목(##), 표(| … |), 굵게(**…**) 등 마크다운으로 매번 직접
@@ -466,17 +301,7 @@ export default function OccurrenceEditor({
 									type="button"
 									onClick={() => setShowPicker(true)}
 									disabled={busy}
-									style={{
-										padding: "0 16px",
-										borderRadius: 10,
-										fontSize: 14,
-										fontWeight: 700,
-										color: "#0b84ff",
-										background: "rgba(11,132,255,0.12)",
-										border: "none",
-										cursor: busy ? "not-allowed" : "pointer",
-										whiteSpace: "nowrap",
-									}}
+									className="btn-tint-blue rounded-[10px] px-4 py-0 text-sm bg-[rgba(11,132,255,0.12)] whitespace-nowrap"
 								>
 									새 장소
 								</button>
@@ -496,7 +321,7 @@ export default function OccurrenceEditor({
 							type="button"
 							onClick={occurrence ? handleOverride : handleCreate}
 							disabled={busy}
-							style={primaryBtnStyle(busy)}
+							className="btn-solid-blue"
 						>
 							{busy ? "저장 중…" : occurrence ? "저장(변경)" : "저장"}
 						</button>
@@ -506,7 +331,7 @@ export default function OccurrenceEditor({
 								type="button"
 								onClick={handleDelete}
 								disabled={busy}
-								style={dangerBtnStyle(busy)}
+								className="btn-tint-red"
 							>
 								삭제
 							</button>
@@ -514,7 +339,7 @@ export default function OccurrenceEditor({
 					</div>
 				)}
 			</div>
-		</div>
+		</ModalSheet>
 		{showPicker && (
 			<PlaceLocationPicker
 				onAddPlace={onAddPlace}
@@ -527,52 +352,4 @@ export default function OccurrenceEditor({
 		)}
 		</>
 	);
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-	return (
-		<div className="flex items-center justify-between gap-3">
-			<dt
-				className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
-				style={{ fontSize: 13, fontWeight: 600 }}
-			>
-				{label}
-			</dt>
-			<dd
-				className="text-[#0f1724] dark:text-white text-right"
-				style={{ fontSize: 14, fontWeight: 600 }}
-			>
-				{value}
-			</dd>
-		</div>
-	);
-}
-
-function dangerBtnStyle(busy: boolean): React.CSSProperties {
-	return {
-		width: "100%",
-		padding: "13px",
-		borderRadius: 12,
-		fontSize: 15,
-		fontWeight: 700,
-		color: "#ef4444",
-		background: "rgba(239,68,68,0.1)",
-		border: "none",
-		cursor: busy ? "not-allowed" : "pointer",
-		opacity: busy ? 0.6 : 1,
-	};
-}
-
-function neutralBtnStyle(): React.CSSProperties {
-	return {
-		width: "100%",
-		padding: "13px",
-		borderRadius: 12,
-		fontSize: 15,
-		fontWeight: 700,
-		color: "#64748b",
-		background: "rgba(100,116,139,0.1)",
-		border: "none",
-		cursor: "pointer",
-	};
 }

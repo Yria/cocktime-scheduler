@@ -8,11 +8,8 @@ import {
 	inputStyle,
 	labelCls,
 	labelStyle,
-	overlayStyle,
-	primaryBtnStyle,
-	sheetCls,
-	sheetStyle,
-} from "./styles";
+} from "../common/fieldStyles";
+import ModalSheet from "../common/ModalSheet";
 
 interface Props {
 	onAddPlace: (input: CreatePlaceInput) => Promise<PlaceRow | null>;
@@ -176,44 +173,14 @@ export default function PlaceLocationPicker({
 	const searchDisabled = !!sdkError || !mapReady;
 
 	return (
-		<div
-			style={{ ...overlayStyle, zIndex: 60 }}
-			onClick={onClose}
-			onKeyDown={(e) => {
-				if (e.key === "Escape") onClose();
-			}}
+		<ModalSheet
+			position="bottom"
+			onClose={onClose}
+			closeOnEscape
+			zIndex={60}
+			title="새 장소"
 		>
-			<div
-				className={sheetCls}
-				style={sheetStyle}
-				onClick={(e) => e.stopPropagation()}
-			>
-				{/* 헤더 */}
-				<div className="flex items-center justify-between mb-4">
-					<h2
-						className="text-[#0f1724] dark:text-white"
-						style={{ fontSize: 18, fontWeight: 800 }}
-					>
-						새 장소
-					</h2>
-					<button
-						type="button"
-						onClick={onClose}
-						className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-						style={{
-							background: "none",
-							border: "none",
-							fontSize: 22,
-							lineHeight: 1,
-							cursor: "pointer",
-							padding: "0 2px",
-						}}
-						aria-label="닫기"
-					>
-						×
-					</button>
-				</div>
-
+			<div className="px-5 pb-5">
 				<div className="flex flex-col gap-4">
 					{/* 1. 장소 검색 */}
 					<div>
@@ -240,18 +207,7 @@ export default function PlaceLocationPicker({
 								type="button"
 								onClick={handleSearch}
 								disabled={searchDisabled}
-								style={{
-									padding: "0 16px",
-									borderRadius: 10,
-									fontSize: 14,
-									fontWeight: 700,
-									color: "#0b84ff",
-									background: "rgba(11,132,255,0.12)",
-									border: "none",
-									cursor: searchDisabled ? "not-allowed" : "pointer",
-									opacity: searchDisabled ? 0.5 : 1,
-									whiteSpace: "nowrap",
-								}}
+								className="btn-tint-blue rounded-[10px] px-4 py-0 text-sm bg-[rgba(11,132,255,0.12)] whitespace-nowrap disabled:opacity-50"
 							>
 								검색
 							</button>
@@ -259,7 +215,7 @@ export default function PlaceLocationPicker({
 
 						{!sdkError && !mapReady && (
 							<p
-								className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.45)]"
+								className="text-faint"
 								style={{ fontSize: 12, marginTop: 6 }}
 							>
 								지도 불러오는 중…
@@ -294,13 +250,13 @@ export default function PlaceLocationPicker({
 											}}
 										>
 											<span
-												className="text-[#0f1724] dark:text-white block"
+												className="text-strong block"
 												style={{ fontSize: 14, fontWeight: 700 }}
 											>
 												{r.place_name}
 											</span>
 											<span
-												className="text-[#64748b] dark:text-[rgba(235,235,245,0.55)] block"
+												className="text-muted block"
 												style={{ fontSize: 12.5, marginTop: 2 }}
 											>
 												{r.road_address_name || r.address_name}
@@ -327,7 +283,7 @@ export default function PlaceLocationPicker({
 
 						{hint && (
 							<p
-								className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+								className="text-muted"
 								style={{ fontSize: 12.5, lineHeight: 1.5, marginTop: 6 }}
 							>
 								{hint}
@@ -357,7 +313,7 @@ export default function PlaceLocationPicker({
 						</label>
 						{sdkError ? (
 							<p
-								className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+								className="text-muted"
 								style={{
 									fontSize: 13,
 									lineHeight: 1.5,
@@ -393,12 +349,12 @@ export default function PlaceLocationPicker({
 						type="button"
 						onClick={handleSave}
 						disabled={busy}
-						style={primaryBtnStyle(busy)}
+						className="btn-solid-blue"
 					>
 						{busy ? "저장 중…" : "장소 저장"}
 					</button>
 				</div>
 			</div>
-		</div>
+		</ModalSheet>
 	);
 }

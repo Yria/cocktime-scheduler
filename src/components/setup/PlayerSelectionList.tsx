@@ -49,9 +49,8 @@ export function PlayerSelectionList({
 }: Props) {
 	return (
 		<div
-			className="bg-white dark:bg-[#1c1c1e] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
+			className="card-lq"
 			style={{
-				borderRadius: 12,
 				overflow: "hidden",
 				marginBottom: 16,
 			}}
@@ -65,7 +64,7 @@ export function PlayerSelectionList({
 						marginBottom: 10,
 					}}
 				>
-					<p className="text-[#64748b] dark:text-[rgba(235,235,245,0.5)]" style={{ fontSize: 12, fontWeight: 600 }}>
+					<p className="text-muted" style={{ fontSize: 12, fontWeight: 600 }}>
 						참석자 <span style={{ color: "#0b84ff" }}>{selectedCount}</span> /{" "}
 						{allPlayersLength}명
 						{guestCount > 0 && (
@@ -125,7 +124,7 @@ export function PlayerSelectionList({
 					}}
 					onFocus={() => setSearch("")}
 					placeholder="이름 검색…"
-					className="bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.08)] text-[#0f1724] dark:text-white placeholder:text-[#94a3b8] dark:placeholder:text-[rgba(235,235,245,0.4)]"
+					className="bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.08)] text-strong placeholder:text-[#94a3b8] dark:placeholder:text-[rgba(235,235,245,0.4)]"
 					style={{
 						width: "100%",
 						border: "none",
@@ -147,7 +146,7 @@ export function PlayerSelectionList({
 							className={
 								genderFilter === g
 									? "bg-[#0b84ff] text-white"
-									: "bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.08)] text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+									: "bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.08)] text-muted"
 							}
 							style={{
 								padding: "5px 12px",

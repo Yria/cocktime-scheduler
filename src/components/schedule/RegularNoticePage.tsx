@@ -9,7 +9,7 @@ import type { SessionWithPlace } from "../../lib/supabase/types";
 import { useAuthStore } from "../../store/authStore";
 import { useScheduleStore } from "../../store/scheduleStore";
 import AppScreen from "../common/AppScreen";
-import Spinner from "../shared/Spinner";
+import EmptyState from "../shared/EmptyState";
 
 /**
  * 회원용 정모 안내·대진표 페이지. 일정(정모)에서 '들어가면' 보이는 화면.
@@ -75,14 +75,14 @@ export default function RegularNoticePage() {
 					<div className="flex items-center gap-2">
 						<span style={regularBadge}>정모</span>
 						<h1
-							className="text-[#0f1724] dark:text-white"
+							className="text-strong"
 							style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-0.01em" }}
 						>
 							{title}
 						</h1>
 					</div>
 					<span
-						className="text-[#64748b] dark:text-[rgba(235,235,245,0.55)]"
+						className="text-muted"
 						style={{ fontSize: 13 }}
 					>
 						{placeName ?? "장소 미정"}
@@ -91,15 +91,15 @@ export default function RegularNoticePage() {
 
 				{/* 본문 */}
 				{loading ? (
-					<div className="flex justify-center py-16">
-						<Spinner size={22} />
-					</div>
+					<EmptyState loading spinnerSize={22} style={{ padding: "64px 0" }} />
 				) : !session ? (
-					<EmptyNote text="일정을 찾을 수 없어요." />
+					<EmptyState card>일정을 찾을 수 없어요.</EmptyState>
 				) : !session.is_regular ? (
-					<EmptyNote text="이 일정에는 안내 페이지가 없어요." />
+					<EmptyState card>이 일정에는 안내 페이지가 없어요.</EmptyState>
 				) : !md ? (
-					<EmptyNote text="대진표를 준비 중이에요. 잠시 후 다시 확인해 주세요." />
+					<EmptyState card>
+						대진표를 준비 중이에요. 잠시 후 다시 확인해 주세요.
+					</EmptyState>
 				) : (
 					<div className="notice-md">
 						<Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>
@@ -109,23 +109,6 @@ export default function RegularNoticePage() {
 				)}
 			</div>
 		</AppScreen>
-	);
-}
-
-function EmptyNote({ text }: { text: string }) {
-	return (
-		<div
-			className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.45)] bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.1)]"
-			style={{
-				borderRadius: 12,
-				padding: "28px 16px",
-				textAlign: "center",
-				fontSize: 13.5,
-				fontWeight: 600,
-			}}
-		>
-			{text}
-		</div>
 	);
 }
 

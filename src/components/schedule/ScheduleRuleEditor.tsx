@@ -1,25 +1,22 @@
 import { useMemo, useState } from "react";
-import {
-	ORDINAL_PRESETS,
-	WEEKDAY_LABELS,
-	formatTime,
-} from "../../lib/schedule/recurrence";
+import { ORDINAL_PRESETS, formatTime } from "../../lib/schedule/recurrence";
 import type { RecurringRuleInput } from "../../lib/supabase/recurring";
 import type { CreatePlaceInput } from "../../lib/supabase/schedule";
 import type { PlaceRow, RecurringScheduleRow } from "../../lib/supabase/types";
-import { Switch } from "../common/Switch";
-import PlaceLocationPicker from "./PlaceLocationPicker";
 import {
 	inputCls,
 	inputStyle,
 	labelCls,
 	labelStyle,
-	overlayStyle,
-	primaryBtnStyle,
 	selectStyle,
-	sheetCls,
-	sheetStyle,
-} from "./styles";
+} from "../common/fieldStyles";
+import ModalSheet from "../common/ModalSheet";
+import { Switch } from "../common/Switch";
+import PlaceLocationPicker from "./PlaceLocationPicker";
+import { WeekOrdinalField } from "./WeekOrdinalField";
+import { WeekdayField } from "./WeekdayField";
+import { isWeekend, matchPreset } from "./ruleEditorPresets";
+import type { PresetKey } from "./ruleEditorPresets";
 
 interface Props {
 	initial: RecurringScheduleRow | null; // null = 신규
@@ -27,30 +24,6 @@ interface Props {
 	onAddPlace: (input: CreatePlaceInput) => Promise<PlaceRow | null>;
 	onSubmit: (input: RecurringRuleInput) => Promise<void>;
 	onClose: () => void;
-}
-
-/** 0=일 .. 6=토 → 주말(토/일) 여부. 카풀 기본값(주말 on) 판정용. */
-function isWeekend(dow: number): boolean {
-	return dow === 0 || dow === 6;
-}
-
-type PresetKey = "every" | "odd" | "even" | "custom";
-
-const PRESET_CHIPS: { key: PresetKey; label: string }[] = [
-	{ key: "every", label: "매주" },
-	{ key: "odd", label: "홀수주" },
-	{ key: "even", label: "짝수주" },
-	{ key: "custom", label: "직접선택" },
-];
-
-/** 정렬된 ordinals 배열이 어떤 프리셋과 일치하는지 (마지막주 미포함 가정) */
-function matchPreset(ordinals: number[], includeLast: boolean): PresetKey {
-	if (includeLast) return "custom";
-	const key = [...ordinals].sort((a, b) => a - b).join(",");
-	if (key === ORDINAL_PRESETS.every.join(",")) return "every";
-	if (key === ORDINAL_PRESETS.odd.join(",")) return "odd";
-	if (key === ORDINAL_PRESETS.even.join(",")) return "even";
-	return "custom";
 }
 
 export default function ScheduleRuleEditor({
@@ -157,173 +130,39 @@ export default function ScheduleRuleEditor({
 
 	return (
 		<>
-		<div
-			style={overlayStyle}
-			onClick={onClose}
-			onKeyDown={(e) => {
-				if (e.key === "Escape") onClose();
-			}}
+		<ModalSheet
+			position="bottom"
+			onClose={onClose}
+			// 위에 새 장소 picker 가 떠 있을 땐 Escape 가 최상단 시트만 닫히게 잠시 끈다
+			closeOnEscape={!showPicker}
+			title={initial ? "규칙 수정" : "반복 규칙 추가"}
 		>
-			<div
-				className={sheetCls}
-				style={sheetStyle}
-				onClick={(e) => e.stopPropagation()}
-			>
-				{/* 헤더 */}
-				<div className="flex items-center justify-between mb-4">
-					<h2
-						className="text-[#0f1724] dark:text-white"
-						style={{ fontSize: 18, fontWeight: 800 }}
-					>
-						{initial ? "규칙 수정" : "반복 규칙 추가"}
-					</h2>
-					<button
-						type="button"
-						onClick={onClose}
-						className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-						style={{
-							background: "none",
-							border: "none",
-							fontSize: 14,
-							fontWeight: 600,
-							cursor: "pointer",
-						}}
-					>
-						취소
-					</button>
-				</div>
-
+			<div className="px-5 pb-5">
 				<div className="flex flex-col gap-4">
 					{/* 요일 */}
-					<div>
-						<span className={labelCls} style={labelStyle}>
-							요일
-						</span>
-						<div className="flex gap-1.5">
-							{[1, 2, 3, 4, 5, 6, 0].map((dow) => {
-								const label = WEEKDAY_LABELS[dow];
-								const active = dow === dayOfWeek;
-								return (
-									<button
-										key={label}
-										type="button"
-										onClick={() => {
-											setError(null);
-											setDayOfWeek(dow);
-											// 신규 + 미수정이면 카풀 기본값을 선택 요일에 맞춤(주말 on)
-											if (!initial && !carpoolTouched)
-												setCarpoolEnabled(isWeekend(dow));
-										}}
-										style={{
-											flex: 1,
-											padding: "9px 0",
-											borderRadius: 9,
-											fontSize: 14,
-											fontWeight: 700,
-											border: "none",
-											cursor: "pointer",
-											color: active ? "#fff" : "#64748b",
-											background: active ? "#0b84ff" : "rgba(100,116,139,0.12)",
-										}}
-									>
-										{label}
-									</button>
-								);
-							})}
-						</div>
-					</div>
+					<WeekdayField
+						dayOfWeek={dayOfWeek}
+						onSelect={(dow) => {
+							setError(null);
+							setDayOfWeek(dow);
+							// 신규 + 미수정이면 카풀 기본값을 선택 요일에 맞춤(주말 on)
+							if (!initial && !carpoolTouched)
+								setCarpoolEnabled(isWeekend(dow));
+						}}
+					/>
 
 					{/* 주차 */}
-					<div>
-						<span className={labelCls} style={labelStyle}>
-							주차
-						</span>
-						<div className="flex gap-1.5">
-							{PRESET_CHIPS.map(({ key, label }) => {
-								const active = activePreset === key;
-								return (
-									<button
-										key={key}
-										type="button"
-										onClick={() => selectPreset(key)}
-										style={{
-											flex: 1,
-											padding: "9px 0",
-											borderRadius: 9,
-											fontSize: 13,
-											fontWeight: 700,
-											border: "none",
-											cursor: "pointer",
-											color: active ? "#fff" : "#64748b",
-											background: active ? "#0b84ff" : "rgba(100,116,139,0.12)",
-										}}
-									>
-										{label}
-									</button>
-								);
-							})}
-						</div>
-
-						{/* 직접선택: 1~5주 체크박스 + 마지막주 토글 */}
-						{activePreset === "custom" && (
-							<div className="flex flex-col gap-2 mt-2.5">
-								<div className="flex gap-1.5">
-									{[1, 2, 3, 4, 5].map((n) => {
-										const active = ordinals.has(n);
-										return (
-											<button
-												key={n}
-												type="button"
-												onClick={() => toggleOrdinal(n)}
-												style={{
-													flex: 1,
-													padding: "9px 0",
-													borderRadius: 9,
-													fontSize: 13.5,
-													fontWeight: 700,
-													border: active
-														? "1px solid #0b84ff"
-														: "1px solid rgba(0,0,0,0.12)",
-													cursor: "pointer",
-													color: active ? "#0b84ff" : "#64748b",
-													background: active
-														? "rgba(11,132,255,0.12)"
-														: "transparent",
-												}}
-											>
-												{active ? "✓ " : ""}
-												{n}주
-											</button>
-										);
-									})}
-								</div>
-								<button
-									type="button"
-									onClick={() => {
-										setError(null);
-										setIncludeLast((v) => !v);
-									}}
-									style={{
-										alignSelf: "flex-start",
-										padding: "7px 13px",
-										borderRadius: 9,
-										fontSize: 13,
-										fontWeight: 700,
-										border: includeLast
-											? "1px solid #0b84ff"
-											: "1px solid rgba(0,0,0,0.12)",
-										cursor: "pointer",
-										color: includeLast ? "#0b84ff" : "#64748b",
-										background: includeLast
-											? "rgba(11,132,255,0.12)"
-											: "transparent",
-									}}
-								>
-									{includeLast ? "✓ " : ""}마지막주
-								</button>
-							</div>
-						)}
-					</div>
+					<WeekOrdinalField
+						activePreset={activePreset}
+						ordinals={ordinals}
+						includeLast={includeLast}
+						onSelectPreset={selectPreset}
+						onToggleOrdinal={toggleOrdinal}
+						onToggleLast={() => {
+							setError(null);
+							setIncludeLast((v) => !v);
+						}}
+					/>
 
 					{/* 시간 (시작 ~ 종료) — 래퍼·input(inputStyle) 모두 minWidth:0:
 					    네이티브 time 위젯(iOS Safari 등)의 intrinsic 폭이 모달 밖으로 밀지 못하게 */}
@@ -367,7 +206,7 @@ export default function ScheduleRuleEditor({
 								카풀
 							</span>
 							<span
-								className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
+								className="text-faint"
 								style={{ fontSize: 11.5 }}
 							>
 								켜면 참석자가 카풀 가능/필요를 선택할 수 있어요
@@ -431,17 +270,7 @@ export default function ScheduleRuleEditor({
 									setError(null);
 									setShowPicker(true);
 								}}
-								style={{
-									padding: "0 16px",
-									borderRadius: 10,
-									fontSize: 14,
-									fontWeight: 700,
-									color: "#0b84ff",
-									background: "rgba(11,132,255,0.12)",
-									border: "none",
-									cursor: "pointer",
-									whiteSpace: "nowrap",
-								}}
+								className="btn-tint-blue rounded-[10px] px-4 py-0 text-sm bg-[rgba(11,132,255,0.12)] whitespace-nowrap"
 							>
 								새 장소
 							</button>
@@ -459,13 +288,13 @@ export default function ScheduleRuleEditor({
 						type="button"
 						onClick={handleSubmit}
 						disabled={busy}
-						style={primaryBtnStyle(busy)}
+						className="btn-solid-blue"
 					>
 						{busy ? "저장 중…" : "저장"}
 					</button>
 				</div>
 			</div>
-		</div>
+		</ModalSheet>
 		{showPicker && (
 			<PlaceLocationPicker
 				onAddPlace={onAddPlace}

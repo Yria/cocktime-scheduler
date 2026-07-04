@@ -1,6 +1,7 @@
 import { memo, useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ModalSheet from "../common/ModalSheet";
+import ConfirmDialog from "../common/ConfirmDialog";
 import { useSessionStore } from "../../store/sessionStore";
 import { useBoardStore } from "../../store/boardStore";
 import { useAuthStore } from "../../store/authStore";
@@ -162,59 +163,30 @@ const BoardToolbar = memo(function BoardToolbar() {
 			</div>
 
 			{confirmEnd && (
-				<ModalSheet position="center" className="p-6" onClose={() => setConfirmEnd(false)}>
-					<h3 className="font-bold text-gray-800 dark:text-white text-lg mb-1.5">
-						세션 종료
-					</h3>
-					<p className="text-sm text-gray-600 dark:text-gray-300 mb-5">
-						{courts.some((c) => c.match)
+				<ConfirmDialog
+					title="세션 종료"
+					message={
+						courts.some((c) => c.match)
 							? "진행 중인 경기는 자동으로 종료 처리된 뒤 세션이 종료됩니다. 모든 참가자의 세션이 종료됩니다."
-							: "진행 중인 세션을 종료합니다. 모든 참가자의 세션이 종료됩니다."}
-					</p>
-					<div className="flex gap-3">
-						<button
-							type="button"
-							onClick={() => setConfirmEnd(false)}
-							className="btn-lq-secondary flex-1 py-3 text-sm"
-						>
-							취소
-						</button>
-						<button
-							type="button"
-							onClick={onConfirmEnd}
-							className="btn-lq-red flex-1 py-3 text-sm"
-						>
-							종료
-						</button>
-					</div>
-				</ModalSheet>
+							: "진행 중인 세션을 종료합니다. 모든 참가자의 세션이 종료됩니다."
+					}
+					confirmLabel="종료"
+					tone="danger"
+					onConfirm={onConfirmEnd}
+					onCancel={() => setConfirmEnd(false)}
+					onDismiss={() => setConfirmEnd(false)}
+				/>
 			)}
 
 			{confirmTakeover && (
-				<ModalSheet position="center" className="p-6" onClose={() => setConfirmTakeover(false)}>
-					<h3 className="font-bold text-gray-800 dark:text-white text-lg mb-1.5">
-						편집 권한 가져오기
-					</h3>
-					<p className="text-sm text-gray-600 dark:text-gray-300 mb-5">
-						{holderName ?? "다른 기기"}님이 편집 중입니다. 권한을 가져오면 상대는 보기 전용이 되어 편집할 수 없게 됩니다.
-					</p>
-					<div className="flex gap-3">
-						<button
-							type="button"
-							onClick={() => setConfirmTakeover(false)}
-							className="btn-lq-secondary flex-1 py-3 text-sm"
-						>
-							취소
-						</button>
-						<button
-							type="button"
-							onClick={onConfirmTakeover}
-							className="btn-lq-primary flex-1 py-3 text-sm"
-						>
-							가져오기
-						</button>
-					</div>
-				</ModalSheet>
+				<ConfirmDialog
+					title="편집 권한 가져오기"
+					message={`${holderName ?? "다른 기기"}님이 편집 중입니다. 권한을 가져오면 상대는 보기 전용이 되어 편집할 수 없게 됩니다.`}
+					confirmLabel="가져오기"
+					onConfirm={onConfirmTakeover}
+					onCancel={() => setConfirmTakeover(false)}
+					onDismiss={() => setConfirmTakeover(false)}
+				/>
 			)}
 
 			{showPresence && (
@@ -269,7 +241,7 @@ const BoardToolbar = memo(function BoardToolbar() {
 					</p>
 					{/* 편집 권한 가져오기는 운영진만 — 일반 회원은 읽기 전용이라 버튼 노출 안 함. */}
 					{!isEditor && isAdmin && (
-						<button type="button" onClick={onTakeover} className="btn-lq-primary w-full py-3 text-sm">
+						<button type="button" onClick={onTakeover} className="btn-lq-primary w-full">
 							편집 권한 가져오기
 						</button>
 					)}

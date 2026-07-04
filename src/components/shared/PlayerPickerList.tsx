@@ -187,7 +187,7 @@ export default function PlayerPickerList({
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
 						placeholder="이름 검색..."
-						className="bg-[rgba(0,0,0,0.04)] dark:bg-[rgba(255,255,255,0.06)] text-[#0f1724] dark:text-white placeholder:text-[#8e8e93]"
+						className="bg-[rgba(0,0,0,0.04)] dark:bg-[rgba(255,255,255,0.06)] text-strong placeholder:text-[#8e8e93]"
 						style={{
 							width: "100%",
 							padding: "8px 12px",

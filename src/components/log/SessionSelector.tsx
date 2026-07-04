@@ -1,13 +1,5 @@
 import type { SessionRow } from "../../lib/supabase/types";
-
-function formatSessionLabel(row: SessionRow): string {
-	const d = new Date(row.started_at);
-	const month = d.getMonth() + 1;
-	const day = d.getDate();
-	const h = d.getHours().toString().padStart(2, "0");
-	const m = d.getMinutes().toString().padStart(2, "0");
-	return `${month}/${day} ${h}:${m}`;
-}
+import { fmtMDHM } from "../../lib/schedule/timeFmt";
 
 interface SessionSelectorProps {
 	loading: boolean;
@@ -28,9 +20,9 @@ export default function SessionSelector({
 			style={{ padding: "10px 16px" }}
 		>
 			{loading ? (
-				<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]" style={{ fontSize: 13 }}>불러오는 중…</span>
+				<span className="text-faint" style={{ fontSize: 13 }}>불러오는 중…</span>
 			) : sessions.length === 0 ? (
-				<span className="text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]" style={{ fontSize: 13 }}>
+				<span className="text-faint" style={{ fontSize: 13 }}>
 					세션 기록이 없습니다
 				</span>
 			) : (
@@ -44,7 +36,7 @@ export default function SessionSelector({
 							className={
 								isSelected
 									? "bg-[#0b84ff] text-white border-0"
-									: "bg-transparent text-[#64748b] dark:text-[rgba(235,235,245,0.6)] border border-[rgba(0,0,0,0.1)] dark:border-[rgba(255,255,255,0.15)]"
+									: "bg-transparent text-muted border border-[rgba(0,0,0,0.1)] dark:border-[rgba(255,255,255,0.15)]"
 							}
 							style={{
 								flexShrink: 0,
@@ -72,7 +64,7 @@ export default function SessionSelector({
 									}}
 								/>
 							)}
-							{s.is_active ? "현재 세션" : formatSessionLabel(s)}
+							{s.is_active ? "현재 세션" : fmtMDHM(s.started_at)}
 						</button>
 					);
 				})

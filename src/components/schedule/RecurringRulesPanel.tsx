@@ -1,5 +1,6 @@
 import { ruleSummary } from "../../lib/schedule/recurrence";
 import type { RecurringScheduleRow } from "../../lib/supabase/types";
+import EmptyState from "../shared/EmptyState";
 
 interface Props {
 	rules: RecurringScheduleRow[];
@@ -23,36 +24,20 @@ export default function RecurringRulesPanel({
 			{/* 섹션 헤더 */}
 			<div className="flex items-center justify-between">
 				<h2
-					className="text-[#0f1724] dark:text-white"
+					className="text-strong"
 					style={{ fontSize: 18, fontWeight: 800 }}
 				>
 					반복 규칙
 				</h2>
-				<button
-					type="button"
-					onClick={onAdd}
-					style={{
-						fontSize: 13,
-						fontWeight: 700,
-						color: "#0b84ff",
-						background: "rgba(11,132,255,0.1)",
-						border: "none",
-						borderRadius: 8,
-						padding: "6px 12px",
-						cursor: "pointer",
-					}}
-				>
+				<button type="button" onClick={onAdd} className="btn-tint-blue">
 					+ 규칙 추가
 				</button>
 			</div>
 
 			{rules.length === 0 ? (
-				<div
-					className="text-center text-[#98a0ab] dark:text-[rgba(235,235,245,0.4)]"
-					style={{ fontSize: 13.5, padding: "20px 8px", lineHeight: 1.5 }}
-				>
+				<EmptyState style={{ padding: "20px 8px", lineHeight: 1.5 }}>
 					반복 규칙이 없습니다. '+ 규칙 추가'로 매주 반복 일정을 만들어보세요.
-				</div>
+				</EmptyState>
 			) : (
 				rules.map((rule) => {
 					const active = rule.is_active;
@@ -84,7 +69,7 @@ export default function RecurringRulesPanel({
 						>
 							<div className="flex items-center gap-2 min-w-0">
 								<span
-									className="text-[#0f1724] dark:text-white truncate"
+									className="text-strong truncate"
 									style={{ fontSize: 14, fontWeight: 600 }}
 								>
 									{ruleSummary(rule, placeName(rule.place_id))}
@@ -113,7 +98,7 @@ export default function RecurringRulesPanel({
 										e.stopPropagation();
 										onToggle(rule);
 									}}
-									className="text-[#64748b] dark:text-[rgba(235,235,245,0.6)]"
+									className="text-muted"
 									style={{
 										fontSize: 12.5,
 										fontWeight: 600,

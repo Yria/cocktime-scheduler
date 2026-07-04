@@ -883,3 +883,61 @@
 - Docker 미실행으로 로컬 supabase 적용 검증은 못 함(문법 리스크는 낮음). 배포 시 supabase db push 필요.
 
 ---
+
+## #67
+
+**Prompt**: 이름 입력할때 성/이름 input 따로 만들고 db에 넣을땐 합쳐서 넣어줘. 사람들이 성을 입력안하는 경우가 많아서 그래. 그리고 일정이 지금은 일주일마다 추가되는데 일요일 오후 6시에 다음주 일요일 일정이 한번에 추가되게 해줘.
+
+**Answer**: 프로필 이름 입력을 성/이름 두 필드로 분리하고, 일정 노출을 "일요일 18:00 KST 일괄 공개"로 변경했습니다.
+- ProfileSetup: 성·이름 각각 필수 검증, 카카오 prefill은 첫 글자=성/나머지=이름으로 분할(재결합 시 무손실), 저장 시 합쳐 members.name 한 컬럼에 저장(DB 스키마 변경 없음)
+- 새 마이그레이션: reveal_horizon_kst_date() 공개 상한 단일 기준 함수 추가, sync E단계와 join_session·add_guest_attendance 노출 가드를 "직전 일요일 18:00 공개 시점 기준 다음 일요일까지"로 교체
+- pg_cron 잡(일요일 09:00 UTC=18:00 KST) 등록 — 앱 접속 없이도 정각에 open 전환 + session_open 웹푸시 발송
+- EXPANSION_SPEC.md와 클라이언트 주석의 "1주 전 노출" 설명을 새 규칙으로 갱신. DB 적용은 supabase db push 필요
+
+---
+
+## #68
+
+**Prompt**: (supabase db push 적용 후 원격 검증 및 후속 조치)
+
+**Answer**: 원격 검증에서 전환기 회귀를 발견해 가드를 롤백했습니다. 옛 rolling 규칙으로 이미 open되고 참석 확정 47명이 진행 중이던 월~목 회차 4개가 새 공개 창(이번 일요일까지) 밖에 남아, 신규 참석이 'session not open yet'으로 막히는 상태였습니다.
+- 원인: 참석 가드를 E단계 공개 상한과 정확히 일치시킨 것이 과함 — 가드는 stale-open 차단 백스톱이고 노출 시점은 E단계가 결정
+- 공개 상한은 항상 오늘+7일 이내이므로 join_session·add_guest_attendance 가드를 기존 rolling +7d로 되돌려도 보호 범위 동일
+- 롤백 마이그레이션 작성 후 supabase db push --yes로 원격 적용 완료, EXPANSION_SPEC.md도 백스톱 의미로 재서술
+- 일요일 18:00 일괄 공개(E단계+pg_cron)는 그대로 유지
+
+---
+
+## #69
+
+**Prompt**: 근데 다음주일정이 1주일단위로 배포되는게 이미 작업되어있어서 금토일을 미리열고 담주일요일부터 규칙작동하게 가능?
+
+**Answer**: 전환기 일회성 마이그레이션으로 7/10(금)·7/11(토)·7/12(일) draft 회차 3개를 즉시 open하고 session_open 푸시(171건)를 발송했습니다.
+- sync E단계와 동일한 로직(open 전환+알림 멱등 가드)을 고정 날짜(7/3~7/12)로 1회 실행 — 재적용 시 과거 날짜라 no-op
+- 7/5(일) 18:00 cron은 열 것이 없어 no-op, 새 일괄 공개 규칙은 7/12(일) 18:00에 7/13~7/19를 열며 첫 작동
+- supabase db push로 원격 적용 후 3개 회차 open 상태와 알림 발송 수를 REST로 검증 완료
+
+---
+
+## #70
+
+**Prompt**: 참여도 시간제한 걸어놨을텐데, 참여가능은 시간제한로직보다 열렸니 안열렸니로 단순화하는게 좋을듯
+
+**Answer**: join_session·add_guest_attendance의 노출 시간 가드(scheduled_at <= now()+7d)를 제거해 참여 가능 판정을 "status='open'인가"로 단일화했습니다.
+- open은 sync E단계(공개 창 안)만 만들므로 status가 노출·참여의 단일 진실원천 — 이중 기준이 전환기 회귀의 근본 원인이었음
+- 종료 가드(ends_at<=now())는 유지 — 종료 시각에 status가 실시간으로 closed로 안 바뀌어(일 단위 sync) 이것까지 빼면 끝난 당일 일정에 참석이 통과됨
+- 마이그레이션 작성 후 supabase db push로 원격 적용, EXPANSION_SPEC.md 가드 서술 재정리
+
+---
+
+## #71
+
+**Prompt**: 코드정리가 필요해. 크기가 큰 파일은 분할하고 공용 컴포넌트는 통일해줘.
+
+**Answer**: 400줄 이상 대형 파일 9개를 분할하고 공용 UI 기반을 신설해 사용처를 일괄 교체했습니다. 분석→분할→기반 신설→교체→적대적 리뷰의 다단계 병렬 에이전트 워크플로우로 진행했으며, 모든 분할은 원본 경로의 public API를 유지해 importer 수정이 0건입니다.
+- 분할: boardStore(1382→48줄, zustand 슬라이스 3개+순수 헬퍼 계층), sessionStore(930→507줄, 편집락·broadcast 핸들러·상태 분리), supabase api(도메인 3분할 후 re-export 셔임), MemberAdminPage·PlayerMagnet·SessionBoard·OccurrenceEditor·ScheduleRuleEditor·CarpoolAnnounceBuilder(훅/서브컴포넌트 추출). ProfileSetup·PlaceLocationPicker·ScheduleCard는 단일 컴포넌트 응집 구조라 분할 실익 없음 판정
+- 공용 기반 신설: 색 토큰 text-strong/muted/faint(하드코딩 약 130곳 치환, 다크 알파 0.4/0.6 수렴), btn-solid-blue·btn-tint-blue/red/neutral·card-lq 유틸리티, ConfirmDialog·SheetHeader·EmptyState·fieldStyles 컴포넌트, ModalSheet(센터 변형·Escape·zIndex·title)·Switch(onColor)·PlayerBadge(count)·PlayerAvatar(preview/fallback)·timeFmt(fmtHM/fmtMDHM) 확장
+- 통일: schedule의 병렬 바텀시트 시스템을 ModalSheet로 통합(표준 플로팅 수렴), 확인 다이얼로그 6곳, 빈상태/로딩 블록 10여 곳, 인라인 재구현 버튼 20여 곳, btn-lq 사이징 복붙 26곳 폴딩, 로컬 시간 포맷터 3곳 제거
+- 적대적 리뷰 7영역에서 발견된 5건 수정: 중첩 ModalSheet 동시 언마운트 시 body 스크롤락 잔존(참조 카운팅으로 근본 수정), CockCheckModal 취소 버튼 busy 의미 변화(cancelDisabled), ConfirmDialog Escape 유실·폭 확대(maxWidth xs), 빈 이름 아바타 404, 디버그 모달 다크 가독성 회귀 복원. tsc·ESLint(기존 3건 외 신규 0)·테스트 168개·빌드 전부 통과. 사용자의 미커밋 기능 작업(성/이름 분리 등)은 보존
+
+---
