@@ -3,6 +3,7 @@ import type { Gender, PlayerSkills, SkillLevel } from "../../types";
 import type { AttendanceRow } from "../../lib/supabase/types";
 import { DEFAULT_SKILLS } from "../../lib/constants";
 import { GuestModal } from "../setup/GuestModal";
+import ConfirmDialog from "../common/ConfirmDialog";
 
 interface Props {
 	/** 이 세션의 참석 행(취소 제외) */
@@ -20,7 +21,8 @@ interface Props {
 
 /**
  * 일정 카드의 게스트 영역 — 회원이 게스트(계정 없는 선수)를 신청하고, 본인이 데려온 게스트를 취소한다.
- * 게스트는 정원/대기 규칙을 회원과 동일하게 따른다(서버 RPC 판정).
+ * 게스트 추가는 무제한 허용(정원 여유면 확정, 아니면 후보/대기 — 서버 RPC 판정). 다만 이미 일정 전체
+ * 게스트가 2명 이상이면, "후보 우선순위라 참여가 어려울 수 있다"는 경고를 확인받은 뒤에 신청 폼을 연다.
  */
 export default function GuestSection({
 	attendances,
@@ -36,6 +38,8 @@ export default function GuestSection({
 	const [gender, setGender] = useState<Gender>("M");
 	const [skills, setSkills] = useState<PlayerSkills>({ ...DEFAULT_SKILLS });
 	const [submitting, setSubmitting] = useState(false);
+	// 게스트 2명 이상 시 "참여 어려울 수 있음" 경고 다이얼로그
+	const [showGuestWarn, setShowGuestWarn] = useState(false);
 
 	// 내가 데려온 게스트(취소 제외는 상위에서 필터됨)
 	const myGuests = useMemo(
@@ -43,6 +47,11 @@ export default function GuestSection({
 		[attendances, memberId],
 	);
 	const waiting = useMemo(() => attendances.filter((a) => a.status === "waitlisted"), [attendances]);
+	// 일정 전체 활성 게스트 수(취소 제외는 상위에서 필터됨) — 2명 상한 pre-check용.
+	const sessionGuestCount = useMemo(
+		() => attendances.filter((a) => a.invited_by != null).length,
+		[attendances],
+	);
 
 	if (!memberId) return null;
 
@@ -51,11 +60,16 @@ export default function GuestSection({
 	// (빈 wrapper의 mt-2.5가 카드 하단에 유령 여백을 만들던 문제 방지)
 	if (myGuests.length === 0 && !showAddButton) return null;
 
-	const openModal = () => {
+	// 신청 폼 열기(초기화). 게스트가 이미 2명 이상이면 먼저 경고를 확인받는다.
+	const openGuestForm = () => {
 		setName("");
 		setGender("M");
 		setSkills({ ...DEFAULT_SKILLS });
 		setShowModal(true);
+	};
+	const handleAddClick = () => {
+		if (sessionGuestCount >= 2) setShowGuestWarn(true);
+		else openGuestForm();
 	};
 
 	const submit = async () => {
@@ -123,7 +137,7 @@ export default function GuestSection({
 			{showAddButton && (
 				<button
 					type="button"
-					onClick={openModal}
+					onClick={handleAddClick}
 					disabled={busy}
 					className="mt-1.5"
 					style={{
@@ -140,6 +154,20 @@ export default function GuestSection({
 				>
 					+ 게스트 신청
 				</button>
+			)}
+
+			{showGuestWarn && (
+				<ConfirmDialog
+					title="게스트가 이미 2명이에요"
+					message="추가 게스트는 후보 우선순위라, 기존 게스트가 빠지지 않으면 참여하지 못할 수 있어요. 그래도 신청할까요?"
+					confirmLabel="그래도 신청"
+					onConfirm={() => {
+						setShowGuestWarn(false);
+						openGuestForm();
+					}}
+					onCancel={() => setShowGuestWarn(false)}
+					onDismiss={() => setShowGuestWarn(false)}
+				/>
 			)}
 
 			{showModal && (
