@@ -125,6 +125,8 @@ function ParticipantRow({
 	const name = a.member?.name ?? "회원";
 	const isMe = a.member_id === memberId;
 	const isGuest = a.member?.is_guest ?? a.invited_by != null;
+	// 게스트를 데려온(신청한) 회원 이름 — 배지에 함께 노출. 신청자 회원이 삭제되면 null → "게스트"만.
+	const inviterName = a.inviter?.name ?? null;
 
 	const isWaiting = waitRank != null;
 
@@ -165,7 +167,7 @@ function ParticipantRow({
 						flexShrink: 0,
 					}}
 				>
-					🎫 게스트
+					🎫 {inviterName ? `${inviterName}님 게스트` : "게스트"}
 				</span>
 			)}
 

@@ -92,6 +92,9 @@
    화면 배경색과 동일하게 맞춰 하단 빈 띠를 채운다. (.dark 는 <html>에 부착) */
 html {
 	background-color: #fafbff;
+	/* iOS 웹뷰 전체 고무줄 바운스(rubber-band) 차단 — 모달/바텀시트 위에서 상하 드래그 시
+	   뒤 페이지(문서 뷰포트)가 통째로 튕겨 움직이던 현상 방지. 문서 레벨 스크롤 체이닝도 함께 막는다. */
+	overscroll-behavior: none;
 }
 html.dark {
 	background-color: #0f172a;
@@ -102,6 +105,7 @@ body {
 	background-color: #fafbff;
 	color: var(--text-primary);
 	font-feature-settings: "ss01", "ss02", "cv01";
+	overscroll-behavior: none;
 }
 
 .dark body {

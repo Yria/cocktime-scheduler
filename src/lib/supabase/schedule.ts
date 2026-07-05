@@ -114,9 +114,10 @@ export async function fetchAttendances(
 	if (sessionIds.length === 0) return [];
 	// member 임베드 — 게스트 이름/게스트여부/성별(아바타 색) 표시용. attendances→members FK가 둘(member_id, invited_by)이라
 	// FK 컬럼(member_id)으로 명시 disambiguate해야 한다(없으면 PGRST201로 전체 조회가 실패).
+	// inviter:invited_by(name) — 게스트를 데려온(신청한) 회원 이름. 본인 참석 행은 invited_by=null → inviter=null.
 	const { data, error } = await supabase
 		.from("attendances")
-		.select("*, member:member_id(name, is_guest, gender)")
+		.select("*, member:member_id(name, is_guest, gender), inviter:invited_by(name)")
 		.in("session_id", sessionIds)
 		.neq("status", "cancelled")
 		.order("position", { ascending: true });

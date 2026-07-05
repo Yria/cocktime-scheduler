@@ -941,3 +941,45 @@
 - 적대적 리뷰 7영역에서 발견된 5건 수정: 중첩 ModalSheet 동시 언마운트 시 body 스크롤락 잔존(참조 카운팅으로 근본 수정), CockCheckModal 취소 버튼 busy 의미 변화(cancelDisabled), ConfirmDialog Escape 유실·폭 확대(maxWidth xs), 빈 이름 아바타 404, 디버그 모달 다크 가독성 회귀 복원. tsc·ESLint(기존 3건 외 신규 0)·테스트 168개·빌드 전부 통과. 사용자의 미커밋 기능 작업(성/이름 분리 등)은 보존
 
 ---
+
+## #72
+
+**Prompt**: 아 올려줘
+
+**Answer**: GitHub Pages 배포 워크플로(deploy.yml)의 액션 버전을 최신 메이저로 업그레이드했습니다. Node 20 deprecation 경고를 없애기 위한 작업.
+- 각 액션의 최신 릴리스와 내부 런타임 확인: 6개 모두 node24 런타임으로 확인됨
+- packageManager 필드(pnpm@11.8.0)가 있어 pnpm/action-setup은 version 입력 없이도 호환됨을 확인
+- 버전 상향: checkout v4→v7, pnpm/action-setup v4→v6, setup-node v4→v6, upload-pages-artifact v3→v5, configure-pages v4→v6, deploy-pages v4→v5
+- setup-node의 `node-version: 22`(앱 빌드용 Node)는 액션 내부 런타임(경고 대상)과 무관하므로 그대로 유지
+- 사용자 선택에 따라 커밋/푸시 없이 스테이징만 수행
+
+---
+
+## #73
+
+**Prompt**: 모달이든 바텀시트이든 화면위에 오버레이되는 창의 스크롤액션을 하면 바닥에 깔린 창도 같이 스크롤되면서 액션이 꼬이는데 이거 근본적으로 막을 방법을 찾아서 모두에 적용해
+
+**Answer**: 모든 스크롤 캡처 오버레이(모달·바텀시트·확인 다이얼로그·메뉴 시트)가 단일 프리미티브 `ModalSheet` 하나를 거치는 구조(포탈 없음)임을 확인하고, 근본 수정을 한 곳 + 전역 CSS에 적용해 전체에 자동 반영되게 했습니다.
+
+- **3겹 방어**: ① 전역 `html/body { overscroll-behavior: none }` — iOS 웹뷰 전체 고무줄 바운스 + 문서 레벨 체이닝 차단 ② `ModalSheet` 백드롭 가드 — 오버레이 루트에 non-passive `touchmove`/`wheel` 리스너를 달아 타깃이 시트 바깥(백드롭)일 때만 `preventDefault`(시트 내부·지도·슬라이더·중첩 스크롤 무손상) ③ 기존 시트 `overscroll-contain` 유지
+- **적대적 검증(워크플로 4관점×심판) 중 실버그 발견·수정**: 모달이 `AppScreen`(pull-to-refresh 루트) DOM 하위에 렌더될 때(Home→ScheduleCard→GuestSection→GuestModal), 모달 오픈 시 `body:fixed`로 `scrollY===0`이 되어 시트 내 하향 드래그가 PTR로 버블링돼 새로고침이 오발동 → `.lq-overlay` 안에서 시작한 터치는 PTR 대상에서 제외
+- `tsc`·`vite build` 통과
+
+---
+
+## #74
+
+**Prompt**: 안드로이드 푸쉬이미지가 흰색으로 나오는데 PWA에서 어떻게 해야함?
+참여취소시 한번더 묻는 확인팝업나오게.
+신규가입하면 운영진한테 알람
+게스트옆에 신청자이름 나오게
+
+**Answer**: 4건을 병렬 조사(워크플로) 후 구현했습니다.
+
+- **안드로이드 푸시 흰색**: 근본 원인은 `sw.js`의 `badge`가 불투명(알파 없음) `icon-192.png`를 가리킨 것 — 안드로이드는 badge의 알파 채널만 실루엣으로 써서 통짜 흰 도형이 됨. 투명 배경 로고 실루엣 `badge-96.png`를 생성해 badge로 교체(큰 icon은 정상이라 유지)
+- **참여취소 확인**: `ScheduleCard`의 취소 버튼(참석중/대기 2곳)이 즉시 취소하던 것을 `ConfirmDialog`(danger, 상태별 문구 분기)로 재확인 후 실행하도록 변경
+- **신규가입 운영진 알림**: members 프로필 3필드(gender/birth_year/residence)가 NULL→채워지는 "최초 완성"에만 발화하는 AFTER UPDATE 트리거로 운영진 전원에게 `new_member` 알림 INSERT → 기존 `trg_notify_push_send` 파이프라인이 웹푸시 처리. edit/실력편집/게스트/본인은 미발화 가드. `send-push`·클라 `notificationMessage`에 케이스 추가 (배포: `supabase db push` + `functions deploy send-push` 필요)
+- **게스트 신청자 이름**: 데이터(`attendances.invited_by`)는 이미 존재 → 쿼리에 `inviter:invited_by(name)` join + 타입 + `SessionParticipantsModal` 배지를 "🎫 {신청자}님 게스트"로 표시(GuestSection은 내 게스트만 보여 제외)
+- `tsc`·`vite build` 통과
+
+---

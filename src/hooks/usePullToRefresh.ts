@@ -37,6 +37,15 @@ export function usePullToRefresh(
 		};
 
 		const onTouchStart = (e: TouchEvent) => {
+			// 모달/바텀시트(.lq-overlay) 안에서 시작한 터치는 PTR 대상에서 제외한다.
+			// 모달은 이 루트(AppScreen)의 DOM 하위에 렌더될 수 있고(예: Home > ScheduleCard >
+			// GuestSection > GuestModal), 모달 오픈 시 ModalSheet 의 body:fixed 잠금으로
+			// window.scrollY 가 항상 0 이 되어, 시트 내부 하향 드래그가 여기로 버블링되면 PTR 이
+			// 오발동(당김 인디케이터 + preventDefault 로 시트 스크롤 차단, 임계 초과 시 새로고침)했다.
+			if ((e.target as Element | null)?.closest?.(".lq-overlay")) {
+				startY.current = null;
+				return;
+			}
 			// 스크롤 최상단(문서 스크롤 기준)에서 시작한 단일 터치만 당김 제스처 후보
 			if (window.scrollY <= 0 && e.touches.length === 1) {
 				startY.current = e.touches[0].clientY;

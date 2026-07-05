@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import SheetHeader from "./SheetHeader";
 
 interface ModalSheetProps {
@@ -46,6 +46,34 @@ export default function ModalSheet({
 	closeOnEscape = false,
 	children,
 }: ModalSheetProps) {
+	const overlayRef = useRef<HTMLDivElement>(null);
+	const sheetRef = useRef<HTMLDivElement>(null);
+
+	// 백드롭(딤) 영역 스크롤 체이닝 차단 — 시트 '바깥'을 드래그/휠 하면 그 제스처가 뒤 스크롤
+	// 컨테이너(body 는 아래 fixed 트릭으로 잠기지만, 회원관리의 내부 overflowY:auto 리스트 등은
+	// 안 잠긴다)로 전파되어 배경이 함께 움직였다. 오버레이 루트에 non-passive 리스너를 달아,
+	// 이벤트 타깃이 시트 내부가 아닐 때(=백드롭)만 preventDefault 한다. 시트 내부는 손대지 않으므로
+	// 시트 자체 스크롤·중첩 스크롤 영역·지도(Kakao) 패닝·슬라이더는 그대로 동작한다
+	// (시트엔 overscroll-contain 을 유지해 시트 내부 스크롤의 체이닝은 CSS 레벨에서 막는다).
+	// React 합성 onTouchMove/onWheel 은 루트에 passive 로 위임돼 preventDefault 가 무시되므로
+	// addEventListener({ passive:false }) 로 직접 단다.
+	useEffect(() => {
+		const overlay = overlayRef.current;
+		if (!overlay) return;
+		const block = (e: TouchEvent | WheelEvent) => {
+			const sheet = sheetRef.current;
+			const target = e.target as Node | null;
+			if (sheet && target && sheet.contains(target)) return; // 시트 내부 → 통과
+			if (e.cancelable) e.preventDefault(); // 백드롭 → 배경 스크롤 차단
+		};
+		overlay.addEventListener("touchmove", block, { passive: false });
+		overlay.addEventListener("wheel", block, { passive: false });
+		return () => {
+			overlay.removeEventListener("touchmove", block);
+			overlay.removeEventListener("wheel", block);
+		};
+	}, []);
+
 	// 모달 열림 동안 배경(body) 스크롤 잠금 — iOS PWA에서 모달 위 상하 드래그가 모달이 아니라 뒤 페이지를
 	// 스크롤하던 문제 방지(position:fixed 트릭 + 닫을 때 스크롤 위치 복원). 시트엔 overscroll-contain으로 체이닝 차단.
 	useEffect(() => {
@@ -102,11 +130,13 @@ export default function ModalSheet({
 
 	return (
 		<div
+			ref={overlayRef}
 			className={`fixed inset-0 lq-overlay flex ${posClass}`}
 			style={{ zIndex }}
 			onClick={onClose}
 		>
 			<div
+				ref={sheetRef}
 				className={`lq-sheet w-full ${widthClass} rounded-3xl overflow-y-auto overscroll-contain no-sb ${className}`}
 				style={{ maxHeight: "90dvh" }}
 				onClick={(e) => e.stopPropagation()}

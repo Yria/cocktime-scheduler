@@ -11,6 +11,7 @@ import GuestSection from "./GuestSection";
 import PlayerAvatar from "../shared/PlayerAvatar";
 import CarpoolAnnounceBuilder from "./carpool/CarpoolAnnounceBuilder";
 import SessionParticipantsModal from "./SessionParticipantsModal";
+import ConfirmDialog from "../common/ConfirmDialog";
 
 /** 인라인 아바타 스택에 노출할 최대 인원(초과분은 +N 칩) */
 const STACK_MAX = 6;
@@ -55,6 +56,7 @@ export default function ScheduleCard({
 }: Props) {
 	const [showParticipants, setShowParticipants] = useState(false);
 	const [showCarpoolBuilder, setShowCarpoolBuilder] = useState(false);
+	const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 	const confirmed = attendances.filter((a) => a.status === "confirmed");
 	const waiting = attendances.filter((a) => a.status === "waitlisted");
 	// 인라인 스택 — 확정자 우선, 모자라면 대기자로 채움
@@ -186,7 +188,7 @@ export default function ScheduleCard({
 							</span>
 							<button
 								type="button"
-								onClick={onCancel}
+								onClick={() => setShowCancelConfirm(true)}
 								disabled={busy}
 								style={chipBtn("#ef4444", busy)}
 							>
@@ -201,7 +203,7 @@ export default function ScheduleCard({
 							</span>
 							<button
 								type="button"
-								onClick={onCancel}
+								onClick={() => setShowCancelConfirm(true)}
 								disabled={busy}
 								style={chipBtn("#ef4444", busy)}
 							>
@@ -366,6 +368,27 @@ export default function ScheduleCard({
 				onAddGuest={onAddGuest}
 				onCancelGuest={onCancelGuest}
 			/>
+
+			{/* 참여취소 재확인 — 실수 취소 방지(대기/참석 문구 분기) */}
+			{showCancelConfirm && (
+				<ConfirmDialog
+					title="참여를 취소할까요?"
+					message={
+						mine?.status === "waitlisted"
+							? "대기 신청이 취소됩니다."
+							: "참석 신청이 취소됩니다. 대기자가 있으면 자동으로 승급될 수 있어요."
+					}
+					confirmLabel="참여 취소"
+					cancelLabel="닫기"
+					tone="danger"
+					onConfirm={() => {
+						setShowCancelConfirm(false);
+						onCancel();
+					}}
+					onCancel={() => setShowCancelConfirm(false)}
+					onDismiss={() => setShowCancelConfirm(false)}
+				/>
+			)}
 
 			{/* 세션 시작 버튼: 시작 시각이 지난(=isLive) open 일정에만 노출 */}
 			{isAdmin && isOpen && isLive && (

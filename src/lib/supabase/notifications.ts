@@ -101,6 +101,11 @@ export function notificationMessage(
 				? `새 일정이 추가됐어요: ${label}`
 				: "새 일정이 추가되었어요";
 		}
+		case "new_member": {
+			const name =
+				n.payload && typeof n.payload.name === "string" ? n.payload.name : null;
+			return name ? `${name}님이 새로 가입했어요` : "새 회원이 가입했어요";
+		}
 		default:
 			return "새 알림이 있어요";
 	}

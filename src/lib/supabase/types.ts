@@ -123,6 +123,8 @@ export interface AttendanceRow {
 	invited_by: string | null;
 	/** fetchAttendances의 members 임베드(이름/게스트 여부/성별 표시용). */
 	member?: { name: string; is_guest: boolean; gender: Gender | null } | null;
+	/** fetchAttendances의 invited_by(신청자) 회원 임베드. 게스트 행에만 존재, 본인 참석은 null. */
+	inviter?: { name: string } | null;
 }
 
 export interface NotificationRow {

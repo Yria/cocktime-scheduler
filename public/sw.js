@@ -20,7 +20,9 @@ self.addEventListener("push", (event) => {
   const options = {
     body: data.body || "",
     icon: new URL("icon-192.png", scope).href,
-    badge: new URL("icon-192.png", scope).href,
+    // badge(상태바 모노크롬 아이콘)는 알파 채널만 실루엣으로 쓰인다. 불투명 icon-192(알파 없음)를
+    // 쓰면 안드로이드에서 통짜 흰 도형으로 나오므로, 투명 배경 로고 실루엣(badge-96.png)을 쓴다.
+    badge: new URL("badge-96.png", scope).href,
     tag: data.tag || data.type || "cocktime",
     renotify: true,
     data: {
