@@ -1085,3 +1085,15 @@
 - <AppScreen> 3곳(Home·SchedulePage·RegularNoticePage)에 일관 적용. tsc·build 통과, 실기기 검증 필요.
 
 ---
+
+## #84
+
+**Prompt**: 스크롤할때 바운딩은 잘 되는데, 멈춘상태에서 p2r 을 위해 다시한번 땡기면 네비와 본문사이에도 인디케이터가, 네비위에도 인디케이터가 생기고, 네비는 의도한것과다르게 아래로 내려가. 이거 위에 딱 붙게 고정 못해? 그리고 네비 위에 붙는건 모든 페이지 고정인데 positioning prop 을 따로 만드는 이유를 모르겠어.
+
+**Answer**: 원인=iOS는 문서 오버스크롤 바운스 때 position:fixed 요소도 함께 끌고 내려감 → fixed 네비가 안 붙고 고정 인디케이터도 끌려가 중복으로 보임. body 스크롤을 쓰는 한 fixed로 네비 고정 불가. 사용자 선택(네비 완전고정)에 따라 내부 스크롤 셸 방식으로 전환.
+- AppScreen: body 스크롤 → app-shell-h(고정높이 셸, 100dvh/설치형 100lvh) flex-col + 내부 overflow-y-auto/overscroll-contain 컨테이너. 바운스가 이 컨테이너 안에서만 일어나 바깥 네비(AppHeader, flex-shrink-0)는 진짜 고정. 인디케이터는 셸 기준 절대배치로 네비 바로 아래 앵커(중복/이동 없음).
+- positioning prop 제거(불필요) → AppHeader 원복. 모든 페이지가 동일하게 네비 상단 고정으로 통일.
+- usePullToRefresh: window.scrollY → 컨테이너 el.scrollTop 기준으로 감지 변경.
+- 로그·회원관리와 동일한 검증된 app-shell-h 패턴이라 하단 safe-area는 content padding-bottom env()로 처리. 트레이드오프: Safari 브라우저에선 스크롤 시 주소창 자동 접힘이 사라짐(설치형 PWA엔 무관). tsc·build 통과.
+
+---

@@ -29,31 +29,24 @@ export default function AppScreen({
 	contentClassName,
 	children,
 }: Props) {
-	const rootRef = useRef<HTMLDivElement>(null);
-	const { pull, refreshing } = usePullToRefresh(rootRef, onRefresh);
+	// 본문은 문서(body)가 아니라 자체 스크롤 컨테이너에서 스크롤/바운스한다. 그래야 iOS 오버스크롤
+	// 바운스가 이 컨테이너 안에서만 일어나고, 바깥의 네비(AppHeader)는 진짜로 고정된다. P2R 도 이
+	// 컨테이너 기준(scrollTop)으로 감지한다.
+	const scrollRef = useRef<HTMLDivElement>(null);
+	const { pull, refreshing } = usePullToRefresh(scrollRef, onRefresh);
 
-	// 네비 높이 = safe-area-top + inner 52 + border 1. 네비를 fixed 로 흐름에서 빼므로
-	// 본문은 이만큼 아래에서 시작하고, 인디케이터도 이 지점(네비 바로 아래)에 고정한다.
+	// 네비 높이 = safe-area-top + inner 52 + border 1. 인디케이터를 이 지점(네비 바로 아래)에 앵커.
 	const NAV_H = "calc(env(safe-area-inset-top) + 53px)";
 
 	return (
-		<div
-			ref={rootRef}
-			className="min-h-[100dvh] bg-[#fafbff] dark:bg-[#0f172a]"
-			style={{ paddingTop: NAV_H }}
-		>
-			{/* 네비를 fixed 로 고정 — iOS 오버스크롤 시 본문(문서)만 바운스로 내려가고 네비는 안 움직인다. */}
-			<AppHeader
-				title={title}
-				onBack={onBack}
-				logo={logo}
-				right={right}
-				positioning="fixed"
-			/>
-			{/* 당김/새로고침 인디케이터 — 네비 바로 아래(본문과의 사이)에 고정. 당기면 네이티브 바운스로
-			    본문이 내려가며 네비 아래 gap 이 열리고, 그 자리에 스피너가 드러난다(콘텐츠 위 z-40). */}
+		// app-shell-h: 고정 높이 셸(100dvh/설치형 100lvh) + position:relative. 셸 자체는 스크롤하지 않고
+		// 내부 컨테이너만 스크롤 → 네비 고정. (로그·회원관리와 동일 패턴)
+		<div className="app-shell-h flex flex-col overflow-hidden bg-[#fafbff] dark:bg-[#0f172a]">
+			<AppHeader title={title} onBack={onBack} logo={logo} right={right} />
+			{/* 당김/새로고침 인디케이터 — 네비 바로 아래(네비-본문 사이)에 셸 기준 절대배치. 당기면 내부
+			    컨테이너가 바운스로 내려가며 이 자리에 스피너가 드러난다. 네비·셸은 안 움직이므로 중복/이동 없음. */}
 			<div
-				className="fixed left-0 right-0 flex justify-center pointer-events-none z-40"
+				className="absolute left-0 right-0 flex justify-center pointer-events-none z-40"
 				style={{
 					top: NAV_H,
 					paddingTop: 10,
@@ -75,7 +68,8 @@ export default function AppScreen({
 				</div>
 			</div>
 			<div
-				className={contentClassName}
+				ref={scrollRef}
+				className={`flex-1 min-h-0 overflow-y-auto overscroll-contain ${contentClassName ?? ""}`}
 				style={{
 					padding: "1.25rem",
 					paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))",
