@@ -6,6 +6,9 @@ import { type RefObject, useEffect, useRef, useState } from "react";
  * 넘긴 채 놓으면 onRefresh 를 호출한다. scrollRef 는 터치 리스너를 붙일 루트 요소.
  * 기본 onRefresh 는 location.reload(앱 코드까지 갱신).
  *
+ * preventDefault 를 하지 않아 iOS 네이티브 오버스크롤 바운스가 그대로 살아 있고, 반환하는 pull 은
+ * 콘텐츠 이동이 아니라 스피너 인디케이터(헤더 아래 고정 오버레이)의 진행도로만 쓴다.
+ *
  * 반환: pull(현재 당김 거리, 인디케이터용), refreshing(새로고침 트리거됨), ready(임계 도달).
  */
 const THRESHOLD = 70; // 이만큼 당겨 놓으면 새로고침
@@ -69,11 +72,11 @@ export function usePullToRefresh(
 			// 아래로 당기는 중 + 문서가 여전히 최상단이면 당김 활성화
 			if (window.scrollY <= 0) {
 				activeRef.current = true;
-				// 고무줄 저항: 당길수록 둔해지게(제곱근 감쇠)
+				// 고무줄 저항: 당길수록 둔해지게(제곱근 감쇠). 인디케이터(스피너)용 진행도.
 				const damped = Math.min(MAX_PULL, Math.sqrt(dy) * 7);
 				setDist(damped);
-				// 네이티브 오버스크롤 bounce 대신 인디케이터를 쓰기 위해 기본 동작 차단
-				if (e.cancelable) e.preventDefault();
+				// preventDefault 하지 않는다 — iOS 네이티브 오버스크롤 바운스를 그대로 살리고,
+				// 스피너는 헤더 아래 고정 오버레이로 별도 표시(콘텐츠는 네이티브 바운스가 움직임).
 			}
 		};
 

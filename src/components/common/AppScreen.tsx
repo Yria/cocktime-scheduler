@@ -38,39 +38,38 @@ export default function AppScreen({
 			className="min-h-[100dvh] bg-[#fafbff] dark:bg-[#0f172a]"
 		>
 			<AppHeader title={title} onBack={onBack} logo={logo} right={right} />
-			<div className="relative">
-				{/* 당김 인디케이터 — 당김 거리만큼 헤더 아래에 스피너 노출 */}
-				<div
-					className="absolute left-0 right-0 flex items-end justify-center pointer-events-none z-10"
-					style={{
-						top: 0,
-						height: pull,
-						paddingBottom: 8,
-						opacity: pull > 8 ? 1 : 0,
-						transition: refreshing ? "none" : "height 0.2s ease, opacity 0.2s ease",
-					}}
-				>
+			{/* 당김/새로고침 인디케이터 — 헤더 바로 아래 고정 오버레이. 콘텐츠 이동은 네이티브
+			    오버스크롤 바운스가 담당하고(usePullToRefresh 가 preventDefault 안 함), 스피너만
+			    여기서 당김 진행도/새로고침 상태로 표시한다. 헤더 아래에 두어 두 상태에서 겹치지 않는다. */}
+			<div
+				className="fixed left-0 right-0 flex justify-center pointer-events-none z-40"
+				style={{
+					top: "calc(env(safe-area-inset-top) + 60px)",
+					opacity: pull > 8 || refreshing ? 1 : 0,
+					transform: `translateY(${refreshing ? 0 : Math.min(pull, 24) - 24}px)`,
+					transition: refreshing
+						? "none"
+						: "opacity 0.2s ease, transform 0.2s ease",
+				}}
+			>
+				<div className="rounded-full bg-white/85 dark:bg-white/10 shadow-sm p-1.5 backdrop-blur-sm">
 					<div
 						style={{
 							transform: refreshing ? undefined : `rotate(${pull * 3}deg)`,
-							opacity: 0.7,
 						}}
 					>
 						<Spinner size={18} />
 					</div>
 				</div>
-				<div
-					className={contentClassName}
-					style={{
-						transform: pull > 0 ? `translateY(${pull}px)` : undefined,
-						transition:
-							refreshing || pull === 0 ? "transform 0.2s ease" : "none",
-						padding: "1.25rem",
-						paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))",
-					}}
-				>
-					{children}
-				</div>
+			</div>
+			<div
+				className={contentClassName}
+				style={{
+					padding: "1.25rem",
+					paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))",
+				}}
+			>
+				{children}
 			</div>
 		</div>
 	);

@@ -1063,3 +1063,14 @@
 **Answer**: blur는 해결 확인. 바운스 부재 원인은 html/body의 전역 `overscroll-behavior: none`이 iOS 고무줄 바운스를 죽이고 있던 것(원래 모달 뒤 페이지 튕김 방지용). 이제 그 역할은 scrollLock이 정밀 처리하므로 전역 none이 과잉. 웹 조사로 `contain`은 바운스를 유지하면서 스크롤 체이닝·pull-to-refresh만 차단함을 확인(none은 바운스까지 제거). html·body의 overscroll-behavior를 none→contain으로 변경해 자연스러운 바운스 복원. CSS만 변경, build 통과.
 
 ---
+
+## #82
+
+**Prompt**: pull to refresh 가 있는곳도 자연스럽게 바운딩되면서 같이 작동하게 하고싶은데 웹에서 구현한 사례또는 패키지를 참조해서 수정할수 있으면 해줘
+
+**Answer**: 기존 커스텀 P2R(usePullToRefresh+AppScreen)이 당길 때 preventDefault로 네이티브 바운스를 죽이고 content를 translateY로 직접 움직이는 방식이라, contain으로 살린 네이티브 바운스와 이질적이었음. 웹 레퍼런스(patrickhlauke overscroll+touch, pulltorefreshjs, chrome overscroll-behavior 문서) 조사 후 "네이티브 바운스에 얹는" 방식으로 전환.
+- hook: touchmove의 preventDefault 제거 → iOS 네이티브 오버스크롤 바운스 그대로 유지. pull 값은 콘텐츠 이동이 아니라 스피너 진행도로만 사용(터치 델타+sqrt 감쇠 추적, 임계 트리거는 유지).
+- AppScreen: content의 translateY transform 제거(네이티브 바운스가 콘텐츠를 움직임, 이중 이동 방지). 스피너를 헤더 바로 아래(top: safe-area+60px) 고정 오버레이로 띄워 당김/새로고침 두 상태에서 헤더와 안 겹치게. 알약형 배경 추가로 콘텐츠 위 가독성 확보.
+- 모달이 body로 portal되므로 P2R 오발동(모달 터치 버블링) 우려도 제거됨. tsc·build 통과, 실기기 검증 필요.
+
+---
