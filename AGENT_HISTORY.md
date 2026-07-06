@@ -996,3 +996,17 @@
 - `tsc`·`vite build` 통과. **프론트만 배포(git push), DB 변경 없음**
 
 ---
+
+## #76
+
+**Prompt**: 18명에서 인원 24명으로 늘리면 대기도 참여로 바뀌어야지. 바로 이전에 24명에서 18명으로 바꿨을때 참여된인원 대기로 빼는것과 마찬가지로 작동해야하고, 해당 인원들에게 상황이 이러이러해서 참여/대기로 변경되었다 푸쉬나가게 해줘.
+
+**Answer**: 코드·DB·git 히스토리를 전수 조사한 결과 **정원 변경 시 참석/대기를 재조정하는 로직이 애초에 존재하지 않음**을 확인(24→18 강등도 실제로는 동작한 적 없음, 승격용 `promote_waitlist` RPC는 어디에도 연결되지 않은 죽은 코드). 따라서 사용자 기대("마찬가지로 작동")대로 **양방향(증가→승격 / 감소→강등)을 모두 신규 구현**.
+
+- **원자 RPC `set_session_capacity(p_session_id, p_capacity)`**(신규 마이그레이션): 정원 UPDATE와 재조정을 한 트랜잭션으로 처리. open 세션만 재조정 — 정원↑/무제한이면 대기자를 신청순(position ASC) 승격, 정원↓면 최근 신청 참석자(position DESC)를 초과분만큼 강등(position 보존→재상향 시 원순번 복귀). 잠금 순서 sessions→session_counters→attendances로 기존 join/cancel 규칙 준수
+- **알림/푸시**: 대상별 `promoted`/`demoted` 알림 INSERT→웹푸시. 게스트는 계정이 없어 `coalesce(invited_by, member_id)`로 데려온 회원에게 발송하되, payload에 `guest_name`을 실어 "내 게스트가 변경됨"으로 문구 분기(본인이 밀린 걸로 오인 방지). 문구는 클라(`notifications.ts`)·Edge Function(`send-push`) 양쪽 동기화
+- **배선**: 정원이 **실제로** 바뀐 경우에만 `overrideOccurrence`에서 원자 RPC 호출(capacity는 일반 PATCH에서 제외), 승격/강등 수를 토스트로 안내. 실패 시 throw로 부분 적용을 성공 위장하지 않음
+- **적대적 리뷰 워크플로우**(4관점 리뷰+결함별 검증): 동시성·순서·카운터는 결함 0, 확정 3건 수정 — ①원자성(정원+재조정 분리 호출→한 RPC로 통합) ②게스트 강등 문구 오해(guest_name 분기) ③부정 알림 초록 토스트(App.tsx 실시간 핸들러에서 negative 타입은 info로)
+- `tsc`·`eslint`·`vitest`(168) 통과. **배포 필요: `supabase db push` + `supabase functions deploy send-push`**(프론트는 git push)
+
+---

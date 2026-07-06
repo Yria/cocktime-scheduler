@@ -9,9 +9,11 @@ import {
 	deleteRecurringRule,
 	fetchOccurrences,
 	fetchRecurringRules,
+	setSessionCapacity,
 	updateOccurrence,
 	updateRecurringRule,
 } from "../lib/supabase/recurring";
+import { toast } from "./toastStore";
 import {
 	type CreatePlaceInput,
 	createPlace,
@@ -132,7 +134,32 @@ export const adminScheduleActions = {
 
 	// ── 회차 개별 편집 ──
 	async overrideOccurrence(sessionId: number, patch: OccurrencePatch) {
-		const row = await updateOccurrence(sessionId, patch);
+		// 정원 실변경 여부는 UPDATE 전 값과 비교(useOccurrenceForm 은 매번 capacity 를 patch 에 담는다).
+		const prevCapacity = useAdminScheduleStore
+			.getState()
+			.occurrences.find((o) => o.id === sessionId)?.capacity;
+		const capacityChanged =
+			patch.capacity !== undefined && patch.capacity !== prevCapacity;
+		// 정원 외 필드는 일반 PATCH. 정원이 바뀌었으면 capacity 는 아래 원자 RPC 가 소유하므로 제외.
+		const patchForUpdate = { ...patch };
+		if (capacityChanged) delete patchForUpdate.capacity;
+		const row = await updateOccurrence(sessionId, patchForUpdate);
+		// 정원이 실제로 바뀐 경우: 정원 변경 + 참석/대기 재조정 + 알림을 한 트랜잭션(원자)으로.
+		// 실패하면 setSessionCapacity 가 throw → 폼이 에러를 노출하고 부분 적용을 성공으로 위장하지 않는다.
+		if (row && capacityChanged) {
+			const { promoted, demoted } = await setSessionCapacity(
+				sessionId,
+				patch.capacity ?? null,
+			);
+			const parts: string[] = [];
+			if (promoted > 0) parts.push(`대기 ${promoted}명 참석 승격`);
+			if (demoted > 0) parts.push(`참석 ${demoted}명 대기 강등`);
+			if (parts.length > 0) {
+				toast(`${parts.join(" · ")} — 해당 인원에 알림을 보냈어요`, {
+					variant: "success",
+				});
+			}
+		}
 		if (row) await reloadOccurrences();
 		return row;
 	},

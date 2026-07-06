@@ -162,6 +162,34 @@ export async function updateOccurrence(
 	return data as SessionRow;
 }
 
+/** set_session_capacity 결과: 이번 정원 변경으로 승격/강등된 인원 수. */
+export interface ReconcileResult {
+	promoted: number;
+	demoted: number;
+}
+
+/**
+ * 정원 변경 + 참석/대기 재조정을 한 RPC(한 트랜잭션)로 원자 처리. 운영진 전용.
+ * 정원을 늘리면 대기자를 여유만큼 참석 승격, 줄이면 초과 참석자를 대기 강등하고
+ * 각 대상에게 알림(→웹푸시)을 보낸다. 승격/강등 인원 수를 반환(0/0=변동 없음).
+ * 실패 시 정원 변경도 롤백되므로, 부분 적용을 성공으로 위장하지 않도록 예외를 그대로 던진다.
+ */
+export async function setSessionCapacity(
+	sessionId: number,
+	capacity: number | null,
+): Promise<ReconcileResult> {
+	const { data, error } = await supabase.rpc("set_session_capacity", {
+		p_session_id: sessionId,
+		p_capacity: capacity,
+	});
+	if (error) {
+		console.error("setSessionCapacity:", error);
+		throw new Error(error.message);
+	}
+	const r = (data ?? {}) as { promoted?: number; demoted?: number };
+	return { promoted: r.promoted ?? 0, demoted: r.demoted ?? 0 };
+}
+
 /**
  * 반복 규칙 회차 삭제(tombstone): status='cancelled'. 행 자체는 남겨 sync 의 재생성을 막는다.
  * (그냥 delete 하면 sync_schedule_occurrences B단계가 56일 창 안에서 다시 생성함)

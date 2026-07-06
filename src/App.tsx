@@ -79,8 +79,14 @@ export default function App() {
 		const ch = subscribeNotifications(memberId, (n) => {
 			notificationActions.pushRealtime(n);
 			const { schedules, places } = useScheduleStore.getState();
+			// 부정적 알림(강등·취소·마감)은 초록 success 가 아닌 중립 info 로 — 오해 방지.
+			const negative = new Set([
+				"demoted",
+				"session_cancelled",
+				"session_closed",
+			]);
 			toast(notificationMessage(n, notificationContext(n, schedules, places)), {
-				variant: "success",
+				variant: negative.has(n.type) ? "info" : "success",
 				duration: 6000,
 			});
 			// 알림이 의미하는 일정/참석 변경을 화면에 반영(재쿼리)

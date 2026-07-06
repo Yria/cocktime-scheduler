@@ -73,10 +73,34 @@ function buildBody(
   const head = ctx.sessionTitle ? `'${ctx.sessionTitle}'` : ctx.placeName;
   const sess = head ? `${head}${when ? ` (${when})` : ""}` : when;
   switch (type) {
-    case "promoted":
+    case "promoted": {
+      // 게스트 승격이면 수신자(초대 회원)에게 "내 게스트가 확정" 으로 표기.
+      const guest =
+        payload && typeof payload.guest_name === "string"
+          ? payload.guest_name
+          : null;
+      if (guest)
+        return sess
+          ? `${sess} 게스트 '${guest}'님이 대기자에서 참석 확정됐어요!`
+          : `게스트 '${guest}'님이 대기자에서 참석 확정되었어요!`;
       return sess
         ? `${sess} 대기자에서 참석이 확정됐어요!`
         : "대기자에서 참석이 확정되었어요!";
+    }
+    case "demoted": {
+      // 게스트 강등이면 수신자(초대 회원)에게 "내 게스트가 대기로" 로 표기(본인이 밀린 걸로 오인 방지).
+      const guest =
+        payload && typeof payload.guest_name === "string"
+          ? payload.guest_name
+          : null;
+      if (guest)
+        return sess
+          ? `${sess} 정원이 조정되어 게스트 '${guest}'님이 대기로 변경됐어요`
+          : `정원이 조정되어 게스트 '${guest}'님이 대기로 변경되었어요`;
+      return sess
+        ? `${sess} 정원이 조정되어 대기로 변경됐어요`
+        : "정원이 조정되어 대기자로 변경되었어요";
+    }
     case "session_cancelled":
       return sess ? `${sess} 일정이 취소됐어요` : "참석 예정 일정이 취소되었어요";
     case "session_closed":

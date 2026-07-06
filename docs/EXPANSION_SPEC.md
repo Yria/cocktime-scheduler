@@ -20,7 +20,7 @@
 | 5 | **로그인해야 열람** | 최종 RLS: 로그인 사용자 read + 운영진 write |
 | 6 | **places = 좌표 테이블** | 모임 코트 위치 + 카풀 집결지 공용. name·address·lat·lng 수준 |
 | 7 | **카풀 = 의향 + 운영진 수동 편성** | `attendances.carpool_role` + `sessions.carpool_groups`(jsonb) 공지 빌더. 배정 테이블 없음. 상세: `CARPOOL_MATCHING_DESIGN.md` |
-| 8 | **정원 상향 시 자동 승급** | `promote_waitlist` RPC |
+| 8 | **정원 변경 시 자동 재조정(승급+강등)** | `set_session_capacity` RPC — 정원 UPDATE+재조정을 한 트랜잭션(원자)으로. 정원↑→대기 승격, 정원↓→초과 참석 강등, 각자 알림(`promoted`/`demoted`, 게스트면 초대 회원에 guest_name 실어 발송). 회차 개별수정에서 정원이 실제로 바뀔 때만 호출. (구 `promote_waitlist` 는 미배선 death code) |
 | 9 | **콕 체크는 운영진만** | 별도 본인검증 RPC 불필요 |
 | 10 | **마이그레이션 자유** | 개발 중이라 백필/파괴적 정리 부담 낮음. 이중운영 최소화 |
 
@@ -85,7 +85,7 @@ $$;
 | `sessions.status` | `'draft'` `'open'` `'active'` `'closed'` `'cancelled'` | 상태기계 ↓ |
 | `attendances.status` | `'confirmed'` `'waitlisted'` `'cancelled'` | confirmed/waitlisted/cancelled 로 동결(going/waitlist 표기 금지) |
 | `attendances.carpool_role` | `'none'` `'can_drive'` `'need_ride'` | 기본 `'none'` |
-| `notifications.type` | `'promoted'` `'session_cancelled'` `'session_closed'` `'carpool_muster'` `'noshow'` | 신규 타입은 여기 추가 |
+| `notifications.type` | `'promoted'` `'demoted'` `'session_cancelled'` `'session_closed'` `'session_open'` `'carpool_muster'` `'schedule_added'` `'new_member'` `'noshow'` | 신규 타입은 여기 + `notifications.ts`/`send-push` 메시지 양쪽에 추가 |
 
 ### sessions 상태기계
 
@@ -282,7 +282,8 @@ alter table public.sessions
 |-----|---------|------|------|
 | `join_session` | `(p_session_id bigint) → attendances` | 로그인 회원 | 정원 여유면 confirmed, 아니면 waitlisted. 중복신청 차단, 취소후재신청은 같은 행 갱신. 참여 가능 = `status='open'` + **종료 상한(`ends_at<=now()`→`session ended`)** 가드 |
 | `cancel_attendance` | `(p_session_id bigint) → void` | 로그인 회원(본인) | 본인 취소(멱등). 카풀 의향(`carpool_role`/`carpool_seats`) 함께 해제(재참석 시 부활 방지). confirmed였으면 카운터 감소 + 대기 1순위 자동 승급 + 알림 |
-| `promote_waitlist` | `(p_session_id bigint) → int` | 운영진 | 정원 상향 후 여유만큼 대기자 일괄 승급 + 각자 알림. 승급 수 반환 |
+| `promote_waitlist` | `(p_session_id bigint) → int` | 운영진 | 정원 상향 후 여유만큼 대기자 일괄 승급 + 각자 알림. 승급 수 반환. ⚠️ 미배선(dead) — 실제 승급/강등은 `set_session_capacity` 가 담당 |
+| `set_session_capacity` | `(p_session_id bigint, p_capacity int) → jsonb{promoted,demoted}` | 운영진 | 정원 UPDATE+재조정 원자 RPC. open 세션만 재조정: 정원↑/무제한→대기자 승격(position ASC), 정원↓→초과 confirmed 강등(position DESC, position 보존). 알림 대상 `coalesce(invited_by, member_id)`(게스트면 payload.guest_name). 승격 `promoted`/강등 `demoted`. 잠금 sessions→session_counters→attendances |
 | `cancel_session` | `(p_session_id bigint) → void` | 운영진 | status='cancelled' + 전체 참석자 알림 |
 | `bridge_confirmed_to_players` | `(p_session_id bigint) → void` | 운영진 | **Phase 6**: confirmed 참석자를 session_players로 일괄 INSERT(members→스냅샷, gender NULL 가드). 보드 로직 0변경 |
 | `set_session_status` | `(p_session_id bigint, p_status text) → void` | 운영진 | 상태 전이(draft→open→active→closed) |
