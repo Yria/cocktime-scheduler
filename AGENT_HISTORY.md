@@ -1033,3 +1033,13 @@
 - `html.modal-dim`(다크 `html.dark.modal-dim`) 색을 `.lq-overlay`와 동일하게 정의하고, `ModalSheet`의 ref-count body-lock effect에 클래스 add/remove 한 줄씩 추가. `.dark`가 `<html>`에 붙음을 확인. 대상 다이얼로그(GuestSection→ConfirmDialog→ModalSheet)가 이 경로를 탐. tsc 통과, 실기기 iOS26 검증 필요해 배포.
 
 ---
+
+## #79
+
+**Prompt**: (스크린샷) 그대로인데? 웹에서 된다는 게 이거맞아?
+
+**Answer**: 배포 검증 결과 CSS(`html.modal-dim`)는 정상 반영, SW는 웹푸시 전용이라 캐시 무관으로 확인. 원인 재분석: 하단 스트립을 칠하는 주체가 환경별로 다름 — 설치형 PWA는 html 배경, Safari 브라우저(사용자 테스트 환경, 하단 주소창)는 스크롤락으로 position:fixed가 된 body의 불투명 배경(#fafbff)이 스트립을 덮어 html만 딤 처리한 게 안 보였음. Govett 레시피대로 body 배경도 딤 처리하도록 수정.
+- CSS: `body.modal-dim`에 rgba 딤(html 기본색 위 합성→오버레이 톤 일치), `html.modal-dim`은 PWA에서 body 클리핑 시 폴백용 solid 값으로 유지. html/body 둘 다 토글.
+- ModalSheet body-lock effect에서 documentElement와 body 양쪽에 클래스 add/remove. 배경색만 변경이라 스크롤락·blur 불변. tsc 통과.
+
+---
