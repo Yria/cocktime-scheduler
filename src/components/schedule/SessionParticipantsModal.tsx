@@ -97,6 +97,33 @@ export default function SessionParticipantsModal({
 	);
 }
 
+/**
+ * 참가자 뱃지 pill(운영진/게스트 공용) — 색만 다르고 모양 동일.
+ * 색은 className으로 주입해 다크모드(dark:)에서 밝은 톤으로 분기(라이트 톤은 다크 서페이스에서 묻힘).
+ */
+function Pill({
+	className,
+	children,
+}: {
+	className: string;
+	children: React.ReactNode;
+}) {
+	return (
+		<span
+			className={className}
+			style={{
+				fontSize: 11,
+				fontWeight: 700,
+				padding: "2px 7px",
+				borderRadius: 999,
+				flexShrink: 0,
+			}}
+		>
+			{children}
+		</span>
+	);
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
 	return (
 		<div>
@@ -125,6 +152,8 @@ function ParticipantRow({
 	const name = a.member?.name ?? "회원";
 	const isMe = a.member_id === memberId;
 	const isGuest = a.member?.is_guest ?? a.invited_by != null;
+	// 운영진 여부 — nested user_roles 에 role='admin' 행이 있으면 운영진(게스트는 role 없음 → 자동 제외).
+	const isAdmin = (a.member?.user_roles ?? []).some((r) => r.role === "admin");
 	// 게스트를 데려온(신청한) 회원 이름 — 배지에 함께 노출. 신청자 회원이 삭제되면 null → "게스트"만.
 	const inviterName = a.inviter?.name ?? null;
 
@@ -142,7 +171,7 @@ function ParticipantRow({
 				<PlayerAvatar name={name} gender={a.member?.gender ?? null} size={34} />
 			</div>
 			<span
-				className="text-strong truncate"
+				className="text-strong truncate min-w-0"
 				style={{ fontSize: 13.5, fontWeight: 600 }}
 			>
 				{name}
@@ -155,20 +184,15 @@ function ParticipantRow({
 					</span>
 				)}
 			</span>
+			{isAdmin && (
+				<Pill className="text-[#6d5bd0] bg-[rgba(109,91,208,0.12)] dark:text-[#b3a4f5] dark:bg-[rgba(179,164,245,0.16)]">
+					🛡️ 운영진
+				</Pill>
+			)}
 			{isGuest && (
-				<span
-					style={{
-						fontSize: 11,
-						fontWeight: 700,
-						color: "#b4762b",
-						background: "rgba(180,118,43,0.12)",
-						padding: "2px 7px",
-						borderRadius: 999,
-						flexShrink: 0,
-					}}
-				>
+				<Pill className="text-[#b4762b] bg-[rgba(180,118,43,0.12)] dark:text-[#e0a860] dark:bg-[rgba(224,168,96,0.16)]">
 					🎫 {inviterName ? `${inviterName}님 게스트` : "게스트"}
-				</span>
+				</Pill>
 			)}
 
 			{/* 우측: 대기순번 또는 카풀 의향 */}

@@ -2,12 +2,14 @@ import { type RefObject, useEffect, useRef, useState } from "react";
 
 /**
  * 당겨서 새로고침(pull-to-refresh) — iOS standalone PWA 처럼 브라우저 새로고침 UI 가 없는 환경용.
- * 스크롤 컨테이너가 최상단(el.scrollTop<=0)일 때 아래로 당기면 거리를 추적하고, 임계(THRESHOLD)를
- * 넘긴 채 놓으면 onRefresh 를 호출한다. scrollRef 는 스크롤 컨테이너(터치 리스너를 붙일 요소).
+ * 문서(body)가 최상단(window.scrollY<=0)일 때 아래로 당기면 거리를 추적하고, 임계(THRESHOLD)를
+ * 넘긴 채 놓으면 onRefresh 를 호출한다. scrollRef 는 터치 리스너를 붙일 루트 요소.
  * 기본 onRefresh 는 location.reload(앱 코드까지 갱신).
  *
- * preventDefault 를 하지 않아 iOS 네이티브 오버스크롤 바운스가 그대로 살아 있고, 반환하는 pull 은
- * 콘텐츠 이동이 아니라 스피너 인디케이터(헤더 아래 고정 오버레이)의 진행도로만 쓴다.
+ * 이 당김 제스처에서만 preventDefault 로 네이티브 오버스크롤을 막는다. iOS 오버스크롤은 sticky/fixed
+ * 를 포함한 모든 요소를 통째로 끌어내리므로, 이를 막아야 sticky 네비가 제자리 고정된 채 콘텐츠만
+ * (호출부 AppScreen 이 translateY(pull) 로) 내려가고 네비-본문 사이에 인디케이터 gap 이 열린다.
+ * 일반 스크롤(이 제스처 외)의 바운스는 CSS overscroll-behavior:contain 으로 네이티브 유지.
  *
  * 반환: pull(현재 당김 거리, 인디케이터용), refreshing(새로고침 트리거됨), ready(임계 도달).
  */
@@ -49,8 +51,8 @@ export function usePullToRefresh(
 				startY.current = null;
 				return;
 			}
-			// 스크롤 최상단(컨테이너 scrollTop 기준)에서 시작한 단일 터치만 당김 제스처 후보
-			if (el.scrollTop <= 0 && e.touches.length === 1) {
+			// 스크롤 최상단(문서 스크롤 기준)에서 시작한 단일 터치만 당김 제스처 후보
+			if (window.scrollY <= 0 && e.touches.length === 1) {
 				startY.current = e.touches[0].clientY;
 				activeRef.current = false;
 			} else {
@@ -69,14 +71,15 @@ export function usePullToRefresh(
 				}
 				return;
 			}
-			// 아래로 당기는 중 + 컨테이너가 여전히 최상단이면 당김 활성화
-			if (el.scrollTop <= 0) {
+			// 아래로 당기는 중 + 문서가 여전히 최상단이면 당김 활성화
+			if (window.scrollY <= 0) {
 				activeRef.current = true;
-				// 고무줄 저항: 당길수록 둔해지게(제곱근 감쇠). 인디케이터(스피너)용 진행도.
+				// 고무줄 저항: 당길수록 둔해지게(제곱근 감쇠)
 				const damped = Math.min(MAX_PULL, Math.sqrt(dy) * 7);
 				setDist(damped);
-				// preventDefault 하지 않는다 — iOS 네이티브 오버스크롤 바운스를 그대로 살리고,
-				// 스피너는 헤더 아래 고정 오버레이로 별도 표시(콘텐츠는 네이티브 바운스가 움직임).
+				// 이 당김 제스처의 네이티브 오버스크롤만 차단 → sticky 네비가 안 끌려가고,
+				// 콘텐츠는 AppScreen 이 translateY 로 내려 네비-본문 사이 gap 을 만든다.
+				if (e.cancelable) e.preventDefault();
 			}
 		};
 

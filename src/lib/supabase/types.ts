@@ -122,7 +122,13 @@ export interface AttendanceRow {
 	/** 게스트를 데려온 회원 id. 본인 참석은 null, null 아니면 그 회원이 신청한 게스트 행. */
 	invited_by: string | null;
 	/** fetchAttendances의 members 임베드(이름/게스트 여부/성별 표시용). */
-	member?: { name: string; is_guest: boolean; gender: Gender | null } | null;
+	member?: {
+		name: string;
+		is_guest: boolean;
+		gender: Gender | null;
+		/** 운영진 뱃지용 nested user_roles. role='admin' 행이 있으면 운영진(RLS: admin 행은 전 회원 공개). */
+		user_roles?: { role: string }[] | null;
+	} | null;
 	/** fetchAttendances의 invited_by(신청자) 회원 임베드. 게스트 행에만 존재, 본인 참석은 null. */
 	inviter?: { name: string } | null;
 }

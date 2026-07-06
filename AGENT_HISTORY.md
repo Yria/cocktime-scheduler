@@ -1097,3 +1097,27 @@
 - 로그·회원관리와 동일한 검증된 app-shell-h 패턴이라 하단 safe-area는 content padding-bottom env()로 처리. 트레이드오프: Safari 브라우저에선 스크롤 시 주소창 자동 접힘이 사라짐(설치형 PWA엔 무관). tsc·build 통과.
 
 ---
+
+## #85
+
+**Prompt**: 참여자 목록에 게스트뱃지처럼 운영진도 뱃지
+
+**Answer**: 참여자 목록(SessionParticipantsModal)에 게스트 뱃지처럼 "🛡️ 운영진" 뱃지를 추가. 근본 제약 파악이 핵심이었음 — 운영진=user_roles.role='admin'인데 기존 RLS(user_roles_select)는 일반 회원이 타인의 admin 여부를 못 봐서, 게스트 뱃지처럼 전원에게 보이려면 운영진 여부를 공개로 노출해야 했음.
+- DB 마이그레이션 추가: role='admin' 행을 로그인 회원 전원에게 공개하는 permissive select 정책(user_roles_select_admin_public). 'member' 등 나머지 role은 계속 비공개.
+- fetchAttendances 쿼리에 nested embed user_roles(role) 추가, AttendanceRow.member 타입에 user_roles 필드 추가.
+- SessionParticipantsModal에 isAdmin 계산 + Pill 공용 컴포넌트로 게스트/운영진 뱃지 통합.
+- 적대적 검증 워크플로(RLS·PostgREST·UI·완전성 4관점) 실행 → RLS/임베드/완전성은 이상 없음(참여자 목록은 이 모달 하나, 마이그레이션 미적용 시 빈 배열로 안전 degrade), UI 저심각도 2건 반영: 다크모드 대비(Pill 색 dark: 분기로 밝게), 이름 span truncate 무력화(min-w-0 추가).
+- 배포 주의: DB 마이그레이션은 supabase db push 수동 적용 필요(미적용 시 프론트만 배포돼도 뱃지만 안 보이고 에러 없음).
+
+---
+
+## #85
+
+**Prompt**: sticky 가 그래서 고정하려고 만든 position 이잖아
+
+**Answer**: 맞는 지적 — sticky는 "일반 스크롤 중 top:0 고정"용으로 정확히 그 역할을 함. 다만 iOS 오버스크롤 바운스는 별개 메커니즘으로 sticky/fixed 포함 모든 요소를 통째로 끌어내려서, 그 순간엔 sticky도 못 버팀. 즉 body 스크롤에서 "P2R 당길 때 네비 고정 + 네이티브 바운스"는 동시 불가(택1). 고정높이 셸은 Safari에서 잘리므로, 잘림 없음을 우선해 body 스크롤 유지로 되돌림.
+- AppScreen: app-shell-h(고정 셸) → 다시 body 자연 스크롤 + sticky 네비. 인디케이터는 커스텀 당김으로 열린 네비-본문 사이 gap(height=pull)에 표시. contentClassName도 원래대로 content 래퍼에.
+- usePullToRefresh: 컨테이너 scrollTop → window.scrollY 복원 + 당김 제스처에서만 preventDefault 복원(네이티브 오버스크롤 차단 → sticky 네비 고정, 콘텐츠만 translateY). 일반 스크롤 바운스는 overscroll-behavior:contain로 네이티브 유지.
+- 결과: Safari·PWA 모두 하단 잘림 없음 + 일반 스크롤 네이티브 바운스 + P2R 당길 때 네비 고정 + 인디케이터 네비-본문 사이. 트레이드오프는 P2R 당기는 그 순간만 커스텀 애니메이션(네이티브 바운스 아님). 메모리(ios-pwa-natural-scroll) 최종 상태로 갱신. tsc·build 통과.
+
+---
