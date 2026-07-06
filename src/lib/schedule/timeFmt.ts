@@ -43,6 +43,11 @@ export function fmtRange(start: string | null, end: string | null): string {
 	return `${base} ~ ${timeOnlyFmt.format(new Date(end))}`;
 }
 
+/** "오후 8:00" 형태 시각만(KST). 늦참 도착시각 표기용. */
+export function fmtClock(iso: string): string {
+	return timeOnlyFmt.format(new Date(iso));
+}
+
 /** 24시간제 "19:05" (KST 고정 — 디바이스 타임존을 쓰던 로컬 구현들과 달리 fmt/fmtRange 와 일관) */
 export function fmtHM(iso: string): string {
 	return hmFmt.format(new Date(iso));

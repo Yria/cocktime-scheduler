@@ -1,5 +1,5 @@
 import type { AttendanceRow, SessionRow } from "../../lib/supabase/types";
-import { fmtRange } from "../../lib/schedule/timeFmt";
+import { fmtClock, fmtRange } from "../../lib/schedule/timeFmt";
 import ModalSheet from "../common/ModalSheet";
 import EmptyState from "../shared/EmptyState";
 import PlayerAvatar from "../shared/PlayerAvatar";
@@ -67,6 +67,7 @@ export default function SessionParticipantsModal({
 										row={a}
 										memberId={memberId}
 										carpoolEnabled={s.carpool_enabled}
+										scheduledAt={s.scheduled_at}
 									/>
 								))}
 							</Section>
@@ -84,6 +85,7 @@ export default function SessionParticipantsModal({
 											row={a}
 											memberId={memberId}
 											carpoolEnabled={s.carpool_enabled}
+											scheduledAt={s.scheduled_at}
 											waitRank={i + 1}
 										/>
 									))}
@@ -142,11 +144,13 @@ function ParticipantRow({
 	row: a,
 	memberId,
 	carpoolEnabled,
+	scheduledAt,
 	waitRank,
 }: {
 	row: AttendanceRow;
 	memberId: string | null;
 	carpoolEnabled: boolean;
+	scheduledAt: string | null;
 	waitRank?: number;
 }) {
 	const name = a.member?.name ?? "회원";
@@ -158,6 +162,15 @@ function ParticipantRow({
 	const inviterName = a.inviter?.name ?? null;
 
 	const isWaiting = waitRank != null;
+	// 늦참 도착시각 — 확정자·시작시각 有·오프셋>0 일 때만. "⏰ 오후 8:00~"
+	const lateArrival =
+		!isWaiting && a.late_minutes > 0 && scheduledAt
+			? fmtClock(
+					new Date(
+						new Date(scheduledAt).getTime() + a.late_minutes * 60000,
+					).toISOString(),
+				)
+			: null;
 
 	return (
 		<div className="flex items-center gap-2.5 px-2 py-1.5">
@@ -195,8 +208,14 @@ function ParticipantRow({
 				</Pill>
 			)}
 
-			{/* 우측: 대기순번 또는 카풀 의향 */}
-			<span className="ml-auto flex-shrink-0" style={{ fontSize: 12, fontWeight: 700 }}>
+			{/* 우측: 늦참 도착시각 + (대기순번 또는 카풀 의향) */}
+			<span
+				className="ml-auto flex-shrink-0 flex items-center gap-1.5"
+				style={{ fontSize: 12, fontWeight: 700 }}
+			>
+				{lateArrival && (
+					<span style={{ color: "#b4762b" }}>⏰ {lateArrival}~</span>
+				)}
 				{waitRank != null ? (
 					<span style={{ color: "#f59e0b" }}>대기 {waitRank}번째</span>
 				) : carpoolEnabled && a.carpool_role === "can_drive" ? (

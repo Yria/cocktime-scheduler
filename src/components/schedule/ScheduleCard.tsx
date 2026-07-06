@@ -8,6 +8,7 @@ import type {
 } from "../../lib/supabase/types";
 import { fmtRange } from "../../lib/schedule/timeFmt";
 import GuestSection from "./GuestSection";
+import LateArrivalSlider from "./LateArrivalSlider";
 import PlayerAvatar from "../shared/PlayerAvatar";
 import CarpoolAnnounceBuilder from "./carpool/CarpoolAnnounceBuilder";
 import SessionParticipantsModal from "./SessionParticipantsModal";
@@ -32,6 +33,8 @@ interface Props {
 	onCancel: () => void;
 	onStartSession: () => void;
 	onSetCarpool: (role: CarpoolRole) => void;
+	/** 늦참 도착 오프셋(분) 설정. */
+	onSetLate: (minutes: number) => void;
 	/** 게스트 신청(성공/실패 반환). */
 	onAddGuest: (guest: { name: string; gender: Gender; skills: PlayerSkills }) => Promise<{ ok: boolean; error?: string }>;
 	/** 게스트 취소(초대 회원 본인). */
@@ -53,6 +56,7 @@ export default function ScheduleCard({
 	onCancel,
 	onStartSession,
 	onSetCarpool,
+	onSetLate,
 	onAddGuest,
 	onCancelGuest,
 	onOpenNotice,
@@ -302,52 +306,49 @@ export default function ScheduleCard({
 				</button>
 			)}
 
-			{/* 카풀 의향 (참석자) — 카풀 사용 일정에서만 */}
+			{/* 카풀 의향 (참석자) — 카풀 사용 일정에서만. 늦참 슬라이더와 통일된 세그먼트 컨트롤. */}
 			{attending && s.carpool_enabled && (
-				<div
-					className="flex items-center gap-1.5 mt-2.5"
-					style={{ fontSize: 12 }}
-				>
-					<span
-						className="text-faint"
-						style={{ fontWeight: 600 }}
-					>
-						카풀
-					</span>
-					{(["can_drive", "need_ride", "none"] as const).map((r) => {
-						const active = (mine?.carpool_role ?? "none") === r;
-						const bg = active
-							? r === "can_drive"
-								? "#2c7a57"
-								: r === "need_ride"
-									? "#b4762b"
-									: "#94a3b8"
-							: "rgba(0,0,0,0.05)";
-						return (
-							<button
-								key={r}
-								type="button"
-								onClick={() => onSetCarpool(r)}
-								style={{
-									fontSize: 11.5,
-									fontWeight: 600,
-									padding: "4px 9px",
-									borderRadius: 7,
-									border: "none",
-									cursor: "pointer",
-									color: active ? "#fff" : "#64748b",
-									background: bg,
-								}}
-							>
-								{r === "can_drive"
-									? "운전 가능"
+				<div className="ctl-row">
+					<span className="ctl-label">카풀</span>
+					<div className="ctl-seg">
+						{(["can_drive", "need_ride", "none"] as const).map((r) => {
+							const active = (mine?.carpool_role ?? "none") === r;
+							const fill =
+								r === "can_drive"
+									? "#2c7a57"
 									: r === "need_ride"
-										? "탑승 필요"
-										: "안 함"}
-							</button>
-						);
-					})}
+										? "#b4762b"
+										: "#94a3b8";
+							return (
+								<button
+									key={r}
+									type="button"
+									onClick={() => onSetCarpool(r)}
+									disabled={busy}
+									className={active ? "on" : ""}
+									style={active ? { background: fill } : undefined}
+								>
+									{r === "can_drive"
+										? "운전 가능"
+										: r === "need_ride"
+											? "탑승 필요"
+											: "안 함"}
+								</button>
+							);
+						})}
+					</div>
 				</div>
+			)}
+
+			{/* 늦참 체크 (참석자) — 시작·종료가 정해진 open 일정에서만 */}
+			{attending && isOpen && s.scheduled_at && s.ends_at && (
+				<LateArrivalSlider
+					scheduledAt={s.scheduled_at}
+					endsAt={s.ends_at}
+					value={mine?.late_minutes ?? 0}
+					disabled={busy}
+					onChange={onSetLate}
+				/>
 			)}
 
 			{/* 운영자: 카풀 공지 빌더 진입 */}

@@ -224,3 +224,19 @@ export async function setCarpoolRole(
 	}
 	return { ok: true };
 }
+
+/** 본인 늦참(도착 오프셋, 분) 설정(참석자). 0=정시. */
+export async function setLateMinutes(
+	sessionId: number,
+	minutes: number,
+): Promise<{ ok: boolean; error?: string }> {
+	const { error } = await supabase.rpc("set_late_minutes", {
+		p_session_id: sessionId,
+		p_minutes: minutes,
+	});
+	if (error) {
+		console.error("setLateMinutes:", error);
+		return { ok: false, error: error.message };
+	}
+	return { ok: true };
+}

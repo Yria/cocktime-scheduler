@@ -115,6 +115,8 @@ export interface AttendanceRow {
 	position: number;
 	carpool_role: CarpoolRole;
 	carpool_seats: number | null;
+	/** 늦참 오프셋(분). scheduled_at 기준 도착 지연. 0=정시, 30·60…(30분 단위). 마이그레이션 20260706030000. */
+	late_minutes: number;
 	requested_at: string;
 	confirmed_at: string | null;
 	cancelled_at: string | null;

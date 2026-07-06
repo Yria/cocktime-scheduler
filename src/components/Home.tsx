@@ -127,6 +127,10 @@ export default function Home({ onStart }: Props) {
 		[],
 	);
 
+	const handleSetLate = useCallback((sessionId: number, minutes: number) => {
+		scheduleActions.setLate(sessionId, minutes);
+	}, []);
+
 	const handleAddGuest = useCallback(
 		async (
 			sessionId: number,
@@ -308,6 +312,7 @@ export default function Home({ onStart }: Props) {
 								onCancel={() => handleCancel(s.id)}
 								onStartSession={() => handleStartSession(s.id)}
 								onSetCarpool={(role) => handleSetCarpool(s.id, role)}
+							onSetLate={(minutes) => handleSetLate(s.id, minutes)}
 								onAddGuest={(guest) => handleAddGuest(s.id, guest)}
 								onCancelGuest={(gid) => handleCancelGuest(s.id, gid)}
 								onOpenNotice={() => navigate(`/notice/${s.id}`)}

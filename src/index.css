@@ -94,8 +94,8 @@ html {
 	background-color: #fafbff;
 	/* contain: 스크롤 체이닝·pull-to-refresh 는 막되 iOS 고무줄 바운스(rubber-band)는 살린다.
 	   (none 은 바운스까지 죽여 자연스러운 스크롤 감각이 사라진다.) 모달/바텀시트 위 드래그로
-	   뒤 페이지가 튕기던 문제는 이제 scrollLock(모달 중 touchmove 차단 + overscroll contain 주입)이
-	   정밀하게 처리하므로 전역 none 은 불필요. */
+	   뒤 페이지가 튕기던 문제는 이제 모달의 usePreventScroll(react-aria: 모달 중 touchmove 차단 +
+	   overscroll contain 주입)이 정밀하게 처리하므로 전역 none 은 불필요. */
 	overscroll-behavior: contain;
 }
 html.dark {
@@ -791,4 +791,144 @@ h4,
 .badge-inline-amber {
 	background: rgba(255, 149, 0, 0.15);
 	color: var(--ios-orange);
+}
+
+/* ── 참석 컨트롤 통일 (카풀 세그먼트 + 늦참 슬라이더) ───────────────
+   ScheduleCard 참석 블록: 라벨(.ctl-label) + 풀폭 바 컨트롤.
+   카풀=연결형 세그먼트(.ctl-seg), 늦참=알약 트랙(.ctl-pill) 안 슬라이더(.late-range).
+   두 컨트롤이 같은 폭·높이·라운드로 한 패밀리처럼 보이게 한다. */
+:root {
+	--seg-track: rgba(0, 0, 0, 0.06); /* 세그먼트/알약 컨테이너 */
+	--seg-track-deep: rgba(0, 0, 0, 0.13); /* 슬라이더 미채움(컨테이너 위 대비) */
+	--late-amber: #b4762b; /* 늦참 채움·값 텍스트(다크에서 밝게 스왑) */
+}
+.dark {
+	--seg-track: rgba(255, 255, 255, 0.05); /* 어두운 카드 위에서 뜨지 않게 낮춤 */
+	--seg-track-deep: rgba(255, 255, 255, 0.14);
+	--late-amber: #e0a860;
+}
+
+.ctl-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: 10px;
+}
+.ctl-label {
+	flex-shrink: 0;
+	min-width: 30px;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--tone-faint);
+}
+.ctl-val {
+	flex-shrink: 0;
+	min-width: 52px;
+	text-align: right;
+	font-size: 12px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	color: var(--tone-faint);
+}
+.ctl-val.on {
+	color: var(--late-amber);
+}
+
+/* 카풀 세그먼트 — 균등 3칸, 선택칸만 역할색 채움(배경은 인라인 주입). */
+.ctl-seg {
+	flex: 1;
+	display: flex;
+	gap: 2px;
+	background: var(--seg-track);
+	border-radius: 9px;
+	padding: 2px;
+}
+.ctl-seg button {
+	flex: 1;
+	padding: 6px 0;
+	font-size: 12px;
+	font-weight: 600;
+	border: none;
+	border-radius: 7px;
+	background: transparent;
+	color: var(--tone-muted);
+	cursor: pointer;
+}
+.ctl-seg button:disabled {
+	cursor: not-allowed;
+}
+.ctl-seg button.on {
+	color: #fff;
+	font-weight: 700;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+}
+
+/* 늦참 알약 — 세그먼트와 같은 높이·트랙색 컨테이너 안에 슬라이더 + 값. */
+.ctl-pill {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	height: 32px;
+	padding: 0 13px;
+	background: var(--seg-track);
+	border-radius: 9px;
+}
+.ctl-pill:has(.late-range:disabled) {
+	opacity: 0.5;
+}
+
+/* 늦참 슬라이더 — 슬림 트랙 + iOS풍 흰 썸. --late-fill(채움 %)만 컴포넌트에서 주입. */
+.late-range {
+	-webkit-appearance: none;
+	appearance: none;
+	flex: 1;
+	height: 16px;
+	background: transparent;
+	cursor: pointer;
+}
+.late-range:disabled {
+	cursor: not-allowed;
+}
+.late-range::-webkit-slider-runnable-track {
+	height: 5px;
+	border-radius: 999px;
+	background: linear-gradient(
+		to right,
+		var(--late-amber) var(--late-fill, 0%),
+		var(--seg-track-deep) var(--late-fill, 0%)
+	);
+}
+.late-range::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	margin-top: -5.5px;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: #fff;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+}
+.late-range::-moz-range-track {
+	height: 5px;
+	border-radius: 999px;
+	background: var(--seg-track-deep);
+}
+.late-range::-moz-range-progress {
+	height: 5px;
+	border-radius: 999px;
+	background: var(--late-amber);
+}
+.late-range::-moz-range-thumb {
+	width: 16px;
+	height: 16px;
+	border: none;
+	border-radius: 50%;
+	background: #fff;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+}
+.late-range:focus-visible {
+	outline: none;
+}
+.late-range:focus-visible::-webkit-slider-thumb {
+	box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.18), 0 1px 3px rgba(0, 0, 0, 0.28);
 }

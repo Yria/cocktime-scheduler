@@ -1133,3 +1133,18 @@
 - 지난번 git add -A 사고 반성 → 이번엔 내 파일만 명시 스테이징. tsc·build 통과.
 
 ---
+
+## #87
+
+**Prompt**: 카풀 선택하는것처럼 세션마다 늦참체크를 하는게 있으면 좋겠는데 슬라이더같은걸 만들어서 좌우로 땡기는 방식으로 체크하는건 어떨까. 세션 이동량은 30분 단위로. (+ 후속: 디자인 개선 → 카풀과 통일(세그먼트) → 낙관적 업데이트 → 다크 톤 조정)
+
+**Answer**: 카풀 의향(carpool_role) 패턴을 그대로 미러링해 세션×회원 단위 "늦참" 기능을 추가. 절대 도착시각이 아니라 scheduled_at 기준 오프셋(분)으로 저장(시각 변경에도 의미 유지, 30분 스냅 자연스러움).
+- DB: attendances.late_minutes(int, 30분 배수 체크) 컬럼 + set_late_minutes RPC(본인·범위·세션길이 상한·종료 가드) + cancel_attendance에 취소 시 late_minutes=0 리셋(재참석 부활 방지) 추가. 마이그레이션은 supabase db push 별도 필요.
+- 데이터/배선: types(AttendanceRow.late_minutes)·schedule.ts(setLateMinutes)·store(setLate)·Home·ScheduleCard(슬라이더)·SessionParticipantsModal(⏰ 도착시각 뱃지). v1 표시 전용이라 팀편성/보드 미연동.
+- 슬라이더: 커스텀 드래그 대신 네이티브 range를 pseudo-element로 커스텀(터치/스냅/접근성 무료). 3줄→1줄로 압축.
+- 디자인 통일(옵션 B 채택, 미리보기 아티팩트로 A/B 비교 후 결정): 카풀 3버튼→iOS식 세그먼트 컨트롤, 늦참은 같은 높이·라운드의 알약 트랙 안 슬라이더. 라벨 타이포 12px/600/faint로 통일. index.css에 .ctl-row/.ctl-label/.ctl-seg/.ctl-pill/.ctl-val + 토큰(--seg-track/--seg-track-deep/--late-amber, 라이트/다크 스왑) 신설.
+- 낙관적 업데이트: authStore.memberId로 내 참석행을 즉시 in-place 패치(화면 선반영) 후 서버 전송. 카풀=즉시 전송+실패 시 롤백, 늦참=즉시 화면+마지막 조작 후 500ms 디바운스 전송(세션별 타이머). 성공 시 reloadAttendances 왕복 제거. 홈 화면은 attendances 실시간 구독이 없어 에코 덮임 없음.
+- 다크 톤: 세그먼트/트랙 컨테이너가 어두운 카드 위에서 떠 보여 다크값 하향(--seg-track 흰10%→5%, --seg-track-deep 흰22%→14%). 라이트는 유지.
+- tsc·eslint·build 전부 통과.
+
+---
