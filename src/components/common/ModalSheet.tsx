@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { usePreventScroll } from "@react-aria/overlays";
 import SheetHeader from "./SheetHeader";
-import { lockScroll } from "../../lib/scrollLock";
 
 interface ModalSheetProps {
 	position?: "center" | "bottom";
@@ -50,11 +50,13 @@ export default function ModalSheet({
 	const sheetRef = useRef<HTMLDivElement>(null);
 	const [docHeight, setDocHeight] = useState(0);
 
-	// 배경 스크롤 잠금(참조 카운트) + 백드롭 높이 측정. 잠금은 문서를 들어내지 않으므로
-	// (html overflow:hidden 방식) absolute 백드롭 기준점이 유지되고 스크롤 위치 복원도 불필요.
-	// useLayoutEffect 로 페인트 전에 높이를 잡아 첫 프레임 깜빡임을 막는다.
+	// 배경 스크롤 잠금 — react-aria usePreventScroll. iOS 는 html overflow:hidden + touchmove 차단 +
+	// overscroll @layer 주입 + 입력 포커스 스크롤 억제까지 처리(문서를 들어내지 않아 absolute 백드롭 안전).
+	// 모달이 열릴 때만 마운트되므로 무조건 호출로 잠그고, 내부 참조 카운트로 중첩 모달도 안전.
+	usePreventScroll();
+
+	// 백드롭 높이 측정 — useLayoutEffect 로 페인트 전에 잡아 첫 프레임 깜빡임을 막는다.
 	useLayoutEffect(() => {
-		const unlock = lockScroll();
 		setDocHeight(measureDocHeight());
 		const onResize = () => setDocHeight(measureDocHeight());
 		window.addEventListener("resize", onResize);
@@ -62,7 +64,6 @@ export default function ModalSheet({
 		return () => {
 			window.removeEventListener("resize", onResize);
 			window.visualViewport?.removeEventListener("resize", onResize);
-			unlock();
 		};
 	}, []);
 

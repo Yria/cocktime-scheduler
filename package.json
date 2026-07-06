@@ -17,6 +17,7 @@
 		"photos:dry": "scripts/.venv/bin/python -u scripts/fetch_photos.py --dry-run"
 	},
 	"dependencies": {
+		"@react-aria/overlays": "^3.32.1",
 		"@supabase/supabase-js": "^2.97.0",
 		"@tanstack/react-virtual": "^3.14.3",
 		"es-hangul": "^2.3.8",

@@ -1121,3 +1121,15 @@
 - 결과: Safari·PWA 모두 하단 잘림 없음 + 일반 스크롤 네이티브 바운스 + P2R 당길 때 네비 고정 + 인디케이터 네비-본문 사이. 트레이드오프는 P2R 당기는 그 순간만 커스텀 애니메이션(네이티브 바운스 아님). 메모리(ios-pwa-natural-scroll) 최종 상태로 갱신. tsc·build 통과.
 
 ---
+
+## #86
+
+**Prompt**: react-area/overlays 로 하자
+
+**Answer**: 배경 스크롤락을 손이식본(scrollLock.ts 265줄)에서 검증된 외부 패키지 @react-aria/overlays 의 usePreventScroll 로 교체(유지보수 upstream 위임). 전수조사+반증검증 결과 우리 실격기준(body position:fixed=absolute 백드롭 붕괴)을 통과하고 iOS 입력포커스까지 처리하는 유일 후보였고, 회피 이유였던 번들 손해도 tree-shaking 실측으로 반증됨(번들 +3.6kB/gzip +1.2kB만 증가 확인).
+- 프로젝트가 pnpm(11.8.0)인데 npm으로 설치 시도해 arborist 오류 → pnpm add 로 정정 설치(@react-aria/overlays 3.32.1).
+- ModalSheet: lockScroll() 명령형 호출 제거하고 usePreventScroll() 훅 한 줄로 대체(모달 마운트 중 자동 잠금+내장 ref-count 중첩). docHeight 측정 로직은 유지. src/lib/scrollLock.ts 삭제.
+- index.css 주석의 scrollLock 언급을 usePreventScroll 로 정정(단 이 파일엔 다른 세션 WIP=late-arrival 슬라이더 CSS가 섞여 있어 스테이징에서 제외).
+- 지난번 git add -A 사고 반성 → 이번엔 내 파일만 명시 스테이징. tsc·build 통과.
+
+---
