@@ -714,26 +714,6 @@ h4,
 	background: rgba(0, 0, 0, 0.6);
 }
 
-/* iOS 26 Safari 대응: fixed(inset-0) 오버레이가 inner viewport 로 클리핑돼 하단 세이프에어리어/
-   주소창 영역을 못 덮는다. 그 스트립을 칠하는 주체는 환경마다 다르다 —
-   설치형 PWA 는 html 배경, Safari 브라우저는 스크롤락으로 position:fixed 가 된 body 의 배경이
-   덮는다. 그래서 두 곳 모두 딤 처리해야 어느 환경에서도 스트립이 오버레이와 이어진다.
-   - body: rgba 딤을 얹으면 html 기본 배경(#fafbff / dark #0f172a) 위에 합성돼 .lq-overlay 와 톤 일치.
-   - html: body 가 그 영역에서 클리핑되는 경우(PWA)를 대비한 폴백 — 위 합성과 같은 solid 값.
-   배경색만 바꾸므로 스크롤락·backdrop-filter blur(대상은 뒤 #root 콘텐츠) 는 불변. */
-html.modal-dim {
-	background-color: #7d7d80; /* rgba(0,0,0,.5) over #fafbff */
-}
-html.dark.modal-dim {
-	background-color: #060911; /* rgba(0,0,0,.6) over #0f172a */
-}
-body.modal-dim {
-	background-color: rgba(0, 0, 0, 0.5);
-}
-.dark body.modal-dim {
-	background-color: rgba(0, 0, 0, 0.6);
-}
-
 .lq-sheet {
 	/* 기본 불투명도를 높게 유지 — backdrop-filter blur 가 약하거나 미지원인 환경에서도
 	   뒤 페이지 내용이 비쳐 읽히지 않도록(블러는 가장자리 질감용). */

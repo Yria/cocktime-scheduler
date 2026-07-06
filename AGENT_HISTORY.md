@@ -1043,3 +1043,15 @@
 - ModalSheet body-lock effect에서 documentElement와 body 양쪽에 클래스 add/remove. 배경색만 변경이라 스크롤락·blur 불변. tsc 통과.
 
 ---
+
+## #80
+
+**Prompt**: 이건 그냥 눈속임으로 가리는거잖아. 백그라운드 드롭에는 블러가 들어있어 뒤가 은은하게 비쳐야하는데 그게 안되는데?
+
+**Answer**: flat 색 채움은 backdrop-filter blur를 재현 못 하는 눈속임임을 인정. 근본 해결로 방향 전환 — blur를 만드는 .lq-overlay가 position:fixed라 iOS 26이 inner viewport로 클리핑하는 게 원인이므로, 검증된 패턴(Devon Govett의 react-spectrum PR #8888)을 이식. 사용자 승인 하에 스크롤락까지 재작업.
+- `.lq-overlay`를 position:fixed → **position:absolute + 문서 전체 높이**로 전환(클리핑 회피, blur가 스트립까지 이어짐). 시트는 별도 fixed 컨테이너로 visual viewport에 배치, 딤 클릭은 pointer-events로 백드롭에 통과.
+- ModalSheet를 document.body로 **portal**(absolute 기준점 안정화).
+- body{position:fixed} 스크롤락 → react-spectrum usePreventScroll 이식(`src/lib/scrollLock.ts` 신규): html overflow:hidden + `*{overscroll-behavior:contain}` 스타일 주입 + touchmove capture 차단 + 인풋 포커스 스크롤 억제. 문서를 들어내지 않아 absolute 백드롭과 양립하고 스크롤 복원 hack 불필요.
+- 이전 flat-dim(.modal-dim) CSS/JS 롤백. tsc·vite build 통과. ModalSheet 계열 28곳 사용 → 실기기 검증 필요(blur/스트립, 배경 스크롤락, 폼 인풋 포커스, 시트 내부 스크롤, 중첩 모달).
+
+---

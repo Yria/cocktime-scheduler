@@ -1,5 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import SheetHeader from "./SheetHeader";
+import { lockScroll } from "../../lib/scrollLock";
 
 interface ModalSheetProps {
 	position?: "center" | "bottom";
@@ -20,19 +22,18 @@ interface ModalSheetProps {
 	children: React.ReactNode;
 }
 
-// body 스크롤 잠금 참조 카운트 — 중첩 시트(에디터 시트 위 PlaceLocationPicker 등)에서 인스턴스마다
-// 개별 잠금/복원하면, 동시 언마운트 시 나중 cleanup이 "부모의 잠금 스타일"을 prev로 복원해
-// 잠금이 영구 잔존한다. 첫 마운트만 잠그고 마지막 언마운트만 원본을 복원해 순서와 무관하게 안전.
-let bodyLockCount = 0;
-let bodyLockSnapshot: {
-	scrollY: number;
-	position: string;
-	top: string;
-	left: string;
-	right: string;
-	width: string;
-	overflow: string;
-} | null = null;
+// 백드롭(blur+dim)이 덮을 문서 전체 높이. iOS 26 Safari 는 position:fixed 를 inner viewport 로
+// 클리핑해 하단 세이프에어리어/주소창 영역까지 못 그린다. 그래서 백드롭은 fixed 가 아니라
+// position:absolute 로 "문서 전체 높이"만큼 깔아야 클리핑을 피하고 blur 가 스트립까지 이어진다.
+// (설치형 PWA 는 lvh 가 물리 화면보다 짧게 보고되므로 screen.height 를 하한으로 둔다.)
+function measureDocHeight(): number {
+	return Math.max(
+		document.documentElement.scrollHeight,
+		document.body?.scrollHeight ?? 0,
+		window.innerHeight,
+		window.screen?.height ?? 0,
+	);
+}
 
 export default function ModalSheet({
 	position = "bottom",
@@ -46,80 +47,26 @@ export default function ModalSheet({
 	closeOnEscape = false,
 	children,
 }: ModalSheetProps) {
-	const overlayRef = useRef<HTMLDivElement>(null);
 	const sheetRef = useRef<HTMLDivElement>(null);
+	const [docHeight, setDocHeight] = useState(0);
 
-	// 백드롭(딤) 영역 스크롤 체이닝 차단 — 시트 '바깥'을 드래그/휠 하면 그 제스처가 뒤 스크롤
-	// 컨테이너(body 는 아래 fixed 트릭으로 잠기지만, 회원관리의 내부 overflowY:auto 리스트 등은
-	// 안 잠긴다)로 전파되어 배경이 함께 움직였다. 오버레이 루트에 non-passive 리스너를 달아,
-	// 이벤트 타깃이 시트 내부가 아닐 때(=백드롭)만 preventDefault 한다. 시트 내부는 손대지 않으므로
-	// 시트 자체 스크롤·중첩 스크롤 영역·지도(Kakao) 패닝·슬라이더는 그대로 동작한다
-	// (시트엔 overscroll-contain 을 유지해 시트 내부 스크롤의 체이닝은 CSS 레벨에서 막는다).
-	// React 합성 onTouchMove/onWheel 은 루트에 passive 로 위임돼 preventDefault 가 무시되므로
-	// addEventListener({ passive:false }) 로 직접 단다.
-	useEffect(() => {
-		const overlay = overlayRef.current;
-		if (!overlay) return;
-		const block = (e: TouchEvent | WheelEvent) => {
-			const sheet = sheetRef.current;
-			const target = e.target as Node | null;
-			if (sheet && target && sheet.contains(target)) return; // 시트 내부 → 통과
-			if (e.cancelable) e.preventDefault(); // 백드롭 → 배경 스크롤 차단
-		};
-		overlay.addEventListener("touchmove", block, { passive: false });
-		overlay.addEventListener("wheel", block, { passive: false });
+	// 배경 스크롤 잠금(참조 카운트) + 백드롭 높이 측정. 잠금은 문서를 들어내지 않으므로
+	// (html overflow:hidden 방식) absolute 백드롭 기준점이 유지되고 스크롤 위치 복원도 불필요.
+	// useLayoutEffect 로 페인트 전에 높이를 잡아 첫 프레임 깜빡임을 막는다.
+	useLayoutEffect(() => {
+		const unlock = lockScroll();
+		setDocHeight(measureDocHeight());
+		const onResize = () => setDocHeight(measureDocHeight());
+		window.addEventListener("resize", onResize);
+		window.visualViewport?.addEventListener("resize", onResize);
 		return () => {
-			overlay.removeEventListener("touchmove", block);
-			overlay.removeEventListener("wheel", block);
-		};
-	}, []);
-
-	// 모달 열림 동안 배경(body) 스크롤 잠금 — iOS PWA에서 모달 위 상하 드래그가 모달이 아니라 뒤 페이지를
-	// 스크롤하던 문제 방지(position:fixed 트릭 + 닫을 때 스크롤 위치 복원). 시트엔 overscroll-contain으로 체이닝 차단.
-	useEffect(() => {
-		const { body } = document;
-		if (bodyLockCount === 0) {
-			bodyLockSnapshot = {
-				scrollY: window.scrollY,
-				position: body.style.position,
-				top: body.style.top,
-				left: body.style.left,
-				right: body.style.right,
-				width: body.style.width,
-				overflow: body.style.overflow,
-			};
-			body.style.position = "fixed";
-			body.style.top = `-${bodyLockSnapshot.scrollY}px`;
-			body.style.left = "0";
-			body.style.right = "0";
-			body.style.width = "100%";
-			body.style.overflow = "hidden";
-			// iOS 26 Safari: fixed 오버레이가 하단 세이프에어리어/주소창 영역을 못 덮으므로 그 스트립을
-			// html·body 배경으로 딤. 환경별로 스트립을 칠하는 주체가 달라(PWA=html, Safari=fixed된 body)
-			// 둘 다 토글한다. 배경색만 바꿔 스크롤락·blur 는 불변.
-			document.documentElement.classList.add("modal-dim");
-			body.classList.add("modal-dim");
-		}
-		bodyLockCount++;
-		return () => {
-			bodyLockCount--;
-			if (bodyLockCount === 0 && bodyLockSnapshot) {
-				body.style.position = bodyLockSnapshot.position;
-				body.style.top = bodyLockSnapshot.top;
-				body.style.left = bodyLockSnapshot.left;
-				body.style.right = bodyLockSnapshot.right;
-				body.style.width = bodyLockSnapshot.width;
-				body.style.overflow = bodyLockSnapshot.overflow;
-				window.scrollTo(0, bodyLockSnapshot.scrollY);
-				document.documentElement.classList.remove("modal-dim");
-				body.classList.remove("modal-dim");
-				bodyLockSnapshot = null;
-			}
+			window.removeEventListener("resize", onResize);
+			window.visualViewport?.removeEventListener("resize", onResize);
+			unlock();
 		};
 	}, []);
 
 	// Escape 닫기 — opt-in(closeOnEscape). 시트 내부에 포커스가 없어도 동작하도록 window 리스너 사용.
-	// (기존 인라인 센터 모달들의 onKeyDown Escape 처리를 흡수하기 위한 것 — 기본 off 라 기존 사용처 불변)
 	useEffect(() => {
 		if (!closeOnEscape || !onClose) return;
 		const onKey = (e: KeyboardEvent) => {
@@ -135,29 +82,46 @@ export default function ModalSheet({
 			: "items-end justify-center px-4 pb-6";
 	const widthClass = maxWidth === "xs" ? "max-w-xs" : "max-w-sm";
 
-	return (
-		<div
-			ref={overlayRef}
-			className={`fixed inset-0 lq-overlay flex ${posClass}`}
-			style={{ zIndex }}
-			onClick={onClose}
-		>
+	return createPortal(
+		<>
+			{/* 백드롭: position:absolute + 문서 전체 높이 → iOS 26 fixed 클리핑을 피해 스트립까지
+			    backdrop-filter blur 가 이어진다. 배경(딤 영역) 클릭 시 닫기. */}
 			<div
-				ref={sheetRef}
-				className={`lq-sheet w-full ${widthClass} rounded-3xl overflow-y-auto overscroll-contain no-sb ${className}`}
-				style={{ maxHeight: "90dvh" }}
-				onClick={(e) => e.stopPropagation()}
+				className="lq-overlay"
+				onClick={onClose}
+				style={{
+					position: "absolute",
+					top: 0,
+					left: 0,
+					width: "100%",
+					height: docHeight || "100%",
+					zIndex,
+				}}
+			/>
+			{/* 시트 컨테이너: visual viewport 안에 시트를 배치(시트는 세이프에어리어 위에 위치, 스트립엔
+			    백드롭 blur 만 보인다). pointer-events:none 으로 딤 영역 클릭은 아래 백드롭으로 통과. */}
+			<div
+				className={`fixed inset-0 flex ${posClass}`}
+				style={{ zIndex: zIndex + 1, pointerEvents: "none" }}
 			>
-				{title != null && (
-					<SheetHeader
-						title={title}
-						subtitle={subtitle}
-						onClose={onClose}
-						action={headerAction}
-					/>
-				)}
-				{children}
+				<div
+					ref={sheetRef}
+					className={`lq-sheet w-full ${widthClass} rounded-3xl overflow-y-auto overscroll-contain no-sb ${className}`}
+					style={{ maxHeight: "90dvh", pointerEvents: "auto" }}
+					onClick={(e) => e.stopPropagation()}
+				>
+					{title != null && (
+						<SheetHeader
+							title={title}
+							subtitle={subtitle}
+							onClose={onClose}
+							action={headerAction}
+						/>
+					)}
+					{children}
+				</div>
 			</div>
-		</div>
+		</>,
+		document.body,
 	);
 }
