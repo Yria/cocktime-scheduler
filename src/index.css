@@ -92,9 +92,11 @@
    화면 배경색과 동일하게 맞춰 하단 빈 띠를 채운다. (.dark 는 <html>에 부착) */
 html {
 	background-color: #fafbff;
-	/* iOS 웹뷰 전체 고무줄 바운스(rubber-band) 차단 — 모달/바텀시트 위에서 상하 드래그 시
-	   뒤 페이지(문서 뷰포트)가 통째로 튕겨 움직이던 현상 방지. 문서 레벨 스크롤 체이닝도 함께 막는다. */
-	overscroll-behavior: none;
+	/* contain: 스크롤 체이닝·pull-to-refresh 는 막되 iOS 고무줄 바운스(rubber-band)는 살린다.
+	   (none 은 바운스까지 죽여 자연스러운 스크롤 감각이 사라진다.) 모달/바텀시트 위 드래그로
+	   뒤 페이지가 튕기던 문제는 이제 scrollLock(모달 중 touchmove 차단 + overscroll contain 주입)이
+	   정밀하게 처리하므로 전역 none 은 불필요. */
+	overscroll-behavior: contain;
 }
 html.dark {
 	background-color: #0f172a;
@@ -105,7 +107,7 @@ body {
 	background-color: #fafbff;
 	color: var(--text-primary);
 	font-feature-settings: "ss01", "ss02", "cv01";
-	overscroll-behavior: none;
+	overscroll-behavior: contain; /* 바운스 유지 + 체이닝/새로고침 차단 (위 html 규칙 참고) */
 }
 
 .dark body {

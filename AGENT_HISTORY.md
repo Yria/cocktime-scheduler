@@ -1055,3 +1055,11 @@
 - 이전 flat-dim(.modal-dim) CSS/JS 롤백. tsc·vite build 통과. ModalSheet 계열 28곳 사용 → 실기기 검증 필요(blur/스트립, 배경 스크롤락, 폼 인풋 포커스, 시트 내부 스크롤, 중첩 모달).
 
 ---
+
+## #81
+
+**Prompt**: 잘 되는거 확인했어. 근데 body 에서 ios 는 특유의 자연스러운 스크롤 바운딩이 있는데 그게 안되네.
+
+**Answer**: blur는 해결 확인. 바운스 부재 원인은 html/body의 전역 `overscroll-behavior: none`이 iOS 고무줄 바운스를 죽이고 있던 것(원래 모달 뒤 페이지 튕김 방지용). 이제 그 역할은 scrollLock이 정밀 처리하므로 전역 none이 과잉. 웹 조사로 `contain`은 바운스를 유지하면서 스크롤 체이닝·pull-to-refresh만 차단함을 확인(none은 바운스까지 제거). html·body의 overscroll-behavior를 none→contain으로 변경해 자연스러운 바운스 복원. CSS만 변경, build 통과.
+
+---
