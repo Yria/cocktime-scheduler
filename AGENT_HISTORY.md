@@ -1022,3 +1022,14 @@
 - 서버 RPC(`start_session_from_schedule`)엔 시작 시각 하한 가드가 없어(종료 가드만 존재) 프론트 변경만으로 동작. `tsc` 통과, 프론트 전용이라 git push만으로 배포
 
 ---
+
+## #78
+
+**Prompt**: 모달/다이얼로그 백드롭의 gray opacity가 아이폰에서 하단 세이프에어리어만큼 적용 안 되는 문제 — 기술적으로 불가능한지 웹 조사 + sticky 편법 비교 + body-lock 맥락 반영해 수정/배포
+
+**Answer**: iOS 26 Safari가 `position:fixed`를 inner viewport로 클리핑하는 알려진 회귀 버그로 확인(불가능한 게 아님). 웹 조사(Devon Govett PSA, MUI #46953, shadcn #8471 등)로 두 갈래 원인(iOS26 fixed 클리핑 / transform 조상)과 해결책 정리.
+- sticky 편법도 유효하나, `ModalSheet`가 스크롤 체이닝 방지용 `body{position:fixed}` 락을 쓰는 구조라 sticky는 스크롤 컨테이너 충돌 소지 → 딤 오버레이엔 부적합으로 판단.
+- 흔한 "body 투명" 트릭은 `backdrop-filter: blur` 대상(뒤 콘텐츠)을 없애 유리 질감이 죽으므로 배제. 대신 **background propagation** 원리 활용: `html`에 배경을 주면 body→캔버스 전파가 멈추고 캔버스=html 배경이 되어, fixed가 못 덮는 하단 스트립이 딤으로 채워짐. body 미변경이라 blur·스크롤락 불변.
+- `html.modal-dim`(다크 `html.dark.modal-dim`) 색을 `.lq-overlay`와 동일하게 정의하고, `ModalSheet`의 ref-count body-lock effect에 클래스 add/remove 한 줄씩 추가. `.dark`가 `<html>`에 붙음을 확인. 대상 다이얼로그(GuestSection→ConfirmDialog→ModalSheet)가 이 경로를 탐. tsc 통과, 실기기 iOS26 검증 필요해 배포.
+
+---

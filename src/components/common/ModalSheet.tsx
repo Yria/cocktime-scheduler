@@ -94,6 +94,9 @@ export default function ModalSheet({
 			body.style.right = "0";
 			body.style.width = "100%";
 			body.style.overflow = "hidden";
+			// iOS 26 Safari: fixed 오버레이가 하단 세이프에어리어를 못 덮으므로 html 배경으로 스트립을 딤.
+			// (background propagation 정지 → 캔버스=html 배경. body 는 그대로라 blur/스크롤락 불변)
+			document.documentElement.classList.add("modal-dim");
 		}
 		bodyLockCount++;
 		return () => {
@@ -106,6 +109,7 @@ export default function ModalSheet({
 				body.style.width = bodyLockSnapshot.width;
 				body.style.overflow = bodyLockSnapshot.overflow;
 				window.scrollTo(0, bodyLockSnapshot.scrollY);
+				document.documentElement.classList.remove("modal-dim");
 				bodyLockSnapshot = null;
 			}
 		};
