@@ -9,6 +9,12 @@ interface Props {
 	logo?: boolean;
 	/** 우측 액션 영역(알림 벨·메뉴 등). */
 	right?: React.ReactNode;
+	/**
+	 * 상단 고정 방식. 기본 "sticky"(문서 흐름 내 고정 — 기존 동작).
+	 * "fixed"는 흐름에서 빠져 iOS 오버스크롤 바운스에도 네비가 안 움직인다(본문만 당겨짐).
+	 * "fixed" 사용 시 부모가 네비 높이(env(safe-area-inset-top)+53px)만큼 padding-top 을 줘야 한다.
+	 */
+	positioning?: "sticky" | "fixed";
 }
 
 /**
@@ -19,10 +25,20 @@ interface Props {
  * 써서 모든 화면폭에서 nav 내용이 본문 거터(20px)와 정확히 맞물린다. .app-card 가 카드 폭
  * (--card-max)을 패딩 안쪽에서 캡하므로 본문과 같은 기준으로 중앙 정렬되어 좌우가 어긋나지 않는다.
  */
-export default function AppHeader({ title, onBack, logo, right }: Props) {
+export default function AppHeader({
+	title,
+	onBack,
+	logo,
+	right,
+	positioning = "sticky",
+}: Props) {
+	const posClass =
+		positioning === "fixed"
+			? "fixed top-0 left-0 right-0 z-50"
+			: "sticky top-0 z-50 flex-shrink-0";
 	return (
 		<header
-			className="sticky top-0 z-50 flex-shrink-0 bg-[#fafbff] dark:bg-[#0f172a] border-b border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]"
+			className={`${posClass} bg-[#fafbff] dark:bg-[#0f172a] border-b border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]`}
 			style={{ paddingTop: "env(safe-area-inset-top)" }}
 		>
 			<div style={{ paddingLeft: "1.25rem", paddingRight: "1.25rem" }}>

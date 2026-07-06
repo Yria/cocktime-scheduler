@@ -32,19 +32,31 @@ export default function AppScreen({
 	const rootRef = useRef<HTMLDivElement>(null);
 	const { pull, refreshing } = usePullToRefresh(rootRef, onRefresh);
 
+	// 네비 높이 = safe-area-top + inner 52 + border 1. 네비를 fixed 로 흐름에서 빼므로
+	// 본문은 이만큼 아래에서 시작하고, 인디케이터도 이 지점(네비 바로 아래)에 고정한다.
+	const NAV_H = "calc(env(safe-area-inset-top) + 53px)";
+
 	return (
 		<div
 			ref={rootRef}
 			className="min-h-[100dvh] bg-[#fafbff] dark:bg-[#0f172a]"
+			style={{ paddingTop: NAV_H }}
 		>
-			<AppHeader title={title} onBack={onBack} logo={logo} right={right} />
-			{/* 당김/새로고침 인디케이터 — 헤더 바로 아래 고정 오버레이. 콘텐츠 이동은 네이티브
-			    오버스크롤 바운스가 담당하고(usePullToRefresh 가 preventDefault 안 함), 스피너만
-			    여기서 당김 진행도/새로고침 상태로 표시한다. 헤더 아래에 두어 두 상태에서 겹치지 않는다. */}
+			{/* 네비를 fixed 로 고정 — iOS 오버스크롤 시 본문(문서)만 바운스로 내려가고 네비는 안 움직인다. */}
+			<AppHeader
+				title={title}
+				onBack={onBack}
+				logo={logo}
+				right={right}
+				positioning="fixed"
+			/>
+			{/* 당김/새로고침 인디케이터 — 네비 바로 아래(본문과의 사이)에 고정. 당기면 네이티브 바운스로
+			    본문이 내려가며 네비 아래 gap 이 열리고, 그 자리에 스피너가 드러난다(콘텐츠 위 z-40). */}
 			<div
 				className="fixed left-0 right-0 flex justify-center pointer-events-none z-40"
 				style={{
-					top: "calc(env(safe-area-inset-top) + 60px)",
+					top: NAV_H,
+					paddingTop: 10,
 					opacity: pull > 8 || refreshing ? 1 : 0,
 					transform: `translateY(${refreshing ? 0 : Math.min(pull, 24) - 24}px)`,
 					transition: refreshing

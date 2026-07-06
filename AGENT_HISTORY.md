@@ -1074,3 +1074,14 @@
 - 모달이 body로 portal되므로 P2R 오발동(모달 터치 버블링) 우려도 제거됨. tsc·build 통과, 실기기 검증 필요.
 
 ---
+
+## #83
+
+**Prompt**: 자연스러운 바운딩이 네비보다 상단에 있는데, 네비 상단은 고정하고, 인디케이터를 네비와 본문사이에 두게 해서 할 순 없을까
+
+**Answer**: iOS 오버스크롤이 페이지 전체(sticky 네비 포함)를 튕겨 네비 위에서 바운스되던 문제. 네비를 fixed로 흐름에서 빼면 바디만 바운스하고 네비는 고정되며, 네비-본문 사이에 gap이 열려 그 자리에 인디케이터를 둘 수 있음(네이티브 앱 방식).
+- AppHeader에 `positioning?: "sticky"|"fixed"` prop 추가(기본 sticky). flex 셸 사용처(LogPage·SessionSetup·MemberAdminPage)는 기본값이라 불변.
+- AppScreen: 네비 positioning="fixed" 지정 + 네비가 흐름에서 빠지므로 root에 padding-top=NAV_H(env(safe-area-inset-top)+53px) 부여. 인디케이터를 top:NAV_H(네비 바로 아래)에 고정, translateY로 네비 밑에서 슬라이드 인. box-sizing border-box라 min-h-100dvh+padding 이중 높이 없음.
+- <AppScreen> 3곳(Home·SchedulePage·RegularNoticePage)에 일관 적용. tsc·build 통과, 실기기 검증 필요.
+
+---
