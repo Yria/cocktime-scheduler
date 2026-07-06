@@ -230,6 +230,16 @@ export default function Home({ onStart }: Props) {
 	const orderedSchedules = [...liveSchedules, ...restSchedules];
 	const liveIds = new Set(liveSchedules.map((s) => s.id));
 
+	// 세션 시작 버튼 노출: 하이라이트(isLive)와 별개로 시작 10분 전부터 허용.
+	const START_LEAD_MS = 10 * 60 * 1000;
+	const canStartSchedule = (s: (typeof schedules)[number]) =>
+		s.status === "open" &&
+		s.scheduled_at != null &&
+		Date.parse(s.scheduled_at) - START_LEAD_MS <= now;
+	const canStartIds = new Set(
+		visibleSchedules.filter(canStartSchedule).map((s) => s.id),
+	);
+
 	return (
 		<>
 		<AppScreen
@@ -292,6 +302,7 @@ export default function Home({ onStart }: Props) {
 								memberId={memberId}
 								isAdmin={isAdmin}
 								isLive={liveIds.has(s.id)}
+								canStart={canStartIds.has(s.id)}
 								busy={busyId === s.id}
 								onJoin={() => handleJoin(s.id)}
 								onCancel={() => handleCancel(s.id)}

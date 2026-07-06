@@ -1010,3 +1010,15 @@
 - `tsc`·`eslint`·`vitest`(168) 통과. **배포 필요: `supabase db push` + `supabase functions deploy send-push`**(프론트는 git push)
 
 ---
+
+## #77
+
+**Prompt**: 일정 시작시간보다 10분전부터 노출되게해줘
+
+**Answer**: 운영진 "경기 시작" 버튼을 일정 시작 10분 전부터 노출되게 변경. 기존엔 `isLive`(시작 시각 경과) 하나가 버튼·초록 하이라이트·"진행중" 배지·상단 정렬을 모두 제어했는데, 이를 통째로 앞당기면 시작 전인데 "진행중" 배지가 뜨는 문제가 생겨 **버튼 노출만 분리**하기로 결정.
+
+- `Home.tsx`: `canStartSchedule` 판정 신설(`open && scheduled_at − 10분 ≤ now`), 리드타임은 `START_LEAD_MS` 상수로 관리, `canStart` prop 전달
+- `ScheduleCard.tsx`: `canStart` prop 추가, 버튼 조건을 `isLive` → `canStart`로 교체. 하이라이트·배지·정렬은 실제 시작 시각 그대로 유지
+- 서버 RPC(`start_session_from_schedule`)엔 시작 시각 하한 가드가 없어(종료 가드만 존재) 프론트 변경만으로 동작. `tsc` 통과, 프론트 전용이라 git push만으로 배포
+
+---

@@ -23,8 +23,10 @@ interface Props {
 	attendances: AttendanceRow[];
 	memberId: string | null;
 	isAdmin: boolean;
-	/** 시작 시각이 지난 open 일정 — 맨 위로 분리·하이라이트 + 세션시작 버튼 노출 */
+	/** 시작 시각이 지난 open 일정 — 맨 위로 분리·하이라이트 + "진행중" 배지 */
 	isLive: boolean;
+	/** 세션시작 버튼 노출 조건 — 시작 10분 전부터(open, 미종료). isLive와 별개. */
+	canStart: boolean;
 	busy: boolean;
 	onJoin: () => void;
 	onCancel: () => void;
@@ -45,6 +47,7 @@ export default function ScheduleCard({
 	memberId,
 	isAdmin,
 	isLive,
+	canStart,
 	busy,
 	onJoin,
 	onCancel,
@@ -390,8 +393,8 @@ export default function ScheduleCard({
 				/>
 			)}
 
-			{/* 세션 시작 버튼: 시작 시각이 지난(=isLive) open 일정에만 노출 */}
-			{isAdmin && isOpen && isLive && (
+			{/* 세션 시작 버튼: 시작 10분 전부터(=canStart) open 일정에만 노출 */}
+			{isAdmin && isOpen && canStart && (
 				<button
 					type="button"
 					onClick={onStartSession}
