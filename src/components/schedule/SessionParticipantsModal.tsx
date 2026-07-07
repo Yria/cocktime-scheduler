@@ -1,6 +1,12 @@
+import { useState } from "react";
+import { X } from "lucide-react";
 import type { AttendanceRow, SessionRow } from "../../lib/supabase/types";
 import { fmtClock, fmtRange } from "../../lib/schedule/timeFmt";
+import { useAuthStore } from "../../store/authStore";
+import { scheduleActions } from "../../store/scheduleStore";
+import { toast } from "../../store/toastStore";
 import ModalSheet from "../common/ModalSheet";
+import ConfirmDialog from "../common/ConfirmDialog";
 import EmptyState from "../shared/EmptyState";
 import PlayerAvatar from "../shared/PlayerAvatar";
 
@@ -26,6 +32,35 @@ export default function SessionParticipantsModal({
 }: Props) {
 	const confirmed = attendances.filter((a) => a.status === "confirmed");
 	const waiting = attendances.filter((a) => a.status === "waitlisted");
+
+	// 운영진만 임의 참석자 제거 가능(본인 행은 제외 — 본인은 카드의 '참여 취소' 사용).
+	const isAdmin = useAuthStore((st) => st.isAdmin);
+	const [pendingRemove, setPendingRemove] = useState<AttendanceRow | null>(null);
+	const [removing, setRemoving] = useState(false);
+
+	async function handleRemove() {
+		if (!pendingRemove) return;
+		setRemoving(true);
+		const res = await scheduleActions.adminRemove(s.id, pendingRemove.member_id);
+		setRemoving(false);
+		if (res.ok) setPendingRemove(null);
+		else toast("제거에 실패했어요. 잠시 후 다시 시도해주세요.", { variant: "error" });
+	}
+
+	// 제거 확인 문구 — 확정/대기, 회원/게스트(알림 수신자), 세션 상태에 따라 분기.
+	function removeMessage(a: AttendanceRow): string {
+		const isGuest = a.member?.is_guest ?? a.invited_by != null;
+		// 운영진이 본인이 초대한 게스트를 제거하면 RPC 는 수신자==본인이라 통지를 생략 → 안내도 생략.
+		const notifies = !(isGuest && a.invited_by === memberId);
+		const to = isGuest ? "신청한 회원에게" : "당사자에게";
+		const notice = notifies ? ` ${to} 알림이 갑니다.` : "";
+		if (a.status === "confirmed") {
+			// 대기 자동 승급은 open 세션에서만 일어남(active 는 승급 없이 확정 해제만) → 승급 안내도 open 일 때만.
+			const promote = s.status === "open" ? " 대기자가 있으면 자동으로 승급됩니다." : "";
+			return `확정 참석에서 제외됩니다.${promote}${notice}`;
+		}
+		return `대기 명단에서 제외됩니다.${notice}`;
+	}
 
 	return (
 		<ModalSheet position="bottom" onClose={onClose}>
@@ -68,6 +103,8 @@ export default function SessionParticipantsModal({
 										memberId={memberId}
 										carpoolEnabled={s.carpool_enabled}
 										scheduledAt={s.scheduled_at}
+										canRemove={isAdmin}
+										onRemove={setPendingRemove}
 									/>
 								))}
 							</Section>
@@ -87,6 +124,8 @@ export default function SessionParticipantsModal({
 											carpoolEnabled={s.carpool_enabled}
 											scheduledAt={s.scheduled_at}
 											waitRank={i + 1}
+											canRemove={isAdmin}
+											onRemove={setPendingRemove}
 										/>
 									))}
 								</Section>
@@ -95,13 +134,48 @@ export default function SessionParticipantsModal({
 					</>
 				)}
 			</div>
+
+			{/* 운영진: 제거 재확인 — 참여목록 모달(z=50) 위에 겹쳐 띄운다(z=70). */}
+			{pendingRemove && (
+				<ConfirmDialog
+					zIndex={70}
+					title={`${pendingRemove.member?.name ?? "회원"}님을 제거할까요?`}
+					message={removeMessage(pendingRemove)}
+					confirmLabel="제거"
+					cancelLabel="닫기"
+					tone="danger"
+					busy={removing}
+					busyLabel="제거 중…"
+					onConfirm={handleRemove}
+					onCancel={() => setPendingRemove(null)}
+					onDismiss={() => setPendingRemove(null)}
+				/>
+			)}
 		</ModalSheet>
 	);
 }
 
 /**
- * 참가자 뱃지 pill(운영진/게스트 공용) — 색만 다르고 모양 동일.
- * 색은 className으로 주입해 다크모드(dark:)에서 밝은 톤으로 분기(라이트 톤은 다크 서페이스에서 묻힘).
+ * 운영진 표식용 채운(fill) 왕관 아이콘(Tabler filled crown, 24 그리드 = lucide와 동일).
+ * 이모지(👑)는 플랫폼마다 모양이 달라 인라인 SVG로 고정. 색은 currentColor로 부모 className에서 주입.
+ */
+function CrownIcon({ size = 16 }: { size?: number }) {
+	return (
+		<svg
+			width={size}
+			height={size}
+			viewBox="0 0 24 24"
+			fill="currentColor"
+			aria-hidden="true"
+		>
+			<path d="M19 19h-14c-.5 0 -.9 -.3 -1 -.8l-2 -10c0 -.4 .1 -.8 .5 -1.1c.4 -.2 .8 -.2 1.1 0l4.1 3.3l3.4 -5.1c.4 -.6 1.3 -.6 1.7 0l3.4 5.1l4.1 -3.3c.3 -.3 .8 -.3 1.1 0c.4 .2 .5 .6 .5 1.1l-2 10c0 .5 -.5 .8 -1 .8z" />
+		</svg>
+	);
+}
+
+/**
+ * 참가자 뱃지 pill(게스트용) — 색은 className으로 주입해 다크모드(dark:)에서 밝은 톤으로 분기
+ * (라이트 톤은 다크 서페이스에서 묻힘). 운영진은 pill 대신 CrownIcon 으로 표기.
  */
 function Pill({
 	className,
@@ -146,12 +220,17 @@ function ParticipantRow({
 	carpoolEnabled,
 	scheduledAt,
 	waitRank,
+	canRemove = false,
+	onRemove,
 }: {
 	row: AttendanceRow;
 	memberId: string | null;
 	carpoolEnabled: boolean;
 	scheduledAt: string | null;
 	waitRank?: number;
+	/** 운영진 뷰 — 제거 버튼 노출(본인 행 제외). */
+	canRemove?: boolean;
+	onRemove?: (row: AttendanceRow) => void;
 }) {
 	const name = a.member?.name ?? "회원";
 	const isMe = a.member_id === memberId;
@@ -198,9 +277,14 @@ function ParticipantRow({
 				)}
 			</span>
 			{isAdmin && (
-				<Pill className="text-[#6d5bd0] bg-[rgba(109,91,208,0.12)] dark:text-[#b3a4f5] dark:bg-[rgba(179,164,245,0.16)]">
-					🛡️ 운영진
-				</Pill>
+				<span
+					className="text-[#f59e0b] dark:text-[#fbbf24] inline-flex flex-shrink-0"
+					role="img"
+					aria-label="운영진"
+					title="운영진"
+				>
+					<CrownIcon size={16} />
+				</span>
 			)}
 			{isGuest && (
 				<Pill className="text-[#b4762b] bg-[rgba(180,118,43,0.12)] dark:text-[#e0a860] dark:bg-[rgba(224,168,96,0.16)]">
@@ -224,6 +308,19 @@ function ParticipantRow({
 					<span style={{ color: "#b4762b" }}>🙋 탑승 필요</span>
 				) : null}
 			</span>
+
+			{/* 운영진 전용 제거 버튼 — 본인 행은 제외(본인은 카드의 '참여 취소' 사용). */}
+			{canRemove && !isMe && onRemove && (
+				<button
+					type="button"
+					onClick={() => onRemove(a)}
+					aria-label={`${name} 제거`}
+					className="flex-shrink-0 inline-flex items-center justify-center rounded-full text-faint hover:text-[#e5484d] hover:bg-[rgba(229,72,77,0.12)] transition-colors"
+					style={{ width: 26, height: 26 }}
+				>
+					<X size={15} strokeWidth={2.5} />
+				</button>
+			)}
 		</div>
 	);
 }

@@ -1148,3 +1148,28 @@
 - tsc·eslint·build 전부 통과.
 
 ---
+
+## #88
+
+**Prompt**: 참여자목록에서 운영진 뱃지가 있는데 왕관모양으로 교체해줘 (+ 후속: 운영진 텍스트 없이 왕관만, 이모지는 플랫폼마다 다르니 웹에서 어울리는 왕관 찾아 SVG로 → 색을 더 눈에 띄게)
+
+**Answer**: SessionParticipantsModal의 참가자 행 운영진 표식을 `🛡️ 운영진` pill에서 왕관 아이콘 단독 표기로 교체.
+- 이모지는 플랫폼별 렌더 편차가 있어 인라인 SVG로 고정. lucide(선형·받침선)보다 작은 뱃지에서 또렷한 Tabler 채운(fill) 왕관 채택(24 그리드라 앱 lucide 아이콘과 비율 일관, currentColor로 색 주입).
+- CrownIcon 컴포넌트 신설, isAdmin 분기를 Pill 대신 role="img"/aria-label="운영진" span + CrownIcon(16px)로 변경. Pill은 게스트 전용으로 남기고 주석 갱신.
+- 색은 눈에 잘 띄고 왕관에 어울리는 골드/앰버로(라이트 #f59e0b / 다크 #fbbf24). 바탕이 바제이라 게스트(갈색계 pill)와도 구분. 격리 프리뷰 스크린샷으로 라이트/다크 가독성 확인.
+- 색 방향은 사용자 확인 대기 중 무응답이라 추천안(골드)으로 진행. tsc 통과.
+
+---
+
+## #89
+
+**Prompt**: (admin 참석자 제거 변경 적대적 리뷰 결과 검토) 둘 다 수정 → (문구이슈 확인 후) 전부수정하고 메인에 커밋해
+
+**Answer**: 적대적 리뷰(3렌즈)가 짚은 낮은 심각도 2건을 고치고, 후속 검증 워크플로우(3렌즈)가 발견한 인접 RPC/문서 이슈까지 사용자 승인 하에 전부 정합화. 대기 승급 'promoted' 알림의 수신자/문구를 4개 경로(set_session_capacity 기준)로 통일하는 것이 핵심.
+- admin_cancel_attendance: 승급 알림 payload에 게스트면 guest_name 병합(초대회원에게 "게스트 X 확정"으로 렌더), 헤더 주석도 removed 알림과 대칭화.
+- 신규 마이그레이션 20260707020000: cancel_attendance는 승급 알림을 게스트 본인 id로 직접 보내 초대회원이 영영 못 받던 실제 알림 유실 버그 수정(coalesce(invited_by,member_id)+guest_name). cancel_guest_attendance는 라우팅 유지하고 guest_name만 병합. 두 함수 본문은 원본과 알림 INSERT만 다름(diff 대조로 재현 오류 없음 확인).
+- SessionParticipantsModal.removeMessage: 승급 안내는 open 세션에서만 노출(active는 승급 없이 확정 해제만), 운영진이 본인 초대 게스트 제거 시 RPC가 알림을 생략하므로 안내 문구도 생략.
+- docs/EXPANSION_SPEC.md: notifications.type에 'removed', RPC 표에 admin_cancel_attendance 추가.
+- tsc 통과. 신규 마이그레이션 2건은 supabase db push 필요(미실행).
+
+---

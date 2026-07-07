@@ -195,6 +195,23 @@ export async function cancelAttendance(
 	return { ok: true };
 }
 
+/** 운영진: 참여목록에서 임의 참석자(회원/게스트) 제거. confirmed였고 open이면 대기 1순위 자동 승급(RPC).
+ *  제거 당사자(게스트면 초대 회원)에게 'removed' 알림(누가 제거했는지 포함) 발송. is_admin 게이팅은 RPC. */
+export async function adminCancelAttendance(
+	sessionId: number,
+	memberId: string,
+): Promise<{ ok: boolean; error?: string }> {
+	const { error } = await supabase.rpc("admin_cancel_attendance", {
+		p_session_id: sessionId,
+		p_member_id: memberId,
+	});
+	if (error) {
+		console.error("adminCancelAttendance:", error);
+		return { ok: false, error: error.message };
+	}
+	return { ok: true };
+}
+
 /** 운영진: 일정 confirmed 참석자를 session_players로 편입하고 세션 활성화(브릿지 RPC). */
 export async function startSessionFromSchedule(
 	sessionId: number,

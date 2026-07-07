@@ -22,6 +22,8 @@ interface ConfirmDialogProps {
 	hideCancel?: boolean;
 	/** 다이얼로그 폭 (ModalSheet maxWidth, 기본 "sm") */
 	maxWidth?: "xs" | "sm";
+	/** 오버레이 z-index (ModalSheet zIndex, 기본 50). 다른 모달 위에 겹쳐 띄울 때 지정. */
+	zIndex?: number;
 	onConfirm: () => void;
 	onCancel?: () => void;
 	/** 배경 클릭으로 닫기. 미지정 시 배경 클릭 무시(ClearConfirmModal 형).
@@ -48,6 +50,7 @@ export default function ConfirmDialog({
 	cancelDisabled,
 	hideCancel = false,
 	maxWidth,
+	zIndex,
 	onConfirm,
 	onCancel,
 	onDismiss,
@@ -61,6 +64,7 @@ export default function ConfirmDialog({
 			onClose={onDismiss}
 			closeOnEscape
 			maxWidth={maxWidth}
+			zIndex={zIndex}
 		>
 			<h3 className="font-bold text-gray-800 dark:text-white text-lg mb-1.5">
 				{title}

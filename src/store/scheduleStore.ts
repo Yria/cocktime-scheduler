@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { setCarpoolGroups } from "../lib/supabase/carpool";
 import {
 	addGuestAttendance,
+	adminCancelAttendance,
 	cancelAttendance,
 	cancelGuestAttendance,
 	deleteSchedule,
@@ -113,6 +114,13 @@ export const scheduleActions = {
 
 	async cancel(sessionId: number) {
 		const res = await cancelAttendance(sessionId);
+		if (res.ok) await reloadAttendances();
+		return res;
+	},
+
+	/** 운영진: 참여목록에서 임의 참석자(회원/게스트) 제거. 성공 시 참석 목록 재조회. */
+	async adminRemove(sessionId: number, memberId: string) {
+		const res = await adminCancelAttendance(sessionId, memberId);
 		if (res.ok) await reloadAttendances();
 		return res;
 	},

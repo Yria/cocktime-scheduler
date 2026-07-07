@@ -129,6 +129,23 @@ function buildBody(
         payload && typeof payload.name === "string" ? payload.name : null;
       return name ? `${name}님이 새로 가입했어요` : "새 회원이 가입했어요";
     }
+    case "removed": {
+      // 운영진이 참석을 취소함. 누가 취소했는지(by_name) 표기. 게스트면 초대 회원에게 게스트 이름과 함께.
+      const by =
+        payload && typeof payload.by_name === "string" ? payload.by_name : null;
+      const guest =
+        payload && typeof payload.guest_name === "string"
+          ? payload.guest_name
+          : null;
+      const actor = by ? `${by} 운영진` : "운영진";
+      if (guest)
+        return sess
+          ? `${sess} 게스트 '${guest}'님 참석을 ${actor}이 취소했어요`
+          : `게스트 '${guest}'님 참석을 ${actor}이 취소했어요`;
+      return sess
+        ? `${sess} ${actor}이 참석을 취소했어요`
+        : `${actor}이 참석을 취소했어요`;
+    }
     default:
       return "새 알림이 있어요";
   }
