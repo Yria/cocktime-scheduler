@@ -2,6 +2,7 @@ import { supabase } from "./client";
 import type { Gender, PlayerSkills } from "../../types";
 import type {
 	AttendanceRow,
+	AttendanceStatus,
 	CarpoolRole,
 	PlaceRow,
 	SessionRow,
@@ -242,12 +243,19 @@ export async function setCarpoolRole(
 	return { ok: true };
 }
 
-/** 본인 늦참(도착 오프셋, 분) 설정(참석자). 0=정시. */
+/** 본인 늦참(도착 오프셋, 분) 설정(참석자). 0=정시.
+ *  도착이 8시(KST 20:00) 이상이면 서버가 정원 외 풀(late_pool)로 전환하고, 미만으로 되돌리면 큐로 복귀.
+ *  반환 status = 반영된 권위 상태(confirmed/waitlisted/late_pool), promoted = 자동 승급 인원. */
 export async function setLateMinutes(
 	sessionId: number,
 	minutes: number,
-): Promise<{ ok: boolean; error?: string }> {
-	const { error } = await supabase.rpc("set_late_minutes", {
+): Promise<{
+	ok: boolean;
+	error?: string;
+	status?: AttendanceStatus;
+	promoted?: number;
+}> {
+	const { data, error } = await supabase.rpc("set_late_minutes", {
 		p_session_id: sessionId,
 		p_minutes: minutes,
 	});
@@ -255,5 +263,6 @@ export async function setLateMinutes(
 		console.error("setLateMinutes:", error);
 		return { ok: false, error: error.message };
 	}
-	return { ok: true };
+	const res = (data ?? {}) as { status?: AttendanceStatus; promoted?: number };
+	return { ok: true, status: res.status, promoted: res.promoted };
 }

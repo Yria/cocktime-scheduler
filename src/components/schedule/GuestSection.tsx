@@ -103,10 +103,19 @@ export default function GuestSection({
 										style={{
 											fontSize: 11,
 											fontWeight: 700,
-											color: g.status === "confirmed" ? "#30d158" : "#f59e0b",
+											color:
+												g.status === "confirmed"
+													? "#30d158"
+													: g.status === "late_pool"
+														? "#8b5cf6"
+														: "#f59e0b",
 										}}
 									>
-										{g.status === "confirmed" ? "확정" : `대기 ${rank}번째`}
+										{g.status === "confirmed"
+											? "확정"
+											: g.status === "late_pool"
+												? "🌙 늦참"
+												: `대기 ${rank}번째`}
 									</span>
 								</span>
 								{isOpen && (

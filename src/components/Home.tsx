@@ -5,9 +5,14 @@ import type { CarpoolRole } from "../lib/supabase/types";
 import type { Gender, PlayerSkills } from "../types";
 import { appActions, useAppStore } from "../store/appStore";
 import { authActions, useAuthStore } from "../store/authStore";
+import {
+	shouldShowInstallPrompt,
+	useInstallPromptStore,
+} from "../store/installPromptStore";
 import { scheduleActions, useScheduleStore } from "../store/scheduleStore";
 import AppScreen from "./common/AppScreen";
 import HeaderMenu from "./common/HeaderMenu";
+import InstallPromptToast from "./common/InstallPromptToast";
 import NotificationBell from "./common/NotificationBell";
 import ProfileSetup from "./ProfileSetup";
 import ScheduleCard from "./schedule/ScheduleCard";
@@ -47,6 +52,13 @@ function guestErrorMsg(e?: string): string {
 	return "게스트 신청에 실패했습니다";
 }
 
+function lateErrorMsg(e?: string): string {
+	if (e?.includes("session ended")) return "이미 종료된 일정입니다";
+	if (e?.includes("not attending")) return "참석 신청 후 이용할 수 있습니다";
+	if (e?.includes("not authenticated")) return "로그인이 필요합니다";
+	return "늦참 신청에 실패했습니다";
+}
+
 export default function Home({ onStart }: Props) {
 	const navigate = useNavigate();
 	const authReady = useAuthStore((s) => s.ready);
@@ -61,6 +73,8 @@ export default function Home({ onStart }: Props) {
 	const places = useScheduleStore((s) => s.places);
 	const attendances = useScheduleStore((s) => s.attendances);
 	const scheduleLoading = useScheduleStore((s) => s.loading);
+	// PWA 설치 유도 토스트 노출 여부(스토어 구독 — dismiss/설치 시 재계산).
+	const installState = useInstallPromptStore();
 
 	const [authBusy, setAuthBusy] = useState(false);
 	const [busyId, setBusyId] = useState<number | null>(null);
@@ -130,6 +144,15 @@ export default function Home({ onStart }: Props) {
 	const handleSetLate = useCallback((sessionId: number, minutes: number) => {
 		scheduleActions.setLate(sessionId, minutes);
 	}, []);
+
+	const handleApplyLatePool = useCallback(
+		async (sessionId: number, minutes: number) => {
+			const res = await scheduleActions.applyLateTransition(sessionId, minutes);
+			// 서버 원문 에러를 친절 메시지로 변환(참석/게스트와 동일 기준).
+			return res.ok ? res : { ok: false, error: lateErrorMsg(res.error) };
+		},
+		[],
+	);
 
 	const handleAddGuest = useCallback(
 		async (
@@ -216,6 +239,13 @@ export default function Home({ onStart }: Props) {
 	// ── 로그인: 일정 목록 ──
 	const placeName = (id: number | null) =>
 		id == null ? null : (places.find((p) => p.id === id)?.name ?? null);
+
+	// PWA 설치 유도 토스트 — 프로필 완성 + 편집 중 아님 + 노출 조건 충족일 때만.
+	// (하단 고정 토스트가 마지막 버튼을 가리지 않도록 스크롤 콘텐츠 끝에 스페이서도 같은 조건으로 넣는다.)
+	const profileComplete =
+		!!memberId && myGender != null && myBirthYear != null && !!myResidence;
+	const showInstallToast =
+		profileComplete && !editingProfile && shouldShowInstallPrompt(installState);
 
 	// 종료된 일정 숨김: 종료 시각이 지난 open 일정은 참석 불가 + 미노출(서버 join 가드와 동일 기준).
 	// active(진행중)는 종료 시각과 무관하게 유지 — 운영 중인 세션을 목록에서 지우지 않는다.
@@ -313,6 +343,7 @@ export default function Home({ onStart }: Props) {
 								onStartSession={() => handleStartSession(s.id)}
 								onSetCarpool={(role) => handleSetCarpool(s.id, role)}
 							onSetLate={(minutes) => handleSetLate(s.id, minutes)}
+								onApplyLatePool={(minutes) => handleApplyLatePool(s.id, minutes)}
 								onAddGuest={(guest) => handleAddGuest(s.id, guest)}
 								onCancelGuest={(gid) => handleCancelGuest(s.id, gid)}
 								onOpenNotice={() => navigate(`/notice/${s.id}`)}
@@ -359,6 +390,9 @@ export default function Home({ onStart }: Props) {
 				>
 					매치 로그 보기
 				</button>
+
+				{/* 설치 유도 토스트가 하단 고정으로 뜰 때, 마지막 버튼이 토스트에 가려 눌리지 않도록 여백 확보 */}
+				{showInstallToast && <div aria-hidden style={{ height: 92 }} />}
 			</div>
 		</AppScreen>
 
@@ -370,6 +404,9 @@ export default function Home({ onStart }: Props) {
 			{editingProfile && (
 				<ProfileSetup mode="edit" onClose={() => setEditingProfile(false)} />
 			)}
+
+			{/* PWA 홈 화면 설치 유도 토스트 — 프로필 완성 + 프로필 편집 중 아님일 때만(모달 위 겹침 방지). */}
+			{showInstallToast && <InstallPromptToast />}
 		</>
 	);
 }

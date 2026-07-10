@@ -83,7 +83,7 @@ $$;
 | `members.gender` | `'M'` `'F'` (NULL 허용) | **세션 편입 전 NOT NULL 필수**(편입 RPC 가드) |
 | `user_roles.role` | `'admin'` `'member'` | |
 | `sessions.status` | `'draft'` `'open'` `'active'` `'closed'` `'cancelled'` | 상태기계 ↓ |
-| `attendances.status` | `'confirmed'` `'waitlisted'` `'cancelled'` | confirmed/waitlisted/cancelled 로 동결(going/waitlist 표기 금지) |
+| `attendances.status` | `'confirmed'` `'waitlisted'` `'cancelled'` `'late_pool'` | 정원 큐 3종 + 정원 외 늦참 풀(`late_pool`). going/waitlist 표기 금지. `late_pool` = 후반 2/3 지점 이후 도착 신청, `confirmed_count` 미포함(§ 늦참 풀) |
 | `attendances.carpool_role` | `'none'` `'can_drive'` `'need_ride'` | 기본 `'none'` |
 | `notifications.type` | `'promoted'` `'demoted'` `'session_cancelled'` `'session_closed'` `'session_open'` `'carpool_muster'` `'schedule_added'` `'new_member'` `'removed'` `'noshow'` | 신규 타입은 여기 + `notifications.ts`/`send-push` 메시지 양쪽에 추가 |
 
@@ -250,6 +250,7 @@ alter table public.sessions
 - **상태기계 활용**: `draft`(운영진만, 미노출) → `open`(노출·참석시작, `join_session` 진입 조건) → `active`(보드) → `closed`/`cancelled`. 명절 등 예외는 해당 회차만 `cancelled`(행 유지 → 재생성 방지) 또는 개별 `is_overridden=true` 수정.
 - **참여 가능 판정 = `status='open'`**: `join_session`·`add_guest_attendance`는 status(+아래 종료 가드)만 검사한다. open 은 sync E단계(공개 창 안)만 만들므로 **status 가 노출·참여의 단일 진실원천** — 공개 창 밖 open 은 운영진의 의도적 개별 조작뿐이라 참여를 막을 이유가 없다. 과거엔 노출 시간 가드(`scheduled_at <= now()+7d`)를 이중으로 재검증했으나(`20260623040000` 도입 → `20260703010000` 공개 상한과 일치 → `20260703020000` rolling 롤백), status 와 시간 가드의 이중 기준이 노출 규칙 변경 때 전환기 회귀를 낳아 `20260703040000`에서 **제거**. 시작 시각이 지난 `open` 회차의 늦참(late join)은 홈 진행 하이라이트(아래)와 함께 의도적으로 허용한다.
 - **종료(`ends_at`) 상한 가드**: status 검사에 더해 **종료 시각이 지나면 마감**한다 — `ends_at is not null and ends_at <= now()` 이면 `session ended` 예외. `join_session`·`add_guest_attendance`·`start_session_from_schedule`(경기 시작) 세 RPC 모두에 적용해 종료된 일정은 회원·운영진 누구도 참석/게스트신청/경기시작을 할 수 없다. `ends_at`이 NULL인 즉석/미정 회차는 가드 통과(차단 안 함). sync A단계(어제 이전 draft/open→closed)는 일(日) 단위 정리라, 당일 종료 직후의 미세 구간은 이 가드 + 홈 필터(아래)가 실시간으로 막는다. 마이그레이션 `20260624030000_attendance_end_time_guard.sql`.
+- **정원 외 늦참 풀(`late_pool`)** — 마이그레이션 `20260708010000`: 늦참 슬라이더로 도착시각을 **경기 후반 2/3 지점 이후**(예: 18:00~21:00 세션이면 20:00="8시")로 넘기면, 정원 큐와 분리된 **독립 접수**로 전환한다. `late_pool` 은 `confirmed_count` 에 미포함(정원 무관) — 현실에서 "늦게 와서 자리 나면 참여, 없으면 대기"를 시스템화한 것. 현장 판정(자리/대기)은 보드 대기 로테이션이 담당하고, RSVP 단계는 정원 분리 + 표기까지만 책임진다(`start_session_from_schedule` 은 여전히 `confirmed` 만 편입). `set_late_minutes(bigint,int)` 가 경계를 원자 처리: **확정→풀** 전환 시 정원 1칸 반납 + 대기 1순위 자동 승급(`promoted`), **풀→복귀** 시 여유 있으면 `confirmed` 없으면 `waitlisted`(큐 뒤 재진입). 경계는 절대시각이 아니라 `v_start + (v_end - v_start)*2/3`(종료시각 필수). 초대자가 `late_pool` 이면 그 게스트도 `late_pool` 상속. 정원 재조정(`set_session_capacity`)은 `late_pool` 을 건드리지 않는다(정원 독립). 클라 8시 경계 크로싱은 확인 다이얼로그로 게이팅하고 UI 는 앰버→바이올렛으로 구분(`late_minutes` 반환 `{status, promoted}`).
 - **편집 권한**: 회차 개별 수정/취소/일회성 추가는 `sessions` anon_all 정책 하 클라이언트 직접 쓰기(운영진 UI 게이트). 규칙 CRUD 는 `recurring_schedules` RLS(select authenticated / write `is_admin()`).
 - UI: 회원=노출 회차 목록(Home), 운영진=`/schedule` 달력+규칙 패널(요일·주차 규칙 등록 → 달력 자동 생성 → 회차별 예외 편집).
 

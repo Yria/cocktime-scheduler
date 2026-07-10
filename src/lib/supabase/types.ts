@@ -90,7 +90,12 @@ export interface PlaceRow {
 	map_url: string | null;
 }
 
-export type AttendanceStatus = "confirmed" | "waitlisted" | "cancelled";
+export type AttendanceStatus =
+	| "confirmed"
+	| "waitlisted"
+	| "cancelled"
+	/** 8시(KST 20:00) 이후 늦참 — 정원 외 독립 접수(confirmed_count 미포함). 마이그레이션 20260708010000. */
+	| "late_pool";
 export type CarpoolRole = "none" | "can_drive" | "need_ride";
 
 /** 카풀 편성(공지 빌더). sessions.carpool_groups jsonb. 탑승자 id는 한 그룹에만. */

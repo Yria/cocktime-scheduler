@@ -22,7 +22,8 @@
       // https://username.github.io/repo-name/one/two?a=b&c=d#qwe becomes
       // https://username.github.io/repo-name/?p=/one/two&q=a=b~and~c=d#qwe
       // Otherwise, leave pathSegmentsToKeep as 0.
-      var pathSegmentsToKeep = 1;
+      // 커스텀 도메인은 루트(/)에서 서빙되므로 0. 프로젝트 경로(/cocktime-scheduler/)로 되돌리면 1.
+      var pathSegmentsToKeep = 0;
 
       var l = window.location;
       l.replace(

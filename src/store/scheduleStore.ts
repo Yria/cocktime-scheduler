@@ -74,6 +74,20 @@ function patchMine(sessionId: number, patch: Partial<AttendanceRow>) {
 const lateSendTimers = new Map<number, ReturnType<typeof setTimeout>>();
 const LATE_DEBOUNCE_MS = 500;
 
+/** 세션별 늦참 쓰기 직렬화 체인 — 디바운스 전송과 8시 경계 전환(applyLateTransition)의 순서 역전 방지.
+ *  둘이 동시 in-flight면 늦게 커밋된 RPC가 이기는데, 같은존 오프셋 전송이 전환 뒤에 도착하면
+ *  풀 전환이 조용히 되돌려진다(status=late_pool → confirmed 복귀). 큐잉으로 신청 순서대로 커밋. */
+const lateChains = new Map<number, Promise<unknown>>();
+function enqueueLate<T>(sessionId: number, fn: () => Promise<T>): Promise<T> {
+	const prev = lateChains.get(sessionId) ?? Promise.resolve();
+	const next = prev.then(fn, fn); // 이전 결과/실패와 무관하게 순차 실행
+	lateChains.set(
+		sessionId,
+		next.catch(() => {}),
+	); // 체인 꼬리는 rejection 을 삼켜 다음 enqueue 를 막지 않게
+	return next;
+}
+
 export const scheduleActions = {
 	async load() {
 		useScheduleStore.setState({ loading: true });
@@ -135,7 +149,7 @@ export const scheduleActions = {
 		return res;
 	},
 
-	/** 늦참 오프셋 — 화면은 즉시, 서버 전송은 마지막 조작 후 500ms 디바운스(자주 끄는 조작 고려). */
+	/** 늦참 오프셋(같은 존 내 이동, 상태 불변) — 화면은 즉시, 서버 전송은 마지막 조작 후 500ms 디바운스. */
 	setLate(sessionId: number, minutes: number) {
 		patchMine(sessionId, { late_minutes: minutes }); // 낙관적(매 조작 즉시)
 		const pending = lateSendTimers.get(sessionId);
@@ -144,12 +158,32 @@ export const scheduleActions = {
 			sessionId,
 			setTimeout(() => {
 				lateSendTimers.delete(sessionId);
-				void setLateMinutes(sessionId, minutes).then((res) => {
-					// 실패 시 서버 권위값으로 재동기화(낙관적 값 되돌림)
+				void enqueueLate(sessionId, () =>
+					setLateMinutes(sessionId, minutes),
+				).then((res) => {
+					// 실패 시, 혹은 예상 밖 상태 전환(경계 오판정) 시 서버 권위값으로 재동기화.
 					if (!res.ok) void reloadAttendances();
 				});
 			}, LATE_DEBOUNCE_MS),
 		);
+	},
+
+	/** 8시 경계 전환(정원 외 늦참 진입/복귀) — 확인 다이얼로그 승인 후 호출.
+	 *  디바운스 중이던 오프셋 전송을 취소하고, 직렬화 체인 뒤에 전환 RPC를 이어 붙여(순서 보장)
+	 *  전송한 뒤, 상태 변화·자동 승급 반영 위해 재조회한다. */
+	async applyLateTransition(sessionId: number, minutes: number) {
+		const pending = lateSendTimers.get(sessionId);
+		if (pending) {
+			clearTimeout(pending);
+			lateSendTimers.delete(sessionId);
+		}
+		patchMine(sessionId, { late_minutes: minutes }); // 오프셋 낙관적 선반영
+		const res = await enqueueLate(sessionId, () =>
+			setLateMinutes(sessionId, minutes),
+		);
+		// 성공/실패 무관 재조회 — 상태(late_pool ↔ confirmed/waitlisted)·정원·승급을 서버 권위로 맞춘다.
+		await reloadAttendances();
+		return res;
 	},
 
 	/** 운영자: 카풀 편성 저장(공지 빌더). 저장 성공 시 스토어의 세션 carpool_groups 갱신. */

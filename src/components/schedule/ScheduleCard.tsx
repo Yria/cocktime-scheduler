@@ -6,7 +6,8 @@ import type {
 	CarpoolRole,
 	SessionRow,
 } from "../../lib/supabase/types";
-import { fmtRange } from "../../lib/schedule/timeFmt";
+import { fmtClock, fmtRange } from "../../lib/schedule/timeFmt";
+import { isLatePoolArrival, latePoolCutoffMs } from "../../lib/schedule/latePool";
 import GuestSection from "./GuestSection";
 import LateArrivalSlider from "./LateArrivalSlider";
 import PlayerAvatar from "../shared/PlayerAvatar";
@@ -33,8 +34,10 @@ interface Props {
 	onCancel: () => void;
 	onStartSession: () => void;
 	onSetCarpool: (role: CarpoolRole) => void;
-	/** 늦참 도착 오프셋(분) 설정. */
+	/** 늦참 도착 오프셋(분) 설정 — 8시 경계를 넘지 않는 같은 존 내 이동(상태 불변, 디바운스). */
 	onSetLate: (minutes: number) => void;
+	/** 8시 경계 전환(정원 외 늦참 진입/복귀) 적용 — 확인 후 호출. status·정원 재동기화 포함. */
+	onApplyLatePool: (minutes: number) => Promise<{ ok: boolean; error?: string }>;
 	/** 게스트 신청(성공/실패 반환). */
 	onAddGuest: (guest: { name: string; gender: Gender; skills: PlayerSkills }) => Promise<{ ok: boolean; error?: string }>;
 	/** 게스트 취소(초대 회원 본인). */
@@ -57,6 +60,7 @@ export default function ScheduleCard({
 	onStartSession,
 	onSetCarpool,
 	onSetLate,
+	onApplyLatePool,
 	onAddGuest,
 	onCancelGuest,
 	onOpenNotice,
@@ -64,10 +68,17 @@ export default function ScheduleCard({
 	const [showParticipants, setShowParticipants] = useState(false);
 	const [showCarpoolBuilder, setShowCarpoolBuilder] = useState(false);
 	const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+	// 정원외늦참 '진입' 확인 대기 — { 후보 오프셋 }. null=대기 없음.
+	// (복귀·같은 존 이동은 모달 없이 바로 적용하므로 진입 케이스만 여기 담긴다.)
+	const [pendingLate, setPendingLate] = useState<{ minutes: number } | null>(
+		null,
+	);
+	const [lateBusy, setLateBusy] = useState(false);
 	const confirmed = attendances.filter((a) => a.status === "confirmed");
 	const waiting = attendances.filter((a) => a.status === "waitlisted");
-	// 인라인 스택 — 확정자 우선, 모자라면 대기자로 채움
-	const roster = [...confirmed, ...waiting];
+	const latePool = attendances.filter((a) => a.status === "late_pool");
+	// 인라인 스택 — 확정자 우선, 대기자, 정원 외 늦참 순으로 채움
+	const roster = [...confirmed, ...waiting, ...latePool];
 	const stackList = roster.slice(0, STACK_MAX);
 	const stackExtra = roster.length - stackList.length;
 	const mine = memberId
@@ -85,6 +96,55 @@ export default function ScheduleCard({
 		(a) => a.carpool_role === "need_ride",
 	).length;
 	const attending = mine != null && mine.status !== "cancelled";
+
+	// 늦참 슬라이더 표시값 — 경계 확인 대기 중이면 후보값을 미리 보여준다(확정 전까지 서버 미반영).
+	const committedLate = mine?.late_minutes ?? 0;
+	const sliderLate = pendingLate ? pendingLate.minutes : committedLate;
+	// 정원 외 풀 경계 시각(후반 2/3 지점) — 확인 다이얼로그 문구용. 예) 6~9시 세션이면 8시.
+	const poolCutoffMs = latePoolCutoffMs(s.scheduled_at, s.ends_at);
+	const poolCutoffClock =
+		poolCutoffMs != null
+			? fmtClock(new Date(poolCutoffMs).toISOString())
+			: null;
+
+	// 슬라이더 조작 →
+	//  · 정원외늦참 '진입'(일반→풀): 확인 다이얼로그로 게이팅.
+	//  · '복귀'(풀→일반): 모달 없이 바로 전환 적용(정원 여유면 확정, 없으면 대기).
+	//  · 같은 존 내 시간 조정: 오프셋만 반영.
+	const handleSlide = (minutes: number) => {
+		if (!s.scheduled_at) {
+			onSetLate(minutes);
+			return;
+		}
+		const wasPool = mine?.status === "late_pool";
+		const willPool = isLatePoolArrival(s.scheduled_at, s.ends_at, minutes);
+		if (wasPool === willPool) {
+			onSetLate(minutes);
+			return;
+		}
+		if (willPool) {
+			setPendingLate({ minutes }); // 진입 — 확인
+		} else {
+			void applyLate(minutes); // 복귀 — 바로 적용
+		}
+	};
+	// 전환 RPC 실행(진입 확인 후 / 복귀 즉시 공용). 실패 시 알림, 성공 시 대기(pending) 해제.
+	const applyLate = async (minutes: number) => {
+		setLateBusy(true);
+		const res = await onApplyLatePool(minutes);
+		setLateBusy(false);
+		if (!res.ok) {
+			alert(res.error ?? "늦참 설정에 실패했습니다.");
+			return false;
+		}
+		return true;
+	};
+	const confirmLate = async () => {
+		if (!pendingLate) return;
+		const ok = await applyLate(pendingLate.minutes);
+		// 성공해야 다이얼로그를 닫는다(실패면 유지 — 슬라이더 원복 방지).
+		if (ok) setPendingLate(null);
+	};
 
 	return (
 		<div
@@ -184,6 +244,7 @@ export default function ScheduleCard({
 					확정 {confirmed.length}
 					{s.capacity != null ? `/${s.capacity}` : ""}명
 					{waiting.length > 0 ? ` · 대기 ${waiting.length}` : ""}
+					{latePool.length > 0 ? ` · 늦참 ${latePool.length}` : ""}
 				</span>
 
 				{isOpen ? (
@@ -207,6 +268,21 @@ export default function ScheduleCard({
 							<span style={statusBadge("#f59e0b", "rgba(245,158,11,0.14)")}>
 								<span style={statusDot("#f59e0b")} />
 								대기 {myWaitRank}번째
+							</span>
+							<button
+								type="button"
+								onClick={() => setShowCancelConfirm(true)}
+								disabled={busy}
+								style={chipBtn("#ef4444", busy)}
+							>
+								취소
+							</button>
+						</div>
+					) : mine?.status === "late_pool" ? (
+						<div className="flex items-center gap-2">
+							<span style={statusBadge("var(--late-pool)", "rgba(139,92,246,0.16)")}>
+								<span style={statusDot("var(--late-pool)")} />
+								🌙 정원 외 늦참
 							</span>
 							<button
 								type="button"
@@ -262,12 +338,17 @@ export default function ScheduleCard({
 				>
 					<div className="flex items-center">
 						{stackList.map((a, i) => {
-							// 대기자는 그레이스케일+감광으로 확정자와 구분.
+							// 대기자는 그레이스케일+감광, 정원 외 늦참은 바이올렛 링으로 확정자와 구분.
 							const isWaiting = a.status === "waitlisted";
+							const isPool = a.status === "late_pool";
 							return (
 								<div
 									key={a.member_id}
-									className="rounded-full ring-2 ring-white dark:ring-[#1e1e23]"
+									className={
+										isPool
+											? "rounded-full ring-2 ring-[#8b5cf6] dark:ring-[#a78bfa]"
+											: "rounded-full ring-2 ring-white dark:ring-[#1e1e23]"
+									}
 									style={{
 										position: "relative",
 										marginLeft: i === 0 ? 0 : -8,
@@ -340,14 +421,14 @@ export default function ScheduleCard({
 				</div>
 			)}
 
-			{/* 늦참 체크 (참석자) — 시작·종료가 정해진 open 일정에서만 */}
+			{/* 늦참 체크 (참석자) — 시작·종료가 정해진 open 일정에서만. 8시 경계는 handleSlide가 게이팅. */}
 			{attending && isOpen && s.scheduled_at && s.ends_at && (
 				<LateArrivalSlider
 					scheduledAt={s.scheduled_at}
 					endsAt={s.ends_at}
-					value={mine?.late_minutes ?? 0}
-					disabled={busy}
-					onChange={onSetLate}
+					value={sliderLate}
+					disabled={busy || lateBusy || pendingLate != null}
+					onChange={handleSlide}
 				/>
 			)}
 
@@ -373,14 +454,16 @@ export default function ScheduleCard({
 				onCancelGuest={onCancelGuest}
 			/>
 
-			{/* 참여취소 재확인 — 실수 취소 방지(대기/참석 문구 분기) */}
+			{/* 참여취소 재확인 — 실수 취소 방지(대기/참석/정원 외 늦참 문구 분기) */}
 			{showCancelConfirm && (
 				<ConfirmDialog
 					title="참여를 취소할까요?"
 					message={
 						mine?.status === "waitlisted"
 							? "대기 신청이 취소됩니다."
-							: "참석 신청이 취소됩니다. 대기자가 있으면 자동으로 승급될 수 있어요."
+							: mine?.status === "late_pool"
+								? "정원 외 늦참 신청이 취소됩니다."
+								: "참석 신청이 취소됩니다. 대기자가 있으면 자동으로 승급될 수 있어요."
 					}
 					confirmLabel="참여 취소"
 					cancelLabel="닫기"
@@ -391,6 +474,27 @@ export default function ScheduleCard({
 					}}
 					onCancel={() => setShowCancelConfirm(false)}
 					onDismiss={() => setShowCancelConfirm(false)}
+				/>
+			)}
+
+			{/* 정원 외 늦참 '진입' 재확인 — 정원과 별도 접수됨을 명시적으로 통보(복귀는 모달 없이 바로 적용). */}
+			{pendingLate && (
+				<ConfirmDialog
+					title="정원 외 늦참으로 신청할까요?"
+					message={`${
+						poolCutoffClock ? `${poolCutoffClock} 이후 도착이라 ` : ""
+					}정원과 별도로 접수돼요. 도착했을 때 자리가 있으면 바로 참여하고, 없으면 대기합니다. 정원 확정 인원에는 포함되지 않아요.${
+						mine?.status === "confirmed" && waiting.length > 0
+							? " 내 확정 자리는 대기 1순위에게 넘어가요."
+							: ""
+					}`}
+					confirmLabel="늦참으로 신청"
+					cancelLabel="닫기"
+					busy={lateBusy}
+					busyLabel="처리 중…"
+					onConfirm={confirmLate}
+					onCancel={() => setPendingLate(null)}
+					onDismiss={() => setPendingLate(null)}
 				/>
 			)}
 

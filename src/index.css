@@ -800,12 +800,14 @@ h4,
 :root {
 	--seg-track: rgba(0, 0, 0, 0.06); /* 세그먼트/알약 컨테이너 */
 	--seg-track-deep: rgba(0, 0, 0, 0.13); /* 슬라이더 미채움(컨테이너 위 대비) */
-	--late-amber: #b4762b; /* 늦참 채움·값 텍스트(다크에서 밝게 스왑) */
+	--late-amber: #b4762b; /* 일반 늦참(8시 이전) 채움·값 텍스트(다크에서 밝게 스왑) */
+	--late-pool: #8b5cf6; /* 정원 외 늦참(8시 이후) — 앰버와 대비되는 바이올렛 */
 }
 .dark {
 	--seg-track: rgba(255, 255, 255, 0.05); /* 어두운 카드 위에서 뜨지 않게 낮춤 */
 	--seg-track-deep: rgba(255, 255, 255, 0.14);
 	--late-amber: #e0a860;
+	--late-pool: #a78bfa;
 }
 
 .ctl-row {
@@ -832,6 +834,10 @@ h4,
 }
 .ctl-val.on {
 	color: var(--late-amber);
+}
+/* 정원 외 늦참(8시 이후) — 값 텍스트를 바이올렛으로 스왑해 일반 늦참과 구분. */
+.ctl-val.pool {
+	color: var(--late-pool);
 }
 
 /* 카풀 세그먼트 — 균등 3칸, 선택칸만 역할색 채움(배경은 인라인 주입). */
@@ -877,8 +883,15 @@ h4,
 .ctl-pill:has(.late-range:disabled) {
 	opacity: 0.5;
 }
+/* 정원 외 늦참 모드 — 알약 컨테이너에 바이올렛 틴트를 얹어 "다른 접수 형태"임을 신호. */
+.ctl-pill.pool {
+	background: color-mix(in srgb, var(--late-pool) 12%, var(--seg-track));
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--late-pool) 34%, transparent);
+}
 
-/* 늦참 슬라이더 — 슬림 트랙 + iOS풍 흰 썸. --late-fill(채움 %)만 컴포넌트에서 주입. */
+/* 늦참 슬라이더 — 슬림 트랙 + iOS풍 흰 썸.
+   컴포넌트 주입 변수: --late-fill(총 채움 %), --late-amber-fill(앰버 구간 끝 = 8시 경계와 채움 중 작은 값).
+   트랙은 앰버(8시 이전) → 바이올렛(8시 이후) 2톤 → 미채움 순. .pool 여부와 무관하게 경계가 보인다. */
 .late-range {
 	-webkit-appearance: none;
 	appearance: none;
@@ -886,6 +899,11 @@ h4,
 	height: 16px;
 	background: transparent;
 	cursor: pointer;
+	/* moz 는 2톤 progress 가 어려워 현재 값 존 색을 단색으로(.pool 에서 바이올렛으로 스왑). */
+	--late-progress: var(--late-amber);
+}
+.late-range.pool {
+	--late-progress: var(--late-pool);
 }
 .late-range:disabled {
 	cursor: not-allowed;
@@ -895,7 +913,10 @@ h4,
 	border-radius: 999px;
 	background: linear-gradient(
 		to right,
-		var(--late-amber) var(--late-fill, 0%),
+		var(--late-amber) 0,
+		var(--late-amber) var(--late-amber-fill, var(--late-fill, 0%)),
+		var(--late-pool) var(--late-amber-fill, var(--late-fill, 0%)),
+		var(--late-pool) var(--late-fill, 0%),
 		var(--seg-track-deep) var(--late-fill, 0%)
 	);
 }
@@ -916,7 +937,7 @@ h4,
 .late-range::-moz-range-progress {
 	height: 5px;
 	border-radius: 999px;
-	background: var(--late-amber);
+	background: var(--late-progress);
 }
 .late-range::-moz-range-thumb {
 	width: 16px;

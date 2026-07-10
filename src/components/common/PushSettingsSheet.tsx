@@ -1,39 +1,16 @@
-import { Download, MonitorDown, Settings } from "lucide-react";
+import { Settings } from "lucide-react";
 import { useEffect, useState } from "react";
-import pushInstallAndroid from "../../assets/push-install-android.webp";
-import pushInstallIos from "../../assets/push-install-ios.webp";
 import { isAndroid, isIOS } from "../../lib/push/platform";
 import { useAuthStore } from "../../store/authStore";
 import { pushActions, usePushStore } from "../../store/pushStore";
 import { toast } from "../../store/toastStore";
 import Spinner from "../shared/Spinner";
+import InstallGuide from "./InstallGuide";
 import ModalSheet from "./ModalSheet";
 import SheetHeader from "./SheetHeader";
 
 interface Props {
 	onClose: () => void;
-}
-
-function platformLabel(): string {
-	if (isIOS()) return "아이폰";
-	if (isAndroid()) return "안드로이드";
-	return "이 기기";
-}
-
-interface InstallStep {
-	icon: React.ReactNode;
-	text: string;
-}
-
-/** 데스크톱 홈 화면 설치 단계(모바일은 이미지 안내로 대체). */
-function installSteps(): InstallStep[] {
-	return [
-		{
-			icon: <MonitorDown size={16} />,
-			text: "주소창 오른쪽의 설치 아이콘을 누르세요",
-		},
-		{ icon: <Download size={16} />, text: "'설치'를 선택하세요" },
-	];
 }
 
 /** 권한 차단(denied) 시 해제 경로 안내 */
@@ -89,58 +66,6 @@ export default function PushSettingsSheet({ onClose }: Props) {
 		</p>
 	);
 
-	// 플랫폼별 "홈 화면에 앱 추가" 안내. 모바일(iOS/안드로이드)은 스크린샷 이미지,
-	// 데스크톱은 텍스트 단계로 안내한다.
-	const installGuide = () => {
-		const img = isIOS() ? pushInstallIos : isAndroid() ? pushInstallAndroid : null;
-		if (img) {
-			// 스크린샷 이미지가 설치 절차를 전부 설명하므로 부가 텍스트는 두지 않는다(이미지만).
-			return (
-				<img
-					src={img}
-					alt={`${platformLabel()} 앱 설치 안내`}
-					style={{
-						width: "100%",
-						height: "auto",
-						borderRadius: 14,
-						display: "block",
-					}}
-				/>
-			);
-		}
-		// 데스크톱: 이미지가 없어 텍스트 단계로 안내
-		return (
-			<div className="rounded-xl p-3.5 bg-[rgba(11,132,255,0.06)] dark:bg-[rgba(11,132,255,0.12)]">
-				<p
-					className="text-strong"
-					style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}
-				>
-					📲 {platformLabel()}에서 앱으로 설치하기
-				</p>
-				<div className="flex flex-col gap-2.5">
-					{installSteps().map((s) => (
-						<div key={s.text} className="flex items-center gap-2.5">
-							<span
-								className="flex items-center justify-center rounded-lg text-[#0b84ff] bg-[rgba(11,132,255,0.1)] dark:bg-[rgba(11,132,255,0.18)]"
-								style={{ width: 26, height: 26, flexShrink: 0 }}
-							>
-								{s.icon}
-							</span>
-							<span
-								className="text-[#0f1724] dark:text-[rgba(235,235,245,0.85)]"
-								style={{ fontSize: 13.5, fontWeight: 500, lineHeight: 1.4 }}
-							>
-								{s.text}
-							</span>
-						</div>
-					))}
-				</div>
-				<div style={{ marginTop: 8 }}>
-					{note("설치한 뒤 이 화면에서 알림을 켜면 잠금화면으로 알림을 받아요.")}
-				</div>
-			</div>
-		);
-	};
 
 	// ── 구독 가능 여부를 먼저 파악해 분기 ──
 	let content: React.ReactNode;
@@ -163,7 +88,8 @@ export default function PushSettingsSheet({ onClose }: Props) {
 		content = (
 			<div className="flex flex-col gap-2.5">
 				{note("잠금화면 알림을 받으려면 먼저 홈 화면에 앱을 설치해야 해요.")}
-				{installGuide()}
+				<InstallGuide />
+				{note("설치한 뒤 이 화면에서 알림을 켜면 잠금화면으로 알림을 받아요.")}
 				{note(
 					"설치한 뒤에는 브라우저가 아니라 홈 화면의 앱 아이콘으로 열어야 알림을 켤 수 있어요. (카카오톡 등 인앱 브라우저에서는 설치가 안 되니 Chrome·Safari로 열어 주세요.)",
 				)}

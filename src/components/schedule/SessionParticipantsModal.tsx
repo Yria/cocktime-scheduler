@@ -32,6 +32,7 @@ export default function SessionParticipantsModal({
 }: Props) {
 	const confirmed = attendances.filter((a) => a.status === "confirmed");
 	const waiting = attendances.filter((a) => a.status === "waitlisted");
+	const latePool = attendances.filter((a) => a.status === "late_pool");
 
 	// 운영진만 임의 참석자 제거 가능(본인 행은 제외 — 본인은 카드의 '참여 취소' 사용).
 	const isAdmin = useAuthStore((st) => st.isAdmin);
@@ -85,12 +86,15 @@ export default function SessionParticipantsModal({
 					확정 {confirmed.length}
 					{s.capacity != null ? `/${s.capacity}` : ""}명
 					{waiting.length > 0 ? ` · 대기 ${waiting.length}` : ""}
+					{latePool.length > 0 ? ` · 늦참 ${latePool.length}` : ""}
 				</div>
 			</div>
 
 			{/* 리스트 (스크롤) */}
 			<div className="px-3 pb-5 overflow-y-auto no-sb" style={{ maxHeight: "60vh" }}>
-				{confirmed.length === 0 && waiting.length === 0 ? (
+				{confirmed.length === 0 &&
+				waiting.length === 0 &&
+				latePool.length === 0 ? (
 					<EmptyState>아직 참가자가 없습니다.</EmptyState>
 				) : (
 					<>
@@ -124,6 +128,28 @@ export default function SessionParticipantsModal({
 											carpoolEnabled={s.carpool_enabled}
 											scheduledAt={s.scheduled_at}
 											waitRank={i + 1}
+											canRemove={isAdmin}
+											onRemove={setPendingRemove}
+										/>
+									))}
+								</Section>
+							</>
+						)}
+
+						{latePool.length > 0 && (
+							<>
+								{(confirmed.length > 0 || waiting.length > 0) && (
+									<div className="mx-2 my-1.5 border-t border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]" />
+								)}
+								<Section title={`정원 외 늦참 ${latePool.length}명`}>
+									{latePool.map((a) => (
+										<ParticipantRow
+											key={a.member_id}
+											row={a}
+											memberId={memberId}
+											carpoolEnabled={s.carpool_enabled}
+											scheduledAt={s.scheduled_at}
+											isPool
 											canRemove={isAdmin}
 											onRemove={setPendingRemove}
 										/>
@@ -220,6 +246,7 @@ function ParticipantRow({
 	carpoolEnabled,
 	scheduledAt,
 	waitRank,
+	isPool = false,
 	canRemove = false,
 	onRemove,
 }: {
@@ -228,6 +255,8 @@ function ParticipantRow({
 	carpoolEnabled: boolean;
 	scheduledAt: string | null;
 	waitRank?: number;
+	/** 정원 외 늦참(late_pool) 행 — 바이올렛 링 + 도착시각 강조. */
+	isPool?: boolean;
 	/** 운영진 뷰 — 제거 버튼 노출(본인 행 제외). */
 	canRemove?: boolean;
 	onRemove?: (row: AttendanceRow) => void;
@@ -241,7 +270,7 @@ function ParticipantRow({
 	const inviterName = a.inviter?.name ?? null;
 
 	const isWaiting = waitRank != null;
-	// 늦참 도착시각 — 확정자·시작시각 有·오프셋>0 일 때만. "⏰ 오후 8:00~"
+	// 늦참 도착시각 — 대기자가 아니고 오프셋>0·시작시각 有 일 때. "⏰ 오후 8:00~"(정원 외는 🌙 바이올렛)
 	const lateArrival =
 		!isWaiting && a.late_minutes > 0 && scheduledAt
 			? fmtClock(
@@ -253,11 +282,13 @@ function ParticipantRow({
 
 	return (
 		<div className="flex items-center gap-2.5 px-2 py-1.5">
-			{/* 대기자는 그레이스케일+감광으로 확정자와 구분 */}
+			{/* 대기자는 그레이스케일+감광, 정원 외 늦참은 바이올렛 링으로 확정자와 구분 */}
 			<div
 				style={{
 					filter: isWaiting ? "grayscale(1)" : undefined,
 					opacity: isWaiting ? 0.55 : 1,
+					borderRadius: 999,
+					boxShadow: isPool ? "0 0 0 2px var(--late-pool)" : undefined,
 				}}
 			>
 				<PlayerAvatar name={name} gender={a.member?.gender ?? null} size={34} />
@@ -297,9 +328,12 @@ function ParticipantRow({
 				className="ml-auto flex-shrink-0 flex items-center gap-1.5"
 				style={{ fontSize: 12, fontWeight: 700 }}
 			>
-				{lateArrival && (
-					<span style={{ color: "#b4762b" }}>⏰ {lateArrival}~</span>
-				)}
+				{lateArrival &&
+					(isPool ? (
+						<span style={{ color: "var(--late-pool)" }}>🌙 {lateArrival}~</span>
+					) : (
+						<span style={{ color: "var(--late-amber)" }}>⏰ {lateArrival}~</span>
+					))}
 				{waitRank != null ? (
 					<span style={{ color: "#f59e0b" }}>대기 {waitRank}번째</span>
 				) : carpoolEnabled && a.carpool_role === "can_drive" ? (

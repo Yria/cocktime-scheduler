@@ -1173,3 +1173,53 @@
 - tsc 통과. 신규 마이그레이션 2건은 supabase db push 필요(미실행).
 
 ---
+
+## #90
+
+**Prompt**: 8시 이후 늦참인원은 현재 참석정원으로 정해져있는 큐와 분리된 독립된 형태로 받고싶은데, 이렇게 하는 사람들은 실제론 참석은 가능하되, 왔을때 자리 있으면 하고 없으면 대기해야하는걸로 할거야. 이건 현실에서 사람들에게 통보할건데, 시스템적으로 되게 해줘. 8시 늦참으로 슬라이드해서 적용되면 이를 알리는 확인 다이얼로그 띄우고, ui 도 약간 다르게 표현
+(추가 정정: 늦참을 절대값 8시라고 했는데 정확히는 6~9시면 8시, 그러니까 2/3 이후를 말해.)
+
+**Answer**: 늦참 슬라이더로 도착시각을 경기 후반 2/3 지점(예: 18:00~21:00이면 20:00) 이후로 넘기면 정원 큐와 분리된 독립 접수 상태(late_pool)로 전환되는 기능을 구현. 핵심 결정:
+- late_pool을 attendances.status 4번째 값으로 모델링 — session_counters.confirmed_count(정원)에 미포함(독립). "왔을때 자리 있으면 참여/없으면 대기"의 현장 판정은 기존 보드 대기 로테이션이 담당하고, RSVP 단계는 정원 분리 + 표기까지만 책임(start_session_from_schedule은 confirmed만 편입, 무변경).
+- 경계는 절대 20:00이 아니라 v_start + (v_end - v_start)*2/3로 계산(사용자 정정 반영). 클라 latePool.ts와 서버 set_late_minutes가 동일 산식·타임스탬프 비교로 판정 일치.
+- set_late_minutes RPC를 void→jsonb로 바꿔 경계 크로싱을 원자 처리: 확정→풀 시 정원 1칸 반납+대기 1순위 자동 승급(promoted), 풀→복귀 시 여유면 confirmed 없으면 waitlisted(position 재발급). 초대자가 풀이면 게스트도 풀 상속. 잠금 순서는 기존 join/cancel과 동일.
+- UI: 슬라이더 앰버→바이올렛 2톤, 경계 크로싱 시 확인 다이얼로그(실제 경계 시각·정원 외 규칙 안내), 카드 배지/카운트/아바타 스택/참가자 모달 별도 섹션. 색은 --late-pool 토큰(라이트/다크 스왑).
+- 디바운스 전송과 경계 전환의 순서 역전 경쟁 조건을 세션별 직렬화 체인(enqueueLate)으로 선제 수정.
+- 4개 관점 애드버서리얼 리뷰 결과 DB 정합성·경계 산식 지적 0건, 확정 경미 3건(전환 실패 무피드백→에러 알림, 다크모드 색 토큰 불일치 2건) 반영. tsc·build·테스트(168)·lint 통과.
+- 신규 마이그레이션 20260708010000_late_pool.sql은 supabase db push 필요(미실행).
+
+---
+
+## #91
+
+**Prompt**: 이론상 경기 끝나는 시간엔 늦참이 없으니 미만으로 셋팅해서 6~9시면 9시는 선택못하게 하고 불참/정원외늦참이 전환될때만 모달띄워줘 / 그리고 참여목록에서도 정원외늦참자는 따로 표기해줘
+
+**Answer**: late_pool 기능 후속 다듬기. 결정:
+- 슬라이더 상한을 "종료 미만" 최대 30분 스텝으로 변경(Math.floor((durationMin-1)/30)*30) — 6~9시 세션이면 8:30까지, 9시(종료)는 선택 불가. 서버 set_late_minutes v_max도 동일 산식 + greatest(0,…)로 정합화.
+- 모달 트리거는 사용자 확인 결과 '진입할 때만'으로 확정: 일반→정원외늦참 진입 시에만 확인 다이얼로그, 정원외늦참→일반 복귀와 같은 존 시간 조정은 모달 없이 바로 적용. handleSlide를 진입(setPendingLate)·복귀(applyLate 즉시)·동일존(onSetLate)으로 분기, pendingLate 타입에서 toPool 제거, 다이얼로그를 진입 문구만으로 단순화, 미사용 hasRoom 제거.
+- 참여목록(SessionParticipantsModal)이 유일한 참가자 목록임을 확인. 정원 외 늦참 전용 섹션(바이올렛 아바타 링 + 🌙 도착시각)은 이미 존재 → 섹션 제목을 카드 배지와 일관되게 "정원 외 늦참 N명"으로 정리.
+- tsc·lint·build 통과.
+
+---
+
+## #92
+
+**Prompt**: 홈화면에 pwa로 등록하기를 유도하는 유도토스트를 띄우고싶은데
+
+**Answer**: 로그인된 홈 화면 하단에 "홈 화면에 앱으로 추가" 설치 유도 토스트를 추가. 결정:
+- 신규 installPromptStore: 모듈 top-level 로 beforeinstallprompt(preventDefault+저장)·appinstalled 리스너 등록(컴포넌트 마운트 전 발생 대비, main.tsx side-effect import). shouldShowInstallPrompt = 미설치(standalone 아님)·미닫음(localStorage)·미설치완료·모바일·인앱브라우저 아님. dismiss()/promptInstall() 액션.
+- 기존 PushSettingsSheet 의 설치 안내(모바일 스크린샷 webp/데스크톱 단계)를 공용 InstallGuide 컴포넌트로 추출해 재사용.
+- InstallPromptToast: 하단 고정 토스트, Android=네이티브 설치 프롬프트(원탭), iOS/폴백='설치 방법'→InstallGuide 시트. X=닫음(영속). 1.5s 후 슬라이드업.
+- Home: 프로필 완성 + 미편집 + 노출조건 충족일 때만 마운트.
+- 3관점 애드버서리얼 리뷰 확정 3건 반영: (medium) 토스트가 하단 버튼(매치로그/즉석세션) 탭을 가림 → 표시 시 스크롤 콘텐츠 끝 92px 스페이서, (low) 전역 Toaster 와 겹침 → 알림 있으면 토스트를 스택 위로 오프셋, (low) role="dialog"→"region"(비모달 배너).
+- 카카오 로그인+모바일 게이팅으로 E2E 자동 구동은 불가 → dev 서버 로드 스모크(콘솔 에러 0)로 임포트 크래시 없음 확인. tsc·lint·build 통과.
+
+---
+
+## #93
+
+**Prompt**: 홈 화면에 앱으로 추가 토스트가 뜰때 이렇게 해야 참여알림이 간다는 설명도 달아줘
+
+**Answer**: 설치 유도 토스트 부제를 "그래야 대기→참석 확정, 일정 변경 등 참여 알림을 받을 수 있어요"로 교체(설치가 참여 알림의 전제임을 명시, 기존 PushSettingsSheet 알림 문구와 일관). '설치 방법' 안내 시트 문구에도 같은 취지를 덧붙임. tsc·lint·build 통과.
+
+---
