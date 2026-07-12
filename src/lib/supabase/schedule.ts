@@ -132,9 +132,10 @@ export async function fetchAttendances(
 	return (data ?? []) as AttendanceRow[];
 }
 
-/** 게스트 신청. 회원이 게스트(이름+성별+실력)를 일정에 신청 — 정원 여유면 confirmed, 아니면 waitlisted(RPC 판정).
- *  게스트 수 자체는 서버에서 제한하지 않는다(무제한 추가 가능). 이미 게스트가 2명이면 후보 우선순위라
- *  참여가 어려울 수 있다는 경고를 클라(GuestSection)에서 확인받은 뒤 신청한다. */
+/** 게스트 신청. 회원이 게스트(이름+성별+실력)를 일정에 신청.
+ *  확정 게스트는 세션당 최대 2명(RPC가 상한 판정) — 정원 여유 + 확정 게스트 2명 미만이면 confirmed, 아니면
+ *  waitlisted(확정 게스트가 빠질 때 승급). 동명 활성 회원이 있으면 신청 거부(name_is_member). 이미 확정
+ *  게스트가 2명이면 "대기로 접수된다"는 경고를 클라(GuestSection)에서 확인받은 뒤 신청한다. */
 export async function addGuestAttendance(
 	sessionId: number,
 	guest: { name: string; gender: Gender; skills: PlayerSkills },

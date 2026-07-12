@@ -21,8 +21,8 @@ interface Props {
 
 /**
  * 일정 카드의 게스트 영역 — 회원이 게스트(계정 없는 선수)를 신청하고, 본인이 데려온 게스트를 취소한다.
- * 게스트 추가는 무제한 허용(정원 여유면 확정, 아니면 후보/대기 — 서버 RPC 판정). 다만 이미 일정 전체
- * 게스트가 2명 이상이면, "후보 우선순위라 참여가 어려울 수 있다"는 경고를 확인받은 뒤에 신청 폼을 연다.
+ * 게스트 확정은 세션당 최대 2명(서버 RPC가 상한 판정) — 초과 신청은 대기로 접수되고, 확정 게스트가
+ * 빠져야 순서대로 승급된다. 이미 확정 게스트가 2명이면 "대기로 들어간다"는 안내를 확인받은 뒤 신청 폼을 연다.
  */
 export default function GuestSection({
 	attendances,
@@ -47,10 +47,15 @@ export default function GuestSection({
 		[attendances, memberId],
 	);
 	const waiting = useMemo(() => attendances.filter((a) => a.status === "waitlisted"), [attendances]);
-	// 일정 전체 활성 게스트 수(취소 제외는 상위에서 필터됨) — 2명 상한 pre-check용.
-	const sessionGuestCount = useMemo(
-		() => attendances.filter((a) => a.invited_by != null).length,
+	// 확정 게스트 수 — 세션당 상한 2명. 이미 2명이면 신규 게스트는 대기로 들어간다(서버 RPC 판정) → pre-check 경고용.
+	const confirmedGuestCount = useMemo(
+		() => attendances.filter((a) => a.invited_by != null && a.status === "confirmed").length,
 		[attendances],
+	);
+	// 초대자 본인의 참석 상태 — 정원 외 늦참(late_pool)이면 게스트도 late_pool 로 상속되어 확정 상한/대기와 무관.
+	const myStatus = useMemo(
+		() => attendances.find((a) => a.member_id === memberId && a.invited_by == null)?.status ?? null,
+		[attendances, memberId],
 	);
 
 	if (!memberId) return null;
@@ -68,7 +73,8 @@ export default function GuestSection({
 		setShowModal(true);
 	};
 	const handleAddClick = () => {
-		if (sessionGuestCount >= 2) setShowGuestWarn(true);
+		// 초대자 본인이 정원 외 늦참이면 게스트도 late_pool 로 접수되므로 확정 상한 경고는 부정확 → 생략.
+		if (myStatus !== "late_pool" && confirmedGuestCount >= 2) setShowGuestWarn(true);
 		else openGuestForm();
 	};
 
@@ -167,9 +173,9 @@ export default function GuestSection({
 
 			{showGuestWarn && (
 				<ConfirmDialog
-					title="게스트가 이미 2명이에요"
-					message="추가 게스트는 후보 우선순위라, 기존 게스트가 빠지지 않으면 참여하지 못할 수 있어요. 그래도 신청할까요?"
-					confirmLabel="그래도 신청"
+					title="확정 게스트가 이미 2명이에요"
+					message="세션당 게스트는 최대 2명까지만 참여할 수 있어요. 추가 게스트는 대기로 접수되고, 기존 게스트가 빠지면 순서대로 참여할 수 있어요. 그래도 신청할까요?"
+					confirmLabel="대기로 신청"
 					onConfirm={() => {
 						setShowGuestWarn(false);
 						openGuestForm();

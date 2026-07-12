@@ -44,6 +44,9 @@ function startErrorMsg(e?: string): string {
 function guestErrorMsg(e?: string): string {
 	if (e?.includes("guest name required")) return "게스트 이름을 입력해 주세요";
 	if (e?.includes("guest gender required")) return "게스트 성별을 선택해 주세요";
+	// 동명 회원이 있으면 게스트로 신청 불가 — 회원 본인이 직접 참석 신청하도록 안내.
+	if (e?.includes("name_is_member"))
+		return "이미 같은 이름의 회원이 있어요. 회원 본인이 직접 참석 신청하도록 안내해 주세요";
 	if (e?.includes("must join first")) return "먼저 본인 참석 신청을 해주세요";
 	if (e?.includes("session ended")) return "이미 종료된 일정입니다";
 	if (e?.includes("not open yet")) return "아직 신청 기간이 아닙니다";

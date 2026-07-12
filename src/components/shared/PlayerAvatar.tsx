@@ -13,6 +13,9 @@ interface PlayerAvatarProps {
 	ring?: boolean;
 	/** 로컬 파일 프리뷰 등 — 원격(이름 기반) URL 보다 우선하며 onError fallback 없이 항상 표시 */
 	previewSrc?: string;
+	/** 게스트(계정 없는 임시 선수) — 사진은 이름(md5) 기반이라 동명 회원 사진이 잘못 붙는다.
+	 *  true 면 원격 사진을 아예 불러오지 않고 항상 이니셜 아바타로 표시한다. */
+	isGuest?: boolean;
 	/** 이니셜이 비어 있을 때 대신 표시할 문자(ProfileSetup 의 "+") */
 	fallbackChar?: string;
 	/** 링 색 오버라이드 — 성별 미선택 시 중립 회색(#cbd5e1) 처리 등. 미지정 시 성별색 */
@@ -42,13 +45,16 @@ export default function PlayerAvatar({
 	bgColor,
 	inkColor,
 	ringWidth = 2,
+	isGuest = false,
 }: PlayerAvatarProps) {
 	const [imgFailed, setImgFailed] = useState(false);
 	const url = getPlayerPhotoUrl(name);
 	const g = gender ?? "M";
 	// 로컬 프리뷰는 onError fallback 대상이 아님 — imgFailed 는 원격 URL 전용.
 	// 이름이 비어 있으면 원격 URL 시도(무의미한 404 + onError까지 빈 이미지) 없이 즉시 이니셜/fallback.
-	const showInitial = previewSrc == null && (imgFailed || name.trim() === "");
+	// 게스트는 이름(md5) 기반 사진이 동명 회원 사진과 충돌하므로 원격 사진을 불러오지 않는다(이니셜만).
+	const showInitial =
+		previewSrc == null && (isGuest || imgFailed || name.trim() === "");
 
 	return (
 		<div

@@ -360,6 +360,7 @@ export default function ScheduleCard({
 									<PlayerAvatar
 										name={a.member?.name ?? "회원"}
 										gender={a.member?.gender ?? null}
+										isGuest={a.member?.is_guest ?? a.invited_by != null}
 										size={28}
 									/>
 								</div>
