@@ -7,7 +7,7 @@
  * - 순수 함수 (랜덤 없음)
  * - 풀 구성(성별 필터, 대기/경기중 혼합 등)은 호출자 책임
  */
-import type { PairHistory, PlayerSkills, SessionPlayer, SkillLevel } from "../../types";
+import type { PairHistory, PlayerSkills, SessionPlayer } from "../../types";
 
 // ─────────────────────────────────────────────
 // 타입 정의
@@ -65,22 +65,37 @@ export interface Weights {
 // 우선순위: 경기수(W_GAME) > 중복 회피(W_PAIR) > 실력(W_SKILL).
 // 4명 선발 단계에선 적게 뛴 사람 우선(경기수)과 같은 4명 반복 회피(중복)가 우선이고,
 // 실력 균형은 2v2 페어 편성(pairPlayers)이 따로 잡으므로 가장 약하게만 본다.
-const DEFAULT_WEIGHTS: Weights = { W_SKILL: 3.0, W_PAIR: 8.0, W_GAME: 10.0, W_MIXED: 0, W_WAIT: 0 };
+// W_SKILL 0.67: skillScore 범위가 등급(1~10, 폭 9)으로 바뀌며 실력차가 구 모델(1~3, 폭 2) 대비
+// 4.5배 커졌으므로, 선발 단계 실력 기여를 종전 수준으로 유지하려 3.0/4.5 ≈ 0.67로 보정.
+const DEFAULT_WEIGHTS: Weights = { W_SKILL: 0.67, W_PAIR: 8.0, W_GAME: 10.0, W_MIXED: 0, W_WAIT: 0 };
 
 // ─────────────────────────────────────────────
 // 스킬 점수 유틸
 // ─────────────────────────────────────────────
 
-export const SKILL_VALUES: Record<SkillLevel, number> = { O: 3, V: 2, X: 1 };
+// 구 6종 스킬(O/V/X · 상/중/하) → 점수 매핑. 마이그레이션 전 데이터나 과거 매치 스냅샷 하위호환용.
+const LEGACY_SKILL_VALUES: Record<string, number> = {
+	O: 3, V: 2, X: 1, 상: 3, 중: 2, 하: 1,
+};
 
-/** PlayerSkills 객체의 평균 점수 (1.0 ~ 3.0). skills가 없으면 0. */
-export function skillScoreOf(skills?: PlayerSkills): number {
+/**
+ * skills → 실력 등급(1~10). 신 모델 `{ grade }`는 그대로, 구 6종 형태는 선형 환산.
+ * skills가 없거나 판독 불가면 0.
+ */
+export function skillScoreOf(skills?: PlayerSkills | Record<string, unknown> | null): number {
 	if (!skills) return 0;
-	const values = Object.values(skills) as SkillLevel[];
-	return values.reduce((sum, s) => sum + SKILL_VALUES[s], 0) / values.length;
+	const grade = (skills as PlayerSkills).grade;
+	if (typeof grade === "number") return grade;
+	// 구 6종 하위호환: present 값 평균(1~3) → 등급(1~10) 선형 환산.
+	const vals = Object.values(skills)
+		.filter((v): v is string => typeof v === "string" && v.toUpperCase() in LEGACY_SKILL_VALUES)
+		.map((v) => LEGACY_SKILL_VALUES[v.toUpperCase()]);
+	if (vals.length === 0) return 0;
+	const avg = vals.reduce((sum, s) => sum + s, 0) / vals.length; // 1..3
+	return Math.round(1 + ((avg - 1) / 2) * 9); // 1..10
 }
 
-/** 선수의 전체 스킬 평균 점수 (1.0 ~ 3.0) */
+/** 선수의 실력 등급 (1 ~ 10) */
 export function skillScore(player: SessionPlayer): number {
 	return skillScoreOf(player.skills);
 }

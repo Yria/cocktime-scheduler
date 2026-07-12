@@ -3,12 +3,12 @@ import { useDebugStore } from "../../store/debugStore";
 import { useSessionStore } from "../../store/sessionStore";
 import { useAppStore } from "../../store/appStore";
 import { useAuthStore } from "../../store/authStore";
-import { skillScore as computeSkillScore } from "../../lib/teamSelection";
+import { skillScore as computeSkillScore, skillScoreOf } from "../../lib/teamSelection";
 import { fetchMatchLogs, type MatchLogEntry } from "../../lib/supabase/api";
 import { dbUpdatePlayerSkill } from "../../lib/supabase/actions";
-import { DEFAULT_SKILLS, SKILLS, SKILL_LEVELS } from "../../lib/constants";
+import { DEFAULT_GRADE, DEFAULT_SKILLS } from "../../lib/constants";
 import { fmtHM } from "../../lib/schedule/timeFmt";
-import { SkillButton } from "../setup/SkillButton";
+import { GradeInput, type GradeAnchor } from "../shared/GradeInput";
 import ModalSheet from "../common/ModalSheet";
 import EmptyState from "../shared/EmptyState";
 import type { GameType, PlayerSkills } from "../../types";
@@ -78,8 +78,13 @@ export default function DebugMatchModal() {
 
 	const myName = player.name;
 
+	// 동성 세션 선수 비교 표본(본인 제외는 GradeInput이 이름으로 처리).
+	const skillAnchors: GradeAnchor[] = [...sessionPlayers.values()]
+		.filter((p) => p.gender === player.gender)
+		.map((p) => ({ name: p.name, grade: skillScoreOf(p.skills), gender: p.gender }));
+
 	const startEdit = () => {
-		setDraft({ ...DEFAULT_SKILLS, ...player.skills });
+		setDraft({ grade: skillScoreOf(player.skills) || DEFAULT_GRADE });
 		setEditErr(null);
 		setEditTarget(player.id);
 	};
@@ -134,7 +139,7 @@ export default function DebugMatchModal() {
 					<h3 className="font-bold text-gray-800 dark:text-white text-lg leading-tight">
 						{player.name}
 						<span className="ml-1.5 text-xs font-medium text-gray-400">
-							{player.gender === "F" ? "여" : "남"} · 스킬 {computeSkillScore(player)}
+							{player.gender === "F" ? "여" : "남"} · 등급 {computeSkillScore(player)}
 						</span>
 					</h3>
 				</div>
@@ -157,26 +162,14 @@ export default function DebugMatchModal() {
 			<div className="no-sb overflow-y-auto px-5 pb-5">
 				{editing ? (
 					<div className="flex flex-col gap-2">
-						<p className="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wide mb-1">
-							실력 편집
-						</p>
-						{SKILLS.map((skill) => (
-							<div key={skill} className="flex items-center gap-3">
-								<span className="text-sm text-gray-500 dark:text-gray-300 w-[60px] shrink-0">
-									{skill}
-								</span>
-								<div className="flex gap-1.5 flex-1">
-									{SKILL_LEVELS.map((level) => (
-										<SkillButton
-											key={level}
-											level={level}
-											active={draft[skill] === level}
-											onClick={() => setDraft((d) => ({ ...d, [skill]: level }))}
-										/>
-									))}
-								</div>
-							</div>
-						))}
+						<GradeInput
+							value={draft.grade}
+							onChange={(grade) => setDraft({ grade })}
+							gender={player.gender}
+							excludeName={player.name}
+							anchors={skillAnchors}
+							title="실력 편집"
+						/>
 						{editErr && (
 							<p className="text-xs font-semibold text-red-500 mt-1">{editErr}</p>
 						)}

@@ -16,7 +16,7 @@ import {
 interface PlayerCardProps {
 	name: string;
 	gender: Gender | string;
-	skillScore?: number; // 1.0 ~ 3.0
+	skillScore?: number; // 실력 등급 1 ~ 10
 	size?: "sm" | "md" | "lg";
 	selected?: boolean;
 	disabled?: boolean;

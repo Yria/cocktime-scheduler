@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { Gender, PlayerSkills, SkillLevel } from "../../types";
+import type { Gender, PlayerSkills } from "../../types";
 import type { AttendanceRow } from "../../lib/supabase/types";
 import { DEFAULT_SKILLS } from "../../lib/constants";
 import { GuestModal } from "../setup/GuestModal";
@@ -196,7 +196,7 @@ export default function GuestSection({
 					onAdd={submit}
 					onChangeName={setName}
 					onChangeGender={setGender}
-					onChangeSkill={(skill, level: SkillLevel) => setSkills((prev) => ({ ...prev, [skill]: level }))}
+					onChangeGrade={(grade) => setSkills({ grade })}
 				/>
 			)}
 		</div>

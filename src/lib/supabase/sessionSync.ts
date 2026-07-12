@@ -3,13 +3,14 @@
  *
  * 세션 참가자 동기화 diff 계산(순수). DB I/O는 api.updateSession이 담당.
  */
+import { isGuestId } from "../player";
 import type { Player } from "../../types";
 import type { SessionPlayerRow } from "./types";
 
 /** session_players insert 행(서버가 채우는 id/game_count/mixed_count/joined_at/cock_checked 제외). */
 export type SessionPlayerInsert = Omit<
 	SessionPlayerRow,
-	"id" | "member_id" | "game_count" | "mixed_count" | "joined_at" | "cock_checked"
+	"id" | "game_count" | "mixed_count" | "joined_at" | "cock_checked"
 >;
 
 export interface SessionPlayerDiff {
@@ -40,6 +41,8 @@ export function diffSessionPlayers(
 		.map((p) => ({
 			session_id: sessionId,
 			player_id: p.id,
+			// 회원(members.id)은 member_id 로 링크 — 게스트(guest-*)는 null.
+			member_id: isGuestId(p.id) ? null : p.id,
 			name: p.name,
 			gender: p.gender,
 			skills: p.skills,

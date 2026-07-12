@@ -1,6 +1,5 @@
-import { SKILLS } from "../../lib/constants";
 import { magnetGenderRing } from "../../lib/magnetStyle";
-import type { Gender, PlayerSkills, SkillLevel } from "../../types";
+import type { Gender, PlayerSkills } from "../../types";
 import ModalSheet from "../common/ModalSheet";
 import GenderDot from "../shared/GenderDot";
 
@@ -14,8 +13,6 @@ interface PlayerConflictDialogProps {
 	onCancel: () => void;
 }
 
-const SKILL_LABEL: Record<SkillLevel, string> = { O: "상", V: "중", X: "하" };
-
 export function PlayerConflictDialog({
 	playerName,
 	serverGender,
@@ -26,9 +23,7 @@ export function PlayerConflictDialog({
 	onCancel,
 }: PlayerConflictDialogProps) {
 	const genderDiff = localGender !== serverGender;
-	const changedSkills = SKILLS.filter(
-		(skill) => localSkills[skill] !== serverSkills[skill],
-	);
+	const gradeDiff = localSkills.grade !== serverSkills.grade;
 
 	return (
 		<ModalSheet position="center" onClose={onCancel}>
@@ -69,29 +64,19 @@ export function PlayerConflictDialog({
 					</DiffSection>
 				)}
 
-				{/* 스킬 */}
-				{changedSkills.length > 0 && (
-					<DiffSection label="스킬">
-						{changedSkills.map((skill, i) => (
-							<div
-								key={skill}
-								className="px-3 py-2 flex items-center"
-								style={
-									i > 0
-										? { borderTop: "1px solid var(--border-light)" }
-										: undefined
-								}
-							>
-								<span className="text-sm text-gray-600 dark:text-gray-400 w-16 shrink-0">
-									{skill}
-								</span>
-								<div className="flex-1 flex items-center justify-center gap-2">
-									<SkillChip level={serverSkills[skill]} variant="server" />
-									<Arrow />
-									<SkillChip level={localSkills[skill]} variant="local" />
-								</div>
+				{/* 실력 등급 */}
+				{gradeDiff && (
+					<DiffSection label="실력 등급">
+						<div className="px-3 py-2.5 flex items-center">
+							<span className="text-sm text-gray-600 dark:text-gray-400 w-16 shrink-0">
+								등급
+							</span>
+							<div className="flex-1 flex items-center justify-center gap-2">
+								<GradeChip grade={serverSkills.grade} variant="server" />
+								<Arrow />
+								<GradeChip grade={localSkills.grade} variant="local" />
 							</div>
-						))}
+						</div>
 					</DiffSection>
 				)}
 			</div>
@@ -181,11 +166,11 @@ function GenderChip({ gender }: { gender: Gender }) {
 	);
 }
 
-function SkillChip({
-	level,
+function GradeChip({
+	grade,
 	variant,
 }: {
-	level: SkillLevel;
+	grade: number;
 	variant: "local" | "server";
 }) {
 	const isLocal = variant === "local";
@@ -198,7 +183,7 @@ function SkillChip({
 					: { background: "rgba(255,149,0,0.1)", color: "#ff9500" }
 			}
 		>
-			{SKILL_LABEL[level]}
+			{grade}
 		</span>
 	);
 }

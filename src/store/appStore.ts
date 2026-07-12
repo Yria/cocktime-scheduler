@@ -1,11 +1,6 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { create } from "zustand";
-import { OAUTH_AVAILABLE, requestAccessToken } from "../lib/googleAuth";
-import {
-	fetchPlayers,
-	updatePlayer,
-	updatePlayerWithToken,
-} from "../lib/sheetsApi";
+import { fetchMembers, updateMemberProfile } from "../lib/supabase/members";
 import {
 	dbUpdateSessionPlayer,
 	fetchActiveSession,
@@ -71,7 +66,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 		}),
 
 	fetchPlayersAction: async () => {
-		const players = await fetchPlayers();
+		const players = await fetchMembers();
 		set({ allPlayers: players });
 	},
 
@@ -89,7 +84,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 			try {
 				const [snapshot, players] = await Promise.all([
 					fetchSessionSnapshot(row.id),
-					fetchPlayers().catch(() => [] as Player[]),
+					fetchMembers().catch(() => [] as Player[]),
 				]);
 				if (!snapshot) return false;
 
@@ -238,29 +233,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 	updatePlayerAction: async (player: Player) => {
 		const { sessionMeta } = get();
 		try {
-			if (OAUTH_AVAILABLE) {
-				try {
-					const token = await requestAccessToken();
-					await updatePlayerWithToken(
-						token,
-						player.name,
-						player.gender,
-						player.skills,
-					);
-				} catch (e) {
-					if (
-						e instanceof Error &&
-						(e.message.includes("광고 차단기") ||
-							e.message.includes("초기화 실패"))
-					) {
-						await updatePlayer(player.name, player.gender, player.skills);
-					} else {
-						throw e;
-					}
-				}
-			} else {
-				await updatePlayer(player.name, player.gender, player.skills);
-			}
+			// 회원 원본(members) 성별·실력 갱신. 권한은 members RLS(본인/운영진)가 강제.
+			const ok = await updateMemberProfile(
+				player.id,
+				player.gender,
+				player.skills,
+			);
+			if (!ok) throw new Error("회원 정보를 저장하지 못했어요. 권한을 확인해주세요.");
 
 			if (sessionMeta) {
 				// 세션 참가 중인 플레이어인지 확인

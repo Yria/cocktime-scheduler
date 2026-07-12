@@ -40,8 +40,8 @@ export function magnetGenderBg(gender: Gender | string): string {
 export function magnetGenderInk(gender: Gender | string): string {
 	return gender === "F" ? MAGNET_GENDER_INK_F : MAGNET_GENDER_INK_M;
 }
-/** 스킬 점수(1.0~3.0) → 아크 각도(0~360deg). 점수 없으면 0. */
-export function magnetSkillAngle(skillScore?: number): number {
-	if (skillScore == null) return 0;
-	return Math.max(0, Math.min(360, ((skillScore - 1.0) / 2.0) * 360));
+/** 실력 등급(1~10) → 아크 각도(0~360deg). 없으면 0. */
+export function magnetSkillAngle(grade?: number): number {
+	if (grade == null) return 0;
+	return Math.max(0, Math.min(360, ((grade - 1) / 9) * 360));
 }

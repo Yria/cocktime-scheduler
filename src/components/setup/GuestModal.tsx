@@ -1,4 +1,4 @@
-import type { Gender, PlayerSkills, SkillLevel } from "../../types";
+import type { Gender, PlayerSkills } from "../../types";
 import ModalSheet from "../common/ModalSheet";
 import { PlayerAttributesForm } from "./PlayerAttributesForm";
 
@@ -10,7 +10,7 @@ interface GuestModalProps {
 	onAdd: () => void;
 	onChangeName: (name: string) => void;
 	onChangeGender: (gender: Gender) => void;
-	onChangeSkill: (skill: keyof PlayerSkills, level: SkillLevel) => void;
+	onChangeGrade: (grade: number) => void;
 	/** 헤더 제목(기본 "게스트 추가"). */
 	title?: string;
 	/** 확정 버튼 라벨(기본 "추가"). */
@@ -25,7 +25,7 @@ export function GuestModal({
 	onAdd,
 	onChangeName,
 	onChangeGender,
-	onChangeSkill,
+	onChangeGrade,
 	title = "게스트 추가",
 	ctaLabel = "추가",
 }: GuestModalProps) {
@@ -58,10 +58,7 @@ export function GuestModal({
 					gender={guestGender}
 					skills={guestSkills}
 					onChangeGender={onChangeGender}
-					onChangeSkill={onChangeSkill}
-					skillHint={
-						<span className="font-normal normal-case"> (기본값: 중)</span>
-					}
+					onChangeGrade={onChangeGrade}
 				/>
 			</div>
 

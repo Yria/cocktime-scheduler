@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { matchLogTeams, type LogPlayer } from "./transformers";
 import type { MatchRow, PlayerSnapshotEntry } from "./types";
 
-const skills = { 클리어: "V", 스매시: "V", 로테이션: "V", 드랍: "V", 헤어핀: "V", 푸시: "V" } as const;
+const skills = { grade: 5 } as const;
 
 function snap(id: string, name: string): PlayerSnapshotEntry {
 	return { id, name, gender: "M", skills: { ...skills } };

@@ -1,7 +1,9 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { DEFAULT_SKILLS } from "../../lib/constants";
+import { DEFAULT_GRADE, DEFAULT_SKILLS } from "../../lib/constants";
+import { skillScoreOf } from "../../lib/teamSelection";
+import type { GradeAnchor } from "../shared/GradeInput";
 import {
 	type AdminMemberRow,
 	deleteMember,
@@ -99,7 +101,8 @@ export default function MemberAdminPage() {
 	};
 
 	const openSkillEdit = useCallback((m: AdminMemberRow) => {
-		setDraft({ ...DEFAULT_SKILLS, ...(m.skills ?? {}) });
+		// 신 모델 {grade} 우선, 구 6종/빈값이면 등급으로 환산해 초기화.
+		setDraft({ grade: skillScoreOf(m.skills) || DEFAULT_GRADE });
 		setSkillEditId(m.id);
 	}, []);
 
@@ -180,6 +183,15 @@ export default function MemberAdminPage() {
 	const editingMember = skillEditId
 		? members.find((m) => m.id === skillEditId)
 		: undefined;
+
+	// 실력 편집 비교 표본 — 편집 대상과 동성인 회원(본인 제외는 GradeInput이 이름으로 처리).
+	const skillAnchors = useMemo<GradeAnchor[]>(() => {
+		if (!editingMember?.gender) return [];
+		const g = editingMember.gender;
+		return members
+			.filter((m) => m.gender === g)
+			.map((m) => ({ name: m.name, grade: skillScoreOf(m.skills), gender: g }));
+	}, [members, editingMember]);
 
 	if (!ready) return null;
 
@@ -308,8 +320,10 @@ export default function MemberAdminPage() {
 			{editingMember && (
 				<MemberSkillEditModal
 					memberName={editingMember.name}
+					gender={editingMember.gender ?? "M"}
 					draft={draft}
 					setDraft={setDraft}
+					anchors={skillAnchors}
 					saving={busyId === skillEditId}
 					onSave={handleSaveSkills}
 					onClose={() => setSkillEditId(null)}

@@ -1,6 +1,5 @@
-import { OAUTH_AVAILABLE } from "../../lib/googleAuth";
 import { isGuestId } from "../../lib/player";
-import type { Gender, Player, PlayerSkills, SkillLevel } from "../../types";
+import type { Gender, Player, PlayerSkills } from "../../types";
 import ModalSheet from "../common/ModalSheet";
 import { PlayerAttributesForm } from "./PlayerAttributesForm";
 
@@ -13,7 +12,7 @@ interface EditModalProps {
 	onClose: () => void;
 	onSave: () => void;
 	onChangeGender: (gender: Gender) => void;
-	onChangeSkill: (skill: keyof PlayerSkills, level: SkillLevel) => void;
+	onChangeGrade: (grade: number) => void;
 }
 
 export function EditModal({
@@ -25,7 +24,7 @@ export function EditModal({
 	onClose,
 	onSave,
 	onChangeGender,
-	onChangeSkill,
+	onChangeGrade,
 }: EditModalProps) {
 	const isGuest = isGuestId(player.id);
 
@@ -53,16 +52,12 @@ export function EditModal({
 					gender={editGender}
 					skills={editSkills}
 					onChangeGender={onChangeGender}
-					onChangeSkill={onChangeSkill}
+					onChangeGrade={onChangeGrade}
+					excludeName={player.name}
 				/>
 
 				{editError && (
 					<p className="text-sm text-red-400 mb-2">{editError}</p>
-				)}
-				{!isGuest && OAUTH_AVAILABLE && (
-					<p className="text-xs text-gray-500 dark:text-gray-300">
-						저장 시 구글 로그인 팝업이 뜰 수 있습니다
-					</p>
 				)}
 				{isGuest && (
 					<p className="text-xs" style={{ color: "#ff9500" }}>

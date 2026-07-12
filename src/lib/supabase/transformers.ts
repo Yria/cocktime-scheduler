@@ -1,5 +1,6 @@
 import type { Court, GameType, Gender, PairHistory, PlayerSkills, SessionPlayer } from "../../types";
 import { addPair } from "../pairHistory";
+import { normalizeSkills } from "./members";
 import type {
 	ClientSessionState,
 	MatchRow,
@@ -40,7 +41,9 @@ export function rowToSessionPlayer(row: SessionPlayerRow): SessionPlayer {
 		memberId: row.member_id ?? null,
 		name: row.name,
 		gender: row.gender,
-		skills: row.skills,
+		// 빈/미판독 skills({}·null·구 6종)를 항상 유효 등급으로 바닥값 처리(등급 0 소비 방지).
+		// 일정 시작 브릿지 RPC가 미채점 회원을 '{}'로 스냅샷해도 편성 알고리즘이 grade 5로 본다.
+		skills: normalizeSkills(row.skills),
 		allowMixedSingle: row.allow_mixed_single,
 		status: row.status,
 		gameCount: row.game_count,

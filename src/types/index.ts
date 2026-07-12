@@ -1,18 +1,19 @@
-export type SkillLevel = "O" | "V" | "X";
 export type Gender = "M" | "F";
 export type GameType = "혼복" | "남복" | "여복" | "혼합";
 export type PlayerStatus = "waiting" | "playing" | "resting";
 
+/** 선수 실력 등급 (1~10 정수, 10이 가장 강함). */
+export type SkillGrade = number;
+
+/**
+ * 선수 실력 — 단일 등급(1~10). 구 6종 스킬(클리어/스매시/…의 O·V·X) 모델을 대체.
+ * DB에는 skills jsonb 로 `{ "grade": 7 }` 형태로 저장된다.
+ */
 export interface PlayerSkills {
-	클리어: SkillLevel;
-	스매시: SkillLevel;
-	로테이션: SkillLevel;
-	드랍: SkillLevel;
-	헤어핀: SkillLevel;
-	푸시: SkillLevel;
+	grade: SkillGrade;
 }
 
-/** 구글 시트에서 로드한 원본 선수 데이터 */
+/** 회원(members) 기반 선수 데이터. id = members.id(UUID), 세션 셋업 게스트는 guest-* id. */
 export interface Player {
 	id: string;
 	name: string;
@@ -24,7 +25,7 @@ export interface Player {
 export interface SessionPlayer {
 	id: string; // UUID (session_players.id)
 	playerId: string; // 원본 player_id (Player.id)
-	memberId: string | null; // 회원 링크(members.id). 게스트·구 Sheets 선수는 null.
+	memberId: string | null; // 회원 링크(members.id). 세션 셋업 게스트는 null.
 	name: string;
 	gender: Gender;
 	skills: PlayerSkills;
@@ -71,7 +72,7 @@ export interface PairHistory {
 
 export interface SessionSettings {
 	courtCount: number;
-	singleWomanIds: string[]; // Player.id (구글 시트 기반), 세션 시작 시 사용
+	singleWomanIds: string[]; // Player.id (members.id 기반), 세션 시작 시 사용
 	/** 콕 체크 모드 — on이면 선수가 콕 제출 확인을 받아야 매칭 대기 상태가 된다. 디폴트 on. */
 	cockCheckEnabled: boolean;
 }

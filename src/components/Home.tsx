@@ -90,7 +90,7 @@ export default function Home({ onStart }: Props) {
 		return () => clearInterval(id);
 	}, []);
 
-	// 즉석 세션용 시트 연동(로그인 후 백그라운드) + 일정 로드
+	// 즉석 세션용 회원 명단 로드(로그인 후 백그라운드) + 일정 로드
 	useEffect(() => {
 		if (authUser) {
 			void scheduleActions.load();

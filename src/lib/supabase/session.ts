@@ -4,6 +4,7 @@ import type {
 	PlayerSkills,
 	SessionPlayer,
 } from "../../types";
+import { isGuestId } from "../player";
 import { supabase } from "./client";
 import { diffSessionPlayers } from "./sessionSync";
 import { rowToSessionPlayer } from "./transformers";
@@ -86,6 +87,8 @@ export async function startSession(
 	const rows = players.map((p) => ({
 		session_id: session.id,
 		player_id: p.id,
+		// 회원(members.id)은 member_id 로 링크 — 게스트(guest-*)는 null.
+		member_id: isGuestId(p.id) ? null : p.id,
 		name: p.name,
 		gender: p.gender,
 		skills: p.skills,

@@ -47,17 +47,14 @@
 
 ## 1. 스킬 점수 — skillScore
 
-`rankCandidates.ts`의 기준 유틸.
-
-| SkillLevel | 점수 |
-|------------|------|
-| O (잘함)   | 3    |
-| V (보통)   | 2    |
-| X (못함)   | 1    |
+`rankCandidates.ts`의 기준 유틸. 실력은 **단일 등급(1~10, 10이 가장 강함)** 으로 관리한다(구 6종 O/V/X 모델 대체).
 
 ```
-skillScore(player) = Σ(7개 스킬 점수) / 7   → 범위 1.0 ~ 3.0
+skillScore(player) = player.skills.grade   → 범위 1 ~ 10
 ```
+
+- 실력은 `members.skills` jsonb 에 `{ "grade": N }` 로 저장되고 세션 스냅샷(`session_players.skills`)으로 복사된다.
+- **하위호환**: `skillScoreOf` 는 구 6종 형태(`{클리어:"V",…}` · O·V·X/상·중·하)를 만나면 선형 환산한다 — 평균(O=3,V=2,X=1) → `round(1 + (avg−1)/2 × 9)`, clamp 1~10. 과거 매치 스냅샷(`matches.player_snapshot`)은 구 형태로 남아 있어도 그대로 읽힌다.
 
 ---
 
@@ -69,7 +66,9 @@ skillScore(player) = Σ(7개 스킬 점수) / 7   → 범위 1.0 ~ 3.0
 
 `W_SKILL, W_PAIR, W_GAME, W_MIXED, W_WAIT` 5개.
 
-기본값(`DEFAULT_WEIGHTS`): `W_GAME 10.0, W_PAIR 8.0, W_SKILL 3.0, W_MIXED 0, W_WAIT 0`. (우선순위 **경기수 > 중복 회피 > 실력** — 위 핵심 철학 참조. `DEFAULT_WEIGHTS`는 `rankCandidates`를 weights 없이 호출할 때의 폴백이며, 실제 추천/자동편성은 `RECOMMEND_WEIGHTS`(7절)를 쓴다.)
+기본값(`DEFAULT_WEIGHTS`): `W_GAME 10.0, W_PAIR 8.0, W_SKILL 0.67, W_MIXED 0, W_WAIT 0`. (우선순위 **경기수 > 중복 회피 > 실력** — 위 핵심 철학 참조. `DEFAULT_WEIGHTS`는 `rankCandidates`를 weights 없이 호출할 때의 폴백이며, 실제 추천/자동편성은 `RECOMMEND_WEIGHTS`(7절)를 쓴다.)
+
+> `W_SKILL` 0.67: `skillScore` 범위가 등급(1~10, 폭 9)으로 바뀌며 실력차가 구 모델(1~3, 폭 2) 대비 4.5배 커졌다. 선발 단계 실력 기여를 종전 수준으로 유지하려 `3.0 / 4.5 ≈ 0.67` 로 보정했다. (`pairPlayers`의 `intraDiff`/`interDiff`는 상대 비교라 스케일 불변 → 가중치 조정 불필요.)
 
 > **제거됨(deprecated)**: 가중치 프로필 상수 `WEIGHT_PROFILES`(자동 다전략 후보 생성용 5개 프로필 — `gameCountBalanced`/`newCombination`/`skillBalanced`/`mixedCountBalanced`/`waitTimePriority`)는 소비자가 전부 삭제되어 **코드에서 완전히 제거**되었다.
 > 현재 유지되는 가중치는 `recommendTeammates` 의 `RECOMMEND_WEIGHTS`(7절)와 `rankCandidates` 내부 기본값 `DEFAULT_WEIGHTS` 뿐이다.
@@ -182,7 +181,7 @@ score = intraDiff × 0.5 + interDiff × 1.5
 2. **혼복**: 여자 2 × 남자 2를 크로스 배치
    - (여A+남A vs 여B+남B) vs (여A+남B vs 여B+남A) 두 조합의 `pairingScore` 비교 → 낮은 쪽 선택, 동점이면 랜덤(`bestMixedPairing`)
 3. **그 외**(남복/여복/혼합): 4명의 3가지 페어 조합을 모두 평가 → `pairingScore` 최솟값 선택, 동점이면 동점 조합 중 랜덤(`bestPairing`)
-4. `teamA`/`teamB` 를 `session_players.id` 쌍으로 추출하여 `GeneratedTeam` 반환 (점수 0 → "실력 균형 최적", ≤1 → "양호" 메모)
+4. `teamA`/`teamB` 를 `session_players.id` 쌍으로 추출하여 `GeneratedTeam` 반환 (점수 0 → "실력 균형 최적", ≤4.5 → "양호" 메모 — 등급 1~10 스케일 기준. 구 1~3 스케일의 ≤1 을 폭 9로 환산)
 
 ---
 
@@ -209,7 +208,7 @@ score = intraDiff × 0.5 + interDiff × 1.5
 |------|---:|------|
 | `W_GAME` | 10.0 | **경기수 최우선** — 적게 뛴 사람부터(절대 판수 `gameCount`) |
 | `W_PAIR` | 8.0 | **중복 회피(2순위)** — 같은 4명으로 함께 뛴 누적(직전+과거 통합). 같이 안 뛴 사람 우선 |
-| `W_SKILL` | 3.0 | **실력은 후순위(3순위)** — 4명 안의 2v2 실력 균형은 페어 편성(`pairPlayers`)이 보정하므로 약하게만 본다 |
+| `W_SKILL` | 0.67 | **실력은 후순위(3순위)** — 4명 안의 2v2 실력 균형은 페어 편성(`pairPlayers`)이 보정하므로 약하게만 본다. 등급(1~10) 스케일 보정값(3.0/4.5) |
 | `W_MIXED` | 0 | 누적 혼복수는 로테이션(W_ROTATE)으로 대체 |
 | `W_WAIT` | 1.0 | **오래 쉰(대기) 사람 강한 우선** — 연속 휴식 편차 완화(아래) |
 | `W_ROTATE` | 6.0 | 로테이션 보너스(직전과 **다른** 타입으로 전환하는 후보) |

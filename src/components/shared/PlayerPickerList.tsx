@@ -287,7 +287,7 @@ export default function PlayerPickerList({
 							} else if (sortBy === "gameCount") {
 								sortLabel = <span style={{ color: "#ff9500" }}>{player.gameCount}회</span>;
 							} else if (sortBy === "skill") {
-								sortLabel = <span style={{ color: "#007aff" }}>{skillScore(player).toFixed(1)}</span>;
+								sortLabel = <span style={{ color: "#007aff" }}>{skillScore(player)}등급</span>;
 							} else if (sortBy === "waitTime") {
 								if (isPlaying) {
 									sortLabel = <span style={{ color: "#8e8e93" }}>경기중</span>;

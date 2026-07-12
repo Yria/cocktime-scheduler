@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import type { GameType, SessionPlayer, SkillLevel } from "../../types";
+import type { GameType, SessionPlayer } from "../../types";
 import { recommendTeammates, autoFillTeammates, RECOMMEND_WEIGHTS, FORCED_WINDOW, type RecommendContext } from "./recommendTeammates";
 
 function player(
 	id: string,
 	gender: "M" | "F",
-	skill: SkillLevel = "V",
+	grade = 5,
 ): SessionPlayer {
 	return {
 		id,
@@ -13,7 +13,7 @@ function player(
 		memberId: null,
 		name: id,
 		gender,
-		skills: { 클리어: skill, 스매시: skill, 로테이션: skill, 드랍: skill, 헤어핀: skill, 푸시: skill },
+		skills: { grade },
 		allowMixedSingle: false,
 		status: "waiting",
 		gameCount: 0,
@@ -35,9 +35,9 @@ function ctx(overrides: Partial<RecommendContext> = {}): RecommendContext {
 
 describe("recommendTeammates", () => {
 	it("실력이 비슷한 후보가 상위(낮은 점수)에 온다", () => {
-		const confirmed = [player("c1", "M", "V")]; // 평균 2.0
-		const close = player("close", "M", "V"); // 2.0
-		const far = player("far", "M", "O"); // 3.0
+		const confirmed = [player("c1", "M", 6)]; // 등급 6
+		const close = player("close", "M", 6); // 6
+		const far = player("far", "M", 10); // 10
 		const ranked = recommendTeammates(confirmed, [far, close], ctx());
 		expect(ranked[0].player.id).toBe("close");
 	});
@@ -130,7 +130,7 @@ describe("recommendTeammates", () => {
 	it("breakdown 항목 합이 최종 score와 일치한다", () => {
 		const ranked = recommendTeammates(
 			[player("s", "M")],
-			[player("a", "F", "O")],
+			[player("a", "F", 10)],
 			ctx({ lastGameType: { s: "남복" as GameType } }),
 		);
 		const r = ranked[0];
@@ -172,12 +172,12 @@ describe("recommendTeammates", () => {
 	});
 
 	it("혼복 그룹에선 남자 후보 실력차는 무시되고(skill 0) 여자 후보만 실력으로 균형된다", () => {
-		// 여자 시드(2.0) + 양성 후보 → 혼복 목표. 남자는 실력 균형 대상 아님, 여자만 시드와 맞춘다.
-		const confirmed = [player("f1", "F", "V")]; // 2.0
-		const mHigh = player("mHigh", "M", "O"); // 3.0
-		const mLow = player("mLow", "M", "X"); // 1.0
-		const fClose = player("fClose", "F", "V"); // 2.0 (시드와 일치)
-		const fFar = player("fFar", "F", "O"); // 3.0
+		// 여자 시드(등급6) + 양성 후보 → 혼복 목표. 남자는 실력 균형 대상 아님, 여자만 시드와 맞춘다.
+		const confirmed = [player("f1", "F", 6)];
+		const mHigh = player("mHigh", "M", 10);
+		const mLow = player("mLow", "M", 1);
+		const fClose = player("fClose", "F", 6); // 시드와 일치
+		const fFar = player("fFar", "F", 10);
 		const ranked = recommendTeammates(confirmed, [mHigh, mLow, fClose, fFar], ctx());
 		const get = (id: string) => ranked.find((r) => r.player.id === id)!;
 		// 남자: 혼복 목표라 실력 균형 대상 아님 → skill 기여 0(실력이 달라도 동일)
@@ -240,9 +240,9 @@ describe("recommendTeammates", () => {
 	});
 
 	it("경기수가 실력을 이긴다 — 더 뛴 '실력 쌍둥이'보다 덜 뛴 후보가 우선 선발된다", () => {
-		const confirmed = [player("seed", "M", "V")]; // 실력 2.0
-		const similar = { ...player("similar", "M", "V"), gameCount: 2 }; // 실력 동일하지만 2판 더 뜀
-		const fewGames = { ...player("fewGames", "M", "X"), gameCount: 0 }; // 실력 다르지만 0판
+		const confirmed = [player("seed", "M", 6)]; // 등급 6
+		const similar = { ...player("similar", "M", 6), gameCount: 2 }; // 실력 동일하지만 2판 더 뜀
+		const fewGames = { ...player("fewGames", "M", 1), gameCount: 0 }; // 실력 다르지만 0판
 		const ranked = recommendTeammates(confirmed, [similar, fewGames], ctx());
 		// 실력만 봤다면 similar가 1순위였겠지만, 경기수 우선이라 덜 뛴 fewGames가 앞선다.
 		expect(ranked[0].player.id).toBe("fewGames");

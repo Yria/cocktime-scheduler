@@ -283,9 +283,7 @@ export default function SessionSetup({ onStart }: Props) {
 					onAdd={addGuest}
 					onChangeName={setGuestName}
 					onChangeGender={setGuestGender}
-					onChangeSkill={(skill, level) =>
-						setGuestSkills((prev) => ({ ...prev, [skill]: level }))
-					}
+					onChangeGrade={(grade) => setGuestSkills({ grade })}
 				/>
 			)}
 
@@ -299,9 +297,7 @@ export default function SessionSetup({ onStart }: Props) {
 					onClose={() => setEditingPlayer(null)}
 					onSave={handleSave}
 					onChangeGender={setEditGender}
-					onChangeSkill={(skill, level) =>
-						setEditSkills((prev) => ({ ...prev, [skill]: level }))
-					}
+					onChangeGrade={(grade) => setEditSkills({ grade })}
 				/>
 			)}
 

@@ -3,14 +3,7 @@ import type { Player, PlayerSkills } from "../../types";
 import { diffSessionPlayers } from "./sessionSync";
 import type { SessionPlayerRow } from "./types";
 
-const SKILLS: PlayerSkills = {
-	클리어: "V",
-	스매시: "V",
-	로테이션: "V",
-	드랍: "V",
-	헤어핀: "V",
-	푸시: "V",
-};
+const SKILLS: PlayerSkills = { grade: 5 };
 
 function player(id: string, over: Partial<Player> = {}): Player {
 	return { id, name: id, gender: "M", skills: SKILLS, ...over };

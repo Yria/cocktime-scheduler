@@ -160,7 +160,8 @@ export function pairPlayers(
 	}
 
 	const score = pairingScore(teamA, teamB);
-	const balanceNote = score === 0 ? "실력 균형 최적" : score <= 1 ? "실력 균형 양호" : "";
+	// 임계값은 등급(1~10) 스케일 기준 — 구 모델(1~3, 폭 2)의 ≤1 을 폭 9로 환산(×4.5 ≈ 4.5).
+	const balanceNote = score === 0 ? "실력 균형 최적" : score <= 4.5 ? "실력 균형 양호" : "";
 	const fullReason = [reason, balanceNote].filter(Boolean).join(" · ");
 
 	return {

@@ -4,7 +4,7 @@ interface PlayerBadgeProps {
 	name: string;
 	gender: Gender | string;
 	size?: "sm" | "md";
-	skillScore?: number; // 1.0 ~ 3.0
+	skillScore?: number; // 실력 등급 1 ~ 10
 	isUnavailable?: boolean; // 경기중/대기열 등 현재 배정 불가
 	/** 이름 뒤 게임 수 필(pill) — MatchSummary 계열(성별별 서브 색·radius 8). 미지정 시 기존 렌더와 동일 */
 	count?: number;
@@ -32,7 +32,7 @@ export default function PlayerBadge({
 	const fontSize = size === "sm" ? 12 : 13;
 	const padding = size === "sm" ? "3px 9px" : "4px 10px";
 
-	const scorePercent = skillScore ? ((skillScore - 1.0) / 2.0) * 100 : 0;
+	const scorePercent = skillScore ? ((skillScore - 1) / 9) * 100 : 0;
 
 	const baseColorLight = isF ? "#fee2e2" : "#e0f2fe";
 	const baseColorDark = isF ? "#fca5a5" : "#7dd3fc";

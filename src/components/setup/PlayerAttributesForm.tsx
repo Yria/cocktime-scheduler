@@ -1,25 +1,26 @@
-import type { ReactNode } from "react";
-import { SKILL_LEVELS, SKILLS } from "../../lib/constants";
-import type { Gender, PlayerSkills, SkillLevel } from "../../types";
+import type { Gender, PlayerSkills } from "../../types";
 import GenderDot from "../shared/GenderDot";
-import { SkillButton } from "./SkillButton";
+import { GradeInput, type GradeAnchor } from "../shared/GradeInput";
 
 interface PlayerAttributesFormProps {
 	gender: Gender;
 	skills: PlayerSkills;
 	onChangeGender: (gender: Gender) => void;
-	onChangeSkill: (skill: keyof PlayerSkills, level: SkillLevel) => void;
-	/** "스킬" 헤더 옆 보조 문구(예: 게스트의 "(기본값: 중)"). */
-	skillHint?: ReactNode;
+	onChangeGrade: (grade: number) => void;
+	/** 비교 추정에서 제외할 본인 이름. */
+	excludeName?: string;
+	/** 비교 표본(미지정 시 GradeInput이 활성 회원 로드). */
+	anchors?: GradeAnchor[];
 }
 
-/** 성별 토글 + 스킬 그리드 — EditModal/GuestModal 공용 표현 컴포넌트. */
+/** 성별 토글 + 실력 등급 입력 — EditModal/GuestModal 공용 표현 컴포넌트. */
 export function PlayerAttributesForm({
 	gender,
 	skills,
 	onChangeGender,
-	onChangeSkill,
-	skillHint,
+	onChangeGrade,
+	excludeName,
+	anchors,
 }: PlayerAttributesFormProps) {
 	return (
 		<>
@@ -45,28 +46,13 @@ export function PlayerAttributesForm({
 			</div>
 
 			<div className="mb-2">
-				<p className="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wide mb-2">
-					스킬{skillHint}
-				</p>
-				<div className="flex flex-col gap-2">
-					{SKILLS.map((skill) => (
-						<div key={skill} className="flex items-center gap-3">
-							<span className="text-sm text-gray-500 dark:text-gray-300 w-[60px] shrink-0">
-								{skill}
-							</span>
-							<div className="flex gap-1.5 flex-1">
-								{SKILL_LEVELS.map((level) => (
-									<SkillButton
-										key={level}
-										level={level}
-										active={skills[skill] === level}
-										onClick={() => onChangeSkill(skill, level)}
-									/>
-								))}
-							</div>
-						</div>
-					))}
-				</div>
+				<GradeInput
+					value={skills.grade}
+					onChange={onChangeGrade}
+					gender={gender}
+					excludeName={excludeName}
+					anchors={anchors}
+				/>
 			</div>
 		</>
 	);
