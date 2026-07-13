@@ -88,6 +88,8 @@ export interface PlaceRow {
 	created_at: string;
 	// 지도 공유 링크(네이버/카카오) — 미리보기/길찾기 버튼용(마이그레이션 20260622020000)
 	map_url: string | null;
+	// 코트 1개 시간당 대관 요금(원). NULL=대관비 없는 장소. 수지 계산용(요금×코트수×시간). 회계 §6.3
+	court_fee_per_hour: number | null;
 }
 
 export type AttendanceStatus =

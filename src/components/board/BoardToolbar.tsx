@@ -1,10 +1,12 @@
 import { memo, useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { ChevronLeft } from "lucide-react";
 import ModalSheet from "../common/ModalSheet";
 import ConfirmDialog from "../common/ConfirmDialog";
 import { useSessionStore } from "../../store/sessionStore";
 import { useBoardStore } from "../../store/boardStore";
 import { useAuthStore } from "../../store/authStore";
+import { useAppStore } from "../../store/appStore";
 import { TOOLBAR_H } from "../../lib/board/constants";
 
 export { TOOLBAR_H };
@@ -38,6 +40,8 @@ const BoardToolbar = memo(function BoardToolbar() {
 	const handoffEditor = useSessionStore((s) => s.handoffEditor);
 	// 편집 권한 획득은 운영진만 — 일반 회원은 읽기 전용(가져오기 버튼 숨김).
 	const isAdmin = useAuthStore((s) => s.isAdmin);
+	// 일정으로 연 세션은 수동 종료 금지 — 즉석 세션(scheduled_at 없음)만 종료 버튼 노출.
+	const isScheduled = useAppStore((s) => s.sessionMeta?.isScheduled ?? false);
 	// 모달 표시는 공유 플래그(헤더 칩 + 보기전용 칩 둘 다 연다)
 	const showPresence = useBoardStore((s) => s.presenceModalOpen);
 	const setShowPresence = useBoardStore((s) => s.setPresenceModalOpen);
@@ -98,17 +102,23 @@ const BoardToolbar = memo(function BoardToolbar() {
 					transition: "opacity 0.12s ease",
 				}}
 			>
+				{/* 좌상단: 뒤로가기 — AppHeader 뒤로가기와 동일 디자인(ChevronLeft 26/2.2, text-strong).
+				    세션은 유지한 채 홈으로. 회원 포함 전원 노출. */}
 				<button
 					type="button"
-					onClick={() => navigate("/setup")}
-					aria-label="세션 설정"
-					style={iconBtn("var(--text-secondary)")}
+					onClick={() => navigate("/")}
+					aria-label="나가기"
+					className="flex items-center justify-center text-strong"
+					style={{
+						width: 40,
+						height: 40,
+						marginLeft: -6,
+						background: "none",
+						border: "none",
+						cursor: "pointer",
+					}}
 				>
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-						<circle cx="12" cy="12" r="3" />
-						<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-					</svg>
-					<span>설정</span>
+					<ChevronLeft size={26} strokeWidth={2.2} />
 				</button>
 
 				{/* 코트 현황(중앙) — 비어있음(초록)/경기중(주황) */}
@@ -129,6 +139,22 @@ const BoardToolbar = memo(function BoardToolbar() {
 					})}
 				</div>
 
+				{/* 세션 설정은 운영진만 — /setup 진입(세션 생성/편성)은 운영진 전용 */}
+				{isAdmin && (
+					<button
+						type="button"
+						onClick={() => navigate("/setup")}
+						aria-label="세션 설정"
+						style={iconBtn("var(--text-secondary)")}
+					>
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+							<circle cx="12" cy="12" r="3" />
+							<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+						</svg>
+						<span>설정</span>
+					</button>
+				)}
+
 				<button
 					type="button"
 					onClick={() => navigate("/logs")}
@@ -144,8 +170,8 @@ const BoardToolbar = memo(function BoardToolbar() {
 					<span>로그</span>
 				</button>
 
-				{/* 세션 종료는 편집자만 */}
-				{isEditor && (
+				{/* 세션 종료는 편집자(운영진)만 + 즉석 세션만 — 일정 세션은 수동 종료 금지 */}
+				{isEditor && !isScheduled && (
 					<button
 						type="button"
 						onClick={() => setConfirmEnd(true)}

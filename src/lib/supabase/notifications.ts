@@ -159,6 +159,20 @@ export function notificationMessage(
 				? `${sess} ${actor}이 참석을 취소했어요`
 				: `${actor}이 참석을 취소했어요`;
 		}
+		case "payment_confirmed":
+			// send-push/index.ts buildBody 와 동기화(§11 금액/입금자 미표기).
+			return "회비 입금이 확인됐어요 👍";
+		case "dues_unpaid": {
+			// send-push/index.ts buildBody 와 동기화: 선택 발송은 payload.msg(커스텀 문구) 우선.
+			const msg =
+				n.payload && typeof n.payload.msg === "string" ? n.payload.msg : null;
+			if (msg) return msg;
+			const ymv =
+				n.payload && typeof n.payload.ym === "string" ? n.payload.ym : null;
+			return ymv
+				? `${ymv} 회비가 아직 미납이에요. 확인 부탁드려요`
+				: "이번 달 회비가 아직 미납이에요";
+		}
 		default:
 			return "새 알림이 있어요";
 	}

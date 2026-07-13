@@ -19,6 +19,10 @@ export interface SessionMeta {
 	courtCount: number;
 	singleWomanIds: string[];
 	cockCheckEnabled: boolean;
+	/** 일정(스케줄)으로 연 세션인가 — scheduled_at != null(반복 회차 포함). 즉석 세션은 false.
+	 *  일정 세션은 수동 종료 금지(BoardToolbar 종료 버튼 숨김): 종료는 일정 라이프사이클이 관리하고,
+	 *  즉석 세션만 편집자가 수동 종료할 수 있다. */
+	isScheduled: boolean;
 }
 
 interface AppState {
@@ -119,6 +123,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 						courtCount: row.court_count,
 						singleWomanIds,
 						cockCheckEnabled: row.cock_check_enabled ?? true,
+						isScheduled: row.scheduled_at != null,
 					},
 					setupGuests: guests,
 					sessionChecked: true,
@@ -185,6 +190,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 					courtCount: settings.courtCount,
 					singleWomanIds: settings.singleWomanIds,
 					cockCheckEnabled: settings.cockCheckEnabled,
+					isScheduled: sessionMeta.isScheduled,
 				},
 			});
 			return true;
@@ -225,6 +231,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 				courtCount: settings.courtCount,
 				singleWomanIds: settings.singleWomanIds,
 				cockCheckEnabled: settings.cockCheckEnabled,
+				// 즉석 세션 시작(startSession)은 scheduled_at 없이 생성 → 항상 수동 종료 가능.
+				isScheduled: false,
 			},
 		});
 		return true;

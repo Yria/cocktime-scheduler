@@ -99,6 +99,24 @@ export default function HeaderMenu({ onEditProfile }: Props) {
 							회원 관리
 						</button>
 					)}
+					{isAdmin && (
+						<button
+							type="button"
+							onClick={run(() => navigate("/dues"))}
+							className={`${itemClass} text-strong`}
+							style={itemStyle}
+						>
+							회비 관리
+						</button>
+					)}
+					<button
+						type="button"
+						onClick={run(() => navigate("/my-dues"))}
+						className={`${itemClass} text-strong`}
+						style={itemStyle}
+					>
+						내 회비
+					</button>
 					<button
 						type="button"
 						onClick={run(() => void authActions.signOut())}

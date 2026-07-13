@@ -1,5 +1,7 @@
+import { Gauge } from "lucide-react";
 import type { CSSProperties } from "react";
 import type { AdminMemberRow } from "../../lib/supabase/adminMembers";
+import { skillScoreOf } from "../../lib/teamSelection";
 import { Highlight } from "./Highlight";
 import { genderText } from "./memberAdminText";
 
@@ -30,6 +32,7 @@ export function MemberRow({
 	onRequestDelete,
 }: MemberRowProps) {
 	const g = genderText(member.gender);
+	const grade = skillScoreOf(member.skills); // 0 = 미설정
 	return (
 		<div
 			style={{
@@ -65,7 +68,6 @@ export function MemberRow({
 						display: "flex",
 						alignItems: "center",
 						gap: 5,
-						whiteSpace: "nowrap",
 						overflow: "hidden",
 					}}
 				>
@@ -74,8 +76,10 @@ export function MemberRow({
 						style={{
 							fontSize: 15,
 							fontWeight: 800,
+							minWidth: 0,
 							overflow: "hidden",
 							textOverflow: "ellipsis",
+							whiteSpace: "nowrap",
 						}}
 					>
 						<Highlight text={member.name} kw={query} />
@@ -88,6 +92,23 @@ export function MemberRow({
 							(나)
 						</span>
 					)}
+					{/* 실력 등급 — 이름 오른쪽에 게이지 아이콘 + 숫자(0=미설정 "–") */}
+					<span
+						title="실력 등급"
+						style={{
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 3,
+							flexShrink: 0,
+							fontSize: 13,
+							fontWeight: 700,
+							fontVariantNumeric: "tabular-nums",
+							color: grade > 0 ? "#16a34a" : "#94a3b8",
+						}}
+					>
+						<Gauge size={14} strokeWidth={2.25} aria-hidden />
+						{grade > 0 ? grade : "–"}
+					</span>
 				</div>
 				<div
 					className="text-muted"

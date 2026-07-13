@@ -154,6 +154,18 @@ function buildBody(
         ? `${sess} ${actor}이 참석을 취소했어요`
         : `${actor}이 참석을 취소했어요`;
     }
+    case "payment_confirmed":
+      // 금액/입금자 미표기(§11 잠금화면 노출 방지) — 확인 사실만.
+      return "회비 입금이 확인됐어요 👍";
+    case "dues_unpaid": {
+      // 선택 발송(dues_notify_selected)은 커스텀 문구(msg)를 담아 옴 — 대관비 등 회비 외 항목 포함.
+      const msg = payload && typeof payload.msg === "string" ? payload.msg : null;
+      if (msg) return msg;
+      const ymv = payload && typeof payload.ym === "string" ? payload.ym : null;
+      return ymv
+        ? `${ymv} 회비가 아직 미납이에요. 확인 부탁드려요`
+        : "이번 달 회비가 아직 미납이에요";
+    }
     default:
       return "새 알림이 있어요";
   }
@@ -222,7 +234,13 @@ Deno.serve(async (req) => {
     const msg = JSON.stringify({
       title: "콕타임",
       body: buildBody(n.type, n.payload, ctx),
-      url: n.session_id ? "session" : "",
+      // 딥링크(scope 상대경로): 회비 알림 → /my-dues, 세션 알림 → /session.
+      url:
+        n.type === "payment_confirmed" || n.type === "dues_unpaid"
+          ? "my-dues"
+          : n.session_id
+            ? "session"
+            : "",
       tag: `notif-${n.id}`,
       type: n.type,
     });

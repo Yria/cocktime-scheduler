@@ -383,20 +383,16 @@ s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
 
-[functions.sheets]
-enabled = true
-verify_jwt = true
-import_map = "./functions/sheets/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/sheets/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/sheets/*.html" ]
-
 # 웹푸시 발송 — notifications 트리거(net.http_post)가 호출. JWT 대신 x-push-secret 헤더로 검증.
 [functions.send-push]
 enabled = true
 verify_jwt = false
 import_map = "./functions/send-push/deno.json"
 entrypoint = "./functions/send-push/index.ts"
+
+# 은행 입금메일 수집(회계 §4) — 프론트에서 admin JWT 로 호출 → 내부 is_admin 재검. Apps Script 는 본문 시크릿.
+[functions.ingest-bank-email]
+enabled = true
+verify_jwt = true
+import_map = "./functions/ingest-bank-email/deno.json"
+entrypoint = "./functions/ingest-bank-email/index.ts"

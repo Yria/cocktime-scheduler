@@ -13,6 +13,7 @@ export interface AdminMemberRow {
 	authUserId: string | null;
 	isActive: boolean;
 	isAdmin: boolean;
+	isGuest: boolean;
 }
 
 interface RawMemberRow {
@@ -24,18 +25,23 @@ interface RawMemberRow {
 	skills: PlayerSkills | null;
 	auth_user_id: string | null;
 	is_active: boolean;
+	is_guest: boolean;
 	user_roles: { role: string }[] | null;
 }
 
-/** 전체 회원 + 운영진 여부(중첩 user_roles). 운영진만 user_roles 전체 조회 가능(RLS). */
-export async function fetchMembersForAdmin(): Promise<AdminMemberRow[]> {
-	const { data, error } = await supabase
+/**
+ * 전체 회원 + 운영진 여부(중첩 user_roles). 운영진만 user_roles 전체 조회 가능(RLS).
+ * includeGuests=true 면 게스트(계정 없는 RSVP 게스트)도 포함 — 입금확인(게스트 대관비 입금 매칭)용.
+ */
+export async function fetchMembersForAdmin(includeGuests = false): Promise<AdminMemberRow[]> {
+	let query = supabase
 		.from("members")
 		.select(
-			"id, name, gender, birth_year, residence, skills, auth_user_id, is_active, user_roles(role)",
+			"id, name, gender, birth_year, residence, skills, auth_user_id, is_active, is_guest, user_roles(role)",
 		)
-		.eq("is_guest", false) // 게스트(계정 없는 RSVP 게스트)는 회원 명단에서 제외
 		.order("name", { ascending: true });
+	if (!includeGuests) query = query.eq("is_guest", false);
+	const { data, error } = await query;
 	if (error) {
 		console.error("fetchMembersForAdmin:", error);
 		return [];
@@ -50,6 +56,7 @@ export async function fetchMembersForAdmin(): Promise<AdminMemberRow[]> {
 		authUserId: m.auth_user_id,
 		isActive: m.is_active,
 		isAdmin: (m.user_roles ?? []).some((r) => r.role === "admin"),
+		isGuest: m.is_guest,
 	}));
 }
 

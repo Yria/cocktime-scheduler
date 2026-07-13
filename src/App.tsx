@@ -6,6 +6,8 @@ import Home from "./components/Home";
 import LogPage from "./components/LogPage";
 import SessionSetup from "./components/SessionSetup";
 import MemberAdminPage from "./components/admin/MemberAdminPage";
+import DuesAdminPage from "./components/admin/dues/DuesAdminPage";
+import MyDuesPage from "./components/dues/MyDuesPage";
 import RegularNoticePage from "./components/schedule/RegularNoticePage";
 import SchedulePage from "./components/schedule/SchedulePage";
 import { useDarkMode } from "./hooks/useDarkMode";
@@ -84,6 +86,7 @@ export default function App() {
 				"demoted",
 				"session_cancelled",
 				"session_closed",
+				"dues_unpaid",
 			]);
 			toast(notificationMessage(n, notificationContext(n, schedules, places)), {
 				variant: negative.has(n.type) ? "info" : "success",
@@ -216,6 +219,10 @@ export default function App() {
 				<Route path="/schedule" element={<SchedulePage />} />
 				<Route path="/notice/:sessionId" element={<RegularNoticePage />} />
 				<Route path="/members" element={<MemberAdminPage />} />
+				<Route path="/dues" element={<DuesAdminPage />} />
+				<Route path="/dues/:ym" element={<DuesAdminPage />} />
+				<Route path="/dues/:ym/:page" element={<DuesAdminPage />} />
+				<Route path="/my-dues" element={<MyDuesPage />} />
 				<Route path="/logs" element={<LogPage />} />
 				<Route path="*" element={<Navigate to="/" replace />} />
 			</Routes>

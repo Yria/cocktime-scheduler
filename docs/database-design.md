@@ -242,8 +242,15 @@ ALTER TABLE sessions          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE session_players   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE matches           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pair_history      ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all" ON sessions        FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "anon_all" ON session_players FOR ALL USING (true) WITH CHECK (true);
+
+-- sessions / session_players : 조회=로그인 전원, 쓰기=운영진(is_admin)만
+--   (마이그레이션 20260713140000. 회원 대면 write 는 전부 SECURITY DEFINER RPC 경유.)
+CREATE POLICY sessions_select             ON sessions        FOR SELECT TO authenticated USING (true);
+CREATE POLICY sessions_admin_write        ON sessions        FOR ALL    TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY session_players_select      ON session_players FOR SELECT TO authenticated USING (true);
+CREATE POLICY session_players_admin_write ON session_players FOR ALL    TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+-- matches / pair_history : 아직 anon_all (후속 전환 대상 — board write 는 DEFINER RPC 경유).
 CREATE POLICY "anon_all" ON matches         FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "anon_all" ON pair_history    FOR ALL USING (true) WITH CHECK (true);
 ```

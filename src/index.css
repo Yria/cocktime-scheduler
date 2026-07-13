@@ -114,6 +114,18 @@ body {
 	background-color: #0f172a;
 }
 
+/* number input 의 위아래 스피너(증감 화살표) 제거 — 폼 입력을 텍스트처럼 깔끔하게. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+	-webkit-appearance: none;
+	appearance: none;
+	margin: 0;
+}
+input[type="number"] {
+	-moz-appearance: textfield;
+	appearance: textfield;
+}
+
 /* ── 앱 셸 풀스크린 높이 ─────────────────────────────────────────
    iOS 설치형 PWA(버전 무관 — iOS17 시뮬레이터~iOS26 실기기 모두 재현)는 CSS 뷰포트
    단위(lvh/dvh/svh)를 레이아웃 뷰포트(예: 869)로 보고해 물리 화면(예: 956)에 못 닿는다.

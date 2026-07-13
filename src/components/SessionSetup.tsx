@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
 	fetchSessionSettingsForConflictCheck,
@@ -16,6 +16,7 @@ interface Props {
 }
 
 import { useAppStore } from "../store/appStore";
+import { useAuthStore } from "../store/authStore";
 import { useSetupPlayers } from "../hooks/useSetupPlayers";
 import { useGuestManager } from "../hooks/useGuestManager";
 import { usePlayerEditor } from "../hooks/usePlayerEditor";
@@ -55,6 +56,14 @@ export default function SessionSetup({ onStart }: Props) {
 
 	// 진행 중인 세션이 있으면 보드로, 없으면 홈으로 복귀 (보드 ↔ 세션 설정 왕복)
 	const handleBack = () => navigate(sessionMeta ? "/session" : "/");
+
+	// 운영진 전용 — 세션 생성/편성은 운영진만. 회원정보 로드 완료(memberLoaded) 후에만 판정(새로고침 조기 리다이렉트 방지).
+	const ready = useAuthStore((s) => s.ready);
+	const memberLoaded = useAuthStore((s) => s.memberLoaded);
+	const isAdmin = useAuthStore((s) => s.isAdmin);
+	useEffect(() => {
+		if (ready && memberLoaded && !isAdmin) navigate("/", { replace: true });
+	}, [ready, memberLoaded, isAdmin, navigate]);
 
 	// 초기 코트수/혼복싱글 복원 (세션 업데이트 모드)
 	const [initialized, setInitialized] = useState(false);

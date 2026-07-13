@@ -1,8 +1,49 @@
 # 회계(회비·대관비) 자동 대사 설계
 
-> 상태: **설계 초안 (미구현)** · 최종수정 2026-07-13
+> 상태: **구현 완료 (은행 수집·복호화·파싱·대사·수지까지) · 운영 테스트 중** · 최종수정 2026-07-13
 > 관련 규칙 문서: [`TEAM_GENERATION_RULES.md`](./TEAM_GENERATION_RULES.md), [`EXPANSION_SPEC.md`](./EXPANSION_SPEC.md)
 > 회비/대관비 룰이 바뀌면 이 문서의 **§2 도메인 규칙**과 **§7 부과 생성층**을 함께 갱신한다.
+
+---
+
+## 구현 상태 (2026-07-13, 브랜치 `sam/accounting`) — 은행 수집까지 구현, 운영 테스트 중
+
+**마이그레이션 (20260713 040000~130000, 원격 적용됨):**
+- `040000` 스키마 9테이블 + `places.court_fee_per_hour` + `members.membership_started_at` + RLS + 배분 트리거
+- `050000` generate_dues_charges · `060000` 대사/현금납부/무시 RPC · `070000` 거래 무시(`classify_note`)
+- `080000` 대관비 모델(코트 시간당요금) · `090000` 세션 지출컬럼(현 미사용) · `100000` 미납 금액 self-heal
+- `110000` 무산 세션(경기기록 없음) 대관비 제외+정리 · `120000` 회비로 처리(항목생성+배분) · `130000` 7월 백필
+
+**RPC:** generate_dues_charges · dues_manual_payment · dues_confirm_match · **dues_confirm_new_monthly** ·
+  dues_cancel_match · dues_reverse_allocation · dues_set_charge_status · dues_ignore/unignore_transaction ·
+  dues_notify_unpaid · dues_club_account.
+
+**은행 수집(구현·배포됨):** Apps Script 웹앱(토스 거래내역 xlsx 첨부 원문 반환, `gmail.readonly`, executeAs=나/access=anyone,
+  본문 시크릿) → Edge Function `ingest-bank-email`(admin JWT + is_admin, **자동 부과생성(지난달·이번달)** →
+  복호화(`officecrypto-tool`, `TOSS_XLSX_PASSWORD`) → 토스 파서(`toss.ts`) → `bank_transactions` 멱등 적재).
+  중복 제거: `raw_bank_emails.message_id` + `bank_transactions.dedup_key`(시각+금액+잔액).
+
+**프론트:** `/dues`(현황판·입금확인·수지) · `/my-dues`.
+- **입금확인** = 미처리 은행입금 인라인 처리(모달 없음): 제안 회원 + 미납항목 자동선택(**subset-sum**), 회원/항목 그 자리 변경,
+  [확인] / **[N월 회비로 처리]**(항목 없을 때 원탭) / [무시]. 확인됨·무시 목록에서 취소/되돌리기.
+- **수지** = 은행 입출금 기반: 수입(입금)−지출(출금)=순, 출금 목록 + 적요 이름 검색(케바케 코트비 찾기).
+- 알림 `payment_confirmed`·`dues_unpaid`(문구 2곳 동기화 + `/my-dues` 딥링크 + 미납은 중립 토스트).
+
+**확정 결정 & 설계 대비 변경:**
+- **회원 대관비 = 고정 6,000/인**(`dues_settings.court_fee_default`). 장소 `court_fee_per_hour`(구 court_fee_per_head)=
+  **코트 시간당 요금**(수지 참고값). 대관비 대상 = `status in ('active','closed')` **＋ 경기기록(`matches`) 있는(=실제 열린)** 세션,
+  참석 `confirmed`/`late_pool`(악용방지) ＋ 당일취소자. 무자격(무산·취소·비대관장소) 미납 대관비는 재생성 시 자동 정리.
+- **회비 = 5,000/월.** 가입일 = `coalesce(membership_started_at, created_at KST)`. **서비스 2026-07 시작 → 기존회원
+  `membership_started_at` 6월 백필**(created_at=앱 등록일이 7월이라 offset 당월면제가 오적용되던 것 차단). 회비 면제는 별도
+  플래그 없이 해당 회원 `membership_started_at`을 미래로 두어 부과 제외(DB 직접).
+- **운영진(`role='admin'`) 회비·대관비 면제**(`is_operator`, 내부전용 `revoke from public`). **`dues_policies` 생략**(amount_due 스냅샷).
+- **부과 생성은 [가져오기]에 자동 흡수**(별도 버튼 없음). 멱등 + 미납 항목 금액 self-heal(정책 변경 시 미납분 현재가로 교정).
+- **`dues_allocations` FK ON DELETE CASCADE**(설계 restrict/no-action → 변경, 하드삭제 정합, SQL 리뷰 발견).
+- **매칭 금액 분해 = subset-sum**(그리디는 회비+대관비 동시미납 시 오작동 → 회귀 테스트).
+- **Edge Function 시크릿 = `Deno.env`**(Vault 아님, §4 정정). `ingest-bank-email` `verify_jwt=true`+내부 is_admin.
+- **duesStore 사용**(비가상화 페이지 React Compiler `set-state-in-effect` 회피). number input 스피너 제거. self-guard는 `memberLoaded` 대기.
+
+**남음:** §11 보안(SERVICE_ROLE·INGEST_SECRET 로테이션) · 프론트 배포(git push) · 회비 면제 명단 반영 · (선택) Apps Script 자동 폴링.
 
 ---
 
@@ -47,8 +88,10 @@
 - **대상**: 그 세션 **확정 로스터(`attendances.status='confirmed'`) 전원**. **당일 실제 출석 여부와 무관** — 참석자든 불참자(no-show)든 모두 납부(코트는 확정 인원 기준으로 이미 대관됨).
   - **운영진 제외** (운영진 = `user_roles.role='admin'`, §11 확정 필요).
   - **게스트 포함** (`members.is_guest=true`).
-  - **당일 취소자도 부과**: `status='confirmed'`(no-show 포함) **＋** `status='cancelled'`이면서 **확정된 적 있고(`attendances.confirmed_at` 존재) 세션 당일에 취소**(`date(cancelled_at KST) = date(scheduled_at KST)`)한 사람. 대기만 하다 취소(`confirmed_at` 없음)한 사람·사전(전날 이전) 취소자는 **제외**.
-  - `confirmed_at`은 취소 시에도 유지되므로(`cancel_*` RPC가 지우지 않음) "확정된 적 있음"의 증거로 사용.
+  - **`late_pool`(정원 외 늦참) 포함** — 세션 2/3 지점 이후 도착으로 정원에서 빠진 인원도 부과(악용 방지, 2026-07-13 확정). `attendances.status`는 실제로 4값 `('confirmed','waitlisted','cancelled','late_pool')`이며 `late_pool`은 전환 시 `confirmed_at`이 NULL이 되므로 **현재 status로 직접 판정**한다.
+  - **당일 취소자도 부과**: `status in ('confirmed','late_pool')`(no-show 포함) **＋** `status='cancelled'`이면서 **확정된 적 있고(`attendances.confirmed_at` 존재) 세션 당일에 취소**(`date(cancelled_at KST) = date(scheduled_at KST)`)한 사람. 대기만 하다 취소(`confirmed_at` 없음)한 사람·사전(전날 이전) 취소자는 **제외**.
+  - **세션 상태 필터**: `sessions.status in ('active','closed')`만 부과(draft/open/cancelled 제외 — 미진행·취소 세션 오부과 차단).
+  - `confirmed_at`은 취소 시엔 유지되나(`cancel_*` RPC가 지우지 않음) late_pool/대기 강등 시엔 NULL이 됨 → "당일 취소자" 판정에만 사용(강등 후 당일취소 엣지는 누락 감수).
 - **게스트 대납**: 게스트 돈은 보통 **데려온 회원이 대납**(항상은 아님). `attendances.invited_by`(데려온 회원)가 이미 있어, 게스트 대관비의 기본 납부 후보로 **초대 회원**을 제안한다. 관리자가 게스트 본인/타인으로 변경 가능.
 
 ### 2.3 입금 = 회비·대관비 조합
@@ -184,8 +227,8 @@ create unique index uq_charge_session on public.dues_charges(member_id, session_
 create table public.dues_allocations (
   id          bigserial primary key,
   bank_tx_id  bigint references public.bank_transactions(id) on delete cascade, -- 현금납부는 NULL
-  charge_id   bigint references public.dues_charges(id) on delete restrict,     -- 선납 크레딧은 NULL
-  member_id   uuid not null references public.members(id),  -- 실제 납부 주체(대납 시 입금자)
+  charge_id   bigint references public.dues_charges(id) on delete cascade,      -- 선납 크레딧은 NULL. ※구현: restrict→cascade(회원/세션 하드삭제 캐스케이드와 정합)
+  member_id   uuid not null references public.members(id) on delete cascade,  -- 실제 납부 주체. ※구현: cascade(delete_my_account/delete_member FK abort 회귀 차단)
   amount      integer not null check (amount > 0),
   kind        text not null default 'payment' check (kind in ('payment','credit','refund')),
   matched_by  uuid references public.members(id) on delete set null,
@@ -199,11 +242,13 @@ create table public.dues_allocations (
 대관 여부는 **장소가 결정**한다(대관하는 코트 vs 무료/공용 체육관). 세션은 `place_id`로 값을 상속.
 ```sql
 alter table public.places
-  add column if not exists court_fee_per_head integer;  -- NULL = 대관비 없는 장소, 값 = 인당 대관비(기본 6000)
+  add column if not exists court_fee_per_hour integer;  -- 코트 1개 시간당 요금(예 13000). NULL = 대관비 없는 장소.
 ```
-- **"장소 추가/편집"(기존 기능) UI에서 설정**한다(기본값 `dues_settings.court_fee_default`). 새 회계 화면을 안 거쳐도 장소 관리에서 자연스럽게 지정.
-- 세션의 대관비 = `sessions.place_id → places.court_fee_per_head`. `NULL`이면 그 세션 참석자에게 대관비 charge를 만들지 않는다.
-- (선택·추후) 예외적으로 특정 세션만 다르게 하려면 `sessions.court_fee_per_head` override 컬럼을 나중에 추가해 `coalesce(session.override, place.court_fee_per_head)`로 해석. 기본 설계는 **장소 단일 소스**.
+> ※ **구현 반영(2026-07-13)**: 이 필드의 의미는 "인당 대관비"가 아니라 **"코트 1개 시간당 요금"**(수지 지출 계산 참고값).
+> **회원이 내는 대관비 = 고정 `dues_settings.court_fee_default`(6,000/인)**이며, 장소에 요금이 설정된(=대관하는) 세션의
+> 참석자에게 부과. 실제 지출(할인 반영)은 은행 출금으로 수지에서 파악(§10). (구 이름 `court_fee_per_head` → `court_fee_per_hour`)
+- **설정(회비 설정 모달)의 "장소별 코트 시간당 요금"에서 지정**. `NULL`이면 그 장소 세션엔 대관비 charge 미생성.
+- 세션의 대관비 부과 여부 = `sessions.place_id → places.court_fee_per_hour`가 NULL이 아닐 때. 금액은 항상 `court_fee_default` 고정.
 
 ---
 
@@ -224,21 +269,25 @@ for m in members where is_active and not is_guest and not is_operator(m.id):   -
 
 ### 7.2 대관비 charge 생성
 ```
+v_court = dues_settings.court_fee_default   -- 회원 대관비 = 고정 인당액(6000). 장소 요금과 무관.
 for s in sessions join places p on s.place_id = p.id
-        where p.court_fee_per_head is not null                 -- 장소가 대관비 부과 장소일 때만
+        where p.court_fee_per_hour is not null                 -- 장소가 대관(요금 설정) 장소일 때만
+        and s.status in ('active','closed')                    -- 진행/종료 세션만(draft·open·cancelled 제외)
+        and exists(select 1 from matches where session_id=s.id) -- 경기기록 있는(실제 열린) 세션만. 무산 제외
         and date_trunc('month', s.scheduled_at KST) = p_ym:
     for a in attendances where a.session_id = s.id
-            and ( a.status = 'confirmed'                       -- 확정 로스터(당일 no-show 포함)
+            and ( a.status in ('confirmed','late_pool')        -- 확정(당일 no-show 포함) + 정원외 늦참(악용 방지)
                   or ( a.status = 'cancelled'                  -- 당일 취소자
                        and a.confirmed_at is not null          --   확정된 적 있음(대기만 하다 취소 제외)
                        and date(a.cancelled_at at time zone 'Asia/Seoul')
                          = date(s.scheduled_at at time zone 'Asia/Seoul') ) ):
         if is_operator(a.member_id):  continue                 -- 운영진 제외
         insert dues_charges(kind='court_fee', member_id=a.member_id,
-                            session_id=s.id, amount_due=p.court_fee_per_head,
+                            session_id=s.id, amount_due=v_court,   -- 고정 인당액
                             payer_hint = case when member(a.member_id).is_guest
                                               then a.invited_by else null end)
-        on conflict (member_id, session_id) do nothing
+        on conflict (member_id, session_id) do update set amount_due=v_court where amount_paid=0  -- 미납 금액 self-heal
+-- ※ 재생성 시 무자격(무산·취소·비대관장소) 세션의 미납 대관비 항목은 별도 delete 로 정리.
 ```
 - `is_operator()` = `user_roles.role='admin'` (§11·§12 확정).
 - 게스트는 `payer_hint = invited_by`(데려온 회원)로 채워, 대사 시 대납 후보로 제시.

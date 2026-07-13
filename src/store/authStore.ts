@@ -7,6 +7,8 @@ interface AuthState {
 	session: Session | null;
 	/** 초기 세션 확인(getSession) 완료 여부 */
 	ready: boolean;
+	/** 회원정보(memberId·isAdmin) 로드 완료 여부. ready 이후 비동기로 채워지므로 가드는 이걸 기다려야 함. */
+	memberLoaded: boolean;
 	/** 로그인 사용자의 members.id (없으면 null) */
 	memberId: string | null;
 	/** 운영진 여부 */
@@ -25,6 +27,7 @@ export const useAuthStore = create<AuthState>(() => ({
 	user: null,
 	session: null,
 	ready: false,
+	memberLoaded: false,
 	memberId: null,
 	isAdmin: false,
 	myName: null,
@@ -51,6 +54,7 @@ async function loadMember(user: User) {
 		.maybeSingle();
 	const { data: admin } = await supabase.rpc("is_admin");
 	useAuthStore.setState({
+		memberLoaded: true,
 		memberId: (member?.id as string | undefined) ?? null,
 		isAdmin: admin === true,
 		myName: (member?.name as string | null | undefined) ?? null,
@@ -73,7 +77,8 @@ function applySession(session: Session | null) {
 			void loadMember(u);
 		}, 0);
 	} else {
-		useAuthStore.setState({ memberId: null, isAdmin: false });
+		// 비로그인: 로드할 회원정보가 없으므로 즉시 settled 처리.
+		useAuthStore.setState({ memberId: null, isAdmin: false, memberLoaded: true });
 	}
 }
 
