@@ -1237,6 +1237,19 @@
 
 ---
 
+## #95
+
+**Prompt**: 해당 클리어기능을 제거해
+
+**Answer**: 매치 로그의 "클리어(기록 초기화)" 기능을 완전히 제거. 이 기능은 되돌릴 수 없는 하드 삭제(완료 매치·game_count·mixed_count·match_assign_count·pair_history 전부)인데도 관리자 게이트·RLS 보호가 없어, 앞선 조사에서 비관리자 회원이 진행 중이던 7/12 세션(104) 기록을 통째로 날린 원인으로 확인됨. 방어 보강보다 기능 자체를 삭제하는 방향 선택.
+- LogPage.tsx: "클리어" 버튼·확인 모달·handleClear·관련 state(showClearConfirm/clearing) 제거. 이에 따라 불필요해진 import(dbClearSessionLogs·ClearConfirmModal·appActions·useAppStore·useRef)와 isCurrentSession/selectedSession/sessionMeta/sessionsRef까지 연쇄 정리.
+- ClearConfirmModal.tsx 파일 삭제.
+- matchLog.ts: dbClearSessionLogs 함수 삭제.
+- ConfirmDialog.tsx: 삭제된 컴포넌트를 예시로 언급하던 주석 2곳 갱신.
+- 잔여 참조 0, tsc 통과. DB 마이그레이션 변경 없음(클라이언트 직접 삭제 경로였음).
+
+---
+
 ## #96
 
 **Prompt**: 현재 실력계산을 단순히 1~10의 그레이드로 변경하고 선택하게 해줘. 만약 점수계산이 힘들면 임의로 몇명을 뽑아 얘보다 잘한다 못한다 선택해서 추정점수를 넣게 해줘. 동성끼리만 비교하고, 현재 입력되어있는 값은 보정해서 변경해. 그리고 구글시트연동코드는 전부 삭제해 해당 기능은 게스트의 실력매길때도 동일해야해
@@ -1248,5 +1261,73 @@
 - 기존값 보정 마이그레이션(6종→등급 선형 환산) + 일정시작 브릿지 미채점 회원 기본등급 5 보정
 - 리뷰 반영: rowToSessionPlayer 정규화(등급0 소비 방지), updateMemberProfile RLS 조용한 실패 판정(.select), 비교 문구 주체 중립화, pairPlayers 균형메모 임계 재보정
 - tsc·174 테스트·빌드 통과. DB 마이그레이션 2건은 db push 미적용(수동 배포 필요)
+
+---
+
+## #97
+
+**Prompt**: pwa 설치안했을때 뜨는 토스트보면 안내만 하던데 직접적으로 설치버튼을 노출하고 누르면 설치되게 해줘
+
+**Answer**: 토스트는 이미 beforeinstallprompt가 잡히면 "추가"로 원탭 설치를 하는 구조였는데, "안내만 뜬다"는 건 그 이벤트가 안 잡히는 환경이라는 뜻이라 원인을 나눠 진단. 웹 검색과 Chrome 공식 블로그로 확인한 결론: iOS Safari는 설치 API 자체가 없어 원탭 설치가 원천 불가능(navigator.share 시트에도 '홈 화면에 추가' 없음), 안드로이드는 sw.js에 fetch 핸들러가 없어서 Chrome이 beforeinstallprompt를 안 띄운 것이 근본 원인. 사용자와 협의해 "안드=원탭 활성화, iOS=안내 UX 정리"로 진행.
+- sw.js: 내비게이션 요청만 네트워크 통과시키는 최소 fetch 핸들러 추가(빈 핸들러는 Chrome이 무시하므로 실동작 필요, 오프라인 캐싱은 없음) → 안드/데스크톱 Chrome에서 원탭 "추가" 활성화
+- InstallPromptToast.tsx: iOS 안내 시트의 3중 중복(헤더+단계텍스트+스크린샷) 정리 — 스크린샷이 단계를 설명하므로 문구는 설치 동기(참여 알림) 한 줄로 슬림화, 미사용 isIOS import 제거
+- 프론트(GitHub Pages)만 배포 대상, DB/Edge Function 무변경. tsc·eslint·sw.js 문법 검사 통과
+
+---
+
+## #98
+
+**Prompt**: 회계가 필요한데 통장내역을 네가 직접 볼 순 없으니 메일로 통장거래내역이 전송되면 그걸 감지해서 디비에 올리고 정해진 로직으로 입금내역 체크해서 회원의 회비입금내역같은거 체크하는걸 만들 수 있을까? 설계만 해보자
+
+**Answer**: 메일로 오는 통장 입금내역을 감지→파싱→DB 적재→회비·대관비 자동 대사하는 회계 기능을 설계(구현 없이 설계 문서만). 코드베이스를 병렬 조사해 실제 인프라(웹푸시 notifications→트리거→send-push 체인, pg_cron, is_admin SECURITY DEFINER RPC, group_settings+cock_support_grants 월단위 멱등 패턴, attendances.invited_by 게스트 초대자)에 맞춰 설계. 두 현실 제약을 핵심 전제로 삼음 — ①도메인에 MX 없어 메일 수신 불가 → 이미 도착하는 Gmail을 소스로, ②members.name이 인증 실명 아니고 동명이인 허용 → 자동확정 금지·항상 제안+관리자 확정. 여러 차례 규칙 문답으로 도메인 규칙을 확정하고 docs/ACCOUNTING_DESIGN.md(14개 섹션) 작성.
+- 수집: 관리자 수동 버튼 → Edge Function → Apps Script 웹앱(원문만 반환) 구조로 DNS 변경·Gmail OAuth 토큰만료 부담 회피, service_role은 Supabase 안에 격리
+- 매칭: 입금액을 그 회원의 미납 회비(5000)·대관비(6000) 항목 조합으로 분해 제안, 관리자 1-click 확정 + 입금자명↔회원 별칭 학습, 가역 배분 레코드로 취소/재매칭 안전
+- 회비 규칙: 월 5000, 운영진 면제, 당월 가입 면제 + 월말(+3일) 오프셋 면제
+- 대관비 규칙: 대관 여부를 장소(places.court_fee_per_head) 플래그로 결정, 대관 세션의 confirmed 로스터(당일 no-show 포함) + 당일 취소자(confirmed_at 존재 & cancelled_at=세션당일) 부과, 운영진 제외·게스트 포함(invited_by로 초대자 대납 제안)
+- 데이터모델: bank_transactions·dues_charges(회비 ym/대관비 session_id XOR)·가역 dues_allocations·member_name_aliases·매칭큐·append-only 감사로그 신규, 전부 관리자 전용 RLS
+- 지출(출금)은 카테고리 태깅으로 월별 수지 요약(부수 기능)
+
+---
+
+## #99
+
+**Prompt**: 주말에 코트 열릴때 푸쉬여러개 한번에 가는데 2개 이상이면 그냥 일정이 열렸다는 간단한 메세지로 퉁쳐줘
+
+**Answer**: 주말 일괄 공개 시 회원이 세션별 푸시를 N개 받던 것을, 한 번의 sync 호출에서 2개 이상 회차가 동시에 open되면 회원당 합친 알림 1건으로 바꿨습니다. 주요 판단:
+- 증폭 근본 원인이 `sync_schedule_occurrences()` E단계의 `opened × members` 데카르트 곱이라, Edge Function(행 단위 트리거)이 아닌 SQL E단계에서 개수 분기 처리
+- 신규 마이그레이션에서 `array_agg`로 이번에 열린 회차 id를 모아 개수 집계 → 1개면 기존 `session_open`(장소·시각 포함) 유지, 2개 이상이면 신규 타입 `sessions_opened`(payload.count, session_id 없음)로 회원당 1건 insert
+- `notifications.type`이 text(enum/CHECK 없음)라 새 타입 도입에 스키마 변경 불필요
+- 멱등성: `opened` CTE가 draft→open으로 새로 flip된 회차만 반환 + 회차는 한 번만 open되므로 bulk 알림도 배치당 1회만 생성(동시 sync는 행 잠금). 별도 가드 불필요
+- Edge Function `buildBody()`와 클라이언트 `notificationMessage()`에 미러 케이스 추가(문구 "새 일정 N개가 열렸어요")
+- bulk 알림은 session_id 없어 SW 빈 url→앱 홈으로 열림(기존 new_member와 동일). tsc 통과
+- 배포는 수동: DB `supabase db push`, Edge Function `supabase functions deploy send-push`, 프론트 git push
+
+---
+
+## #100
+
+**Prompt**: 제곱으로
+
+**Answer**: 팀 후보 선발의 동반 회피(`pairOverlap`)를 선형 합산에서 상대별 제곱 합산(`Σc²`)으로 변경했습니다. (직전 대화에서 "같은 2~3명이 자주 나온다"는 근본 원인 분석 → 곱셈 방식 제안 → 사용자가 제곱 선택)
+
+- **핵심 판단**: 제곱을 "합계에 씌우기(`(Σc)²`)"는 여러 명을 한 번씩 만난 경우까지 과벌해 경기수 균등을 해치므로 배제. "상대별로 제곱 후 합산(`Σc²`)"이 특정 상대와의 반복만 정확히 겨냥 → 1회=1(저렴), 2회=4, 3회=9로 급증
+- `rankCandidates.ts`의 `pairOverlap` 계산 한 곳 수정(제곱). `recommendTeammates`는 이 base를 그대로 쓰므로 단일 변경점
+- 제곱 동작 고정 회귀 테스트 추가(선형이면 동점인 두 후보를 제곱이 갈라내는지)
+- `docs/TEAM_GENERATION_RULES.md` 2·4·7절 반영. 덤으로 문서 오류 수정: "DB `complete_match`는 팀 2쌍만 누적" → 실제 최신 마이그레이션은 클라이언트와 동일 6쌍 전부 누적(`20260611120000`에서 그룹 전환 확인)
+- 세션 스코프 리셋 문제(세션마다 이력 0에서 재시작)는 이번 변경 범위 밖으로 남김
+- `tsc --noEmit` 통과, 관련 테스트 99개 통과
+
+---
+
+## #101
+
+**Prompt**: 현재 게스트 최대 2명만 참여가능한데, 게스트대기는 다른 대기풀인거 맞지? 예를 들어 취소를 일반인이 했는데 게스트가 1번인데 참여중 게스트가 2명이만 2번 일반유저를 참여로 바꾸고 같은상황에서 취소가 게스트이면 1번게스트가 참여되고 맞지? 그럼 일반대기와 게스트대기의 표현을 다르게 해줘야할거같아
+
+**Answer**: 서버 승격 로직(`20260712010000_guest_confirm_cap.sql`)을 확인해 사용자 이해를 검증하고, 대기 표시를 회원/게스트로 구분했다.
+
+- **검증**: 두 예시(일반인 취소→회원#2 승격 / 게스트 취소→게스트#1 승급)는 둘 다 맞음. 다만 "다른 대기풀"은 아니고 **단일 FIFO 대기열 + 게스트 확정 상한(2) 게이트** 구조. 승급은 "빈 자리 1칸 + 자격(회원은 항상, 게스트는 확정<2일 때만)"으로 결정 → `[회원#1, 게스트#2]`에서 게스트 취소 시 회원#1이 올라감(빈 자리가 게스트에 예약되지 않음).
+- **문제**: 기존 "대기 N번째"가 회원·게스트 합산 순번이라, 막힌 게스트가 회원 순번을 부풀리고, 게이트 닫힌 게스트의 "1번째"가 실제 의미와 다름.
+- **결정(사용자 선택)**: "상한 찼을 때만 분리". 확정 게스트 2명이면 대기 게스트=`게스트 정원 대기`(번호 없음)·회원=회원끼리 순번, 2명 미만이면 전원 통합 순번.
+- **구현**: 공용 헬퍼 `src/lib/schedule/waitStatus.ts`(서버 자격 규칙과 동일하게 계산)를 만들어 `ScheduleCard`·`GuestSection`·`SessionParticipantsModal` 세 곳에 일관 적용. 유닛 테스트 5개로 고정. tsc·eslint·vitest 통과.
 
 ---

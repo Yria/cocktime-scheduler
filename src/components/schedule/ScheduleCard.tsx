@@ -8,6 +8,7 @@ import type {
 } from "../../lib/supabase/types";
 import { fmtClock, fmtRange } from "../../lib/schedule/timeFmt";
 import { isLatePoolArrival, latePoolCutoffMs } from "../../lib/schedule/latePool";
+import { waitDisplay } from "../../lib/schedule/waitStatus";
 import GuestSection from "./GuestSection";
 import LateArrivalSlider from "./LateArrivalSlider";
 import PlayerAvatar from "../shared/PlayerAvatar";
@@ -84,10 +85,9 @@ export default function ScheduleCard({
 	const mine = memberId
 		? attendances.find((a) => a.member_id === memberId)
 		: undefined;
-	const myWaitRank =
-		mine?.status === "waitlisted"
-			? waiting.filter((a) => a.position <= mine.position).length
-			: 0;
+	// 본인 참석 행은 항상 회원(invited_by=null)이라 게이트가 찼어도 queue 순번(막힌 게스트 제외)으로 나온다.
+	const myWait =
+		mine?.status === "waitlisted" ? waitDisplay(attendances, mine) : null;
 	const isOpen = s.status === "open";
 	const canDrive = attendances.filter(
 		(a) => a.carpool_role === "can_drive",
@@ -267,7 +267,9 @@ export default function ScheduleCard({
 						<div className="flex items-center gap-2">
 							<span style={statusBadge("#f59e0b", "rgba(245,158,11,0.14)")}>
 								<span style={statusDot("#f59e0b")} />
-								대기 {myWaitRank}번째
+								{myWait?.kind === "guestCap"
+									? "게스트 정원 대기"
+									: `대기 ${myWait?.rank ?? 0}번째`}
 							</span>
 							<button
 								type="button"

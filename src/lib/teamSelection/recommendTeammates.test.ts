@@ -42,6 +42,22 @@ describe("recommendTeammates", () => {
 		expect(ranked[0].player.id).toBe("close");
 	});
 
+	it("동반 회피는 상대별 제곱(Σc²) — 한 명과 여러 번 만난 후보가 여러 명과 한 번씩 만난 후보보다 강하게 하위", () => {
+		// confirmed 2명(A,B) 동성/동일실력/0판 → 점수는 동반 항(pairOverlap·W_PAIR)만 작동.
+		const confirmed = [player("A", "M"), player("B", "M")];
+		const heavy = player("heavy", "M"); // A와 2회, B와 0회 → Σc² = 2²+0² = 4
+		const spread = player("spread", "M"); // A와 1회, B와 1회 → Σc² = 1²+1² = 2 (선형 합은 둘 다 2로 동일)
+		const pairHistory = { A: { heavy: 2, spread: 1 }, B: { spread: 1 } };
+		const ranked = recommendTeammates(confirmed, [heavy, spread], ctx({ pairHistory }));
+		expect(ranked[0].player.id).toBe("spread"); // 선형이라면 동점이지만 제곱이 heavy를 밀어냄
+		expect(ranked.find((r) => r.player.id === "heavy")!.breakdown!.pair).toBe(
+			4 * RECOMMEND_WEIGHTS.W_PAIR,
+		);
+		expect(ranked.find((r) => r.player.id === "spread")!.breakdown!.pair).toBe(
+			2 * RECOMMEND_WEIGHTS.W_PAIR,
+		);
+	});
+
 	it("혼복 구성 중에는 직전에 남복/여복(단식)을 한 후보가 직전 혼복 후보보다 우대된다", () => {
 		// confirmed 1남1녀 → 후보 추가 시 혼복 지향
 		const confirmed = [player("m", "M"), player("f", "F")];

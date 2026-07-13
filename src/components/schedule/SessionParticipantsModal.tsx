@@ -2,6 +2,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import type { AttendanceRow, SessionRow } from "../../lib/supabase/types";
 import { fmtClock, fmtRange } from "../../lib/schedule/timeFmt";
+import { waitDisplay, type WaitDisplay } from "../../lib/schedule/waitStatus";
 import { useAuthStore } from "../../store/authStore";
 import { scheduleActions } from "../../store/scheduleStore";
 import { toast } from "../../store/toastStore";
@@ -120,14 +121,14 @@ export default function SessionParticipantsModal({
 									<div className="mx-2 my-1.5 border-t border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]" />
 								)}
 								<Section title={`대기 ${waiting.length}명`}>
-									{waiting.map((a, i) => (
+									{waiting.map((a) => (
 										<ParticipantRow
 											key={a.member_id}
 											row={a}
 											memberId={memberId}
 											carpoolEnabled={s.carpool_enabled}
 											scheduledAt={s.scheduled_at}
-											waitRank={i + 1}
+											waitInfo={waitDisplay(attendances, a)}
 											canRemove={isAdmin}
 											onRemove={setPendingRemove}
 										/>
@@ -245,7 +246,7 @@ function ParticipantRow({
 	memberId,
 	carpoolEnabled,
 	scheduledAt,
-	waitRank,
+	waitInfo,
 	isPool = false,
 	canRemove = false,
 	onRemove,
@@ -254,7 +255,8 @@ function ParticipantRow({
 	memberId: string | null;
 	carpoolEnabled: boolean;
 	scheduledAt: string | null;
-	waitRank?: number;
+	/** 대기 행이면 표시 상태(순번 또는 게스트 정원 대기). 확정/늦참 행은 undefined. */
+	waitInfo?: WaitDisplay;
 	/** 정원 외 늦참(late_pool) 행 — 바이올렛 링 + 도착시각 강조. */
 	isPool?: boolean;
 	/** 운영진 뷰 — 제거 버튼 노출(본인 행 제외). */
@@ -269,7 +271,7 @@ function ParticipantRow({
 	// 게스트를 데려온(신청한) 회원 이름 — 배지에 함께 노출. 신청자 회원이 삭제되면 null → "게스트"만.
 	const inviterName = a.inviter?.name ?? null;
 
-	const isWaiting = waitRank != null;
+	const isWaiting = waitInfo != null;
 	// 늦참 도착시각 — 대기자가 아니고 오프셋>0·시작시각 有 일 때. "⏰ 오후 8:00~"(정원 외는 🌙 바이올렛)
 	const lateArrival =
 		!isWaiting && a.late_minutes > 0 && scheduledAt
@@ -334,8 +336,12 @@ function ParticipantRow({
 					) : (
 						<span style={{ color: "var(--late-amber)" }}>⏰ {lateArrival}~</span>
 					))}
-				{waitRank != null ? (
-					<span style={{ color: "#f59e0b" }}>대기 {waitRank}번째</span>
+				{waitInfo != null ? (
+					<span style={{ color: "#f59e0b" }}>
+						{waitInfo.kind === "guestCap"
+							? "게스트 정원 대기"
+							: `대기 ${waitInfo.rank}번째`}
+					</span>
 				) : carpoolEnabled && a.carpool_role === "can_drive" ? (
 					<span style={{ color: "#2c7a57" }}>🚗 운전 가능</span>
 				) : carpoolEnabled && a.carpool_role === "need_ride" ? (

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import { isIOS } from "../../lib/push/platform";
 import {
 	installPromptActions,
 	shouldShowInstallPrompt,
@@ -169,11 +168,11 @@ export default function InstallPromptToast() {
 						onClose={() => setShowGuide(false)}
 					/>
 					<div className="px-5 pb-5 flex flex-col gap-3">
+						{/* 단계별 방법은 아래 이미지(InstallGuide)가 시각적으로 설명하므로,
+						    여기 문구는 '왜 설치하는지'(참여 알림) 동기만 짧게 남긴다. */}
 						<p className="text-muted" style={{ fontSize: 13, lineHeight: 1.6 }}>
-							{isIOS()
-								? "공유 버튼을 누른 뒤 '홈 화면에 추가'를 선택하세요."
-								: "브라우저 메뉴에서 '앱 설치' 또는 '홈 화면에 추가'를 선택하세요."}
-							{" 그래야 대기→참석 확정, 일정 변경 등 참여 알림을 받을 수 있어요."}
+							홈 화면에 추가하면 대기→참석 확정, 일정 변경 등 참여 알림을 받을 수
+							있어요. 아래 순서대로 따라 해 주세요.
 						</p>
 						<InstallGuide />
 					</div>

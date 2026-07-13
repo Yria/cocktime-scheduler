@@ -26,14 +26,14 @@ interface ConfirmDialogProps {
 	zIndex?: number;
 	onConfirm: () => void;
 	onCancel?: () => void;
-	/** 배경 클릭으로 닫기. 미지정 시 배경 클릭 무시(ClearConfirmModal 형).
+	/** 배경 클릭으로 닫기. 미지정 시 배경 클릭 무시.
 	    보통 onCancel 과 같은 핸들러를 넘긴다. */
 	onDismiss?: () => void;
 }
 
 /**
  * ConfirmDialog — 확인 다이얼로그 공용 골격(제목 h3 + 설명 p + 취소/확인 버튼 행).
- * ClearConfirmModal·BoardToolbar(세션 종료/권한 가져오기)·CockCheckModal·EditorTakenNotice·
+ * BoardToolbar(세션 종료/권한 가져오기)·CockCheckModal·EditorTakenNotice·
  * GroupSettingsModal 계열의 다수파 스타일(ModalSheet center + p-6)을 그대로 캡슐화 — 시각 동일.
  * 주의: SessionConflictDialog·PlayerConflictDialog 는 버튼이 세로 스택(확인 먼저)이라 이
  * 골격에 맞지 않음 — 그 2곳은 이관 대상에서 제외하거나 별도 variant 논의.

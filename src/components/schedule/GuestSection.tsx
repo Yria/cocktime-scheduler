@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { Gender, PlayerSkills } from "../../types";
 import type { AttendanceRow } from "../../lib/supabase/types";
 import { DEFAULT_SKILLS } from "../../lib/constants";
+import { waitDisplay } from "../../lib/schedule/waitStatus";
 import { GuestModal } from "../setup/GuestModal";
 import ConfirmDialog from "../common/ConfirmDialog";
 
@@ -46,7 +47,6 @@ export default function GuestSection({
 		() => (memberId ? attendances.filter((a) => a.invited_by === memberId) : []),
 		[attendances, memberId],
 	);
-	const waiting = useMemo(() => attendances.filter((a) => a.status === "waitlisted"), [attendances]);
 	// 확정 게스트 수 — 세션당 상한 2명. 이미 2명이면 신규 게스트는 대기로 들어간다(서버 RPC 판정) → pre-check 경고용.
 	const confirmedGuestCount = useMemo(
 		() => attendances.filter((a) => a.invited_by != null && a.status === "confirmed").length,
@@ -93,10 +93,9 @@ export default function GuestSection({
 			{myGuests.length > 0 && (
 				<div className="flex flex-col gap-1.5">
 					{myGuests.map((g) => {
-						const rank =
-							g.status === "waitlisted"
-								? waiting.filter((w) => w.position <= g.position).length
-								: 0;
+						// 상한이 찬 동안 대기 게스트는 "게스트 정원 대기"(번호 없음), 열려 있으면 통합 순번.
+						const wait =
+							g.status === "waitlisted" ? waitDisplay(attendances, g) : null;
 						return (
 							<div
 								key={g.member_id}
@@ -121,7 +120,9 @@ export default function GuestSection({
 											? "확정"
 											: g.status === "late_pool"
 												? "🌙 늦참"
-												: `대기 ${rank}번째`}
+												: wait?.kind === "guestCap"
+													? "게스트 정원 대기"
+													: `대기 ${wait?.rank ?? 0}번째`}
 									</span>
 								</span>
 								{isOpen && (

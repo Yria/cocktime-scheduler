@@ -156,10 +156,14 @@ function computeScore(
 		skillDiff = Math.abs(skillScore(candidate) - confirmedAvgSkill);
 	}
 
-	// 동반 회피: 같은 4명 그룹으로 함께 뛴 누적 횟수(confirmed 각각과의 합산).
+	// 동반 회피: 같은 4명 그룹으로 함께 뛴 누적 횟수를 confirmed 각각에 대해 "제곱"해 합산.
 	// 직전 1게임을 따로 보지 않고 누적만으로 판단 — 자주 함께 뛴 상대일수록 회피된다.
-	const pairOverlap = confirmed.reduce((count, p) => {
-		return count + (context.pairHistory[p.id]?.[candidate.id] ?? 0);
+	// 제곱(비선형): 특정 상대와 반복해 만날수록 페널티가 급격히 커진다(1회는 싸게, 2·3회는 확 비싸게)
+	// → "같은 2~3명"이 반복 편성되는 걸 강하게 흩는다. 상대별로 제곱하므로(Σc²) 여러 명을 한 번씩
+	// 만난 경우(합은 크지만 각 1회)는 완만히 두고, 한 명과 여러 번 만난 경우만 강하게 회피한다.
+	const pairOverlap = confirmed.reduce((sum, p) => {
+		const c = context.pairHistory[p.id]?.[candidate.id] ?? 0;
+		return sum + c * c;
 	}, 0);
 
 	// 대기 시간: 오래 기다릴수록 우선 (분 단위, 음수로 점수 감소)

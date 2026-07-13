@@ -7,6 +7,16 @@ self.addEventListener("activate", (event) =>
   event.waitUntil(self.clients.claim()),
 );
 
+// 안드로이드/데스크톱 Chrome은 '동작하는 fetch 핸들러가 있는 SW'를 자동 설치 프롬프트
+// (beforeinstallprompt) 발생 신호로 요구한다. 핸들러가 없거나 '빈' 핸들러면 프롬프트를 띄우지
+// 않아 원탭 설치가 불가능하다(Chrome은 빈 핸들러를 무시). 오프라인 캐싱은 하지 않으므로
+// (요구사항) 내비게이션 요청만 네트워크로 그대로 통과시켜 최소한의 실동작 핸들러를 둔다.
+self.addEventListener("fetch", (event) => {
+  if (event.request.mode === "navigate") {
+    event.respondWith(fetch(event.request));
+  }
+});
+
 self.addEventListener("push", (event) => {
   let data = {};
   try {

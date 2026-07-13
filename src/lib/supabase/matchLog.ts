@@ -56,29 +56,3 @@ export async function fetchMatchLogs(
 		};
 	});
 }
-
-export async function dbClearSessionLogs(sessionId: number): Promise<boolean> {
-	const [{ error: matchErr }, { error: playerErr }, { error: sessionErr }] = await Promise.all([
-		supabase
-			.from("matches")
-			.delete()
-			.eq("session_id", sessionId)
-			.eq("status", "completed"),
-		supabase
-			.from("session_players")
-			.update({ game_count: 0, mixed_count: 0, joined_at_match: 0 })
-			.eq("session_id", sessionId),
-		supabase
-			.from("sessions")
-			.update({ match_assign_count: 0 })
-			.eq("id", sessionId),
-	]);
-
-	if (matchErr) console.error("dbClearSessionLogs matches:", matchErr);
-	if (playerErr) console.error("dbClearSessionLogs players:", playerErr);
-	if (sessionErr) console.error("dbClearSessionLogs session:", sessionErr);
-
-	await supabase.from("pair_history").delete().eq("session_id", sessionId);
-
-	return !matchErr && !playerErr && !sessionErr;
-}

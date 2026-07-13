@@ -109,6 +109,14 @@ function buildBody(
       return sess
         ? `${sess} 일정이 열렸어요. 참석 신청하세요!`
         : "새 일정이 열렸어요. 참석 신청하세요!";
+    case "sessions_opened": {
+      // 여러 회차가 한번에 열렸을 때(주말 일괄 공개 등) 합친 알림. 세션별 개별 푸시 대신 1건.
+      const count =
+        payload && typeof payload.count === "number" ? payload.count : null;
+      return count
+        ? `새 일정 ${count}개가 열렸어요. 참석 신청하세요!`
+        : "새 일정이 여러 개 열렸어요. 참석 신청하세요!";
+    }
     case "carpool_muster": {
       const at = formatWhen(
         payload && typeof payload.at === "string" ? payload.at : null,
