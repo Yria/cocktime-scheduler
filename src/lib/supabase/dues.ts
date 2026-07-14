@@ -382,7 +382,8 @@ export interface UnpaidCharge {
 	isProxy: boolean;
 }
 function unpaidLabel(kind: string, periodYm: string | null, session: { title: string | null; scheduled_at: string | null; places: { name: string | null } | null } | null, proxy: boolean): string {
-	if (kind === "monthly_fee") return `${periodYm ?? ""} 회비`;
+	// 회비: 'N월 회비'로 통일(거래내역 라벨·신규회비 칩과 동일 형식). 예: 2026-07 → 7월 회비.
+	if (kind === "monthly_fee") return periodYm ? `${Number(periodYm.slice(5))}월 회비` : "회비";
 	// 세션 칩(sessionLabel)과 동일 형식으로 통일: "{월.일} {장소} 대관비". 장소 없으면 날짜만.
 	const d = session?.scheduled_at
 		? new Date(session.scheduled_at).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric", timeZone: "Asia/Seoul" })

@@ -198,11 +198,9 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 			{on ? "✓ " : ""}{label}
 		</button>
 	);
-	// 미납 부과 칩(이름 접두 없이 — 사람 구분은 그룹 헤더로). 크로스먼스면 ↩.
-	const chargeChip = (c: UnpaidCharge, key: string) => {
-		const cross = c.kind === "monthly_fee" ? c.periodYm !== depositYm : c.sessionDate != null && ymOfIso(c.sessionDate) !== depositYm;
-		return itemChip(`${c.label} ${won(remaining(c.amountDue, c.amountPaid))}${cross ? " ↩" : ""}`, active.charges.has(c.id), () => toggleCharge(c.id), key);
-	};
+	// 미납 부과 칩(이름 접두 없이 — 사람 구분은 그룹 헤더로). 월은 라벨('N월 회비'/'M.D 대관비')로 자명하니 별도 표식 없음.
+	const chargeChip = (c: UnpaidCharge, key: string) =>
+		itemChip(`${c.label} ${won(remaining(c.amountDue, c.amountPaid))}`, active.charges.has(c.id), () => toggleCharge(c.id), key);
 	const payerHasItems = existing.length > 0 || (!selectedMember?.isGuest && !existingMonthly) || newSessionCandidates.length > 0;
 	const groupLabel: CSSProperties = { fontSize: 10.5, fontWeight: 800, letterSpacing: "0.02em" };
 
