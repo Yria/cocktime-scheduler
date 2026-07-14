@@ -317,7 +317,8 @@ export async function fetchTxAllocations(
 	if (txIds && txIds.length === 0) return {};
 	let query = supabase
 		.from("dues_allocations")
-		.select("bank_tx_id, amount, member_id, dues_charges(kind, period_ym, member_id, sessions(scheduled_at, title)), members(name)")
+		// members 임베드는 member_id·matched_by 두 FK가 있어 모호 → 납부자(member_id) FK 명시(PGRST201 회피).
+		.select("bank_tx_id, amount, member_id, dues_charges(kind, period_ym, member_id, sessions(scheduled_at, title)), members!dues_allocations_member_id_fkey(name)")
 		.not("bank_tx_id", "is", null);
 	if (txIds) query = query.in("bank_tx_id", txIds);
 	const { data, error } = await query;

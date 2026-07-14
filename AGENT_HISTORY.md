@@ -557,3 +557,17 @@
 - 검증: build·lint clean.
 
 ---
+
+## #46
+
+**Prompt**: [스크린샷] 여기 보이는 회비들 전부 미처리란 얘기야? 그게 아닐텐데
+
+**Answer**: 처리내역·취소가 안 보이던 것 = 버그. 근본원인 규명·수정.
+
+- **증상**: 회계 거래내역의 7월 회비 입금들이 처리내역(→7월 회비)·취소 버튼 없이 미처리처럼 보임.
+- **DB 확인**: 해당 입금들은 실제 matched + 배분(dues_allocations) 1건씩 있음(정상 처리됨). 미처리 아님.
+- **근본원인**: `fetchTxAllocations`의 `members(name)` 임베드가 모호(PGRST201) — `dues_allocations`에 members로 가는 FK가 둘(member_id·matched_by)이라 PostgREST가 300 반환 → catch로 빈 객체 → txAllocations 전멸 → 거래내역 note/취소 안 뜸. curl로 HTTP 300 재현 확인.
+- **수정**: 임베드에 납부자 FK 명시(`members!dues_allocations_member_id_fkey(name)`) → HTTP 200. 처리된 회비가 '7월 회비' 라벨 + 취소 버튼 정상 표시.
+- 검증: curl 200, build·lint clean.
+
+---
