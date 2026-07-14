@@ -2,6 +2,7 @@ import { Plus, Search } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import type { AdminMemberRow } from "../../../lib/supabase/adminMembers";
 import type { BankTxnRow, SessionFeeRow, TxnCategory, UnpaidCharge } from "../../../lib/supabase/dues";
+import ConfirmDialog from "../../common/ConfirmDialog";
 import { inputCls, inputStyle } from "../../common/fieldStyles";
 import { genderText } from "../memberAdminText";
 import { fmtMD, remaining, sessionLabel, won, ymOfIso } from "./duesText";
@@ -39,6 +40,8 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	const [query, setQuery] = useState("");
 	const [override, setOverride] = useState<Sel | null>(null); // null = 프리셀렉트 사용
 	const [extSession, setExtSession] = useState<number | null>(null); // 비회원 대관 세션
+	const [catSel, setCatSel] = useState<number | null>(null); // 비회비 수입 분류(선택 후 확인)
+	const [showMismatch, setShowMismatch] = useState(false); // 선택≠입금 확인 다이얼로그
 
 	const depositYm = ymOfIso(tx.occurredAt) ?? "";
 	const selectedMember = selectedId ? memberById.get(selectedId) : undefined;
@@ -138,17 +141,24 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		setOverride({ charges: new Set([...active.charges].filter((cid) => !removed.has(cid))), monthly: active.monthly, sessions: new Set(active.sessions) });
 	};
 	const toggleCharge = (id: number) => {
+		setCatSel(null); // 회원 항목 선택 = 분류 해제(상호배타)
 		const n: Sel = { charges: new Set(active.charges), monthly: active.monthly, sessions: new Set(active.sessions) };
 		if (n.charges.has(id)) n.charges.delete(id);
 		else n.charges.add(id);
 		setOverride(n);
 	};
-	const toggleMonthly = () => setOverride({ charges: new Set(active.charges), monthly: !active.monthly, sessions: new Set(active.sessions) });
+	const toggleMonthly = () => { setCatSel(null); setOverride({ charges: new Set(active.charges), monthly: !active.monthly, sessions: new Set(active.sessions) }); };
 	const toggleSession = (sid: number) => {
+		setCatSel(null);
 		const n = new Set(active.sessions);
 		if (n.has(sid)) n.delete(sid); // 온/오프 토글(비회원 대관과 동일, 1인분)
 		else n.add(sid);
 		setOverride({ charges: new Set(active.charges), monthly: active.monthly, sessions: n });
+	};
+	// 비회비 수입 분류(선택 후 확인). 선택 시 회원 항목 선택은 비움(상호배타).
+	const toggleCategory = (id: number) => {
+		if (catSel === id) { setCatSel(null); setOverride(null); }
+		else { setCatSel(id); setOverride({ charges: new Set(), monthly: false, sessions: new Set() }); }
 	};
 
 	const q = query.trim().toLowerCase();
@@ -161,6 +171,19 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 
 	// 비회원 대관(회원 매칭 없이 대관비 배수일 때).
 	const externalCourt = !selectedId && courtFee > 0 && tx.amount % courtFee === 0;
+
+	// 확인 결정: 분류(catSel) > 회원 배분(total) > 비회원 대관(extSession). 상호배타.
+	const catName = catSel != null ? categories.find((c) => c.id === catSel)?.name : null;
+	const catMode = catSel != null;
+	const memberMode = !catMode && selectedId != null && total > 0;
+	const extMode = !catMode && !selectedId && externalCourt && extSession != null;
+	const mismatch = memberMode && total !== tx.amount; // 선택 금액 ≠ 입금액
+	const ready = catMode || memberMode || extMode;
+	const doConfirm = () => {
+		if (catMode && catSel != null) onCategorize(catSel);
+		else if (memberMode && selectedId) onConfirm(selectedId, [...active.charges], active.monthly ? depositYm : "", [...active.sessions].map((id) => ({ id, units: 1 })));
+		else if (extMode && extSession != null) onConfirmCourtExternal(extSession);
+	};
 
 	const itemChip = (label: string, on: boolean, onClick: () => void, key: string) => (
 		<button
@@ -279,56 +302,42 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 				</div>
 			)}
 
-			{/* 상태 + 액션 */}
-			<div style={{ marginTop: 10, paddingTop: 9, borderTop: "1px solid rgba(120,120,128,0.16)" }}>
-				<p className="text-muted" style={{ fontSize: 11.5, marginBottom: 7, minHeight: 15 }}>
-					{selectedId ? (
-						total > 0 ? (
-							<>
-								<b className="text-strong">{selectedMember?.name}</b> · 선택 {won(total)}
-								{total !== tx.amount && <span className="text-[#c2670a]"> (입금 {won(tx.amount)})</span>}
-							</>
-						) : (
-							""
-						)
-					) : externalCourt ? (
-						extSession ? "비회원 대관비 — 확인하면 세션 수입으로" : "회원을 검색하거나, 비회원 대관비면 세션을 고르세요"
-					) : (
-						"납부한 회원을 검색·선택하세요"
-					)}
-				</p>
-				<div className="flex items-center gap-2">
-					{selectedId ? (
-						<button
-							type="button"
-							onClick={() => total > 0 && onConfirm(selectedId, [...active.charges], active.monthly ? depositYm : "", [...active.sessions].map((id) => ({ id, units: 1 })))}
-							disabled={busy || total <= 0}
-							className="rounded-[9px] py-2 text-sm disabled:opacity-35"
-							style={{ flex: 1, fontWeight: 800, color: total > 0 ? "#fff" : undefined, background: total > 0 ? "#1c8a3b" : "rgba(120,120,128,0.14)" }}
-						>
-							{total > 0 ? `확인 · ${won(total)}` : "항목 선택"}
-						</button>
-					) : (
-						<button
-							type="button"
-							onClick={() => extSession && onConfirmCourtExternal(extSession)}
-							disabled={busy || !extSession}
-							className="rounded-[9px] py-2 text-sm disabled:opacity-35"
-							style={{ flex: 1, fontWeight: 800, color: extSession ? "#fff" : undefined, background: extSession ? "#1c8a3b" : "rgba(120,120,128,0.14)" }}
-						>
-							{extSession ? `비회원 대관비 확인 · ${won(tx.amount)}` : "회원/세션 선택"}
-						</button>
-					)}
-				</div>
-				{/* 비회비 수입 분류(콕공구·이자·정모·기타). 코트대관은 카테고리가 아니라 위 비회원 세션 선택으로. */}
-				<div className="flex flex-wrap items-center gap-1.5" style={{ marginTop: 8 }}>
-					{categories.map((cat) => (
-						<button key={cat.id} type="button" onClick={() => onCategorize(cat.id)} disabled={busy} className="text-muted" style={{ fontSize: 12, fontWeight: 600, padding: "4px 9px", borderRadius: 8, border: "none", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
-							{cat.name}
-						</button>
-					))}
-				</div>
+			{/* 그 외 분류(콕공구·이자 등) — 선택 후 확인(지출과 동일). 코트대관은 위 비회원 세션으로. */}
+			<div className="flex flex-wrap items-center gap-1.5" style={{ marginTop: 9 }}>
+				<span className="text-faint" style={{ fontSize: 11, fontWeight: 700, alignSelf: "center" }}>그 외</span>
+				{categories.map((cat) => itemChip(cat.name, catSel === cat.id, () => toggleCategory(cat.id), `cat${cat.id}`))}
 			</div>
+
+			{/* 확인 */}
+			<div style={{ marginTop: 10, paddingTop: 9, borderTop: "1px solid rgba(120,120,128,0.16)" }}>
+				{mismatch && (
+					<p className="text-[#d1362c]" style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 7 }}>
+						선택 {won(total)} · 입금 {won(tx.amount)} — 금액이 안 맞아요
+					</p>
+				)}
+				<button
+					type="button"
+					onClick={() => { if (!ready) return; if (mismatch) setShowMismatch(true); else doConfirm(); }}
+					disabled={busy || !ready}
+					className="rounded-[9px] py-2 text-sm disabled:opacity-35"
+					style={{ width: "100%", fontWeight: 800, color: ready ? "#fff" : undefined, background: !ready ? "rgba(120,120,128,0.14)" : mismatch ? "#d1362c" : "#1c8a3b" }}
+				>
+					{catMode ? `확인 · ${catName}` : memberMode ? `확인 · ${won(total)}` : extMode ? `비회원 대관비 · ${won(tx.amount)}` : "항목 선택"}
+				</button>
+			</div>
+
+			{showMismatch && (
+				<ConfirmDialog
+					title="금액이 안 맞아요"
+					message={`선택한 금액(${won(total)})이 입금(${won(tx.amount)})과 달라요. 정산이 맞지 않는데 이대로 확인할까요?`}
+					confirmLabel="그래도 확인"
+					tone="danger"
+					maxWidth="xs"
+					onCancel={() => setShowMismatch(false)}
+					onDismiss={() => setShowMismatch(false)}
+					onConfirm={() => { setShowMismatch(false); doConfirm(); }}
+				/>
+			)}
 		</div>
 	);
 }
