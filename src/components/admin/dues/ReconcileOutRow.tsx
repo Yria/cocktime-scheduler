@@ -77,7 +77,7 @@ export default function ReconcileOutRow({ tx, categories, courtCatId, ledgerSess
 			{/* 환불 연결 */}
 			<div style={{ marginTop: 8 }}>
 				<button type="button" onClick={() => setRefundOpen((v) => !v)} disabled={busy} className="text-[#c2670a]" style={{ fontSize: 11.5, fontWeight: 700, background: "none", cursor: "pointer" }}>
-					{refundOpen ? "환불 연결 닫기" : "차액·오입금 환불 연결"}
+					{refundOpen ? "환불 닫기" : "차액·오입금 환불"}
 				</button>
 				{refundOpen && (
 					<div className="flex flex-wrap gap-1.5" style={{ marginTop: 6 }}>

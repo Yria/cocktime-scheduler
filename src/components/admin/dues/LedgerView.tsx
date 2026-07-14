@@ -35,6 +35,10 @@ export default function LedgerView({ ym }: { ym: string }) {
 	const [newCat, setNewCat] = useState("");
 	const [addingCat, setAddingCat] = useState(false);
 	const [confirmDeleteCat, setConfirmDeleteCat] = useState<TxnCategory | null>(null);
+	// 거래내역 필터(키워드·카테고리) + 환불 하이라이트
+	const [query, setQuery] = useState("");
+	const [catFilter, setCatFilter] = useState<number | null>(null); // null=전체
+	const [highlightId, setHighlightId] = useState<number | null>(null);
 
 	const reloadFull = () => duesActions.loadMonth(ym, true); // 카테고리 추가/삭제는 전체(categories 갱신)
 
@@ -93,18 +97,32 @@ export default function LedgerView({ ym }: { ym: string }) {
 	// 거래 내역(러닝 잔액) — 최신순.
 	const ledger = useMemo(() => [...txns].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)), [txns]);
 	const sessionLabelById = useMemo(() => new Map(monthSessions.map((s) => [s.id, sessionLabel(s)])), [monthSessions]);
+	const txById = useMemo(() => new Map(txns.map((t) => [t.id, t])), [txns]);
+	// 이 입금(IN)을 환불한 출금(OUT) 매핑 — 오입금 전액환불 입금이 '미정산'으로 보이지 않게.
+	const refundOutByIn = useMemo(() => {
+		const m = new Map<number, number>();
+		for (const t of txns) if (t.refundOfTxId != null) m.set(t.refundOfTxId, t.id);
+		return m;
+	}, [txns]);
 
-	// 거래별 처리 요약 + 취소 방식. 처리된 모든 거래는 되돌릴 수 있게(§12).
-	const txInfo = (t: BankTxnRow): { note: string | null; cancel: null | "match" | "category" | "refund" | "unignore" } => {
+	// 거래별 처리 요약 + 취소 방식. 처리된 모든 거래는 되돌릴 수 있게(§12). linkTo=하이라이트 대상 거래.
+	type TxInfo = { note: string | null; cancel: null | "match" | "category" | "refund" | "unignore"; linkTo?: number };
+	const txInfo = (t: BankTxnRow): TxInfo => {
 		if (t.status === "ignored") return { note: "무시함", cancel: "unignore" };
 		if (t.direction === "in") {
 			if (txAllocations[t.id]) return { note: txAllocations[t.id].label, cancel: "match" };
 			if (t.categoryId != null) return { note: t.categoryName ?? "수입 분류", cancel: "category" };
 			// 외부(비회원) 대관 수입 — 배분·분류 없이 세션에만 귀속. cancel_match가 세션 태깅 해제.
 			if (t.status === "matched" && t.sessionId != null) return { note: `세션 수입 · ${sessionLabelById.get(t.sessionId) ?? (t.sessionDate ? fmtMD(t.sessionDate) : "세션")}`, cancel: "match" };
+			// 전액 환불된 오입금 — 배분 없이 환불 출금으로만 해결. 원출금으로 점프(취소는 그 출금에서).
+			const refOut = refundOutByIn.get(t.id);
+			if (refOut != null) return { note: "환불 처리됨", cancel: null, linkTo: refOut };
 			return { note: null, cancel: null };
 		}
-		if (t.refundOfTxId != null) return { note: "환불 연결", cancel: "refund" };
+		if (t.refundOfTxId != null) {
+			const inName = txById.get(t.refundOfTxId)?.counterpartyName;
+			return { note: `환불 → ${inName || "입금"}`, cancel: "refund", linkTo: t.refundOfTxId };
+		}
 		if (t.categoryId != null) {
 			const base = t.categoryName ?? "지출";
 			if (t.categoryId === courtCatId && t.sessionId != null) return { note: `${base} · ${sessionLabelById.get(t.sessionId) ?? (t.sessionDate ? fmtMD(t.sessionDate) : "세션")}`, cancel: "category" };
@@ -112,6 +130,28 @@ export default function LedgerView({ ym }: { ym: string }) {
 		}
 		return { note: null, cancel: null };
 	};
+
+	// 하이라이트(환불 → 원입금) : 잠시 강조 후 해제 + 스크롤.
+	const jumpTo = (id: number) => {
+		setHighlightId(id);
+		document.getElementById(`ledgertx-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+		window.setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 2000);
+	};
+
+	// 필터 적용(키워드=적요·처리내역, 카테고리=category_id).
+	const q = query.trim().toLowerCase();
+	const filteredLedger = useMemo(
+		() =>
+			ledger.filter((t) => {
+				if (catFilter != null && t.categoryId !== catFilter) return false;
+				if (q) {
+					const hay = `${t.counterpartyName ?? ""} ${txAllocations[t.id]?.label ?? ""} ${t.categoryName ?? ""}`.toLowerCase();
+					if (!hay.includes(q)) return false;
+				}
+				return true;
+			}),
+		[ledger, catFilter, q, txAllocations],
+	);
 
 	const doCancel = async () => {
 		if (!cancelTx) return;
@@ -245,19 +285,42 @@ export default function LedgerView({ ym }: { ym: string }) {
 
 			{/* 거래 내역(러닝 잔액) */}
 			<div>
-				<div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
-					<span style={{ width: 3.5, height: 16, borderRadius: 2, background: "#0b84ff", flexShrink: 0 }} />
-					<h3 className="text-strong" style={{ fontSize: 16, fontWeight: 800 }}>거래 내역</h3>
-					<span className="text-faint" style={{ fontSize: 11.5 }}>통장 잔액 대사</span>
+				{/* 헤더 + 필터(스크롤해도 상단 고정) */}
+				<div className="bg-[#fafbff] dark:bg-[#0f172a]" style={{ position: "sticky", top: "calc(52px + env(safe-area-inset-top))", zIndex: 20, paddingTop: 6, paddingBottom: 8, marginBottom: 2 }}>
+					<div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+						<span style={{ width: 3.5, height: 16, borderRadius: 2, background: "#0b84ff", flexShrink: 0 }} />
+						<h3 className="text-strong" style={{ fontSize: 16, fontWeight: 800 }}>거래 내역</h3>
+						<span className="text-faint" style={{ fontSize: 11.5 }}>통장 잔액 대사</span>
+					</div>
+					<input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름·처리내역 검색" className={inputCls} style={{ ...inputStyle, padding: "7px 10px", fontSize: 13 }} />
+					<div className="flex flex-wrap gap-1.5" style={{ marginTop: 7 }}>
+						{[{ id: null as number | null, name: "전체" }, ...categories].map((c) => {
+							const on = catFilter === c.id;
+							return (
+								<button key={c.id ?? "all"} type="button" onClick={() => setCatFilter(c.id)} className={on ? "text-strong" : "text-muted"} style={{ fontSize: 12, fontWeight: on ? 700 : 500, padding: "4px 10px", borderRadius: 999, border: "none", background: on ? "rgba(11,132,255,0.16)" : "rgba(120,120,128,0.1)", cursor: "pointer" }}>
+									{c.name}
+								</button>
+							);
+						})}
+					</div>
 				</div>
 				{ledger.length === 0 ? (
 					<p className="text-faint" style={{ fontSize: 13 }}>이 달 거래가 없어요.</p>
+				) : filteredLedger.length === 0 ? (
+					<p className="text-faint" style={{ fontSize: 13, paddingTop: 6 }}>조건에 맞는 거래가 없어요.</p>
 				) : (
 					<div className="flex flex-col">
-						{ledger.map((t) => {
+						{filteredLedger.map((t) => {
 							const info = txInfo(t);
+							const pending = info.note == null; // 아직 정산 안 함
+							const hl = highlightId === t.id;
 							return (
-								<div key={t.id} className="flex flex-col" style={{ gap: 2, borderBottom: "1px solid rgba(120,120,128,0.14)", padding: "7px 4px", opacity: busyId === t.id ? 0.5 : 1 }}>
+								<div
+									key={t.id}
+									id={`ledgertx-${t.id}`}
+									className="flex flex-col"
+									style={{ gap: 2, borderBottom: "1px solid rgba(120,120,128,0.14)", padding: "7px 4px", borderRadius: 8, opacity: busyId === t.id ? 0.5 : pending ? 0.45 : 1, background: hl ? "rgba(11,132,255,0.16)" : undefined, transition: "background 0.4s" }}
+								>
 									<div className="flex items-center gap-2" style={{ fontSize: 13 }}>
 										<span className="text-faint" style={{ width: 36, flexShrink: 0 }}>{fmtMD(t.occurredAt)}</span>
 										<span className="text-strong" style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{t.counterpartyName || "(적요 없음)"}</span>
@@ -265,7 +328,13 @@ export default function LedgerView({ ym }: { ym: string }) {
 										{t.balanceAfter != null && <span className="text-faint" style={{ fontSize: 11, width: 74, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{t.balanceAfter.toLocaleString("ko-KR")}</span>}
 									</div>
 									<div className="flex items-center gap-2" style={{ paddingLeft: 44 }}>
-										{info.note && <span className="text-faint" style={{ fontSize: 11, minWidth: 0 }}>{info.note}</span>}
+										{pending ? (
+											<span className="text-faint" style={{ fontSize: 11 }}>미정산</span>
+										) : info.linkTo != null ? (
+											<button type="button" onClick={() => info.linkTo != null && jumpTo(info.linkTo)} className="text-[#0b84ff]" style={{ fontSize: 11, fontWeight: 600, background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}>{info.note} ↗</button>
+										) : (
+											info.note && <span className="text-faint" style={{ fontSize: 11, minWidth: 0 }}>{info.note}</span>
+										)}
 										<span style={{ flex: 1 }} />
 										{info.cancel && (
 											<button type="button" onClick={() => setCancelTx(t)} disabled={busyId === t.id} className="text-[#d1362c]" style={{ fontSize: 11.5, fontWeight: 700, background: "rgba(209,54,44,0.1)", border: "none", borderRadius: 6, padding: "2px 8px", cursor: "pointer", flexShrink: 0 }}>취소</button>
