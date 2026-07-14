@@ -764,3 +764,16 @@
 - 정시 종료 대신 1시간 유예(ACTIVE_CLOSE_GRACE_MS)를 둬 예정 종료를 조금 넘겨 진행하는 세션의 조기 종료 방지.
 
 ---
+
+## #61
+
+**Prompt**: [스크린샷] 출금 카드에 또 안 열린 세션 칩이 보임 — 근본 문제를 찾아.
+
+**Answer**: 세션 목록 원천 쿼리를 '경기기록 있음' 기준으로 통일(근본 수정).
+
+- 근본원인: queryCourtSessions가 status(active/closed)만 보고 matches(경기기록) 유무를 안 봐서, 경기 0건 무산 세션(6/27·6/28·7/4·7/11 등, 데이터로 확인)이 monthSessions·ledgerSessions에 섞여 IN/OUT 카드·필터·현황 곳곳에 노출. generate는 has-matches를 실제 세션 기준으로 쓰는데 UI 쿼리만 안 맞췄음. dues_include 세션은 0개라 그 조건도 불필요.
+- 수정: queryCourtSessions에 matches!inner(id) + status in(active,closed) → 경기기록 있는 대관 세션만 반환(REST 200 검증). 이 단일 원천을 monthSessions·ledgerSessions가 공유하므로 모든 목록 일괄 정합.
+- 정리: 흩어진 heldSessionIds(court·sessionTxns) 헬퍼·ReconcileInbox 필터·LedgerView activeSess 제거(원천이 이미 깨끗).
+- 검증: tsc clean, 204 tests, build·lint clean.
+
+---
