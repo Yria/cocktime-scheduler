@@ -35,7 +35,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	const candidates = useMemo(() => suggestMembers(tx.counterpartyName, members), [tx.counterpartyName, members]);
 	const [selectedId, setSelectedId] = useState<string | null>(candidates[0]?.id ?? null);
 	const [extraIds, setExtraIds] = useState<string[]>([]); // 이 입금으로 함께 내주는 다른 사람(회원·게스트)
-	const [searchOpen, setSearchOpen] = useState(false);
+	const [searchFor, setSearchFor] = useState<null | "payer" | "extra">(null); // 검색 열림 위치(납부자/대납)
 	const [query, setQuery] = useState("");
 	const [override, setOverride] = useState<Sel | null>(null); // null = 프리셀렉트 사용
 	const [extSession, setExtSession] = useState<number | null>(null); // 비회원 대관 세션
@@ -118,17 +118,17 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		setSelectedId((prev) => (prev === id ? null : id));
 		setExtraIds([]); // 납부자 바뀌면 대납 대상 초기화
 		setOverride(null);
-		setSearchOpen(false);
+		setSearchFor(null);
 		setQuery("");
 	};
-	// 검색 결과 선택: 납부자 없으면 납부자로, 있으면 '함께 낼 사람'으로 추가.
+	// 검색 결과 선택: 검색 위치(payer/extra)에 따라 납부자 지정 또는 대납 대상 추가.
 	const pickResult = (id: string) => {
-		if (!selectedId) {
+		if (searchFor === "payer") {
 			selectMember(id);
 			return;
 		}
 		if (id !== selectedId) setExtraIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-		setSearchOpen(false);
+		setSearchFor(null);
 		setQuery("");
 	};
 	const removeExtra = (id: string) => {
@@ -187,7 +187,8 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 
 			{/* 납부자 */}
 			<div className="flex flex-wrap items-center gap-1.5" style={{ marginTop: 9 }}>
-				{chipMembers.length === 0 && !searchOpen && <span className="text-faint" style={{ fontSize: 12.5 }}>제안 없음 — 검색하세요</span>}
+				<span className="text-faint" style={{ fontSize: 11, fontWeight: 700, alignSelf: "center" }}>납부자</span>
+				{chipMembers.length === 0 && searchFor !== "payer" && <span className="text-faint" style={{ fontSize: 12.5 }}>제안 없음 — 검색하세요</span>}
 				{chipMembers.map((m) => {
 					const on = m.id === selectedId;
 					const gm = memberById.get(m.id);
@@ -204,27 +205,19 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 						</button>
 					);
 				})}
-				{/* 함께 낼 사람(대납 대상) — × 로 제거 */}
-				{extraIds.map((id) => (
-					<span key={id} className="flex items-center bg-[rgba(52,199,89,0.16)]" style={{ fontSize: 13, fontWeight: 700, borderRadius: 999, padding: "5px 4px 5px 11px", color: "#1c8a3b" }}>
-						{memberById.get(id)?.name ?? "회원"}
-						<button type="button" onClick={() => removeExtra(id)} aria-label="대납 대상 제거" style={{ width: 18, height: 18, lineHeight: "16px", fontSize: 14, background: "none", cursor: "pointer", color: "#1c8a3b" }}>×</button>
-					</span>
-				))}
-				{searchOpen ? (
+				{searchFor === "payer" ? (
 					<span className="flex items-center gap-1" style={{ flex: 1, minWidth: 120 }}>
 						{/* biome-ignore lint/a11y/noAutofocus: 검색 열면 바로 입력하도록 */}
-						<input type="text" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={selectedId ? "함께 낼 사람 검색" : "이름 검색"} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 0, padding: "6px 10px", fontSize: 13 }} />
-						<button type="button" onClick={() => { setSearchOpen(false); setQuery(""); }} aria-label="검색 닫기" className="text-faint" style={{ fontSize: 15, lineHeight: 1, padding: "0 4px", background: "none", cursor: "pointer" }}>✕</button>
+						<input type="text" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름 검색" className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 0, padding: "6px 10px", fontSize: 13 }} />
+						<button type="button" onClick={() => { setSearchFor(null); setQuery(""); }} aria-label="검색 닫기" className="text-faint" style={{ fontSize: 15, lineHeight: 1, padding: "0 4px", background: "none", cursor: "pointer" }}>✕</button>
 					</span>
 				) : (
-					<button type="button" onClick={() => setSearchOpen(true)} aria-label={selectedId ? "함께 낼 사람 추가" : "회원 검색"} className="text-faint flex items-center" style={{ gap: 3, fontSize: 12.5, fontWeight: 600, padding: "6px 10px", borderRadius: 999, border: "1.5px solid transparent", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
-						<Search size={13} strokeWidth={2.2} />{selectedId ? " 다른 사람" : ""}
+					<button type="button" onClick={() => { setSearchFor("payer"); setQuery(""); }} aria-label="회원 검색" className="text-faint flex items-center" style={{ fontSize: 13, padding: "6px 10px", borderRadius: 999, border: "1.5px solid transparent", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
+						<Search size={13} strokeWidth={2.2} />
 					</button>
 				)}
 			</div>
-
-			{searchOpen && query.trim() && (
+			{searchFor === "payer" && query.trim() && (
 				<div className="flex flex-wrap gap-1.5" style={{ marginTop: 6 }}>
 					{searchResults.length === 0 ? (
 						<span className="text-faint" style={{ fontSize: 12 }}>검색 결과 없음</span>
@@ -234,6 +227,46 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 								{m.name} <span className="text-faint">{m.isGuest ? "게스트" : `${genderText(m.gender)}${m.birthYear ? ` ${m.birthYear}` : ""}`}</span>
 							</button>
 						))
+					)}
+				</div>
+			)}
+
+			{/* 대납 — 함께 낼 사람(납부자와 영역 분리) */}
+			{selectedId && (
+				<div style={{ marginTop: 8, borderRadius: 10, border: "1px dashed rgba(120,120,128,0.3)", padding: "7px 9px" }}>
+					<div className="flex flex-wrap items-center gap-1.5">
+						<span className="text-faint" style={{ fontSize: 11, fontWeight: 700, alignSelf: "center" }}>함께 낼 사람</span>
+						{extraIds.length === 0 && searchFor !== "extra" && <span className="text-faint" style={{ fontSize: 11.5 }}>이 입금으로 남의 것도 내주면 추가</span>}
+						{extraIds.map((id) => (
+							<span key={id} className="flex items-center bg-[rgba(52,199,89,0.16)]" style={{ fontSize: 12.5, fontWeight: 700, borderRadius: 999, padding: "4px 3px 4px 10px", color: "#1c8a3b" }}>
+								{memberById.get(id)?.name ?? "회원"}
+								<button type="button" onClick={() => removeExtra(id)} aria-label="대납 대상 제거" style={{ width: 18, height: 18, lineHeight: "16px", fontSize: 14, background: "none", cursor: "pointer", color: "#1c8a3b" }}>×</button>
+							</span>
+						))}
+						{searchFor === "extra" ? (
+							<span className="flex items-center gap-1" style={{ flex: 1, minWidth: 110 }}>
+								{/* biome-ignore lint/a11y/noAutofocus: 검색 열면 바로 입력하도록 */}
+								<input type="text" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름 검색" className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 0, padding: "6px 10px", fontSize: 13 }} />
+								<button type="button" onClick={() => { setSearchFor(null); setQuery(""); }} aria-label="검색 닫기" className="text-faint" style={{ fontSize: 15, lineHeight: 1, padding: "0 4px", background: "none", cursor: "pointer" }}>✕</button>
+							</span>
+						) : (
+							<button type="button" onClick={() => { setSearchFor("extra"); setQuery(""); }} className="text-[#1c8a3b] flex items-center" style={{ gap: 3, fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 999, border: "1px solid rgba(52,199,89,0.4)", background: "transparent", cursor: "pointer" }}>
+								＋ 추가
+							</button>
+						)}
+					</div>
+					{searchFor === "extra" && query.trim() && (
+						<div className="flex flex-wrap gap-1.5" style={{ marginTop: 6 }}>
+							{searchResults.length === 0 ? (
+								<span className="text-faint" style={{ fontSize: 12 }}>검색 결과 없음</span>
+							) : (
+								searchResults.map((m) => (
+									<button key={m.id} type="button" onClick={() => pickResult(m.id)} className="text-muted" style={{ fontSize: 13, padding: "5px 11px", borderRadius: 999, border: "none", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
+										{m.name} <span className="text-faint">{m.isGuest ? "게스트" : `${genderText(m.gender)}${m.birthYear ? ` ${m.birthYear}` : ""}`}</span>
+									</button>
+								))
+							)}
+						</div>
 					)}
 				</div>
 			)}
