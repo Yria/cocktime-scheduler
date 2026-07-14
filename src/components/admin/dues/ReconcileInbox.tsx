@@ -4,7 +4,6 @@ import {
 	type IngestResult,
 	duesConfirmCourtExternal,
 	duesConfirmReconcile,
-	duesIgnoreTransaction,
 	duesLinkRefund,
 	ingestBankEmail,
 	setTxnCategory,
@@ -170,7 +169,6 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 									onConfirm={(payerId, chargeIds, cym, sessions) => run(t.id, () => duesConfirmReconcile(t.id, payerId, chargeIds, cym, sessions), "처리 실패", { touchesCharges: true })}
 									onConfirmCourtExternal={(sid) => run(t.id, () => duesConfirmCourtExternal(t.id, sid), "외부인 대관비 처리 실패")}
 									onCategorize={(catId) => run(t.id, () => setTxnCategory(t.id, catId), "분류 실패")}
-									onIgnore={() => run(t.id, () => duesIgnoreTransaction(t.id, null), "무시 실패")}
 								/>
 							) : (
 								<ReconcileOutRow
@@ -183,7 +181,6 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 									busy={busyId === t.id}
 									onCategorize={(catId) => run(t.id, () => setTxnCategory(t.id, catId), "분류 실패")}
 									onSetSession={(sid) => run(t.id, () => setTxnSession(t.id, sid), "세션 지정 실패")}
-									onIgnore={() => run(t.id, () => duesIgnoreTransaction(t.id, null), "무시 실패")}
 									onLinkRefund={(inId) => run(t.id, () => duesLinkRefund(t.id, inId), "환불 연결 실패", { okMsg: "환불로 연결했어요" })}
 								/>
 							),

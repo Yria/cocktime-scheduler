@@ -198,12 +198,6 @@ export async function fetchPublicLedger(ym: string): Promise<PublicLedger | null
 	};
 }
 
-export const duesIgnoreTransaction = (txId: number, note: string | null) =>
-	callRpc("dues_ignore_transaction", { p_tx_id: txId, p_note: note });
-
-export const duesUnignoreTransaction = (txId: number) =>
-	callRpc("dues_unignore_transaction", { p_tx_id: txId });
-
 // ── 은행 거래 조회(대사 화면) ─────────────────────────────────────────
 export type BankTxnStatus = "unmatched" | "proposed" | "partial" | "matched" | "ignored";
 export interface BankTxnRow {

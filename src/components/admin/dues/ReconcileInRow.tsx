@@ -20,7 +20,6 @@ interface Props {
 	onConfirm: (payerId: string, chargeIds: number[], ym: string, sessions: { id: number; units: number }[]) => void;
 	onConfirmCourtExternal: (sessionId: number) => void;
 	onCategorize: (categoryId: number) => void;
-	onIgnore: () => void;
 }
 
 interface Sel {
@@ -30,8 +29,8 @@ interface Sel {
 }
 
 // 미처리 입금 1건 처리. 납부자 지정 → 그 회원의 기존 미납(본인+대납·월무관) 배분 + 신규(회비/세션) 생성을
-// 함께 골라 [확인] 1회로. 금액(§4)으로 기본 선택 제안. 비회원 대관·비회비 분류/무시도 여기서.
-export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessions, categories, monthlyFee, courtFee, busy, onConfirm, onConfirmCourtExternal, onCategorize, onIgnore }: Props) {
+// 함께 골라 [확인] 1회로. 금액(§4)으로 기본 선택 제안. 비회원 대관·비회비 수입 분류도 여기서.
+export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessions, categories, monthlyFee, courtFee, busy, onConfirm, onConfirmCourtExternal, onCategorize }: Props) {
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
 	const candidates = useMemo(() => suggestMembers(tx.counterpartyName, members), [tx.counterpartyName, members]);
 	const [selectedId, setSelectedId] = useState<string | null>(candidates[0]?.id ?? null);
@@ -256,17 +255,16 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 						</button>
 					)}
 				</div>
-				{/* 회비 아님: 수입 분류 / 무시 */}
+				{/* 회비 아님: 수입 분류(콕공구·이자·기타 등). 코트대관은 위 세션 선택으로 처리하므로 제외. */}
 				<div className="flex flex-wrap items-center gap-1.5" style={{ marginTop: 8 }}>
 					<span className="text-faint" style={{ fontSize: 11 }}>회비 아님</span>
-					{categories.map((cat) => (
-						<button key={cat.id} type="button" onClick={() => onCategorize(cat.id)} disabled={busy} className="text-muted" style={{ fontSize: 12, fontWeight: 600, padding: "4px 9px", borderRadius: 8, border: "none", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
-							{cat.name}
-						</button>
-					))}
-					<button type="button" onClick={onIgnore} disabled={busy} className="text-faint" style={{ fontSize: 12, fontWeight: 600, padding: "4px 9px", borderRadius: 8, border: "none", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
-						무시
-					</button>
+					{categories
+						.filter((cat) => cat.name !== "코트대관")
+						.map((cat) => (
+							<button key={cat.id} type="button" onClick={() => onCategorize(cat.id)} disabled={busy} className="text-muted" style={{ fontSize: 12, fontWeight: 600, padding: "4px 9px", borderRadius: 8, border: "none", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
+								{cat.name}
+							</button>
+						))}
 				</div>
 			</div>
 		</div>

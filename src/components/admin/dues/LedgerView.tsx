@@ -5,7 +5,6 @@ import {
 	addCategory,
 	deleteCategory,
 	duesCancelMatch,
-	duesUnignoreTransaction,
 	duesUnlinkRefund,
 	setTxnCategory,
 	setTxnSession,
@@ -106,9 +105,8 @@ export default function LedgerView({ ym }: { ym: string }) {
 	}, [txns]);
 
 	// 거래별 처리 요약 + 취소 방식. 처리된 모든 거래는 되돌릴 수 있게(§12). linkTo=하이라이트 대상 거래.
-	type TxInfo = { note: string | null; cancel: null | "match" | "category" | "refund" | "unignore"; linkTo?: number };
+	type TxInfo = { note: string | null; cancel: null | "match" | "category" | "refund"; linkTo?: number };
 	const txInfo = (t: BankTxnRow): TxInfo => {
-		if (t.status === "ignored") return { note: "무시함", cancel: "unignore" };
 		if (t.direction === "in") {
 			if (txAllocations[t.id]) return { note: txAllocations[t.id].label, cancel: "match" };
 			if (t.categoryId != null) return { note: t.categoryName ?? "수입 분류", cancel: "category" };
@@ -162,7 +160,6 @@ export default function LedgerView({ ym }: { ym: string }) {
 		let res: { ok: boolean; error?: string };
 		if (info.cancel === "match") res = await duesCancelMatch(t.id);
 		else if (info.cancel === "refund") res = await duesUnlinkRefund(t.id);
-		else if (info.cancel === "unignore") res = await duesUnignoreTransaction(t.id);
 		else if (info.cancel === "category") {
 			// 분류 해제 = 미처리로. 세션이 물려 있으면 함께 해제(안 그러면 세션 순액에 이중 계상).
 			if (t.sessionId != null) {
@@ -207,9 +204,7 @@ export default function LedgerView({ ym }: { ym: string }) {
 			? "이 입금의 연결을 취소하고 정산함(미처리)으로 되돌립니다. 이미 나간 입금확인 푸시는 회수되지 않으니 회원에게 직접 안내하세요."
 			: cancelKind === "refund"
 				? "이 출금의 환불 연결을 해제하고 정산함(미처리)으로 되돌립니다."
-				: cancelKind === "unignore"
-					? "이 거래의 '무시'를 해제하고 정산함(미처리)으로 되돌립니다."
-					: "이 거래의 분류를 취소하고 정산함(미처리)으로 되돌립니다.";
+				: "이 거래의 분류를 취소하고 정산함(미처리)으로 되돌립니다.";
 
 	return (
 		<div className="flex flex-col gap-4">

@@ -14,21 +14,23 @@ interface Props {
 	categories: TxnCategory[];
 	courtCatId: number | null;
 	ledgerSessions: SessionFeeRow[];
-	refundTargets: RefundTarget[]; // 환불 연결 후보(잔여 있는 입금)
+	refundTargets: RefundTarget[]; // 환불 후보(잔여 있는 입금)
 	busy: boolean;
 	onCategorize: (categoryId: number | null) => void;
 	onSetSession: (sessionId: number | null) => void;
-	onIgnore: () => void;
 	onLinkRefund: (inTxId: number) => void;
 }
 
-// 미처리 출금 1건 처리. 카테고리 지정(코트대관이면 어느 세션인지) 또는 무시.
-// 초과입금 차액/오입금이면 [환불 연결]로 입금과 연결(수지에서 미스터리 지출로 안 잡히게).
-export default function ReconcileOutRow({ tx, categories, courtCatId, ledgerSessions, refundTargets, busy, onCategorize, onSetSession, onIgnore, onLinkRefund }: Props) {
+// 미처리 출금 1건 처리. 정산 항목 = 자동반영형(콕공구·기타 등, 채운 칩=한 번에 반영) + 하위메뉴형(코트대관·환불,
+// 외곽선+`›`=누르면 세션/입금 선택이 한 뎁스 더). 하위메뉴형은 앞쪽 정렬·모양을 달리해 '한 단계 더 있음'을 표시.
+export default function ReconcileOutRow({ tx, categories, courtCatId, ledgerSessions, refundTargets, busy, onCategorize, onSetSession, onLinkRefund }: Props) {
 	const [refundOpen, setRefundOpen] = useState(false);
 	const isCourt = tx.categoryId != null && tx.categoryId === courtCatId;
+	// 코트대관은 하위메뉴(세션)형이라 자동반영 칩 목록에서 뺀다(환불은 카테고리가 아니라 별도 처리).
+	const plainCats = categories.filter((c) => c.id !== courtCatId);
 
-	const catChip = (label: string, on: boolean, onClick: () => void, key: string) => (
+	// 자동반영 칩(한 번 누르면 바로 반영).
+	const plainChip = (label: string, on: boolean, onClick: () => void, key: string) => (
 		<button
 			key={key}
 			type="button"
@@ -36,6 +38,31 @@ export default function ReconcileOutRow({ tx, categories, courtCatId, ledgerSess
 			disabled={busy}
 			className={on ? "text-[#1c8a3b]" : "text-muted"}
 			style={{ fontSize: 12, fontWeight: on ? 700 : 600, padding: "5px 10px", borderRadius: 8, border: "none", background: on ? "rgba(52,199,89,0.18)" : "rgba(120,120,128,0.1)", cursor: "pointer" }}
+		>
+			{on ? "✓ " : ""}{label}
+		</button>
+	);
+	// 하위메뉴형 칩(외곽선 + `›`/`▾`, 누르면 아래에 선택지가 열림).
+	const stepChip = (label: string, open: boolean, onClick: () => void, key: string) => (
+		<button
+			key={key}
+			type="button"
+			onClick={onClick}
+			disabled={busy}
+			className={open ? "text-[#0b84ff]" : "text-muted"}
+			style={{ fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 8, cursor: "pointer", border: open ? "1.5px solid #0b84ff" : "1.5px solid rgba(120,120,128,0.35)", background: open ? "rgba(11,132,255,0.1)" : "transparent" }}
+		>
+			{label} <span style={{ opacity: 0.7, fontWeight: 800 }}>{open ? "▾" : "›"}</span>
+		</button>
+	);
+	// 하위 선택지 칩(세션·입금) — 한 뎁스 안이라 살짝 들여쓰고 구분.
+	const subChip = (label: string, on: boolean, onClick: () => void, key: string, tint = "#1c8a3b") => (
+		<button
+			key={key}
+			type="button"
+			onClick={onClick}
+			disabled={busy}
+			style={{ fontSize: 11.5, fontWeight: on ? 700 : 600, padding: "5px 10px", borderRadius: 8, border: "none", cursor: "pointer", color: on ? "#fff" : tint, background: on ? tint : `${tint}1f` }}
 		>
 			{on ? "✓ " : ""}{label}
 		</button>
@@ -52,54 +79,35 @@ export default function ReconcileOutRow({ tx, categories, courtCatId, ledgerSess
 				</span>
 			</div>
 
-			{/* 분류 */}
+			{/* 정산 항목 — 하위메뉴형(코트대관·환불) 먼저, 그다음 자동반영형 */}
 			<div className="flex flex-wrap items-center gap-1.5" style={{ marginTop: 9 }}>
-				<span className="text-faint" style={{ fontSize: 11 }}>분류</span>
-				{categories.map((cat) => catChip(cat.name, tx.categoryId === cat.id, () => onCategorize(tx.categoryId === cat.id ? null : cat.id), `cat${cat.id}`))}
-				<button type="button" onClick={onIgnore} disabled={busy} className="text-faint" style={{ fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 8, border: "none", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
-					무시
-				</button>
+				<span className="text-faint" style={{ fontSize: 11 }}>정산</span>
+				{courtCatId != null && stepChip("코트대관", isCourt, () => onCategorize(isCourt ? null : courtCatId), "court")}
+				{stepChip("환불", refundOpen, () => setRefundOpen((v) => !v), "refund")}
+				{plainCats.map((c) => plainChip(c.name, tx.categoryId === c.id, () => onCategorize(tx.categoryId === c.id ? null : c.id), `c${c.id}`))}
 			</div>
 
-			{/* 코트대관이면 어느 세션 */}
+			{/* 코트대관 → 어느 세션(하위) */}
 			{isCourt && (
-				<div className="flex flex-wrap items-center gap-1.5" style={{ marginTop: 8 }}>
-					<span className="text-faint" style={{ fontSize: 11 }}>세션</span>
+				<div className="flex flex-wrap gap-1.5" style={{ marginTop: 7, marginLeft: 10, paddingLeft: 8, borderLeft: "2px solid rgba(11,132,255,0.25)" }}>
 					{ledgerSessions.length === 0 ? (
 						<span className="text-faint" style={{ fontSize: 11.5 }}>대관 세션이 없어요</span>
 					) : (
-						ledgerSessions.map((s) => catChip(sessionLabel(s), tx.sessionId === s.id, () => onSetSession(tx.sessionId === s.id ? null : s.id), `s${s.id}`))
+						ledgerSessions.map((s) => subChip(sessionLabel(s), tx.sessionId === s.id, () => onSetSession(tx.sessionId === s.id ? null : s.id), `s${s.id}`))
 					)}
-					{tx.sessionId == null && <span className="text-[#c2670a]" style={{ fontSize: 11 }}>← 어느 날 대관인지 고르세요</span>}
 				</div>
 			)}
 
-			{/* 환불 연결 */}
-			<div style={{ marginTop: 8 }}>
-				<button type="button" onClick={() => setRefundOpen((v) => !v)} disabled={busy} className="text-[#c2670a]" style={{ fontSize: 11.5, fontWeight: 700, background: "none", cursor: "pointer" }}>
-					{refundOpen ? "환불 닫기" : "차액·오입금 환불"}
-				</button>
-				{refundOpen && (
-					<div className="flex flex-wrap gap-1.5" style={{ marginTop: 6 }}>
-						{refundTargets.length === 0 ? (
-							<span className="text-faint" style={{ fontSize: 11.5 }}>연결할 입금(잔여 있는)이 없어요</span>
-						) : (
-							refundTargets.map((r) => (
-								<button
-									key={r.id}
-									type="button"
-									onClick={() => onLinkRefund(r.id)}
-									disabled={busy}
-									className="text-muted"
-									style={{ fontSize: 11.5, fontWeight: 600, padding: "5px 9px", borderRadius: 8, border: "1px solid rgba(194,103,10,0.4)", background: "rgba(194,103,10,0.08)", cursor: "pointer" }}
-								>
-									{fmtMD(r.date)} {r.name} <span className="text-[#1c8a3b]">+{won(r.amount)}</span>
-								</button>
-							))
-						)}
-					</div>
-				)}
-			</div>
+			{/* 환불 → 어느 입금(하위) */}
+			{refundOpen && (
+				<div className="flex flex-wrap gap-1.5" style={{ marginTop: 7, marginLeft: 10, paddingLeft: 8, borderLeft: "2px solid rgba(11,132,255,0.25)" }}>
+					{refundTargets.length === 0 ? (
+						<span className="text-faint" style={{ fontSize: 11.5 }}>잔여 있는 입금이 없어요</span>
+					) : (
+						refundTargets.map((r) => subChip(`${fmtMD(r.date)} ${r.name} +${won(r.amount)}`, false, () => onLinkRefund(r.id), `r${r.id}`, "#c2670a"))
+					)}
+				</div>
+			)}
 		</div>
 	);
 }
