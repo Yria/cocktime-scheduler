@@ -359,7 +359,7 @@ interface RawUnpaid {
 	amount_paid: number;
 	status: string;
 	payer_hint: string | null;
-	sessions: { title: string | null; scheduled_at: string | null } | null;
+	sessions: { title: string | null; scheduled_at: string | null; places: { name: string | null } | null } | null;
 }
 export interface UnpaidCharge {
 	id: number;
@@ -372,19 +372,21 @@ export interface UnpaidCharge {
 	amountPaid: number;
 	isProxy: boolean;
 }
-function unpaidLabel(kind: string, periodYm: string | null, session: { title: string | null; scheduled_at: string | null } | null, proxy: boolean): string {
+function unpaidLabel(kind: string, periodYm: string | null, session: { title: string | null; scheduled_at: string | null; places: { name: string | null } | null } | null, proxy: boolean): string {
 	if (kind === "monthly_fee") return `${periodYm ?? ""} 회비`;
+	// 세션 칩(sessionLabel)과 동일 형식으로 통일: "{월.일} {장소} 대관비". 장소 없으면 날짜만.
 	const d = session?.scheduled_at
 		? new Date(session.scheduled_at).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric", timeZone: "Asia/Seoul" })
 		: (session?.title ?? "세션");
-	return `${d} 대관비${proxy ? " (게스트)" : ""}`;
+	const place = session?.places?.name;
+	return `${d}${place ? ` ${place}` : ""} 대관비${proxy ? " (게스트)" : ""}`;
 }
 
 /** 전체 미납/부분납 부과를 회원별로 인덱싱(member_id + payer_hint 대납분 포함). 대사 인라인 제안용. */
 export async function fetchUnpaidByMember(): Promise<Record<string, UnpaidCharge[]>> {
 	const { data, error } = await supabase
 		.from("dues_charges")
-		.select("id, kind, member_id, period_ym, session_id, amount_due, amount_paid, status, payer_hint, sessions(title, scheduled_at)")
+		.select("id, kind, member_id, period_ym, session_id, amount_due, amount_paid, status, payer_hint, sessions(title, scheduled_at, places(name))")
 		.in("status", ["unpaid", "partial"])
 		.order("created_at", { ascending: true });
 	if (error) {

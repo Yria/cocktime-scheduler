@@ -209,7 +209,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 					{monthSessions.length === 0 ? (
 						<span className="text-faint" style={{ fontSize: 11.5 }}>이 달 대관 세션이 없어요</span>
 					) : (
-						monthSessions.map((s) => itemChip(sessionLabel(s), extSession === s.id, () => setExtSession((v) => (v === s.id ? null : s.id)), `ext${s.id}`))
+						monthSessions.map((s) => itemChip(`${sessionLabel(s)} 대관비`, extSession === s.id, () => setExtSession((v) => (v === s.id ? null : s.id)), `ext${s.id}`))
 					)}
 				</div>
 			)}
