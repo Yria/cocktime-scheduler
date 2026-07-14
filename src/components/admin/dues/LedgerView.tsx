@@ -28,21 +28,20 @@ export default function LedgerView({ ym }: { ym: string }) {
 	const monthly = useDuesStore((s) => s.monthly);
 	const txAllocations = useDuesStore((s) => s.txAllocations);
 
-	const courtCatId = useMemo(() => categories.find((c) => c.name === "코트대관")?.id ?? null, [categories]);
 	const [busyId, setBusyId] = useState<number | null>(null);
 	const [cancelTx, setCancelTx] = useState<BankTxnRow | null>(null);
 	const [newCat, setNewCat] = useState("");
 	const [addingCat, setAddingCat] = useState(false);
 	const [confirmDeleteCat, setConfirmDeleteCat] = useState<TxnCategory | null>(null);
-	// 거래내역 필터(키워드·카테고리) + 환불 하이라이트
+	// 거래내역 필터(키워드·항목) + 환불 하이라이트. 항목: null=전체 / 'court'=코트대관(세션) / 'refund'=환불 / number=카테고리.
 	const [query, setQuery] = useState("");
-	const [catFilter, setCatFilter] = useState<number | null>(null); // null=전체
+	const [catFilter, setCatFilter] = useState<number | "court" | "refund" | null>(null);
 	const [highlightId, setHighlightId] = useState<number | null>(null);
 
 	const reloadFull = () => duesActions.loadMonth(ym, true); // 카테고리 추가/삭제는 전체(categories 갱신)
 
-	const { income, expense, latestBalance, feeIncome, sessionRows, catRows, courtUnassignedOut, uncatIn, uncatOut } = useMemo(() => {
-		let inc = 0, exp = 0, courtUnassigned = 0, uIn = 0, uOut = 0;
+	const { income, expense, latestBalance, feeIncome, sessionRows, catRows, uncatIn, uncatOut } = useMemo(() => {
+		let inc = 0, exp = 0, uIn = 0, uOut = 0;
 		const catMap = new Map<number, { name: string; inSum: number; outSum: number }>();
 		const sess = new Map<number, { income: number; expense: number }>();
 		let latest: { at: string; bal: number } | null = null;
@@ -50,16 +49,15 @@ export default function LedgerView({ ym }: { ym: string }) {
 			if (t.direction === "in") inc += t.amount;
 			else exp += t.amount;
 			if (t.balanceAfter != null && (!latest || t.occurredAt > latest.at)) latest = { at: t.occurredAt, bal: t.balanceAfter };
-			if (t.categoryId != null && t.categoryId !== courtCatId) {
+			if (t.sessionId != null) continue; // 코트대관 = 세션별 순액(sessionTxns)로 집계 → 여기선 스킵(이중계상 방지)
+			if (t.categoryId != null) {
 				const e = catMap.get(t.categoryId) ?? { name: t.categoryName ?? "?", inSum: 0, outSum: 0 };
 				if (t.direction === "in") e.inSum += t.amount;
 				else e.outSum += t.amount;
 				catMap.set(t.categoryId, e);
-			} else if (t.categoryId === courtCatId && t.direction === "out" && t.sessionId == null) {
-				courtUnassigned += t.amount;
-			} else if (t.categoryId == null) {
+			} else {
 				if (t.direction === "in" && (t.status === "matched" || t.status === "partial")) {
-					// 회비/대관비 수납은 부과(amount_paid)로 집계 → 여기선 스킵(중복 방지)
+					// 회비 수납은 부과(amount_paid)로 집계 → 여기선 스킵(중복 방지)
 				} else if (t.direction === "in") uIn += t.amount;
 				else if (t.refundOfTxId == null) uOut += t.amount; // 환불 출금은 미분류 지출로 안 잡음
 			}
@@ -86,12 +84,11 @@ export default function LedgerView({ ym }: { ym: string }) {
 			latestBalance: latest?.bal ?? null,
 			feeIncome: monthly.reduce((s, m) => s + m.amountPaid, 0),
 			sessionRows: rows,
-			courtUnassignedOut: courtUnassigned,
 			uncatIn: uIn,
 			uncatOut: uOut,
 			catRows: [...catMap.entries()].map(([id, e]) => ({ id, name: e.name, inSum: e.inSum, outSum: e.outSum, net: e.inSum - e.outSum })),
 		};
-	}, [txns, court, monthly, monthSessions, sessionTxns, courtCatId]);
+	}, [txns, court, monthly, monthSessions, sessionTxns]);
 
 	// 거래 내역(러닝 잔액) — 최신순.
 	const ledger = useMemo(() => [...txns].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)), [txns]);
@@ -104,14 +101,15 @@ export default function LedgerView({ ym }: { ym: string }) {
 		return m;
 	}, [txns]);
 
+	const courtLabel = (t: BankTxnRow) => `코트대관 · ${(t.sessionId != null && sessionLabelById.get(t.sessionId)) || (t.sessionDate ? fmtMD(t.sessionDate) : "세션")}`;
 	// 거래별 처리 요약 + 취소 방식. 처리된 모든 거래는 되돌릴 수 있게(§12). linkTo=하이라이트 대상 거래.
-	type TxInfo = { note: string | null; cancel: null | "match" | "category" | "refund"; linkTo?: number };
+	// 항목 개념 통일: 코트대관=session_id, 환불=refund_of_tx_id, 그 외=category_id / 회비=배분.
+	type TxInfo = { note: string | null; cancel: null | "match" | "category" | "refund" | "session"; linkTo?: number };
 	const txInfo = (t: BankTxnRow): TxInfo => {
 		if (t.direction === "in") {
 			if (txAllocations[t.id]) return { note: txAllocations[t.id].label, cancel: "match" };
+			if (t.sessionId != null) return { note: courtLabel(t), cancel: "match" }; // 비회원 대관 수입(세션 귀속·matched) — cancel_match가 세션 해제
 			if (t.categoryId != null) return { note: t.categoryName ?? "수입 분류", cancel: "category" };
-			// 외부(비회원) 대관 수입 — 배분·분류 없이 세션에만 귀속. cancel_match가 세션 태깅 해제.
-			if (t.status === "matched" && t.sessionId != null) return { note: `세션 수입 · ${sessionLabelById.get(t.sessionId) ?? (t.sessionDate ? fmtMD(t.sessionDate) : "세션")}`, cancel: "match" };
 			// 전액 환불된 오입금 — 배분 없이 환불 출금으로만 해결. 원출금으로 점프(취소는 그 출금에서).
 			const refOut = refundOutByIn.get(t.id);
 			if (refOut != null) return { note: "환불 처리됨", cancel: null, linkTo: refOut };
@@ -121,11 +119,8 @@ export default function LedgerView({ ym }: { ym: string }) {
 			const inName = txById.get(t.refundOfTxId)?.counterpartyName;
 			return { note: `환불 → ${inName || "입금"}`, cancel: "refund", linkTo: t.refundOfTxId };
 		}
-		if (t.categoryId != null) {
-			const base = t.categoryName ?? "지출";
-			if (t.categoryId === courtCatId && t.sessionId != null) return { note: `${base} · ${sessionLabelById.get(t.sessionId) ?? (t.sessionDate ? fmtMD(t.sessionDate) : "세션")}`, cancel: "category" };
-			return { note: base, cancel: "category" };
-		}
+		if (t.sessionId != null) return { note: courtLabel(t), cancel: "session" }; // 코트대관 지출
+		if (t.categoryId != null) return { note: t.categoryName ?? "지출", cancel: "category" };
 		return { note: null, cancel: null };
 	};
 
@@ -136,12 +131,14 @@ export default function LedgerView({ ym }: { ym: string }) {
 		window.setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 2000);
 	};
 
-	// 필터 적용(키워드=적요·처리내역, 카테고리=category_id).
+	// 필터 적용(키워드=적요·처리내역, 항목=코트대관/환불/카테고리).
 	const q = query.trim().toLowerCase();
 	const filteredLedger = useMemo(
 		() =>
 			ledger.filter((t) => {
-				if (catFilter != null && t.categoryId !== catFilter) return false;
+				if (catFilter === "court" && t.sessionId == null) return false;
+				else if (catFilter === "refund" && t.refundOfTxId == null) return false;
+				else if (typeof catFilter === "number" && t.categoryId !== catFilter) return false;
 				if (q) {
 					const hay = `${t.counterpartyName ?? ""} ${txAllocations[t.id]?.label ?? ""} ${t.categoryName ?? ""}`.toLowerCase();
 					if (!hay.includes(q)) return false;
@@ -160,18 +157,12 @@ export default function LedgerView({ ym }: { ym: string }) {
 		let res: { ok: boolean; error?: string };
 		if (info.cancel === "match") res = await duesCancelMatch(t.id);
 		else if (info.cancel === "refund") res = await duesUnlinkRefund(t.id);
-		else if (info.cancel === "category") {
-			// 분류 해제 = 미처리로. 세션이 물려 있으면 함께 해제(안 그러면 세션 순액에 이중 계상).
-			if (t.sessionId != null) {
-				const s = await setTxnSession(t.id, null);
-				res = s.ok ? await setTxnCategory(t.id, null) : s;
-			} else {
-				res = await setTxnCategory(t.id, null);
-			}
-		} else res = { ok: false, error: "취소 불가" };
+		else if (info.cancel === "session") res = await setTxnSession(t.id, null); // 코트대관 해제
+		else if (info.cancel === "category") res = await setTxnCategory(t.id, null);
+		else res = { ok: false, error: "취소 불가" };
 		setBusyId(null);
 		if (res.ok) {
-			// 대사 취소만 charge(amount_paid)를 되돌림 → refreshMonth. 분류·환불 해제는 tx만 → refreshTxns(§10.2).
+			// 대사 취소만 charge(amount_paid)를 되돌림 → refreshMonth. 나머지(분류·세션·환불 해제)는 tx만 → refreshTxns(§10.2).
 			await (info.cancel === "match" ? duesActions.refreshMonth(ym) : duesActions.refreshTxns(ym));
 		} else toast("취소 실패", { variant: "error" });
 	};
@@ -204,7 +195,9 @@ export default function LedgerView({ ym }: { ym: string }) {
 			? "이 입금의 연결을 취소하고 정산함(미처리)으로 되돌립니다. 이미 나간 입금확인 푸시는 회수되지 않으니 회원에게 직접 안내하세요."
 			: cancelKind === "refund"
 				? "이 출금의 환불 연결을 해제하고 정산함(미처리)으로 되돌립니다."
-				: "이 거래의 분류를 취소하고 정산함(미처리)으로 되돌립니다.";
+				: cancelKind === "session"
+					? "이 거래의 코트대관(세션) 지정을 해제하고 정산함(미처리)으로 되돌립니다."
+					: "이 거래의 분류를 취소하고 정산함(미처리)으로 되돌립니다.";
 
 	return (
 		<div className="flex flex-col gap-4">
@@ -246,16 +239,13 @@ export default function LedgerView({ ym }: { ym: string }) {
 							right={<span className={r.net >= 0 ? "text-[#1c8a3b]" : "text-[#d1362c]"} style={{ fontWeight: 800 }}>{r.net === 0 ? "정산 0" : `${r.net > 0 ? "+" : "−"}${won(Math.abs(r.net))}`}</span>}
 						/>
 					))}
-					{courtUnassignedOut > 0 && (
-						<Row name="세션 안 정한 코트비" nameColor="#c2670a" sub="정산함에서 출금→세션 지정" right={<span className="text-[#d1362c]" style={{ fontWeight: 800 }}>−{won(courtUnassignedOut)}</span>} />
-					)}
 					{catRows.map((r) => (
 						<Row key={r.id} name={r.name} inAmt={r.inSum} outAmt={r.outSum} right={<span className={r.net >= 0 ? "text-[#1c8a3b]" : "text-[#d1362c]"} style={{ fontWeight: 800 }}>{r.net === 0 ? "정산 0" : `${r.net > 0 ? "+" : "−"}${won(Math.abs(r.net))}`}</span>} />
 					))}
 					{(uncatIn > 0 || uncatOut > 0) && (
 						<Row name="미분류" nameColor="#9498a2" inAmt={uncatIn} outAmt={uncatOut} right={null} />
 					)}
-					{catRows.length === 0 && sessionRows.length === 0 && feeIncome === 0 && courtUnassignedOut === 0 && uncatIn === 0 && uncatOut === 0 && (
+					{catRows.length === 0 && sessionRows.length === 0 && feeIncome === 0 && uncatIn === 0 && uncatOut === 0 && (
 						<p className="text-faint" style={{ fontSize: 13 }}>이 달 거래가 없어요.</p>
 					)}
 				</div>
@@ -289,10 +279,15 @@ export default function LedgerView({ ym }: { ym: string }) {
 					</div>
 					<input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름·처리내역 검색" className={inputCls} style={{ ...inputStyle, padding: "7px 10px", fontSize: 13 }} />
 					<div className="flex flex-wrap gap-1.5" style={{ marginTop: 7 }}>
-						{[{ id: null as number | null, name: "전체" }, ...categories].map((c) => {
-							const on = catFilter === c.id;
+						{[
+							{ key: null as number | "court" | "refund" | null, name: "전체" },
+							{ key: "court" as const, name: "코트대관" },
+							{ key: "refund" as const, name: "환불" },
+							...categories.map((c) => ({ key: c.id, name: c.name })),
+						].map((c) => {
+							const on = catFilter === c.key;
 							return (
-								<button key={c.id ?? "all"} type="button" onClick={() => setCatFilter(c.id)} className={on ? "text-strong" : "text-muted"} style={{ fontSize: 12, fontWeight: on ? 700 : 500, padding: "4px 10px", borderRadius: 999, border: "none", background: on ? "rgba(11,132,255,0.16)" : "rgba(120,120,128,0.1)", cursor: "pointer" }}>
+								<button key={String(c.key ?? "all")} type="button" onClick={() => setCatFilter(c.key)} className={on ? "text-strong" : "text-muted"} style={{ fontSize: 12, fontWeight: on ? 700 : 500, padding: "4px 10px", borderRadius: 999, border: "none", background: on ? "rgba(11,132,255,0.16)" : "rgba(120,120,128,0.1)", cursor: "pointer" }}>
 									{c.name}
 								</button>
 							);

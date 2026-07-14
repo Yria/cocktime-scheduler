@@ -32,35 +32,31 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 	const categories = useDuesStore((s) => s.categories);
 	const txAllocations = useDuesStore((s) => s.txAllocations);
 
-	const courtCatId = useMemo(() => categories.find((c) => c.name === "코트대관")?.id ?? null, [categories]);
 	const [ingesting, setIngesting] = useState(false);
 	const [ingestResult, setIngestResult] = useState<IngestResult | null>(null);
 	const [busyId, setBusyId] = useState<number | null>(null);
 	const [filter, setFilter] = useState<Filter>("all");
 
-
 	const { pending, partial } = useMemo(() => {
 		const pending: BankTxnRow[] = [];
 		const partial: BankTxnRow[] = [];
 		for (const t of txns) {
-			if (t.status === "ignored") continue; // 무시된 거래는 회계 거래내역에서 조회·되돌리기(정산함은 처리할 것만)
+			if (t.status === "ignored") continue; // 레거시 무시 거래는 회계 거래내역에서만(정산함은 처리할 것만)
 			if (t.direction === "in") {
 				if (t.categoryId != null || t.status === "matched") continue; // 처리됨(회계로)
 				if (t.status === "partial") partial.push(t);
 				else pending.push(t);
 			} else {
-				// 출금: 환불연결 or (분류됨 & (코트 아니면 or 세션지정됨)) = 처리됨
-				if (t.refundOfTxId != null) continue;
-				if (t.categoryId == null) pending.push(t);
-				else if (t.categoryId === courtCatId && t.sessionId == null) pending.push(t); // 코트대관인데 세션 미지정
-				else continue;
+				// 출금 처리됨 = 환불연결 / 카테고리 분류 / 코트대관(세션 지정). 셋 다 없으면 미처리.
+				if (t.refundOfTxId != null || t.categoryId != null || t.sessionId != null) continue;
+				pending.push(t);
 			}
 		}
 		const byDateDesc = (a: BankTxnRow, b: BankTxnRow) => b.occurredAt.localeCompare(a.occurredAt);
 		pending.sort(byDateDesc);
 		partial.sort(byDateDesc);
 		return { pending, partial };
-	}, [txns, courtCatId]);
+	}, [txns]);
 
 	// 환불 연결 후보: 잔여 있는 입금(미처리·부분).
 	const refundTargets = useMemo<RefundTarget[]>(
@@ -175,7 +171,6 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 									key={t.id}
 									tx={t}
 									categories={categories}
-									courtCatId={courtCatId}
 									ledgerSessions={ledgerSessions}
 									refundTargets={refundTargets}
 									busy={busyId === t.id}

@@ -600,3 +600,18 @@
 - 검증: tsc clean, 204 tests, build·lint clean, RPC 드롭 배포.
 
 ---
+
+## #49
+
+**Prompt**: 개념 혼용 정리 — 코트대관은 카테고리, 환불은 아님인데 정산함(입금엔 안 보이고 출금만)·회계필터에서 취급이 꼬임. 코트대관·환불을 '미리정의된' 항목 취급하고 DB 코트대관 카테고리 제거. 필터에 코트대관·환불 추가. 입금행 텍스트 제거. 출금행을 입금행처럼 상단 버튼→하단변경→확인. (논리검증 후 구현)
+
+**Answer**: 논리검증(환불=출금전용/코트대관=session식별 시 미배정상태 사라짐) 후 사용자 확답(코트대관 완전제거·출금 선택후확인·환불은 출금행 내 하단변경) 받아 개념 통일.
+
+- **개념 통일**: 항목 = 코트대관(session_id) · 환불(refund_of_tx_id) · 카테고리(category_id) · 회비(배분)로 분리. **코트대관 DB 카테고리 완전 제거**(마이그레이션: 쓰던 3건 category_id null화[세션연결분은 세션으로, 미연결 −45,000은 미정산 복귀] 후 삭제). dues_public_ledger에서 court-cat 특수처리 제거(세션 기반만).
+- **출금행(ReconcileOutRow) 재작성**: 상단 정산항목 칩(코트대관›·환불›=외곽선/앞정렬, 콕공구·이자·정모·기타=채운칩) 선택 → 하단 내용 변경(세션/입금후보) → **[확인]으로 정산**(입금행과 동일 구조). court=setTxnSession(카테고리 없음)·refund=duesLinkRefund·category=setTxnCategory.
+- **회계 필터**: 코트대관(session_id)·환불(refund_of_tx_id) 칩 추가.
+- **집계 통일**: LedgerView에서 courtCatId 제거, session_id 있는 거래는 세션순액으로만(카테고리/미분류 이중계상 방지), '세션 안 정한 코트비'(courtUnassignedOut) 개념 제거. txInfo/취소도 session 기반(코트대관 취소=setTxnSession null).
+- **입금행**: '회비 아님'·'낼 항목을 골라 처리하세요' 텍스트 제거.
+- 검증: tsc clean, 204 tests, build·lint clean, 공개회계 스모크 정상(income 637055/expense 532300), 마이그레이션 배포.
+
+---

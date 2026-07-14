@@ -224,7 +224,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 								{total !== tx.amount && <span className="text-[#c2670a]"> (입금 {won(tx.amount)})</span>}
 							</>
 						) : (
-							`${selectedMember?.name} · 낼 항목을 골라 처리하세요`
+							""
 						)
 					) : externalCourt ? (
 						extSession ? "비회원 대관비 — 확인하면 세션 수입으로" : "회원을 검색하거나, 비회원 대관비면 세션을 고르세요"
@@ -255,16 +255,13 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 						</button>
 					)}
 				</div>
-				{/* 회비 아님: 수입 분류(콕공구·이자·기타 등). 코트대관은 위 세션 선택으로 처리하므로 제외. */}
+				{/* 비회비 수입 분류(콕공구·이자·정모·기타). 코트대관은 카테고리가 아니라 위 비회원 세션 선택으로. */}
 				<div className="flex flex-wrap items-center gap-1.5" style={{ marginTop: 8 }}>
-					<span className="text-faint" style={{ fontSize: 11 }}>회비 아님</span>
-					{categories
-						.filter((cat) => cat.name !== "코트대관")
-						.map((cat) => (
-							<button key={cat.id} type="button" onClick={() => onCategorize(cat.id)} disabled={busy} className="text-muted" style={{ fontSize: 12, fontWeight: 600, padding: "4px 9px", borderRadius: 8, border: "none", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
-								{cat.name}
-							</button>
-						))}
+					{categories.map((cat) => (
+						<button key={cat.id} type="button" onClick={() => onCategorize(cat.id)} disabled={busy} className="text-muted" style={{ fontSize: 12, fontWeight: 600, padding: "4px 9px", borderRadius: 8, border: "none", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
+							{cat.name}
+						</button>
+					))}
 				</div>
 			</div>
 		</div>
