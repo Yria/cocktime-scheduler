@@ -17,11 +17,7 @@ import {
 	ymLabel,
 	ymOfIso,
 } from "../admin/dues/duesText";
-
-// 순액 우측 표시(초록/빨강 + 부호, 0이면 '정산 0'). 공개 회계 행 공용.
-function netRight(n: number): ReactNode {
-	return <span className={moneyClass(n >= 0)} style={{ fontWeight: 800 }}>{n === 0 ? "정산 0" : signed(n)}</span>;
-}
+import { NetAmount } from "../admin/dues/duesUi";
 
 function chargeLabel(c: MyChargeRow): string {
 	if (c.kind === "monthly_fee") return `${c.periodYm ?? ""} 회비`;
@@ -132,16 +128,16 @@ export default function MyDuesPage() {
 									<LedgerRow name="걷은 회비" right={<span className="text-[#1c8a3b]" style={{ fontWeight: 800 }}>+{won(ledger.feeCollected)}</span>} />
 								)}
 								{ledger.sessions.map((s, i) => (
-									<LedgerRow key={`sess${i}`} name={`${s.date} ${s.place ?? ""} 대관비`.trim()} right={netRight(s.net)} />
+									<LedgerRow key={`sess${i}`} name={`${s.date} ${s.place ?? ""} 대관비`.trim()} right={<NetAmount n={s.net} />} />
 								))}
 								{ledger.categories.map((c, i) => (
-									<LedgerRow key={`cat${i}`} name={c.name} right={netRight(c.net)} />
+									<LedgerRow key={`cat${i}`} name={c.name} right={<NetAmount n={c.net} />} />
 								))}
 								{ledger.refund > 0 && (
 									<LedgerRow name="환불" right={<span className="text-[#d1362c]" style={{ fontWeight: 800 }}>−{won(ledger.refund)}</span>} />
 								)}
 								{(ledger.uncatIn > 0 || ledger.uncatOut > 0) && (
-									<LedgerRow name="미분류" nameColor="#9498a2" right={netRight(ledger.uncatIn - ledger.uncatOut)} />
+									<LedgerRow name="미분류" nameColor="#9498a2" right={<NetAmount n={ledger.uncatIn - ledger.uncatOut} />} />
 								)}
 								<div className="flex items-center gap-2" style={{ borderTop: "1px solid rgba(120,120,128,0.2)", paddingTop: 7, marginTop: 2 }}>
 									<span className="text-strong" style={{ fontSize: 13.5, fontWeight: 700, flex: 1 }}>이 달 남은 돈</span>

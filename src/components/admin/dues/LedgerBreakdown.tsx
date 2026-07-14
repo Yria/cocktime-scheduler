@@ -4,7 +4,8 @@ import { duesActions, useDuesStore } from "../../../store/duesStore";
 import { toast } from "../../../store/toastStore";
 import ConfirmDialog from "../../common/ConfirmDialog";
 import { inputCls, inputStyle } from "../../common/fieldStyles";
-import { moneyClass, sessionLabel, signed } from "./duesText";
+import { sessionLabel } from "./duesText";
+import { NetAmount } from "./duesUi";
 
 // 항목별 정산(월 통장 기준·현금주의): 그 달 통장 거래만 버킷에 담아 합이 반드시 '이 달 남은 돈'과 일치.
 //  - 매칭 입금은 배분내역(txAllocations)으로 회비/세션대관에 쪼갬(부분배분 잔액은 미분류).
@@ -95,7 +96,6 @@ export default function LedgerBreakdown({ ym }: { ym: string }) {
 		else toast("카테고리 삭제 실패", { variant: "error" });
 	};
 
-	const netRight = (n: number) => <span className={moneyClass(n >= 0)} style={{ fontWeight: 800 }}>{n === 0 ? "정산 0" : signed(n)}</span>;
 	const empty = catRows.length === 0 && sessionRows.length === 0 && feeIncome === 0 && refundOut === 0 && uncatIn === 0 && uncatOut === 0;
 
 	return (
@@ -107,10 +107,10 @@ export default function LedgerBreakdown({ ym }: { ym: string }) {
 			<div className="flex flex-col gap-1.5">
 				{feeIncome > 0 && <Row name="걷은 회비" right={<span className="text-[#1c8a3b]" style={{ fontWeight: 800 }}>+{feeIncome.toLocaleString("ko-KR")}원</span>} />}
 				{sessionRows.map((r) => (
-					<Row key={r.id} name={r.s ? `${sessionLabel(r.s)} 대관비` : `세션 #${r.id} 대관비`} inAmt={r.income} outAmt={r.expense} right={netRight(r.net)} />
+					<Row key={r.id} name={r.s ? `${sessionLabel(r.s)} 대관비` : `세션 #${r.id} 대관비`} inAmt={r.income} outAmt={r.expense} right={<NetAmount n={r.net} />} />
 				))}
 				{catRows.map((r) => (
-					<Row key={r.id} name={r.name} inAmt={r.inSum} outAmt={r.outSum} right={netRight(r.net)} />
+					<Row key={r.id} name={r.name} inAmt={r.inSum} outAmt={r.outSum} right={<NetAmount n={r.net} />} />
 				))}
 				{refundOut > 0 && <Row name="환불" outAmt={refundOut} right={<span className="text-[#d1362c]" style={{ fontWeight: 800 }}>−{refundOut.toLocaleString("ko-KR")}원</span>} />}
 				{(uncatIn > 0 || uncatOut > 0) && <Row name="미분류" nameColor="#9498a2" inAmt={uncatIn} outAmt={uncatOut} right={null} />}

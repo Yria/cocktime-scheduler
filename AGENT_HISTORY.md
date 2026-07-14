@@ -831,3 +831,15 @@
 - 검증: tsc/build/lint clean, 204 tests, 공개회계 재정산 DB 검증.
 
 ---
+
+## #66
+
+**Prompt**: (계속) 최적화 마무리 — 남은 중복/점검.
+
+**Answer**: 최종 정리 — 순액 표시 공용 컴포넌트화 + 잔여 점검.
+
+- netRight(LedgerBreakdown·MyDuesPage 중복 1줄 헬퍼)를 공용 컴포넌트 NetAmount(duesUi)로 통일. fast-refresh 린트(컴포넌트 파일은 컴포넌트만 export) 준수 위해 함수→컴포넌트로.
+- 점검 결과 유지 결정: SessionsHome 색상은 의미 고정색(완납 초록/미납 빨강)이라 부호 헬퍼 대상 아님(정상). 계정 외 대형 파일(ScheduleCard 등)은 이번 회계 최적화 범위 밖이라 손대지 않음.
+- 검증: tsc/build/lint clean, 204 tests.
+
+---

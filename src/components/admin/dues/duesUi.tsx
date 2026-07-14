@@ -1,6 +1,12 @@
 import type { ReactNode } from "react";
+import { moneyClass, signed } from "./duesText";
 
 // 회계 UI 공용 프리미티브. 입금·출금 정산행 등에서 재사용(중복 제거).
+
+/** 항목 순액 표시(초록/빨강 + 부호, 0이면 '정산 0'). 회계·공개회계 행 공용. */
+export function NetAmount({ n }: { n: number }) {
+	return <span className={moneyClass(n >= 0)} style={{ fontWeight: 800 }}>{n === 0 ? "정산 0" : signed(n)}</span>;
+}
 
 /**
  * 선택 토글 칩(초록 활성 + ✓ 접두). 정산함 입금 항목칩·출금 선택칩 공용.
