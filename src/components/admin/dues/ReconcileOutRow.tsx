@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { BankTxnRow, SessionFeeRow, TxnCategory } from "../../../lib/supabase/dues";
 import { fmtMD, sessionLabel, won } from "./duesText";
+import { ToggleChip } from "./duesUi";
 
 export interface RefundTarget {
 	id: number;
@@ -57,18 +58,9 @@ export default function ReconcileOutRow({ tx, categories, ledgerSessions, refund
 			{label} <span style={{ opacity: 0.7, fontWeight: 800 }}>{open ? "▾" : "›"}</span>
 		</button>
 	);
-	// 선택 칩(세션·입금·카테고리) — 입금행 항목 칩과 동일 디자인.
+	// 선택 칩(세션·입금·카테고리) — 입금행 항목 칩(ToggleChip)과 동일.
 	const pickChip = (label: string, on: boolean, onClick: () => void, key: string) => (
-		<button
-			key={key}
-			type="button"
-			onClick={onClick}
-			disabled={busy}
-			className={on ? "text-[#1c8a3b]" : "text-faint"}
-			style={{ fontSize: 12.5, fontWeight: on ? 700 : 500, padding: "5px 11px", borderRadius: 8, cursor: "pointer", border: "none", background: on ? "rgba(52,199,89,0.18)" : "rgba(120,120,128,0.1)" }}
-		>
-			{on ? "✓ " : ""}{label}
-		</button>
+		<ToggleChip key={key} label={label} on={on} onClick={onClick} disabled={busy} />
 	);
 
 	return (

@@ -6,6 +6,7 @@ import ConfirmDialog from "../../common/ConfirmDialog";
 import { inputCls, inputStyle } from "../../common/fieldStyles";
 import { genderText } from "../memberAdminText";
 import { fmtMD, remaining, sessionLabel, won, ymOfIso } from "./duesText";
+import { ToggleChip } from "./duesUi";
 import { type MemberLite, suggestMembers } from "./matching";
 
 interface Props {
@@ -187,20 +188,10 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		else if (extMode && extSession != null) onConfirmCourtExternal(extSession);
 	};
 
-	const itemChip = (label: string, on: boolean, onClick: () => void, key: string) => (
-		<button
-			key={key}
-			type="button"
-			onClick={onClick}
-			className={on ? "text-[#1c8a3b]" : "text-faint"}
-			style={{ fontSize: 12.5, fontWeight: on ? 700 : 500, padding: "5px 11px", borderRadius: 8, cursor: "pointer", border: "none", background: on ? "rgba(52,199,89,0.18)" : "rgba(120,120,128,0.1)" }}
-		>
-			{on ? "✓ " : ""}{label}
-		</button>
-	);
 	// 미납 부과 칩(이름 접두 없이 — 사람 구분은 그룹 헤더로). 월은 라벨('N월 회비'/'M.D 대관비')로 자명하니 별도 표식 없음.
-	const chargeChip = (c: UnpaidCharge, key: string) =>
-		itemChip(`${c.label} ${won(remaining(c.amountDue, c.amountPaid))}`, active.charges.has(c.id), () => toggleCharge(c.id), key);
+	const chargeChip = (c: UnpaidCharge, key: string) => (
+		<ToggleChip key={key} label={`${c.label} ${won(remaining(c.amountDue, c.amountPaid))}`} on={active.charges.has(c.id)} onClick={() => toggleCharge(c.id)} />
+	);
 	const payerHasItems = existing.length > 0 || (!selectedMember?.isGuest && !existingMonthly) || newSessionCandidates.length > 0;
 	const groupLabel: CSSProperties = { fontSize: 10.5, fontWeight: 800, letterSpacing: "0.02em" };
 
@@ -271,8 +262,8 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 						{extraGroups.length > 0 && <span className="text-muted" style={groupLabel}>{selectedMember?.name}</span>}
 						<div className="flex flex-wrap gap-1.5">
 							{existing.map((c) => chargeChip(c, `c${c.id}`))}
-							{!selectedMember?.isGuest && !existingMonthly && itemChip(`${Number(depositYm.slice(5))}월 회비 ${won(monthlyFee)}`, active.monthly, toggleMonthly, "newm")}
-							{newSessionCandidates.map((s) => itemChip(`${sessionLabel(s)} 대관비`, active.sessions.has(s.id), () => toggleSession(s.id), `s${s.id}`))}
+							{!selectedMember?.isGuest && !existingMonthly && <ToggleChip label={`${Number(depositYm.slice(5))}월 회비 ${won(monthlyFee)}`} on={active.monthly} onClick={toggleMonthly} />}
+							{newSessionCandidates.map((s) => <ToggleChip key={`s${s.id}`} label={`${sessionLabel(s)} 대관비`} on={active.sessions.has(s.id)} onClick={() => toggleSession(s.id)} />)}
 							{!payerHasItems && <span className="text-faint" style={{ fontSize: 12 }}>낼 항목 없음(완납/부과 없음)</span>}
 						</div>
 					</div>
@@ -298,7 +289,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 					{monthSessions.length === 0 ? (
 						<span className="text-faint" style={{ fontSize: 11.5 }}>이 달 대관 세션이 없어요</span>
 					) : (
-						monthSessions.map((s) => itemChip(`${sessionLabel(s)} 대관비`, extSession === s.id, () => setExtSession((v) => (v === s.id ? null : s.id)), `ext${s.id}`))
+						monthSessions.map((s) => <ToggleChip key={`ext${s.id}`} label={`${sessionLabel(s)} 대관비`} on={extSession === s.id} onClick={() => setExtSession((v) => (v === s.id ? null : s.id))} />)
 					)}
 				</div>
 			)}
@@ -306,7 +297,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 			{/* 그 외 분류(콕공구·이자 등) — 선택 후 확인(지출과 동일). 코트대관은 위 비회원 세션으로. */}
 			<div className="flex flex-wrap items-center gap-1.5" style={{ marginTop: 9 }}>
 				<span className="text-faint" style={{ fontSize: 11, fontWeight: 700, alignSelf: "center" }}>그 외</span>
-				{categories.map((cat) => itemChip(cat.name, catSel === cat.id, () => toggleCategory(cat.id), `cat${cat.id}`))}
+				{categories.map((cat) => <ToggleChip key={`cat${cat.id}`} label={cat.name} on={catSel === cat.id} onClick={() => toggleCategory(cat.id)} />)}
 			</div>
 
 			{/* 확인 */}

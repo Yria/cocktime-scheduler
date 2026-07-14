@@ -802,3 +802,16 @@
 - 검증: 7월 재정산 합 = 남은 돈 156,755 정확히 일치(DB로 확인). tsc/build/lint clean.
 
 ---
+
+## #64
+
+**Prompt**: 얼추 완성이 된 거 같은데 지금까지의 내용을 점검해서 문서 업데이트 하고 최적화 해. (DB 효율 설계·마이그레이션, 중복 컴포넌트 독립화, 죽은 코드 제거, 큰 파일 분할, props 드릴링 대신 zustand, 리렌더 방지, 다중 쿼리 서버함수 검토 — 더 건드릴 게 없을 때까지)
+
+**Answer**: 회계 서브시스템 최적화 1차 — 공용 UI 추출 + LedgerView 분할. (전체 goal의 일부, 계속 진행 중)
+
+- 조사: DB는 이미 깔끔(과거 drop 마이그레이션으로 죽은 RPC 정리됨). dues_alloc_guard/sync=트리거, dues_sync_bank_tx=내부헬퍼. dues_norm_name만 참조 0(죽은 함수)→드롭 예정. dues.ts export 전부 사용중.
+- 중복 제거: itemChip(입금행)==pickChip(출금행) 동일 토글칩 → 공용 ToggleChip(duesUi.tsx). 돈 색상 헬퍼 moneyClass/signed(duesText.ts) 신설.
+- 분할: LedgerView 396줄 → shell(19) + LedgerSummary(40) + LedgerBreakdown(163) + LedgerTxnList(194). 각 컴포넌트가 필요한 스토어 슬라이스만 직접 구독 → 프롭 드릴링 제거 + 리렌더 격리.
+- 검증: tsc/build/lint clean, 204 tests 통과.
+
+---

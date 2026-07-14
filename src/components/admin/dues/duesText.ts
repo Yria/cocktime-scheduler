@@ -7,6 +7,16 @@ export function won(n: number): string {
 	return `${n.toLocaleString("ko-KR")}원`;
 }
 
+/** 수입/양수=초록, 지출/음수=빨강 텍스트 클래스(회계 공용). */
+export function moneyClass(positive: boolean): string {
+	return positive ? "text-[#1c8a3b]" : "text-[#d1362c]";
+}
+
+/** +12,000원 / −12,000원 (부호 표기). */
+export function signed(n: number): string {
+	return `${n >= 0 ? "+" : "−"}${won(Math.abs(n))}`;
+}
+
 /** 현재(KST) 'YYYY-MM'. */
 export function currentYm(): string {
 	const now = new Date();
