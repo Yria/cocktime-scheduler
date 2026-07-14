@@ -1,5 +1,5 @@
 import { Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 import type { AdminMemberRow } from "../../../lib/supabase/adminMembers";
 import type { BankTxnRow, SessionFeeRow, TxnCategory, UnpaidCharge } from "../../../lib/supabase/dues";
 import { inputCls, inputStyle } from "../../common/fieldStyles";
@@ -53,29 +53,30 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		return monthSessions.filter((s) => !charged.has(s.id));
 	}, [existingCourt, monthSessions]);
 
-	// 함께 내주는 다른 사람들의 미납(대납). 납부자 본인 것과 중복 제거, 소유자 이름 표기.
-	const extraCharges = useMemo(() => {
-		if (!selectedId) return [] as { c: UnpaidCharge; ownerName: string }[];
+	// 함께 내주는 다른 사람들의 미납(대납) — 사람별 그룹으로 분리(칩에 이름 접두 대신 그룹 헤더로 구분).
+	const extraGroups = useMemo(() => {
+		if (!selectedId) return [] as { id: string; name: string; charges: UnpaidCharge[] }[];
 		const seen = new Set(existing.map((c) => c.id));
-		const out: { c: UnpaidCharge; ownerName: string }[] = [];
+		const groups: { id: string; name: string; charges: UnpaidCharge[] }[] = [];
 		for (const eid of extraIds) {
 			if (eid === selectedId) continue;
-			const name = memberById.get(eid)?.name ?? "회원";
+			const charges: UnpaidCharge[] = [];
 			for (const c of unpaidByMember[eid] ?? []) {
 				if (seen.has(c.id)) continue;
 				seen.add(c.id);
-				out.push({ c, ownerName: name });
+				charges.push(c);
 			}
+			groups.push({ id: eid, name: memberById.get(eid)?.name ?? "회원", charges });
 		}
-		return out;
+		return groups;
 	}, [selectedId, extraIds, unpaidByMember, existing, memberById]);
 	// 전체 선택 대상 부과(본인 + 대납) — 합계·검증용.
 	const chargeById = useMemo(() => {
 		const m = new Map<number, UnpaidCharge>();
 		for (const c of existing) m.set(c.id, c);
-		for (const e of extraCharges) m.set(e.c.id, e.c);
+		for (const g of extraGroups) for (const c of g.charges) m.set(c.id, c);
 		return m;
-	}, [existing, extraCharges]);
+	}, [existing, extraGroups]);
 
 	// 금액(§4) 기반 기본 선택: 기존 미납 우선(참가 세션 → 최근순), 회비는 없으면 신규 생성.
 	const monthSessionIds = useMemo(() => new Set(monthSessions.map((s) => s.id)), [monthSessions]);
@@ -172,6 +173,13 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 			{on ? "✓ " : ""}{label}
 		</button>
 	);
+	// 미납 부과 칩(이름 접두 없이 — 사람 구분은 그룹 헤더로). 크로스먼스면 ↩.
+	const chargeChip = (c: UnpaidCharge, key: string) => {
+		const cross = c.kind === "monthly_fee" ? c.periodYm !== depositYm : c.sessionDate != null && ymOfIso(c.sessionDate) !== depositYm;
+		return itemChip(`${c.label} ${won(remaining(c.amountDue, c.amountPaid))}${cross ? " ↩" : ""}`, active.charges.has(c.id), () => toggleCharge(c.id), key);
+	};
+	const payerHasItems = existing.length > 0 || (!selectedMember?.isGuest && !existingMonthly) || newSessionCandidates.length > 0;
+	const groupLabel: CSSProperties = { fontSize: 10.5, fontWeight: 800, letterSpacing: "0.02em" };
 
 	return (
 		<div className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px", opacity: busy ? 0.5 : 1 }}>
@@ -273,18 +281,26 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 
 			{/* 항목: 기존 미납 + 신규 회비/세션 */}
 			{selectedId && (
-				<div className="flex flex-wrap gap-1.5" style={{ marginTop: 9 }}>
-					{existing.map((c) => {
-						const cross = c.kind === "monthly_fee" ? c.periodYm !== depositYm : c.sessionDate != null && ymOfIso(c.sessionDate) !== depositYm;
-						return itemChip(`${c.label} ${won(remaining(c.amountDue, c.amountPaid))}${cross ? " ↩" : ""}`, active.charges.has(c.id), () => toggleCharge(c.id), `c${c.id}`);
-					})}
-					{!selectedMember?.isGuest && !existingMonthly && itemChip(`${Number(depositYm.slice(5))}월 회비 ${won(monthlyFee)}`, active.monthly, toggleMonthly, "newm")}
-					{newSessionCandidates.map((s) => itemChip(`${sessionLabel(s)} 대관비`, active.sessions.has(s.id), () => toggleSession(s.id), `s${s.id}`))}
-					{/* 함께 낼 다른 사람의 미납(이름 접두) */}
-					{extraCharges.map(({ c, ownerName }) => itemChip(`${ownerName} · ${c.label} ${won(remaining(c.amountDue, c.amountPaid))}`, active.charges.has(c.id), () => toggleCharge(c.id), `x${c.id}`))}
-					{existing.length === 0 && extraCharges.length === 0 && newSessionCandidates.length === 0 && (selectedMember?.isGuest || existingMonthly) && (
-						<span className="text-faint" style={{ fontSize: 12 }}>낼 항목이 없어요(이미 완납/부과 없음)</span>
-					)}
+				<div className="flex flex-col" style={{ gap: 10, marginTop: 9 }}>
+					{/* 납부자 본인 항목 (대납 있을 때만 이름 헤더 표시) */}
+					<div className="flex flex-col gap-1">
+						{extraGroups.length > 0 && <span className="text-muted" style={groupLabel}>{selectedMember?.name}</span>}
+						<div className="flex flex-wrap gap-1.5">
+							{existing.map((c) => chargeChip(c, `c${c.id}`))}
+							{!selectedMember?.isGuest && !existingMonthly && itemChip(`${Number(depositYm.slice(5))}월 회비 ${won(monthlyFee)}`, active.monthly, toggleMonthly, "newm")}
+							{newSessionCandidates.map((s) => itemChip(`${sessionLabel(s)} 대관비`, active.sessions.has(s.id), () => toggleSession(s.id), `s${s.id}`))}
+							{!payerHasItems && <span className="text-faint" style={{ fontSize: 12 }}>낼 항목 없음(완납/부과 없음)</span>}
+						</div>
+					</div>
+					{/* 대납 대상별 항목 — 사람마다 영역 분리(칩엔 이름 안 붙임) */}
+					{extraGroups.map((g) => (
+						<div key={g.id} className="flex flex-col gap-1">
+							<span className="text-muted" style={groupLabel}>{g.name}</span>
+							<div className="flex flex-wrap gap-1.5">
+								{g.charges.length === 0 ? <span className="text-faint" style={{ fontSize: 12 }}>미납 없음</span> : g.charges.map((c) => chargeChip(c, `x${c.id}`))}
+							</div>
+						</div>
+					))}
 				</div>
 			)}
 
