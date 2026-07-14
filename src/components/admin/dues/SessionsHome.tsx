@@ -1,8 +1,8 @@
 import { Send } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { duesNotifySelected } from "../../../lib/supabase/dues";
-import { useDuesStore } from "../../../store/duesStore";
+import { duesDeferCharge, duesNotifySelected, duesSettleDeferred, duesUndeferCharge } from "../../../lib/supabase/dues";
+import { duesActions, useDuesStore } from "../../../store/duesStore";
 import { toast } from "../../../store/toastStore";
 import ConfirmDialog from "../../common/ConfirmDialog";
 import EmptyState from "../../shared/EmptyState";
@@ -13,6 +13,7 @@ interface UnpaidRow {
 	name: string;
 	remain: number;
 	hasGuest: boolean;
+	chargeId?: number; // 회비 미납 행 — 이월용
 }
 interface SessionCard {
 	id: number;
@@ -46,19 +47,26 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
 	const roster = useMemo(() => members.filter((m) => m.isActive && !m.isAdmin), [members]);
 
-	// 회비 진행
+	// 회비 진행 — 원 월(period_ym=ym) 기준. 이월된(deferred_to set) 건은 '낸 것처럼' 해결로 카운트.
 	const fee = useMemo(() => {
-		const byMember = new Map(monthly.map((c) => [c.memberId, c]));
+		const own = new Map(monthly.filter((c) => c.periodYm === ym).map((c) => [c.memberId, c]));
 		let paid = 0;
 		const unpaid: UnpaidRow[] = [];
 		for (const m of roster) {
-			const c = byMember.get(m.id);
-			if (c && (c.status === "paid" || c.status === "overpaid")) paid++;
-			else if (c && (c.status === "unpaid" || c.status === "partial")) unpaid.push({ payerId: m.id, name: m.name, remain: remaining(c.amountDue, c.amountPaid), hasGuest: false });
+			const c = own.get(m.id);
+			if (!c) continue;
+			if (c.deferredTo != null) paid++; // 이월 = 해결로 취급
+			else if (c.status === "paid" || c.status === "overpaid") paid++;
+			else if (c.status === "unpaid" || c.status === "partial") unpaid.push({ payerId: m.id, name: m.name, remain: remaining(c.amountDue, c.amountPaid), hasGuest: false, chargeId: c.id });
 		}
 		unpaid.sort((a, b) => a.name.localeCompare(b.name));
-		return { paid, total: roster.length, unpaid };
-	}, [monthly, roster]);
+		// 다른 달에서 이월돼 온 회비(이번 달 미정산 대상)
+		const carried = monthly
+			.filter((c) => c.deferredTo === ym)
+			.map((c) => ({ chargeId: c.id, name: memberById.get(c.memberId)?.name ?? "회원", settled: c.status === "waived", fromYm: c.periodYm }))
+			.sort((a, b) => a.name.localeCompare(b.name));
+		return { paid, total: roster.length, unpaid, carried };
+	}, [monthly, roster, ym, memberById]);
 
 	// 세션별 정산 상태
 	const sessionCards = useMemo<SessionCard[]>(() => {
@@ -139,6 +147,15 @@ export default function SessionsHome({ ym }: { ym: string }) {
 			toast("알림 발송 실패", { variant: "error" });
 		}
 	};
+	// 회비 이월/정산/취소 — charge 변경이라 전체 재로드.
+	const runCharge = async (fn: () => Promise<{ ok: boolean; error?: string }>, errMsg: string) => {
+		if (busy) return;
+		setBusy(true);
+		const res = await fn();
+		setBusy(false);
+		if (res.ok) await duesActions.loadMonth(ym, true);
+		else toast(errMsg, { variant: "error" });
+	};
 
 	if (loading) return <EmptyState loading style={{ padding: "2.5rem 0" }} />;
 
@@ -174,7 +191,33 @@ export default function SessionsHome({ ym }: { ym: string }) {
 				onToggle={toggleSel}
 				busy={busy}
 				onSend={() => requestNotify("fee", fee.unpaid, `${ymLabel(ym)} 회비가 아직 미납이에요. 확인 부탁드려요`, `${ymLabel(ym)} 회비`)}
+				onDefer={(chargeId) => runCharge(() => duesDeferCharge(chargeId), "이월 실패")}
 			/>
+
+			{/* 이월돼 온 회비(다른 달 → 이번 달 미정산) */}
+			{fee.carried.length > 0 && (
+				<div className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px" }}>
+					<b className="text-strong" style={{ fontSize: 13, display: "block", marginBottom: 6 }}>이월된 회비 <span className="text-faint" style={{ fontSize: 11, fontWeight: 600 }}>· 지난달에서 미룬 것</span></b>
+					<div className="flex flex-col gap-1.5">
+						{fee.carried.map((c) => (
+							<div key={c.chargeId} className="flex items-center gap-2" style={{ fontSize: 13 }}>
+								<span className="text-strong" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{c.name}<span className="text-faint" style={{ fontSize: 11, fontWeight: 500, marginLeft: 5 }}>{c.fromYm} 회비</span></span>
+								{c.settled ? (
+									<>
+										<span className="text-[#1c8a3b]" style={{ fontSize: 12, fontWeight: 700 }}>정산됨</span>
+										<button type="button" onClick={() => runCharge(() => duesUndeferCharge(c.chargeId), "취소 실패")} disabled={busy} className="text-faint" style={{ fontSize: 11.5, background: "none", cursor: "pointer" }}>이월 취소</button>
+									</>
+								) : (
+									<>
+										<button type="button" onClick={() => runCharge(() => duesSettleDeferred(c.chargeId), "정산 실패")} disabled={busy} className="rounded-[7px]" style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: "#1c8a3b", padding: "3px 10px", border: "none", cursor: "pointer" }}>정산</button>
+										<button type="button" onClick={() => runCharge(() => duesUndeferCharge(c.chargeId), "취소 실패")} disabled={busy} className="text-faint" style={{ fontSize: 11.5, background: "none", cursor: "pointer" }}>취소</button>
+									</>
+								)}
+							</div>
+						))}
+					</div>
+				</div>
+			)}
 
 			{/* 세션별 정산 상태 */}
 			{sessionCards.length === 0 ? (
@@ -271,7 +314,7 @@ function SendButton({ count, open, onClick }: { count: number; open: boolean; on
 }
 
 // 회비 카드: 진행 막대 + (미납 있으면) 발송 펼침.
-function NotifyGroup({ title, subtitle, meter, groupKey, unpaid, open, onOpen, excluded, onToggle, busy, onSend }: {
+function NotifyGroup({ title, subtitle, meter, groupKey, unpaid, open, onOpen, excluded, onToggle, busy, onSend, onDefer }: {
 	title: string;
 	subtitle: string;
 	meter: number;
@@ -283,6 +326,7 @@ function NotifyGroup({ title, subtitle, meter, groupKey, unpaid, open, onOpen, e
 	onToggle: (key: string) => void;
 	busy: boolean;
 	onSend: () => void;
+	onDefer?: (chargeId: number) => void; // 회비 미납 이월(다음 달로)
 }) {
 	return (
 		<div className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px" }}>
@@ -294,41 +338,46 @@ function NotifyGroup({ title, subtitle, meter, groupKey, unpaid, open, onOpen, e
 			{unpaid.length > 0 && (
 				<div style={{ marginTop: 8 }}>
 					<SendButton count={unpaid.length} open={open} onClick={onOpen} />
-					{open && <MemberToggleList groupKey={groupKey} rows={unpaid} excluded={excluded} onToggle={onToggle} busy={busy} onSend={onSend} />}
+					{open && <MemberToggleList groupKey={groupKey} rows={unpaid} excluded={excluded} onToggle={onToggle} busy={busy} onSend={onSend} onDefer={onDefer} />}
 				</div>
 			)}
 		</div>
 	);
 }
 
-// 발송 대상 회원 취사선택(기본 전원 포함) + 발송. 미납 안내 푸시.
-function MemberToggleList({ groupKey, rows, excluded, onToggle, busy, onSend }: {
+// 발송 대상 회원 취사선택(기본 전원 포함) + 발송. 회비면 각 회원 '이월' 가능.
+function MemberToggleList({ groupKey, rows, excluded, onToggle, busy, onSend, onDefer }: {
 	groupKey: string;
 	rows: UnpaidRow[];
 	excluded: Set<string>;
 	onToggle: (key: string) => void;
 	busy: boolean;
 	onSend: () => void;
+	onDefer?: (chargeId: number) => void;
 }) {
 	const selCount = rows.filter((r) => !excluded.has(`${groupKey}:${r.payerId}`)).length;
 	return (
 		<div className="flex flex-col" style={{ gap: 2, marginTop: 8, background: "rgba(120,120,128,0.06)", borderRadius: 10, padding: "9px 10px" }}>
-			<p className="text-faint" style={{ fontSize: 11, marginBottom: 4 }}>안내 보낼 사람 · 탭하면 제외</p>
+			<p className="text-faint" style={{ fontSize: 11, marginBottom: 4 }}>안내 보낼 사람 · 탭하면 제외{onDefer ? " · 이월=다음 달로" : ""}</p>
 			{rows.map((r) => {
 				const on = !excluded.has(`${groupKey}:${r.payerId}`);
 				return (
-					<button
-						key={r.payerId}
-						type="button"
-						onClick={() => onToggle(`${groupKey}:${r.payerId}`)}
-						aria-pressed={on}
-						className="flex items-center gap-2"
-						style={{ fontSize: 13, padding: "4px 2px", background: "none", border: "none", cursor: "pointer", textAlign: "left", opacity: on ? 1 : 0.4 }}
-					>
-						<span aria-hidden style={{ width: 18, height: 18, borderRadius: 6, flexShrink: 0, border: on ? "1.5px solid #c2670a" : "1.5px solid rgba(120,120,128,0.5)", background: on ? "#c2670a" : "transparent", color: "#fff", fontSize: 11, lineHeight: "15px", textAlign: "center", fontWeight: 900 }}>{on ? "✓" : ""}</span>
-						<span className="text-strong" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{r.name}{r.hasGuest && <span className="text-[#0b84ff]" style={{ fontSize: 11, fontWeight: 700, marginLeft: 5 }}>게스트분 포함</span>}</span>
-						<span className="text-[#d1362c]" style={{ fontWeight: 700 }}>{won(r.remain)}</span>
-					</button>
+					<div key={r.payerId} className="flex items-center gap-2" style={{ fontSize: 13 }}>
+						<button
+							type="button"
+							onClick={() => onToggle(`${groupKey}:${r.payerId}`)}
+							aria-pressed={on}
+							className="flex items-center gap-2"
+							style={{ flex: 1, minWidth: 0, padding: "4px 2px", background: "none", border: "none", cursor: "pointer", textAlign: "left", opacity: on ? 1 : 0.4 }}
+						>
+							<span aria-hidden style={{ width: 18, height: 18, borderRadius: 6, flexShrink: 0, border: on ? "1.5px solid #c2670a" : "1.5px solid rgba(120,120,128,0.5)", background: on ? "#c2670a" : "transparent", color: "#fff", fontSize: 11, lineHeight: "15px", textAlign: "center", fontWeight: 900 }}>{on ? "✓" : ""}</span>
+							<span className="text-strong" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{r.name}{r.hasGuest && <span className="text-[#0b84ff]" style={{ fontSize: 11, fontWeight: 700, marginLeft: 5 }}>게스트분 포함</span>}</span>
+							<span className="text-[#d1362c]" style={{ fontWeight: 700 }}>{won(r.remain)}</span>
+						</button>
+						{onDefer && r.chargeId != null && (
+							<button type="button" onClick={() => r.chargeId != null && onDefer(r.chargeId)} disabled={busy} className="text-[#0b84ff]" style={{ fontSize: 11.5, fontWeight: 700, background: "rgba(11,132,255,0.1)", border: "none", borderRadius: 7, padding: "3px 8px", cursor: "pointer", flexShrink: 0 }}>이월</button>
+						)}
+					</div>
 				);
 			})}
 			<button type="button" onClick={onSend} disabled={busy || selCount === 0} className="rounded-[9px] py-2 disabled:opacity-40" style={{ fontSize: 13, fontWeight: 800, color: "#fff", background: selCount > 0 ? "#c2670a" : "rgba(120,120,128,0.3)", marginTop: 6 }}>

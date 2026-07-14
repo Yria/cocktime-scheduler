@@ -699,3 +699,16 @@
 - 검증: build·lint clean.
 
 ---
+
+## #57
+
+**Prompt**: (요청3) 회비 이월 기능 — 7월 회비 이월하면 7월엔 안 보이고 낸것처럼, 8월엔 미정산 노출. 8월에서 수동 정산=미납 해제만(금액 기록X), 이월 취소 가능.
+
+**Answer**: 회비 이월(carry-over) 구현.
+
+- **스키마/RPC**: dues_charges.deferred_to(YYYY-MM) 추가. dues_defer_charge(다음 달로 이월), dues_undefer_charge(취소→unpaid 원복), dues_settle_deferred(수동 정산=status waived, 금액 기록X → phantom 수입 없음). 마이그레이션 배포.
+- **데이터**: MonthlyChargeRow에 periodYm·deferredTo. fetchMonthlyCharges(ym)=원 월(period_ym=ym)+이월돼 온 것(deferred_to=ym). wrapper 3종.
+- **현황(SessionsHome)**: 회비 진행에서 원 월 기준, deferred는 '낸 것처럼' 해결 카운트. 미납 회원 각 행에 '이월' 버튼. 그 아래 '이월된 회비' 섹션(지난달→이번달 미정산)에 [정산][취소]. MemberToggleList 행을 div로 재구성(중첩버튼 방지)+onDefer.
+- 검증: tsc clean, 204 tests, build·lint clean, 컬럼·RPC 배포 확인. (MyDuesPage 이월 표시는 후속.)
+
+---

@@ -26,6 +26,8 @@ export interface MonthlyChargeRow {
 	amountDue: number;
 	amountPaid: number;
 	status: ChargeStatus;
+	periodYm: string | null; // 부과 원 월
+	deferredTo: string | null; // 이월 대상 월(있으면 원 월에서 숨김·해당 월에 미정산)
 }
 
 export interface CourtChargeRow {
@@ -455,12 +457,13 @@ export async function ingestBankEmail(): Promise<
 }
 
 // ── 월별 부과 조회(관리자) ────────────────────────────────────────────
+// 그 달 회비 = 원 월(period_ym=ym) + 다른 달에서 이월돼 온 것(deferred_to=ym).
 export async function fetchMonthlyCharges(ym: string): Promise<MonthlyChargeRow[]> {
 	const { data, error } = await supabase
 		.from("dues_charges")
-		.select("id, member_id, amount_due, amount_paid, status")
+		.select("id, member_id, amount_due, amount_paid, status, period_ym, deferred_to")
 		.eq("kind", "monthly_fee")
-		.eq("period_ym", ym);
+		.or(`period_ym.eq.${ym},deferred_to.eq.${ym}`);
 	if (error) {
 		console.error("fetchMonthlyCharges:", error);
 		return [];
@@ -471,8 +474,15 @@ export async function fetchMonthlyCharges(ym: string): Promise<MonthlyChargeRow[
 		amountDue: c.amount_due,
 		amountPaid: c.amount_paid,
 		status: c.status as ChargeStatus,
+		periodYm: c.period_ym,
+		deferredTo: c.deferred_to,
 	}));
 }
+
+/** 회비 이월(다음 달로) / 이월 취소 / 이월분 수동 정산(미납 해제). */
+export const duesDeferCharge = (chargeId: number) => callRpc("dues_defer_charge", { p_charge_id: chargeId });
+export const duesUndeferCharge = (chargeId: number) => callRpc("dues_undefer_charge", { p_charge_id: chargeId });
+export const duesSettleDeferred = (chargeId: number) => callRpc("dues_settle_deferred", { p_charge_id: chargeId });
 
 interface RawCourtCharge {
 	id: number;
