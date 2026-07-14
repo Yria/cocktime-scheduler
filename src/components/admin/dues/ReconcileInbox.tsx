@@ -6,7 +6,6 @@ import {
 	duesConfirmReconcile,
 	duesIgnoreTransaction,
 	duesLinkRefund,
-	duesUnignoreTransaction,
 	ingestBankEmail,
 	setTxnCategory,
 	setTxnSession,
@@ -20,8 +19,8 @@ import { fmtMD, won } from "./duesText";
 
 type Filter = "all" | "in" | "out";
 
-// 정산함: 은행 거래 처리 큐. 상단 가져오기 → 미처리(입금·출금 한 큐, 날짜순) → 부분 처리 → 무시.
-// 확인된 거래는 [회계] 원장에서 보고 취소한다(여긴 처리 전용).
+// 정산함: 은행 거래 처리 큐. 상단 가져오기 → 미처리(입금·출금 한 큐, 날짜순) → 부분 처리.
+// 확인·분류·무시된 거래는 모두 [회계] 거래내역에서 조회·취소한다(정산함은 '처리할 것'만 남김).
 export default function ReconcileInbox({ ym }: { ym: string }) {
 	const loading = useDuesStore((s) => s.monthLoading);
 	const txns = useDuesStore((s) => s.bankTxns);
@@ -41,15 +40,11 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 	const [filter, setFilter] = useState<Filter>("all");
 
 
-	const { pending, partial, ignored } = useMemo(() => {
+	const { pending, partial } = useMemo(() => {
 		const pending: BankTxnRow[] = [];
 		const partial: BankTxnRow[] = [];
-		const ignored: BankTxnRow[] = [];
 		for (const t of txns) {
-			if (t.status === "ignored") {
-				ignored.push(t);
-				continue;
-			}
+			if (t.status === "ignored") continue; // 무시된 거래는 회계 거래내역에서 조회·되돌리기(정산함은 처리할 것만)
 			if (t.direction === "in") {
 				if (t.categoryId != null || t.status === "matched") continue; // 처리됨(회계로)
 				if (t.status === "partial") partial.push(t);
@@ -65,8 +60,7 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 		const byDateDesc = (a: BankTxnRow, b: BankTxnRow) => b.occurredAt.localeCompare(a.occurredAt);
 		pending.sort(byDateDesc);
 		partial.sort(byDateDesc);
-		ignored.sort(byDateDesc);
-		return { pending, partial, ignored };
+		return { pending, partial };
 	}, [txns, courtCatId]);
 
 	// 환불 연결 후보: 잔여 있는 입금(미처리·부분).
@@ -217,26 +211,6 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 						))}
 					</div>
 					<p className="text-faint" style={{ fontSize: 11.5, marginTop: 6 }}>남은 금액은 회원에게 더 받거나, 초과분이면 위 출금에서 [환불 연결]하세요. 취소·재처리는 [회계]에서.</p>
-				</section>
-			)}
-
-			{/* 무시 */}
-			{ignored.length > 0 && (
-				<section>
-					<h3 className="text-faint" style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>무시 {ignored.length}건</h3>
-					<div className="flex flex-col gap-1.5">
-						{ignored.map((t) => (
-							<div key={t.id} className="flex items-center gap-2" style={{ fontSize: 13, opacity: busyId === t.id ? 0.5 : 1 }}>
-								<span className="text-faint" style={{ width: 40 }}>{fmtMD(t.occurredAt)}</span>
-								<span className="text-muted" style={{ flex: 1, minWidth: 0 }}>
-									{t.counterpartyName}
-									{t.classifyNote && <span className="text-faint"> · {t.classifyNote}</span>}
-								</span>
-								<span className="text-faint">{t.direction === "in" ? "+" : "−"}{won(t.amount)}</span>
-								<button type="button" onClick={() => run(t.id, () => duesUnignoreTransaction(t.id), "되돌리기 실패")} className="text-faint" style={{ fontSize: 12.5, background: "none", cursor: "pointer" }}>되돌리기</button>
-							</div>
-						))}
-					</div>
 				</section>
 			)}
 		</div>
