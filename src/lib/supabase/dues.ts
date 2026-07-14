@@ -170,14 +170,16 @@ export const duesLinkRefund = (outTxId: number, inTxId: number) =>
 export const duesUnlinkRefund = (outTxId: number) =>
 	callRpc("dues_unlink_refund", { p_out_tx_id: outTxId });
 
-/** 회원 공개 회계(항목별 정산만). 개별 미납·원장·납부자 제외. */
+/** 회원 공개 회계(항목별 정산만, 월 통장 기준). 개별 미납·원장·납부자 제외. */
 export interface PublicLedger {
 	ym: string;
 	income: number;
 	expense: number;
 	net: number;
 	feeCollected: number;
-	courtUnassigned: number;
+	refund: number; // 그 달 환불 출금
+	uncatIn: number; // 미분류 입금(미매칭 + 부분배분 잔액)
+	uncatOut: number; // 미분류 출금
 	sessions: { date: string; place: string | null; income: number; expense: number; net: number }[];
 	categories: { name: string; in: number; out: number; net: number }[];
 }
@@ -194,7 +196,9 @@ export async function fetchPublicLedger(ym: string): Promise<PublicLedger | null
 		expense: (d.expense as number) ?? 0,
 		net: (d.net as number) ?? 0,
 		feeCollected: (d.fee_collected as number) ?? 0,
-		courtUnassigned: (d.court_unassigned as number) ?? 0,
+		refund: (d.refund as number) ?? 0,
+		uncatIn: (d.uncat_in as number) ?? 0,
+		uncatOut: (d.uncat_out as number) ?? 0,
 		sessions: (d.sessions as PublicLedger["sessions"]) ?? [],
 		categories: (d.categories as PublicLedger["categories"]) ?? [],
 	};

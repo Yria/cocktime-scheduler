@@ -815,3 +815,19 @@
 - 검증: tsc/build/lint clean, 204 tests 통과.
 
 ---
+
+## #65
+
+**Prompt**: (계속) 최적화 goal — DB 효율·마이그레이션, 죽은 코드 제거, 문서 업데이트, 리렌더/드릴링 점검.
+
+**Answer**: 회계 서브시스템 최적화 2차 — DB 정합성·정리 + 문서 + 색 헬퍼.
+
+- DB 죽은 함수 제거: dues_norm_name(참조 0) 드롭 마이그레이션. 클라이언트용 죽은 RPC는 이미 정리됨 확인(alloc_guard/sync=트리거, sync_bank_tx=내부헬퍼는 유지).
+- 정합성 수정(중요): 회원 공개 회계 RPC dues_public_ledger도 admin 회계와 동일한 혼재기준 버그(항목별 합≠남은돈)였음 → 월 통장 기준(현금주의)으로 재작성. 회비=그달 입금 배분액, 세션=그달 세션거래, 환불 라인·미분류 추가. 7월 검증: buckets_sum=net=156,755 일치. PublicLedger 타입/매핑/MyDuesPage 함께 갱신(courtUnassigned→refund·uncatIn·uncatOut).
+- 쿼리 전략 판단: loadMonth 단일 스냅샷 RPC는 refresh* 개별 fetch와 이중유지 부담·병렬이라 이득 작음 → 병렬 fetch 유지(무거운 공개회계만 RPC). 문서에 근거 기록.
+- 색 헬퍼 moneyClass/signed를 MyDuesPage에 적용(netRight 공용화). 
+- 문서: ACCOUNTING_SPEC §3.3(현금주의)·§5(세션기준 현황 vs 현금주의 회계 분리)·§3.4·§8(정리완료)·§10.2(구현현황+RPC판단) 갱신. ACCOUNTING_DESIGN 상단에 최신기준 안내.
+- 판단(어거지 회피): dues.ts(723줄)는 죽은 export 0·균일 데이터모듈이라 분할 안 함. ReconcileInbox→Row는 단일레벨 전달이라 store전환 이득 없어 유지.
+- 검증: tsc/build/lint clean, 204 tests, 공개회계 재정산 DB 검증.
+
+---

@@ -8,13 +8,20 @@ import EmptyState from "../shared/EmptyState";
 import {
 	currentYm,
 	fmtMD,
+	moneyClass,
 	remaining,
+	signed,
 	statusChipClass,
 	statusLabel,
 	won,
 	ymLabel,
 	ymOfIso,
 } from "../admin/dues/duesText";
+
+// 순액 우측 표시(초록/빨강 + 부호, 0이면 '정산 0'). 공개 회계 행 공용.
+function netRight(n: number): ReactNode {
+	return <span className={moneyClass(n >= 0)} style={{ fontWeight: 800 }}>{n === 0 ? "정산 0" : signed(n)}</span>;
+}
 
 function chargeLabel(c: MyChargeRow): string {
 	if (c.kind === "monthly_fee") return `${c.periodYm ?? ""} 회비`;
@@ -116,7 +123,7 @@ export default function MyDuesPage() {
 					</div>
 
 					{/* 클럽 회계(항목별, 투명성) */}
-					{ledger && (ledger.feeCollected > 0 || ledger.sessions.length > 0 || ledger.categories.length > 0 || ledger.courtUnassigned > 0) && (
+					{ledger && (ledger.feeCollected > 0 || ledger.sessions.length > 0 || ledger.categories.length > 0 || ledger.refund > 0 || ledger.uncatIn > 0 || ledger.uncatOut > 0) && (
 						<div>
 							<p className="text-strong" style={{ fontSize: 14, fontWeight: 700, marginBottom: 3 }}>클럽 회계 · {ymLabel(ym)}</p>
 							<p className="text-faint" style={{ fontSize: 12, marginBottom: 8 }}>클럽이 이 달 무엇으로 얼마를 걷고 썼는지(항목별). 개별 회원 내역은 운영진만 봅니다.</p>
@@ -125,17 +132,20 @@ export default function MyDuesPage() {
 									<LedgerRow name="걷은 회비" right={<span className="text-[#1c8a3b]" style={{ fontWeight: 800 }}>+{won(ledger.feeCollected)}</span>} />
 								)}
 								{ledger.sessions.map((s, i) => (
-									<LedgerRow key={`sess${i}`} name={`${s.date} ${s.place ?? ""} 대관비`.trim()} right={<span className={s.net >= 0 ? "text-[#1c8a3b]" : "text-[#d1362c]"} style={{ fontWeight: 800 }}>{s.net === 0 ? "정산 0" : `${s.net > 0 ? "+" : "−"}${won(Math.abs(s.net))}`}</span>} />
+									<LedgerRow key={`sess${i}`} name={`${s.date} ${s.place ?? ""} 대관비`.trim()} right={netRight(s.net)} />
 								))}
-								{ledger.courtUnassigned > 0 && (
-									<LedgerRow name="세션 안 정한 코트비" nameColor="#c2670a" right={<span className="text-[#d1362c]" style={{ fontWeight: 800 }}>−{won(ledger.courtUnassigned)}</span>} />
-								)}
 								{ledger.categories.map((c, i) => (
-									<LedgerRow key={`cat${i}`} name={c.name} right={<span className={c.net >= 0 ? "text-[#1c8a3b]" : "text-[#d1362c]"} style={{ fontWeight: 800 }}>{c.net === 0 ? "정산 0" : `${c.net > 0 ? "+" : "−"}${won(Math.abs(c.net))}`}</span>} />
+									<LedgerRow key={`cat${i}`} name={c.name} right={netRight(c.net)} />
 								))}
+								{ledger.refund > 0 && (
+									<LedgerRow name="환불" right={<span className="text-[#d1362c]" style={{ fontWeight: 800 }}>−{won(ledger.refund)}</span>} />
+								)}
+								{(ledger.uncatIn > 0 || ledger.uncatOut > 0) && (
+									<LedgerRow name="미분류" nameColor="#9498a2" right={netRight(ledger.uncatIn - ledger.uncatOut)} />
+								)}
 								<div className="flex items-center gap-2" style={{ borderTop: "1px solid rgba(120,120,128,0.2)", paddingTop: 7, marginTop: 2 }}>
 									<span className="text-strong" style={{ fontSize: 13.5, fontWeight: 700, flex: 1 }}>이 달 남은 돈</span>
-									<span className={ledger.net >= 0 ? "text-[#1c8a3b]" : "text-[#d1362c]"} style={{ fontSize: 15, fontWeight: 800 }}>{ledger.net >= 0 ? "+" : "−"}{won(Math.abs(ledger.net))}</span>
+									<span className={moneyClass(ledger.net >= 0)} style={{ fontSize: 15, fontWeight: 800 }}>{signed(ledger.net)}</span>
 								</div>
 							</div>
 						</div>
