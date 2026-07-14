@@ -739,3 +739,11 @@
 - 검증: 7월 실데이터 held={105(07-05),104(07-12)}, 후보 4개 중 2개만 노출. tsc clean, 204 tests, build·lint clean.
 
 ---
+
+## #60
+
+**Prompt**: 환불 메뉴 선택 시 가격 똑같은 입금 후보 있으면 자동 선택되게.
+
+**Answer**: ReconcileOutRow 환불 칩 클릭 시 refundTargets 중 amount===출금액인 후보를 refundSel로 기본 선택(없으면 null). 전액 환불 케이스 원탭.
+
+---

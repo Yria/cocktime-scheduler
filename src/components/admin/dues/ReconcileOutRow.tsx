@@ -85,7 +85,7 @@ export default function ReconcileOutRow({ tx, categories, ledgerSessions, refund
 			{/* 하위메뉴형: 코트대관·환불 */}
 			<div className="flex flex-wrap items-center gap-1.5" style={{ marginTop: 9 }}>
 				{stepChip("코트대관", selCourt, () => { setSel({ kind: "court" }); setSessionSel(null); }, "court")}
-				{stepChip("환불", selRefund, () => { setSel({ kind: "refund" }); setRefundSel(null); }, "refund")}
+				{stepChip("환불", selRefund, () => { setSel({ kind: "refund" }); setRefundSel(refundTargets.find((r) => r.amount === tx.amount)?.id ?? null); }, "refund")}
 			</div>
 
 			{/* 코트대관 → 세션 / 환불 → 입금 (하위 선택지, 입금행 칩 디자인) */}
