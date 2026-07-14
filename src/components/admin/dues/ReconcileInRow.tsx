@@ -34,6 +34,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
 	const candidates = useMemo(() => suggestMembers(tx.counterpartyName, members), [tx.counterpartyName, members]);
 	const [selectedId, setSelectedId] = useState<string | null>(candidates[0]?.id ?? null);
+	const [extraIds, setExtraIds] = useState<string[]>([]); // 이 입금으로 함께 내주는 다른 사람(회원·게스트)
 	const [searchOpen, setSearchOpen] = useState(false);
 	const [query, setQuery] = useState("");
 	const [override, setOverride] = useState<Sel | null>(null); // null = 프리셀렉트 사용
@@ -51,6 +52,30 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		const charged = new Set(existingCourt.map((c) => c.sessionId));
 		return monthSessions.filter((s) => !charged.has(s.id));
 	}, [existingCourt, monthSessions]);
+
+	// 함께 내주는 다른 사람들의 미납(대납). 납부자 본인 것과 중복 제거, 소유자 이름 표기.
+	const extraCharges = useMemo(() => {
+		if (!selectedId) return [] as { c: UnpaidCharge; ownerName: string }[];
+		const seen = new Set(existing.map((c) => c.id));
+		const out: { c: UnpaidCharge; ownerName: string }[] = [];
+		for (const eid of extraIds) {
+			if (eid === selectedId) continue;
+			const name = memberById.get(eid)?.name ?? "회원";
+			for (const c of unpaidByMember[eid] ?? []) {
+				if (seen.has(c.id)) continue;
+				seen.add(c.id);
+				out.push({ c, ownerName: name });
+			}
+		}
+		return out;
+	}, [selectedId, extraIds, unpaidByMember, existing, memberById]);
+	// 전체 선택 대상 부과(본인 + 대납) — 합계·검증용.
+	const chargeById = useMemo(() => {
+		const m = new Map<number, UnpaidCharge>();
+		for (const c of existing) m.set(c.id, c);
+		for (const e of extraCharges) m.set(e.c.id, e.c);
+		return m;
+	}, [existing, extraCharges]);
 
 	// 금액(§4) 기반 기본 선택: 기존 미납 우선(참가 세션 → 최근순), 회비는 없으면 신규 생성.
 	const monthSessionIds = useMemo(() => new Set(monthSessions.map((s) => s.id)), [monthSessions]);
@@ -83,14 +108,33 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	}, [selectedId, selectedMember, tx.amount, monthlyFee, courtFee, existingMonthly, existingCourt, monthSessionIds]);
 
 	const active = override ?? preselect;
-	const existingTotal = existing.reduce((s, c) => (active.charges.has(c.id) ? s + remaining(c.amountDue, c.amountPaid) : s), 0);
+	const existingTotal = [...active.charges].reduce((s, id) => {
+		const c = chargeById.get(id);
+		return c ? s + remaining(c.amountDue, c.amountPaid) : s;
+	}, 0);
 	const total = existingTotal + (active.monthly ? monthlyFee : 0) + active.sessions.size * courtFee;
 
 	const selectMember = (id: string) => {
 		setSelectedId((prev) => (prev === id ? null : id));
+		setExtraIds([]); // 납부자 바뀌면 대납 대상 초기화
 		setOverride(null);
 		setSearchOpen(false);
 		setQuery("");
+	};
+	// 검색 결과 선택: 납부자 없으면 납부자로, 있으면 '함께 낼 사람'으로 추가.
+	const pickResult = (id: string) => {
+		if (!selectedId) {
+			selectMember(id);
+			return;
+		}
+		if (id !== selectedId) setExtraIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+		setSearchOpen(false);
+		setQuery("");
+	};
+	const removeExtra = (id: string) => {
+		setExtraIds((prev) => prev.filter((x) => x !== id));
+		const removed = new Set((unpaidByMember[id] ?? []).map((c) => c.id));
+		setOverride({ charges: new Set([...active.charges].filter((cid) => !removed.has(cid))), monthly: active.monthly, sessions: new Set(active.sessions) });
 	};
 	const toggleCharge = (id: number) => {
 		const n: Sel = { charges: new Set(active.charges), monthly: active.monthly, sessions: new Set(active.sessions) };
@@ -107,7 +151,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	};
 
 	const q = query.trim().toLowerCase();
-	const searchResults = q ? members.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 6) : [];
+	const searchResults = q ? members.filter((m) => m.name.toLowerCase().includes(q) && m.id !== selectedId && !extraIds.includes(m.id)).slice(0, 6) : [];
 	const chipMembers = useMemo(() => {
 		const arr: MemberLite[] = [...candidates];
 		if (selectedMember && !arr.some((c) => c.id === selectedMember.id)) arr.unshift(selectedMember);
@@ -125,7 +169,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 			className={on ? "text-[#1c8a3b]" : "text-faint"}
 			style={{ fontSize: 12.5, fontWeight: on ? 700 : 500, padding: "5px 11px", borderRadius: 8, cursor: "pointer", border: "none", background: on ? "rgba(52,199,89,0.18)" : "rgba(120,120,128,0.1)" }}
 		>
-			{on ? "✓ " : "＋ "}{label}
+			{on ? "✓ " : ""}{label}
 		</button>
 	);
 
@@ -160,15 +204,22 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 						</button>
 					);
 				})}
+				{/* 함께 낼 사람(대납 대상) — × 로 제거 */}
+				{extraIds.map((id) => (
+					<span key={id} className="flex items-center bg-[rgba(52,199,89,0.16)]" style={{ fontSize: 13, fontWeight: 700, borderRadius: 999, padding: "5px 4px 5px 11px", color: "#1c8a3b" }}>
+						{memberById.get(id)?.name ?? "회원"}
+						<button type="button" onClick={() => removeExtra(id)} aria-label="대납 대상 제거" style={{ width: 18, height: 18, lineHeight: "16px", fontSize: 14, background: "none", cursor: "pointer", color: "#1c8a3b" }}>×</button>
+					</span>
+				))}
 				{searchOpen ? (
 					<span className="flex items-center gap-1" style={{ flex: 1, minWidth: 120 }}>
 						{/* biome-ignore lint/a11y/noAutofocus: 검색 열면 바로 입력하도록 */}
-						<input type="text" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름 검색" className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 0, padding: "6px 10px", fontSize: 13 }} />
+						<input type="text" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={selectedId ? "함께 낼 사람 검색" : "이름 검색"} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 0, padding: "6px 10px", fontSize: 13 }} />
 						<button type="button" onClick={() => { setSearchOpen(false); setQuery(""); }} aria-label="검색 닫기" className="text-faint" style={{ fontSize: 15, lineHeight: 1, padding: "0 4px", background: "none", cursor: "pointer" }}>✕</button>
 					</span>
 				) : (
-					<button type="button" onClick={() => setSearchOpen(true)} aria-label="회원 검색" className="text-faint flex items-center" style={{ fontSize: 13, padding: "6px 10px", borderRadius: 999, border: "1.5px solid transparent", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
-						<Search size={13} strokeWidth={2.2} />
+					<button type="button" onClick={() => setSearchOpen(true)} aria-label={selectedId ? "함께 낼 사람 추가" : "회원 검색"} className="text-faint flex items-center" style={{ gap: 3, fontSize: 12.5, fontWeight: 600, padding: "6px 10px", borderRadius: 999, border: "1.5px solid transparent", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
+						<Search size={13} strokeWidth={2.2} />{selectedId ? " 다른 사람" : ""}
 					</button>
 				)}
 			</div>
@@ -179,7 +230,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 						<span className="text-faint" style={{ fontSize: 12 }}>검색 결과 없음</span>
 					) : (
 						searchResults.map((m) => (
-							<button key={m.id} type="button" onClick={() => selectMember(m.id)} className="text-muted" style={{ fontSize: 13, padding: "5px 11px", borderRadius: 999, border: "none", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
+							<button key={m.id} type="button" onClick={() => pickResult(m.id)} className="text-muted" style={{ fontSize: 13, padding: "5px 11px", borderRadius: 999, border: "none", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
 								{m.name} <span className="text-faint">{m.isGuest ? "게스트" : `${genderText(m.gender)}${m.birthYear ? ` ${m.birthYear}` : ""}`}</span>
 							</button>
 						))
@@ -196,7 +247,9 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 					})}
 					{!selectedMember?.isGuest && !existingMonthly && itemChip(`${Number(depositYm.slice(5))}월 회비 ${won(monthlyFee)}`, active.monthly, toggleMonthly, "newm")}
 					{newSessionCandidates.map((s) => itemChip(`${sessionLabel(s)} 대관비`, active.sessions.has(s.id), () => toggleSession(s.id), `s${s.id}`))}
-					{existing.length === 0 && newSessionCandidates.length === 0 && (selectedMember?.isGuest || existingMonthly) && (
+					{/* 함께 낼 다른 사람의 미납(이름 접두) */}
+					{extraCharges.map(({ c, ownerName }) => itemChip(`${ownerName} · ${c.label} ${won(remaining(c.amountDue, c.amountPaid))}`, active.charges.has(c.id), () => toggleCharge(c.id), `x${c.id}`))}
+					{existing.length === 0 && extraCharges.length === 0 && newSessionCandidates.length === 0 && (selectedMember?.isGuest || existingMonthly) && (
 						<span className="text-faint" style={{ fontSize: 12 }}>낼 항목이 없어요(이미 완납/부과 없음)</span>
 					)}
 				</div>
