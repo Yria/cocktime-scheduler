@@ -35,7 +35,8 @@ export default function LedgerView({ ym }: { ym: string }) {
 	const [confirmDeleteCat, setConfirmDeleteCat] = useState<TxnCategory | null>(null);
 	// 거래내역 필터(키워드·항목) + 환불 하이라이트. 항목: null=전체 / 'court'=코트대관(세션) / 'refund'=환불 / number=카테고리.
 	const [query, setQuery] = useState("");
-	const [catFilter, setCatFilter] = useState<number | "session" | "fee" | "refund" | null>(null);
+	// 필터 키: null=전체 · "fee" · "refund" · `cat:{id}` · `sess:{id}`(세션별)
+	const [catFilter, setCatFilter] = useState<string | null>(null);
 	const [highlightId, setHighlightId] = useState<number | null>(null);
 
 	const reloadFull = () => duesActions.loadMonth(ym, true); // 카테고리 추가/삭제는 전체(categories 갱신)
@@ -132,18 +133,18 @@ export default function LedgerView({ ym }: { ym: string }) {
 		window.setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 2000);
 	};
 
-	// 필터 적용(키워드=적요·처리내역, 항목=세션/회비/환불/카테고리).
-	//  - 세션: session_id 연결(코트대관 지출·비회원 대관 수입)
-	//  - 회비: 회비 부과에 배분된 입금(배분 라벨 키가 'a-회비')
-	//  - 환불: 환불 출금 + 그 환불이 링크된 입금(둘 다)
+	// 필터 적용(키워드=적요·처리내역, 항목=세션별/회비/환불/카테고리).
+	//  - sess:{id}: 그 세션에 연결된 거래(대관 지출·비회원 대관 수입)
+	//  - fee: 회비 부과에 배분된 입금(배분 라벨 키가 'a-회비')
+	//  - refund: 환불 출금 + 그 환불이 링크된 입금(둘 다)
 	const q = query.trim().toLowerCase();
 	const filteredLedger = useMemo(
 		() =>
 			ledger.filter((t) => {
-				if (catFilter === "session" && t.sessionId == null) return false;
-				else if (catFilter === "fee" && !(txAllocations[t.id]?.key ?? "").startsWith("a-회비")) return false;
+				if (catFilter === "fee" && !(txAllocations[t.id]?.key ?? "").startsWith("a-회비")) return false;
 				else if (catFilter === "refund" && !(t.refundOfTxId != null || refundOutByIn.has(t.id))) return false;
-				else if (typeof catFilter === "number" && t.categoryId !== catFilter) return false;
+				else if (catFilter?.startsWith("sess:") && t.sessionId !== Number(catFilter.slice(5))) return false;
+				else if (catFilter?.startsWith("cat:") && t.categoryId !== Number(catFilter.slice(4))) return false;
 				if (q) {
 					const hay = `${t.counterpartyName ?? ""} ${txAllocations[t.id]?.label ?? ""} ${t.categoryName ?? ""}`.toLowerCase();
 					if (!hay.includes(q)) return false;
@@ -285,15 +286,15 @@ export default function LedgerView({ ym }: { ym: string }) {
 					<input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름·처리내역 검색" className={inputCls} style={{ ...inputStyle, padding: "7px 10px", fontSize: 13 }} />
 					<div className="flex flex-wrap gap-1.5" style={{ marginTop: 7 }}>
 						{[
-							{ key: null as number | "session" | "fee" | "refund" | null, name: "전체" },
-							{ key: "session" as const, name: "세션" },
-							{ key: "fee" as const, name: "회비" },
-							{ key: "refund" as const, name: "환불" },
-							...categories.map((c) => ({ key: c.id, name: c.name })),
+							{ key: null as string | null, name: "전체" },
+							{ key: "fee", name: "회비" },
+							{ key: "refund", name: "환불" },
+							...monthSessions.map((s) => ({ key: `sess:${s.id}`, name: sessionLabel(s) })),
+							...categories.map((c) => ({ key: `cat:${c.id}`, name: c.name })),
 						].map((c) => {
 							const on = catFilter === c.key;
 							return (
-								<button key={String(c.key ?? "all")} type="button" onClick={() => setCatFilter(c.key)} className={on ? "text-strong" : "text-muted"} style={{ fontSize: 12, fontWeight: on ? 700 : 500, padding: "4px 10px", borderRadius: 999, border: "none", background: on ? "rgba(11,132,255,0.16)" : "rgba(120,120,128,0.1)", cursor: "pointer" }}>
+								<button key={c.key ?? "all"} type="button" onClick={() => setCatFilter(c.key)} className={on ? "text-strong" : "text-muted"} style={{ fontSize: 12, fontWeight: on ? 700 : 500, padding: "4px 10px", borderRadius: 999, border: "none", background: on ? "rgba(11,132,255,0.16)" : "rgba(120,120,128,0.1)", cursor: "pointer" }}>
 									{c.name}
 								</button>
 							);

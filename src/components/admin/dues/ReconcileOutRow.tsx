@@ -116,16 +116,18 @@ export default function ReconcileOutRow({ tx, categories, ledgerSessions, refund
 				</div>
 			)}
 
-			{/* 확인 */}
+			{/* 확인 (입금 카드와 동일: 구분선 위) */}
+			<div style={{ marginTop: 10, paddingTop: 9, borderTop: "1px solid rgba(120,120,128,0.16)" }}>
 			<button
 				type="button"
 				onClick={confirm}
 				disabled={busy || !ready}
 				className="rounded-[9px] py-2 text-sm disabled:opacity-35"
-				style={{ width: "100%", marginTop: 10, fontWeight: 800, color: ready ? "#fff" : undefined, background: ready ? "#1c8a3b" : "rgba(120,120,128,0.14)" }}
+				style={{ width: "100%", fontWeight: 800, color: ready ? "#fff" : undefined, background: ready ? "#1c8a3b" : "rgba(120,120,128,0.14)" }}
 			>
 				{selCourt && sessionSel == null ? "세션 선택" : selRefund && refundSel == null ? "환불할 입금 선택" : "확인"}
 			</button>
+			</div>
 		</div>
 	);
 }

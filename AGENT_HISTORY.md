@@ -687,3 +687,15 @@
 - 검증: tsc clean, 204 tests, build·lint clean, 마이그레이션 배포.
 
 ---
+
+## #56
+
+**Prompt**: 1)회계 필터를 '세션' 단일 대신 세션별(7.12 TK…)로. 2)입/출금 카드 디자인 통일, 구분선 있는 게 좋음. (3)회비 이월은 후속.
+
+**Answer**: 회계 세션별 필터 + 출금 카드 구분선.
+
+- **세션별 필터(1)**: catFilter를 문자열 키(null/fee/refund/cat:{id}/sess:{id})로 리팩터. 그 달 세션마다 '7.12 TK…' 필터 칩 추가(session_id 일치), 단일 '세션' 칩 제거.
+- **구분선 통일(2)**: 출금 카드(ReconcileOutRow) 확인 버튼 위에 입금 카드와 동일한 구분선(borderTop) 추가.
+- 검증: build·lint clean.
+
+---
