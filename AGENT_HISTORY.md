@@ -726,3 +726,16 @@
 - 검증: tsc clean, 204 tests, build·lint clean.
 
 ---
+
+## #59
+
+**Prompt**: [스크린샷] 정산함 입금 카드 세션 후보에 아직 07-04·07-11이 보임 — '열린 경기만' 여기도 적용.
+
+**Answer**: '열린 세션' 정의를 부과 기반으로 바꿔 정산함·회계 공통 적용.
+
+- 원인: '열린 경기' 필터가 회계에만 적용됐고, 정산함 ReconcileInRow의 세션 후보(monthSessions)엔 미적용. 또 07-04·07-11은 status=closed지만 대관 부과 0이라 status로는 못 거름.
+- 공통 헬퍼 activeSessionIds(당월 거래 기반)→ heldSessionIds(court, sessionTxns): 대관 부과가 있거나 은행 거래가 링크된 세션 = 열린 경기(status 무관, cancelled+dues_include여도 부과 있으면 포함).
+- ReconcileInbox가 heldSessionIds로 monthSessions 필터→ReconcileInRow에 전달(07-04·07-11 제외). LedgerView도 동일 헬퍼로 통일.
+- 검증: 7월 실데이터 held={105(07-05),104(07-12)}, 후보 4개 중 2개만 노출. tsc clean, 204 tests, build·lint clean.
+
+---

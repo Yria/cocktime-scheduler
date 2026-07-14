@@ -14,7 +14,7 @@ import { toast } from "../../../store/toastStore";
 import EmptyState from "../../shared/EmptyState";
 import ReconcileInRow from "./ReconcileInRow";
 import ReconcileOutRow, { type RefundTarget } from "./ReconcileOutRow";
-import { fmtMD, won } from "./duesText";
+import { fmtMD, heldSessionIds, won } from "./duesText";
 
 type Filter = "all" | "in" | "out";
 
@@ -31,6 +31,14 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 	const ledgerSessions = useDuesStore((s) => s.ledgerSessions);
 	const categories = useDuesStore((s) => s.categories);
 	const txAllocations = useDuesStore((s) => s.txAllocations);
+	const court = useDuesStore((s) => s.court);
+	const sessionTxns = useDuesStore((s) => s.sessionTxns);
+
+	// 열린(대관 정산 있는) 세션만 — 입금 세션 후보로 07-04·07-11 같은 부과 없는 세션 제외(공통 헬퍼).
+	const heldSessions = useMemo(() => {
+		const held = heldSessionIds(court, sessionTxns);
+		return monthSessions.filter((s) => held.has(s.id));
+	}, [court, sessionTxns, monthSessions]);
 
 	const [ingesting, setIngesting] = useState(false);
 	const [ingestResult, setIngestResult] = useState<IngestResult | null>(null);
@@ -164,7 +172,7 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 									tx={t}
 									members={members}
 									unpaidByMember={unpaidByMember}
-									monthSessions={monthSessions}
+									monthSessions={heldSessions}
 									categories={categories}
 									monthlyFee={monthlyFee}
 									courtFee={courtFee}
