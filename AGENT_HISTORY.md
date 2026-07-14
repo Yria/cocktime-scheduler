@@ -675,3 +675,15 @@
 - 검증: tsc clean, 204 tests, build·lint clean.
 
 ---
+
+## #55
+
+**Prompt**: 1)환불 전체/일부 구분 — 일부환불이면 둘다 정산처리 말고 금액 마이너스 처리하고 입금은 미정산으로. 2)회계 거래내역 필터: 코트대관→세션, 회비 필터 추가, 환불 필터는 환불+링크된 입금도.
+
+**Answer**: 부분 환불 처리 + 회계 필터 개편.
+
+- **부분 환불(요청1)**: dues_sync_bank_tx 규칙 변경 — 배분+환불 ≥ 입금이면 matched, 배분 있으면 partial, 없으면 unmatched. 즉 부분환불(배분 없음)이면 입금은 미정산 유지. dues_confirm_reconcile의 거래잔여 txrem에서 환불분 차감(환불된 만큼 배분 못 함). 프론트: ReconcileInbox가 입금별 환불합(refundedByIn) 계산→ReconcileInRow에 refunded 전달, 실효금액=입금−환불로 프리셀렉트·불일치·비회원대관·확인 라벨 계산, 헤더에 '환불 −X · 대상 Y' 표기. 마이그레이션 배포.
+- **회계 필터(요청2)**: 코트대관→세션(session_id), 회비 필터 추가(배분 라벨 key 'a-회비'), 환불 필터는 환불 출금 + 그 환불이 링크된 입금(refundOutByIn) 둘 다. 원장 txInfo: 부분환불(unmatched) 입금은 '환불 처리됨' 아니라 미정산으로(전액환불 matched일 때만 표기).
+- 검증: tsc clean, 204 tests, build·lint clean, 마이그레이션 배포.
+
+---

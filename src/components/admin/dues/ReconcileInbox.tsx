@@ -70,6 +70,13 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 
 	const filteredPending = useMemo(() => (filter === "all" ? pending : pending.filter((t) => t.direction === filter)), [pending, filter]);
 
+	// 입금별 연결 환불 합계(부분 환불이면 입금 실효금액 = 입금 − 환불).
+	const refundedByIn = useMemo(() => {
+		const m = new Map<number, number>();
+		for (const t of txns) if (t.direction === "out" && t.refundOfTxId != null) m.set(t.refundOfTxId, (m.get(t.refundOfTxId) ?? 0) + t.amount);
+		return m;
+	}, [txns]);
+
 	// 뮤테이션 후 갱신 범위(§10.2):
 	//  - charge를 바꾸는 입금 확정(reconcile)은 refreshMonth(charges·unpaid 포함).
 	//  - tx만 바꾸는 분류·세션·무시·환불·외부대관은 refreshTxns(3쿼리).
@@ -161,6 +168,7 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 									categories={categories}
 									monthlyFee={monthlyFee}
 									courtFee={courtFee}
+									refunded={refundedByIn.get(t.id) ?? 0}
 									busy={busyId === t.id}
 									onConfirm={(payerId, chargeIds, cym, sessions) => run(t.id, () => duesConfirmReconcile(t.id, payerId, chargeIds, cym, sessions), "처리 실패", { touchesCharges: true })}
 									onConfirmCourtExternal={(sid) => run(t.id, () => duesConfirmCourtExternal(t.id, sid), "외부인 대관비 처리 실패")}

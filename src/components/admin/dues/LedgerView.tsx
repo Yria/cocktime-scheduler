@@ -35,7 +35,7 @@ export default function LedgerView({ ym }: { ym: string }) {
 	const [confirmDeleteCat, setConfirmDeleteCat] = useState<TxnCategory | null>(null);
 	// 거래내역 필터(키워드·항목) + 환불 하이라이트. 항목: null=전체 / 'court'=코트대관(세션) / 'refund'=환불 / number=카테고리.
 	const [query, setQuery] = useState("");
-	const [catFilter, setCatFilter] = useState<number | "court" | "refund" | null>(null);
+	const [catFilter, setCatFilter] = useState<number | "session" | "fee" | "refund" | null>(null);
 	const [highlightId, setHighlightId] = useState<number | null>(null);
 
 	const reloadFull = () => duesActions.loadMonth(ym, true); // 카테고리 추가/삭제는 전체(categories 갱신)
@@ -110,9 +110,10 @@ export default function LedgerView({ ym }: { ym: string }) {
 			if (txAllocations[t.id]) return { note: txAllocations[t.id].label, cancel: "match" };
 			if (t.sessionId != null) return { note: courtLabel(t), cancel: "match" }; // 비회원 대관 수입(세션 귀속·matched) — cancel_match가 세션 해제
 			if (t.categoryId != null) return { note: t.categoryName ?? "수입 분류", cancel: "category" };
-			// 전액 환불된 오입금 — 배분 없이 환불 출금으로만 해결. 원출금으로 점프(취소는 그 출금에서).
+			// 전액 환불된 오입금(matched) — 배분 없이 환불로만 해결. 원출금으로 점프(취소는 그 출금에서).
+			// 부분 환불(아직 unmatched)은 여기 안 걸리고 아래 null → '미정산'(남은 금액 배분 필요).
 			const refOut = refundOutByIn.get(t.id);
-			if (refOut != null) return { note: "환불 처리됨", cancel: null, linkTo: refOut };
+			if (refOut != null && t.status === "matched") return { note: "환불 처리됨", cancel: null, linkTo: refOut };
 			return { note: null, cancel: null };
 		}
 		if (t.refundOfTxId != null) {
@@ -131,13 +132,17 @@ export default function LedgerView({ ym }: { ym: string }) {
 		window.setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 2000);
 	};
 
-	// 필터 적용(키워드=적요·처리내역, 항목=코트대관/환불/카테고리).
+	// 필터 적용(키워드=적요·처리내역, 항목=세션/회비/환불/카테고리).
+	//  - 세션: session_id 연결(코트대관 지출·비회원 대관 수입)
+	//  - 회비: 회비 부과에 배분된 입금(배분 라벨 키가 'a-회비')
+	//  - 환불: 환불 출금 + 그 환불이 링크된 입금(둘 다)
 	const q = query.trim().toLowerCase();
 	const filteredLedger = useMemo(
 		() =>
 			ledger.filter((t) => {
-				if (catFilter === "court" && t.sessionId == null) return false;
-				else if (catFilter === "refund" && t.refundOfTxId == null) return false;
+				if (catFilter === "session" && t.sessionId == null) return false;
+				else if (catFilter === "fee" && !(txAllocations[t.id]?.key ?? "").startsWith("a-회비")) return false;
+				else if (catFilter === "refund" && !(t.refundOfTxId != null || refundOutByIn.has(t.id))) return false;
 				else if (typeof catFilter === "number" && t.categoryId !== catFilter) return false;
 				if (q) {
 					const hay = `${t.counterpartyName ?? ""} ${txAllocations[t.id]?.label ?? ""} ${t.categoryName ?? ""}`.toLowerCase();
@@ -145,7 +150,7 @@ export default function LedgerView({ ym }: { ym: string }) {
 				}
 				return true;
 			}),
-		[ledger, catFilter, q, txAllocations],
+		[ledger, catFilter, q, txAllocations, refundOutByIn],
 	);
 
 	const doCancel = async () => {
@@ -280,8 +285,9 @@ export default function LedgerView({ ym }: { ym: string }) {
 					<input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름·처리내역 검색" className={inputCls} style={{ ...inputStyle, padding: "7px 10px", fontSize: 13 }} />
 					<div className="flex flex-wrap gap-1.5" style={{ marginTop: 7 }}>
 						{[
-							{ key: null as number | "court" | "refund" | null, name: "전체" },
-							{ key: "court" as const, name: "코트대관" },
+							{ key: null as number | "session" | "fee" | "refund" | null, name: "전체" },
+							{ key: "session" as const, name: "세션" },
+							{ key: "fee" as const, name: "회비" },
 							{ key: "refund" as const, name: "환불" },
 							...categories.map((c) => ({ key: c.id, name: c.name })),
 						].map((c) => {

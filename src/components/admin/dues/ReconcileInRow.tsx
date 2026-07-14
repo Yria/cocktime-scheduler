@@ -16,6 +16,7 @@ interface Props {
 	categories: TxnCategory[];
 	monthlyFee: number;
 	courtFee: number;
+	refunded: number; // 이 입금에 연결된 환불 합계(실효금액 = 입금 − 환불)
 	busy: boolean;
 	/** 통합 확정: 기존 미납(chargeIds) 배분 + 신규 회비(ym)/세션(sessions) 생성·배분. */
 	onConfirm: (payerId: string, chargeIds: number[], ym: string, sessions: { id: number; units: number }[]) => void;
@@ -31,7 +32,8 @@ interface Sel {
 
 // 미처리 입금 1건 처리. 납부자 지정 → 그 회원의 기존 미납(본인+대납·월무관) 배분 + 신규(회비/세션) 생성을
 // 함께 골라 [확인] 1회로. 금액(§4)으로 기본 선택 제안. 비회원 대관·비회비 수입 분류도 여기서.
-export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessions, categories, monthlyFee, courtFee, busy, onConfirm, onConfirmCourtExternal, onCategorize }: Props) {
+export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessions, categories, monthlyFee, courtFee, refunded, busy, onConfirm, onConfirmCourtExternal, onCategorize }: Props) {
+	const effectiveAmount = tx.amount - refunded; // 부분 환불 반영: 정산 대상 금액
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
 	const candidates = useMemo(() => suggestMembers(tx.counterpartyName, members), [tx.counterpartyName, members]);
 	const [selectedId, setSelectedId] = useState<string | null>(candidates[0]?.id ?? null);
@@ -86,14 +88,14 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	const preselect = useMemo<Sel>(() => {
 		const charges = new Set<number>();
 		if (!selectedId) return { charges, monthly: false, sessions: new Set() };
-		const afterFee = tx.amount - monthlyFee;
+		const afterFee = effectiveAmount - monthlyFee;
 		let wantMonthly = false;
 		let k = 0;
 		if (afterFee >= 0 && courtFee > 0 && afterFee % courtFee === 0) {
 			wantMonthly = true;
 			k = afterFee / courtFee;
-		} else if (courtFee > 0 && tx.amount % courtFee === 0) {
-			k = tx.amount / courtFee;
+		} else if (courtFee > 0 && effectiveAmount % courtFee === 0) {
+			k = effectiveAmount / courtFee;
 		}
 		if (selectedMember?.isGuest) wantMonthly = false;
 		let monthly = false;
@@ -109,7 +111,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		});
 		for (const c of courtSorted.slice(0, k)) charges.add(c.id);
 		return { charges, monthly, sessions: new Set() };
-	}, [selectedId, selectedMember, tx.amount, monthlyFee, courtFee, existingMonthly, existingCourt, monthSessionIds]);
+	}, [selectedId, selectedMember, effectiveAmount, monthlyFee, courtFee, existingMonthly, existingCourt, monthSessionIds]);
 
 	const active = override ?? preselect;
 	const existingTotal = [...active.charges].reduce((s, id) => {
@@ -170,14 +172,14 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	}, [candidates, selectedMember]);
 
 	// 비회원 대관(회원 매칭 없이 대관비 배수일 때).
-	const externalCourt = !selectedId && courtFee > 0 && tx.amount % courtFee === 0;
+	const externalCourt = !selectedId && courtFee > 0 && effectiveAmount > 0 && effectiveAmount % courtFee === 0;
 
 	// 확인 결정: 분류(catSel) > 회원 배분(total) > 비회원 대관(extSession). 상호배타.
 	const catName = catSel != null ? categories.find((c) => c.id === catSel)?.name : null;
 	const catMode = catSel != null;
 	const memberMode = !catMode && selectedId != null && total > 0;
 	const extMode = !catMode && !selectedId && externalCourt && extSession != null;
-	const mismatch = memberMode && total !== tx.amount; // 선택 금액 ≠ 입금액
+	const mismatch = memberMode && total !== effectiveAmount; // 선택 금액 ≠ 정산 대상(입금−환불)
 	const ready = catMode || memberMode || extMode;
 	const doConfirm = () => {
 		if (catMode && catSel != null) onCategorize(catSel);
@@ -212,6 +214,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 				<span className="text-strong" style={{ flex: 1, fontSize: 14, fontWeight: 600, minWidth: 0 }}>{tx.counterpartyName || "(적요 없음)"}</span>
 				<span className="flex flex-col items-end" style={{ flexShrink: 0 }}>
 					<span className="text-[#1c8a3b]" style={{ fontSize: 14, fontWeight: 800 }}>+{won(tx.amount)}</span>
+					{refunded > 0 && <span className="text-[#c2670a]" style={{ fontSize: 10.5, fontWeight: 700 }}>환불 −{won(refunded)} · 대상 {won(effectiveAmount)}</span>}
 					{tx.balanceAfter != null && <span className="text-faint" style={{ fontSize: 10.5 }}>잔액 {won(tx.balanceAfter)}</span>}
 				</span>
 			</div>
@@ -312,7 +315,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 			<div style={{ marginTop: 10, paddingTop: 9, borderTop: "1px solid rgba(120,120,128,0.16)" }}>
 				{mismatch && (
 					<p className="text-[#d1362c]" style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 7 }}>
-						선택 {won(total)} · 입금 {won(tx.amount)} — 금액이 안 맞아요
+						선택 {won(total)} · 대상 {won(effectiveAmount)} — 금액이 안 맞아요
 					</p>
 				)}
 				<button
@@ -322,14 +325,14 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 					className="rounded-[9px] py-2 text-sm disabled:opacity-35"
 					style={{ width: "100%", fontWeight: 800, color: ready ? "#fff" : undefined, background: !ready ? "rgba(120,120,128,0.14)" : mismatch ? "#d1362c" : "#1c8a3b" }}
 				>
-					{catMode ? `확인 · ${catName}` : memberMode ? `확인 · ${won(total)}` : extMode ? `비회원 대관비 · ${won(tx.amount)}` : "항목 선택"}
+					{catMode ? `확인 · ${catName}` : memberMode ? `확인 · ${won(total)}` : extMode ? `비회원 대관비 · ${won(effectiveAmount)}` : "항목 선택"}
 				</button>
 			</div>
 
 			{showMismatch && (
 				<ConfirmDialog
 					title="금액이 안 맞아요"
-					message={`선택한 금액(${won(total)})이 입금(${won(tx.amount)})과 달라요. 정산이 맞지 않는데 이대로 확인할까요?`}
+					message={`선택한 금액(${won(total)})이 정산 대상(${won(effectiveAmount)})과 달라요. 정산이 맞지 않는데 이대로 확인할까요?`}
 					confirmLabel="그래도 확인"
 					tone="danger"
 					maxWidth="xs"
