@@ -81,3 +81,19 @@ export function sessionLabel(s: { scheduledAt: string | null; placeName?: string
 	const d = s.scheduledAt ? fmtMD(s.scheduledAt) : (s.title ?? "세션");
 	return s.placeName ? `${d} ${s.placeName}` : d;
 }
+
+/**
+ * 거래내역에서 '열린(활동 있는) 세션' id 집합 — 공통 헬퍼.
+ * 세션 필터·세션 관련 UI가 실제 돈이 오간 세션만 보이게. 직접 링크(session_id) + 배분(입금)의 세션 모두 포함.
+ */
+export function activeSessionIds(
+	txns: { id: number; sessionId: number | null }[],
+	txAllocations: Record<number, { sessionIds: number[] }>,
+): Set<number> {
+	const ids = new Set<number>();
+	for (const t of txns) {
+		if (t.sessionId != null) ids.add(t.sessionId);
+		for (const sid of txAllocations[t.id]?.sessionIds ?? []) ids.add(sid);
+	}
+	return ids;
+}

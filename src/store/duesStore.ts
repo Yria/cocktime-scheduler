@@ -11,6 +11,7 @@ import {
 	type MyChargeRow,
 	type PublicLedger,
 	type SessionFeeRow,
+	type TxAllocation,
 	type TxnCategory,
 	type UnpaidCharge,
 	fetchBankTransactions,
@@ -47,7 +48,7 @@ interface DuesState {
 	sessionTxns: { sessionId: number; direction: "in" | "out"; amount: number }[]; // 세션 링크 거래(발생월 무관)
 	categories: TxnCategory[]; // 거래 분류
 	unpaidByMember: Record<string, UnpaidCharge[]>; // 전체 미납(크로스먼스 배분용)
-	txAllocations: Record<number, { label: string; key: string; names: string[] }>; // 거래별 처리내역 라벨
+	txAllocations: Record<number, TxAllocation>; // 거래별 처리내역(라벨·세션)
 	monthlyFee: number;
 	courtFee: number;
 

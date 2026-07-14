@@ -298,23 +298,29 @@ interface RawTxAlloc {
 		kind: string;
 		period_ym: string | null;
 		member_id: string;
+		session_id: number | null;
 		sessions: { scheduled_at: string | null; title: string | null } | null;
 	} | null;
 	members: { name: string } | null;
 }
+/** 거래별 처리 내역. sessionIds=그 거래가 배분된 대관 부과의 세션(입금을 세션 필터에 잡히게). */
+export interface TxAllocation {
+	label: string;
+	key: string;
+	names: string[];
+	sessionIds: number[];
+}
 /**
- * 거래별 처리 내역(무엇으로 배분됐는지) — 확인됨 라벨·정렬용. Record<txId, {label, key, names}>.
+ * 거래별 처리 내역(무엇으로 배분됐는지) — 확인됨 라벨·정렬·세션 필터용.
  * txIds 를 주면 그 거래들로만 스코프(표시 대상=이번 달 거래) — 전역 배분 누적 조회 회피(§10.2).
  * txIds=[] → 빈 결과. 미지정 → 전체(하위호환).
  */
-export async function fetchTxAllocations(
-	txIds?: number[],
-): Promise<Record<number, { label: string; key: string; names: string[] }>> {
+export async function fetchTxAllocations(txIds?: number[]): Promise<Record<number, TxAllocation>> {
 	if (txIds && txIds.length === 0) return {};
 	let query = supabase
 		.from("dues_allocations")
 		// members 임베드는 member_id·matched_by 두 FK가 있어 모호 → 납부자(member_id) FK 명시(PGRST201 회피).
-		.select("bank_tx_id, amount, member_id, dues_charges(kind, period_ym, member_id, sessions(scheduled_at, title)), members!dues_allocations_member_id_fkey(name)")
+		.select("bank_tx_id, amount, member_id, dues_charges(kind, period_ym, member_id, session_id, sessions(scheduled_at, title)), members!dues_allocations_member_id_fkey(name)")
 		.not("bank_tx_id", "is", null);
 	if (txIds) query = query.in("bank_tx_id", txIds);
 	const { data, error } = await query;
@@ -322,7 +328,7 @@ export async function fetchTxAllocations(
 		console.error("fetchTxAllocations:", error);
 		return {};
 	}
-	const map: Record<number, { label: string; key: string; names: Set<string> }> = {};
+	const map: Record<number, { label: string; key: string; names: Set<string>; sessionIds: Set<number> }> = {};
 	for (const a of (data ?? []) as unknown as RawTxAlloc[]) {
 		const c = a.dues_charges;
 		let label: string;
@@ -340,13 +346,14 @@ export async function fetchTxAllocations(
 			label = `${d} 대관비`;
 			key = `b-대관-${c.sessions?.scheduled_at ?? c.kind}`;
 		}
-		const e = map[a.bank_tx_id] ?? { label, key, names: new Set<string>() };
-		// 여러 charge면 primary(첫) 라벨 유지, 이름은 누적
+		const e = map[a.bank_tx_id] ?? { label, key, names: new Set<string>(), sessionIds: new Set<number>() };
+		// 여러 charge면 primary(첫) 라벨 유지, 이름·세션은 누적
 		if (a.members?.name) e.names.add(a.members.name);
-		map[a.bank_tx_id] = { label: e.label, key: e.key, names: e.names };
+		if (c?.session_id != null) e.sessionIds.add(c.session_id); // 대관비 배분 → 그 세션(입금도 세션 필터에)
+		map[a.bank_tx_id] = { label: e.label, key: e.key, names: e.names, sessionIds: e.sessionIds };
 	}
-	const out: Record<number, { label: string; key: string; names: string[] }> = {};
-	for (const [k, v] of Object.entries(map)) out[Number(k)] = { label: v.label, key: v.key, names: [...v.names] };
+	const out: Record<number, TxAllocation> = {};
+	for (const [k, v] of Object.entries(map)) out[Number(k)] = { label: v.label, key: v.key, names: [...v.names], sessionIds: [...v.sessionIds] };
 	return out;
 }
 

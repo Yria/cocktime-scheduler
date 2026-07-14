@@ -712,3 +712,17 @@
 - 검증: tsc clean, 204 tests, build·lint clean, 컬럼·RPC 배포 확인. (MyDuesPage 이월 표시는 후속.)
 
 ---
+
+## #58
+
+**Prompt**: 거래내역 min-height, 필터 순서 전체/회비/세션/환불/[항목], 세션은 열린 경기만(공통로직), 세션 필터가 출금만 잡히는데 입금도 잡히게.
+
+**Answer**: 회계 거래내역 필터 4개 개선.
+
+- **입금도 세션 필터에**: fetchTxAllocations가 배분된 대관 부과의 session_id를 모아 TxAllocation.sessionIds로 반환. 세션 필터 predicate=`t.sessionId===sid || txAllocations[t.id].sessionIds.includes(sid)` → 대관 지출(출금)+비회원 수입(입금)+회원 대관비 납부(입금) 모두 잡힘.
+- **열린 세션만(공통 헬퍼)**: duesText.activeSessionIds(txns, txAllocations)=활동(직접 링크+배분) 있는 세션 id 집합. 세션 필터 칩을 이걸로 필터(활동 없는 07-04·07-11 제외). 공통 로직으로 분리.
+- **필터 순서**: 전체 / 회비 / [열린 세션들] / 환불 / [카테고리].
+- **min-height**: 거래내역 리스트 래퍼 minHeight 360(필터 시 높이 흔들림 방지).
+- 검증: tsc clean, 204 tests, build·lint clean.
+
+---
