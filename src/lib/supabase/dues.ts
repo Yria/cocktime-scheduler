@@ -309,6 +309,8 @@ export interface TxAllocation {
 	key: string;
 	names: string[];
 	sessionIds: number[];
+	feeAmount: number; // 이 거래가 회비(monthly_fee) 부과에 배분한 금액 합(월 통장 기준 회계 분해용)
+	courtBySession: Record<number, number>; // 세션별 대관(court_fee) 배분 금액 합
 }
 /**
  * 거래별 처리 내역(무엇으로 배분됐는지) — 확인됨 라벨·정렬·세션 필터용.
@@ -328,7 +330,7 @@ export async function fetchTxAllocations(txIds?: number[]): Promise<Record<numbe
 		console.error("fetchTxAllocations:", error);
 		return {};
 	}
-	const map: Record<number, { label: string; key: string; names: Set<string>; sessionIds: Set<number> }> = {};
+	const map: Record<number, { label: string; key: string; names: Set<string>; sessionIds: Set<number>; feeAmount: number; courtBySession: Record<number, number> }> = {};
 	for (const a of (data ?? []) as unknown as RawTxAlloc[]) {
 		const c = a.dues_charges;
 		let label: string;
@@ -346,14 +348,16 @@ export async function fetchTxAllocations(txIds?: number[]): Promise<Record<numbe
 			label = `${d} 대관비`;
 			key = `b-대관-${c.sessions?.scheduled_at ?? c.kind}`;
 		}
-		const e = map[a.bank_tx_id] ?? { label, key, names: new Set<string>(), sessionIds: new Set<number>() };
-		// 여러 charge면 primary(첫) 라벨 유지, 이름·세션은 누적
+		const e = map[a.bank_tx_id] ?? { label, key, names: new Set<string>(), sessionIds: new Set<number>(), feeAmount: 0, courtBySession: {} };
+		// 여러 charge면 primary(첫) 라벨 유지, 이름·세션·금액은 누적
 		if (a.members?.name) e.names.add(a.members.name);
 		if (c?.session_id != null) e.sessionIds.add(c.session_id); // 대관비 배분 → 그 세션(입금도 세션 필터에)
-		map[a.bank_tx_id] = { label: e.label, key: e.key, names: e.names, sessionIds: e.sessionIds };
+		if (c?.kind === "monthly_fee") e.feeAmount += a.amount ?? 0; // 월 통장 기준 회계: 회비 배분액
+		else if (c?.session_id != null) e.courtBySession[c.session_id] = (e.courtBySession[c.session_id] ?? 0) + (a.amount ?? 0); // 세션별 대관 배분액
+		map[a.bank_tx_id] = e;
 	}
 	const out: Record<number, TxAllocation> = {};
-	for (const [k, v] of Object.entries(map)) out[Number(k)] = { label: v.label, key: v.key, names: [...v.names], sessionIds: [...v.sessionIds] };
+	for (const [k, v] of Object.entries(map)) out[Number(k)] = { label: v.label, key: v.key, names: [...v.names], sessionIds: [...v.sessionIds], feeAmount: v.feeAmount, courtBySession: v.courtBySession };
 	return out;
 }
 

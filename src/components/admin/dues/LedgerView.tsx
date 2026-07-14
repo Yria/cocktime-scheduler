@@ -23,9 +23,7 @@ export default function LedgerView({ ym }: { ym: string }) {
 	const txns = useDuesStore((s) => s.bankTxns);
 	const categories = useDuesStore((s) => s.categories);
 	const monthSessions = useDuesStore((s) => s.monthSessions);
-	const sessionTxns = useDuesStore((s) => s.sessionTxns);
-	const court = useDuesStore((s) => s.court);
-	const monthly = useDuesStore((s) => s.monthly);
+	const ledgerSessions = useDuesStore((s) => s.ledgerSessions); // 세션 행 라벨용(±1개월 상위집합)
 	const txAllocations = useDuesStore((s) => s.txAllocations);
 
 	const [busyId, setBusyId] = useState<number | null>(null);
@@ -41,40 +39,52 @@ export default function LedgerView({ ym }: { ym: string }) {
 
 	const reloadFull = () => duesActions.loadMonth(ym, true); // 카테고리 추가/삭제는 전체(categories 갱신)
 
-	const { income, expense, latestBalance, feeIncome, sessionRows, catRows, uncatIn, uncatOut } = useMemo(() => {
-		let inc = 0, exp = 0, uIn = 0, uOut = 0;
+	// 월 통장 기준(현금주의) 분해: '그 달 통장 거래'만 버킷에 담아 합이 반드시 '이 달 남은 돈'과 일치.
+	//  - 매칭 입금은 배분내역(txAllocations)으로 회비/세션대관에 쪼갬(부분배분 잔액은 미분류).
+	//  - 세션 지출/수입은 '그 달' 세션거래만(다른 달 선결제 대관비는 그 달 회계로). 환불 출금은 별도 라인.
+	const { income, expense, latestBalance, feeIncome, sessionRows, catRows, uncatIn, uncatOut, refundOut } = useMemo(() => {
+		let inc = 0, exp = 0, uIn = 0, uOut = 0, fee = 0, refOut = 0;
 		const catMap = new Map<number, { name: string; inSum: number; outSum: number }>();
 		const sess = new Map<number, { income: number; expense: number }>();
+		const addSess = (id: number, key: "income" | "expense", amt: number) => {
+			const e = sess.get(id) ?? { income: 0, expense: 0 };
+			e[key] += amt;
+			sess.set(id, e);
+		};
+		const addCat = (t: BankTxnRow, key: "inSum" | "outSum") => {
+			const e = catMap.get(t.categoryId!) ?? { name: t.categoryName ?? "?", inSum: 0, outSum: 0 };
+			e[key] += t.amount;
+			catMap.set(t.categoryId!, e);
+		};
 		let latest: { at: string; bal: number } | null = null;
 		for (const t of txns) {
-			if (t.direction === "in") inc += t.amount;
-			else exp += t.amount;
 			if (t.balanceAfter != null && (!latest || t.occurredAt > latest.at)) latest = { at: t.occurredAt, bal: t.balanceAfter };
-			if (t.sessionId != null) continue; // 코트대관 = 세션별 순액(sessionTxns)로 집계 → 여기선 스킵(이중계상 방지)
-			if (t.categoryId != null) {
-				const e = catMap.get(t.categoryId) ?? { name: t.categoryName ?? "?", inSum: 0, outSum: 0 };
-				if (t.direction === "in") e.inSum += t.amount;
-				else e.outSum += t.amount;
-				catMap.set(t.categoryId, e);
+			if (t.direction === "in") {
+				inc += t.amount;
+				if (t.sessionId != null) addSess(t.sessionId, "income", t.amount); // 비회원 대관 입금
+				else if (t.categoryId != null) addCat(t, "inSum");
+				else if (t.status === "matched" || t.status === "partial") {
+					const a = txAllocations[t.id];
+					let allocated = 0;
+					if (a) {
+						fee += a.feeAmount;
+						allocated += a.feeAmount;
+						for (const [sid, amt] of Object.entries(a.courtBySession)) {
+							addSess(Number(sid), "income", amt);
+							allocated += amt;
+						}
+					}
+					if (t.amount - allocated !== 0) uIn += t.amount - allocated; // 부분 배분 잔액 → 미분류
+				} else uIn += t.amount; // 미매칭
 			} else {
-				if (t.direction === "in" && (t.status === "matched" || t.status === "partial")) {
-					// 회비 수납은 부과(amount_paid)로 집계 → 여기선 스킵(중복 방지)
-				} else if (t.direction === "in") uIn += t.amount;
-				else if (t.refundOfTxId == null) uOut += t.amount; // 환불 출금은 미분류 지출로 안 잡음
+				exp += t.amount;
+				if (t.refundOfTxId != null) refOut += t.amount; // 환불 출금 = 별도 라인
+				else if (t.sessionId != null) addSess(t.sessionId, "expense", t.amount);
+				else if (t.categoryId != null) addCat(t, "outSum");
+				else uOut += t.amount;
 			}
 		}
-		for (const t of sessionTxns) {
-			const e = sess.get(t.sessionId) ?? { income: 0, expense: 0 };
-			if (t.direction === "in") e.income += t.amount;
-			else e.expense += t.amount;
-			sess.set(t.sessionId, e);
-		}
-		for (const c of court) {
-			const e = sess.get(c.sessionId) ?? { income: 0, expense: 0 };
-			e.income += c.amountPaid;
-			sess.set(c.sessionId, e);
-		}
-		const label = new Map(monthSessions.map((s) => [s.id, s]));
+		const label = new Map(ledgerSessions.map((s) => [s.id, s]));
 		const rows = [...sess.entries()]
 			.map(([id, e]) => ({ id, income: e.income, expense: e.expense, net: e.income - e.expense, s: label.get(id) ?? null }))
 			.filter((r) => r.income > 0 || r.expense > 0)
@@ -83,13 +93,14 @@ export default function LedgerView({ ym }: { ym: string }) {
 			income: inc,
 			expense: exp,
 			latestBalance: latest?.bal ?? null,
-			feeIncome: monthly.reduce((s, m) => s + m.amountPaid, 0),
+			feeIncome: fee,
 			sessionRows: rows,
 			uncatIn: uIn,
 			uncatOut: uOut,
+			refundOut: refOut,
 			catRows: [...catMap.entries()].map(([id, e]) => ({ id, name: e.name, inSum: e.inSum, outSum: e.outSum, net: e.inSum - e.outSum })),
 		};
-	}, [txns, court, monthly, monthSessions, sessionTxns]);
+	}, [txns, txAllocations, ledgerSessions]);
 
 	// 거래 내역(러닝 잔액) — 최신순.
 	const ledger = useMemo(() => [...txns].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)), [txns]);
@@ -251,10 +262,13 @@ export default function LedgerView({ ym }: { ym: string }) {
 					{catRows.map((r) => (
 						<Row key={r.id} name={r.name} inAmt={r.inSum} outAmt={r.outSum} right={<span className={r.net >= 0 ? "text-[#1c8a3b]" : "text-[#d1362c]"} style={{ fontWeight: 800 }}>{r.net === 0 ? "정산 0" : `${r.net > 0 ? "+" : "−"}${won(Math.abs(r.net))}`}</span>} />
 					))}
+					{refundOut > 0 && (
+						<Row name="환불" outAmt={refundOut} right={<span className="text-[#d1362c]" style={{ fontWeight: 800 }}>−{won(refundOut)}</span>} />
+					)}
 					{(uncatIn > 0 || uncatOut > 0) && (
 						<Row name="미분류" nameColor="#9498a2" inAmt={uncatIn} outAmt={uncatOut} right={null} />
 					)}
-					{catRows.length === 0 && sessionRows.length === 0 && feeIncome === 0 && uncatIn === 0 && uncatOut === 0 && (
+					{catRows.length === 0 && sessionRows.length === 0 && feeIncome === 0 && refundOut === 0 && uncatIn === 0 && uncatOut === 0 && (
 						<p className="text-faint" style={{ fontSize: 13 }}>이 달 거래가 없어요.</p>
 					)}
 				</div>
