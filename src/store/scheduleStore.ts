@@ -14,6 +14,7 @@ import {
 	setLateMinutes,
 	syncOccurrences,
 } from "../lib/supabase/schedule";
+import { dbEndSession } from "../lib/supabase/actions";
 import type { Gender, PlayerSkills } from "../types";
 import type {
 	AttendanceRow,
@@ -39,6 +40,31 @@ export const useScheduleStore = create<ScheduleState>(() => ({
 	loading: false,
 	loaded: false,
 }));
+
+/** active 자동 종료 유예: 예정 종료(ends_at)를 넘겨 진행되는 세션을 조기 종료하지 않도록 1시간 여유. */
+const ACTIVE_CLOSE_GRACE_MS = 60 * 60 * 1000;
+
+/** 운영진이 일정 목록에 진입하면, 예정 종료(ends_at) + 유예(1h)가 지난 진행중(active) 세션을
+ *  서버에 종료 요청한다. active 는 자동 종료 대상이 아니라(수동 종료/다음 세션 시작 때만
+ *  닫힘) ends_at 이 지나도 "진행중"으로 목록에 남는데, cron 없이 운영진 로드 시점에 정리한다.
+ *  - isAdmin 게이팅: 일반 회원 접속으로는 닫지 않는다(종료 권한은 운영진).
+ *  - 종료분은 로컬 배열에서도 제거해 즉시 목록에서 사라지게 한다(fetchSchedules 는 open/active 만 반환). */
+async function closeEndedActiveIfAdmin(
+	schedules: SessionRow[],
+): Promise<SessionRow[]> {
+	if (!useAuthStore.getState().isAdmin) return schedules;
+	const nowMs = Date.now();
+	const stale = schedules.filter(
+		(s) =>
+			s.status === "active" &&
+			s.ends_at != null &&
+			Date.parse(s.ends_at) + ACTIVE_CLOSE_GRACE_MS <= nowMs,
+	);
+	if (stale.length === 0) return schedules;
+	await Promise.all(stale.map((s) => dbEndSession(s.id)));
+	const staleIds = new Set(stale.map((s) => s.id));
+	return schedules.filter((s) => !staleIds.has(s.id));
+}
 
 async function reloadAttendances() {
 	const ids = useScheduleStore.getState().schedules.map((s) => s.id);
@@ -93,10 +119,12 @@ export const scheduleActions = {
 		useScheduleStore.setState({ loading: true });
 		// 규칙→회차 동기화 + 노출(일요일 18:00 일괄 공개) 선반영 후 목록 조회
 		await syncOccurrences();
-		const [schedules, places] = await Promise.all([
+		const [fetched, places] = await Promise.all([
 			fetchSchedules(),
 			fetchPlaces(),
 		]);
+		// 운영진 진입 시: 종료 시각(ends_at) 지난 진행중(active) 세션을 서버에 종료 요청 후 목록에서 제외
+		const schedules = await closeEndedActiveIfAdmin(fetched);
 		const attendances = await fetchAttendances(schedules.map((s) => s.id));
 		useScheduleStore.setState({
 			schedules,

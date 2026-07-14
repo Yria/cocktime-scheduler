@@ -634,13 +634,14 @@ export interface SessionFeeRow {
 }
 
 async function queryCourtSessions(start: string, end: string): Promise<SessionFeeRow[]> {
+	// '실제 열린 대관 세션'의 단일 기준(generate_dues_charges와 동일): 대관 장소 + active/closed + 경기기록(matches) 있음.
+	// matches!inner 로 경기 없는 세션(무산)을 원천 제외 → 정산함·회계·현황 모든 세션 목록이 일괄로 열린 경기만.
 	const { data, error } = await supabase
 		.from("sessions")
-		.select("id, title, scheduled_at, ends_at, court_count, court_fee, places!inner(name, court_fee_per_hour)")
+		.select("id, title, scheduled_at, ends_at, court_count, court_fee, places!inner(name, court_fee_per_hour), matches!inner(id)")
 		.gte("scheduled_at", start)
 		.lt("scheduled_at", end)
-		// 실제 열린(active/closed) 세션 + 정산 전용 노출(dues_include, 예: 무산됐지만 대관 정산 필요한 0705)
-		.or("status.in.(active,closed),dues_include.is.true")
+		.in("status", ["active", "closed"])
 		.not("places.court_fee_per_hour", "is", null) // 코트 요금 설정된(대관) 장소 세션만
 		.order("scheduled_at", { ascending: false });
 	if (error) {

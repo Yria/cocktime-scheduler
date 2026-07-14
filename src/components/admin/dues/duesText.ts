@@ -81,18 +81,3 @@ export function sessionLabel(s: { scheduledAt: string | null; placeName?: string
 	const d = s.scheduledAt ? fmtMD(s.scheduledAt) : (s.title ?? "세션");
 	return s.placeName ? `${d} ${s.placeName}` : d;
 }
-
-/**
- * '열린(실제 정산이 있는) 세션' id 집합 — 공통 헬퍼. 정산함 세션 후보·회계 세션 필터가 이걸 쓴다.
- * 정의: 대관 부과(court charge)가 있거나 은행 거래가 링크된 세션. (status가 아니라 실제 대관 정산 유무로 판정 —
- * 예: cancelled여도 dues_include로 정산한 세션은 포함, closed여도 부과 0이면 제외.)
- */
-export function heldSessionIds(
-	court: { sessionId: number }[],
-	sessionTxns: { sessionId: number }[],
-): Set<number> {
-	const ids = new Set<number>();
-	for (const c of court) ids.add(c.sessionId);
-	for (const t of sessionTxns) ids.add(t.sessionId);
-	return ids;
-}

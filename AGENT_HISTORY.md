@@ -747,3 +747,20 @@
 **Answer**: ReconcileOutRow 환불 칩 클릭 시 refundTargets 중 amount===출금액인 후보를 refundSel로 기본 선택(없으면 null). 전액 환불 케이스 원탭.
 
 ---
+
+## #61
+
+**Prompt**: 지금 일정시간 지났는데 세션열려있네 이유확인해봐 / 정시 종료 말고 한시간 유예두자
+
+**Answer**: 예정 시간이 지났는데 세션이 열려있던 원인을 진단하고 근본 수정. 원인 분석:
+- 자동 종료(sync A단계)는 status in ('draft','open')만 대상이라 active(진행중)는 절대 닫지 않음. active→closed 전환은 관리자 수동 종료 또는 다음 세션 시작(단일-active 불변식) 때만 발생.
+- 홈 목록(visibleSchedules)도 active는 ends_at 지나도 유지 → 종료된 세션이 "진행중"으로 영구 노출.
+- 실제 범인은 세션 77(7/14 정모): 18:24 수동 시작 후 21:00 종료 예정이 지나고 날짜까지 바뀌었는데 active로 잔존.
+
+조치:
+- 세션 77을 DB에서 즉시 종료(closed/is_active=false, ended_at=예정 종료시각).
+- cron 상향(주1회→매시간) 방식 마이그레이션을 작성했다가, 사용자 요청으로 폐기하고 프론트 방식으로 전환.
+- scheduleActions.load()에 closeEndedActiveIfAdmin 추가: 운영진(isAdmin) 진입 시 ends_at + 1시간 유예가 지난 active 세션을 서버에 종료 요청(dbEndSession)하고 로컬 목록에서 제거. 일반 회원 접속으로는 안 닫힘.
+- 정시 종료 대신 1시간 유예(ACTIVE_CLOSE_GRACE_MS)를 둬 예정 종료를 조금 넘겨 진행하는 세션의 조기 종료 방지.
+
+---

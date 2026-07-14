@@ -14,7 +14,7 @@ import { toast } from "../../../store/toastStore";
 import ConfirmDialog from "../../common/ConfirmDialog";
 import { inputCls, inputStyle } from "../../common/fieldStyles";
 import EmptyState from "../../shared/EmptyState";
-import { fmtMD, heldSessionIds, sessionLabel, won } from "./duesText";
+import { fmtMD, sessionLabel, won } from "./duesText";
 
 // 회계: 은행 입출금 기반 장부. 수입/지출/남은 돈 + 항목별 정산(세션 단위 대관비 순액 포함) + 거래 내역(러닝 잔액).
 // 거래를 탭하면 처리 취소·재처리(정산함으로 되돌림). 출금 분류·세션 지정은 정산함에서.
@@ -137,8 +137,6 @@ export default function LedgerView({ ym }: { ym: string }) {
 	//  - sess:{id}: 그 세션에 연결된 거래(대관 지출·비회원 대관 수입)
 	//  - fee: 회비 부과에 배분된 입금(배분 라벨 키가 'a-회비')
 	//  - refund: 환불 출금 + 그 환불이 링크된 입금(둘 다)
-	// 열린(대관 정산 있는) 세션만 필터 칩에 노출 — 공통 헬퍼.
-	const activeSess = useMemo(() => heldSessionIds(court, sessionTxns), [court, sessionTxns]);
 	const q = query.trim().toLowerCase();
 	const filteredLedger = useMemo(
 		() =>
@@ -293,8 +291,8 @@ export default function LedgerView({ ym }: { ym: string }) {
 						{[
 							{ key: null as string | null, name: "전체" },
 							{ key: "fee", name: "회비" },
-							// 세션: 열린(활동 있는) 세션만
-							...monthSessions.filter((s) => activeSess.has(s.id)).map((s) => ({ key: `sess:${s.id}`, name: sessionLabel(s) })),
+							// 세션별 — queryCourtSessions가 이미 '경기기록 있는' 세션만 반환(원천 필터)
+							...monthSessions.map((s) => ({ key: `sess:${s.id}`, name: sessionLabel(s) })),
 							{ key: "refund", name: "환불" },
 							...categories.map((c) => ({ key: `cat:${c.id}`, name: c.name })),
 						].map((c) => {
