@@ -26,7 +26,7 @@ interface Props {
 interface Sel {
 	charges: Set<number>; // 선택된 기존 미납 charge id
 	monthly: boolean; // 신규 이번달 회비 생성
-	sessions: Map<number, number>; // 신규 세션 대관비(sessionId → 인원)
+	sessions: Set<number>; // 신규 세션 대관비(온/오프, 1인분씩) — 비회원 대관과 동일한 토글
 }
 
 // 미처리 입금 1건 처리. 납부자 지정 → 그 회원의 기존 미납(본인+대납·월무관) 배분 + 신규(회비/세션) 생성을
@@ -57,7 +57,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	const monthSessionIds = useMemo(() => new Set(monthSessions.map((s) => s.id)), [monthSessions]);
 	const preselect = useMemo<Sel>(() => {
 		const charges = new Set<number>();
-		if (!selectedId) return { charges, monthly: false, sessions: new Map() };
+		if (!selectedId) return { charges, monthly: false, sessions: new Set() };
 		const afterFee = tx.amount - monthlyFee;
 		let wantMonthly = false;
 		let k = 0;
@@ -80,13 +80,12 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 			return (b.sessionDate ?? "").localeCompare(a.sessionDate ?? ""); // 최근순
 		});
 		for (const c of courtSorted.slice(0, k)) charges.add(c.id);
-		return { charges, monthly, sessions: new Map() };
+		return { charges, monthly, sessions: new Set() };
 	}, [selectedId, selectedMember, tx.amount, monthlyFee, courtFee, existingMonthly, existingCourt, monthSessionIds]);
 
 	const active = override ?? preselect;
 	const existingTotal = existing.reduce((s, c) => (active.charges.has(c.id) ? s + remaining(c.amountDue, c.amountPaid) : s), 0);
-	const unitTotal = [...active.sessions.values()].reduce((s, n) => s + n, 0);
-	const total = existingTotal + (active.monthly ? monthlyFee : 0) + unitTotal * courtFee;
+	const total = existingTotal + (active.monthly ? monthlyFee : 0) + active.sessions.size * courtFee;
 
 	const selectMember = (id: string) => {
 		setSelectedId((prev) => (prev === id ? null : id));
@@ -95,17 +94,16 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		setQuery("");
 	};
 	const toggleCharge = (id: number) => {
-		const n: Sel = { charges: new Set(active.charges), monthly: active.monthly, sessions: new Map(active.sessions) };
+		const n: Sel = { charges: new Set(active.charges), monthly: active.monthly, sessions: new Set(active.sessions) };
 		if (n.charges.has(id)) n.charges.delete(id);
 		else n.charges.add(id);
 		setOverride(n);
 	};
-	const toggleMonthly = () => setOverride({ charges: new Set(active.charges), monthly: !active.monthly, sessions: new Map(active.sessions) });
-	const cycleSession = (sid: number) => {
-		const n = new Map(active.sessions);
-		const next = ((n.get(sid) ?? 0) + 1) % 5; // 0→1→2→3→4(본인+게스트)
-		if (next === 0) n.delete(sid);
-		else n.set(sid, next);
+	const toggleMonthly = () => setOverride({ charges: new Set(active.charges), monthly: !active.monthly, sessions: new Set(active.sessions) });
+	const toggleSession = (sid: number) => {
+		const n = new Set(active.sessions);
+		if (n.has(sid)) n.delete(sid); // 온/오프 토글(비회원 대관과 동일, 1인분)
+		else n.add(sid);
 		setOverride({ charges: new Set(active.charges), monthly: active.monthly, sessions: n });
 	};
 
@@ -163,21 +161,30 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 						</button>
 					);
 				})}
-				<button type="button" onClick={() => setSearchOpen((o) => !o)} aria-label="회원 검색" className="text-faint flex items-center" style={{ fontSize: 13, padding: "6px 10px", borderRadius: 999, border: "1.5px solid transparent", background: searchOpen ? "rgba(11,132,255,0.12)" : "rgba(120,120,128,0.1)", cursor: "pointer" }}>
-					<Search size={13} strokeWidth={2.2} />
-				</button>
+				{searchOpen ? (
+					<span className="flex items-center gap-1" style={{ flex: 1, minWidth: 120 }}>
+						{/* biome-ignore lint/a11y/noAutofocus: 검색 열면 바로 입력하도록 */}
+						<input type="text" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름 검색" className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 0, padding: "6px 10px", fontSize: 13 }} />
+						<button type="button" onClick={() => { setSearchOpen(false); setQuery(""); }} aria-label="검색 닫기" className="text-faint" style={{ fontSize: 15, lineHeight: 1, padding: "0 4px", background: "none", cursor: "pointer" }}>✕</button>
+					</span>
+				) : (
+					<button type="button" onClick={() => setSearchOpen(true)} aria-label="회원 검색" className="text-faint flex items-center" style={{ fontSize: 13, padding: "6px 10px", borderRadius: 999, border: "1.5px solid transparent", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
+						<Search size={13} strokeWidth={2.2} />
+					</button>
+				)}
 			</div>
 
-			{searchOpen && (
-				<div style={{ marginTop: 6 }}>
-					<input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="회원 이름 검색" className={inputCls} style={{ ...inputStyle, padding: "7px 10px", fontSize: 13.5 }} />
-					<div className="flex flex-wrap gap-1.5" style={{ marginTop: 6 }}>
-						{searchResults.map((m) => (
+			{searchOpen && query.trim() && (
+				<div className="flex flex-wrap gap-1.5" style={{ marginTop: 6 }}>
+					{searchResults.length === 0 ? (
+						<span className="text-faint" style={{ fontSize: 12 }}>검색 결과 없음</span>
+					) : (
+						searchResults.map((m) => (
 							<button key={m.id} type="button" onClick={() => selectMember(m.id)} className="text-muted" style={{ fontSize: 13, padding: "5px 11px", borderRadius: 999, border: "none", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
 								{m.name} <span className="text-faint">{m.isGuest ? "게스트" : `${genderText(m.gender)}${m.birthYear ? ` ${m.birthYear}` : ""}`}</span>
 							</button>
-						))}
-					</div>
+						))
+					)}
 				</div>
 			)}
 
@@ -189,10 +196,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 						return itemChip(`${c.label} ${won(remaining(c.amountDue, c.amountPaid))}${cross ? " ↩" : ""}`, active.charges.has(c.id), () => toggleCharge(c.id), `c${c.id}`);
 					})}
 					{!selectedMember?.isGuest && !existingMonthly && itemChip(`${Number(depositYm.slice(5))}월 회비 ${won(monthlyFee)}`, active.monthly, toggleMonthly, "newm")}
-					{newSessionCandidates.map((s) => {
-						const units = active.sessions.get(s.id) ?? 0;
-						return itemChip(`${sessionLabel(s)} 대관비${units > 1 ? ` ${units}인` : ""}`, units > 0, () => cycleSession(s.id), `s${s.id}`);
-					})}
+					{newSessionCandidates.map((s) => itemChip(`${sessionLabel(s)} 대관비`, active.sessions.has(s.id), () => toggleSession(s.id), `s${s.id}`))}
 					{existing.length === 0 && newSessionCandidates.length === 0 && (selectedMember?.isGuest || existingMonthly) && (
 						<span className="text-faint" style={{ fontSize: 12 }}>낼 항목이 없어요(이미 완납/부과 없음)</span>
 					)}
@@ -233,7 +237,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 					{selectedId ? (
 						<button
 							type="button"
-							onClick={() => total > 0 && onConfirm(selectedId, [...active.charges], active.monthly ? depositYm : "", [...active.sessions.entries()].map(([id, units]) => ({ id, units })))}
+							onClick={() => total > 0 && onConfirm(selectedId, [...active.charges], active.monthly ? depositYm : "", [...active.sessions].map((id) => ({ id, units: 1 })))}
 							disabled={busy || total <= 0}
 							className="rounded-[9px] py-2 text-sm disabled:opacity-35"
 							style={{ flex: 1, fontWeight: 800, color: total > 0 ? "#fff" : undefined, background: total > 0 ? "#1c8a3b" : "rgba(120,120,128,0.14)" }}

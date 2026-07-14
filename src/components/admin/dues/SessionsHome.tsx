@@ -102,6 +102,8 @@ export default function SessionsHome({ ym }: { ym: string }) {
 				const status: SessionCard["status"] = !hasSomething ? "none" : courtLinked && unpaid.length === 0 ? "settled" : "open";
 				return { id: s.id, label: sessionLabel(s), scheduledAt: s.scheduledAt, courtLinked, expense, paidCount, totalCount, unpaid, status };
 			})
+			// 실제로 열리지 않은 세션(부과·지출·수입 전무)은 정산 대상이 아니므로 숨김.
+			.filter((c) => c.status !== "none")
 			.sort((a, b) => (b.scheduledAt ?? "").localeCompare(a.scheduledAt ?? ""));
 	}, [monthSessions, court, sessionTxns, memberById]);
 
@@ -175,54 +177,51 @@ export default function SessionsHome({ ym }: { ym: string }) {
 			/>
 
 			{/* 세션별 정산 상태 */}
-			<p className="text-faint" style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", textTransform: "uppercase", marginTop: 4 }}>정모 · 정산 상태</p>
 			{sessionCards.length === 0 ? (
-				<EmptyState style={{ fontSize: 14, padding: "2rem 0" }}>이 달 대관 세션이 없어요.</EmptyState>
+				<EmptyState style={{ fontSize: 14, padding: "2rem 0" }}>이 달 정산할 대관 세션이 없어요.</EmptyState>
 			) : (
-				sessionCards.map((c) => (
-					<div key={c.id} className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px", opacity: c.status === "settled" || c.status === "none" ? 0.82 : 1 }}>
-						<div className="flex items-center gap-2">
-							<b className="text-strong" style={{ fontSize: 13.5, flex: 1, minWidth: 0 }}>{c.label}</b>
-							{c.status === "settled" ? (
-								<span style={pill("ok")}>마감 ✓</span>
-							) : c.status === "none" ? (
-								<span style={pill("mut")}>정산 대상 없음</span>
-							) : (
-								<span style={pill("warn")}>정산 미완</span>
-							)}
-						</div>
-						{c.status !== "none" && (
-							<div className="flex flex-col gap-1" style={{ marginTop: 7 }}>
+				sessionCards.map((c) => {
+					const done = c.status === "settled";
+					return (
+						<div key={c.id} className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px", opacity: done ? 0.85 : 1 }}>
+							<div className="flex items-center gap-2">
+								<b className="text-strong" style={{ fontSize: 13.5, flex: 1, minWidth: 0 }}>{c.label}</b>
+								<span style={pill(done ? "ok" : "warn")}>{done ? "마감 ✓" : "정산 미완"}</span>
+							</div>
+							<div className="flex flex-col gap-2" style={{ marginTop: 8 }}>
+								{/* 코트지출 연결 */}
 								<div className="flex items-center gap-1.5" style={{ fontSize: 12 }}>
 									<span style={mark(c.courtLinked)}>{c.courtLinked ? "✓" : "!"}</span>
-									<span className={c.courtLinked ? "text-muted" : "text-[#c2670a]"}>코트지출 {c.courtLinked ? `연결 · ${won(c.expense)}` : "미연결 (정산함에서 출금→세션 지정)"}</span>
+									<span className={c.courtLinked ? "text-muted" : "text-[#c2670a]"}>코트지출 {c.courtLinked ? `연결 · ${won(c.expense)}` : "미연결 · 정산함에서 출금→세션 지정"}</span>
 								</div>
+								{/* 수납 진행(막대그래프) */}
 								{c.totalCount > 0 && (
-									<div className="flex items-center gap-1.5" style={{ fontSize: 12 }}>
-										<span style={mark(c.unpaid.length === 0)}>{c.unpaid.length === 0 ? "✓" : "!"}</span>
-										<span className={c.unpaid.length === 0 ? "text-muted" : "text-[#c2670a]"}>수납 {c.paidCount}/{c.totalCount}{c.unpaid.length > 0 ? ` · 미납 ${c.unpaid.length}` : ""}</span>
+									<div className="flex flex-col gap-1">
+										<div className="flex items-center gap-1.5" style={{ fontSize: 12 }}>
+											<span style={mark(c.unpaid.length === 0)}>{c.unpaid.length === 0 ? "✓" : "!"}</span>
+											<span className={c.unpaid.length === 0 ? "text-muted" : "text-[#c2670a]"}>대관비 수납</span>
+											<span style={{ flex: 1 }} />
+											<span className="text-muted" style={{ fontSize: 11.5 }}>{c.paidCount}/{c.totalCount}{c.unpaid.length > 0 ? ` · 미납 ${c.unpaid.length}` : ""}</span>
+										</div>
+										<Meter ratio={c.totalCount > 0 ? c.paidCount / c.totalCount : 1} done={c.unpaid.length === 0} />
 									</div>
 								)}
 								{c.unpaid.length > 0 && (
-									<div style={{ marginTop: 4 }}>
-										<button
-											type="button"
+									<div>
+										<SendButton
+											count={c.unpaid.length}
+											open={openGroup === `s${c.id}`}
 											onClick={() => setOpenGroup((g) => (g === `s${c.id}` ? null : `s${c.id}`))}
-											className="btn-tint-blue rounded-[8px] px-2.5 py-1 bg-[rgba(194,103,10,0.14)]"
-											style={{ fontSize: 12, fontWeight: 700, color: "#c2670a" }}
-										>
-											<Send size={12} strokeWidth={2.4} style={{ display: "inline", marginRight: 4, verticalAlign: "-1px" }} />
-											미납 {c.unpaid.length} 발송
-										</button>
+										/>
 										{openGroup === `s${c.id}` && (
 											<MemberToggleList groupKey={`s${c.id}`} rows={c.unpaid} excluded={excluded} onToggle={toggleSel} busy={busy} onSend={() => requestNotify(`s${c.id}`, c.unpaid, `${c.label} 대관비가 아직 미납이에요. 확인 부탁드려요`, `${c.label} 대관비`)} />
 										)}
 									</div>
 								)}
 							</div>
-						)}
-					</div>
-				))
+						</div>
+					);
+				})
 			)}
 
 			{notifyReq && (
@@ -240,11 +239,10 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	);
 }
 
-function pill(kind: "ok" | "warn" | "mut"): CSSProperties {
+function pill(kind: "ok" | "warn"): CSSProperties {
 	const map = {
 		ok: { background: "rgba(52,199,89,0.16)", color: "#1c8a3b" },
 		warn: { background: "rgba(255,149,0,0.16)", color: "#c2670a" },
-		mut: { background: "rgba(120,120,128,0.14)", color: "#8b8e97" },
 	}[kind];
 	return { fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 999, ...map };
 }
@@ -252,7 +250,27 @@ function mark(ok: boolean): CSSProperties {
 	return { width: 14, height: 14, borderRadius: 999, display: "grid", placeItems: "center", fontSize: 9, fontWeight: 900, color: "#fff", background: ok ? "#1c8a3b" : "#d1362c", flexShrink: 0 };
 }
 
-// 회비 카드: 진행 미터 + (미납 있으면) 발송 펼침.
+// 진행 막대(회비·코트 수납 공용).
+function Meter({ ratio, done }: { ratio: number; done: boolean }) {
+	return (
+		<div style={{ height: 7, borderRadius: 999, background: "rgba(120,120,128,0.16)", overflow: "hidden" }}>
+			<i style={{ display: "block", height: "100%", width: `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%`, background: done ? "#1c8a3b" : "#0b84ff", transition: "width 0.2s" }} />
+		</div>
+	);
+}
+
+// 미납 안내 발송 토글 버튼.
+function SendButton({ count, open, onClick }: { count: number; open: boolean; onClick: () => void }) {
+	return (
+		<button type="button" onClick={onClick} aria-expanded={open} className="flex items-center rounded-[8px]" style={{ gap: 5, fontSize: 12, fontWeight: 700, color: "#c2670a", padding: "5px 11px", border: "none", background: "rgba(194,103,10,0.14)", cursor: "pointer" }}>
+			<Send size={12} strokeWidth={2.4} />
+			미납 {count}명 안내
+			<span style={{ opacity: 0.7, fontWeight: 800 }}>{open ? "▲" : "▼"}</span>
+		</button>
+	);
+}
+
+// 회비 카드: 진행 막대 + (미납 있으면) 발송 펼침.
 function NotifyGroup({ title, subtitle, meter, groupKey, unpaid, open, onOpen, excluded, onToggle, busy, onSend }: {
 	title: string;
 	subtitle: string;
@@ -268,19 +286,14 @@ function NotifyGroup({ title, subtitle, meter, groupKey, unpaid, open, onOpen, e
 }) {
 	return (
 		<div className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px" }}>
-			<div className="flex items-center gap-2">
+			<div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
 				<b className="text-strong" style={{ fontSize: 13.5, flex: 1, minWidth: 0 }}>{title}</b>
 				<span className="text-muted" style={{ fontSize: 12 }}>{subtitle}</span>
 			</div>
-			<div style={{ height: 7, borderRadius: 999, background: "rgba(120,120,128,0.16)", overflow: "hidden", marginTop: 7 }}>
-				<i style={{ display: "block", height: "100%", width: `${Math.round(meter * 100)}%`, background: unpaid.length === 0 ? "#1c8a3b" : "#0b84ff" }} />
-			</div>
+			<Meter ratio={meter} done={unpaid.length === 0} />
 			{unpaid.length > 0 && (
 				<div style={{ marginTop: 8 }}>
-					<button type="button" onClick={onOpen} className="btn-tint-blue rounded-[8px] px-2.5 py-1 bg-[rgba(194,103,10,0.14)]" style={{ fontSize: 12, fontWeight: 700, color: "#c2670a" }}>
-						<Send size={12} strokeWidth={2.4} style={{ display: "inline", marginRight: 4, verticalAlign: "-1px" }} />
-						미납 {unpaid.length} 발송
-					</button>
+					<SendButton count={unpaid.length} open={open} onClick={onOpen} />
 					{open && <MemberToggleList groupKey={groupKey} rows={unpaid} excluded={excluded} onToggle={onToggle} busy={busy} onSend={onSend} />}
 				</div>
 			)}
@@ -288,7 +301,7 @@ function NotifyGroup({ title, subtitle, meter, groupKey, unpaid, open, onOpen, e
 	);
 }
 
-// 발송 대상 회원 취사선택(기본 전원 포함) + 발송.
+// 발송 대상 회원 취사선택(기본 전원 포함) + 발송. 미납 안내 푸시.
 function MemberToggleList({ groupKey, rows, excluded, onToggle, busy, onSend }: {
 	groupKey: string;
 	rows: UnpaidRow[];
@@ -299,26 +312,27 @@ function MemberToggleList({ groupKey, rows, excluded, onToggle, busy, onSend }: 
 }) {
 	const selCount = rows.filter((r) => !excluded.has(`${groupKey}:${r.payerId}`)).length;
 	return (
-		<div className="flex flex-col gap-1" style={{ marginTop: 8 }}>
+		<div className="flex flex-col" style={{ gap: 2, marginTop: 8, background: "rgba(120,120,128,0.06)", borderRadius: 10, padding: "9px 10px" }}>
+			<p className="text-faint" style={{ fontSize: 11, marginBottom: 4 }}>안내 보낼 사람 · 탭하면 제외</p>
 			{rows.map((r) => {
 				const on = !excluded.has(`${groupKey}:${r.payerId}`);
 				return (
-					<div key={r.payerId} className="flex items-center gap-2" style={{ fontSize: 13 }}>
-						<button
-							type="button"
-							onClick={() => onToggle(`${groupKey}:${r.payerId}`)}
-							aria-label={on ? "발송 대상 해제" : "발송 대상 선택"}
-							style={{ width: 19, height: 19, borderRadius: 6, cursor: "pointer", flexShrink: 0, border: on ? "1.5px solid #c2670a" : "1.5px solid rgba(120,120,128,0.4)", background: on ? "#c2670a" : "transparent", color: "#fff", fontSize: 12, lineHeight: "16px", textAlign: "center", fontWeight: 900 }}
-						>
-							{on ? "✓" : ""}
-						</button>
+					<button
+						key={r.payerId}
+						type="button"
+						onClick={() => onToggle(`${groupKey}:${r.payerId}`)}
+						aria-pressed={on}
+						className="flex items-center gap-2"
+						style={{ fontSize: 13, padding: "4px 2px", background: "none", border: "none", cursor: "pointer", textAlign: "left", opacity: on ? 1 : 0.4 }}
+					>
+						<span aria-hidden style={{ width: 18, height: 18, borderRadius: 6, flexShrink: 0, border: on ? "1.5px solid #c2670a" : "1.5px solid rgba(120,120,128,0.5)", background: on ? "#c2670a" : "transparent", color: "#fff", fontSize: 11, lineHeight: "15px", textAlign: "center", fontWeight: 900 }}>{on ? "✓" : ""}</span>
 						<span className="text-strong" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{r.name}{r.hasGuest && <span className="text-[#0b84ff]" style={{ fontSize: 11, fontWeight: 700, marginLeft: 5 }}>게스트분 포함</span>}</span>
 						<span className="text-[#d1362c]" style={{ fontWeight: 700 }}>{won(r.remain)}</span>
-					</div>
+					</button>
 				);
 			})}
-			<button type="button" onClick={onSend} disabled={busy || selCount === 0} className="rounded-[8px] py-1.5 disabled:opacity-40" style={{ fontSize: 12.5, fontWeight: 800, color: "#fff", background: "#c2670a", marginTop: 3 }}>
-				{selCount}명에게 발송
+			<button type="button" onClick={onSend} disabled={busy || selCount === 0} className="rounded-[9px] py-2 disabled:opacity-40" style={{ fontSize: 13, fontWeight: 800, color: "#fff", background: selCount > 0 ? "#c2670a" : "rgba(120,120,128,0.3)", marginTop: 6 }}>
+				{selCount > 0 ? `${selCount}명에게 미납 안내 보내기` : "보낼 사람을 선택하세요"}
 			</button>
 		</div>
 	);

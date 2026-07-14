@@ -12,7 +12,7 @@ import { currentYm, shiftYm, ymLabel } from "./duesText";
 
 type Page = "home" | "inbox" | "ledger";
 const NAV: [Page, string][] = [
-	["home", "정모"],
+	["home", "현황"],
 	["inbox", "정산함"],
 	["ledger", "회계"],
 ];
@@ -74,19 +74,23 @@ export default function DuesAdminPage() {
 				<button type="button" onClick={() => goYm(1)} className="text-muted" style={{ background: "none", cursor: "pointer", fontSize: 22, lineHeight: 1, padding: 4 }} aria-label="다음 달">›</button>
 			</div>
 
-			{/* 화면 전환 */}
-			<div className="flex gap-1.5" style={{ marginBottom: 14 }}>
-				{NAV.map(([key, label]) => (
-					<button
-						key={key}
-						type="button"
-						onClick={() => goPage(key)}
-						className={page === key ? "text-strong" : "text-faint"}
-						style={{ flex: 1, padding: "7px 0", fontSize: 13, fontWeight: 700, borderRadius: 999, cursor: "pointer", border: "none", background: page === key ? "rgba(11,132,255,0.14)" : "rgba(120,120,128,0.1)" }}
-					>
-						{label}
-					</button>
-				))}
+			{/* 화면 전환(세그먼티드 컨트롤) */}
+			<div className="flex" style={{ gap: 3, marginBottom: 14, background: "rgba(120,120,128,0.14)", borderRadius: 11, padding: 3 }}>
+				{NAV.map(([key, label]) => {
+					const on = page === key;
+					return (
+						<button
+							key={key}
+							type="button"
+							onClick={() => goPage(key)}
+							aria-current={on ? "page" : undefined}
+							className={on ? "bg-white dark:bg-[rgba(72,72,78,0.9)] text-strong" : "text-muted"}
+							style={{ flex: 1, padding: "7px 0", fontSize: 13.5, fontWeight: on ? 800 : 600, borderRadius: 8, cursor: "pointer", border: "none", background: on ? undefined : "transparent", boxShadow: on ? "0 1px 3px rgba(0,0,0,0.12)" : undefined, transition: "font-weight 0.1s" }}
+						>
+							{label}
+						</button>
+					);
+				})}
 			</div>
 
 			{page === "home" && <SessionsHome ym={ym} />}
