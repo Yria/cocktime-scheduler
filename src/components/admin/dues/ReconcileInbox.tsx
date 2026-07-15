@@ -172,7 +172,7 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 									busy={busyId === t.id}
 									onConfirm={(payerId, chargeIds, cym, sessions) => run(t.id, () => duesConfirmReconcile(t.id, payerId, chargeIds, cym, sessions), "처리 실패", { touchesCharges: true })}
 									onConfirmCourtExternal={(sid) => run(t.id, () => duesConfirmCourtExternal(t.id, sid), "외부인 대관비 처리 실패")}
-									onCategorize={(catId) => run(t.id, () => setTxnCategory(t.id, catId), "분류 실패")}
+									onCategorize={(catId, paidBy) => run(t.id, () => setTxnCategory(t.id, catId, paidBy), "분류 실패")}
 								/>
 							) : (
 								<ReconcileOutRow

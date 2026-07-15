@@ -47,6 +47,7 @@ export interface MyChargeRow {
 	id: number;
 	kind: "monthly_fee" | "court_fee";
 	periodYm: string | null;
+	deferredTo: string | null; // 이월 대상 월(set이면 그 달이 실효 월 — 부과 월 대신)
 	sessionId: number | null;
 	sessionTitle: string | null;
 	scheduledAt: string | null;
@@ -58,7 +59,7 @@ export interface MyChargeRow {
 
 export interface ClubAccount {
 	bankName: string | null;
-	accountMasked: string | null;
+	account: string | null; // 전체 계좌번호(로그인 회원 전용)
 	accountHolder: string | null;
 	monthlyFee: number | null;
 }
@@ -288,8 +289,8 @@ export async function fetchCategories(): Promise<TxnCategory[]> {
 }
 export const addCategory = (name: string) => callRpc("dues_add_category", { p_name: name });
 export const deleteCategory = (id: number) => callRpc("dues_delete_category", { p_id: id });
-export const setTxnCategory = (txId: number, categoryId: number | null) =>
-	callRpc("dues_set_txn_category", { p_tx_id: txId, p_category_id: categoryId });
+export const setTxnCategory = (txId: number, categoryId: number | null, paidBy: string | null = null) =>
+	callRpc("dues_set_txn_category", { p_tx_id: txId, p_category_id: categoryId, p_paid_by: paidBy });
 /** 거래를 세션에 매칭(대관비 지출이 어느 날 대관인지). null=해제. */
 export const setTxnSession = (txId: number, sessionId: number | null) =>
 	callRpc("dues_set_txn_session", { p_tx_id: txId, p_session_id: sessionId });
@@ -545,6 +546,7 @@ interface RawMyCharge {
 	kind: string;
 	member_id: string;
 	period_ym: string | null;
+	deferred_to: string | null;
 	session_id: number | null;
 	amount_due: number;
 	amount_paid: number;
@@ -558,7 +560,7 @@ export async function fetchMyCharges(meMemberId: string): Promise<MyChargeRow[]>
 	const { data, error } = await supabase
 		.from("dues_charges")
 		.select(
-			"id, kind, member_id, period_ym, session_id, amount_due, amount_paid, status, payer_hint, sessions(title, scheduled_at)",
+			"id, kind, member_id, period_ym, deferred_to, session_id, amount_due, amount_paid, status, payer_hint, sessions(title, scheduled_at)",
 		)
 		// 본인 부과 + 대납분(게스트 초대자)만. RLS가 관리자에겐 전체를 허용하므로 명시 필터 필수
 		// (없으면 관리자 계정의 /my-dues 에 전 회원 부과가 노출됨).
@@ -572,6 +574,7 @@ export async function fetchMyCharges(meMemberId: string): Promise<MyChargeRow[]>
 		id: c.id,
 		kind: c.kind as "monthly_fee" | "court_fee",
 		periodYm: c.period_ym,
+		deferredTo: c.deferred_to,
 		sessionId: c.session_id,
 		sessionTitle: c.sessions?.title ?? null,
 		scheduledAt: c.sessions?.scheduled_at ?? null,
@@ -579,6 +582,30 @@ export async function fetchMyCharges(meMemberId: string): Promise<MyChargeRow[]>
 		amountPaid: c.amount_paid,
 		status: c.status as ChargeStatus,
 		isProxy: c.member_id !== meMemberId && c.payer_hint === meMemberId,
+	}));
+}
+
+/** 내 납부 이력 한 건(실제 낸 입금 단위). */
+export interface MyPayment {
+	txId: number;
+	date: string; // 'YYYY-MM-DD' (KST)
+	ym: string; // 'YYYY-MM'
+	amount: number;
+	purpose: string; // '7월 회비 · 7.12 대관비' / '콕공구'
+}
+/** 내가 실제로 낸 돈(부과 배분 입금 + paid_by 카테고리 입금) — 미납 제외, 최신순. */
+export async function fetchMyPayments(): Promise<MyPayment[]> {
+	const { data, error } = await supabase.rpc("dues_my_payments");
+	if (error || !data) {
+		if (error) console.error("fetchMyPayments:", error);
+		return [];
+	}
+	return (data as { tx_id: number; date: string; ym: string; amount: number; purpose: string }[]).map((p) => ({
+		txId: p.tx_id,
+		date: p.date,
+		ym: p.ym,
+		amount: p.amount,
+		purpose: p.purpose,
 	}));
 }
 
@@ -591,7 +618,7 @@ export async function fetchClubAccount(): Promise<ClubAccount | null> {
 	const d = data as Record<string, unknown>;
 	return {
 		bankName: (d.bank_name as string | null) ?? null,
-		accountMasked: (d.account_masked as string | null) ?? null,
+		account: (d.account as string | null) ?? null,
 		accountHolder: (d.account_holder as string | null) ?? null,
 		monthlyFee: (d.monthly_fee as number | null) ?? null,
 	};

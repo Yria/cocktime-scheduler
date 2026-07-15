@@ -223,6 +223,7 @@ export default function App() {
 				<Route path="/dues/:ym" element={<DuesAdminPage />} />
 				<Route path="/dues/:ym/:page" element={<DuesAdminPage />} />
 				<Route path="/my-dues" element={<MyDuesPage />} />
+				<Route path="/my-dues/:page" element={<MyDuesPage />} />
 				<Route path="/logs" element={<LogPage />} />
 				<Route path="*" element={<Navigate to="/" replace />} />
 			</Routes>

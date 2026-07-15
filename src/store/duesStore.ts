@@ -9,6 +9,7 @@ import {
 	type CourtChargeRow,
 	type MonthlyChargeRow,
 	type MyChargeRow,
+	type MyPayment,
 	type PublicLedger,
 	type SessionFeeRow,
 	type TxAllocation,
@@ -22,6 +23,7 @@ import {
 	fetchLedgerSessions,
 	fetchMonthlyCharges,
 	fetchMyCharges,
+	fetchMyPayments,
 	fetchPublicLedger,
 	fetchSessionTxns,
 	fetchTxAllocations,
@@ -55,8 +57,11 @@ interface DuesState {
 	// ── 내 회비(회원 본인) ──────────────────────────────────────────
 	myLoading: boolean;
 	myCharges: MyChargeRow[];
+	myPayments: MyPayment[]; // 실제 납부 이력(부과 배분 + paid_by 카테고리)
 	account: ClubAccount | null;
-	myLedger: PublicLedger | null; // 클럽 공개 회계(항목별만)
+	myLedger: PublicLedger | null; // 클럽 공개 회계(항목별만) — 선택 월
+	myLedgerYm: string | null; // myLedger가 담고 있는 월
+	myLedgerLoading: boolean;
 }
 
 export const useDuesStore = create<DuesState>(() => ({
@@ -76,8 +81,11 @@ export const useDuesStore = create<DuesState>(() => ({
 	courtFee: 6000,
 	myLoading: true,
 	myCharges: [],
+	myPayments: [],
 	account: null,
 	myLedger: null,
+	myLedgerYm: null,
+	myLedgerLoading: true,
 }));
 
 /** ISO(timestamptz)가 KST 기준 ym('YYYY-MM')에 속하는지. monthSessions 파생용. */
@@ -86,6 +94,9 @@ function isInYm(iso: string | null, ym: string): boolean {
 	const kst = new Date(new Date(iso).getTime() + 9 * 3600 * 1000);
 	return `${kst.getUTCFullYear()}-${String(kst.getUTCMonth() + 1).padStart(2, "0")}` === ym;
 }
+
+// 클럽 회계 로드 경합 가드용 시퀀스(빠른 월 이동 시 오래된 응답이 최신 표시를 덮지 않게).
+let ledgerReq = 0;
 
 export const duesActions = {
 	/**
@@ -164,14 +175,25 @@ export const duesActions = {
 		useDuesStore.setState({ bankTxns, sessionTxns, txAllocations });
 	},
 
-	/** 내 회비: 본인 부과(대납 포함) + 마스킹 클럽 계좌 + 클럽 공개 회계(그 달). */
-	async loadMine(memberId: string, ym: string) {
+	/** 내 회비 탭: 본인 부과(대납 포함) + 클럽 계좌 + 실제 납부 이력. (클럽 회계는 loadMyLedger로 분리) */
+	async loadMine(memberId: string) {
 		useDuesStore.setState({ myLoading: true });
-		const [myCharges, account, myLedger] = await Promise.all([
+		const [myCharges, account, myPayments] = await Promise.all([
 			fetchMyCharges(memberId),
 			fetchClubAccount(),
-			fetchPublicLedger(ym),
+			fetchMyPayments(),
 		]);
-		useDuesStore.setState({ myCharges, account, myLedger, myLoading: false });
+		useDuesStore.setState({ myCharges, account, myPayments, myLoading: false });
+	},
+
+	/** 클럽 회계 탭: 선택 월의 공개 회계(당월 제외는 화면에서 가드). 같은 ym 캐시 + 경합 가드(마지막 요청만 반영). */
+	async loadMyLedger(ym: string, force = false) {
+		const s = useDuesStore.getState();
+		if (!force && s.myLedgerYm === ym && !s.myLedgerLoading) return;
+		const req = ++ledgerReq;
+		useDuesStore.setState({ myLedgerLoading: true });
+		const myLedger = await fetchPublicLedger(ym); // 오류 시 null
+		if (req !== ledgerReq) return; // 더 최신 월 요청이 진행 중 → 이 결과는 버림(out-of-order 방지)
+		useDuesStore.setState({ myLedger, myLedgerYm: ym, myLedgerLoading: false });
 	},
 };

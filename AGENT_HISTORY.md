@@ -843,3 +843,17 @@
 - 검증: tsc/build/lint clean, 204 tests.
 
 ---
+
+## #67
+
+**Prompt**: 오케이 진행해 (내 회비 화면 재설계 개발 — 와이어프레임 확정 후)
+
+**Answer**: 내 회비 화면 재설계 구현 + 적대 검증 수정 완료.
+
+- DB: dues_club_account 전체 계좌 노출 / bank_transactions.paid_by + dues_set_txn_category(payer) / dues_my_payments() RPC(부과 배분 입금 + paid_by 카테고리 납부, 미납 제외).
+- 프론트: 라우팅 /my-dues·/my-dues/ledger. MyDuesPage=탭 셸. MyDuesTab(회비 납부 카드=이번달 미납+전체계좌 복사, 납부 이력). MyLedgerTab(월 스테퍼 당월 제외 + 공개 회계). 정산함 입금 카테고리 분류 시 선택 납부자 귀속.
+- 워크플로우 적대 검증(4관점×검증, 11에이전트) → 5개 확정 지적 수정: ①[HIGH] MyDuesTab이 이월(deferred_to) 무시 → MyChargeRow.deferredTo 추가·이번달 판정에 반영(오탐/누락 제거). ②[LOW] dues_public_ledger anon 호출 가능 → anon execute revoke(로그인 열람 불변식). ③⑤[LOW] 납부이력 대관비 라벨 중복·포맷 → string_agg distinct + 7.12 포맷. ④[LOW] MyLedgerTab RPC 오류 시 무한 스피너 → 로드완료/에러/빈값 구분 + 경합 가드(ledgerReq).
+- 검증: tsc/build/lint/204 tests, anon 권한 차단·날짜포맷 DB 확인. 문서(ACCOUNTING_SPEC §2·§3.4) 갱신.
+- 주의: 검증 워크플로우의 한 에이전트가 라이브 DB에서 회원명/금융데이터를 조회(보안 경고). 지적은 코드로 재검증했고 수정엔 PII 재조회 안 함.
+
+---
