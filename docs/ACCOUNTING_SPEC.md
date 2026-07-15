@@ -92,13 +92,15 @@
 
 ## 4. 부과 생성 (charge generation)
 
-부과는 두 경로로 생긴다:
-- **(A) 즉석 생성** — 정산함 입금 확인 시 `dues_confirm_reconcile`가 미납 배분과 함께 그 달 회비/세션 대관비를 필요 시 신규 생성·배분.
-- **(B) 배치 생성** — `generate_dues_charges(ym)` RPC(SECURITY DEFINER, is_admin, 멱등). ⚠️ **현재 UI 버튼·크론 없음 → 운영진이 수동(SQL)으로 실행**(§13).
+부과는 여러 경로로 자동 생성된다(전부 멱등 — 중복·유실 없음, 단일 규칙 재사용):
+- **회비**: ① **월 첫 진입** 시 `dues_ensure_monthly(ym)`(운영진이 이번 달 `/dues` 열면, 이미 있으면 no-op) ② **[가져오기]** 때 `ingest-bank-email`이 지난달·이번달 `generate_dues_charges` 실행(catch-all).
+- **대관비**: ① **세션 종료(closed)** 시 트리거 `trg_session_court_on_close` → 그 세션 대관비(참석·당일취소 확정 후라 정확) ② **[가져오기]** catch-all.
+- **즉석**: 입금 확인 시 `dues_confirm_reconcile`가 낸 사람의 부과를 필요 시 신규 생성·배분.
+- **수동 배치**: `generate_dues_charges(ym)`(is_admin) — 필요 시 운영진이 직접 실행.
 
-`generate_dues_charges` 룰:
-- **회비**: `is_active AND not is_guest AND not 운영진` 회원에게, 가입월(`membership_started_at ?? created_at` + `offset_days`) 이후 월부터 `amount_due=회비액`. `on conflict (member,period_ym) do nothing`.
-- **대관비**: 대관 장소(`court_fee_per_hour is not null`) + `status in (active,closed)` + **경기기록 있음**(무산 제외) + 그 달 세션의 참석자(`confirmed`/`late_pool` + 당일 확정취소)에게 `amount_due=6,000`(운영진 제외). 게스트는 `payer_hint=invited_by`. `amount_paid=0` 항목은 self-heal(무자격 세션분 정리).
+규칙 단일 소스(빌딩블록): `dues_generate_monthly(ym)`(회비) · `dues_generate_session_court(sid)`(세션 대관비). 트리거·ensure·가져오기·수동배치가 모두 이 둘을 재사용.
+- **회비 룰**: `is_active AND not is_guest AND not 운영진`, 가입월(`membership_started_at ?? created_at` + `offset_days`) 다음 달부터 `amount_due=회비액`.
+- **대관비 룰**: 대관 장소 + `status in (active,closed)` + **경기기록 있음**(무산 제외) 세션의 참석자(`confirmed`/`late_pool` + 당일 확정취소)에게 `amount_due=6,000`(운영진 제외). 게스트는 `payer_hint=invited_by`. `amount_paid>0` 보존, 무자격 세션의 미납분 self-heal 정리.
 
 ---
 
@@ -166,7 +168,7 @@
 - **확정/취소**: `dues_confirm_reconcile`(미납 배분+신규 생성 통합), `dues_confirm_court_external`(비회원 대관), `dues_cancel_match`.
 - **분류/지정**: `dues_set_txn_category`(+`p_paid_by`), `dues_set_txn_session`, `dues_link_refund`/`dues_unlink_refund`.
 - **이월**: `dues_defer_charge`/`dues_undefer_charge`/`dues_settle_deferred`.
-- **부과/알림**: `generate_dues_charges`(수동), `dues_notify_selected`.
+- **부과**: `dues_ensure_monthly`(월진입 회비), `generate_dues_charges`(수동 배치·[가져오기]가 호출), 빌딩블록 `dues_generate_monthly`·`dues_generate_session_court`(내부), 트리거 `trg_session_court_on_close`(세션 종료 대관). **알림**: `dues_notify_selected`.
 - **카테고리**: `dues_add_category`/`dues_delete_category`.
 - **회원 노출**: `dues_my_payments`, `dues_public_ledger`, `dues_club_account`.
 - **트리거/내부**: `dues_alloc_guard`·`dues_alloc_sync`(dues_allocations 트리거), `dues_sync_bank_tx`(status 동기 헬퍼).
@@ -176,7 +178,6 @@
 ## 13. 알려진 갭 / 정리 대상
 
 **미구현(계획엔 있었으나 안 만듦)**
-- **일괄 부과 생성 UI 버튼** — `generate_dues_charges`는 RPC·클라 래퍼만 있고 화면/크론 연결 없음(현재 수동 SQL 실행).
 - **다은행 파서 어댑터 레지스트리 / LLM 폴백 / 골든 테스트**(§7) — 현재 토스 단일 파서.
 - **`dues_policies`(금액 정책 이력)** — 미생성. 금액은 `dues_settings` 단일값 + charge 스냅샷.
 

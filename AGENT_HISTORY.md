@@ -882,3 +882,13 @@
 - 대관비 자동: sessions status→closed AFTER UPDATE 트리거(trg_session_court_on_close)가 그 세션 대관비 생성. 종료 시점=참석·당일취소 확정 후라 정확. 모든 종료 경로 커버.
 - 회비 자동: dues_ensure_monthly(ym)(is_admin·이미 있으면 no-op) — DuesAdminPage가 이번 달 진입 시 호출 후 loadMonth.
 - 검증: tsc/build/lint/204 tests, DB 멱등·트리거 확인.
+
+## #70
+
+**Prompt**: (부과 자동생성 적대 검증 결과 확인)
+
+**Answer**: 검증 확정 결함 0 — 오히려 내 이전 오판을 교정. 문서·메모리 정정.
+
+- 3개 지적 전부 반려. 핵심 반증: generate_dues_charges는 이미 자동 호출됨 — Edge Function ingest-bank-email(index.ts:127)이 매 [가져오기] 때 지난달·이번달 실행. 내가 src/만 grep해서 놓쳤고 "부과생성 수동SQL/버튼 미구현"이라 잘못 기술했음. 나머지 2건(세션 재개 유령부과·종료후 변경)도 앱에 재개 경로 없음+종료시 참석 동결로 도달 불가.
+- 정정: ACCOUNTING_SPEC §4(부과 생성 경로=월진입ensure+세션종료트리거+[가져오기]+즉석+수동, 전부 멱등 단일규칙), §12, §13에서 '부과생성 UI버튼 미구현' 삭제. 메모리도 정정.
+- 내가 추가한 월진입 ensure+세션종료 트리거는 import-driven 생성과 부분 중복이나 즉각성(세션 닫자마자 대관 미납) 이득. 유지/되돌림은 사용자 결정 대기.
