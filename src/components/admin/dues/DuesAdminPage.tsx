@@ -1,6 +1,7 @@
 import { Settings } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { duesEnsureMonthly } from "../../../lib/supabase/dues";
 import { useAuthStore } from "../../../store/authStore";
 import { duesActions } from "../../../store/duesStore";
 import AppScreen from "../../common/AppScreen";
@@ -48,7 +49,11 @@ export default function DuesAdminPage() {
 	}, [ready, memberLoaded, isAdmin, navigate]);
 
 	// 월 공통 데이터 로드(ym 캐시 가드는 스토어가 처리).
-	const load = useCallback(() => duesActions.loadMonth(ym), [ym]);
+	// 이번 달 첫 진입 시 회비 부과 자동 생성(멱등·no-op after first) 후 로드 — 대관비는 세션 종료 트리거가 담당.
+	const load = useCallback(async () => {
+		if (ym === currentYm()) await duesEnsureMonthly(ym);
+		await duesActions.loadMonth(ym);
+	}, [ym]);
 	const refresh = useCallback(() => duesActions.loadMonth(ym, true), [ym]);
 	useEffect(() => {
 		void load();

@@ -870,3 +870,15 @@
 - 검증: build/lint clean, src 잔여 낡은 참조 없음.
 
 ---
+
+## #69
+
+**Prompt**: 회비 월 첫 진입 자동생성 OK. 대관비는 당일취소·게스트도 받아야 하는데 자동 방법? → DB 트리거로 진행.
+
+**Answer**: 부과 자동 생성 구현 — 회비=월 첫 진입 ensure / 대관비=세션 종료(closed) DB 트리거.
+
+- 규칙 단일 소스화: generate_dues_charges의 회비·대관 로직을 빌딩블록 dues_generate_monthly(ym)·dues_generate_session_court(sid)로 추출(내부 전용, execute revoke). 당일취소·게스트·경기기록·운영진 제외 규칙 그대로 이관.
+- generate_dues_charges(수동 배치)는 두 블록 재사용하도록 재작성. 멱등 검증: 2026-07 부과 수 불변(monthly 81/57, court 37/30).
+- 대관비 자동: sessions status→closed AFTER UPDATE 트리거(trg_session_court_on_close)가 그 세션 대관비 생성. 종료 시점=참석·당일취소 확정 후라 정확. 모든 종료 경로 커버.
+- 회비 자동: dues_ensure_monthly(ym)(is_admin·이미 있으면 no-op) — DuesAdminPage가 이번 달 진입 시 호출 후 loadMonth.
+- 검증: tsc/build/lint/204 tests, DB 멱등·트리거 확인.

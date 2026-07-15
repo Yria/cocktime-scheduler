@@ -145,6 +145,10 @@ export const duesNotifySelected = (memberIds: string[], msg: string) =>
 export const duesCancelMatch = (txId: number) =>
 	callRpc("dues_cancel_match", { p_tx_id: txId });
 
+/** 회비 부과 월 첫 진입 자동 생성(이미 있으면 no-op). 대관비는 세션 종료 트리거가 담당. */
+export const duesEnsureMonthly = (ym: string) =>
+	callRpc("dues_ensure_monthly", { p_ym: ym });
+
 /** 외부인(비회원) 대관비: 회원 없이 세션에만 귀속하고 matched 처리('대관비 수납'으로 집계). */
 export const duesConfirmCourtExternal = (txId: number, sessionId: number) =>
 	callRpc("dues_confirm_court_external", { p_tx_id: txId, p_session_id: sessionId });
