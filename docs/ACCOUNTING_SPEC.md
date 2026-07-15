@@ -40,7 +40,6 @@
 - **`dues_settings`** — 싱글톤: 회비액·대관비 기본액·`offset_days`·클럽 계좌(`bank_name`/`bank_account`/`account_holder`).
 - **`raw_bank_emails`** — 수신 원문 보관(재파싱·감사). **`dues_audit_log`** — append-only 감사 로그.
 - 재사용: `members`(+`membership_started_at`=가입일 보정), `sessions`/`attendances`/`places`, `notifications`→푸시.
-- ⚠️ **미사용(정리 후보)**: `member_name_aliases`, `dues_match_queue` — 옛 자동제안 파이프라인 잔재로 현재 어떤 코드도 쓰지 않음(§13).
 
 ---
 
@@ -181,9 +180,7 @@
 - **다은행 파서 어댑터 레지스트리 / LLM 폴백 / 골든 테스트**(§7) — 현재 토스 단일 파서.
 - **`dues_policies`(금액 정책 이력)** — 미생성. 금액은 `dues_settings` 단일값 + charge 스냅샷.
 
-**죽은 자산**
-- `dues_match_queue` — 삭제됨(2026-07-15, 행 0·참조 없음).
-- `member_name_aliases` — 옛 학습 별칭. 행 33개(휴면) + `dues_cancel_match`가 참조(취소 시 학습분 삭제, no-op). 삭제하려면 함수에서 참조 제거 + 33행 폐기 필요 → 보류 중.
+**죽은 자산** — 모두 정리됨(2026-07-15): `dues_match_queue`(행 0), `member_name_aliases`(휴면 33행, `dues_cancel_match`에서 참조 제거 후 drop) 삭제 완료.
 
 **의도적 폐기(과거 설계 → 현행 대체, 재도입 아님)**
 - 자동 제안+신뢰도 매칭·보류 큐·학습 별칭 → **직접 확인**(§8).
