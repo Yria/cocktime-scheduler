@@ -77,7 +77,7 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 		return m;
 	}, [txns]);
 
-	// 뮤테이션 후 갱신 범위(§10.2):
+	// 뮤테이션 후 갱신 범위(§11):
 	//  - charge를 바꾸는 입금 확정(reconcile)은 refreshMonth(charges·unpaid 포함).
 	//  - tx만 바꾸는 분류·세션·무시·환불·외부대관은 refreshTxns(3쿼리).
 	const run = async (

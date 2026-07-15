@@ -33,7 +33,7 @@ import {
 // 회비 데이터 스토어(scheduleStore/authStore 관례: uncurried create + 별도 actions 객체).
 // setState 를 컴포넌트 밖(스토어)에서 하여 effect 내 동기 setState 규칙(React Compiler)을 피한다.
 //
-// 최적화(ACCOUNTING_SPEC §10.2): 관리자 화면 3개(정모·정산함·회계)는 같은 달 데이터를 공유하므로
+// 최적화(ACCOUNTING_SPEC §11): 관리자 화면 3개(정모·정산함·회계)는 같은 달 데이터를 공유하므로
 // loadMonth(ym) 한 번으로 공통 데이터를 로드하고 loadedYm 로 캐시 — 화면 전환 시 재조회 없음.
 // 뮤테이션(확인/취소/분류/가져오기) 후에만 loadMonth(ym, true)로 무효화.
 
@@ -108,7 +108,7 @@ export const duesActions = {
 		if (!force && s.loadedYm === ym && !s.monthLoading) return; // 캐시 히트
 		useDuesStore.setState({ monthLoading: true });
 		// wave 1: 서로 독립인 조회 병렬. (정적: members·sessions·categories·settings / 가변: charges·txns·unpaid)
-		// monthSessions는 ledgerSessions(±1개월 상위집합)에서 파생 — 세션 쿼리 1회로(§10.2).
+		// monthSessions는 ledgerSessions(±1개월 상위집합)에서 파생 — 세션 쿼리 1회로(§11).
 		const [members, monthly, court, bankTxns, ledgerSessions, categories, settings, unpaidByMember] = await Promise.all([
 			fetchMembersForAdmin(true), // 게스트 포함 — 대관비 입금 매칭용
 			fetchMonthlyCharges(ym),
@@ -144,7 +144,7 @@ export const duesActions = {
 	},
 
 	/**
-	 * 뮤테이션 후 가변 슬라이스만 갱신(§10.2). 정적(회원·세션·카테고리·설정)은 재조회 안 함 → triage 중 왕복 절반.
+	 * 뮤테이션 후 가변 슬라이스만 갱신(§11). 정적(회원·세션·카테고리·설정)은 재조회 안 함 → triage 중 왕복 절반.
 	 * 로딩 플래그를 켜지 않아 목록이 깜빡이지 않음. 카테고리 추가/삭제는 loadMonth(force)로.
 	 * charge를 바꾸는 뮤테이션(입금확인·대사취소)용. tx만 바꾸는 건 refreshTxns.
 	 */

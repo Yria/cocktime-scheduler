@@ -857,3 +857,16 @@
 - 주의: 검증 워크플로우의 한 에이전트가 라이브 DB에서 회원명/금융데이터를 조회(보안 경고). 지적은 코드로 재검증했고 수정엔 PII 재조회 안 함.
 
 ---
+
+## #68
+
+**Prompt**: 문서가 낡긴했네 현재 기준으로 문서 재작성해 (ACCOUNTING_SPEC/DESIGN 통합)
+
+**Answer**: 낡은 회계 문서 2개를 현행 기준 단일 기능 레퍼런스로 통합.
+
+- 먼저 문서-구현 갭 감사: 옛 설계의 자동제안/신뢰도 매칭·보류큐(dues_match_queue)·학습별칭(member_name_aliases)·현금납부(dues_manual_payment)·구 3탭 UI·expense_categories는 폐기/대체 확인. 진짜 미구현: 다은행 파서(현재 토스 단일)·LLM폴백·골든테스트·dues_policies·부과생성 UI버튼(generate_dues_charges는 수동 SQL, cron/트리거/UI 없음; 입금확인 dues_confirm_reconcile이 즉석 생성). 죽은 테이블: member_name_aliases·dues_match_queue.
+- ACCOUNTING_SPEC.md를 현행 기준 13절로 재작성(대전제·도메인·라우팅·화면별·부과생성·자동선택·크로스먼스·수집파싱·정산배분·권한·쿼리전략·RPC인벤토리·알려진갭). ACCOUNTING_DESIGN.md 삭제.
+- 코드 참조 정리: §10.2→§11(쿼리전략), dues.ts 설계서 링크 ACCOUNTING_DESIGN→ACCOUNTING_SPEC, '수지 §10'→'회계 §3.3'. (마이그레이션 히스토리 주석은 불변이라 유지.)
+- 검증: build/lint clean, src 잔여 낡은 참조 없음.
+
+---

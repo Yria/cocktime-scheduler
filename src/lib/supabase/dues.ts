@@ -1,7 +1,7 @@
 import { supabase } from "./client";
 
 // 회계(회비·대관비) 데이터 레이어. 권한 가드는 RPC(SECURITY DEFINER + is_admin) 및 RLS 가 강제.
-// 설계서: docs/ACCOUNTING_DESIGN.md. RPC 결과는 {ok,error} 로 감싼다(adminMembers.ts 패턴).
+// 기능 기획: docs/ACCOUNTING_SPEC.md. RPC 결과는 {ok,error} 로 감싼다(adminMembers.ts 패턴).
 
 export type ChargeStatus =
 	| "unpaid"
@@ -319,7 +319,7 @@ export interface TxAllocation {
 }
 /**
  * 거래별 처리 내역(무엇으로 배분됐는지) — 확인됨 라벨·정렬·세션 필터용.
- * txIds 를 주면 그 거래들로만 스코프(표시 대상=이번 달 거래) — 전역 배분 누적 조회 회피(§10.2).
+ * txIds 를 주면 그 거래들로만 스코프(표시 대상=이번 달 거래) — 전역 배분 누적 조회 회피(§11).
  * txIds=[] → 빈 결과. 미지정 → 전체(하위호환).
  */
 export async function fetchTxAllocations(txIds?: number[]): Promise<Record<number, TxAllocation>> {
@@ -648,7 +648,7 @@ export async function fetchPlaceFees(): Promise<PlaceFeeRow[]> {
 	}));
 }
 
-// ── 세션별 실지출 대관비(수지 §10) ───────────────────────────────────
+// ── 세션별 실지출 대관비(회계 §3.3·크로스먼스 §6) ─────────────────────
 interface RawSessionFee {
 	id: number;
 	title: string | null;

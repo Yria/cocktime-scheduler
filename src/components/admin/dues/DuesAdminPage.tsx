@@ -19,7 +19,7 @@ const NAV: [Page, string][] = [
 const YM_RE = /^\d{4}-\d{2}$/;
 
 // 회비 관리(운영진). ym·화면은 URL로: /dues/:ym(정모) · /dues/:ym/inbox(정산함) · /dues/:ym/ledger(회계).
-// 월 공통 데이터는 여기서 loadMonth(ym) 한 번(캐시) — 화면 전환 시 재조회 없음(ACCOUNTING_SPEC §10.2).
+// 월 공통 데이터는 여기서 loadMonth(ym) 한 번(캐시) — 화면 전환 시 재조회 없음(ACCOUNTING_SPEC §11).
 export default function DuesAdminPage() {
 	const navigate = useNavigate();
 	const params = useParams<{ ym?: string; page?: string }>();
