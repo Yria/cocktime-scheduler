@@ -2,6 +2,7 @@ import { Gauge } from "lucide-react";
 import type { CSSProperties } from "react";
 import type { AdminMemberRow } from "../../lib/supabase/adminMembers";
 import { skillScoreOf } from "../../lib/teamSelection";
+import PlayerAvatar from "../shared/PlayerAvatar";
 import { Highlight } from "./Highlight";
 import { genderText } from "./memberAdminText";
 
@@ -48,6 +49,14 @@ export function MemberRow({
 				borderBottom: "1px solid rgba(0,0,0,0.06)",
 			}}
 		>
+			{/* 프로필 사진(이름 md5 기반 원격 URL, 로드 실패 시 성별색 이니셜 폴백). 게스트는 동명 충돌 방지로 이니셜만. */}
+			<PlayerAvatar
+				name={member.name}
+				gender={member.gender}
+				isGuest={member.isGuest}
+				size={44}
+			/>
+
 			{/* 정보(탭 → 실력 편집) */}
 			<button
 				type="button"
