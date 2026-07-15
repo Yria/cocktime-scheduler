@@ -1,7 +1,7 @@
 import { Plus, Search } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import type { AdminMemberRow } from "../../../lib/supabase/adminMembers";
-import type { BankTxnRow, SessionFeeRow, TxnCategory, UnpaidCharge } from "../../../lib/supabase/dues";
+import type { BankTxnRow, SessionFeeRow, TxnCategory, UnpaidCharge, UpcomingSessionRow } from "../../../lib/supabase/dues";
 import ConfirmDialog from "../../common/ConfirmDialog";
 import { inputCls, inputStyle } from "../../common/fieldStyles";
 import { genderText } from "../memberAdminText";
@@ -14,6 +14,7 @@ interface Props {
 	members: AdminMemberRow[];
 	unpaidByMember: Record<string, UnpaidCharge[]>;
 	monthSessions: SessionFeeRow[]; // 이번 달 대관 세션(신규 대관비 생성 후보)
+	upcomingSessions: UpcomingSessionRow[]; // 참가 예정(open) 세션 — 본인 참가분만 선납 후보
 	categories: TxnCategory[];
 	monthlyFee: number;
 	courtFee: number;
@@ -33,7 +34,7 @@ interface Sel {
 
 // 미처리 입금 1건 처리. 납부자 지정 → 그 회원의 기존 미납(본인+대납·월무관) 배분 + 신규(회비/세션) 생성을
 // 함께 골라 [확인] 1회로. 금액(§4)으로 기본 선택 제안. 비회원 대관·비회비 수입 분류도 여기서.
-export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessions, categories, monthlyFee, courtFee, refunded, busy, onConfirm, onConfirmCourtExternal, onCategorize }: Props) {
+export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessions, upcomingSessions, categories, monthlyFee, courtFee, refunded, busy, onConfirm, onConfirmCourtExternal, onCategorize }: Props) {
 	const effectiveAmount = tx.amount - refunded; // 부분 환불 반영: 정산 대상 금액
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
 	const candidates = useMemo(() => suggestMembers(tx.counterpartyName, members), [tx.counterpartyName, members]);
@@ -86,6 +87,12 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 
 	// 금액(§4) 기반 기본 선택: 기존 미납 우선(참가 세션 → 최근순), 회비는 없으면 신규 생성.
 	const monthSessionIds = useMemo(() => new Set(monthSessions.map((s) => s.id)), [monthSessions]);
+	// 참가 예정(open) 세션 중 '이 납부자가 확정 참가자'인 것만 선납 후보로 노출.
+	// chargedMemberIds(완납 포함 = 기존 미납·선납 완료 모두)로 제외 → 같은 세션이 기존 미납과 중복되거나, 완납 후 재노출되지 않음.
+	const myUpcoming = useMemo(() => {
+		if (!selectedId) return [] as UpcomingSessionRow[];
+		return upcomingSessions.filter((s) => s.attendeeIds.includes(selectedId) && !s.chargedMemberIds.includes(selectedId) && !monthSessionIds.has(s.id));
+	}, [selectedId, upcomingSessions, monthSessionIds]);
 	const preselect = useMemo<Sel>(() => {
 		const charges = new Set<number>();
 		if (!selectedId) return { charges, monthly: false, sessions: new Set() };
@@ -192,7 +199,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	const chargeChip = (c: UnpaidCharge, key: string) => (
 		<ToggleChip key={key} label={`${c.label} ${won(remaining(c.amountDue, c.amountPaid))}`} on={active.charges.has(c.id)} onClick={() => toggleCharge(c.id)} />
 	);
-	const payerHasItems = existing.length > 0 || (!selectedMember?.isGuest && !existingMonthly) || newSessionCandidates.length > 0;
+	const payerHasItems = existing.length > 0 || (!selectedMember?.isGuest && !existingMonthly) || newSessionCandidates.length > 0 || myUpcoming.length > 0;
 	const groupLabel: CSSProperties = { fontSize: 10.5, fontWeight: 800, letterSpacing: "0.02em" };
 
 	return (
@@ -264,6 +271,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 							{existing.map((c) => chargeChip(c, `c${c.id}`))}
 							{!selectedMember?.isGuest && !existingMonthly && <ToggleChip label={`${Number(depositYm.slice(5))}월 회비 ${won(monthlyFee)}`} on={active.monthly} onClick={toggleMonthly} />}
 							{newSessionCandidates.map((s) => <ToggleChip key={`s${s.id}`} label={`${sessionLabel(s)} 대관비`} on={active.sessions.has(s.id)} onClick={() => toggleSession(s.id)} />)}
+							{myUpcoming.map((s) => <ToggleChip key={`u${s.id}`} label={`${sessionLabel(s)} 대관비(예정)`} on={active.sessions.has(s.id)} onClick={() => toggleSession(s.id)} />)}
 							{!payerHasItems && <span className="text-faint" style={{ fontSize: 12 }}>낼 항목 없음(완납/부과 없음)</span>}
 						</div>
 					</div>

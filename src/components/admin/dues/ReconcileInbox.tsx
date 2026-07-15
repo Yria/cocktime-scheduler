@@ -11,6 +11,7 @@ import {
 } from "../../../lib/supabase/dues";
 import { duesActions, useDuesStore } from "../../../store/duesStore";
 import { toast } from "../../../store/toastStore";
+import { inputCls, inputStyle } from "../../common/fieldStyles";
 import EmptyState from "../../shared/EmptyState";
 import ReconcileInRow from "./ReconcileInRow";
 import ReconcileOutRow, { type RefundTarget } from "./ReconcileOutRow";
@@ -28,6 +29,7 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 	const monthlyFee = useDuesStore((s) => s.monthlyFee);
 	const courtFee = useDuesStore((s) => s.courtFee);
 	const monthSessions = useDuesStore((s) => s.monthSessions);
+	const upcomingSessions = useDuesStore((s) => s.upcomingSessions);
 	const ledgerSessions = useDuesStore((s) => s.ledgerSessions);
 	const categories = useDuesStore((s) => s.categories);
 	const txAllocations = useDuesStore((s) => s.txAllocations);
@@ -36,6 +38,7 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 	const [ingestResult, setIngestResult] = useState<IngestResult | null>(null);
 	const [busyId, setBusyId] = useState<number | null>(null);
 	const [filter, setFilter] = useState<Filter>("all");
+	const [amountFilter, setAmountFilter] = useState(""); // 금액 완전일치 필터(빈값=전체)
 
 	const { pending, partial } = useMemo(() => {
 		const pending: BankTxnRow[] = [];
@@ -68,7 +71,16 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 		[txns],
 	);
 
-	const filteredPending = useMemo(() => (filter === "all" ? pending : pending.filter((t) => t.direction === filter)), [pending, filter]);
+	// 금액 필터: 완전일치(equal)만. type=number 값을 그대로 파싱(자릿수만 뽑으면 6000.5→60005 오매칭). 0/빈값/비정상이면 미적용.
+	const amountEq = useMemo(() => {
+		const n = Number(amountFilter);
+		return amountFilter.trim() && Number.isFinite(n) && n > 0 ? n : null;
+	}, [amountFilter]);
+	const filteredPending = useMemo(() => {
+		let list = filter === "all" ? pending : pending.filter((t) => t.direction === filter);
+		if (amountEq != null) list = list.filter((t) => t.amount === amountEq);
+		return list;
+	}, [pending, filter, amountEq]);
 
 	// 입금별 연결 환불 합계(부분 환불이면 입금 실효금액 = 입금 − 환불).
 	const refundedByIn = useMemo(() => {
@@ -151,6 +163,23 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 					<span style={{ flex: 1 }} />
 					<div className="flex gap-1">{seg("all", "전체")}{seg("in", "입금")}{seg("out", "출금")}</div>
 				</div>
+				{/* 금액 완전일치 필터 */}
+				<div className="flex items-center gap-1.5" style={{ marginBottom: 8 }}>
+					<input
+						type="number"
+						inputMode="numeric"
+						value={amountFilter}
+						onChange={(e) => setAmountFilter(e.target.value)}
+						placeholder="금액 일치 (예: 6000)"
+						className={inputCls}
+						style={{ ...inputStyle, flex: 1, minWidth: 0, padding: "6px 10px", fontSize: 13 }}
+					/>
+					{amountEq != null && (
+						<button type="button" onClick={() => setAmountFilter("")} aria-label="금액 필터 지우기" className="text-faint" style={{ fontSize: 12.5, fontWeight: 700, padding: "6px 11px", borderRadius: 999, border: "none", background: "rgba(120,120,128,0.12)", cursor: "pointer", whiteSpace: "nowrap" }}>
+							✕ 금액
+						</button>
+					)}
+				</div>
 				{txns.length === 0 ? (
 					<p className="text-faint" style={{ fontSize: 13 }}>[통장내역 가져오기]로 거래를 불러오세요.</p>
 				) : filteredPending.length === 0 ? (
@@ -165,6 +194,7 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 									members={members}
 									unpaidByMember={unpaidByMember}
 									monthSessions={monthSessions}
+									upcomingSessions={upcomingSessions}
 									categories={categories}
 									monthlyFee={monthlyFee}
 									courtFee={courtFee}

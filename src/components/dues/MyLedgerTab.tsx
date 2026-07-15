@@ -18,7 +18,7 @@ export default function MyLedgerTab() {
 
 	const canForward = ym < lastMonth; // 당월/미래로는 못 감
 	const loaded = !loading && shownYm === ym; // 이 달 로드 완료(성공/오류 무관)
-	const empty = loaded && ledger != null && !(ledger.feeCollected > 0 || ledger.sessions.length > 0 || ledger.categories.length > 0 || ledger.refund > 0 || ledger.uncatIn > 0 || ledger.uncatOut > 0);
+	const empty = loaded && ledger != null && !(ledger.feeCollected > 0 || ledger.sessions.length > 0 || ledger.categories.length > 0 || ledger.refund > 0 || ledger.uncatIn !== 0 || ledger.uncatOut > 0);
 
 	return (
 		<div className="flex flex-col gap-3">
@@ -56,7 +56,7 @@ export default function MyLedgerTab() {
 							<Row key={`cat${i}`} name={c.name} right={<NetAmount n={c.net} />} />
 						))}
 						{ledger.refund > 0 && <Row name="환불" right={<span className="text-[#d1362c]" style={{ fontWeight: 800 }}>−{won(ledger.refund)}</span>} />}
-						{(ledger.uncatIn > 0 || ledger.uncatOut > 0) && <Row name="미분류" nameColor="#9498a2" right={<NetAmount n={ledger.uncatIn - ledger.uncatOut} />} />}
+						{(ledger.uncatIn !== 0 || ledger.uncatOut > 0) && <Row name="미분류" nameColor="#9498a2" right={<NetAmount n={ledger.uncatIn - ledger.uncatOut} />} />}
 						<div className="flex items-center gap-2" style={{ borderTop: "1px solid rgba(120,120,128,0.2)", paddingTop: 7, marginTop: 2 }}>
 							<span className="text-strong" style={{ fontSize: 13.5, fontWeight: 700, flex: 1 }}>이 달 남은 돈</span>
 							<span className={ledger.net >= 0 ? "text-[#1c8a3b]" : "text-[#d1362c]"} style={{ fontSize: 15, fontWeight: 800 }}>{ledger.net >= 0 ? "+" : "−"}{won(Math.abs(ledger.net))}</span>

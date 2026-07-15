@@ -9,7 +9,9 @@ import { NetAmount } from "./duesUi";
 
 // 항목별 정산(월 통장 기준·현금주의): 그 달 통장 거래만 버킷에 담아 합이 반드시 '이 달 남은 돈'과 일치.
 //  - 매칭 입금은 배분내역(txAllocations)으로 회비/세션대관에 쪼갬(부분배분 잔액은 미분류).
-//  - 세션 지출/수입은 '그 달' 세션거래만(다른 달 선결제 대관비는 그 달 회계로). 환불 출금은 별도 라인.
+//  - 세션 지출/수입은 '그 달' 세션거래만(다른 달 선결제 대관비는 그 달 회계로).
+//  - 환불은 소스 입금(refundOfTxId)과 상쇄: 정상 전액환불이면 그 입금이 실효 0이 되어 어디에도 안 뜸(±0).
+//    부분/미스매치면 잔액이 미분류로 남아 추적 가능. 소스 입금이 이 달에 없는(크로스먼스) 환불만 '환불' 라인으로.
 export default function LedgerBreakdown({ ym }: { ym: string }) {
 	const txns = useDuesStore((s) => s.bankTxns);
 	const txAllocations = useDuesStore((s) => s.txAllocations);
@@ -32,15 +34,24 @@ export default function LedgerBreakdown({ ym }: { ym: string }) {
 			e[key] += amt;
 			sess.set(id, e);
 		};
-		const addCat = (t: BankTxnRow, key: "inSum" | "outSum") => {
+		const addCat = (t: BankTxnRow, key: "inSum" | "outSum", amt: number) => {
 			const e = catMap.get(t.categoryId!) ?? { name: t.categoryName ?? "?", inSum: 0, outSum: 0 };
-			e[key] += t.amount;
+			e[key] += amt;
 			catMap.set(t.categoryId!, e);
 		};
+		// 환불↔소스 입금 상쇄 준비: 이 달 입금 id 집합 + 입금별 연결 환불 합계. 소스가 이 달에 없는 환불은 잔여 라인.
+		const inIds = new Set(txns.filter((t) => t.direction === "in").map((t) => t.id));
+		const refundByIn = new Map<number, number>();
+		for (const t of txns) {
+			if (t.direction !== "out" || t.refundOfTxId == null) continue;
+			if (inIds.has(t.refundOfTxId)) refundByIn.set(t.refundOfTxId, (refundByIn.get(t.refundOfTxId) ?? 0) + t.amount);
+			else refOut += t.amount; // 크로스먼스: 소스 입금이 이 달에 없어 상쇄 불가 → 잔여 환불 라인
+		}
 		for (const t of txns) {
 			if (t.direction === "in") {
-				if (t.sessionId != null) addSess(t.sessionId, "income", t.amount); // 비회원 대관 입금
-				else if (t.categoryId != null) addCat(t, "inSum");
+				const eff = t.amount - (refundByIn.get(t.id) ?? 0); // 연결 환불만큼 상쇄(정상 전액환불이면 0)
+				if (t.sessionId != null) addSess(t.sessionId, "income", eff); // 비회원 대관 입금
+				else if (t.categoryId != null) addCat(t, "inSum", eff);
 				else if (t.status === "matched" || t.status === "partial") {
 					const a = txAllocations[t.id];
 					let allocated = 0;
@@ -52,12 +63,12 @@ export default function LedgerBreakdown({ ym }: { ym: string }) {
 							allocated += amt;
 						}
 					}
-					if (t.amount - allocated !== 0) uIn += t.amount - allocated; // 부분 배분 잔액 → 미분류
-				} else uIn += t.amount; // 미매칭
+					if (eff - allocated !== 0) uIn += eff - allocated; // 부분 배분/부분 환불 잔액 → 미분류
+				} else uIn += eff; // 미매칭(전액환불이면 0 → 안 뜸)
 			} else {
-				if (t.refundOfTxId != null) refOut += t.amount; // 환불 출금 = 별도 라인
-				else if (t.sessionId != null) addSess(t.sessionId, "expense", t.amount);
-				else if (t.categoryId != null) addCat(t, "outSum");
+				if (t.refundOfTxId != null) continue; // 환불 출금: 위에서 소스 입금과 상쇄(또는 잔여 refOut). 여기선 스킵
+				if (t.sessionId != null) addSess(t.sessionId, "expense", t.amount);
+				else if (t.categoryId != null) addCat(t, "outSum", t.amount);
 				else uOut += t.amount;
 			}
 		}
@@ -112,8 +123,8 @@ export default function LedgerBreakdown({ ym }: { ym: string }) {
 				{catRows.map((r) => (
 					<Row key={r.id} name={r.name} inAmt={r.inSum} outAmt={r.outSum} right={<NetAmount n={r.net} />} />
 				))}
-				{refundOut > 0 && <Row name="환불" outAmt={refundOut} right={<span className="text-[#d1362c]" style={{ fontWeight: 800 }}>−{refundOut.toLocaleString("ko-KR")}원</span>} />}
-				{(uncatIn > 0 || uncatOut > 0) && <Row name="미분류" nameColor="#9498a2" inAmt={uncatIn} outAmt={uncatOut} right={null} />}
+				{refundOut > 0 && <Row name="환불" sub="상쇄 안 된 건" outAmt={refundOut} right={<span className="text-[#d1362c]" style={{ fontWeight: 800 }}>−{refundOut.toLocaleString("ko-KR")}원</span>} />}
+				{(uncatIn !== 0 || uncatOut !== 0) && <Row name="미분류" nameColor="#9498a2" inAmt={uncatIn} outAmt={uncatOut} right={<NetAmount n={uncatIn - uncatOut} />} />}
 				{empty && <p className="text-faint" style={{ fontSize: 13 }}>이 달 거래가 없어요.</p>}
 			</div>
 			{/* 카테고리 관리 */}

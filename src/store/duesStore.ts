@@ -15,6 +15,7 @@ import {
 	type TxAllocation,
 	type TxnCategory,
 	type UnpaidCharge,
+	type UpcomingSessionRow,
 	fetchBankTransactions,
 	fetchCategories,
 	fetchClubAccount,
@@ -28,6 +29,7 @@ import {
 	fetchSessionTxns,
 	fetchTxAllocations,
 	fetchUnpaidByMember,
+	fetchUpcomingParticipating,
 } from "../lib/supabase/dues";
 
 // 회비 데이터 스토어(scheduleStore/authStore 관례: uncurried create + 별도 actions 객체).
@@ -47,6 +49,7 @@ interface DuesState {
 	bankTxns: BankTxnRow[]; // 그 달 은행 입출금
 	monthSessions: SessionFeeRow[]; // 그 달 대관 세션
 	ledgerSessions: SessionFeeRow[]; // ±1개월 대관 세션(출금→세션 지정용)
+	upcomingSessions: UpcomingSessionRow[]; // 참가 예정(open) 대관 세션 + 참가자 — 정산함 선납 후보(now 기준)
 	sessionTxns: { sessionId: number; direction: "in" | "out"; amount: number }[]; // 세션 링크 거래(발생월 무관)
 	categories: TxnCategory[]; // 거래 분류
 	unpaidByMember: Record<string, UnpaidCharge[]>; // 전체 미납(크로스먼스 배분용)
@@ -73,6 +76,7 @@ export const useDuesStore = create<DuesState>(() => ({
 	bankTxns: [],
 	monthSessions: [],
 	ledgerSessions: [],
+	upcomingSessions: [],
 	sessionTxns: [],
 	categories: [],
 	unpaidByMember: {},
@@ -109,7 +113,7 @@ export const duesActions = {
 		useDuesStore.setState({ monthLoading: true });
 		// wave 1: 서로 독립인 조회 병렬. (정적: members·sessions·categories·settings / 가변: charges·txns·unpaid)
 		// monthSessions는 ledgerSessions(±1개월 상위집합)에서 파생 — 세션 쿼리 1회로(§11).
-		const [members, monthly, court, bankTxns, ledgerSessions, categories, settings, unpaidByMember] = await Promise.all([
+		const [members, monthly, court, bankTxns, ledgerSessions, categories, settings, unpaidByMember, upcomingSessions] = await Promise.all([
 			fetchMembersForAdmin(true), // 게스트 포함 — 대관비 입금 매칭용
 			fetchMonthlyCharges(ym),
 			fetchCourtCharges(ym),
@@ -118,6 +122,7 @@ export const duesActions = {
 			fetchCategories(),
 			fetchDuesSettings(),
 			fetchUnpaidByMember(),
+			fetchUpcomingParticipating(), // now 기준 참가 예정 세션(ym 무관)
 		]);
 		const monthSessions = ledgerSessions.filter((x) => isInYm(x.scheduledAt, ym));
 		// wave 2: 앞 결과 id가 필요한 조회(세션 링크 거래 · 이번 달 거래 배분만 — 전역 배분 누적 회피).
@@ -132,6 +137,7 @@ export const duesActions = {
 			bankTxns,
 			monthSessions,
 			ledgerSessions,
+			upcomingSessions,
 			categories,
 			sessionTxns,
 			unpaidByMember,
@@ -149,17 +155,18 @@ export const duesActions = {
 	 * charge를 바꾸는 뮤테이션(입금확인·대사취소)용. tx만 바꾸는 건 refreshTxns.
 	 */
 	async refreshMonth(ym: string) {
-		const [monthly, court, bankTxns, unpaidByMember] = await Promise.all([
+		const [monthly, court, bankTxns, unpaidByMember, upcomingSessions] = await Promise.all([
 			fetchMonthlyCharges(ym),
 			fetchCourtCharges(ym),
 			fetchBankTransactions(ym),
 			fetchUnpaidByMember(),
+			fetchUpcomingParticipating(), // 선납 확정으로 chargedMemberIds 가 바뀌므로 함께 갱신(완납 세션 재노출 방지)
 		]);
 		const [sessionTxns, txAllocations] = await Promise.all([
 			fetchSessionTxns(useDuesStore.getState().monthSessions.map((x) => x.id)),
 			fetchTxAllocations(bankTxns.map((t) => t.id)),
 		]);
-		useDuesStore.setState({ monthly, court, bankTxns, unpaidByMember, sessionTxns, txAllocations });
+		useDuesStore.setState({ monthly, court, bankTxns, unpaidByMember, upcomingSessions, sessionTxns, txAllocations });
 	},
 
 	/**

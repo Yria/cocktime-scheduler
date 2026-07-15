@@ -673,6 +673,16 @@ export interface SessionFeeRow {
 	courtFee: number | null; // 실제 입력 지출
 }
 
+/** 정산함 선납용: 참가 예정(open) 대관 세션 + 확정 참가자 목록. SessionFeeRow + attendeeIds. */
+export interface UpcomingSessionRow extends SessionFeeRow {
+	attendeeIds: string[]; // 확정 참가자(confirmed/late_pool) member_id — 본인이 여기 있는 세션만 칩으로 노출
+	chargedMemberIds: string[]; // 이미 대관비(court_fee) 부과된 회원(완납 포함) — 중복 후보 방지(기존 미납·선납 완료 세션 제외)
+}
+interface RawUpcomingSession extends RawSessionFee {
+	attendances: { member_id: string; status: string }[] | null;
+	dues_charges: { member_id: string; kind: string }[] | null;
+}
+
 async function queryCourtSessions(start: string, end: string): Promise<SessionFeeRow[]> {
 	// '실제 열린 대관 세션'의 단일 기준(generate_dues_charges와 동일): 대관 장소 + active/closed + 경기기록(matches) 있음.
 	// matches!inner 로 경기 없는 세션(무산)을 원천 제외 → 정산함·회계·현황 모든 세션 목록이 일괄로 열린 경기만.
@@ -718,6 +728,64 @@ export function fetchLedgerSessions(ym: string): Promise<SessionFeeRow[]> {
 	const { start } = ymRangeKst(shift(ym, -1));
 	const { end } = ymRangeKst(shift(ym, 1));
 	return queryCourtSessions(start, end);
+}
+
+/**
+ * 정산함 선납용: '참가 가능(open) 상태의 대관 세션' + 확정 참가자 목록.
+ * now 기준(선택 월 무관) — open 은 sync 가 이미 공개창(~7일)으로만 부여하므로 별도 날짜창 불필요.
+ * queryCourtSessions 와 달리 matches!inner 를 쓰지 않는다(미래 세션엔 경기기록이 없음 — 그게 핵심 차이).
+ * status·waitlisted 필터는 임베드 결과를 JS 에서(부모 세션을 걸러내지 않도록) — confirmed/late_pool 만 참가자로 인정.
+ */
+export async function fetchUpcomingParticipating(): Promise<UpcomingSessionRow[]> {
+	const { data, error } = await supabase
+		.from("sessions")
+		.select("id, title, scheduled_at, ends_at, court_count, court_fee, places!inner(name, court_fee_per_hour), attendances(member_id, status), dues_charges(member_id, kind)")
+		.eq("status", "open")
+		.not("places.court_fee_per_hour", "is", null) // 대관 장소만(monthSessions 와 동일 게이트)
+		.order("scheduled_at", { ascending: true });
+	if (error) {
+		console.error("fetchUpcomingParticipating:", error);
+		return [];
+	}
+	return ((data ?? []) as unknown as RawUpcomingSession[]).map((s) => {
+		const hours =
+			s.scheduled_at && s.ends_at
+				? Math.round((new Date(s.ends_at).getTime() - new Date(s.scheduled_at).getTime()) / 3600000)
+				: null;
+		const rate = s.places?.court_fee_per_hour ?? null;
+		const suggested = rate != null && s.court_count != null && hours != null ? rate * s.court_count * hours : null;
+		return {
+			id: s.id,
+			title: s.title,
+			scheduledAt: s.scheduled_at,
+			courtCount: s.court_count,
+			hours,
+			placeName: s.places?.name ?? null,
+			suggested,
+			courtFee: s.court_fee,
+			attendeeIds: (s.attendances ?? [])
+				.filter((a) => a.status === "confirmed" || a.status === "late_pool")
+				.map((a) => a.member_id),
+			chargedMemberIds: (s.dues_charges ?? [])
+				.filter((c) => c.kind === "court_fee")
+				.map((c) => c.member_id),
+		};
+	});
+}
+
+/** 세션에 선납(입금 배분됨, amount_paid>0)된 대관비 부과 건수 — 세션 하드삭제 경고용. 조회 실패 시 0(경고 생략, fail-open). */
+export async function countSessionPrepaid(sessionId: number): Promise<number> {
+	const { count, error } = await supabase
+		.from("dues_charges")
+		.select("id", { count: "exact", head: true })
+		.eq("session_id", sessionId)
+		.eq("kind", "court_fee")
+		.gt("amount_paid", 0);
+	if (error) {
+		console.error("countSessionPrepaid:", error);
+		return 0;
+	}
+	return count ?? 0;
 }
 
 /** 세션에 링크된 은행거래(발생월 무관) — 세션 순액을 세션 기준으로 계산(전월 지급 등 포함). */

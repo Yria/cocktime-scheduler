@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
 	dateStrDow,
 	isoToDateKST,
@@ -6,6 +6,7 @@ import {
 	kstEndWallClockToISO,
 	kstWallClockToISO,
 } from "../../lib/schedule/calendar";
+import { countSessionPrepaid } from "../../lib/supabase/dues";
 import type {
 	OccurrencePatch,
 	OneOffInput,
@@ -134,12 +135,27 @@ export function useOccurrenceForm(
 		});
 	}
 
-	function handleDelete() {
-		if (!occurrence) return;
-		if (!confirm("이 회차를 삭제할까요? 되돌릴 수 없어요.")) return;
-		void run(async () => {
-			await onDelete(occurrence);
-		});
+	// 선납 조회~confirm 사이의 async 창(버튼이 아직 busy 아님) 중복 클릭 가드. setState 는 same-tick 재클릭을 못 막으므로 ref 로.
+	const deletingRef = useRef(false);
+	async function handleDelete() {
+		if (!occurrence || busy || deletingRef.current) return;
+		deletingRef.current = true;
+		try {
+			let msg = "이 회차를 삭제할까요? 되돌릴 수 없어요.";
+			// 일회성 회차는 하드 삭제(반복 회차는 cancelled 텀스톤이라 선납 부과 보존). 선납(입금 배분된) 대관비가
+			// 걸린 세션을 하드 삭제하면 그 입금이 미정산으로 되돌아가므로(돈은 사라지지 않음) 미리 경고한다.
+			if (!isRuleBased) {
+				const n = await countSessionPrepaid(occurrence.id);
+				if (n > 0)
+					msg = `이 세션에 선납 정산 ${n}건이 걸려 있어요.\n삭제하면 해당 입금이 미정산으로 되돌아가요(돈은 사라지지 않고 정산함에 다시 떠요).\n계속 삭제할까요?`;
+			}
+			if (!confirm(msg)) return;
+			void run(async () => {
+				await onDelete(occurrence);
+			});
+		} finally {
+			deletingRef.current = false;
+		}
 	}
 
 	return {
