@@ -30,6 +30,10 @@ interface Props {
 	isLive: boolean;
 	/** 세션시작 버튼 노출 조건 — 시작 10분 전부터(open, 미종료). isLive와 별개. */
 	canStart: boolean;
+	/** 참여(참석하기) 가능 — 모집중/진행중이고 종료 전. active 여도 종료 전이면 늦참 입장 허용. */
+	joinable: boolean;
+	/** 예정 시간의 2/3 지점(정원 외 늦참 경계) 이후 — 입장 시 '완전 늦참' 확인 다이얼로그. */
+	lateJoin: boolean;
 	busy: boolean;
 	onJoin: () => void;
 	onCancel: () => void;
@@ -55,6 +59,8 @@ export default function ScheduleCard({
 	isAdmin,
 	isLive,
 	canStart,
+	joinable,
+	lateJoin,
 	busy,
 	onJoin,
 	onCancel,
@@ -69,6 +75,8 @@ export default function ScheduleCard({
 	const [showParticipants, setShowParticipants] = useState(false);
 	const [showCarpoolBuilder, setShowCarpoolBuilder] = useState(false);
 	const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+	// 완전 늦참(2/3 지점 이후) 입장 확인 대기
+	const [showLateJoinConfirm, setShowLateJoinConfirm] = useState(false);
 	// 정원외늦참 '진입' 확인 대기 — { 후보 오프셋 }. null=대기 없음.
 	// (복귀·같은 존 이동은 모달 없이 바로 적용하므로 진입 케이스만 여기 담긴다.)
 	const [pendingLate, setPendingLate] = useState<{ minutes: number } | null>(
@@ -89,6 +97,12 @@ export default function ScheduleCard({
 	const myWait =
 		mine?.status === "waitlisted" ? waitDisplay(attendances, mine) : null;
 	const isOpen = s.status === "open";
+	const isActive = s.status === "active";
+	// 참여 버튼 탭 — 2/3 지점 이후면 '완전 늦참' 확인 다이얼로그, 아니면 바로 참여.
+	const handleJoinClick = () => {
+		if (lateJoin) setShowLateJoinConfirm(true);
+		else onJoin();
+	};
 	const canDrive = attendances.filter(
 		(a) => a.carpool_role === "can_drive",
 	).length;
@@ -247,7 +261,7 @@ export default function ScheduleCard({
 					{latePool.length > 0 ? ` · 늦참 ${latePool.length}` : ""}
 				</span>
 
-				{isOpen ? (
+				{isOpen || isActive ? (
 					mine?.status === "confirmed" ? (
 						<div className="flex items-center gap-2">
 							<span style={statusBadge("#30d158", "rgba(52,199,89,0.14)")}>
@@ -295,10 +309,10 @@ export default function ScheduleCard({
 								취소
 							</button>
 						</div>
-					) : (
+					) : joinable ? (
 						<button
 							type="button"
-							onClick={onJoin}
+							onClick={handleJoinClick}
 							disabled={busy}
 							style={{
 								fontSize: 13,
@@ -313,6 +327,10 @@ export default function ScheduleCard({
 						>
 							참석하기
 						</button>
+					) : (
+						<span className="text-faint" style={{ fontSize: 12 }}>
+							모집 마감
+						</span>
 					)
 				) : (
 					<span
@@ -477,6 +495,24 @@ export default function ScheduleCard({
 					}}
 					onCancel={() => setShowCancelConfirm(false)}
 					onDismiss={() => setShowCancelConfirm(false)}
+				/>
+			)}
+
+			{/* 완전 늦참(2/3 지점 이후) 입장 재확인 — 정상 접수(자리 있으면 확정, 없으면 대기)임을 안내. */}
+			{showLateJoinConfirm && (
+				<ConfirmDialog
+					title="완전 늦참으로 참여할까요?"
+					message={`이미 예정 시간의 2/3${
+						poolCutoffClock ? `(${poolCutoffClock})` : ""
+					}가 지났어요. 자리가 있으면 바로 참여하고, 없으면 대기로 접수돼요.`}
+					confirmLabel="참여하기"
+					cancelLabel="닫기"
+					onConfirm={() => {
+						setShowLateJoinConfirm(false);
+						onJoin();
+					}}
+					onCancel={() => setShowLateJoinConfirm(false)}
+					onDismiss={() => setShowLateJoinConfirm(false)}
 				/>
 			)}
 

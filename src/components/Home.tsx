@@ -10,6 +10,7 @@ import {
 	useInstallPromptStore,
 } from "../store/installPromptStore";
 import { scheduleActions, useScheduleStore } from "../store/scheduleStore";
+import { latePoolCutoffMs } from "../lib/schedule/latePool";
 import AppScreen from "./common/AppScreen";
 import HeaderMenu from "./common/HeaderMenu";
 import InstallPromptToast from "./common/InstallPromptToast";
@@ -277,6 +278,23 @@ export default function Home({ onStart }: Props) {
 		visibleSchedules.filter(canStartSchedule).map((s) => s.id),
 	);
 
+	// 참여 가능(참석하기 노출): 모집중(open) 또는 진행중(active)이고 종료 전. 서버 join 가드와 동일 기준.
+	// → '경기 시작'으로 active 가 돼도 종료(ends_at) 전까진 늦참 입장 가능.
+	const canJoinSchedule = (s: (typeof schedules)[number]) =>
+		(s.status === "open" || s.status === "active") &&
+		(s.ends_at == null || Date.parse(s.ends_at) > now);
+	const joinableIds = new Set(
+		visibleSchedules.filter(canJoinSchedule).map((s) => s.id),
+	);
+	// 완전 늦참: 예정 시간의 2/3 지점(정원 외 늦참 경계)을 넘긴 시점. 이후 입장 시 확인 다이얼로그.
+	const lateJoinSchedule = (s: (typeof schedules)[number]) => {
+		const cutoff = latePoolCutoffMs(s.scheduled_at, s.ends_at);
+		return cutoff != null && now >= cutoff;
+	};
+	const lateJoinIds = new Set(
+		visibleSchedules.filter(lateJoinSchedule).map((s) => s.id),
+	);
+
 	return (
 		<>
 		<AppScreen
@@ -340,6 +358,8 @@ export default function Home({ onStart }: Props) {
 								isAdmin={isAdmin}
 								isLive={liveIds.has(s.id)}
 								canStart={canStartIds.has(s.id)}
+								joinable={joinableIds.has(s.id)}
+								lateJoin={lateJoinIds.has(s.id)}
 								busy={busyId === s.id}
 								onJoin={() => handleJoin(s.id)}
 								onCancel={() => handleCancel(s.id)}
