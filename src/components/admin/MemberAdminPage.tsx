@@ -26,6 +26,7 @@ import type { PlayerSkills } from "../../types";
 import { MemberRow } from "./MemberAdminRow";
 import { genderText } from "./memberAdminText";
 import { MemberSkillEditModal } from "./MemberSkillEditModal";
+import { MemberPhotoModal } from "./MemberPhotoModal";
 
 // 운영진 전용 회원 관리(라우트). 100명+ 대비 가상화 리스트 + 컴팩트 행. 실력 편집은 모달.
 // 권한 가드: 클라(여기) + RPC/RLS(서버) 이중. error 키워드로 친절 문구 분기.
@@ -84,6 +85,8 @@ export default function MemberAdminPage() {
 	);
 	// 실력 편집 모달 대상 회원 id(null=닫힘) + 편집 중 draft.
 	const [skillEditId, setSkillEditId] = useState<string | null>(null);
+	// 아바타 탭 → 큰 사진 보기(회원관리 전용)
+	const [photoMember, setPhotoMember] = useState<AdminMemberRow | null>(null);
 	const [draft, setDraft] = useState<PlayerSkills>(DEFAULT_SKILLS);
 	// 처리 중인 회원 id(중복 클릭 방지).
 	const [busyId, setBusyId] = useState<string | null>(null);
@@ -529,6 +532,7 @@ export default function MemberAdminPage() {
 										size={vr.size}
 										start={vr.start}
 										onOpenSkillEdit={openSkillEdit}
+										onOpenPhoto={setPhotoMember}
 										onRequestToggleAdmin={requestToggleAdmin}
 										onRequestDelete={requestDelete}
 									/>
@@ -550,6 +554,14 @@ export default function MemberAdminPage() {
 					saving={busyId === skillEditId}
 					onSave={handleSaveSkills}
 					onClose={() => setSkillEditId(null)}
+				/>
+			)}
+
+			{/* 큰 프로필 사진 보기 */}
+			{photoMember && (
+				<MemberPhotoModal
+					member={photoMember}
+					onClose={() => setPhotoMember(null)}
 				/>
 			)}
 

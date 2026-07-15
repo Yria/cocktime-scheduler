@@ -17,6 +17,7 @@ interface MemberRowProps {
 	size: number;
 	start: number;
 	onOpenSkillEdit: (m: AdminMemberRow) => void;
+	onOpenPhoto: (m: AdminMemberRow) => void;
 	onRequestToggleAdmin: (m: AdminMemberRow) => void;
 	onRequestDelete: (m: AdminMemberRow) => void;
 }
@@ -29,6 +30,7 @@ export function MemberRow({
 	size,
 	start,
 	onOpenSkillEdit,
+	onOpenPhoto,
 	onRequestToggleAdmin,
 	onRequestDelete,
 }: MemberRowProps) {
@@ -49,13 +51,29 @@ export function MemberRow({
 				borderBottom: "1px solid rgba(0,0,0,0.06)",
 			}}
 		>
-			{/* 프로필 사진(이름 md5 기반 원격 URL, 로드 실패 시 성별색 이니셜 폴백). 게스트는 동명 충돌 방지로 이니셜만. */}
-			<PlayerAvatar
-				name={member.name}
-				gender={member.gender}
-				isGuest={member.isGuest}
-				size={44}
-			/>
+			{/* 프로필 사진(이름 md5 기반 원격 URL, 로드 실패 시 성별색 이니셜 폴백). 게스트는 동명 충돌 방지로 이니셜만.
+			    탭하면 큰 사진 보기(회원관리 전용). 정보 버튼과 분리된 형제라 실력 편집과 안 겹침. */}
+			<button
+				type="button"
+				onClick={() => onOpenPhoto(member)}
+				aria-label={`${member.name} 사진 크게 보기`}
+				style={{
+					padding: 0,
+					border: "none",
+					background: "none",
+					cursor: "pointer",
+					borderRadius: "50%",
+					flexShrink: 0,
+					lineHeight: 0,
+				}}
+			>
+				<PlayerAvatar
+					name={member.name}
+					gender={member.gender}
+					isGuest={member.isGuest}
+					size={44}
+				/>
+			</button>
 
 			{/* 정보(탭 → 실력 편집) */}
 			<button
