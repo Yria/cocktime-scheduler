@@ -892,3 +892,14 @@
 - 3개 지적 전부 반려. 핵심 반증: generate_dues_charges는 이미 자동 호출됨 — Edge Function ingest-bank-email(index.ts:127)이 매 [가져오기] 때 지난달·이번달 실행. 내가 src/만 grep해서 놓쳤고 "부과생성 수동SQL/버튼 미구현"이라 잘못 기술했음. 나머지 2건(세션 재개 유령부과·종료후 변경)도 앱에 재개 경로 없음+종료시 참석 동결로 도달 불가.
 - 정정: ACCOUNTING_SPEC §4(부과 생성 경로=월진입ensure+세션종료트리거+[가져오기]+즉석+수동, 전부 멱등 단일규칙), §12, §13에서 '부과생성 UI버튼 미구현' 삭제. 메모리도 정정.
 - 내가 추가한 월진입 ensure+세션종료 트리거는 import-driven 생성과 부분 중복이나 즉각성(세션 닫자마자 대관 미납) 이득. 유지/되돌림은 사용자 결정 대기.
+
+## #71
+
+**Prompt**: 그래 그렇게해 ([가져오기]에서 부과 생성 분리)
+
+**Answer**: 부과 생성을 은행 [가져오기]에서 분리 — 발생 이벤트 트리거로 일원화.
+
+- 근거: [가져오기](통장내역 적재)가 통장으로 부과를 추측하는 게 아니라, ingest-bank-email이 적재 후 generate_dues_charges(지난달·이번달)를 그냥 이어붙여 호출하던 것(편의 커플링). "통장 가져오는데 부과가 생김"이 혼란.
+- 조치: ingest-bank-email/index.ts에서 ② 부과 생성 블록 + kstYm 헬퍼 + 응답 generated 필드 제거 → [가져오기]는 은행내역 적재만. Edge Function 배포 완료.
+- 부과 생성은 이제 발생 시점 이벤트로만: 회비=월 첫 진입 ensure, 대관=세션 종료 트리거, 즉석=reconcile, fallback=generate_dues_charges 수동. 전부 멱등·단일 규칙.
+- 문서(§4·§12)·메모리 정정. IngestResult 타입엔 generated 없어 클라 영향 없음.

@@ -92,13 +92,13 @@
 
 ## 4. 부과 생성 (charge generation)
 
-부과는 여러 경로로 자동 생성된다(전부 멱등 — 중복·유실 없음, 단일 규칙 재사용):
-- **회비**: ① **월 첫 진입** 시 `dues_ensure_monthly(ym)`(운영진이 이번 달 `/dues` 열면, 이미 있으면 no-op) ② **[가져오기]** 때 `ingest-bank-email`이 지난달·이번달 `generate_dues_charges` 실행(catch-all).
-- **대관비**: ① **세션 종료(closed)** 시 트리거 `trg_session_court_on_close` → 그 세션 대관비(참석·당일취소 확정 후라 정확) ② **[가져오기]** catch-all.
+부과는 **발생 시점 이벤트**에서 자동 생성된다(전부 멱등 — 중복·유실 없음, 단일 규칙 재사용). 부과 생성은 **은행 내역 가져오기와 분리**돼 있다(통장 적재와 무관).
+- **회비**: **월 첫 진입** 시 `dues_ensure_monthly(ym)` — 운영진이 이번 달 `/dues` 열면 생성(이미 있으면 no-op).
+- **대관비**: **세션 종료(closed)** 시 트리거 `trg_session_court_on_close` → 그 세션 대관비(참석·당일취소 확정 후라 정확).
 - **즉석**: 입금 확인 시 `dues_confirm_reconcile`가 낸 사람의 부과를 필요 시 신규 생성·배분.
-- **수동 배치**: `generate_dues_charges(ym)`(is_admin) — 필요 시 운영진이 직접 실행.
+- **수동 배치**: `generate_dues_charges(ym)`(is_admin) — 과거 달 보정 등 fallback.
 
-규칙 단일 소스(빌딩블록): `dues_generate_monthly(ym)`(회비) · `dues_generate_session_court(sid)`(세션 대관비). 트리거·ensure·가져오기·수동배치가 모두 이 둘을 재사용.
+규칙 단일 소스(빌딩블록): `dues_generate_monthly(ym)`(회비) · `dues_generate_session_court(sid)`(세션 대관비). 트리거·ensure·수동배치가 모두 이 둘을 재사용.
 - **회비 룰**: `is_active AND not is_guest AND not 운영진`, 가입월(`membership_started_at ?? created_at` + `offset_days`) 다음 달부터 `amount_due=회비액`.
 - **대관비 룰**: 대관 장소 + `status in (active,closed)` + **경기기록 있음**(무산 제외) 세션의 참석자(`confirmed`/`late_pool` + 당일 확정취소)에게 `amount_due=6,000`(운영진 제외). 게스트는 `payer_hint=invited_by`. `amount_paid>0` 보존, 무자격 세션의 미납분 self-heal 정리.
 
@@ -168,7 +168,7 @@
 - **확정/취소**: `dues_confirm_reconcile`(미납 배분+신규 생성 통합), `dues_confirm_court_external`(비회원 대관), `dues_cancel_match`.
 - **분류/지정**: `dues_set_txn_category`(+`p_paid_by`), `dues_set_txn_session`, `dues_link_refund`/`dues_unlink_refund`.
 - **이월**: `dues_defer_charge`/`dues_undefer_charge`/`dues_settle_deferred`.
-- **부과**: `dues_ensure_monthly`(월진입 회비), `generate_dues_charges`(수동 배치·[가져오기]가 호출), 빌딩블록 `dues_generate_monthly`·`dues_generate_session_court`(내부), 트리거 `trg_session_court_on_close`(세션 종료 대관). **알림**: `dues_notify_selected`.
+- **부과**: `dues_ensure_monthly`(월진입 회비), `generate_dues_charges`(수동 배치 fallback), 빌딩블록 `dues_generate_monthly`·`dues_generate_session_court`(내부), 트리거 `trg_session_court_on_close`(세션 종료 대관). **알림**: `dues_notify_selected`.
 - **카테고리**: `dues_add_category`/`dues_delete_category`.
 - **회원 노출**: `dues_my_payments`, `dues_public_ledger`, `dues_club_account`.
 - **트리거/내부**: `dues_alloc_guard`·`dues_alloc_sync`(dues_allocations 트리거), `dues_sync_bank_tx`(status 동기 헬퍼).

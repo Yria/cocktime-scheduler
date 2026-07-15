@@ -76,13 +76,6 @@ async function fetchFromGmail(max: number): Promise<AppsScriptResult> {
   }
 }
 
-// 현재 KST 기준 monthOffset 개월 전/후의 'YYYY-MM'.
-function kstYm(monthOffset: number): string {
-  const kst = new Date(Date.now() + 9 * 3600 * 1000);
-  const total = kst.getUTCFullYear() * 12 + kst.getUTCMonth() + monthOffset;
-  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, "0")}`;
-}
-
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const arr = new Uint8Array(bin.length);
@@ -121,15 +114,8 @@ Deno.serve(async (req) => {
     if (adminErr) return jsonResponse({ error: "auth check failed" }, 401);
     if (isAdmin !== true) return jsonResponse({ error: "forbidden" }, 403);
 
-    // ② 부과 자동 생성(지난달·이번달) — [가져오기]에 흡수(별도 부과생성 버튼 없음).
-    //    멱등 + 미납 항목 금액 현재가로 교정. 실패해도 수집은 진행(경고만).
-    const generated: Record<string, unknown> = {};
-    for (const ym of [kstYm(-1), kstYm(0)]) {
-      const { data: g, error: gErr } = await supa.rpc("generate_dues_charges", { p_ym: ym });
-      generated[ym] = gErr ? { error: gErr.message } : g;
-    }
-
-    // ③ Apps Script → Gmail.
+    // 부과 생성은 이벤트 시점에서 처리(회비=월 첫 진입 ensure, 대관=세션 종료 트리거) — 여기선 은행내역만 적재.
+    // Apps Script → Gmail.
     const fetched = await fetchFromGmail(20);
     if (!fetched.ok) {
       return jsonResponse({ error: `apps-script: ${fetched.error ?? "unknown"}` }, 502);
@@ -209,7 +195,6 @@ Deno.serve(async (req) => {
     deposits.sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1));
     return jsonResponse({
       ok: true,
-      generated,
       fetched: (fetched.messages ?? []).length,
       parsed,
       inserted,
