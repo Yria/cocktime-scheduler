@@ -60,7 +60,7 @@ export default function ScheduleCalendar({
 		return map;
 	}, [occurrences]);
 
-	// 선택일 회차 목록 (시간 오름차순, 닫힌 것 포함)
+	// 선택일 회차 목록 (시간 오름차순, 닫힌 것·취소된 것 포함 — 취소는 탭하면 되살리기)
 	const selectedList = useMemo(() => {
 		if (!selectedDate) return [];
 		const arr = byDate.get(selectedDate) ?? [];
@@ -145,8 +145,9 @@ export default function ScheduleCalendar({
 					const dow = dateStrDow(cell.date);
 					const isToday = cell.date === today;
 					const isSelected = cell.date === selectedDate;
+					// 종료(closed)·취소(cancelled)는 점에서 숨김(선택일 목록엔 표시 — 취소는 되살리기 진입).
 					const dayOccs = (byDate.get(cell.date) ?? []).filter(
-						(o) => o.status !== "closed",
+						(o) => o.status !== "closed" && o.status !== "cancelled",
 					);
 					const dots = dayOccs.slice(0, 3);
 					const extra = dayOccs.length - dots.length;

@@ -8,9 +8,11 @@ interface Props {
 	placeName: (id: number | null) => string | null;
 	error: string | null;
 	onClose: () => void;
+	/** 취소된 회차 되살리기(취소 취소). status==='cancelled' 일 때만 버튼 노출. */
+	onReopen?: () => void;
 }
 
-// active/closed: 편집 불가, 정보만
+// active/closed: 편집 불가, 정보만. cancelled: 되살리기만 가능.
 export default function OccurrenceInfoView({
 	occurrence,
 	occDate,
@@ -19,7 +21,9 @@ export default function OccurrenceInfoView({
 	placeName,
 	error,
 	onClose,
+	onReopen,
 }: Props) {
+	const cancelled = occurrence.status === "cancelled";
 	return (
 		<div className="flex flex-col gap-3">
 			<dl className="flex flex-col gap-2">
@@ -52,8 +56,19 @@ export default function OccurrenceInfoView({
 				className="text-faint"
 				style={{ fontSize: 12.5 }}
 			>
-				진행 중이거나 종료된 회차는 수정할 수 없어요.
+				{cancelled
+					? "취소된 회차예요. 되살리면 규칙에 따라 다시 노출·모집됩니다."
+					: "진행 중이거나 종료된 회차는 수정할 수 없어요."}
 			</p>
+			{cancelled && onReopen && (
+				<button
+					type="button"
+					onClick={onReopen}
+					className="btn-solid-blue"
+				>
+					되살리기
+				</button>
+			)}
 			<button
 				type="button"
 				onClick={onClose}

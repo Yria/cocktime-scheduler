@@ -28,6 +28,7 @@ interface Props {
 	onOverride: (sessionId: number, patch: OccurrencePatch) => Promise<void>;
 	onCreateOneOff: (input: OneOffInput) => Promise<void>;
 	onDelete: (occurrence: SessionRow) => Promise<void>;
+	onReopen: (occurrence: SessionRow) => Promise<void>;
 	onClose: () => void;
 }
 
@@ -40,6 +41,7 @@ export default function OccurrenceEditor({
 	onOverride,
 	onCreateOneOff,
 	onDelete,
+	onReopen,
 	onClose,
 }: Props) {
 	const {
@@ -135,6 +137,11 @@ export default function OccurrenceEditor({
 						placeName={placeName}
 						error={error}
 						onClose={onClose}
+						onReopen={
+							occurrence.status === "cancelled"
+								? () => onReopen(occurrence)
+								: undefined
+						}
 					/>
 				) : (
 					// 신규 일회성 또는 draft/open 편집 폼

@@ -5,7 +5,6 @@ import {
 	adminCancelAttendance,
 	cancelAttendance,
 	cancelGuestAttendance,
-	deleteSchedule,
 	fetchAttendances,
 	fetchPlaces,
 	fetchSchedules,
@@ -136,17 +135,6 @@ export const scheduleActions = {
 	},
 
 	reloadAttendances,
-
-	async remove(sessionId: number) {
-		const ok = await deleteSchedule(sessionId);
-		if (ok) {
-			useScheduleStore.setState((s) => ({
-				schedules: s.schedules.filter((x) => x.id !== sessionId),
-				attendances: s.attendances.filter((a) => a.session_id !== sessionId),
-			}));
-		}
-		return ok;
-	},
 
 	async join(sessionId: number) {
 		const res = await joinSession(sessionId);

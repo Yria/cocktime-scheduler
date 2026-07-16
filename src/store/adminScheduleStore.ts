@@ -9,6 +9,7 @@ import {
 	deleteRecurringRule,
 	fetchOccurrences,
 	fetchRecurringRules,
+	reopenOccurrence,
 	setSessionCapacity,
 	updateOccurrence,
 	updateRecurringRule,
@@ -175,7 +176,8 @@ export const adminScheduleActions = {
 
 	/**
 	 * 회차 삭제. 반복 규칙 회차는 그냥 delete 하면 sync 가 재생성하므로 tombstone(cancelled)으로
-	 * 남기고, 일회성 회차는 완전 삭제한다. 어느 쪽이든 fetchOccurrences 가 제외해 달력에서 사라진다.
+	 * 남기고(달력 점에선 숨되 선택일 목록에 '취소됨' 으로 남아 되살리기 가능), 일회성 회차는
+	 * 규칙이 없어 완전 삭제한다(달력에서 완전히 사라짐).
 	 */
 	async removeOccurrence(occ: SessionRow) {
 		const ok =
@@ -184,5 +186,19 @@ export const adminScheduleActions = {
 				: await deleteSchedule(occ.id);
 		if (ok) await reloadOccurrences();
 		return ok;
+	},
+
+	/**
+	 * 취소된 회차 되살리기(취소 취소). tombstone(cancelled)을 draft 로 되돌린 뒤 sync 를 돌려
+	 * 공개 창 안이면 즉시 open 승격(+'session_open' 알림) — addOneOff 와 동일 패턴.
+	 * (본문 reopenOccurrence 는 lib import; 객체 메서드명은 스코프 바인딩이 아니라 재귀 아님)
+	 */
+	async reopenOccurrence(occ: SessionRow) {
+		const row = await reopenOccurrence(occ.id);
+		if (row) {
+			await syncOccurrences();
+			await reloadOccurrences();
+		}
+		return row;
 	},
 };

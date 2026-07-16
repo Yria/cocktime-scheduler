@@ -142,6 +142,11 @@ export default function SchedulePage() {
 		setOccModal(null);
 	}, []);
 
+	const handleReopenOcc = useCallback(async (occurrence: SessionRow) => {
+		await adminScheduleActions.reopenOccurrence(occurrence);
+		setOccModal(null);
+	}, []);
+
 	const monthOccurrences = useMemo(() => occurrences, [occurrences]);
 
 	if (!ready) return null;
@@ -201,6 +206,7 @@ export default function SchedulePage() {
 					onOverride={handleOverride}
 					onCreateOneOff={handleCreateOneOff}
 					onDelete={handleRemoveOcc}
+					onReopen={handleReopenOcc}
 					onClose={() => setOccModal(null)}
 				/>
 			)}

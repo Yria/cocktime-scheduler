@@ -106,7 +106,12 @@ export async function deleteRecurringRule(id: number): Promise<boolean> {
 
 // ── 회차(sessions) 조회/개별 편집 ─────────────────────────────
 
-/** 달력용: 기간 내 모든 회차(draft 포함, scheduled_at 보유). 즉석 세션(scheduled_at NULL)은 제외. */
+/**
+ * 달력용(운영진): 기간 내 모든 회차(draft·cancelled 포함, scheduled_at 보유). 즉석 세션(NULL)은 제외.
+ * cancelled tombstone 도 반환한다 — 되살리기(취소 취소) 진입점이 되도록. 달력 점(dot)에서는
+ * closed 와 함께 숨기고 선택일 상세 목록에만 '취소됨' 배지로 표시(ScheduleCalendar). 회원용
+ * fetchSchedules 는 여전히 open/active 만 노출하므로 cancelled 가 회원에게 새지 않는다.
+ */
 export async function fetchOccurrences(
 	fromISO: string,
 	toISO: string,
@@ -115,7 +120,6 @@ export async function fetchOccurrences(
 		.from("sessions")
 		.select("*")
 		.not("scheduled_at", "is", null)
-		.neq("status", "cancelled") // 삭제(취소)된 회차는 달력에서 숨김 — tombstone 은 재생성 방지용으로만 잔존
 		.gte("scheduled_at", fromISO)
 		.lte("scheduled_at", toISO)
 		.order("scheduled_at", { ascending: true });
@@ -193,7 +197,8 @@ export async function setSessionCapacity(
 /**
  * 반복 규칙 회차 삭제(tombstone): status='cancelled'. 행 자체는 남겨 sync 의 재생성을 막는다.
  * (그냥 delete 하면 sync_schedule_occurrences B단계가 56일 창 안에서 다시 생성함)
- * fetchOccurrences 가 cancelled 를 제외하므로 달력에는 노출되지 않아 "삭제된 것"처럼 보인다.
+ * 회원 화면(fetchSchedules=open/active)엔 안 뜨고, 운영진 달력에선 점(dot)에서 숨되 선택일
+ * 상세 목록에 '취소됨' 으로 남아 되살리기(reopenOccurrence) 진입점이 된다.
  * 일회성 회차는 규칙이 없어 deleteSchedule 로 완전 삭제한다.
  */
 export async function cancelOccurrence(
@@ -207,6 +212,29 @@ export async function cancelOccurrence(
 		.single();
 	if (error) {
 		console.error("cancelOccurrence:", error);
+		return null;
+	}
+	return data as SessionRow;
+}
+
+/**
+ * 취소(tombstone) 되살리기 — cancelOccurrence 의 역연산. `cancelled` 회차를 `draft` 로
+ * 되돌리고 `is_overridden=false` 로 규칙 관리에 재편입한다.
+ * 노출(draft→open, 'session_open' 알림) 판정은 호출부(adminScheduleActions.reopenOccurrence)가
+ * 직후 sync_schedule_occurrences E단계에 위임 — 공개 창 안이면 즉시 open + 알림(이미 알림이
+ * 나갔던 회차는 E단계 멱등 가드로 중복 발송하지 않는다).
+ */
+export async function reopenOccurrence(
+	sessionId: number,
+): Promise<SessionRow | null> {
+	const { data, error } = await supabase
+		.from("sessions")
+		.update({ status: "draft", is_active: false, is_overridden: false })
+		.eq("id", sessionId)
+		.select()
+		.single();
+	if (error) {
+		console.error("reopenOccurrence:", error);
 		return null;
 	}
 	return data as SessionRow;
