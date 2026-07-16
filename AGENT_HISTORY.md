@@ -77,3 +77,16 @@
 - 적대적 리뷰로 버그 2건 확정·수정: ①(HIGH) 회원 `MyLedgerTab`도 미분류 조건 `>0`→`!==0`로(음수 uncat_in 누락=불변식 붕괴 방지), empty 판정도 동반 수정. ②(LOW) 금액 파싱 자릿수추출→`Number()` 직접(6000.5→60005 오매칭 방지). ACCOUNTING_SPEC §3.2·3.3 갱신. tsc/eslint/테스트/빌드 통과.
 
 ---
+
+## #7
+
+**Prompt**: 한사람이 두명분 내는 상황에서 토글배지가 안나와. 저거 배지필터하는 로직이 분산되어있으면 최대한 하나로 통일해 (+ 세션109 대관비 라벨을 날짜·장소로, 현황에도 반영하되 예정 세션은 진행률 대신 몇 명 냈는지로 / 다 끝나면 커밋·배포)
+
+**Answer**: 정산함 대납 대상이 미납만 보이고 예정/신규 세션 칩이 안 뜨던 문제를 해결. 분산돼 있던 배지 필터(납부자=existing+newSession+myUpcoming, 대납=미납만)를 `people` 배열 한 로직으로 통일해 납부자·대납 대상 모두 동일하게 기존미납+신규세션+참가예정 칩 노출. 회비는 개인 귀속이라 납부자 전용 유지.
+- RPC `dues_confirm_reconcile` §③: `p_sessions[].member` 추가(미지정=납부자, 시그니처 불변=하위호환). 대상 회원 앞으로 court_fee 생성(payer_hint=대상 게스트면 invited_by), 배분 member_id는 납부자. 배포는 DB 먼저(구 프론트 안전).
+- `ReconcileInRow`: `Sel.sessions`를 `Set<'memberId:sessionId'>`로, toggle/doConfirm/removeExtra 회원 인식. preselect는 납부자 미납 기준 유지.
+- `LedgerBreakdown`: 라벨 소스에 upcomingSessions 병합 → 선납된 미개장 세션이 "세션 #109" 대신 "7.19 …"로.
+- `SessionsHome`: 예정(선납) 세션 카드 추가 — 부과 미생성이라 진행률 대신 "N명 선납" 표시.
+- 검증 tsc/eslint/테스트/빌드 통과. 적대적 리뷰 워크플로우는 세션 한도로 미실행 → 핵심(RPC 하위호환·키 파싱·dedup·prune·합계·라벨 병합) 수동 검토. 불참·환불 시 부과 처리는 별도 안내(환불연결 가드+취소 순서).
+
+---

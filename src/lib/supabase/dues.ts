@@ -153,13 +153,14 @@ export const duesEnsureMonthly = (ym: string) =>
 export const duesConfirmCourtExternal = (txId: number, sessionId: number) =>
 	callRpc("dues_confirm_court_external", { p_tx_id: txId, p_session_id: sessionId });
 
-/** 입금확인 통합 확정: 기존 미납(chargeIds, 본인+대납·월무관) 배분 + 회비(ym)/세션(sessions) 신규 생성·배분 한 트랜잭션. */
+/** 입금확인 통합 확정: 기존 미납(chargeIds, 본인+대납·월무관) 배분 + 회비(ym, 납부자)/세션(sessions) 신규 생성·배분 한 트랜잭션.
+ *  sessions[].member = 대관비 부과 대상 회원(대납 대상 지정 가능, 미지정=납부자). 배분 주체는 항상 납부자. */
 export const duesConfirmReconcile = (
 	txId: number,
 	payerMemberId: string,
 	chargeIds: number[],
 	ym: string,
-	sessions: { id: number; units: number }[],
+	sessions: { member: string; id: number; units: number }[],
 ) =>
 	callRpc("dues_confirm_reconcile", {
 		p_tx_id: txId,

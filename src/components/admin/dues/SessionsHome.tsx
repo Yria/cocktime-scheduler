@@ -36,6 +36,7 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	const monthly = useDuesStore((s) => s.monthly);
 	const court = useDuesStore((s) => s.court);
 	const monthSessions = useDuesStore((s) => s.monthSessions);
+	const upcomingSessions = useDuesStore((s) => s.upcomingSessions); // 예정(open) 세션 — 선납만 존재하는 미개장 세션 카드용
 	const sessionTxns = useDuesStore((s) => s.sessionTxns);
 	const bankTxns = useDuesStore((s) => s.bankTxns);
 
@@ -114,6 +115,28 @@ export default function SessionsHome({ ym }: { ym: string }) {
 			.filter((c) => c.status !== "none")
 			.sort((a, b) => (b.scheduledAt ?? "").localeCompare(a.scheduledAt ?? ""));
 	}, [monthSessions, court, sessionTxns, memberById]);
+
+	// 예정(선납) 세션: 아직 안 열린(경기기록 없어 monthSessions에 없는) 세션인데 대관비가 선납된 것.
+	// 전체 참가자 부과는 세션 종료 시 생성되므로 진행률(N/전체)은 무의미 → '몇 명 선납'으로만 표시.
+	const upcomingCards = useMemo(() => {
+		const monthIds = new Set(monthSessions.map((s) => s.id));
+		const labelById = new Map(upcomingSessions.map((s) => [s.id, s]));
+		const bySession = new Map<number, typeof court>();
+		for (const c of court) {
+			if (monthIds.has(c.sessionId)) continue; // 열린 세션은 아래 정상 카드에서 처리
+			const arr = bySession.get(c.sessionId) ?? [];
+			arr.push(c);
+			bySession.set(c.sessionId, arr);
+		}
+		return [...bySession.entries()]
+			.map(([sid, charges]) => {
+				const s = labelById.get(sid);
+				const payers = new Set(charges.map((c) => c.payerHint ?? c.memberId)); // 대납자 기준 인원
+				const paid = charges.reduce((sum, c) => sum + c.amountPaid, 0);
+				return { id: sid, label: s ? sessionLabel(s) : `세션 #${sid}`, scheduledAt: s?.scheduledAt ?? null, payerCount: payers.size, paid };
+			})
+			.sort((a, b) => (b.scheduledAt ?? "").localeCompare(a.scheduledAt ?? ""));
+	}, [court, monthSessions, upcomingSessions]);
 
 	// 정산함 미처리 입금 수(진입 배지)
 	const pendingIn = useMemo(() => bankTxns.filter((t) => t.direction === "in" && t.categoryId == null && (t.status === "unmatched" || t.status === "proposed")).length, [bankTxns]);
@@ -219,8 +242,23 @@ export default function SessionsHome({ ym }: { ym: string }) {
 				</div>
 			)}
 
+			{/* 예정(선납) 세션 — 아직 안 열렸는데 대관비 선납된 것. 진행률 대신 '몇 명 선납'. */}
+			{upcomingCards.map((c) => (
+				<div key={`up${c.id}`} className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px" }}>
+					<div className="flex items-center gap-2">
+						<b className="text-strong" style={{ fontSize: 13.5, flex: 1, minWidth: 0 }}>{c.label}</b>
+						<span style={pill("info")}>예정</span>
+					</div>
+					<div className="flex items-center gap-1.5" style={{ fontSize: 12, marginTop: 8 }}>
+						<span className="text-muted">선납 {c.payerCount}명 · {won(c.paid)}</span>
+						<span style={{ flex: 1 }} />
+						<span className="text-faint" style={{ fontSize: 11.5 }}>세션 종료 후 나머지 부과 생성</span>
+					</div>
+				</div>
+			))}
+
 			{/* 세션별 정산 상태 */}
-			{sessionCards.length === 0 ? (
+			{sessionCards.length === 0 && upcomingCards.length === 0 ? (
 				<EmptyState style={{ fontSize: 14, padding: "2rem 0" }}>이 달 정산할 대관 세션이 없어요.</EmptyState>
 			) : (
 				sessionCards.map((c) => {
@@ -282,10 +320,11 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	);
 }
 
-function pill(kind: "ok" | "warn"): CSSProperties {
+function pill(kind: "ok" | "warn" | "info"): CSSProperties {
 	const map = {
 		ok: { background: "rgba(52,199,89,0.16)", color: "#1c8a3b" },
 		warn: { background: "rgba(255,149,0,0.16)", color: "#c2670a" },
+		info: { background: "rgba(11,132,255,0.14)", color: "#0b84ff" },
 	}[kind];
 	return { fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 999, ...map };
 }

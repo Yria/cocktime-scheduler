@@ -20,16 +20,27 @@ interface Props {
 	courtFee: number;
 	refunded: number; // 이 입금에 연결된 환불 합계(실효금액 = 입금 − 환불)
 	busy: boolean;
-	/** 통합 확정: 기존 미납(chargeIds) 배분 + 신규 회비(ym)/세션(sessions) 생성·배분. */
-	onConfirm: (payerId: string, chargeIds: number[], ym: string, sessions: { id: number; units: number }[]) => void;
+	/** 통합 확정: 기존 미납(chargeIds) 배분 + 신규 회비(ym, 납부자)/세션(sessions, member=대상) 생성·배분. */
+	onConfirm: (payerId: string, chargeIds: number[], ym: string, sessions: { member: string; id: number; units: number }[]) => void;
 	onConfirmCourtExternal: (sessionId: number) => void;
 	onCategorize: (categoryId: number, paidBy: string | null) => void;
 }
 
 interface Sel {
-	charges: Set<number>; // 선택된 기존 미납 charge id
-	monthly: boolean; // 신규 이번달 회비 생성
-	sessions: Set<number>; // 신규 세션 대관비(온/오프, 1인분씩) — 비회원 대관과 동일한 토글
+	charges: Set<number>; // 선택된 기존 미납 charge id(본인·대납 공통 — id가 회원을 식별)
+	monthly: boolean; // 신규 이번달 회비(납부자 본인만 — 회비는 개인 귀속)
+	sessions: Set<string>; // 신규/예정 세션 대관비 — `${memberId}:${sessionId}` (대납 대상별로 각자 생성)
+}
+
+// 납부자 + 대납 대상 각각의 '낼 항목' — 한 로직으로 계산해 동일하게 렌더(배지 필터 통일).
+interface PersonItems {
+	id: string;
+	name: string;
+	isPayer: boolean;
+	canMonthly: boolean; // 신규 회비 칩 노출(납부자·비게스트·이번달 회비 미부과일 때만)
+	existing: UnpaidCharge[]; // 기존 미납(사람 간 중복 제거)
+	newSessions: SessionFeeRow[]; // 이번 달 열린·미부과 세션(신규 대관비 후보)
+	upcoming: UpcomingSessionRow[]; // 참가 예정(open) 세션 중 본인 참가·미부과
 }
 
 // 미처리 입금 1건 처리. 납부자 지정 → 그 회원의 기존 미납(본인+대납·월무관) 배분 + 신규(회비/세션) 생성을
@@ -50,49 +61,45 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	const depositYm = ymOfIso(tx.occurredAt) ?? "";
 	const selectedMember = selectedId ? memberById.get(selectedId) : undefined;
 
-	// 이 회원의 기존 미납(본인 + 대납 게스트분, 월무관).
-	const existing = useMemo(() => (selectedId ? (unpaidByMember[selectedId] ?? []) : []), [selectedId, unpaidByMember]);
-	const existingMonthly = useMemo(() => existing.find((c) => c.kind === "monthly_fee" && c.periodYm === depositYm), [existing, depositYm]);
-	const existingCourt = useMemo(() => existing.filter((c) => c.kind === "court_fee"), [existing]);
-	// 이번 달 세션 중 아직 대관비 부과가 없는 것 = 신규 생성 후보(즉석/커스텀).
-	const newSessionCandidates = useMemo(() => {
-		const charged = new Set(existingCourt.map((c) => c.sessionId));
-		return monthSessions.filter((s) => !charged.has(s.id));
-	}, [existingCourt, monthSessions]);
-
-	// 함께 내주는 다른 사람들의 미납(대납) — 사람별 그룹으로 분리(칩에 이름 접두 대신 그룹 헤더로 구분).
-	const extraGroups = useMemo(() => {
-		if (!selectedId) return [] as { id: string; name: string; charges: UnpaidCharge[] }[];
-		const seen = new Set(existing.map((c) => c.id));
-		const groups: { id: string; name: string; charges: UnpaidCharge[] }[] = [];
-		for (const eid of extraIds) {
-			if (eid === selectedId) continue;
-			const charges: UnpaidCharge[] = [];
-			for (const c of unpaidByMember[eid] ?? []) {
-				if (seen.has(c.id)) continue;
-				seen.add(c.id);
-				charges.push(c);
-			}
-			groups.push({ id: eid, name: memberById.get(eid)?.name ?? "회원", charges });
-		}
-		return groups;
-	}, [selectedId, extraIds, unpaidByMember, existing, memberById]);
-	// 전체 선택 대상 부과(본인 + 대납) — 합계·검증용.
-	const chargeById = useMemo(() => {
-		const m = new Map<number, UnpaidCharge>();
-		for (const c of existing) m.set(c.id, c);
-		for (const g of extraGroups) for (const c of g.charges) m.set(c.id, c);
-		return m;
-	}, [existing, extraGroups]);
-
-	// 금액(§4) 기반 기본 선택: 기존 미납 우선(참가 세션 → 최근순), 회비는 없으면 신규 생성.
 	const monthSessionIds = useMemo(() => new Set(monthSessions.map((s) => s.id)), [monthSessions]);
-	// 참가 예정(open) 세션 중 '이 납부자가 확정 참가자'인 것만 선납 후보로 노출.
-	// chargedMemberIds(완납 포함 = 기존 미납·선납 완료 모두)로 제외 → 같은 세션이 기존 미납과 중복되거나, 완납 후 재노출되지 않음.
-	const myUpcoming = useMemo(() => {
-		if (!selectedId) return [] as UpcomingSessionRow[];
-		return upcomingSessions.filter((s) => s.attendeeIds.includes(selectedId) && !s.chargedMemberIds.includes(selectedId) && !monthSessionIds.has(s.id));
-	}, [selectedId, upcomingSessions, monthSessionIds]);
+
+	// 통합: 납부자 + 대납 대상 각각의 '낼 항목'을 한 로직으로. 배지 필터를 여기 한 곳에 모음.
+	//  - 기존 미납(unpaidByMember, 사람 간 중복 제거) + 신규 세션(이번 달 열린·미부과) + 참가 예정(open·본인 참가·미부과).
+	//  - 예정 칩은 chargedMemberIds(완납 포함)로 제외 → 기존 미납 중복/완납 후 재노출 방지.
+	const people = useMemo<PersonItems[]>(() => {
+		if (!selectedId) return [];
+		const seen = new Set<number>(); // 미납 charge 중복(게스트분이 두 사람에게 잡히는 것) 제거 — 먼저 나온 사람에게.
+		const ids = [selectedId, ...extraIds.filter((e) => e !== selectedId)];
+		return ids.map((mid) => {
+			const m = memberById.get(mid);
+			const unpaid = unpaidByMember[mid] ?? [];
+			const existing = unpaid.filter((c) => !seen.has(c.id));
+			for (const c of existing) seen.add(c.id);
+			const hasMonthly = existing.some((c) => c.kind === "monthly_fee" && c.periodYm === depositYm);
+			const chargedSess = new Set(unpaid.filter((c) => c.kind === "court_fee").map((c) => c.sessionId));
+			return {
+				id: mid,
+				name: m?.name ?? "회원",
+				isPayer: mid === selectedId,
+				canMonthly: !m?.isGuest && !hasMonthly,
+				existing,
+				newSessions: monthSessions.filter((s) => !chargedSess.has(s.id)),
+				upcoming: upcomingSessions.filter((s) => s.attendeeIds.includes(mid) && !s.chargedMemberIds.includes(mid) && !monthSessionIds.has(s.id)),
+			};
+		});
+	}, [selectedId, extraIds, unpaidByMember, memberById, monthSessions, upcomingSessions, monthSessionIds, depositYm]);
+
+	// 전체 선택 대상 부과(사람별 existing 합) — 합계·검증용.
+	const chargeById = useMemo(() => {
+		const map = new Map<number, UnpaidCharge>();
+		for (const p of people) for (const c of p.existing) map.set(c.id, c);
+		return map;
+	}, [people]);
+
+	// 프리셀렉트(금액 자동선택) 기준 — 납부자 본인 미납만.
+	const payerUnpaid = useMemo(() => (selectedId ? (unpaidByMember[selectedId] ?? []) : []), [selectedId, unpaidByMember]);
+	const payerExistingMonthly = useMemo(() => payerUnpaid.find((c) => c.kind === "monthly_fee" && c.periodYm === depositYm), [payerUnpaid, depositYm]);
+	const payerExistingCourt = useMemo(() => payerUnpaid.filter((c) => c.kind === "court_fee"), [payerUnpaid]);
 	const preselect = useMemo<Sel>(() => {
 		const charges = new Set<number>();
 		if (!selectedId) return { charges, monthly: false, sessions: new Set() };
@@ -108,10 +115,10 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		if (selectedMember?.isGuest) wantMonthly = false;
 		let monthly = false;
 		if (wantMonthly) {
-			if (existingMonthly) charges.add(existingMonthly.id);
+			if (payerExistingMonthly) charges.add(payerExistingMonthly.id);
 			else monthly = true;
 		}
-		const courtSorted = [...existingCourt].sort((a, b) => {
+		const courtSorted = [...payerExistingCourt].sort((a, b) => {
 			const pa = a.sessionId != null && monthSessionIds.has(a.sessionId) ? 1 : 0;
 			const pb = b.sessionId != null && monthSessionIds.has(b.sessionId) ? 1 : 0;
 			if (pa !== pb) return pb - pa; // 이번 달 참가분 우선
@@ -119,7 +126,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		});
 		for (const c of courtSorted.slice(0, k)) charges.add(c.id);
 		return { charges, monthly, sessions: new Set() };
-	}, [selectedId, selectedMember, effectiveAmount, monthlyFee, courtFee, existingMonthly, existingCourt, monthSessionIds]);
+	}, [selectedId, selectedMember, effectiveAmount, monthlyFee, courtFee, payerExistingMonthly, payerExistingCourt, monthSessionIds]);
 
 	const active = override ?? preselect;
 	const existingTotal = [...active.charges].reduce((s, id) => {
@@ -148,7 +155,11 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	const removeExtra = (id: string) => {
 		setExtraIds((prev) => prev.filter((x) => x !== id));
 		const removed = new Set((unpaidByMember[id] ?? []).map((c) => c.id));
-		setOverride({ charges: new Set([...active.charges].filter((cid) => !removed.has(cid))), monthly: active.monthly, sessions: new Set(active.sessions) });
+		setOverride({
+			charges: new Set([...active.charges].filter((cid) => !removed.has(cid))),
+			monthly: active.monthly,
+			sessions: new Set([...active.sessions].filter((k) => !k.startsWith(`${id}:`))), // 그 사람의 신규/예정 세션 선택도 해제
+		});
 	};
 	const toggleCharge = (id: number) => {
 		setCatSel(null); // 회원 항목 선택 = 분류 해제(상호배타)
@@ -158,11 +169,12 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		setOverride(n);
 	};
 	const toggleMonthly = () => { setCatSel(null); setOverride({ charges: new Set(active.charges), monthly: !active.monthly, sessions: new Set(active.sessions) }); };
-	const toggleSession = (sid: number) => {
+	const toggleSession = (mid: string, sid: number) => {
 		setCatSel(null);
+		const key = `${mid}:${sid}`;
 		const n = new Set(active.sessions);
-		if (n.has(sid)) n.delete(sid); // 온/오프 토글(비회원 대관과 동일, 1인분)
-		else n.add(sid);
+		if (n.has(key)) n.delete(key); // 온/오프 토글(대납 대상별 1인분)
+		else n.add(key);
 		setOverride({ charges: new Set(active.charges), monthly: active.monthly, sessions: n });
 	};
 	// 비회비 수입 분류(선택 후 확인). 선택 시 회원 항목 선택은 비움(상호배타).
@@ -191,7 +203,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	const ready = catMode || memberMode || extMode;
 	const doConfirm = () => {
 		if (catMode && catSel != null) onCategorize(catSel, selectedId); // 납부자 지정 시 그 회원 이력에 귀속
-		else if (memberMode && selectedId) onConfirm(selectedId, [...active.charges], active.monthly ? depositYm : "", [...active.sessions].map((id) => ({ id, units: 1 })));
+		else if (memberMode && selectedId) onConfirm(selectedId, [...active.charges], active.monthly ? depositYm : "", [...active.sessions].map((k) => { const i = k.indexOf(":"); return { member: k.slice(0, i), id: Number(k.slice(i + 1)), units: 1 }; }));
 		else if (extMode && extSession != null) onConfirmCourtExternal(extSession);
 	};
 
@@ -199,7 +211,6 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	const chargeChip = (c: UnpaidCharge, key: string) => (
 		<ToggleChip key={key} label={`${c.label} ${won(remaining(c.amountDue, c.amountPaid))}`} on={active.charges.has(c.id)} onClick={() => toggleCharge(c.id)} />
 	);
-	const payerHasItems = existing.length > 0 || (!selectedMember?.isGuest && !existingMonthly) || newSessionCandidates.length > 0 || myUpcoming.length > 0;
 	const groupLabel: CSSProperties = { fontSize: 10.5, fontWeight: 800, letterSpacing: "0.02em" };
 
 	return (
@@ -261,32 +272,30 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 				</div>
 			)}
 
-			{/* 항목: 기존 미납 + 신규 회비/세션 */}
+			{/* 항목: 사람(납부자+대납)별 기존 미납 + 신규 세션 + 참가 예정 (+ 납부자는 신규 회비). 한 로직으로 통일. */}
 			{selectedId && (
 				<div className="flex flex-col" style={{ gap: 10, marginTop: 9 }}>
-					{/* 납부자 본인 항목 (대납 있을 때만 이름 헤더 표시) */}
-					<div className="flex flex-col gap-1">
-						{extraGroups.length > 0 && <span className="text-muted" style={groupLabel}>{selectedMember?.name}</span>}
-						<div className="flex flex-wrap gap-1.5">
-							{existing.map((c) => chargeChip(c, `c${c.id}`))}
-							{!selectedMember?.isGuest && !existingMonthly && <ToggleChip label={`${Number(depositYm.slice(5))}월 회비 ${won(monthlyFee)}`} on={active.monthly} onClick={toggleMonthly} />}
-							{newSessionCandidates.map((s) => <ToggleChip key={`s${s.id}`} label={`${sessionLabel(s)} 대관비`} on={active.sessions.has(s.id)} onClick={() => toggleSession(s.id)} />)}
-							{myUpcoming.map((s) => <ToggleChip key={`u${s.id}`} label={`${sessionLabel(s)} 대관비(예정)`} on={active.sessions.has(s.id)} onClick={() => toggleSession(s.id)} />)}
-							{!payerHasItems && <span className="text-faint" style={{ fontSize: 12 }}>낼 항목 없음(완납/부과 없음)</span>}
-						</div>
-					</div>
-					{/* 대납 대상별 항목 — 사람마다 영역 분리(칩엔 이름 안 붙임). 헤더 × 로 제거 */}
-					{extraGroups.map((g) => (
-						<div key={g.id} className="flex flex-col gap-1">
-							<span className="flex items-center gap-1">
-								<span className="text-muted" style={groupLabel}>{g.name}</span>
-								<button type="button" onClick={() => removeExtra(g.id)} aria-label={`${g.name} 대납 제거`} className="text-faint" style={{ fontSize: 13, lineHeight: 1, padding: "0 2px", background: "none", cursor: "pointer" }}>×</button>
-							</span>
-							<div className="flex flex-wrap gap-1.5">
-								{g.charges.length === 0 ? <span className="text-faint" style={{ fontSize: 12 }}>미납 없음</span> : g.charges.map((c) => chargeChip(c, `x${c.id}`))}
+					{people.map((p) => {
+						const hasItems = p.existing.length > 0 || (p.isPayer && p.canMonthly) || p.newSessions.length > 0 || p.upcoming.length > 0;
+						return (
+							<div key={p.id} className="flex flex-col gap-1">
+								{/* 이름 헤더 — 대납 대상이 있을 때만(사람 구분). 대납 대상은 × 로 제거 */}
+								{people.length > 1 && (
+									<span className="flex items-center gap-1">
+										<span className="text-muted" style={groupLabel}>{p.name}</span>
+										{!p.isPayer && <button type="button" onClick={() => removeExtra(p.id)} aria-label={`${p.name} 대납 제거`} className="text-faint" style={{ fontSize: 13, lineHeight: 1, padding: "0 2px", background: "none", cursor: "pointer" }}>×</button>}
+									</span>
+								)}
+								<div className="flex flex-wrap gap-1.5">
+									{p.existing.map((c) => chargeChip(c, `c${c.id}`))}
+									{p.isPayer && p.canMonthly && <ToggleChip label={`${Number(depositYm.slice(5))}월 회비 ${won(monthlyFee)}`} on={active.monthly} onClick={toggleMonthly} />}
+									{p.newSessions.map((s) => <ToggleChip key={`s${p.id}:${s.id}`} label={`${sessionLabel(s)} 대관비`} on={active.sessions.has(`${p.id}:${s.id}`)} onClick={() => toggleSession(p.id, s.id)} />)}
+									{p.upcoming.map((s) => <ToggleChip key={`u${p.id}:${s.id}`} label={`${sessionLabel(s)} 대관비(예정)`} on={active.sessions.has(`${p.id}:${s.id}`)} onClick={() => toggleSession(p.id, s.id)} />)}
+									{!hasItems && <span className="text-faint" style={{ fontSize: 12 }}>{p.isPayer ? "낼 항목 없음(완납/부과 없음)" : "미납 없음"}</span>}
+								</div>
 							</div>
-						</div>
-					))}
+						);
+					})}
 				</div>
 			)}
 

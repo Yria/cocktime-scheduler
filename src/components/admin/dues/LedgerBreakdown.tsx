@@ -16,6 +16,7 @@ export default function LedgerBreakdown({ ym }: { ym: string }) {
 	const txns = useDuesStore((s) => s.bankTxns);
 	const txAllocations = useDuesStore((s) => s.txAllocations);
 	const ledgerSessions = useDuesStore((s) => s.ledgerSessions); // 세션 행 라벨용(±1개월 상위집합)
+	const upcomingSessions = useDuesStore((s) => s.upcomingSessions); // 예정(open) 세션 라벨 — 선납된 미개장 세션이 '세션 #N'으로 뜨지 않게
 	const categories = useDuesStore((s) => s.categories);
 
 	const [newCat, setNewCat] = useState("");
@@ -72,7 +73,7 @@ export default function LedgerBreakdown({ ym }: { ym: string }) {
 				else uOut += t.amount;
 			}
 		}
-		const label = new Map(ledgerSessions.map((s) => [s.id, s]));
+		const label = new Map([...ledgerSessions, ...upcomingSessions].map((s) => [s.id, s]));
 		const rows = [...sess.entries()]
 			.map(([id, e]) => ({ id, income: e.income, expense: e.expense, net: e.income - e.expense, s: label.get(id) ?? null }))
 			.filter((r) => r.income > 0 || r.expense > 0)
@@ -85,7 +86,7 @@ export default function LedgerBreakdown({ ym }: { ym: string }) {
 			refundOut: refOut,
 			catRows: [...catMap.entries()].map(([id, e]) => ({ id, name: e.name, inSum: e.inSum, outSum: e.outSum, net: e.inSum - e.outSum })),
 		};
-	}, [txns, txAllocations, ledgerSessions]);
+	}, [txns, txAllocations, ledgerSessions, upcomingSessions]);
 
 	const reloadFull = () => duesActions.loadMonth(ym, true); // 카테고리 추가/삭제는 전체(categories 갱신)
 	const handleAddCategory = async () => {
