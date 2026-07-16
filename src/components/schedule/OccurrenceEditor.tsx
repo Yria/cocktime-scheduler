@@ -139,10 +139,10 @@ export default function OccurrenceEditor({
 				) : (
 					// 신규 일회성 또는 draft/open 편집 폼
 					<div className="flex flex-col gap-4">
-						{/* 시간 (시작 ~ 종료) — 네이티브 time 위젯은 고유 최소폭이 있어 좁은 2단에서 넘친다.
-						    flex-wrap + flex-basis 140px 로: 폭 충분하면 나란히, 좁으면 자동 세로 스택(넘침 방지). */}
-						<div className="flex flex-wrap gap-3">
-							<div style={{ flex: "1 1 140px" }}>
+						{/* 시간 (시작 / 종료) — 네이티브 time 위젯이 width:100%를 무시하고 고유 폭(~180pt)으로 그려
+						    2단에선 좁은 셀 밖으로 넘친다. 폭 의존성 없이 안전하게 전체폭 세로 스택. */}
+						<div className="flex flex-col gap-3">
+							<div>
 								<label className={labelCls} style={labelStyle}>
 									시작 시간
 								</label>
@@ -155,7 +155,7 @@ export default function OccurrenceEditor({
 									style={inputStyle}
 								/>
 							</div>
-							<div style={{ flex: "1 1 140px" }}>
+							<div>
 								<label className={labelCls} style={labelStyle}>
 									종료 시간
 								</label>
