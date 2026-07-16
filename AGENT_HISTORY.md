@@ -100,3 +100,13 @@
 - 마이그레이션 create-or-replace(시그니처·grant 불변). ACCOUNTING_SPEC §4 대관비 룰 갱신.
 
 ---
+
+## #9
+
+**Prompt**: 리뷰해
+
+**Answer**: 대납 통합·RPC 2건·라벨·현황 변경(29d276b..HEAD)을 적대적 리뷰(3축→검증). 확정 1건(LOW) 수정.
+- **SessionsHome 예정 카드 오분류**: 선납됐는데 세션이 취소·무산(경기기록 없음)이면 monthSessions·upcomingSessions 어디에도 없어 "예정 · 종료 후 부과 생성"으로 오표기(실제론 선납금 묶여 환불 필요). `upcoming = !!upcomingById.get(sid)`로 open 세션만 진짜 '예정', 나머지는 **"확인 필요 · 세션 미개장·취소 — 환불 확인"**(주황)으로 → 오해 대신 환불 대상 노출.
+- RPC·통합 로직·라벨 병합은 리뷰 반박(문제 없음) 확인. tsc/eslint/빌드 통과.
+
+---

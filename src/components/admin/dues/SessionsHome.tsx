@@ -133,7 +133,8 @@ export default function SessionsHome({ ym }: { ym: string }) {
 				const s = labelById.get(sid);
 				const payers = new Set(charges.map((c) => c.payerHint ?? c.memberId)); // 대납자 기준 인원
 				const paid = charges.reduce((sum, c) => sum + c.amountPaid, 0);
-				return { id: sid, label: s ? sessionLabel(s) : `세션 #${sid}`, scheduledAt: s?.scheduledAt ?? null, payerCount: payers.size, paid };
+				// open 세션에 있으면 진짜 예정. 아니면(취소·무산인데 선납만 남음) 환불 확인 대상 — '예정'으로 오표기 금지.
+				return { id: sid, upcoming: !!s, label: s ? sessionLabel(s) : `세션 #${sid}`, scheduledAt: s?.scheduledAt ?? null, payerCount: payers.size, paid };
 			})
 			.sort((a, b) => (b.scheduledAt ?? "").localeCompare(a.scheduledAt ?? ""));
 	}, [court, monthSessions, upcomingSessions]);
@@ -242,17 +243,18 @@ export default function SessionsHome({ ym }: { ym: string }) {
 				</div>
 			)}
 
-			{/* 예정(선납) 세션 — 아직 안 열렸는데 대관비 선납된 것. 진행률 대신 '몇 명 선납'. */}
+			{/* 예정(선납) 세션 — 아직 안 열렸는데 대관비 선납된 것. 진행률 대신 '몇 명 선납'.
+			    open이 아니면(취소·무산인데 선납만 묶임) '확인 필요'로 — 환불 대상임을 알림. */}
 			{upcomingCards.map((c) => (
 				<div key={`up${c.id}`} className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px" }}>
 					<div className="flex items-center gap-2">
 						<b className="text-strong" style={{ fontSize: 13.5, flex: 1, minWidth: 0 }}>{c.label}</b>
-						<span style={pill("info")}>예정</span>
+						<span style={pill(c.upcoming ? "info" : "warn")}>{c.upcoming ? "예정" : "확인 필요"}</span>
 					</div>
 					<div className="flex items-center gap-1.5" style={{ fontSize: 12, marginTop: 8 }}>
 						<span className="text-muted">선납 {c.payerCount}명 · {won(c.paid)}</span>
 						<span style={{ flex: 1 }} />
-						<span className="text-faint" style={{ fontSize: 11.5 }}>세션 종료 후 나머지 부과 생성</span>
+						<span className={c.upcoming ? "text-faint" : "text-[#c2670a]"} style={{ fontSize: 11.5 }}>{c.upcoming ? "세션 종료 후 나머지 부과 생성" : "세션 미개장·취소 — 환불 확인"}</span>
 					</div>
 				</div>
 			))}
