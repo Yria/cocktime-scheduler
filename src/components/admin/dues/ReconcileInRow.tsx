@@ -118,8 +118,9 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		return map;
 	}, [people]);
 
-	// 디폴트 선택(금액 자동매칭) — 위 people(단일 소스)에서 파생. 납부자 항목만 자동선택.
-	//  회비(있으면 기존, 없으면 신규) + 대관 k개(기존 미납·참가확정 예정 풀에서 우선순위대로). 신규 월세션은 제외(수동).
+	// 디폴트 선택(금액 자동매칭) — 위 people(단일 소스)에서 파생.
+	//  회비(납부자·입금월, 있으면 기존/없으면 신규) + 대관 k개(전원=납부자+대납의 기존미납·참가확정 예정 풀에서 우선순위대로).
+	//  대관 풀을 전원으로 → 한 사람이 여러 명분 낼 때 대납 대상 세션도 디폴트로 잡힘. 신규 월세션(참석필터 없음)은 제외(수동).
 	const defaultKeys = useMemo<Set<string>>(() => {
 		const sel = new Set<string>();
 		const payer = people.find((p) => p.isPayer);
@@ -131,11 +132,13 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		else if (courtFee > 0 && effectiveAmount % courtFee === 0) { k = effectiveAmount / courtFee; }
 		if (selectedMember?.isGuest) wantMonthly = false;
 		if (wantMonthly) {
-			// 입금 월 회비만(기존 그 달 미납 or 신규). 이전 달 미납 회비를 잘못 고르지 않게 depositYm 스코프.
+			// 회비는 납부자 개인 귀속. 입금 월 회비만(기존 그 달 미납 or 신규) — 이전 달 미납 회비 오선택 방지.
 			const monthly = payer.items.find((it) => it.role === "monthly" && it.ym === depositYm);
 			if (monthly) sel.add(monthly.key);
 		}
-		const courtPool = payer.items
+		// 대관 풀 = 전원(납부자+대납)의 기존 미납 court + 참가확정 예정. 우선순위: 이번달기존0 · 다른달기존1 · 예정2.
+		const courtPool = people
+			.flatMap((p) => p.items)
 			.filter((it) => it.role === "court" && it.autoDefault)
 			.sort((a, b) => a.poolRank - b.poolRank || b.poolDate.localeCompare(a.poolDate));
 		for (const it of courtPool.slice(0, k)) sel.add(it.key);
@@ -236,7 +239,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 			<div className="flex flex-wrap items-center gap-1.5" style={{ marginTop: 9 }}>
 				<span className="text-faint" style={{ fontSize: 11, fontWeight: 700, alignSelf: "center" }}>납부자</span>
 				{chipMembers.length === 0 && !searchOpen && <span className="text-faint" style={{ fontSize: 12.5 }}>제안 없음 — 검색하세요</span>}
-				{chipMembers.map((m) => {
+				{chipMembers.filter((m) => !extraIds.includes(m.id)).map((m) => {
 					const on = m.id === selectedId;
 					const gm = memberById.get(m.id);
 					return (
@@ -250,6 +253,17 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 							{m.name}
 							<span className="text-faint" style={{ fontWeight: 500, marginLeft: 4 }}>{gm?.isGuest ? "게스트" : `${genderText(m.gender)}${m.birthYear ? String(m.birthYear % 100).padStart(2, "0") : ""}`}</span>
 						</button>
+					);
+				})}
+				{/* 함께 낼 사람(대납 대상) 버블 — 납부자 옆에, × 로 제거 */}
+				{selectedId && extraIds.map((eid) => {
+					const em = memberById.get(eid);
+					return (
+						<span key={`x-${eid}`} className="flex items-center text-strong" style={{ fontSize: 13, fontWeight: 700, padding: "5px 5px 5px 11px", borderRadius: 999, border: "1.5px solid rgba(52,199,89,0.55)", background: "rgba(52,199,89,0.14)" }}>
+							{em?.name ?? "회원"}
+							<span className="text-faint" style={{ fontWeight: 500, margin: "0 5px 0 4px" }}>{em?.isGuest ? "게스트" : `${genderText(em?.gender ?? null)}${em?.birthYear ? String(em.birthYear % 100).padStart(2, "0") : ""}`}</span>
+							<button type="button" onClick={() => removeExtra(eid)} aria-label={`${em?.name ?? "회원"} 제거`} className="text-faint flex items-center justify-center" style={{ width: 17, height: 17, borderRadius: 999, background: "rgba(120,120,128,0.22)", cursor: "pointer", fontSize: 12, lineHeight: 1 }}>×</button>
+						</span>
 					);
 				})}
 				{searchOpen ? (
@@ -283,13 +297,8 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 				<div className="flex flex-col" style={{ gap: 10, marginTop: 9 }}>
 					{people.map((p) => (
 						<div key={p.id} className="flex flex-col gap-1">
-							{/* 이름 헤더 — 대납 대상이 있을 때만(사람 구분). 대납 대상은 × 로 제거 */}
-							{people.length > 1 && (
-								<span className="flex items-center gap-1">
-									<span className="text-muted" style={groupLabel}>{p.name}</span>
-									{!p.isPayer && <button type="button" onClick={() => removeExtra(p.id)} aria-label={`${p.name} 대납 제거`} className="text-faint" style={{ fontSize: 13, lineHeight: 1, padding: "0 2px", background: "none", cursor: "pointer" }}>×</button>}
-								</span>
-							)}
+							{/* 이름 헤더 — 대납 대상이 있을 때만(칩 그룹 구분). 제거 ×는 위 납부자 행의 버블에 있음 */}
+							{people.length > 1 && <span className="text-muted" style={groupLabel}>{p.name}</span>}
 							<div className="flex flex-wrap gap-1.5">
 								{p.items.map((it) => <ToggleChip key={it.key} label={it.label} on={selected.has(it.key)} onClick={() => toggle(it.key)} />)}
 								{p.items.length === 0 && <span className="text-faint" style={{ fontSize: 12 }}>{p.isPayer ? "낼 항목 없음(완납/부과 없음)" : "미납 없음"}</span>}
