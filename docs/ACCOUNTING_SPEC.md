@@ -101,7 +101,7 @@
 
 규칙 단일 소스(빌딩블록): `dues_generate_monthly(ym)`(회비) · `dues_generate_session_court(sid)`(세션 대관비). 트리거·ensure·수동배치가 모두 이 둘을 재사용.
 - **회비 룰**: `is_active AND not is_guest AND not 운영진`, 가입월(`membership_started_at ?? created_at` + `offset_days`) 다음 달부터 `amount_due=회비액`.
-- **대관비 룰**: 대관 장소 + `status in (active,closed)` + **경기기록 있음**(무산 제외) 세션의 참석자(`confirmed`/`late_pool` + 당일 확정취소)에게 `amount_due=6,000`(운영진 제외). 게스트는 `payer_hint=invited_by`. `amount_paid>0` 보존, 무자격 세션의 미납분 self-heal 정리.
+- **대관비 룰**: 대관 장소 + `status in (active,closed)` + **경기기록 있음**(무산 제외) 세션의 참석자(`confirmed`/`late_pool` + 당일 확정취소)에게 `amount_due=6,000`(운영진 제외). 게스트는 `payer_hint=invited_by`. `amount_paid>0` 보존(선납), **무자격 세션 + 자격 세션의 비참석자 미납분 모두 self-heal 정리** — 선납 후 참가 취소·환불(취소·재처리로 미납 복귀)한 사람의 유령 미납 부과가 세션 종료 후 남지 않게.
 
 ---
 
