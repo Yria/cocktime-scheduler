@@ -7,7 +7,7 @@ import { inputCls, inputStyle } from "../../common/fieldStyles";
 import { genderText } from "../memberAdminText";
 import { fmtMD, remaining, sessionLabel, won, ymOfIso } from "./duesText";
 import { ToggleChip } from "./duesUi";
-import { type MemberLite, suggestMembers } from "./matching";
+import { type MemberLite, nameMatches, suggestMembers } from "./matching";
 
 interface Props {
 	tx: BankTxnRow;
@@ -183,8 +183,8 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		else { setCatSel(id); setOverride({ charges: new Set(), monthly: false, sessions: new Set() }); }
 	};
 
-	const q = query.trim().toLowerCase();
-	const searchResults = q ? members.filter((m) => m.name.toLowerCase().includes(q) && m.id !== selectedId && !extraIds.includes(m.id)).slice(0, 6) : [];
+	const q = query.trim();
+	const searchResults = q ? members.filter((m) => nameMatches(m.name, q) && m.id !== selectedId && !extraIds.includes(m.id)).slice(0, 6) : [];
 	const chipMembers = useMemo(() => {
 		const arr: MemberLite[] = [...candidates];
 		if (selectedMember && !arr.some((c) => c.id === selectedMember.id)) arr.unshift(selectedMember);

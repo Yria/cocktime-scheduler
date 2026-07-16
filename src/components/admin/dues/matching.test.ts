@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeDepositName, suggestMembers } from "./matching";
+import { chosungOf, nameMatches, normalizeDepositName, suggestMembers } from "./matching";
 
 // 2026-07 토스 실입금 적요 표본 → 기대 이름
 const CASES: [string, string][] = [
@@ -49,5 +49,35 @@ describe("suggestMembers", () => {
 	it("동명이인은 둘 다 후보로", () => {
 		const r = suggestMembers("김태혁0719", members);
 		expect(r.filter((m) => m.name === "김태혁")).toHaveLength(2);
+	});
+});
+
+describe("chosungOf", () => {
+	it("한글 음절 → 초성", () => {
+		expect(chosungOf("황서진")).toBe("ㅎㅅㅈ");
+		expect(chosungOf("김태혁")).toBe("ㄱㅌㅎ");
+	});
+	it("쌍자음 초성", () => {
+		expect(chosungOf("빵까뚜")).toBe("ㅃㄲㄸ");
+	});
+	it("비한글은 그대로", () => {
+		expect(chosungOf("ab 12")).toBe("ab 12");
+	});
+});
+
+describe("nameMatches", () => {
+	it("부분 일치(공백·대소문자 무시)", () => {
+		expect(nameMatches("황서진", "서진")).toBe(true);
+		expect(nameMatches("황 서진", "황서")).toBe(true);
+		expect(nameMatches("황서진", "이도현")).toBe(false);
+	});
+	it("초성 검색", () => {
+		expect(nameMatches("황서진", "ㅎㅅㅈ")).toBe(true);
+		expect(nameMatches("황서진", "ㅎㅅ")).toBe(true); // 부분 초성
+		expect(nameMatches("황서진", "ㄱㅅㅈ")).toBe(false);
+	});
+	it("빈 검색어는 통과", () => {
+		expect(nameMatches("황서진", "")).toBe(true);
+		expect(nameMatches("황서진", "  ")).toBe(true);
 	});
 });
