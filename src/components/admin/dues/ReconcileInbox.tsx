@@ -105,14 +105,15 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 	) => {
 		if (busyId) return;
 		setBusyId(id);
+		setHiddenIds((p) => new Set(p).add(id)); // 낙관적: 누른 즉시 목록에서 숨김(RPC 네트워크 왕복 대기 체감 제거)
 		const res = await fn();
 		setBusyId(null);
 		if (res.ok) {
-			setHiddenIds((p) => new Set(p).add(id)); // 낙관적: 확정 즉시 목록에서 사라진 것처럼(모바일 왕복 체감 제거)
 			if (opts?.okMsg) toast(opts.okMsg, { variant: "success" });
 			await (opts?.touchesCharges ? duesActions.refreshMonth(ym) : duesActions.refreshTxns(ym));
 			setHiddenIds((p) => { const n = new Set(p); n.delete(id); return n; }); // 갱신 완료 → 실제 status 필터가 인계
 		} else {
+			setHiddenIds((p) => { const n = new Set(p); n.delete(id); return n; }); // 실패 → 행 복원
 			toast(res.error?.includes("nothing") ? "선택 항목이 없어요." : errMsg, { variant: "error" });
 		}
 	};

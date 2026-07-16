@@ -123,3 +123,13 @@
 - 초성 테스트 6건 추가(총 30 통과). tsc/eslint/빌드 통과.
 
 ---
+
+## #11
+
+**Prompt**: 정산칩 선택하고 확인 누른 시점 쿼리도 오래걸리는것같아
+
+**Answer**: 확인 RPC 자체를 실측(서비스키). 결과: 서버는 빠름 — forbidden fast-fail ~40ms, dues_public_ledger RPC ~50-70ms, 단순 select ~37ms(제 PC 기준). 확인 RPC가 쓰는 테이블 트리거(alloc-sync 집계·notification trim 범위삭제·push는 Vault 2읽기+pg_net 비동기, BEGIN/EXCEPTION 격리)도 전부 가벼움 → **서버 병목 아님, 모바일 네트워크 왕복이 원인**.
+- 직전(#10)엔 낙관적 숨김을 RPC 응답 '후'에 해서 RPC 왕복 동안 행이 남아 느리게 체감. → 낙관적 숨김을 **버튼 누른 즉시(RPC 전)**로 이동, 실패 시 행 복원. 네트워크 대기 체감 제거.
+- 프론트만 변경. tsc/eslint/빌드 통과.
+
+---
