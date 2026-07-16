@@ -179,7 +179,7 @@ export default function ScheduleRuleEditor({
 									setStartTime(e.target.value);
 								}}
 								className={inputCls}
-								style={inputStyle}
+								style={{ ...inputStyle, width: "auto", maxWidth: "100%" }}
 							/>
 						</div>
 						<div>
@@ -194,7 +194,7 @@ export default function ScheduleRuleEditor({
 									setEndTime(e.target.value);
 								}}
 								className={inputCls}
-								style={inputStyle}
+								style={{ ...inputStyle, width: "auto", maxWidth: "100%" }}
 							/>
 						</div>
 					</div>

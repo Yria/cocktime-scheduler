@@ -152,7 +152,7 @@ export default function OccurrenceEditor({
 									onChange={(e) => setTime(e.target.value)}
 									disabled={busy}
 									className={inputCls}
-									style={inputStyle}
+									style={{ ...inputStyle, width: "auto", maxWidth: "100%" }}
 								/>
 							</div>
 							<div>
@@ -165,7 +165,7 @@ export default function OccurrenceEditor({
 									onChange={(e) => setEndTime(e.target.value)}
 									disabled={busy}
 									className={inputCls}
-									style={inputStyle}
+									style={{ ...inputStyle, width: "auto", maxWidth: "100%" }}
 								/>
 							</div>
 						</div>
