@@ -133,3 +133,16 @@
 - 프론트만 변경. tsc/eslint/빌드 통과.
 
 ---
+
+## #12
+
+**Prompt**: 칩 목록 가져오고 디폴트 선택하는 로직을 하나만 쓰게 해서 전부 공용으로. 어쩔땐 칩이 안보이고 어쩔땐 디폴트가 안되고… 확인해봐
+
+**Answer**: 근본원인 = 칩 표시(people: 각자 existing/newSessions/upcoming)와 디폴트 선택(preselect: 납부자 existing court/monthly만 별도 파생)이 **완전히 분리**돼 불일치(예정/신규 칩 보여도 디폴트 안 잡힘). → **단일 `ChipItem` 모델**로 통합.
+- people가 각 사람 items:ChipItem[](기존미납·신규회비·신규세션·예정)을 한 번에 생성. 선택상태 = override:Set<string>|null, selected = override ?? defaultKeys. 키: charge:{id}/monthly/session:{member}:{sid}. itemByKey로 합계·확정 분해.
+- defaultKeys를 **같은 items에서 파생**: 금액=회비+k대관 매칭, 대관 풀에 기존미납+참가확정 예정 포함(poolRank 0/1/2) → 선납(예정)도 디폴트 잡힘. 신규 월세션은 자동선택 제외(참석필터 없음, 수동).
+- 토글/제거/확정/합계 전부 키 기반 단일 경로. chargeChip·toggleCharge/Monthly/Session 제거.
+- 적대적 리뷰 확정 1건 수정(medium): 디폴트 회비가 이전 달 미납을 잘못 선택 → charge item에 ym 실어 `role==='monthly' && ym===depositYm`로 입금월 스코프(원래 동작 복원). doConfirm은 chargeId 분기 우선이라 안전.
+- tsc/eslint/테스트(30)/빌드 통과.
+
+---
