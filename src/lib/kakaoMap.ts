@@ -13,6 +13,28 @@ export function hasKakaoKey(): boolean {
 	return Boolean(import.meta.env.VITE_KAKAO_MAP_KEY);
 }
 
+/**
+ * 장소 → 외부 지도(카카오맵) 링크. 모바일은 앱 딥링크, 데스크탑은 웹으로 열린다(카카오 universal link).
+ * 우선순위: 저장된 map_url(정확한 공유 링크) → 좌표(핀) → 이름 키워드 검색. 정보 없으면 null.
+ */
+export function buildPlaceMapLink(
+	place:
+		| { name?: string | null; map_url?: string | null; lat?: number | null; lng?: number | null }
+		| null
+		| undefined,
+): string | null {
+	if (!place) return null;
+	const url = place.map_url?.trim();
+	if (url && /^https?:\/\//i.test(url)) return url;
+	const name = place.name?.trim();
+	if (place.lat != null && place.lng != null) {
+		const label = encodeURIComponent(name || "모임 장소");
+		return `https://map.kakao.com/link/map/${label},${place.lat},${place.lng}`;
+	}
+	if (name) return `https://map.kakao.com/link/search/${encodeURIComponent(name)}`;
+	return null;
+}
+
 /** 카카오 지도 SDK 로드(멱등). 이미 로드됐으면 즉시 resolve. 키 없으면 reject. */
 export function loadKakaoMaps(): Promise<KakaoNamespace> {
 	const key = import.meta.env.VITE_KAKAO_MAP_KEY as string | undefined;

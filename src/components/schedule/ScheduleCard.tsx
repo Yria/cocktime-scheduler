@@ -22,6 +22,8 @@ const STACK_MAX = 6;
 interface Props {
 	session: SessionRow;
 	placeName: string | null;
+	/** 모임 장소 외부 지도(카카오맵) 링크. 있으면 장소명을 탭하면 새 창으로 지도가 열린다. */
+	placeMapLink?: string | null;
 	/** 이 세션의 참석 행(취소 제외) */
 	attendances: AttendanceRow[];
 	memberId: string | null;
@@ -54,6 +56,7 @@ interface Props {
 export default function ScheduleCard({
 	session: s,
 	placeName,
+	placeMapLink,
 	attendances,
 	memberId,
 	isAdmin,
@@ -217,12 +220,30 @@ export default function ScheduleCard({
 							</span>
 						)}
 					</div>
-					<span
-						className="text-faint"
-						style={{ fontSize: 12.5 }}
-					>
-						{placeName ?? "장소 미정"}
-					</span>
+					{placeMapLink ? (
+						<a
+							href={placeMapLink}
+							target="_blank"
+							rel="noopener noreferrer"
+							onClick={(e) => e.stopPropagation()}
+							aria-label={`${placeName ?? "모임 장소"} 지도 열기`}
+							className="text-muted inline-flex items-center gap-1 w-fit rounded-full bg-black/[0.05] dark:bg-white/[0.08] active:opacity-70 transition-opacity"
+							style={{ fontSize: 12, fontWeight: 500, padding: "3px 10px", marginLeft: -2 }}
+						>
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+								<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+								<circle cx="12" cy="10" r="2.6" />
+							</svg>
+							<span className="truncate" style={{ maxWidth: 180 }}>{placeName ?? "모임 장소"}</span>
+							<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ opacity: 0.65 }}>
+								<path d="m9 18 6-6-6-6" />
+							</svg>
+						</a>
+					) : (
+						<span className="text-faint" style={{ fontSize: 12.5 }}>
+							{placeName ?? "장소 미정"}
+						</span>
+					)}
 				</div>
 			</div>
 

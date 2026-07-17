@@ -11,6 +11,7 @@ import {
 } from "../store/installPromptStore";
 import { scheduleActions, useScheduleStore } from "../store/scheduleStore";
 import { latePoolCutoffMs } from "../lib/schedule/latePool";
+import { buildPlaceMapLink } from "../lib/kakaoMap";
 import AppScreen from "./common/AppScreen";
 import HeaderMenu from "./common/HeaderMenu";
 import InstallPromptToast from "./common/InstallPromptToast";
@@ -243,6 +244,9 @@ export default function Home({ onStart }: Props) {
 	// ── 로그인: 일정 목록 ──
 	const placeName = (id: number | null) =>
 		id == null ? null : (places.find((p) => p.id === id)?.name ?? null);
+	// 모임 장소 → 외부 카카오맵 링크(저장된 map_url·좌표·이름 순). 있으면 장소명 탭 시 지도 열림.
+	const placeMapLink = (id: number | null) =>
+		id == null ? null : buildPlaceMapLink(places.find((p) => p.id === id) ?? null);
 
 	// PWA 설치 유도 토스트 — 프로필 완성 + 편집 중 아님 + 노출 조건 충족일 때만.
 	// (하단 고정 토스트가 마지막 버튼을 가리지 않도록 스크롤 콘텐츠 끝에 스페이서도 같은 조건으로 넣는다.)
@@ -354,6 +358,7 @@ export default function Home({ onStart }: Props) {
 								key={s.id}
 								session={s}
 								placeName={placeName(s.place_id)}
+								placeMapLink={placeMapLink(s.place_id)}
 								attendances={attendances.filter((a) => a.session_id === s.id)}
 								memberId={memberId}
 								isAdmin={isAdmin}

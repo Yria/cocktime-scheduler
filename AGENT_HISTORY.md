@@ -225,3 +225,15 @@ b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
 - 문서 EXPANSION_SPEC §8.1·DATABASE.md 편집락 섹션 갱신, 메모리(board-sync·realtime) 갱신. tsc/eslint/vitest(210)/build 통과. 배포: 프론트만(신규 마이그레이션 없음).
 
 ---
+
+## #19
+
+**Prompt**: (스크린샷) 모임위치 누르면 외부링크 띄워줘 지금 카카오맵 sdk쓰니까 그거 써도 될듯 / 누르면 이동가능하게 생긴것처럼 디자인도 손보고
+
+**Answer**: Home 일정 카드의 모임 장소명(예: "SM배드민턴")을 탭하면 외부 카카오맵이 열리도록 + 탭 가능한 디자인으로 변경. 클라가 이미 `places: PlaceRow[]`(map_url·좌표 포함)를 place_id로 조인 중이라 **조회/DB 변경 없이** 구현.
+- `lib/kakaoMap.ts`에 `buildPlaceMapLink(place)` 추가 — 우선순위: 저장된 `map_url` → 좌표(`map.kakao.com/link/map/{name},{lat},{lng}`) → 이름검색(`link/search/{name}`). 카카오 universal link라 모바일=앱 딥링크·데스크탑=웹.
+- `ScheduleCard`에 옵션 프롭 `placeMapLink` 추가 — 있으면 장소명을 📍핀 + 이름 + › chevron 의 pill(`<a target=_blank>`, stopPropagation)로 렌더(라이트/다크 토큰), 없으면 기존 faint 텍스트 유지.
+- `Home`에서 `placeMapLink(place_id)` 계산해 전달(ScheduleCard는 Home 전용).
+- tsc/eslint/build 통과, 링크 URL 출력 검증. 서버 영향 없음(프론트만).
+
+---
