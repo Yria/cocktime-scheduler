@@ -50,6 +50,7 @@ export default function PlaceLocationPicker({
 			: "지도/검색을 쓰려면 VITE_KAKAO_MAP_KEY 설정이 필요해요(카카오 콘솔에 도메인 등록 포함).",
 	);
 	const [hint, setHint] = useState<string | null>(null);
+	const [courtFee, setCourtFee] = useState(""); // 대관비(코트 1개 시간당, 원). 빈값=대관비 없음.
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [mapReady, setMapReady] = useState(false);
@@ -147,6 +148,17 @@ export default function PlaceLocationPicker({
 			setError("장소를 검색해 선택하세요.");
 			return;
 		}
+		// 대관비: 빈값이면 null(대관비 없는 장소), 입력했으면 0 이상 숫자만 허용.
+		let courtFeePerHour: number | null = null;
+		const feeRaw = courtFee.trim();
+		if (feeRaw !== "") {
+			const n = Number(feeRaw);
+			if (!Number.isFinite(n) || n < 0) {
+				setError("대관비는 0 이상의 숫자로 입력하거나 비워두세요.");
+				return;
+			}
+			courtFeePerHour = Math.round(n);
+		}
 		setError(null);
 		setBusy(true);
 		try {
@@ -156,6 +168,7 @@ export default function PlaceLocationPicker({
 				lat: selected.lat,
 				lng: selected.lng,
 				mapUrl: null,
+				courtFeePerHour,
 			});
 			if (place) {
 				setBusy(false);
@@ -336,6 +349,48 @@ export default function PlaceLocationPicker({
 								}}
 							/>
 						)}
+					</div>
+
+					{/* 4. 대관비(선택) — 입력하면 places.court_fee_per_hour 로 저장돼 회계 대관비 설정에 자동 반영 */}
+					<div>
+						<label className={labelCls} style={labelStyle}>
+							대관비{" "}
+							<span className="text-faint" style={{ fontWeight: 400 }}>
+								(선택)
+							</span>
+						</label>
+						<div style={{ position: "relative" }}>
+							<input
+								type="number"
+								inputMode="numeric"
+								min={0}
+								step={1000}
+								value={courtFee}
+								onChange={(e) => setCourtFee(e.target.value)}
+								placeholder="코트 1개 · 시간당 (없으면 비워두세요)"
+								className={inputCls}
+								style={{ ...inputStyle, paddingRight: 34 }}
+							/>
+							<span
+								style={{
+									position: "absolute",
+									right: 12,
+									top: "50%",
+									transform: "translateY(-50%)",
+									fontSize: 13,
+									color: "#94a3b8",
+									pointerEvents: "none",
+								}}
+							>
+								원
+							</span>
+						</div>
+						<p
+							className="text-faint"
+							style={{ fontSize: 12, marginTop: 6, lineHeight: 1.5 }}
+						>
+							입력하면 회계의 <b>대관비 설정</b>에 자동 반영돼요. 대관비 없는 장소면 비워두세요.
+						</p>
 					</div>
 
 					{error && (
