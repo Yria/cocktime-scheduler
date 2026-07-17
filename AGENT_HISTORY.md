@@ -237,3 +237,14 @@ b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
 - tsc/eslint/build 통과, 링크 URL 출력 검증. 서버 영향 없음(프론트만).
 
 ---
+
+## #20
+
+**Prompt**: 지금 주소 적용한거 카카오맵 앱안에서 카카오맵 웹뷰가 떠. 이거 개선해줘
+
+**Answer**: 장소 탭 시 `map.kakao.com/link/...` 웹 URL을 열어 카카오맵 앱이 이를 웹뷰로 띄우던 문제 개선 → **네이티브 앱 스킴(`kakaomap://`) 우선**.
+- `kakaomap.ts`: `buildPlaceMapLink`(string) → `buildPlaceMapTarget`(`{webUrl, appUrl}`)로 교체. appUrl: 좌표→`kakaomap://look?p=lat,lng`(네이티브 지도), 없으면 이름→`kakaomap://search?q=`. webUrl은 기존 우선순위(map_url→link/map→link/search) 유지. `openPlaceMap(target)` 추가 — 모바일이면 앱 스킴 호출 후 ~1.4s 내 화면이 안 바뀌면(미설치) 웹 폴백(visibilitychange로 앱 실행 감지해 폴백 취소), 데스크탑은 웹 새 탭.
+- ScheduleCard: 프롭 `placeMapLink`(string)→`placeMapTarget`, `<a href=webUrl>` + onClick에서 preventDefault 후 `openPlaceMap`. Home: `placeMapTarget(place_id)` 계산·전달.
+- tsc/eslint/build 통과, 웹/앱 URL 출력 검증. 프론트만.
+
+---

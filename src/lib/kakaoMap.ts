@@ -13,26 +13,67 @@ export function hasKakaoKey(): boolean {
 	return Boolean(import.meta.env.VITE_KAKAO_MAP_KEY);
 }
 
+export interface PlaceMapTarget {
+	/** 데스크탑·폴백용 웹 URL(map.kakao.com). */
+	webUrl: string;
+	/** 모바일 카카오맵 네이티브 앱 스킴(kakaomap://). 좌표/이름 없으면 null. */
+	appUrl: string | null;
+}
+
 /**
- * 장소 → 외부 지도(카카오맵) 링크. 모바일은 앱 딥링크, 데스크탑은 웹으로 열린다(카카오 universal link).
- * 우선순위: 저장된 map_url(정확한 공유 링크) → 좌표(핀) → 이름 키워드 검색. 정보 없으면 null.
+ * 장소 → 지도 열기 타깃. webUrl(웹)과 appUrl(네이티브 앱 스킴)을 함께 만든다.
+ * - webUrl: 저장된 map_url(정확) → 좌표(핀) → 이름 검색.
+ * - appUrl: 좌표 → `kakaomap://look`(네이티브 지도), 없으면 이름 → `kakaomap://search`.
+ * 웹 URL을 못 만들면(정보 없음) null.
  */
-export function buildPlaceMapLink(
+export function buildPlaceMapTarget(
 	place:
 		| { name?: string | null; map_url?: string | null; lat?: number | null; lng?: number | null }
 		| null
 		| undefined,
-): string | null {
+): PlaceMapTarget | null {
 	if (!place) return null;
-	const url = place.map_url?.trim();
-	if (url && /^https?:\/\//i.test(url)) return url;
 	const name = place.name?.trim();
-	if (place.lat != null && place.lng != null) {
-		const label = encodeURIComponent(name || "모임 장소");
-		return `https://map.kakao.com/link/map/${label},${place.lat},${place.lng}`;
+	const savedUrl = place.map_url?.trim();
+	const hasCoords = place.lat != null && place.lng != null;
+
+	let webUrl: string | null = null;
+	if (savedUrl && /^https?:\/\//i.test(savedUrl)) webUrl = savedUrl;
+	else if (hasCoords) webUrl = `https://map.kakao.com/link/map/${encodeURIComponent(name || "모임 장소")},${place.lat},${place.lng}`;
+	else if (name) webUrl = `https://map.kakao.com/link/search/${encodeURIComponent(name)}`;
+	if (!webUrl) return null;
+
+	let appUrl: string | null = null;
+	if (hasCoords) appUrl = `kakaomap://look?p=${place.lat},${place.lng}`;
+	else if (name) appUrl = `kakaomap://search?q=${encodeURIComponent(name)}`;
+
+	return { webUrl, appUrl };
+}
+
+function isMobileUA(): boolean {
+	return typeof navigator !== "undefined" && /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+
+/**
+ * 장소 지도 열기. 모바일이고 앱 스킴이 있으면 **카카오맵 네이티브 앱**을 우선 호출하고,
+ * 앱이 안 떠서 화면이 그대로면(미설치 등) ~1.4초 뒤 웹으로 폴백한다. 데스크탑은 웹 새 탭.
+ * (기존엔 map.kakao.com 웹 URL만 열어 카카오맵 앱이 이를 웹뷰로 띄우던 문제를 개선.)
+ */
+export function openPlaceMap(target: PlaceMapTarget): void {
+	if (isMobileUA() && target.appUrl) {
+		let opened = false;
+		const onHide = () => {
+			if (document.hidden) opened = true; // 앱이 떠서 PWA가 백그라운드로 → 폴백 취소
+		};
+		document.addEventListener("visibilitychange", onHide, { once: true });
+		setTimeout(() => {
+			document.removeEventListener("visibilitychange", onHide);
+			if (!opened) window.location.href = target.webUrl; // 앱 미설치 → 웹
+		}, 1400);
+		window.location.href = target.appUrl; // 네이티브 앱 호출
+		return;
 	}
-	if (name) return `https://map.kakao.com/link/search/${encodeURIComponent(name)}`;
-	return null;
+	window.open(target.webUrl, "_blank", "noopener,noreferrer");
 }
 
 /** 카카오 지도 SDK 로드(멱등). 이미 로드됐으면 즉시 resolve. 키 없으면 reject. */

@@ -9,6 +9,7 @@ import type {
 import { fmtClock, fmtRange } from "../../lib/schedule/timeFmt";
 import { isLatePoolArrival, latePoolCutoffMs } from "../../lib/schedule/latePool";
 import { waitDisplay } from "../../lib/schedule/waitStatus";
+import { openPlaceMap, type PlaceMapTarget } from "../../lib/kakaoMap";
 import GuestSection from "./GuestSection";
 import LateArrivalSlider from "./LateArrivalSlider";
 import PlayerAvatar from "../shared/PlayerAvatar";
@@ -22,8 +23,8 @@ const STACK_MAX = 6;
 interface Props {
 	session: SessionRow;
 	placeName: string | null;
-	/** 모임 장소 외부 지도(카카오맵) 링크. 있으면 장소명을 탭하면 새 창으로 지도가 열린다. */
-	placeMapLink?: string | null;
+	/** 모임 장소 지도 열기 타깃(웹+앱 스킴). 있으면 장소명을 탭하면 카카오맵(모바일=네이티브 앱)이 열린다. */
+	placeMapTarget?: PlaceMapTarget | null;
 	/** 이 세션의 참석 행(취소 제외) */
 	attendances: AttendanceRow[];
 	memberId: string | null;
@@ -56,7 +57,7 @@ interface Props {
 export default function ScheduleCard({
 	session: s,
 	placeName,
-	placeMapLink,
+	placeMapTarget,
 	attendances,
 	memberId,
 	isAdmin,
@@ -220,12 +221,16 @@ export default function ScheduleCard({
 							</span>
 						)}
 					</div>
-					{placeMapLink ? (
+					{placeMapTarget ? (
 						<a
-							href={placeMapLink}
+							href={placeMapTarget.webUrl}
 							target="_blank"
 							rel="noopener noreferrer"
-							onClick={(e) => e.stopPropagation()}
+							onClick={(e) => {
+								e.stopPropagation();
+								e.preventDefault();
+								openPlaceMap(placeMapTarget);
+							}}
 							aria-label={`${placeName ?? "모임 장소"} 지도 열기`}
 							className="text-muted inline-flex items-center gap-1 w-fit rounded-full bg-black/[0.05] dark:bg-white/[0.08] active:opacity-70 transition-opacity"
 							style={{ fontSize: 12, fontWeight: 500, padding: "3px 10px", marginLeft: -2 }}
