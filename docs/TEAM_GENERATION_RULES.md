@@ -295,7 +295,7 @@ autoFillTeammates(confirmed, pool, ctx, count):
 ### 보드 멤버십 불변식 (reconcile — `remoteDrafts.ts` / `boardStore.ts`)
 팀 편성(`board_drafts`)과 코트 배정(`matches`)은 별도 권위로 비원자적으로 동기화되므로, 동시편집 레이스(유실된 dissolve, 핸드오프/탈취, 로스터 편입)로 멤버십이 어긋날 수 있다. 두 선행조건으로 막는다.
 
-**(가) 편집은 반드시 한 명만** — `board_save_drafts`뿐 아니라 경기 RPC(`assign_match`/`complete_match`/`set_match_roster`)도 `board_assert_editor`(editor lease self-claim CAS)로 서버에서 게이팅한다(마이그레이션 `20260624020000`). 유효 lease를 보유하지 않은 낙관적 편집자/stale 기기의 코트 변경을 'not editor'로 거부하고, 거부된 기기는 `resyncFromServer`로 보기 전용으로 수렴한다.
+**(가) 편집은 반드시 한 명만** — `board_save_drafts`뿐 아니라 경기 RPC(`assign_match`/`complete_match`/`set_match_roster`)도 `board_assert_editor`로 서버에서 게이팅한다. 편집 락은 **sticky 소유**(`editor_client_id` 신원만; lease 만료 자동 해제·하트비트 폐기 — 마이그레이션 `20260717000000`)라 점유되면 명시적 takeover/handoff로만 이동한다. `board_assert_editor`는 호출자가 이미 편집자면 통과(sessions write 없음), 자유면 self-claim, **남이 보유하면 `'not editor'`로 거부**한다. 거부된(=편집자 아닌) 기기의 코트 변경은 `resyncFromServer`로 보기 전용에 수렴한다. (초기 게이팅은 마이그레이션 `20260624020000`, 운영진 강제는 `20260701020000`.)
 
 **(나) 사람 유니크성** — 아래 불변식을 **파생 단계에서 항상 강제**해 "팀에 있는데 게임중"·"A팀·B팀 동시 소속" 중복 표시를 막는다.
 - **I1 — 단일 anchor**: 한 선수는 최대 한 예비팀의 anchor. `reconcileMembership`이 payload 팀을 `(createdMs↑, id↑)` 결정적 순서로 처리해 같은 선수가 둘 이상 팀에 있으면 **먼저 만들어진 팀**만 유지(모든 클라가 동일 결과로 수렴).

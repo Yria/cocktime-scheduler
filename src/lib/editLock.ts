@@ -48,15 +48,16 @@ export interface LockInfo {
 }
 
 /**
- * 서버 권위 편집 락 상태 산정. 보유자 = editor_client_id 존재 AND lease가 아직 유효(leaseUntilMs > now).
- * lease 만료(보유자 crash 등)면 lockFree=true로 떨어져 누구나 다시 점유 가능.
+ * 서버 권위 편집 락 상태 산정. 보유자 = editor_client_id 존재(신원만).
+ * sticky 소유: lease 만료로 자동 해제하지 않는다(하트비트 폐기). 락 이동은 명시적 takeover/handoff
+ * (또는 보유자 이탈 시 release로 editor_client_id=null) 로만 일어난다. crash로 붙잡힌 락은
+ * "편집 권한 가져오기"(board_takeover_editor)로 회수.
  */
 export function computeLockFromRow(
 	editor: EditorCache,
 	myClientId: string | null,
-	nowMs: number,
 ): LockInfo {
-	const active = !!editor.clientId && editor.leaseUntilMs > nowMs;
+	const active = !!editor.clientId;
 	const holderClientId = active ? editor.clientId : null;
 	return {
 		holderClientId,

@@ -35,40 +35,39 @@ describe("computePresenceList — 접속자 목록(편집권과 무관)", () => 
 	});
 });
 
-describe("computeLockFromRow — 서버 권위 편집 락", () => {
-	const NOW = 1000;
-
+describe("computeLockFromRow — 서버 권위 편집 락(sticky, 신원만)", () => {
 	it("락이 비었으면(clientId null) lockFree, 누구도 보유자 아님", () => {
-		const r = computeLockFromRow({ clientId: null, name: null, leaseUntilMs: 0 }, "me", NOW);
+		const r = computeLockFromRow({ clientId: null, name: null, leaseUntilMs: 0 }, "me");
 		expect(r.lockFree).toBe(true);
 		expect(r.holderClientId).toBeNull();
 		expect(r.isEditor).toBe(false);
 	});
 
-	it("유효 lease 보유자가 나면 isEditor=true", () => {
-		const r = computeLockFromRow({ clientId: "me", name: "내기기", leaseUntilMs: NOW + 5000 }, "me", NOW);
+	it("보유자가 나면 isEditor=true", () => {
+		const r = computeLockFromRow({ clientId: "me", name: "내기기", leaseUntilMs: 0 }, "me");
 		expect(r.holderClientId).toBe("me");
 		expect(r.holderName).toBe("내기기");
 		expect(r.lockFree).toBe(false);
 		expect(r.isEditor).toBe(true);
 	});
 
-	it("유효 lease 보유자가 남이면 isEditor=false(보기 전용)", () => {
-		const r = computeLockFromRow({ clientId: "other", name: "남", leaseUntilMs: NOW + 5000 }, "me", NOW);
+	it("보유자가 남이면 isEditor=false(보기 전용)", () => {
+		const r = computeLockFromRow({ clientId: "other", name: "남", leaseUntilMs: 0 }, "me");
 		expect(r.holderClientId).toBe("other");
 		expect(r.lockFree).toBe(false);
 		expect(r.isEditor).toBe(false);
 	});
 
-	it("lease 만료면 보유자 있어도 lockFree(crash 회복)", () => {
-		const r = computeLockFromRow({ clientId: "other", name: "남", leaseUntilMs: NOW - 1 }, "me", NOW);
-		expect(r.lockFree).toBe(true);
-		expect(r.holderClientId).toBeNull();
+	it("sticky: lease 만료(과거)여도 보유자가 있으면 계속 held — 자동 해제 없음", () => {
+		// leaseUntilMs 는 더 이상 판정에 쓰이지 않는다(하트비트 폐기). editor_client_id 존재 = held.
+		const r = computeLockFromRow({ clientId: "other", name: "남", leaseUntilMs: 1 }, "me");
+		expect(r.lockFree).toBe(false);
+		expect(r.holderClientId).toBe("other");
 		expect(r.isEditor).toBe(false);
 	});
 
 	it("myClientId가 null이면 절대 editor 아님", () => {
-		const r = computeLockFromRow({ clientId: "me", name: "x", leaseUntilMs: NOW + 5000 }, null, NOW);
+		const r = computeLockFromRow({ clientId: "me", name: "x", leaseUntilMs: 0 }, null);
 		expect(r.isEditor).toBe(false);
 	});
 });

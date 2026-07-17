@@ -346,11 +346,30 @@ alter table public.sessions
 
 ## 8. Realtime 채널
 
-- 기존: `session-bc:{id}`(broadcast), `session-meta:{id}`(postgres_changes), `app-session-watch`.
+- 기존: `session-bc:{id}`(broadcast), `session-meta:{id}`(postgres_changes). (`app-session-watch`는 2026-07 제거 — §8.1.)
 - 추가:
   - `notifications` postgres_changes (filter `recipient_member_id`) → 앱내 알림 1차(toastStore 연결).
   - 일정 목록/참석 현황: `attendances` 또는 sessions 변경 구독(필요 시).
 - 웹푸시(보조): `notifications` INSERT → Database Webhook(pg_net) → `send-push` Edge Function(`@negrel/webpush`) → 410/404 시 `push_subscriptions` 정리. (Phase 8)
+
+### 8.1 Realtime 메시지 감축(2026-07, 마이그레이션 `20260717000000`)
+
+Supabase Realtime 메시지 초과(주범: 사용자 활동과 무관한 연속 트래픽)를 줄이기 위해 편집 락 모델을 단순화하고 중복 브로드캐스트를 제거했다.
+
+- **편집 락 = sticky 소유 + 하트비트 폐기**: 기존엔 편집자가 lease(20s)를 하트비트(7s)로 계속 갱신 → sessions row UPDATE가 접속자 전원에게 팬아웃(연속 최대 트래픽). 이제 락은 `editor_client_id`(신원)만으로 결정되고 **lease 만료로 자동 해제되지 않는다**(`computeLockFromRow` 신원만; `board_claim_editor`/`board_save_drafts`/`board_assert_editor` CAS에서 `editor_lease_until < now()` 조항 제거). 하트비트 제거로 연속 UPDATE 스트림 소멸.
+  - **점유 = 편집 의도로만(자동 점유 폐지, 2026-07)**: "혼자면 자동 점유"(구 `maybeClaimIfAlone` + 보드 mount effect + reeval 타이머 + 창복귀/재연결 재점유)를 **전부 제거**. 편집자가 되는 길은 (a) **편집 동작**(자석 드래그 등 → `claimEdit`→`claimEditingIfFree`, 자유 락일 때만) (b) **`board_takeover_editor`**("편집 권한 가져오기") / `board_handoff_editor`(명시 양도)뿐. **연결만 하고 편집 안 하는 클라(상시 데스크탑)는 편집자가 되지 않는다** — "혼자 남으면 자동 점유 → 남이 뺏고 → 반복"하던 호깅/플래핑을 근본 차단. crash로 붙잡힌 락도 takeover 한 번으로 회수. 뺏긴 편집자는 `EditorTakenNotice` 다이얼로그로 통지(명시 takeover일 때만).
+  - **`board_assert_editor`(경기 RPC 가드)**: 이미 편집자면 sessions WRITE 없이 통과(매 경기조작 lease 갱신 팬아웃 제거). 자유면 self-claim(운영진만), 남이 보유면 `'not editor'`. 단일 편집자 불변식은 그대로(서버 CAS·신원 검사).
+  - `editor_lease_until` 컬럼은 잔존하나 만료 판정에 미사용(향후 정리).
+- **중복 브로드캐스트 제거**: `player_updated`·`board_drafts_updated` 브로드캐스트를 삭제. 각각 `session_players` postgres_changes / sessions-row UPDATE(board_drafts+version)라는 **권위 경로와 중복**이었다(같은 버전 리듀서로 수렴). 발신자 로컬 즉시 반영은 `applyBroadcast` 직접 호출로 유지(네트워크 미사용). `session-bc` 잔여 브로드캐스트: `match_started`/`match_completed`/`match_roster_updated`/`session_refresh_required`.
+
+### 8.2 자동참여 폐지 + `app-session-watch` 제거(2026-07)
+
+기존엔 앱을 켠 **모든 회원**이 `app-session-watch`(sessions 테이블 **무필터** postgres_changes)를 앱 전역 구독해, 세션이 활성화되면 자동으로 보드로 끌려 들어갔다(`applySession`→`/session`). 이 무필터 구독이 세션의 *모든* 변화(편집·경기·카운터)를 접속 전원에게 팬아웃하는 큰 비용원이었는데, 정작 필요한 건 시작/종료 신호뿐이었다.
+
+- **자동참여 폐지**(기획 결정): 세션 시작 시 회원을 자동 소환하지 않는다. `app-session-watch` 구독과 앱 마운트 시 자동 `/session` 이동을 **제거**. 진행 중 보드 입장은 **Home의 '진행 중 세션 입장' 버튼(수동)** 으로만 — `sessionMeta`가 있으면 노출되고(마운트/포그라운드 복귀/새로고침 시 `checkActiveSession`이 세팅), 탭하면 `/session`으로 이동해 그때 세션 채널을 구독한다.
+- **종료 처리**: 보드에 들어가 있는 사용자는 `session-meta` onEnd가 이탈시키므로 앱 전역 감시 불필요. 세션을 시작한 운영진은 자기가 명시적으로 `/session`으로 이동(유지).
+- **알려진 소소한 트레이드오프**: 회원이 세션 진행 중 앱을 열어 `sessionMeta`가 로드된 뒤 입장하지 않은 채 세션이 끝나면 '입장' 버튼이 잠깐 남을 수 있다(탭하면 `session-meta` onEnd가 곧바로 홈으로 되돌려 자기교정). 실시간 push가 없으므로 진행 중 세션은 회원이 Home을 열거나 새로고침할 때 나타난다(즉시 알림 아님 — 자동참여 폐지의 의도된 결과).
+- 이 제거로 Tier2 계획의 **E(sessions↔session_runtime 테이블 분리)는 불필요**해졌다(앱 전역 팬아웃 자체가 사라짐).
 
 ---
 

@@ -153,12 +153,3 @@ export function handleSessionRefreshRequired(_payload: BroadcastPayloadData, _se
 			.catch((err) => console.error("Failed to refresh session:", err));
 	}
 }
-
-export function handleBoardDraftsUpdated(payload: BroadcastPayloadData, set: SetFn, get: GetFn) {
-	// broadcast 페이로드는 { drafts, version }. 단조 가드로 새(>=) 버전만 반영(catch-up과 역전 방지).
-	// 실제 보드 반영은 SessionBoard가 boardDrafts 변화를 감지해 applyRemoteDrafts로 수행.
-	const { drafts, version } = payload as { drafts?: BoardDraftsPayload; version?: number };
-	if (drafts) {
-		applyDraftsIfNewerImpl(get, set, drafts, typeof version === "number" ? version : get().boardDraftsVersion);
-	}
-}

@@ -201,6 +201,11 @@ export async function fetchAllSessions(): Promise<SessionRow[]> {
 	const { data } = await supabase
 		.from("sessions")
 		.select("*")
+		// draft(매치 시작 전 일정 회차)·cancelled(취소 회차)는 매치 로그에 노출하지 않는다.
+		// sessions는 일정=세션 통합 테이블이라 status 필터가 없으면 미시작/취소 일정 회차가 새어든다.
+		// open은 유지(모집 중 회차도 로그 탭에서 확인 가능).
+		.neq("status", "draft")
+		.neq("status", "cancelled")
 		.order("started_at", { ascending: false })
 		.limit(30);
 	return (data ?? []) as SessionRow[];

@@ -12,7 +12,6 @@ import RegularNoticePage from "./components/schedule/RegularNoticePage";
 import SchedulePage from "./components/schedule/SchedulePage";
 import { useDarkMode } from "./hooks/useDarkMode";
 import { usePageVisibility } from "./hooks/usePageVisibility";
-import type { SessionRow } from "./lib/supabase";
 import { supabase } from "./lib/supabase";
 import {
 	notificationContext,
@@ -104,26 +103,10 @@ export default function App() {
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
 	const sessionChecked = useAppStore((s) => s.sessionChecked);
 
-	const initialPathRef = useRef(window.location.pathname);
-
-	// snapshot 로드 → 상태 설정 → navigate (setup 화면이 아닌 경우)
-	const applySession = useCallback(async (row: SessionRow) => {
-		const success = await appActions.loadSession(row);
-		if (success && !window.location.pathname.includes("/setup")) {
-			navRef.current("/session", { replace: true });
-		}
-	}, []);
-
-	// 마운트 시 활성 세션 확인 → 초기 URL이 홈(/)일 때만 세션 페이지로 자동 이동.
-	// setup/session 등 특정 경로로 진입했다면 그 경로 유지.
+	// 마운트 시 활성 세션 확인(sessionChecked·sessionMeta 세팅). 자동 이동은 하지 않는다 —
+	// 진행 중 세션 입장은 Home의 '진행 중 세션 입장' 버튼(수동)으로만(자동참여 폐지).
 	useEffect(() => {
-		async function check() {
-			const hasActive = await appActions.checkActiveSession();
-			if (hasActive && initialPathRef.current === "/") {
-				navRef.current("/session", { replace: true });
-			}
-		}
-		check();
+		void appActions.checkActiveSession();
 	}, []);
 
 	// 페이지가 다시 활성화되었을 때(백그라운드 -> 포그라운드) 자동 재동기화.
@@ -147,28 +130,8 @@ export default function App() {
 		wasVisibleRef.current = isVisible;
 	}, [isVisible]);
 
-	// 다른 클라이언트의 세션 시작/종료 감지
-	useEffect(() => {
-		appActions.subscribeSessionWatch({
-			onSessionStart: async (row) => {
-				if (window.location.pathname.includes("/setup")) return;
-				if (useAppStore.getState().sessionMeta?.sessionId === row.id) return;
-				await applySession(row);
-			},
-			onSessionEnd: (endedSessionId) => {
-				if (useAppStore.getState().sessionMeta?.sessionId === endedSessionId) {
-					appActions.setSessionMeta(null);
-					useSessionStore.getState().reset();
-					appActions.resetSetupState();
-					navRef.current("/", { replace: true });
-				}
-			},
-		});
-
-		return () => {
-			appActions.unsubscribeSessionWatch();
-		};
-	}, [applySession]);
+	// (앱 전역 session watch 제거 — 자동참여 폐지 + Realtime 감축) 진행 중 세션 입장은 Home 버튼(수동),
+	// 세션 종료 시 보드 이탈은 세션 채널(session-meta onEnd)이 담당한다.
 
 	const handleHomeStart = useCallback(() => {
 		navRef.current("/setup");

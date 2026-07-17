@@ -1,4 +1,3 @@
-import type { RealtimeChannel } from "@supabase/supabase-js";
 import { create } from "zustand";
 import { fetchMembers, updateMemberProfile } from "../lib/supabase/members";
 import {
@@ -7,7 +6,6 @@ import {
 	fetchSessionSnapshot,
 	snapshotToClientState,
 	startSession,
-	supabase,
 	updateSession,
 	type SessionRow,
 } from "../lib/supabase";
@@ -39,14 +37,6 @@ interface AppState {
 	) => Promise<boolean>;
 	updatePlayerAction: (player: Player) => Promise<boolean>;
 
-	// Session watch (App-level postgres_changes)
-	_sessionWatchChannel: RealtimeChannel | null;
-	subscribeSessionWatch: (callbacks: {
-		onSessionStart: (row: SessionRow) => Promise<void>;
-		onSessionEnd: (sessionId: number) => void;
-	}) => void;
-	unsubscribeSessionWatch: () => void;
-
 	// Setup Screen State
 	setupGuests: Player[];
 
@@ -60,7 +50,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 	allPlayers: [],
 	sessionMeta: null,
 	sessionChecked: false,
-	_sessionWatchChannel: null,
 
 	setupGuests: [],
 
@@ -281,37 +270,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 			throw e;
 		}
 	},
-
-	subscribeSessionWatch: ({ onSessionStart, onSessionEnd }) => {
-		get().unsubscribeSessionWatch();
-		const channel = supabase
-			.channel("app-session-watch")
-			.on(
-				"postgres_changes",
-				{ event: "*", schema: "public", table: "sessions" },
-				async (payload) => {
-					const row = payload.new as SessionRow;
-					if (!row || !row.id) return;
-
-					if (row.is_active) {
-						await onSessionStart(row);
-					} else if (!row.is_active) {
-						onSessionEnd(row.id);
-					}
-				},
-			)
-			.subscribe();
-
-		set({ _sessionWatchChannel: channel });
-	},
-
-	unsubscribeSessionWatch: () => {
-		const { _sessionWatchChannel } = get();
-		if (_sessionWatchChannel) {
-			supabase.removeChannel(_sessionWatchChannel);
-			set({ _sessionWatchChannel: null });
-		}
-	},
 }));
 
 // ── 안정적 참조 액션 (컴포넌트에서 구독 없이 직접 호출) ──────────
@@ -327,12 +285,6 @@ export const appActions = {
 	) => useAppStore.getState().startOrUpdateSessionAction(selected, settings),
 	updatePlayer: (player: Player) =>
 		useAppStore.getState().updatePlayerAction(player),
-	subscribeSessionWatch: (callbacks: {
-		onSessionStart: (row: SessionRow) => Promise<void>;
-		onSessionEnd: (sessionId: number) => void;
-	}) => useAppStore.getState().subscribeSessionWatch(callbacks),
-	unsubscribeSessionWatch: () =>
-		useAppStore.getState().unsubscribeSessionWatch(),
 	setSessionMeta: (meta: SessionMeta | null) =>
 		useAppStore.setState({ sessionMeta: meta }),
 	setSetupGuests: (updater: Player[] | ((prev: Player[]) => Player[])) =>

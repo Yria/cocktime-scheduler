@@ -213,12 +213,12 @@ sessionStore (휴식 토글)
 | `match_started` | 매치 코트 배정 | 코트에 매치 추가, 대기열에서 선수 제거 |
 | `match_completed` | 게임 완료 | 코트 비움, 선수→대기열, pair_history 업데이트 (updatedPlayers) |
 | `match_roster_updated` | 경기 로스터 수정(`set_match_roster`) | 코트의 teamA/B 교체 + 상태 바뀐 선수 upsert (2026-06-22, H3 해결 — 이전엔 broadcast 없었음) |
-| `player_updated` | 선수 정보/상태 변경 (성별·스킬·휴식 토글) | 전체 목록에서 선수 정보 교체 |
-| `board_drafts_updated` | 보드 "팀 구성중" 멤버십 변경 | 드래프트 멤버십 교체 |
 | `session_refresh_required` | 설정 대변경 후 | DB 전체 재로드 |
 
 > **제거된 이벤트(deprecated)**: ~~`player_status_changed`~~(→ `player_updated` 로 통합), ~~`session_updated`~~,
-> ~~`player_force_mixed_changed`~~, ~~`player_force_hard_game_changed`~~, ~~`candidates_updated`~~, ~~`session_ended`~~, ~~`pending_team`~~.
+> ~~`player_force_mixed_changed`~~, ~~`player_force_hard_game_changed`~~, ~~`candidates_updated`~~, ~~`session_ended`~~, ~~`pending_team`~~,
+> ~~`player_updated`~~(2026-07 Realtime 감축 — `session_players` postgres_changes로 수렴, 발신자만 로컬 반영),
+> ~~`board_drafts_updated`~~(2026-07 Realtime 감축 — sessions-row UPDATE(board_drafts+version)로 수렴).
 
 > **매치 broadcast 는 즉시성 전용, 권위는 catch-up**(2026-06-22): `match_started`/`match_completed`/`match_roster_updated` 를 놓치거나 순서가 역전돼도, 모든 매치 RPC 가 올린 `sessions.match_state_version` 갭을 postgres_changes 가 감지해 `refetchMatches`(matches 권위 재조회)로 수렴한다. 따라서 broadcast 페이로드에는 version 단조 가드를 두지 않는다(refetch 가 항상 최신 DB 로 교정).
 
@@ -235,12 +235,11 @@ sessionStore (휴식 토글)
 편집 보유자를 **단일 DB row(`sessions.editor_client_id`/`editor_name`/`editor_lease_until`)**가 결정한다. presence 다수결이 아니라 서버 권위라 presence 부분 동기화로 인한 **이중 편집권(원인2)이 구조적으로 불가능**하다. (이전 presence 파생 락 `computePresence`/`nextClaimAt`은 폐기.)
 
 - **식별자**: `editor_client_id`에는 **로그인 사용자 id(`user.id`, 사람 단위)** 를 저장한다(2026-06-23). 같은 사람의 리로드·다른 탭·다른 기기는 같은 id라 `editor=client` 분기로 자기 lease를 즉시 재획득(자기 잠금 없음). 미로그인 등 부재 시에만 탭 단위 영속 `clientId`(sessionStorage) 폴백. (이전: 연결마다 randomUUID라 리로드 시 직전 lease에 묶여 20s 자기 잠금이 발생.)
-- **보유자** = `editor_client_id != null AND editor_lease_until > now()`. `computeLockFromRow`로 `isEditor`/`holderClientId`/`holderName`/`lockFree` 산정.
-- **획득**: (a) **자동 점유는 "혼자일 때만"(presenceCount<=1)** (2026-06-30 변경) — 자유 상태에서 접속자가 나뿐이면 즉시 낙관 점유(SessionBoard effect→`claimEditingIfFree`, maybeClaimIfAlone). **2명 이상이면 진입·창 액티브로 자동 점유하지 않는다** — 인원수와 무관히 자유 락을 낚아채 "뺏기는 것처럼" 보이던 버그(특히 창 복귀 시 무조건 재점유) 제거. 서버 락은 `board_save_drafts` self-claim 또는 heartbeat `board_claim_editor`(CAS: 자유/만료/본인)가 확정. (b) **명시 점유** — 직접 드래그 편집(`boardStore`→`claimEditingIfFree`, 자유 락만)과 **강제 탈취** "편집 권한 가져오기"(`claimEditor`→`board_takeover_editor`, 활성 보유자도 무조건). 직전 보유자는 다음 heartbeat 거부+실시간 수신으로 읽기 모드로 수렴(+뺏긴 쪽엔 `EditorTakenNotice` 다이얼로그).
-- **유지**: 보유자만 7s heartbeat(`board_claim_editor`)로 20s lease 연장. 백그라운드(visibilitychange) 시 heartbeat 정지, 복귀 시엔 **서버 재동기만** 하고 자동 점유는 "혼자일 때만" 규칙을 따른다(여럿이면 재점유 안 함).
-- **해제/회복**: 정상 이탈(unsubscribe/pagehide)→`board_release_editor`. crash/강제종료→20s lease 만료 후 자유(클라 4s `reeval` 타이머가 만료를 로컬 감지). presence leave 의존 없음.
+- **보유자** = `editor_client_id != null`(**신원만 — sticky**). `computeLockFromRow`로 `isEditor`/`holderClientId`/`holderName`/`lockFree` 산정. **2026-07 변경**: 하트비트·lease 만료·"혼자면 자동 점유" 전부 폐기 → 락은 만료로 자동 해제되지 않고 명시 이동으로만. `editor_lease_until`은 잔존하나 판정 미사용(마이그레이션 `20260717000000`).
+- **획득(편집 의도로만)**: 자동 점유("혼자면 자동", 창 복귀·재연결 재점유 등)는 **전부 폐기**. 편집자가 되는 길은 둘뿐 — (a) **편집 동작**(자석 드래그 등 → `boardStore`→`claimEdit`→`claimEditingIfFree`, 자유 락일 때만 점유; 서버는 `board_save_drafts`/`board_assert_editor` self-claim으로 확정), (b) **"편집 권한 가져오기"**(`claimEditor`→`board_takeover_editor`, 활성 보유자도 무조건 탈취). **연결만 하고 편집 안 하는 클라(상시 데스크탑 등)는 편집자가 되지 않는다**(호깅/플래핑 방지). 탈취당한 보유자는 실시간 row 수신으로 보기 전용 수렴 + `EditorTakenNotice` 다이얼로그.
+- **해제/회복**: 정상 이탈(unsubscribe/pagehide)→`board_release_editor`(→ `editor_client_id=null`, 자유). crash/강제종료면 락이 붙잡히지만(만료 없음) 다른 클라가 "편집 권한 가져오기"로 언제든 회수.
 - **양도**: 보유자가 접속자 모달에서 "넘기기"(`board_handoff_editor`)로 명시 이전.
-- **stale 콜백 방어**: `lockEpoch`(권위 변경마다 증가)로 in-flight heartbeat의 늦은 `.then`이 handoff/세션전환 후 상태를 덮어쓰지 못하게 가드.
+- **stale 콜백 방어**: `lockEpoch`(권위 변경마다 증가)로 in-flight 점유 RPC(`claimNow`)의 늦은 `.then`이 handoff/세션전환 후 상태를 덮어쓰지 못하게 가드.
 - presence(`session-bc:{id}`)는 이제 **접속자 목록 표시 전용**(`computePresenceList`) — 편집권 election에 쓰지 않는다. 비편집자는 멤버십 변경 차단(보기 전용)이되 broadcast/catch-up은 정상 수신.
 
 

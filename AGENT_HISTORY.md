@@ -171,3 +171,57 @@ go on
 - tsc -b / eslint 통과.
 
 ---
+
+## #15
+
+**Prompt**: 그냥 로그에 드래프트 상태인 세션을 보이지 않게해
+캔슬까지만 숨김
+go on
+
+**Answer**: 매치 로그 세션 탭에 "7/17 00:00"(경기 0회) 같은 미시작 일정 회차가 뜬 원인을 추적했다. sessions는 '일정=세션 통합' 단일 테이블(Phase 4)이라 일정 자동생성(sync_schedule_occurrences B단계)이 만든 draft 회차가 sessions row로 존재하는데, 매치 로그 전용 조회 fetchAllSessions가 status 필터 없이 최근 30개를 끌어와 미시작 회차가 로그 목록에 새어들었다(로그 데이터 matches는 0개, 그릇만 노출). started_at이 draft에선 생성시각으로 찍혀 "7/17 00:00"으로 라벨된 것.
+- **결정**: 테이블 물리 분리(과설계·마이그레이션 리스크) 대신 로그 조회에서 필터. 사용자 선택 "캔슬까지만"에 따라 draft·cancelled 제외, open은 유지.
+- **수정**: fetchAllSessions(로그 전용, 사용처 LogPage 단독 확인)에 `.neq("status","draft").neq("status","cancelled")` 추가.
+- **검증**: 프로덕션 REST 동일 쿼리로 #188(draft)·#187(cancelled) 제외, #182(open)·실제 경기 세션 유지 확인. tsc 통과.
+- 물리 분리/전체 누수 감사는 보류(사용자가 최소 수정 선택).
+
+---
+
+## #16
+
+**Prompt**: a. 편집권한 자동으로 이어받기 필요없어. 최초세션 오픈한 사람만 편집권한획득이 자동이고 이후는 수동으로 버튼 눌러야만 편집권한 옮겨가. 편집권한 뺏긴 사람응 누가 뺏었는지 다이얼로그 뜨는거 추가개발하고. 이렇게 수정하면 어때?
+b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
+(+ 후속: 티어1 기획설명 / "혼자면 자동, 여럿이면 버튼" 선택)
+
+**Answer**: Realtime 메시지 초과(2.38M/2.2M) 감축 Tier1(A~D)을 구현. A는 단순 상수완화 대신 사용자 제안대로 편집락을 sticky 모델로 재설계 — 이게 하트비트를 존재이유째 없애 연속 스트림을 완전 제거(원래안보다 큰 이득)함을 확인하고 채택. "누가 뺏었는지 다이얼로그"는 EditorTakenNotice로 이미 구현돼 있어 추가개발 불필요. 편집=운영진 전용도 기존대로.
+- **A(편집락 sticky + 하트비트 제거)**: computeLockFromRow를 신원(editor_client_id)만으로 판정(lease 만료 무시), 클라 하트비트/startHeartbeat/stopHeartbeat/heartbeatTick 제거, claimNow가 1회성 점유 RPC 발사. 점유 이동은 명시 takeover/handoff(또는 이탈 release)로만, 자유+혼자면 자동점유 유지. 서버 CAS(board_claim_editor/board_save_drafts)에서 `editor_lease_until < now()` 조항 제거.
+- **D(board_assert_editor 병합)**: 경기 RPC 가드를 "이미 편집자면 sessions write 없이 통과"로 재작성 → 경기조작당 sessions UPDATE 2→1(팬아웃 절반). 자유면 self-claim, 남이 보유면 'not editor'. 운영진 재검증 유지.
+- **B/C(중복 브로드캐스트 제거)**: board_drafts_updated·player_updated 브로드캐스트 삭제(각각 sessions-row UPDATE / session_players postgres_changes 권위경로와 중복). 발신자 로컬반영은 applyBroadcast 직접호출로 유지. BROADCAST_EVENTS·핸들러·union변형·죽은 handleBoardDraftsUpdated 정리.
+- 새 마이그레이션 20260717000000, 클라 6파일 수정, 문서(EXPANSION_SPEC §8.1·TEAM_GENERATION_RULES §가·DATABASE.md) 갱신, editLock 테스트를 sticky 모델로 갱신.
+- 단일편집자·뷰어수렴·재연결 catch-up 불변식 보존(서버 CAS·신원검사·version-gap refetch 그대로). 트레이드오프: crash로 붙잡힌 락은 만료 자동해제 대신 "편집 권한 가져오기"로 회수.
+- tsc/eslint/vitest(210 pass)/build 통과. 배포는 마이그레이션 먼저(supabase db push) 후 프론트 순서 필요(신클라+구서버 조합이 락 도난 위험).
+
+---
+
+## #17
+
+**Prompt**: 세션을 실시간으로 모든 회원이 봐야하는 이유를 설명 → 자동참여 필요없어 → (수동 입장 추가 선택) → 진행중세션이어하기 워딩도 바꿔야겠지?
+
+**Answer**: Tier2 E(app-session-watch 앱전역 팬아웃)의 전제를 파고든 결과, 그 실시간 구독의 진짜 목적은 "세션 시작 시 전 회원을 보드로 자동 소환(즉석 공유보드)"이고 필요한 신호는 시작/종료뿐인데 무필터라 모든 변화를 전원에 뿌리고 있었음을 확인. 사용자가 "자동참여 폐지"를 결정 → E를 테이블 분리 대신 **app-session-watch 통째 삭제**로 해소(더 크고 간단). "회원도 라이브 보드 관전 가능(수동 입장 추가)" 선택 반영.
+- **제거**: `appStore`의 subscribeSessionWatch/unsubscribeSessionWatch/_sessionWatchChannel + appActions/인터페이스, `App.tsx`의 세션워치 useEffect·마운트 자동이동(`/session`)·죽은 applySession/initialPathRef. 앱 전역 무필터 sessions 구독 소멸 → 최대 팬아웃원 제거.
+- **수동 입장**: 마운트/포그라운드 복귀/새로고침 시 `checkActiveSession`이 sessionMeta를 세팅, Home의 버튼 워딩을 '진행 중 세션 이어하기'→**'진행 중 세션 입장'**으로 바꿔 그 입구로 사용. Home onRefresh에 checkActiveSession 추가(진행 중 세션이 pull-to-refresh로 노출되게). 종료 이탈은 세션채널(session-meta onEnd)이 담당, 시작 운영진은 명시 이동 유지.
+- 트레이드오프: 실시간 push 없음(진행 세션은 Home 열/새로고침 시 노출), 회원이 로드만 하고 안 들어간 채 종료되면 '입장' 버튼 잔존→탭 시 onEnd로 자기교정.
+- 문서 EXPANSION_SPEC §8.2 추가(+§8 채널목록), 메모리 realtime-usage-reduction E=완료 갱신. tsc/eslint/vitest(210)/build 통과. 배포: 프론트만(이번 변경엔 신규 마이그레이션 없음).
+
+---
+
+## #18
+
+**Prompt**: (F 논의 중) 데탑 계속 켜놓으면 혼자 남을 때 자동으로 권한 가져가고 앱 켜서 뺏고 반복하겠네? → 연결돼 있어도 권한을 수동으로 가져간 적 없으면 없는사람 취급 가능한가? → 이렇게 하면 그 반복 없어지나? → 구현해
+
+**Answer**: 편집권 "혼자면 자동 점유"가 상시 데스크탑의 호깅/플래핑(혼자 남으면 자동 획득→폰이 뺏고→반복)을 유발함을 확인. 사용자 제안대로 **"편집 의도로만 점유"** 모델로 전환 — 연결만 하고 편집 안 한 클라는 '없는 사람 취급'(편집자 안 됨). 침묵 점유 경로를 전부 제거하고 의도 기반(드래그 편집·버튼)만 남김.
+- **제거**: `sessionEditorLock`의 `maybeClaimIfAlone` + reeval 타이머(REEVAL_MS/reevalTimer) + 창복귀 자동점유, `sessionStore` onPresenceSync/onResync의 maybeClaimIfAlone 호출, `useSessionBoardEffects`의 mount 자동점유 effect. `installLockLifecycle`은 이제 DOM 핸들러(visibility resync·pagehide release)만.
+- **유지**: 드래그 편집 시 `claimEdit→claimEditingIfFree`(자유 락일 때만), '편집 권한 가져오기'(`board_takeover_editor`), handoff. 서버 CAS·sticky·단일 편집자 불변식 불변.
+- **결과**: 상시 데스크탑이 혼자 남아도 편집 안 하면 편집권 안 가져감 → 자동 반복 고리 끊김. 남는 인계는 활성 편집자에게서 버튼으로 일부러 뺏는 경우뿐(의도된 동작, 그때만 뺏김 다이얼로그).
+- 문서 EXPANSION_SPEC §8.1·DATABASE.md 편집락 섹션 갱신, 메모리(board-sync·realtime) 갱신. tsc/eslint/vitest(210)/build 통과. 배포: 프론트만(신규 마이그레이션 없음).
+
+---

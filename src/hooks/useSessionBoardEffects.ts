@@ -50,19 +50,9 @@ export function useSessionBoardEffects() {
 		return () => unsubscribe();
 	}, [sessionId, subscribe, unsubscribe, navigate]);
 
-	// 세션 연 사람을 자동으로 편집자로 — 자유 상태(아무도 편집 중이 아님)면 즉시 점유한다.
-	// 남이 편집 중이면 claimEditingIfFree가 동작하지 않아(lockFree일 때만 점유) 읽기 모드로 시작.
-	// 편집자가 이탈해 락이 풀리면(lockFree) 남은 클라가 다시 점유 → "아무도 편집하지 않는 상태"가 지속되지 않는다.
-	// (서버 lease CAS가 진실 — 동시 점유 시 한쪽만 성공, 나머지는 resync로 읽기 모드 복귀.)
-	const lockFree = useSessionStore((s) => s.lockFree);
-	const clientId = useSessionStore((s) => s._clientId);
-	const presenceCount = useSessionStore((s) => s.presenceCount);
-	const claimEditingIfFree = useSessionStore((s) => s.claimEditingIfFree);
-	// 자동 점유는 "혼자일 때만"(presenceCount<=1). 2명 이상이면 들어와도/창 액티브로도 자동 점유하지 않고
-	// 보기 전용으로 시작 — 편집은 직접 드래그(boardStore.claimEditingIfFree)나 '편집 권한 가져오기'로만.
-	useEffect(() => {
-		if (clientId && lockFree && !isEditor && presenceCount <= 1) claimEditingIfFree();
-	}, [clientId, lockFree, isEditor, presenceCount, claimEditingIfFree]);
+	// (자동 점유 제거) 보드에 들어와도 편집자가 되지 않는다 — 보기 전용으로 시작하고, 편집은 직접
+	// 드래그 편집(boardStore→claimEdit→claimEditingIfFree, 자유 락만) 또는 '편집 권한 가져오기'로만.
+	// 연결만 하고 편집 안 하는 클라(상시 데스크탑 등)는 편집자가 되지 않는다(호깅/플래핑 방지).
 
 	// ── 불변식 I2 자가 치유(편집자) — 코트 변화 시 경기중이 된 anchor를 예비팀에서 제거 + 영속화 ──
 	// 경기 시작/로스터 편입으로 코트에 올라간 선수가 동시편집 레이스(유실된 dissolve)나 setMatchRoster

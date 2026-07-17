@@ -28,7 +28,6 @@ import { randomId } from "../lib/randomId";
 import { useAuthStore } from "./authStore";
 import {
 	applyDraftsIfNewerImpl,
-	handleBoardDraftsUpdated,
 	handleMatchCompleted,
 	handleMatchRosterUpdated,
 	handleMatchStarted,
@@ -42,12 +41,10 @@ import {
 	getCachedEditor,
 	installLockLifecycle,
 	LEASE_SECONDS,
-	maybeClaimIfAlone,
 	recomputeLock,
 	resetEditorCache,
 	setCachedEditorFromRow,
 	setEditorCache,
-	stopHeartbeat,
 	teardownLockLifecycle,
 } from "./sessionEditorLock";
 import {
@@ -67,9 +64,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	initialize: (initial) => {
 		const playerMap = new Map(initial.players.map((p) => [p.id, p]));
 		const { waitingIds, restingIds } = rebuildDerivedIds(playerMap);
-		// 편집 락 캐시/heartbeat 리셋 — 구독 후 onResync가 서버 권위로 다시 채운다.
+		// 편집 락 캐시 리셋 — 구독 후 onResync가 서버 권위로 다시 채운다.
 		resetEditorCache();
-		stopHeartbeat();
 		set({
 			...initialState,
 			_channel: get()._channel,
@@ -212,10 +208,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 
 	broadcastPlayerUpdated: (player) => {
-		const { _channel } = get();
+		// 로컬(발신자) 즉시 반영만. 다른 기기는 session_players postgres_changes(같은 write가 트리거)로
+		// 수렴 — 별도 broadcast는 중복 전송이라 제거(Realtime 감축). applyBroadcast는 네트워크 안 탐.
 		const payload: BroadcastPayload = { event: "player_updated", payload: { player } };
 		get().applyBroadcast(payload);
-		if (_channel) sendBroadcast(_channel, payload);
 	},
 
 	handleSetMatchRoster: async (courtId, teamA, teamB) => {
@@ -284,7 +280,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			match_roster_updated: (p, s) => handleMatchRosterUpdated(p, s),
 			player_updated: (p, s) => handlePlayerUpdated(p, s),
 			session_refresh_required: (p, s, g) => handleSessionRefreshRequired(p, s, g),
-			board_drafts_updated: (p, s, g) => handleBoardDraftsUpdated(p, s, g),
 		};
 
 		const evWithPayload = ev as { payload?: BroadcastPayloadData };
@@ -308,7 +303,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const solo = presenceCount <= 1;
 		if (solo) {
 			setEditorCache({ clientId: _clientId, name, leaseUntilMs: Date.now() + LEASE_SECONDS * 1000 });
-			set(computeLockFromRow(getCachedEditor(), _clientId, Date.now())); // isEditor 즉시 true (heartbeat는 아직 X)
+			set(computeLockFromRow(getCachedEditor(), _clientId)); // isEditor 즉시 true (takeover 확정 전 낙관 반영)
 		}
 		const res = await dbBoardTakeoverEditor(getSessionId(), _clientId, name, LEASE_SECONDS);
 		if (!res) {
@@ -409,10 +404,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			{
 				onBroadcast: (payload) => get().applyBroadcast(payload),
 				// presence는 접속자 목록 표시 전용(편집권 election 아님 — 편집권은 서버 권위 락).
-				// 단, 혼자뿐이면 보기 전용 단계 없이 자동 점유(아래 maybeClaimIfAlone, lockFree 가드로 안전).
+				// 자동 점유 없음 — 편집자가 되려면 편집 동작(드래그)이나 '편집 권한 가져오기' 버튼 필요.
 				onPresenceSync: (state) => {
 					set(computePresenceList(state));
-					maybeClaimIfAlone(get, set);
 				},
 				onEnd,
 				// sessions row UPDATE → match_assign_count + board_drafts/version catch-up(원인1) + 편집 락(원인2).
@@ -435,9 +429,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					recomputeLock(get, set);
 				},
 				// 재구독(재연결) 직후 1회 재조회 — SUBSCRIBED~첫 UPDATE 공백 보정(drafts+버전+락 모두).
-				// 서버 권위 락이 확정된 뒤 혼자뿐이면 자동 점유(보기 전용 단계 생략).
+				// 자동 점유 없음 — 편집자가 되려면 편집 동작(드래그)이나 '편집 권한 가져오기' 버튼 필요.
 				onResync: () => {
-					void get().resyncFromServer({ indicate: true }).then(() => maybeClaimIfAlone(get, set));
+					void get().resyncFromServer({ indicate: true });
 				},
 				// session_players row 변경(추가/삭제/상태)을 즉시 반영 — broadcast 누락/지연과 무관하게
 				// 모든 기기의 sessionPlayers가 DB와 수렴(중복·미동기화·다중상태 방지). 보드는 sessionPlayers
@@ -478,14 +472,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		// 편집 락 lifecycle 설치(서버 권위 락) — 매 구독마다 초기화.
 		resetEditorCache(); // 세션 경계 — 이전 세션의 in-flight heartbeat .then 무효화(lockEpoch 증가)
 		recomputeLock(get, set); // 초기 lockFree; SUBSCRIBED 후 onResync가 서버 권위로 채움
-		installLockLifecycle(get, set);
+		installLockLifecycle(get);
 	},
 
 	unsubscribe: () => {
 		const { _channel, _metaChannel, _clientId, isEditor } = get();
-		// 편집 보유자면 명시 해제(best-effort). 실패해도 lease 만료가 백업.
+		// 편집 보유자면 명시 해제(best-effort). 실패(crash 등)해도 "편집 권한 가져오기"(takeover)로 회수.
 		if (isEditor && _clientId) void dbBoardReleaseEditor(getSessionId(), _clientId);
-		stopHeartbeat();
 		teardownLockLifecycle();
 		resetEditorCache();
 		if (_channel) supabase.removeChannel(_channel);

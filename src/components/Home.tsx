@@ -299,7 +299,7 @@ export default function Home({ onStart }: Props) {
 		<>
 		<AppScreen
 			logo
-			onRefresh={() => scheduleActions.load()}
+			onRefresh={() => Promise.all([scheduleActions.load(), appActions.checkActiveSession()]).then(() => {})}
 			right={
 				// 아이콘 버튼(40px·중앙정렬)은 글리프가 버튼 안쪽에 있어 거터선보다 들어온다.
 				// 음수 마진으로 마지막 아이콘(⋮)의 우측을 본문 우측 거터선에 맞춘다(좌측 로고와 대칭).
@@ -310,14 +310,15 @@ export default function Home({ onStart }: Props) {
 			}
 		>
 			<div className="app-card flex flex-col gap-4">
-				{/* 진행 중 세션 이어하기 */}
+				{/* 진행 중 세션 입장(수동) — 자동참여 폐지 후 라이브 보드로 들어가는 입구.
+				    sessionMeta는 마운트/포그라운드 복귀/새로고침 시 checkActiveSession이 세팅. */}
 				{sessionMeta && (
 					<button
 						type="button"
 						onClick={() => navigate("/session")}
 						className="btn-solid-blue text-[15px]"
 					>
-						진행 중 세션 이어하기
+						진행 중 세션 입장
 					</button>
 				)}
 

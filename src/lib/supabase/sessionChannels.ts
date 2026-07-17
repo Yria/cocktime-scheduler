@@ -12,12 +12,14 @@ import type { SessionRow } from "./types";
 
 export type SessionPlayersChange = RealtimePostgresChangesPayload<Record<string, unknown>>;
 
+// player_updated / board_drafts_updated 는 브로드캐스트로 전송하지 않는다(Realtime 감축):
+//   · player_updated → session_players postgres_changes 로 수렴
+//   · board_drafts_updated → sessions-row UPDATE(board_drafts+version)로 수렴
+// 둘 다 권위 경로와 중복이라 수신 리스너도 제거(발신자 로컬 반영은 applyBroadcast 직접 호출로 유지).
 const BROADCAST_EVENTS = [
 	"match_started",
 	"match_completed",
 	"match_roster_updated",
-	"player_updated",
-	"board_drafts_updated",
 	"session_refresh_required",
 ] as const;
 
@@ -29,9 +31,9 @@ export interface SessionChannelHandlers {
 	/** 다른 클라이언트가 세션 종료(is_active=false). */
 	onEnd: () => void;
 	/**
-	 * sessions row UPDATE(is_active 제외) — match_assign_count + board_drafts/version(catch-up, 원인1) +
-	 * editor_*(서버 권위 편집 락, 원인2)를 한 row에서 전달. board_drafts_updated broadcast(self:false)를
-	 * 놓친 관전자도 이 DB UPDATE로 수렴하고, 편집 락 변화도 같은 이벤트에 동승해 전파된다.
+	 * sessions row UPDATE(is_active 제외) — match_assign_count + board_drafts/version + editor_*(서버 권위
+	 * 편집 락)를 한 row에서 전달. board_drafts 는 이 DB UPDATE가 뷰어 수렴의 단일 권위 경로다(중복이던
+	 * board_drafts_updated broadcast 제거 — Realtime 감축). 편집 락 변화도 같은 이벤트에 동승해 전파된다.
 	 */
 	onSessionRowUpdate: (row: SessionRow) => void;
 	/** meta 채널 (재)구독 완료 — 재연결 직후 공백 보정용 단건 재조회 트리거. */

@@ -42,7 +42,7 @@ export const createMatchSlice: StateCreator<
 	MatchSlice
 > = (set, get) => ({
 	applyRemoteDrafts: (payload) => {
-		// 멤버십이 실제로 안 바뀐 재수신/스냅샷(handleBoardDraftsUpdated는 동일 멤버십도 매번 새 객체 set)이면
+		// 멤버십이 실제로 안 바뀐 재수신/스냅샷(applyDraftsIfNewer는 동일 멤버십도 매번 새 객체 set)이면
 		// 자석 위치를 전혀 만지지 않는다 — 자유 자석 위치는 로컬 전용이므로 보존되어야 한다.
 		if (canonicalizeDrafts(payload) === canonicalizeDrafts(serializeBoardDrafts(get()))) return;
 		// 불변식 I2(경기중 anchor 제거)·I1(중복 제거) 강제를 위해 reconcile에 넘긴다.

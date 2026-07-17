@@ -43,11 +43,6 @@ export type BroadcastPayload =
 	| {
 			event: "session_refresh_required";
 			payload: Record<string, never>;
-	  }
-	| {
-			event: "board_drafts_updated";
-			// version: 낙관적 단조 가드 — 수신측이 자신의 버전보다 새 것만 적용(broadcast/catch-up 역전 방지).
-			payload: { drafts: import("../../types/board").BoardDraftsPayload; version: number };
 	  };
 
 export function createBroadcastChannel(

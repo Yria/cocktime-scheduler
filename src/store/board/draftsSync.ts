@@ -1,7 +1,7 @@
 import type { BoardDraftsPayload, DraftTeam, ForcedPair, Reservation } from "../../types/board";
 import { teamMembers } from "../../lib/board/membership";
 import { effectiveForcedIds } from "../../lib/board/draftMutations";
-import { dbBoardSaveDrafts, sendBroadcast } from "../../lib/supabase";
+import { dbBoardSaveDrafts } from "../../lib/supabase";
 import { useSessionStore } from "../sessionStore";
 import { useAppStore } from "../appStore";
 import { toast } from "../toastStore";
@@ -97,10 +97,8 @@ export function pushDraftsToRemote(payload: BoardDraftsPayload) {
 			return;
 		}
 		sess.applyDraftsIfNewer(payload, newVersion); // 내 버전 즉시 갱신(다음 저장 base)
-		const channel = sess._channel;
-		if (channel) {
-			sendBroadcast(channel, { event: "board_drafts_updated", payload: { drafts: payload, version: newVersion } });
-		}
+		// board_drafts_updated broadcast 제거(Realtime 감축): 뷰어는 sessions-row UPDATE(postgres_changes,
+		// board_drafts+version 동승)로 수렴 — broadcast는 그 권위 경로와 같은 버전 리듀서로 들어가던 중복 전송이었다.
 		if (pendingDraftsPayload) {
 			const next = pendingDraftsPayload;
 			pendingDraftsPayload = null;
