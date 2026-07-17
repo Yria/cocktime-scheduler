@@ -50,9 +50,25 @@ export function useSessionBoardEffects() {
 		return () => unsubscribe();
 	}, [sessionId, subscribe, unsubscribe, navigate]);
 
-	// (자동 점유 제거) 보드에 들어와도 편집자가 되지 않는다 — 보기 전용으로 시작하고, 편집은 직접
-	// 드래그 편집(boardStore→claimEdit→claimEditingIfFree, 자유 락만) 또는 '편집 권한 가져오기'로만.
-	// 연결만 하고 편집 안 하는 클라(상시 데스크탑 등)는 편집자가 되지 않는다(호깅/플래핑 방지).
+	// 최초 진입 1회 자동 점유 — 세션을 연 사람(운영진)이 자유(아무도 편집 안 함) 보드에 들어오면 편집자가 된다.
+	// 콕체크·경기 조작·드래그 등 보드 편집이 전부 isEditor 게이팅이라, opener는 editor여야 바로 조작 가능하다.
+	// 단 "진입 시 1회만"(autoClaimTriedRef) — 이후 편집자 이탈로 free가 돼도 재점유하지 않는다(연속 재점유
+	// maybeClaimIfAlone 폐기 유지 → 상시 데스크탑이 혼자 남을 때마다 되뺏는 플래핑 방지). 그 뒤 편집권
+	// 이동은 '편집 권한 가져오기'(수동)로만. 서버 CAS가 진실 — 실제로 남이 편집 중이면 optimistic claim이
+	// 거부되고 resync로 읽기 모드로 떨어진다. claimEditingIfFree는 운영진(isAdmin)만 동작(회원은 읽기 전용).
+	const clientId = useSessionStore((s) => s._clientId);
+	const lockFree = useSessionStore((s) => s.lockFree);
+	const presenceCount = useSessionStore((s) => s.presenceCount);
+	const claimEditingIfFree = useSessionStore((s) => s.claimEditingIfFree);
+	const autoClaimTriedRef = useRef(false);
+	useEffect(() => {
+		autoClaimTriedRef.current = false; // 세션(보드) 바뀌면 진입 1회 기회 리셋
+	}, [sessionId]);
+	useEffect(() => {
+		if (autoClaimTriedRef.current || !clientId) return; // 구독 전이면 clientId 세팅 후 재평가
+		autoClaimTriedRef.current = true; // 최초 1회만 시도 — 이후 free 전이엔 재점유하지 않음(플래핑 방지)
+		if (lockFree && !isEditor && presenceCount <= 1) claimEditingIfFree();
+	}, [clientId, lockFree, isEditor, presenceCount, claimEditingIfFree, sessionId]);
 
 	// ── 불변식 I2 자가 치유(편집자) — 코트 변화 시 경기중이 된 anchor를 예비팀에서 제거 + 영속화 ──
 	// 경기 시작/로스터 편입으로 코트에 올라간 선수가 동시편집 레이스(유실된 dissolve)나 setMatchRoster

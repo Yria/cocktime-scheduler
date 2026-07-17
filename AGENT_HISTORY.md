@@ -260,3 +260,14 @@ b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
 - tsc/eslint/build 통과. 프론트만.
 
 ---
+
+## #22
+
+**Prompt**: 세션화면에서 콕체크안돼
+
+**Answer**: 근본 원인 = #18에서 "진입 자동점유"까지 없앤 회귀. 콕체크는 UI 탭(SessionBoard onCockCheck)과 confirmCock 둘 다 `isEditor` 게이팅이고(주석에 "opener는 진입 시 자동 점유로 editor"라 명시), 보드 편집(드래그·경기 조작 포함)이 전부 isEditor 게이팅이라 opener가 editor여야 조작 가능. #18에서 자동점유(진입 + 연속)를 통째로 제거해 opener가 read-only로 시작 → 콕체크·편집 전반 불가.
+- **수정**: `useSessionBoardEffects`에 **진입 1회 자동 점유**(one-shot `autoClaimTriedRef`) 복구 — 자유+혼자+운영진이면 진입 시 `claimEditingIfFree`. **단 진입 1회만** — 이후 free 전이엔 재점유 안 함(연속 재점유 maybeClaimIfAlone은 계속 폐기 → 플래핑 방지 유지). 서버 CAS가 진실이라 실제로 남이 편집 중이면 optimistic claim 거부 후 read-only.
+- 결과: opener가 진입 즉시 editor → 콕체크·경기 조작·드래그 정상. 플래핑은 여전히 없음(연속 재점유 없음). 이는 사용자의 최초 요청("최초 오픈 자동, 이후 수동")과 일치.
+- 문서 EXPANSION_SPEC §8.1·DATABASE.md, 메모리(board-sync·realtime) 정정. tsc/eslint/vitest(210)/build 통과. 프론트만.
+
+---
