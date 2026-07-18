@@ -92,8 +92,6 @@ export interface PlaceRow {
 	map_url: string | null;
 	// 대관장소 여부(대관비 부과 대상 게이트). 마이그레이션 20260718000000. 회계 §5
 	charges_court_fee: boolean;
-	// (deprecated) 옛 시간당 요금. charges_court_fee 로 대체됨 — 후속 마이그레이션에서 컬럼 drop 예정.
-	court_fee_per_hour: number | null;
 }
 
 export type AttendanceStatus =

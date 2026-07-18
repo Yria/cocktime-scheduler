@@ -285,3 +285,15 @@ b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
 - ACCOUNTING_SPEC §1.1·1.2·4·5 갱신. tsc/eslint/vitest(210)/build 통과. **운영 DB 배포는 사용자 확인 대기**(금전 크리티컬).
 
 ---
+
+## #24
+
+**Prompt**: 테스트하고 1번 수행하고, 현재 지난 세션에 대관비 입력해야해. 앞으로는 이런일 없고 이번건만 db에 수동으로 넣어줘. 7월17일 sm배드민턴이야 (가격은 9만원)
+
+**Answer**: (1) #23 배포 검증 → 라이브 번들(ckti.me)에 charges_court_fee·대관장소 포함 확인 = 새 프론트 라이브. (2) **#1 contract 마이그레이션 20260718010000**: 브리지 트리거·함수·court_fee_per_hour 컬럼 drop. 선행조건(신 클라 라이브·잔존 참조는 브리지 함수뿐, 뷰 없음) 확인 후 적용. PlaceRow 타입의 죽은 court_fee_per_hour 필드도 제거. (3) **과거 세션 대관비 수동 보정**(supabase db query --linked, 기능 이전 마감 세션이라 UI로 불가):
+- 세션 id=182(SM배드민턴, 7/17 15:00, closed, charges_court_fee=true, matches 13). 기존 부과=정액 6,000×12 전부 미납(선납 없음).
+- `court_fee=90000` UPDATE 후 `dues_generate_session_court(182)` 호출 → 엔빵 분모 14명(참석 12+당일취소확정 2, 운영진 2 포함), 6,420원/인. 기존 12건 6000→6420 갱신 + 운영진 2명 신규 = 14건. 합계 89,880(미달 120=10원 버림, 의도).
+- `dues_set_session_fee`는 is_admin 게이트라 Management API로 불가 → 직접 UPDATE + SECURITY DEFINER 함수 호출. 이 보정은 dues_audit_log 미기록(1회성).
+- 실데이터로 엔빵 로직 검증 완료. tsc/build 통과.
+
+---
