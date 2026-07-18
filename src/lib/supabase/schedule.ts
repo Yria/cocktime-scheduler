@@ -81,8 +81,8 @@ export interface CreatePlaceInput {
 	lat?: number | null;
 	lng?: number | null;
 	mapUrl?: string | null;
-	/** 코트 1개 시간당 대관비(원). null=대관비 없는 장소. places.court_fee_per_hour → 회계 대관비 설정에 자동 반영. */
-	courtFeePerHour?: number | null;
+	/** 대관장소 여부(대관비 부과 대상). places.charges_court_fee. 실제 총액은 일정(반복 규칙)에서 입력. */
+	chargesCourtFee?: boolean;
 }
 
 export async function createPlace(
@@ -97,7 +97,7 @@ export async function createPlace(
 			lat: input.lat ?? null,
 			lng: input.lng ?? null,
 			map_url: input.mapUrl ?? null,
-			court_fee_per_hour: input.courtFeePerHour ?? null,
+			charges_court_fee: input.chargesCourtFee ?? false,
 			created_by: createdBy,
 		})
 		.select()

@@ -20,13 +20,16 @@
 
 ### 1.1 금액
 - **회비(monthly_fee)**: 5,000원/월. 회원(활성·비운영진·비게스트) 대상, 월 단위(`period_ym`).
-- **대관비(court_fee)**: **인당 정액 6,000원**(고정, `dues_settings.court_fee_default`). 세션 단위(`session_id`).
-- `places.court_fee_per_hour` = **"대관하는 장소인지" 플래그 + 코트 시간당 요금(지출 추정 참고값)**. NULL이면 그 장소 세션엔 대관비 미부과. 회원이 내는 금액은 항상 6,000 고정이며, 실제 대관 지출(할인 등)은 은행 출금으로 파악.
+- **대관비(court_fee)**: 세션 단위(`session_id`). 두 모드로 갈린다(2026-07):
+  - **엔빵**: 세션에 대관 **총액**이 있으면 `총액 ÷ 참석 인원`(**10원 버림**), **운영진 포함** 전원에게 부과. (평일: 총액 입력 → 엔빵)
+  - **정액**: 총액이 없으면 **인당 6,000원**(`dues_settings.court_fee_default`), **운영진 제외**. (토·일: 총액 미입력 → 정액)
+  - 엔빵 총액 = `coalesce(sessions.court_fee, recurring_schedules.court_fee)` — 반복 규칙에 넣은 **기본 총액**(일정 생성 시)을 회차가 물려받고, 회차에서 실제 총액을 넣으면 그게 우선. 부과 시점(세션 종료 트리거)에 규칙을 조인해 읽음.
+- `places.charges_court_fee`(boolean) = **대관장소 여부(대관비 부과 대상 게이트)**. false면 그 장소 세션엔 대관비 미부과. (구 `court_fee_per_hour` 를 대체 — 후속 마이그레이션에서 컬럼 drop 예정. 전환 창은 `places` 브리지 트리거가 두 컬럼을 동기화.)
 
 ### 1.2 세션이 "열렸다"의 정의
 - **경기(matches)가 있으면 열린 세션.** 없으면 무산 → 대관비 부과 대상 아님.
 - **예외(`sessions.dues_include=true`)**: 무산/즉석 세션이지만 정산이 필요한 경우 정산 화면에만 노출.
-- 정산상 열린 세션 = `matches 있음 OR dues_include`. 대관 세션 목록 쿼리(`queryCourtSessions`)가 이 기준을 원천에서 강제(장소 요금 있음 + `matches!inner`).
+- 정산상 열린 세션 = `matches 있음 OR dues_include`. 대관 세션 목록 쿼리(`queryCourtSessions`)가 이 기준을 원천에서 강제(대관장소 `charges_court_fee=true` + `matches!inner`).
 
 ### 1.3 회비 이월 (deferred_to)
 - `dues_charges.deferred_to`가 set이면 **그 달이 실효 월**(부과 월 대신). 예: 7월 회비를 8월로 이월 → 7월엔 해결된 것처럼 숨김, 8월에 미정산으로 노출.
@@ -101,7 +104,11 @@
 
 규칙 단일 소스(빌딩블록): `dues_generate_monthly(ym)`(회비) · `dues_generate_session_court(sid)`(세션 대관비). 트리거·ensure·수동배치가 모두 이 둘을 재사용.
 - **회비 룰**: `is_active AND not is_guest AND not 운영진`, 가입월(`membership_started_at ?? created_at` + `offset_days`) 다음 달부터 `amount_due=회비액`.
-- **대관비 룰**: 대관 장소 + `status in (active,closed)` + **경기기록 있음**(무산 제외) 세션의 참석자(`confirmed`/`late_pool` + 당일 확정취소)에게 `amount_due=6,000`(운영진 제외). 게스트는 `payer_hint=invited_by`. `amount_paid>0` 보존(선납). self-heal 정리: **①무자격 세션의 미납분** + **②자격 세션에서 '사전취소(당일취소 아님) attendance가 있는 회원'의 미납분** — 선납/부과 후 참가 취소·환불(취소·재처리로 미납 복귀)한 사람의 유령 미납만. **취소 기록이 없으면 삭제 안 함**(attendances 없는 수동부과 세션·워크인 수동부과의 정상 미납 보존).
+- **대관비 룰**: 대관장소(`charges_court_fee`) + `status in (active,closed)` + **경기기록 있음**(무산 제외) 세션의 참석자(`confirmed`/`late_pool` + 당일 확정취소)에게 부과. 금액·대상은 총액 유무로 갈림(§1.1):
+  - **엔빵**(총액 `coalesce(세션,규칙) > 0`): `amount_due = 총액 ÷ 참석인원`(10원 버림), **운영진 포함** 전원.
+  - **정액**(총액 없음): `amount_due = 6,000`, **운영진 제외**(현행).
+  - 게스트는 `payer_hint=invited_by`. `amount_paid>0` 보존(선납). `dues_set_session_fee`(실제 총액 입력)는 저장 후 대관비를 재생성해 엔빵을 즉시 반영.
+  - self-heal 정리: **①무자격 세션의 미납분 전삭제** + **②자격 세션에서 '이번 부과 대상(엔빵=전원 / 정액=운영진 제외 + 확정·당일취소)에 속하지 않는 회원'의 미납분** — 사전취소 유령 + 엔빵→정액 전환으로 제외된 운영진 고아까지 포함. `amount_paid>0`(선납)은 보존.
 
 ---
 
@@ -111,6 +118,7 @@
 - 5,000 → 회비 / 6,000 → 대관 1 / 12,000 → 대관 2 / 11,000 → 회비+대관 1.
 - 일반식: `amount−5,000`이 6,000 배수면 회비+k대관, 아니면 `amount`가 6,000 배수면 k대관. 게스트는 회비 제외.
 - **완납/면제 항목 자동선택 금지**. 부족하면 있는 만큼만.
+- ⚠️ 자동선택은 **정액 6,000 기준**의 휴리스틱이다. 엔빵 대관비(10원 단위, 6,000 비배수)는 이 식에 안 맞을 수 있으니 **기존 미납 배분 우선**으로 흡수하고, 안 맞으면 관리자가 수동 조정.
 
 ---
 

@@ -24,6 +24,8 @@ export interface RecurringRuleInput {
 	carpoolEnabled: boolean;
 	capacity: number | null;
 	placeId: number | null;
+	/** 엔빵 대관비 기본 총액(원). null=총액 없음(→정액 6천). 대관장소일 때만 의미. */
+	courtFee: number | null;
 }
 
 export async function fetchRecurringRules(): Promise<RecurringScheduleRow[]> {
@@ -54,6 +56,7 @@ export async function createRecurringRule(
 			carpool_enabled: input.carpoolEnabled,
 			capacity: input.capacity,
 			place_id: input.placeId,
+			court_fee: input.courtFee,
 			created_by: createdBy,
 		})
 		.select()
@@ -78,6 +81,7 @@ export async function updateRecurringRule(
 	if (patch.carpoolEnabled != null) row.carpool_enabled = patch.carpoolEnabled;
 	if (patch.capacity !== undefined) row.capacity = patch.capacity;
 	if (patch.placeId !== undefined) row.place_id = patch.placeId;
+	if (patch.courtFee !== undefined) row.court_fee = patch.courtFee;
 	if (patch.isActive != null) row.is_active = patch.isActive;
 	const { data, error } = await supabase
 		.from("recurring_schedules")
@@ -136,6 +140,7 @@ export interface OccurrencePatch {
 	carpoolEnabled?: boolean;
 	placeId?: number | null;
 	capacity?: number | null;
+	courtFee?: number | null; // 이 회차 엔빵 대관비 총액(원). null=규칙 기본값 사용. 부과 시점 coalesce(세션,규칙)
 	isRegular?: boolean; // 정모 여부
 	noticeMd?: string | null; // 정모 안내/대진표 본문(마크다운)
 }
@@ -151,6 +156,7 @@ export async function updateOccurrence(
 	if (patch.carpoolEnabled != null) row.carpool_enabled = patch.carpoolEnabled;
 	if (patch.placeId !== undefined) row.place_id = patch.placeId;
 	if (patch.capacity !== undefined) row.capacity = patch.capacity;
+	if (patch.courtFee !== undefined) row.court_fee = patch.courtFee;
 	if (patch.isRegular != null) row.is_regular = patch.isRegular;
 	if (patch.noticeMd !== undefined) row.notice_md = patch.noticeMd;
 	const { data, error } = await supabase
@@ -248,6 +254,7 @@ export interface OneOffInput {
 	placeId: number | null;
 	capacity: number | null;
 	courtCount?: number;
+	courtFee?: number | null; // 엔빵 대관비 총액(원). null=총액 없음(→정액 6천)
 	isRegular?: boolean; // 정모 여부
 	noticeMd?: string | null; // 정모 안내/대진표 본문(마크다운)
 }
@@ -271,6 +278,7 @@ export async function createOneOffOccurrence(
 			place_id: input.placeId,
 			capacity: input.capacity,
 			court_count: input.courtCount ?? 4,
+			court_fee: input.courtFee ?? null,
 			status: "draft",
 			is_active: false,
 			is_overridden: false,

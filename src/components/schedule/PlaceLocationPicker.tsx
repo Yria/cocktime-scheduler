@@ -10,6 +10,7 @@ import {
 	labelStyle,
 } from "../common/fieldStyles";
 import ModalSheet from "../common/ModalSheet";
+import { Switch } from "../common/Switch";
 
 interface Props {
 	onAddPlace: (input: CreatePlaceInput) => Promise<PlaceRow | null>;
@@ -50,7 +51,7 @@ export default function PlaceLocationPicker({
 			: "지도/검색을 쓰려면 VITE_KAKAO_MAP_KEY 설정이 필요해요(카카오 콘솔에 도메인 등록 포함).",
 	);
 	const [hint, setHint] = useState<string | null>(null);
-	const [courtFee, setCourtFee] = useState(""); // 대관비(코트 1개 시간당, 원). 빈값=대관비 없음.
+	const [chargesCourtFee, setChargesCourtFee] = useState(false); // 대관장소 여부(대관비 부과 대상)
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [mapReady, setMapReady] = useState(false);
@@ -148,17 +149,6 @@ export default function PlaceLocationPicker({
 			setError("장소를 검색해 선택하세요.");
 			return;
 		}
-		// 대관비: 빈값이면 null(대관비 없는 장소), 입력했으면 0 이상 숫자만 허용.
-		let courtFeePerHour: number | null = null;
-		const feeRaw = courtFee.trim();
-		if (feeRaw !== "") {
-			const n = Number(feeRaw);
-			if (!Number.isFinite(n) || n < 0) {
-				setError("대관비는 0 이상의 숫자로 입력하거나 비워두세요.");
-				return;
-			}
-			courtFeePerHour = Math.round(n);
-		}
 		setError(null);
 		setBusy(true);
 		try {
@@ -168,7 +158,7 @@ export default function PlaceLocationPicker({
 				lat: selected.lat,
 				lng: selected.lng,
 				mapUrl: null,
-				courtFeePerHour,
+				chargesCourtFee,
 			});
 			if (place) {
 				setBusy(false);
@@ -351,45 +341,29 @@ export default function PlaceLocationPicker({
 						)}
 					</div>
 
-					{/* 4. 대관비(선택) — 입력하면 places.court_fee_per_hour 로 저장돼 회계 대관비 설정에 자동 반영 */}
+					{/* 4. 대관장소 여부 — places.charges_court_fee. 실제 총액은 일정(반복 규칙·회차)에서 입력 */}
 					<div>
-						<label className={labelCls} style={labelStyle}>
-							대관비{" "}
-							<span className="text-faint" style={{ fontWeight: 400 }}>
-								(선택)
-							</span>
-						</label>
-						<div style={{ position: "relative" }}>
-							<input
-								type="number"
-								inputMode="numeric"
-								min={0}
-								step={1000}
-								value={courtFee}
-								onChange={(e) => setCourtFee(e.target.value)}
-								placeholder="코트 1개 · 시간당 (없으면 비워두세요)"
-								className={inputCls}
-								style={{ ...inputStyle, paddingRight: 34 }}
+						<div className="flex items-center justify-between">
+							<div className="flex flex-col gap-0.5">
+								<span className={labelCls} style={{ ...labelStyle, marginBottom: 0 }}>
+									대관장소
+								</span>
+								<span className="text-faint" style={{ fontSize: 11.5 }}>
+									켜면 이 장소 세션 참석자에게 대관비를 부과해요
+								</span>
+							</div>
+							<Switch
+								checked={chargesCourtFee}
+								onChange={setChargesCourtFee}
+								ariaLabel="대관장소"
 							/>
-							<span
-								style={{
-									position: "absolute",
-									right: 12,
-									top: "50%",
-									transform: "translateY(-50%)",
-									fontSize: 13,
-									color: "#94a3b8",
-									pointerEvents: "none",
-								}}
-							>
-								원
-							</span>
 						</div>
 						<p
 							className="text-faint"
 							style={{ fontSize: 12, marginTop: 6, lineHeight: 1.5 }}
 						>
-							입력하면 회계의 <b>대관비 설정</b>에 자동 반영돼요. 대관비 없는 장소면 비워두세요.
+							실제 대관 총액은 일정(반복 규칙·회차)에서 입력해요. 총액이 있으면 참석 인원으로
+							엔빵(나눗셈), 없으면 정액(인당)이 부과돼요.
 						</p>
 					</div>
 

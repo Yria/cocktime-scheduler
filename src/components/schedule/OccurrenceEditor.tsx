@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { courtFeeChargeHint, parseCourtFee } from "../../lib/schedule/courtFee";
 import type {
 	OccurrencePatch,
 	OneOffInput,
@@ -58,6 +59,8 @@ export default function OccurrenceEditor({
 		setCapacity,
 		placeId,
 		setPlaceId,
+		courtFeeStr,
+		setCourtFeeStr,
 		isRegular,
 		setIsRegular,
 		noticeMd,
@@ -74,6 +77,10 @@ export default function OccurrenceEditor({
 	});
 
 	const [showPicker, setShowPicker] = useState(false);
+
+	// 선택한 장소가 대관장소면 코트 총액(엔빵) 입력 노출
+	const placeChargesCourt =
+		places.find((p) => p.id === placeId)?.charges_court_fee ?? false;
 
 	// 헤더 제목/태그
 	const title =
@@ -314,6 +321,32 @@ export default function OccurrenceEditor({
 								</button>
 							</div>
 						</div>
+
+						{/* 코트 총액(엔빵) — 대관장소일 때만. 비우면 규칙 기본값 사용 */}
+						{placeChargesCourt && (
+							<div>
+								<label className={labelCls} style={labelStyle}>
+									코트 총액 (엔빵)
+								</label>
+								<input
+									type="number"
+									inputMode="numeric"
+									min={0}
+									step={1000}
+									value={courtFeeStr}
+									onChange={(e) => setCourtFeeStr(e.target.value)}
+									disabled={busy}
+									placeholder="비우면 규칙 기본값"
+									className={inputCls}
+									style={inputStyle}
+								/>
+								<p className="text-faint" style={{ fontSize: 11.5, marginTop: 4, lineHeight: 1.5 }}>
+									{courtFeeStr.trim() === ""
+										? "이 회차는 반복 규칙의 기본 총액으로 부과돼요."
+										: courtFeeChargeHint(parseCourtFee(courtFeeStr))}
+								</p>
+							</div>
+						)}
 
 						{error && (
 							<p

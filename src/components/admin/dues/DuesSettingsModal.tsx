@@ -8,6 +8,7 @@ import {
 	updatePlaceFee,
 } from "../../../lib/supabase/dues";
 import ModalSheet from "../../common/ModalSheet";
+import { Switch } from "../../common/Switch";
 import { inputCls, inputStyle, labelCls, labelStyle } from "../../common/fieldStyles";
 import EmptyState from "../../shared/EmptyState";
 
@@ -29,8 +30,8 @@ export default function DuesSettingsModal({ onClose }: Props) {
 	const [accountHolder, setAccountHolder] = useState("");
 
 	const [places, setPlaces] = useState<PlaceFeeRow[]>([]);
-	// 장소별 편집값(문자열; 빈 문자열=대관비 없음).
-	const [placeFees, setPlaceFees] = useState<Record<number, string>>({});
+	// 장소별 대관장소 여부(대관비 부과 대상) 편집값.
+	const [placeGate, setPlaceGate] = useState<Record<number, boolean>>({});
 
 	useEffect(() => {
 		let cancelled = false;
@@ -46,10 +47,8 @@ export default function DuesSettingsModal({ onClose }: Props) {
 				setAccountHolder(s.accountHolder ?? "");
 			}
 			setPlaces(p);
-			setPlaceFees(
-				Object.fromEntries(
-					p.map((pl) => [pl.id, pl.courtFeePerHour == null ? "" : String(pl.courtFeePerHour)]),
-				),
+			setPlaceGate(
+				Object.fromEntries(p.map((pl) => [pl.id, pl.chargesCourtFee])),
 			);
 			setLoading(false);
 		})();
@@ -82,16 +81,11 @@ export default function DuesSettingsModal({ onClose }: Props) {
 			accountHolder: accountHolder.trim() || null,
 		};
 		const okSettings = await updateDuesSettings(patch);
-		// 변경된 장소 대관비만 업데이트
+		// 변경된 장소 대관장소 여부만 업데이트
 		let okPlaces = true;
 		for (const pl of places) {
-			const raw = (placeFees[pl.id] ?? "").trim();
-			const next = raw === "" ? null : Number(raw);
-			if (next !== null && (!Number.isInteger(next) || next < 0)) {
-				okPlaces = false;
-				continue;
-			}
-			if (next !== pl.courtFeePerHour) {
+			const next = placeGate[pl.id] ?? false;
+			if (next !== pl.chargesCourtFee) {
 				const ok = await updatePlaceFee(pl.id, next);
 				if (!ok) okPlaces = false;
 			}
@@ -195,14 +189,14 @@ export default function DuesSettingsModal({ onClose }: Props) {
 							</div>
 						</div>
 
-						{/* 장소별 대관비 */}
+						{/* 장소별 대관장소 여부 */}
 						<div className="pt-1">
 							<p className="text-strong" style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>
-								장소별 코트 시간당 요금
+								대관장소 (대관비 부과 대상)
 							</p>
 							<p className="text-faint" style={{ fontSize: 12.5, marginBottom: 8, lineHeight: 1.5 }}>
-								코트 1개 시간당 요금(예: 13,000). 비워두면 대관비 없는 장소예요(회원 대관비 부과 안 함).
-								세션별 실제 지출은 수지 탭에서 입력(할인 반영). 회원 대관비는 위 "대관비(인당)" 고정액.
+								켜면 그 장소 세션 참석자에게 대관비를 부과해요. 실제 대관 총액은 일정(반복 규칙·회차)에서
+								입력하고, 총액이 있으면 참석 인원으로 엔빵(나눗셈), 없으면 위 "대관비(인당)" 정액이 부과돼요.
 							</p>
 							{places.length === 0 ? (
 								<p className="text-muted" style={{ fontSize: 13 }}>등록된 장소가 없어요.</p>
@@ -213,18 +207,13 @@ export default function DuesSettingsModal({ onClose }: Props) {
 											<span className="text-strong" style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>
 												{pl.name}
 											</span>
-											<input
-												type="number"
-												inputMode="numeric"
-												value={placeFees[pl.id] ?? ""}
-												onChange={(e) =>
-													setPlaceFees((prev) => ({ ...prev, [pl.id]: e.target.value }))
+											<Switch
+												checked={placeGate[pl.id] ?? false}
+												onChange={(v) =>
+													setPlaceGate((prev) => ({ ...prev, [pl.id]: v }))
 												}
-												placeholder="없음"
-												className={inputCls}
-												style={{ ...inputStyle, width: 110, textAlign: "right" }}
+												ariaLabel={`${pl.name} 대관장소`}
 											/>
-											<span className="text-faint" style={{ fontSize: 13 }}>원</span>
 										</div>
 									))}
 								</div>

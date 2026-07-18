@@ -271,3 +271,17 @@ b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
 - 문서 EXPANSION_SPEC §8.1·DATABASE.md, 메모리(board-sync·realtime) 정정. tsc/eslint/vitest(210)/build 통과. 프론트만.
 
 ---
+
+## #23
+
+**Prompt**: court_fee_per_hour 를 제거하는 방향으로 가자 (엔빵 대관비: 평일 총액÷참석인원, 대관장소 플래그 boolean 전환)
+
+**Answer**: 평일 대관비를 정액 6천 → **엔빵**(총액÷참석인원, 10원 버림, 운영진 포함)으로. 총액 없으면 현행 정액 6천(운영진 제외) 유지 → 토·일은 총액 미입력으로 자연히 정액.
+- **설계 단순화(핵심 결정)**: 회차 총액을 sync로 복사(큰 sync 함수 수정)하는 대신 **부과 시점에 `coalesce(sessions.court_fee, recurring_schedules.court_fee)`로 조인**해 읽음 → sync/뷰 무수정. 규칙=기본 총액(일정 생성 시), 세션=회차 override(우선).
+- **게이트 전환**: `places.court_fee_per_hour`(시간당 요금·죽은 값) → boolean `places.charges_court_fee`(대관장소 여부). 죽은 `suggested`/`rate` 계산 제거.
+- **마이그레이션 20260718000000**: charges_court_fee 신설+이행, recurring_schedules.court_fee 신설, `dues_generate_session_court` 재정의(엔빵/정액 분기), `dues_set_session_fee` 재정의(총액 입력 후 재생성). court_fee_per_hour 컬럼 drop은 **후속**(expand/contract — 클라 배포 후).
+- **적대적 검증 워크플로우(8 에이전트)로 돈 로직 2버그 발견·수정**: ①(HIGH) 게이트를 charges_court_fee로 바꿨는데 구 클라는 court_fee_per_hour만 write → 전환 창에 미부과+미납삭제. **places 브리지 트리거**로 두 컬럼 동기화(배포 순서 무관). ②(MED) 엔빵→정액 전환 시 운영진 고아 미납 잔존 → 하단 self-heal delete를 **"이번 부과 대상에 없는 회원 정리"로 일반화**(사전취소 유령 정리도 포함).
+- **클라/UI**: 규칙·회차 에디터에 "코트 총액(엔빵)" 입력 + 부과 방식 안내(`courtFee.ts` 공용 헬퍼), 장소 폼·회비설정을 "대관장소" 토글로 전환. 타입(PlaceRow.charges_court_fee·RecurringScheduleRow.court_fee·SessionRow.court_fee), dues.ts 게이트 필터 2곳 전환.
+- ACCOUNTING_SPEC §1.1·1.2·4·5 갱신. tsc/eslint/vitest(210)/build 통과. **운영 DB 배포는 사용자 확인 대기**(금전 크리티컬).
+
+---

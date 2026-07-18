@@ -6,6 +6,7 @@ import {
 	kstEndWallClockToISO,
 	kstWallClockToISO,
 } from "../../lib/schedule/calendar";
+import { parseCourtFee } from "../../lib/schedule/courtFee";
 import { countSessionPrepaid } from "../../lib/supabase/dues";
 import type {
 	OccurrencePatch,
@@ -53,6 +54,9 @@ export function useOccurrenceForm(
 	);
 	const [placeId, setPlaceId] = useState<number | null>(
 		occurrence?.place_id ?? null,
+	);
+	const [courtFeeStr, setCourtFeeStr] = useState<string>(() =>
+		occurrence?.court_fee != null ? String(occurrence.court_fee) : "",
 	);
 	const [isRegular, setIsRegular] = useState<boolean>(
 		() => occurrence?.is_regular ?? false,
@@ -112,6 +116,7 @@ export function useOccurrenceForm(
 				occurrenceDate: occDate,
 				placeId,
 				capacity: parseCapacity(),
+				courtFee: parseCourtFee(courtFeeStr),
 				isRegular,
 				noticeMd: noticeMd.trim() ? noticeMd : null,
 			});
@@ -129,6 +134,7 @@ export function useOccurrenceForm(
 				carpoolEnabled,
 				placeId,
 				capacity: parseCapacity(),
+				courtFee: parseCourtFee(courtFeeStr),
 				isRegular,
 				noticeMd: noticeMd.trim() ? noticeMd : null,
 			});
@@ -173,6 +179,8 @@ export function useOccurrenceForm(
 		setCapacity,
 		placeId,
 		setPlaceId,
+		courtFeeStr,
+		setCourtFeeStr,
 		isRegular,
 		setIsRegular,
 		noticeMd,

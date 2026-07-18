@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { courtFeeChargeHint, parseCourtFee } from "../../lib/schedule/courtFee";
 import { ORDINAL_PRESETS, formatTime } from "../../lib/schedule/recurrence";
 import type { RecurringRuleInput } from "../../lib/supabase/recurring";
 import type { CreatePlaceInput } from "../../lib/supabase/schedule";
@@ -62,6 +63,13 @@ export default function ScheduleRuleEditor({
 	const [placeId, setPlaceId] = useState<number | null>(
 		initial ? initial.place_id : null,
 	);
+	const [courtFeeStr, setCourtFeeStr] = useState<string>(
+		initial?.court_fee != null ? String(initial.court_fee) : "",
+	);
+
+	// 선택한 장소가 대관장소면 코트 총액(엔빵) 입력을 노출
+	const placeChargesCourt =
+		places.find((p) => p.id === placeId)?.charges_court_fee ?? false;
 
 	// 새 장소: 지도 picker 모달
 	const [showPicker, setShowPicker] = useState(false);
@@ -110,6 +118,11 @@ export default function ScheduleRuleEditor({
 			setError("주차를 선택하세요.");
 			return;
 		}
+		const courtFee = placeChargesCourt ? parseCourtFee(courtFeeStr) : null;
+		if (placeChargesCourt && courtFeeStr.trim() !== "" && (courtFee == null || courtFee < 0)) {
+			setError("코트 총액은 0 이상의 숫자로 입력하거나 비워두세요.");
+			return;
+		}
 		setBusy(true);
 		try {
 			await onSubmit({
@@ -121,6 +134,7 @@ export default function ScheduleRuleEditor({
 				carpoolEnabled,
 				capacity: capacityStr.trim() === "" ? null : Number(capacityStr),
 				placeId,
+				courtFee,
 			});
 		} catch {
 			setError("저장에 실패했어요. 다시 시도해 주세요.");
@@ -276,6 +290,34 @@ export default function ScheduleRuleEditor({
 							</button>
 						</div>
 					</div>
+
+					{/* 코트 총액(엔빵) — 대관장소일 때만 */}
+					{placeChargesCourt && (
+						<div>
+							<span className={labelCls} style={labelStyle}>
+								코트 총액 (엔빵)
+							</span>
+							<input
+								type="number"
+								inputMode="numeric"
+								min={0}
+								step={1000}
+								placeholder="비우면 정액 부과"
+								value={courtFeeStr}
+								onChange={(e) => {
+									setError(null);
+									setCourtFeeStr(e.target.value);
+								}}
+								className={inputCls}
+								style={inputStyle}
+							/>
+							<p className="text-faint" style={{ fontSize: 11.5, marginTop: 4, lineHeight: 1.5 }}>
+								{courtFeeChargeHint(parseCourtFee(courtFeeStr))}
+								<br />
+								회차별로 실제 총액이 다르면 달력에서 회차를 눌러 개별 수정할 수 있어요.
+							</p>
+						</div>
+					)}
 
 					{error && (
 						<p style={{ fontSize: 13, fontWeight: 600, color: "#ef4444" }}>

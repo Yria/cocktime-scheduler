@@ -633,13 +633,13 @@ export async function fetchClubAccount(): Promise<ClubAccount | null> {
 export interface PlaceFeeRow {
 	id: number;
 	name: string;
-	courtFeePerHour: number | null;
+	chargesCourtFee: boolean; // 대관장소 여부(대관비 부과 대상 게이트)
 }
 
 export async function fetchPlaceFees(): Promise<PlaceFeeRow[]> {
 	const { data, error } = await supabase
 		.from("places")
-		.select("id, name, court_fee_per_hour")
+		.select("id, name, charges_court_fee")
 		.eq("is_active", true)
 		.order("name", { ascending: true });
 	if (error) {
@@ -649,7 +649,7 @@ export async function fetchPlaceFees(): Promise<PlaceFeeRow[]> {
 	return (data ?? []).map((p) => ({
 		id: p.id,
 		name: p.name,
-		courtFeePerHour: p.court_fee_per_hour,
+		chargesCourtFee: p.charges_court_fee,
 	}));
 }
 
@@ -661,7 +661,7 @@ interface RawSessionFee {
 	ends_at: string | null;
 	court_count: number | null;
 	court_fee: number | null;
-	places: { name: string | null; court_fee_per_hour: number | null } | null;
+	places: { name: string | null; charges_court_fee: boolean } | null;
 }
 export interface SessionFeeRow {
 	id: number;
@@ -670,8 +670,7 @@ export interface SessionFeeRow {
 	courtCount: number | null;
 	hours: number | null;
 	placeName: string | null;
-	suggested: number | null; // 코트요금 × 코트수 × 시간(할인 전 참고값)
-	courtFee: number | null; // 실제 입력 지출
+	courtFee: number | null; // 실제 입력 지출(= 엔빵 총액)
 }
 
 /** 정산함 선납용: 참가 예정(open) 대관 세션 + 확정 참가자 목록. SessionFeeRow + attendeeIds. */
@@ -689,11 +688,11 @@ async function queryCourtSessions(start: string, end: string): Promise<SessionFe
 	// matches!inner 로 경기 없는 세션(무산)을 원천 제외 → 정산함·회계·현황 모든 세션 목록이 일괄로 열린 경기만.
 	const { data, error } = await supabase
 		.from("sessions")
-		.select("id, title, scheduled_at, ends_at, court_count, court_fee, places!inner(name, court_fee_per_hour), matches!inner(id)")
+		.select("id, title, scheduled_at, ends_at, court_count, court_fee, places!inner(name, charges_court_fee), matches!inner(id)")
 		.gte("scheduled_at", start)
 		.lt("scheduled_at", end)
 		.in("status", ["active", "closed"])
-		.not("places.court_fee_per_hour", "is", null) // 코트 요금 설정된(대관) 장소 세션만
+		.eq("places.charges_court_fee", true) // 대관장소 세션만
 		.order("scheduled_at", { ascending: false });
 	if (error) {
 		console.error("queryCourtSessions:", error);
@@ -704,8 +703,6 @@ async function queryCourtSessions(start: string, end: string): Promise<SessionFe
 			s.scheduled_at && s.ends_at
 				? Math.round((new Date(s.ends_at).getTime() - new Date(s.scheduled_at).getTime()) / 3600000)
 				: null;
-		const rate = s.places?.court_fee_per_hour ?? null;
-		const suggested = rate != null && s.court_count != null && hours != null ? rate * s.court_count * hours : null;
 		return {
 			id: s.id,
 			title: s.title,
@@ -713,7 +710,6 @@ async function queryCourtSessions(start: string, end: string): Promise<SessionFe
 			courtCount: s.court_count,
 			hours,
 			placeName: s.places?.name ?? null,
-			suggested,
 			courtFee: s.court_fee,
 		};
 	});
@@ -740,9 +736,9 @@ export function fetchLedgerSessions(ym: string): Promise<SessionFeeRow[]> {
 export async function fetchUpcomingParticipating(): Promise<UpcomingSessionRow[]> {
 	const { data, error } = await supabase
 		.from("sessions")
-		.select("id, title, scheduled_at, ends_at, court_count, court_fee, places!inner(name, court_fee_per_hour), attendances(member_id, status), dues_charges(member_id, kind)")
+		.select("id, title, scheduled_at, ends_at, court_count, court_fee, places!inner(name, charges_court_fee), attendances(member_id, status), dues_charges(member_id, kind)")
 		.eq("status", "open")
-		.not("places.court_fee_per_hour", "is", null) // 대관 장소만(monthSessions 와 동일 게이트)
+		.eq("places.charges_court_fee", true) // 대관장소만(monthSessions 와 동일 게이트)
 		.order("scheduled_at", { ascending: true });
 	if (error) {
 		console.error("fetchUpcomingParticipating:", error);
@@ -753,8 +749,6 @@ export async function fetchUpcomingParticipating(): Promise<UpcomingSessionRow[]
 			s.scheduled_at && s.ends_at
 				? Math.round((new Date(s.ends_at).getTime() - new Date(s.scheduled_at).getTime()) / 3600000)
 				: null;
-		const rate = s.places?.court_fee_per_hour ?? null;
-		const suggested = rate != null && s.court_count != null && hours != null ? rate * s.court_count * hours : null;
 		return {
 			id: s.id,
 			title: s.title,
@@ -762,7 +756,6 @@ export async function fetchUpcomingParticipating(): Promise<UpcomingSessionRow[]
 			courtCount: s.court_count,
 			hours,
 			placeName: s.places?.name ?? null,
-			suggested,
 			courtFee: s.court_fee,
 			attendeeIds: (s.attendances ?? [])
 				.filter((a) => a.status === "confirmed" || a.status === "late_pool")
@@ -809,14 +802,14 @@ export async function fetchSessionTxns(
 	}));
 }
 
-/** 장소 코트 시간당 요금 설정(NULL=대관비 없는 장소, 수지용). members_admin_write 격 RLS(places). */
+/** 장소 대관장소 여부(대관비 부과 대상) 설정. members_admin_write 격 RLS(places). */
 export async function updatePlaceFee(
 	placeId: number,
-	fee: number | null,
+	chargesCourtFee: boolean,
 ): Promise<boolean> {
 	const { data, error } = await supabase
 		.from("places")
-		.update({ court_fee_per_hour: fee })
+		.update({ charges_court_fee: chargesCourtFee })
 		.eq("id", placeId)
 		.select("id");
 	if (error || !data || data.length === 0) {

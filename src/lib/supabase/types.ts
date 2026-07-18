@@ -40,6 +40,7 @@ export interface SessionRow {
 	ends_at: string | null; // 종료 시각(마이그레이션 20260622120000). 기존 데이터는 시작+3h 백필.
 	capacity: number | null;
 	place_id: number | null;
+	court_fee: number | null; // 이 회차 대관 총액(원). 엔빵 기준(부과 시 coalesce(세션,규칙)). null=규칙 기본값. 마이그레이션 20260713090000
 	status: SessionStatus;
 	created_by: string | null;
 	carpool_enabled: boolean; // 카풀 노출 on/off. on이면 참석자가 카풀 가능/필요 선택(20260622120000)
@@ -71,6 +72,7 @@ export interface RecurringScheduleRow {
 	carpool_enabled: boolean; // 이 규칙으로 깔린 회차의 카풀 노출 on/off(20260622120000)
 	capacity: number | null; // NULL=무제한
 	place_id: number | null;
+	court_fee: number | null; // 엔빵 대관비 기본 총액(원). NULL=총액 없음(→정액 6천). 마이그레이션 20260718000000
 	is_active: boolean;
 	created_by: string | null;
 	created_at: string;
@@ -88,7 +90,9 @@ export interface PlaceRow {
 	created_at: string;
 	// 지도 공유 링크(네이버/카카오) — 미리보기/길찾기 버튼용(마이그레이션 20260622020000)
 	map_url: string | null;
-	// 코트 1개 시간당 대관 요금(원). NULL=대관비 없는 장소. 수지 계산용(요금×코트수×시간). 회계 §6.3
+	// 대관장소 여부(대관비 부과 대상 게이트). 마이그레이션 20260718000000. 회계 §5
+	charges_court_fee: boolean;
+	// (deprecated) 옛 시간당 요금. charges_court_fee 로 대체됨 — 후속 마이그레이션에서 컬럼 drop 예정.
 	court_fee_per_hour: number | null;
 }
 
