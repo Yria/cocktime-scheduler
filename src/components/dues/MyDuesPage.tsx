@@ -35,7 +35,7 @@ export default function MyDuesPage() {
 	};
 
 	return (
-		<AppScreen title="회비" onBack={() => navigate(-1)} onRefresh={refresh}>
+		<AppScreen title="회비" onBack={() => navigate("/")} onRefresh={refresh}>
 			{/* 탭 전환(세그먼티드) */}
 			<div className="flex" style={{ gap: 3, marginBottom: 14, background: "rgba(120,120,128,0.14)", borderRadius: 11, padding: 3 }}>
 				{NAV.map(([key, label]) => {

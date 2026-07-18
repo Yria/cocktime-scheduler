@@ -4,7 +4,7 @@ import type { MyChargeRow, MyPayment } from "../../lib/supabase/dues";
 import { duesActions, useDuesStore } from "../../store/duesStore";
 import { toast } from "../../store/toastStore";
 import EmptyState from "../shared/EmptyState";
-import { currentYm, fmtMD, remaining, won, ymLabel, ymOfIso } from "../admin/dues/duesText";
+import { currentYm, fmtMD, remaining, won, ymLabel } from "../admin/dues/duesText";
 
 function chargeLabel(c: MyChargeRow): string {
 	if (c.kind === "monthly_fee") return `${c.periodYm ? `${Number(c.periodYm.slice(5))}월` : ""} 회비`;
@@ -24,18 +24,19 @@ export default function MyDuesTab({ memberId }: { memberId: string }) {
 	}, [memberId]);
 
 	const ym = currentYm();
-	// 이번 달 미납 부과. 회비는 이월(deferred_to) 시 그 달이 실효 월 — 이월 나간 건 제외, 이월 들어온 건 포함.
-	const unpaidThisMonth = useMemo(
+	// 전체 미납/부분납. 대관비는 월 무관 전부, 회비는 실효 월(이월=deferred_to, 없으면 period_ym)이
+	// 이번 달 이하인 것만(미래로 이월된 건 아직 안 뜸). 회비 시스템 정산은 이번 달부터라 과거 회비 미납은 없음.
+	const unpaidAll = useMemo(
 		() =>
 			charges.filter(
 				(c) =>
 					(c.status === "unpaid" || c.status === "partial") &&
-					((c.kind === "monthly_fee" && (c.deferredTo ? c.deferredTo === ym : c.periodYm === ym)) ||
-						(c.kind === "court_fee" && ymOfIso(c.scheduledAt) === ym)),
+					(c.kind === "court_fee" ||
+						(c.kind === "monthly_fee" && (c.deferredTo ?? c.periodYm ?? "") <= ym)),
 			),
 		[charges, ym],
 	);
-	const unpaidTotal = unpaidThisMonth.reduce((s, c) => s + remaining(c.amountDue, c.amountPaid), 0);
+	const unpaidTotal = unpaidAll.reduce((s, c) => s + remaining(c.amountDue, c.amountPaid), 0);
 
 	// 납부 이력 월별 그룹(RPC가 이미 최신순 → 삽입순 유지)
 	const groups = useMemo(() => {
@@ -70,9 +71,9 @@ export default function MyDuesTab({ memberId }: { memberId: string }) {
 					<h3 className="text-strong" style={{ fontSize: 15, fontWeight: 800 }}>회비 납부</h3>
 				</div>
 				<div className="bg-[rgba(11,132,255,0.06)] border border-[rgba(11,132,255,0.22)]" style={{ borderRadius: 14, padding: "15px 16px" }}>
-					{/* 이번 달 상태 */}
+					{/* 미납 현황(전체 — 이번 달만이 아님) */}
 					<div className="flex items-center justify-between">
-						<span className="text-muted" style={{ fontSize: 13, fontWeight: 600 }}>{ymLabel(ym)}</span>
+						<span className="text-muted" style={{ fontSize: 13, fontWeight: 600 }}>미납 현황</span>
 						{unpaidTotal > 0 ? (
 							<span className="bg-[rgba(255,59,48,0.14)] text-[#d1362c]" style={{ fontSize: 11.5, fontWeight: 700, padding: "2px 9px", borderRadius: 999 }}>미납</span>
 						) : (
@@ -83,13 +84,13 @@ export default function MyDuesTab({ memberId }: { memberId: string }) {
 						<>
 							<p className="text-[#d1362c]" style={{ fontSize: 24, fontWeight: 800, marginTop: 4 }}>{won(unpaidTotal)}</p>
 							<div className="flex flex-col gap-0.5" style={{ marginTop: 2 }}>
-								{unpaidThisMonth.map((c) => (
+								{unpaidAll.map((c) => (
 									<span key={c.id} className="text-muted" style={{ fontSize: 12.5 }}>{chargeLabel(c)} · {won(remaining(c.amountDue, c.amountPaid))}</span>
 								))}
 							</div>
 						</>
 					) : (
-						<p className="text-[#1c8a3b]" style={{ fontSize: 18, fontWeight: 800, marginTop: 4 }}>이번 달 다 냈어요 👍</p>
+						<p className="text-[#1c8a3b]" style={{ fontSize: 18, fontWeight: 800, marginTop: 4 }}>미납이 없어요 👍</p>
 					)}
 
 					{/* 계좌 */}

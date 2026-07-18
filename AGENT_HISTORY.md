@@ -308,3 +308,14 @@ b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
 - ACCOUNTING_SPEC §1.1·§4 + 메모리 갱신. 클라 무변경(서버 로직만).
 
 ---
+
+## #26
+
+**Prompt**: (부분납 처리 설계 확인) / 내 회비에 미납은 이번달만이 아닌 전체 미납을 보여줘야해. 시스템 정산 회비는 이번달부터야 / 내 회비페이지 좌상단 < 버튼도 홈으로 가야(back 아님)
+
+**Answer**: 먼저 부분납(7,500 부과에 6,000 납부) 처리 로직 전수 확인 → 정산 `least(부과잔액,입금잔액)`으로 부분배분→배분 트리거가 status=partial 계산→`fetchMyCharges`(전체 로드)→MyDuesTab 미납 섹션(court_fee+partial 포함)까지 이미 동작 확인. 다만 미납 필터가 '이번 달'로 한정돼 있어 수정:
+- **MyDuesTab 미납 전체화**: `unpaidThisMonth`→`unpaidAll`. 대관비=월 무관 전부, 회비=실효 월(deferred_to ?? period_ym) ≤ 이번 달인 것만(미래 이월 제외). 회비 정산이 이번 달부터라 과거 회비 미납 없음 → 안전. 헤더 '이번 달'→'미납 현황', 완납 문구 '미납이 없어요'. 미사용 `ymOfIso` import 제거.
+- **MyDuesPage `<` 버튼**: `navigate(-1)`(브라우저 back) → `navigate("/")`(홈). DuesAdminPage 관례와 일치.
+- 클라 전용. tsc/eslint/build 통과.
+
+---
