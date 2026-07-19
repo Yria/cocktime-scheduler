@@ -8,6 +8,7 @@ import { genderText } from "../memberAdminText";
 import { fmtMD, remaining, sessionLabel, won, ymOfIso } from "./duesText";
 import { ToggleChip } from "./duesUi";
 import { type MemberLite, nameMatches, suggestMembers } from "./matching";
+import { matchExactSubset } from "./reconcileMatch";
 
 interface Props {
 	tx: BankTxnRow;
@@ -125,25 +126,22 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		const sel = new Set<string>();
 		const payer = people.find((p) => p.isPayer);
 		if (!payer) return sel;
-		const afterFee = effectiveAmount - monthlyFee;
-		let wantMonthly = false;
-		let k = 0;
-		if (afterFee >= 0 && courtFee > 0 && afterFee % courtFee === 0) { wantMonthly = true; k = afterFee / courtFee; }
-		else if (courtFee > 0 && effectiveAmount % courtFee === 0) { k = effectiveAmount / courtFee; }
-		if (selectedMember?.isGuest) wantMonthly = false;
-		if (wantMonthly) {
-			// 회비는 납부자 개인 귀속. 입금 월 회비만(기존 그 달 미납 or 신규) — 이전 달 미납 회비 오선택 방지.
-			const monthly = payer.items.find((it) => it.role === "monthly" && it.ym === depositYm);
-			if (monthly) sel.add(monthly.key);
-		}
-		// 대관 풀 = 전원(납부자+대납)의 기존 미납 court + 참가확정 예정. 우선순위: 이번달기존0 · 다른달기존1 · 예정2.
+		// 입금액을 '실제 부과 금액'으로 정확히 맞추는 부분집합을 찾는다(정액 6,000 가정 폐기 — 엔빵은 6,000 배수가 아님).
+		//  후보 = (납부자·입금월) 회비 + 대관 풀(전원 기존미납 court + 참가확정 예정). 회비는 개인 귀속·입금 월만(이전 달 오선택 방지).
+		//  대관 우선순위: 이번달기존0 · 다른달기존1 · 예정2. 회비를 맨 앞에 두고 include-우선 탐색 →
+		//  고우선(이번달 기존미납·회비) 항목을 최대한 포함하는 '정확히 떨어지는' 조합. 없으면 아무것도 안 고름(수동).
+		const monthly = selectedMember?.isGuest
+			? undefined
+			: payer.items.find((it) => it.role === "monthly" && it.ym === depositYm);
 		const courtPool = people
 			.flatMap((p) => p.items)
 			.filter((it) => it.role === "court" && it.autoDefault)
 			.sort((a, b) => a.poolRank - b.poolRank || b.poolDate.localeCompare(a.poolDate));
-		for (const it of courtPool.slice(0, k)) sel.add(it.key);
+		const pool = [...(monthly ? [monthly] : []), ...courtPool];
+		const result = matchExactSubset(pool, effectiveAmount);
+		if (result) for (const k of result) sel.add(k);
 		return sel;
-	}, [people, selectedMember, effectiveAmount, monthlyFee, courtFee, depositYm]);
+	}, [people, selectedMember, effectiveAmount, depositYm]);
 
 	const selected = override ?? defaultKeys;
 	const total = [...selected].reduce((s, key) => s + (itemByKey.get(key)?.amount ?? 0), 0);
