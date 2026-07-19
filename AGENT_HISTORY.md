@@ -342,3 +342,11 @@ b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
 - **배포 수동**: ①firea32 Apps Script에 코드 반영 + `authorize()` 재실행(modify 재동의) + 웹앱 재배포 ②`supabase functions deploy ingest-bank-email`. 프론트 무변경.
 
 ---
+
+## #29
+
+**Prompt**: 일단 이거 나중에 할거니까 어떻게 해야할지 문서로 정리해
+
+**Answer**: 은행 메일 수집+자동 정리 배포 런북 `docs/BANK_EMAIL_INGEST.md` 신설. 구조도(엣지↔Apps Script↔Gmail), 시크릿 목록, 이번 변경 요약, **배포 절차(순서: Apps Script 재코드+매니페스트 gmail.modify+authorize 재동의+웹앱 재배포 → supabase functions deploy)**, 검증 체크리스트, 롤백/주의(재동의 누락 증상·URL 변경·휴지통 30일)까지 정리. apps-script.gs 상단의 삭제된 ACCOUNTING_DESIGN.md 참조를 새 문서로 정정. 코드 무변경(문서만).
+
+---
