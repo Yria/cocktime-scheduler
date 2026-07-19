@@ -217,6 +217,7 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 									tx={t}
 									categories={categories}
 									ledgerSessions={ledgerSessions}
+									upcomingSessions={upcomingSessions}
 									refundTargets={refundTargets}
 									busy={busyId === t.id}
 									onCategorize={(catId) => run(t.id, () => setTxnCategory(t.id, catId), "분류 실패")}

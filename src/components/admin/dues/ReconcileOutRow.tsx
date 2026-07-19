@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { BankTxnRow, SessionFeeRow, TxnCategory } from "../../../lib/supabase/dues";
 import { fmtMD, sessionLabel, won } from "./duesText";
 import { ToggleChip } from "./duesUi";
@@ -13,7 +13,8 @@ export interface RefundTarget {
 interface Props {
 	tx: BankTxnRow;
 	categories: TxnCategory[];
-	ledgerSessions: SessionFeeRow[];
+	ledgerSessions: SessionFeeRow[]; // 실제 열린 세션(±1개월·경기기록) — 대부분의 대관 지출 대상
+	upcomingSessions: SessionFeeRow[]; // 참가 예정(open) 세션 — 미래 대관비 선지급 대상(경기기록 없어 ledgerSessions엔 없음)
 	refundTargets: RefundTarget[]; // 환불 후보(잔여 있는 입금)
 	busy: boolean;
 	onCategorize: (categoryId: number) => void;
@@ -28,10 +29,21 @@ interface Props {
 // 코트대관은 category가 아니라 session_id 로만 식별. 환불은 refund_of_tx_id.
 type Sel = { kind: "court" } | { kind: "refund" } | { kind: "category"; id: number };
 
-export default function ReconcileOutRow({ tx, categories, ledgerSessions, refundTargets, busy, onCategorize, onSetSession, onLinkRefund }: Props) {
+export default function ReconcileOutRow({ tx, categories, ledgerSessions, upcomingSessions, refundTargets, busy, onCategorize, onSetSession, onLinkRefund }: Props) {
 	const [sel, setSel] = useState<Sel>({ kind: "court" }); // 코트대관 기본 선택
 	const [sessionSel, setSessionSel] = useState<number | null>(null);
 	const [refundSel, setRefundSel] = useState<number | null>(null);
+
+	// 코트대관 세션 후보 = 실제 열린 세션(ledgerSessions) + 참가 예정(open) 세션(upcomingSessions).
+	// 미래에 대관비를 선지급하면 세션이 아직 open(경기기록 없음)이라 ledgerSessions엔 안 잡힘 → upcoming을 병합해 '(예정)'으로 노출(입금 선납 칩과 대칭).
+	// status로 상호배타(open ↔ active/closed)라 실제 겹칠 일은 없지만 id 기준 dedup으로 방어. 세션일 내림차순(미래·최근이 위).
+	const courtSessions = useMemo(() => {
+		const seen = new Set<number>();
+		const list: { s: SessionFeeRow; upcoming: boolean }[] = [];
+		for (const s of ledgerSessions) if (!seen.has(s.id)) { seen.add(s.id); list.push({ s, upcoming: false }); }
+		for (const s of upcomingSessions) if (!seen.has(s.id)) { seen.add(s.id); list.push({ s, upcoming: true }); }
+		return list.sort((a, b) => (b.s.scheduledAt ?? "").localeCompare(a.s.scheduledAt ?? ""));
+	}, [ledgerSessions, upcomingSessions]);
 
 	const selCourt = sel.kind === "court";
 	const selRefund = sel.kind === "refund";
@@ -83,10 +95,10 @@ export default function ReconcileOutRow({ tx, categories, ledgerSessions, refund
 			{/* 코트대관 → 세션 / 환불 → 입금 (하위 선택지, 입금행 칩 디자인) */}
 			{selCourt && (
 				<div className="flex flex-wrap gap-1.5" style={{ marginTop: 7 }}>
-					{ledgerSessions.length === 0 ? (
+					{courtSessions.length === 0 ? (
 						<span className="text-faint" style={{ fontSize: 11.5 }}>대관 세션이 없어요</span>
 					) : (
-						ledgerSessions.map((s) => pickChip(sessionLabel(s), sessionSel === s.id, () => setSessionSel((v) => (v === s.id ? null : s.id)), `s${s.id}`))
+						courtSessions.map(({ s, upcoming }) => pickChip(upcoming ? `${sessionLabel(s)} (예정)` : sessionLabel(s), sessionSel === s.id, () => setSessionSel((v) => (v === s.id ? null : s.id)), `s${s.id}`))
 					)}
 				</div>
 			)}

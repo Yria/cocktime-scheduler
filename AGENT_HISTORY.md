@@ -350,3 +350,16 @@ b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
 **Answer**: 은행 메일 수집+자동 정리 배포 런북 `docs/BANK_EMAIL_INGEST.md` 신설. 구조도(엣지↔Apps Script↔Gmail), 시크릿 목록, 이번 변경 요약, **배포 절차(순서: Apps Script 재코드+매니페스트 gmail.modify+authorize 재동의+웹앱 재배포 → supabase functions deploy)**, 검증 체크리스트, 롤백/주의(재동의 누락 증상·URL 변경·휴지통 30일)까지 정리. apps-script.gs 상단의 삭제된 ACCOUNTING_DESIGN.md 참조를 새 문서로 정정. 코드 무변경(문서만).
 
 ---
+
+## #30
+
+**Prompt**: 정산함에 코트대관 지출 정리하는데 미래에 대관할 코트가 보이지않아.
+
+**Answer**: 정산함 출금(코트대관 지출)에서 미래에 대관할 세션이 안 보이던 원인을 규명·수정. 워크플로로 blast radius를 적대적 검증(high confidence).
+
+- **근본 원인**: 입금/출금 비대칭 배선. 출금 카드(ReconcileOutRow)의 세션 칩은 ledgerSessions(queryCourtSessions: matches!inner + status in active/closed)만 렌더 → 아직 open이고 경기기록 없는 미래 세션이 원천 이중 배제. 입금 쪽은 커밋 29d276b에서 fetchUpcomingParticipating/upcomingSessions로 open 세션을 '(예정)' 칩 처리했지만 출금엔 연결 안 됨.
+- **수정(범위 A, 사용자 결정 '보이는 open 일정만')**: ReconcileOutRow에 upcomingSessions prop 추가 → ledgerSessions와 id dedup 병합(세션일 내림차순)·open엔 '(예정)' 라벨. ReconcileInbox가 store upcomingSessions를 출금 카드에도 전달. 확정은 기존 dues_set_txn_session 재사용(신규 charge 없음).
+- **회귀 방지**: store ledgerSessions/monthSessions는 미변경 — 거기 섞으면 monthSessions 파생으로 SessionsHome 오탐·ReconcileInRow 붕괴. 병합은 컴포넌트 로컬로만. 회계 정합성(§3.3/§6) 무손상.
+- 문서 ACCOUNTING_SPEC.md §3.2·§6 갱신. 검증: tsc -b·eslint·vite build 통과.
+
+---
