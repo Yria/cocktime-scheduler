@@ -330,3 +330,15 @@ b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
 - ACCOUNTING_SPEC §5 갱신. tsc/eslint/build 통과. 클라 전용.
 
 ---
+
+## #28
+
+**Prompt**: (통장내역 가져오는 로직) 그거 끝나고 메일 지우면 안돼? (firea32@gmail.com, 가져온 은행 메일 삭제)
+
+**Answer**: 수신 구조 확인 = 엣지 함수 → (시크릿) Apps Script 웹앱(firea32, gmail.readonly) → GmailApp.search로 토스 거래내역 메일 찾아 xlsx 반환 → 엣지에서 복호화·파싱·멱등 적재. 여기에 '적재 성공 후 삭제'를 안전하게 추가:
+- **Apps Script**: 스코프 `gmail.readonly`→`gmail.modify`(휴지통 이동 권한). doPost에 `action:'trash'` 분기 추가(messageIds → `getMessageById().moveToTrash()`). 파싱은 그대로 원문 반환만.
+- **엣지 함수**: 호출부를 `callAppsScript(payload)`로 일반화. 메시지별 `msgOk` 추적 → 원문·거래가 **에러 없이 적재된 메일만**(중복 skip 포함) 처리 후 2차 호출(`trashInGmail`)로 휴지통 이동. 파싱 실패분은 보존(유실 방지), best-effort(삭제 실패해도 적재엔 무영향), 응답에 `trashed` 카운트.
+- 안전 설계 근거: Apps Script가 바로 지우면 엣지 파싱 실패 시 유실 → fetch→ingest→confirm-trash 2단계. 휴지통이라 30일 복구 가능. trash된 메일은 GmailApp.search 기본 제외라 재조회도 안 됨.
+- **배포 수동**: ①firea32 Apps Script에 코드 반영 + `authorize()` 재실행(modify 재동의) + 웹앱 재배포 ②`supabase functions deploy ingest-bank-email`. 프론트 무변경.
+
+---

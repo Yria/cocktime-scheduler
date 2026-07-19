@@ -49,15 +49,16 @@ interface AppsScriptResult {
   error?: string;
   count?: number;
   messages?: AppsScriptMessage[];
+  trashed?: number;
 }
 
 // Apps Script 웹앱 호출. POST → 302(googleusercontent echo)라 쿠키 전달하며 리다이렉트를 따라간다.
-async function fetchFromGmail(max: number): Promise<AppsScriptResult> {
-  const payload = JSON.stringify({ secret: INGEST_SECRET, max });
+async function callAppsScript(payload: Record<string, unknown>): Promise<AppsScriptResult> {
+  const body = JSON.stringify({ secret: INGEST_SECRET, ...payload });
   let res = await fetch(APPS_SCRIPT_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: payload,
+    body,
     redirect: "manual",
   });
   let hops = 0;
@@ -75,6 +76,10 @@ async function fetchFromGmail(max: number): Promise<AppsScriptResult> {
     throw new Error(`apps-script non-JSON (status ${res.status}): ${text.slice(0, 200)}`);
   }
 }
+
+const fetchFromGmail = (max: number) => callAppsScript({ max });
+// 적재 성공(에러 없음)이 확정된 메일만 휴지통으로. 파싱 실패분은 남긴다(유실 방지). best-effort.
+const trashInGmail = (messageIds: string[]) => callAppsScript({ action: "trash", messageIds });
 
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -127,8 +132,11 @@ Deno.serve(async (req) => {
     let skipped = 0;
     const deposits: { occurredAt: string; name: string; amount: number }[] = [];
     const errors: string[] = [];
+    // 적재 성공(에러 없음)이 확정된 메일 id — 처리 후 휴지통 이동 대상. 에러 난 메일은 남긴다(유실 방지).
+    const trashIds: string[] = [];
 
     for (const m of fetched.messages ?? []) {
+      let msgOk = true;
       // 이메일 원문 메타(멱등: message_id UNIQUE).
       const { data: rawRows, error: rawErr } = await supa
         .from("raw_bank_emails")
@@ -144,7 +152,7 @@ Deno.serve(async (req) => {
           { onConflict: "message_id" },
         )
         .select("id");
-      if (rawErr) errors.push(`raw(${m.subject}): ${rawErr.message}`);
+      if (rawErr) { errors.push(`raw(${m.subject}): ${rawErr.message}`); msgOk = false; }
       const rawId = rawRows?.[0]?.id ?? null;
 
       for (const a of m.attachments ?? []) {
@@ -172,6 +180,7 @@ Deno.serve(async (req) => {
             .select("id, direction, occurred_at, counterparty_name, amount");
           if (insErr) {
             errors.push(`tx(${a.name}): ${insErr.message}`);
+            msgOk = false;
             continue;
           }
           const insCount = ins?.length ?? 0;
@@ -188,7 +197,22 @@ Deno.serve(async (req) => {
           }
         } catch (e) {
           errors.push(`${a.name}: ${e instanceof Error ? e.message : String(e)}`);
+          msgOk = false;
         }
+      }
+      // 이 메일의 원문·거래가 모두 에러 없이 적재됐으면(중복 skip 포함) 휴지통 대상. 하나라도 실패면 보존.
+      if (msgOk) trashIds.push(m.messageId);
+    }
+
+    // 적재 성공 확정 메일만 휴지통으로(best-effort — 실패해도 적재 결과엔 영향 없음).
+    let trashed = 0;
+    if (trashIds.length > 0) {
+      try {
+        const t = await trashInGmail(trashIds);
+        trashed = t.trashed ?? 0;
+        if (!t.ok && t.error) errors.push(`trash: ${t.error}`);
+      } catch (e) {
+        errors.push(`trash: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
 
@@ -199,6 +223,7 @@ Deno.serve(async (req) => {
       parsed,
       inserted,
       skipped,
+      trashed,
       deposits: deposits.slice(0, 30),
       errors: errors.length ? errors : undefined,
     });
