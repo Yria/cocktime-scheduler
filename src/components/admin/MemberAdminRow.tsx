@@ -19,6 +19,7 @@ interface MemberRowProps {
 	onOpenSkillEdit: (m: AdminMemberRow) => void;
 	onOpenPhoto: (m: AdminMemberRow) => void;
 	onRequestToggleAdmin: (m: AdminMemberRow) => void;
+	onRequestToggleActive: (m: AdminMemberRow) => void;
 	onRequestDelete: (m: AdminMemberRow) => void;
 }
 
@@ -32,10 +33,13 @@ export function MemberRow({
 	onOpenSkillEdit,
 	onOpenPhoto,
 	onRequestToggleAdmin,
+	onRequestToggleActive,
 	onRequestDelete,
 }: MemberRowProps) {
 	const g = genderText(member.gender);
 	const grade = skillScoreOf(member.skills); // 0 = 미설정
+	// 비활성 회원은 신원(아바타·이름·정보)만 흐리게 — 액션 버튼은 또렷하게 유지.
+	const idOpacity = member.isActive ? 1 : 0.45;
 	return (
 		<div
 			style={{
@@ -65,6 +69,7 @@ export function MemberRow({
 					borderRadius: "50%",
 					flexShrink: 0,
 					lineHeight: 0,
+					opacity: idOpacity,
 				}}
 			>
 				<PlayerAvatar
@@ -88,6 +93,7 @@ export function MemberRow({
 					cursor: "pointer",
 					padding: "4px 0",
 					overflow: "hidden",
+					opacity: idOpacity,
 				}}
 			>
 				<div
@@ -136,6 +142,21 @@ export function MemberRow({
 						<Gauge size={14} strokeWidth={2.25} aria-hidden />
 						{grade > 0 ? grade : "–"}
 					</span>
+					{!member.isActive && (
+						<span
+							style={{
+								flexShrink: 0,
+								fontSize: 10.5,
+								fontWeight: 800,
+								padding: "1px 6px",
+								borderRadius: 6,
+								background: "rgba(100,116,139,0.16)",
+								color: "#64748b",
+							}}
+						>
+							비활성
+						</span>
+					)}
 				</div>
 				<div
 					className="text-muted"
@@ -164,42 +185,70 @@ export function MemberRow({
 				</div>
 			</button>
 
-			{/* 액션(컴팩트) */}
+			{/* 액션(컴팩트) — 활성: 운영진·실력·비활성 / 비활성: 활성화·삭제.
+			    본인(isMe)은 비활성/삭제 숨김(자기 자신 편성 이탈·탈퇴 방지 — 탈퇴는 별도 경로). */}
 			<div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-				<button
-					type="button"
-					onClick={() => onRequestToggleAdmin(member)}
-					disabled={isBusy}
-					title={
-						member.isAdmin ? "운영진 — 눌러서 해제" : "회원 — 눌러서 승급"
-					}
-					style={miniBtn(
-						member.isAdmin ? "#0b84ff" : "#64748b",
-						member.isAdmin
-							? "rgba(11,132,255,0.15)"
-							: "rgba(100,116,139,0.12)",
-						isBusy,
-					)}
-				>
-					{member.isAdmin ? "운영진" : "회원"}
-				</button>
-				<button
-					type="button"
-					onClick={() => onOpenSkillEdit(member)}
-					disabled={isBusy}
-					style={miniBtn("#16a34a", "rgba(22,163,74,0.12)", isBusy)}
-				>
-					실력
-				</button>
-				{!isMe && (
-					<button
-						type="button"
-						onClick={() => onRequestDelete(member)}
-						disabled={isBusy}
-						style={miniBtn("#ef4444", "rgba(239,68,68,0.12)", isBusy)}
-					>
-						삭제
-					</button>
+				{member.isActive ? (
+					<>
+						<button
+							type="button"
+							onClick={() => onRequestToggleAdmin(member)}
+							disabled={isBusy}
+							title={
+								member.isAdmin ? "운영진 — 눌러서 해제" : "회원 — 눌러서 승급"
+							}
+							style={miniBtn(
+								member.isAdmin ? "#0b84ff" : "#64748b",
+								member.isAdmin
+									? "rgba(11,132,255,0.15)"
+									: "rgba(100,116,139,0.12)",
+								isBusy,
+							)}
+						>
+							{member.isAdmin ? "운영진" : "회원"}
+						</button>
+						<button
+							type="button"
+							onClick={() => onOpenSkillEdit(member)}
+							disabled={isBusy}
+							style={miniBtn("#16a34a", "rgba(22,163,74,0.12)", isBusy)}
+						>
+							실력
+						</button>
+						{!isMe && (
+							<button
+								type="button"
+								onClick={() => onRequestToggleActive(member)}
+								disabled={isBusy}
+								title="비활성화 — 세션 명단·회비 부과에서 제외"
+								style={miniBtn("#d97706", "rgba(217,119,6,0.12)", isBusy)}
+							>
+								비활성
+							</button>
+						)}
+					</>
+				) : (
+					<>
+						<button
+							type="button"
+							onClick={() => onRequestToggleActive(member)}
+							disabled={isBusy}
+							title="활성화 — 세션 명단·회비 부과에 다시 포함"
+							style={miniBtn("#16a34a", "rgba(22,163,74,0.12)", isBusy)}
+						>
+							활성화
+						</button>
+						{!isMe && (
+							<button
+								type="button"
+								onClick={() => onRequestDelete(member)}
+								disabled={isBusy}
+								style={miniBtn("#ef4444", "rgba(239,68,68,0.12)", isBusy)}
+							>
+								삭제
+							</button>
+						)}
+					</>
 				)}
 			</div>
 		</div>

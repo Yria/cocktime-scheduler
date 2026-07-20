@@ -99,6 +99,34 @@ export async function deleteMember(memberId: string): Promise<RpcResult> {
 	return { ok: true };
 }
 
+/**
+ * 회원 활성/비활성 토글 — members.is_active 직접 UPDATE(members_admin_write RLS).
+ * is_active=false 면 세션 셋업 명단(fetchMembers)·회비 월정액 자동부과(dues_generate_monthly)·
+ * 실력 비교 앵커에서 제외된다. 회원관리 목록(fetchMembersForAdmin)에는 계속 노출돼 재활성화할 수 있다.
+ *
+ * RLS USING 절로 걸러진 UPDATE 는 0행이 갱신돼도 error 를 던지지 않으므로(updateMemberProfile 과 동일),
+ * `.select()` 로 실제 갱신 행을 확인해 "권한 없음 = 조용한 실패"를 false 로 잡는다.
+ */
+export async function setMemberActive(
+	memberId: string,
+	isActive: boolean,
+): Promise<boolean> {
+	const { data, error } = await supabase
+		.from("members")
+		.update({ is_active: isActive, updated_at: new Date().toISOString() })
+		.eq("id", memberId)
+		.select("id");
+	if (error) {
+		console.error("setMemberActive:", error);
+		return false;
+	}
+	if (!data || data.length === 0) {
+		console.error("setMemberActive: 갱신된 행 없음(RLS 거부 추정)", memberId);
+		return false;
+	}
+	return true;
+}
+
 /** 회원 실력 편집(members.skills 직접 UPDATE — members_admin_write RLS). */
 export async function updateMemberSkills(
 	memberId: string,

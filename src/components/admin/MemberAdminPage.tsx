@@ -10,6 +10,7 @@ import {
 	fetchMembersForAdmin,
 	grantAdmin,
 	revokeAdmin,
+	setMemberActive,
 	updateMemberSkills,
 } from "../../lib/supabase/adminMembers";
 import {
@@ -21,6 +22,7 @@ import AppHeader from "../common/AppHeader";
 import ConfirmDialog from "../common/ConfirmDialog";
 import { inputCls, inputStyle } from "../common/fieldStyles";
 import EmptyState from "../shared/EmptyState";
+import FilterChip from "../shared/FilterChip";
 import GroupSettingsModal from "./GroupSettingsModal";
 import type { PlayerSkills } from "../../types";
 import { MemberRow } from "./MemberAdminRow";
@@ -92,6 +94,8 @@ export default function MemberAdminPage() {
 	const [busyId, setBusyId] = useState<string | null>(null);
 	// 검색 키워드(이름/성별/지역 대상)
 	const [query, setQuery] = useState("");
+	// 비활성 회원 숨김(기본 false=전원 표시). 목록이 커지면 활성만 보도록 토글.
+	const [hideInactive, setHideInactive] = useState(false);
 	const [showGroupSettings, setShowGroupSettings] = useState(false);
 	// 확인 다이얼로그(승급/해제/삭제). null=닫힘.
 	const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
@@ -165,6 +169,37 @@ export default function MemberAdminPage() {
 		});
 	};
 
+	const doToggleActive = useCallback(
+		async (m: AdminMemberRow) => {
+			if (busyId) return;
+			setBusyId(m.id);
+			const ok = await setMemberActive(m.id, !m.isActive);
+			setBusyId(null);
+			if (ok) {
+				await reload();
+			} else {
+				alert("처리에 실패했어요.");
+			}
+		},
+		[busyId, reload],
+	);
+
+	const requestToggleActive = (m: AdminMemberRow) => {
+		setConfirmState({
+			title: m.isActive ? "회원 비활성화" : "회원 활성화",
+			message: m.isActive ? (
+				<>
+					{`'${m.name}'님을 비활성화할까요?`}
+					<br />
+					세션 명단과 회비 자동부과에서 제외됩니다. (회원 정보는 보존)
+				</>
+			) : (
+				`'${m.name}'님을 다시 활성화할까요?`
+			),
+			run: () => doToggleActive(m),
+		});
+	};
+
 	const openSkillEdit = useCallback((m: AdminMemberRow) => {
 		// 신 모델 {grade} 우선, 구 6종/빈값이면 등급으로 환산해 초기화.
 		setDraft({ grade: skillScoreOf(m.skills) || DEFAULT_GRADE });
@@ -221,20 +256,25 @@ export default function MemberAdminPage() {
 		});
 	};
 
-	// 검색: 이름/성별(남·여)/지역 안에서만 부분일치(대소문자 무시)
-	const q = query.trim().toLowerCase();
-	const filtered = useMemo(
-		() =>
-			q
-				? members.filter(
-						(m) =>
-							m.name.toLowerCase().includes(q) ||
-							genderText(m.gender).includes(q) ||
-							(m.residence ?? "").toLowerCase().includes(q),
-					)
-				: members,
-		[members, q],
+	// 비활성 회원 수(필터 칩 노출/라벨용).
+	const inactiveCount = useMemo(
+		() => members.filter((m) => !m.isActive).length,
+		[members],
 	);
+
+	// 검색: 이름/성별(남·여)/지역 안에서만 부분일치(대소문자 무시) + 비활성 숨김 필터
+	const q = query.trim().toLowerCase();
+	const filtered = useMemo(() => {
+		let list = hideInactive ? members.filter((m) => m.isActive) : members;
+		if (q)
+			list = list.filter(
+				(m) =>
+					m.name.toLowerCase().includes(q) ||
+					genderText(m.gender).includes(q) ||
+					(m.residence ?? "").toLowerCase().includes(q),
+			);
+		return list;
+	}, [members, q, hideInactive]);
 
 	// 정렬 + 그룹 구분선(헤더) 삽입 → 평탄한 가상화 항목 배열.
 	const listItems = useMemo<ListItem[]>(() => {
@@ -453,6 +493,24 @@ export default function MemberAdminPage() {
 					</div>
 				)}
 
+				{/* 비활성 숨김 토글 — 비활성 회원이 있을 때만 노출 */}
+				{!loading && inactiveCount > 0 && (
+					<div
+						style={{
+							display: "flex",
+							justifyContent: "flex-end",
+							marginTop: 8,
+							flexShrink: 0,
+						}}
+					>
+						<FilterChip
+							label={`비활성 ${inactiveCount}명 숨기기`}
+							active={hideInactive}
+							onClick={() => setHideInactive((v) => !v)}
+						/>
+					</div>
+				)}
+
 				{/* 목록(가상화 스크롤 영역) */}
 				<div
 					ref={parentRef}
@@ -534,6 +592,7 @@ export default function MemberAdminPage() {
 										onOpenSkillEdit={openSkillEdit}
 										onOpenPhoto={setPhotoMember}
 										onRequestToggleAdmin={requestToggleAdmin}
+										onRequestToggleActive={requestToggleActive}
 										onRequestDelete={requestDelete}
 									/>
 								);
