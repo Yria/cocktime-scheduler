@@ -363,3 +363,36 @@ b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
 - 문서 ACCOUNTING_SPEC.md §3.2·§6 갱신. 검증: tsc -b·eslint·vite build 통과.
 
 ---
+
+## #31
+
+**Prompt**: 세션종료시점에 경기중인건 싹다 완료로 처리해
+
+**Answer**: 세션이 closed 로 전환될 때 진행중(playing) 매치를 자동 완료 처리하는 DB 트리거를 추가하고, 기존 고아 매치를 일괄 백필했다.
+
+- **근본 원인**: 종료 시 코트에서 진행중이던 매치가 방치돼 경기 로그(completed만 노출)·game_count·pair_history 에서 누락. 실제로 closed 세션 35곳에 playing 매치 64건 잔존(전부 자동종료 경로에서 발생 — 수동종료는 complete_match 선처리 후 닫으므로 무관).
+- **설계**: 종료 경로가 여럿(수동 dbEndSession·종료시각 자동종료·반복정리)이라 단일 초크포인트인 트리거로. `complete_session_playing_matches(session_id)` 재사용 함수(complete_match 효과 복제: status·ended_at·player_snapshot·pair_history 6쌍·game_count·mixed_count·wait_since, 편집락 가드 없음, 실재 선수만 대상으로 FK 안전) + `after update of status` 트리거 + 일회성 백필.
+- **적대적 검증(워크플로 4렌즈)**: blocker 0. 대관비 불변(존재 게이트+attendances 분모라 매치 status 무관), 종료 후 game_count/pair_history 읽는 소비처 없음, FK 안전, 멱등, 클라 변경 불필요 확인.
+- **적용/결과**: supabase db push 완료. playing 잔존 0, 세션 109 = 68완료·표준편차 0.68로 균등도 개선. 향후 전 종료경로 자동완료.
+
+---
+
+## #32
+
+**Prompt**: @docs/BANK_EMAIL_INGEST.md 이거 이어하자
+
+**Answer**: #29에서 "나중에" 하기로 문서화만 해둔 은행 메일 수집+자동 정리 배포를 실제로 실행. 코드(트래시 로직·apps-script trash 분기·appsscript gmail.modify)는 이미 커밋·작업트리 clean이라 남은 건 배포 실행뿐임을 확인.
+
+- **Edge Function 배포**: 시크릿 3종(APPS_SCRIPT_URL·INGEST_SECRET·TOSS_XLSX_PASSWORD) 이미 설정 확인 후 `supabase functions deploy ingest-bank-email` 실행(프로덕션 배포는 사용자 명시 승인 후). 3-2 먼저여도 안전(구 Apps Script는 trash 요청 무시 → 수집·적재 정상).
+- **클라이언트 trashed 표시 추가**(사용자 선택): 응답의 `trashed` 필드를 클라가 무시하고 있어(타입에도 없음) `IngestResult`에 `trashed` 추가 + `ReconcileInbox` 결과 요약에 '· 휴지통 N' 노출. 순수 표시용, 로직 무관. tsc/eslint/build 통과.
+- **남은 수동 작업(사용자만 가능)**: 3-1 Apps Script(firea32 구글 계정) — 코드 교체(INGEST_SECRET 기존값 유지)·매니페스트 gmail.modify·authorize 재실행(modify 재동의)·기존 배포 편집으로 재배포(URL 유지). 이걸 해야 실제 휴지통 이동 동작. 이후 앱에서 통장내역 1회 가져와 §4 검증(trashed 개수·Gmail 휴지통 확인).
+
+---
+
+## #33
+
+**Prompt**: 버튼 아래 힌트는 없어도 될듯?
+
+**Answer**: 3-1까지 배포·검증 완료('잘 됨') 후, 통장내역 가져오기 버튼 아래 결과 요약줄 제거 요청. 성공은 이미 토스트로 뜨니 평상시 요약줄은 중복. 단 그 줄이 파싱 실패(`errors`)를 보여주는 유일한 곳이라(토스트는 성공 시 에러 미표시, 실패 메일은 받은편지함 잔존) 완전 삭제 대신 **에러 있을 때만 표시**로 축소 — 평상시엔 숨고 `⚠️`만 남김. `IngestResult.trashed`는 응답 계약이라 타입엔 유지(미표시). tsc/eslint/build 통과, 클라 전용.
+
+---

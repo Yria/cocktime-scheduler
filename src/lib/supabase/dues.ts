@@ -449,6 +449,7 @@ export interface IngestResult {
 	parsed: number; // 파싱된 거래 수
 	inserted: number; // 신규 적재
 	skipped: number; // 중복
+	trashed: number; // 적재 성공 후 Gmail 휴지통으로 이동한 메일 수
 	deposits: IngestDeposit[]; // 신규 입금 샘플
 	errors?: string[];
 }

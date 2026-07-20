@@ -1,5 +1,5 @@
 // 토스뱅크 거래내역 xlsx 리더 — firea32@gmail.com 에 배포하는 Apps Script 웹앱.
-// 배포/운영: docs/BANK_EMAIL_INGEST.md. 원칙 = "Gmail 에서 찾아 원문(첨부 바이트)만 반환 + 적재 성공분 휴지통 정리".
+// 배포/운영: 아래 [배포]·[Gmail 큐 정의]·[테스트] 주석 참고. 원칙 = "Gmail 에서 찾아 원문(첨부 바이트)만 반환 + 적재 성공분 휴지통 정리".
 //
 // [배포]
 //   1) https://script.google.com → 새 프로젝트, 이 코드 붙여넣기.

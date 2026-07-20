@@ -153,10 +153,9 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 				<button type="button" onClick={handleIngest} disabled={ingesting} className="btn-solid-blue">
 					{ingesting ? "가져오는 중…" : "통장내역 가져오기 (Gmail)"}
 				</button>
-				{ingestResult && (
+				{ingestResult?.errors && (
 					<p className="text-faint" style={{ fontSize: 12 }}>
-						메일 {ingestResult.fetched} · 거래 {ingestResult.parsed} · 신규 {ingestResult.inserted} · 중복 {ingestResult.skipped}
-						{ingestResult.errors ? ` · ⚠️ ${ingestResult.errors.join("; ")}` : ""}
+						⚠️ {ingestResult.errors.join("; ")}
 					</p>
 				)}
 			</div>
