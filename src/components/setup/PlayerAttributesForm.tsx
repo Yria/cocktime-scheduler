@@ -7,8 +7,10 @@ interface PlayerAttributesFormProps {
 	skills: PlayerSkills;
 	onChangeGender: (gender: Gender) => void;
 	onChangeGrade: (grade: number) => void;
-	/** 비교 추정에서 제외할 본인 이름. */
+	/** 비교 추정에서 제외할 본인 이름(표시용). */
 	excludeName?: string;
+	/** 비교에서 제외할 본인 id(members.id/session_players.id) + 아바타 사진 키. */
+	excludeId?: string;
 	/** 비교 표본(미지정 시 GradeInput이 활성 회원 로드). */
 	anchors?: GradeAnchor[];
 }
@@ -20,6 +22,7 @@ export function PlayerAttributesForm({
 	onChangeGender,
 	onChangeGrade,
 	excludeName,
+	excludeId,
 	anchors,
 }: PlayerAttributesFormProps) {
 	return (
@@ -51,6 +54,7 @@ export function PlayerAttributesForm({
 					onChange={onChangeGrade}
 					gender={gender}
 					excludeName={excludeName}
+					excludeId={excludeId}
 					anchors={anchors}
 				/>
 			</div>

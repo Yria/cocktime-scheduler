@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Gender } from "../../types";
 import { getPlayerPhotoUrl } from "../../lib/playerPhoto";
 import { getNameInitial } from "../../lib/player";
@@ -11,11 +11,11 @@ interface PlayerAvatarProps {
 	size?: number;
 	/** 성별색 테두리 링 */
 	ring?: boolean;
-	/** 로컬 파일 프리뷰 등 — 원격(이름 기반) URL 보다 우선하며 onError fallback 없이 항상 표시 */
+	/** 로컬 파일 프리뷰 등 — 원격 URL 보다 우선하며 onError fallback 없이 항상 표시 */
 	previewSrc?: string;
-	/** 게스트(계정 없는 임시 선수) — 사진은 이름(md5) 기반이라 동명 회원 사진이 잘못 붙는다.
-	 *  true 면 원격 사진을 아예 불러오지 않고 항상 이니셜 아바타로 표시한다. */
-	isGuest?: boolean;
+	/** 사진 키(members.id). 없으면 원격 사진을 불러오지 않고 이니셜만 표시한다.
+	 *  게스트/사진 미등록자는 이 값을 넘기지 않으면(undefined) 자연히 이니셜로 폴백된다. */
+	photoId?: string;
 	/** 이니셜이 비어 있을 때 대신 표시할 문자(ProfileSetup 의 "+") */
 	fallbackChar?: string;
 	/** 링 색 오버라이드 — 성별 미선택 시 중립 회색(#cbd5e1) 처리 등. 미지정 시 성별색 */
@@ -45,16 +45,17 @@ export default function PlayerAvatar({
 	bgColor,
 	inkColor,
 	ringWidth = 2,
-	isGuest = false,
+	photoId,
 }: PlayerAvatarProps) {
 	const [imgFailed, setImgFailed] = useState(false);
-	const url = getPlayerPhotoUrl(name);
+	// photoId 가 바뀌면(다른 사람 아바타로 재사용) 이전 실패 상태를 리셋해 새 사진을 재시도.
+	useEffect(() => setImgFailed(false), [photoId]);
+	const url = photoId ? getPlayerPhotoUrl(photoId) : "";
 	const g = gender ?? "M";
 	// 로컬 프리뷰는 onError fallback 대상이 아님 — imgFailed 는 원격 URL 전용.
-	// 이름이 비어 있으면 원격 URL 시도(무의미한 404 + onError까지 빈 이미지) 없이 즉시 이니셜/fallback.
-	// 게스트는 이름(md5) 기반 사진이 동명 회원 사진과 충돌하므로 원격 사진을 불러오지 않는다(이니셜만).
+	// photoId 가 없으면(게스트·사진 미등록·회원 링크 없음) 원격 URL 시도 없이 즉시 이니셜/fallback.
 	const showInitial =
-		previewSrc == null && (isGuest || imgFailed || name.trim() === "");
+		previewSrc == null && (!photoId || imgFailed);
 
 	return (
 		<div

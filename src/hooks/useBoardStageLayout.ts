@@ -92,7 +92,7 @@ export function useBoardStageLayout(stageW: number, stageH: number, cw: number, 
 	// fitAndArrange처럼 줌을 '다 들어가는 최대 배율'로 바꾸지 않으므로, 축소해 둔 상태에서 정렬해도 확대되지 않는다.
 	const arrangeAtCurrentScale = useCallback(() => {
 		if (stageW <= 0 || stageH <= 0) return;
-		rearrangeAll(viewW, viewH);
+		rearrangeAll(viewW, viewH, true); // 편집자면 manualLayout 켜서 이후 자동 fit이 축소 비율을 되돌리지 않게(정렬 결과 고정)
 	}, [stageW, stageH, viewW, viewH, rearrangeAll]);
 
 	useEffect(() => {

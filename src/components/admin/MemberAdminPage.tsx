@@ -340,7 +340,7 @@ export default function MemberAdminPage() {
 		? members.find((m) => m.id === skillEditId)
 		: undefined;
 
-	// 실력 편집 비교 표본 — 편집 대상과 동성 + 최근 3달 참석 회원(본인 제외는 GradeInput이 이름으로 처리).
+	// 실력 편집 비교 표본 — 편집 대상과 동성 + 최근 3달 참석 회원(본인 제외는 GradeInput이 id로 처리).
 	// recentActiveIds 가 null(로딩) 또는 빈 Set(이력없음)이면 미필터 폴백.
 	const skillAnchors = useMemo<GradeAnchor[]>(() => {
 		if (!editingMember?.gender) return [];
@@ -350,7 +350,7 @@ export default function MemberAdminPage() {
 			recentActiveIds && recentActiveIds.size
 				? sameGender.filter((m) => recentActiveIds.has(m.id))
 				: sameGender;
-		return pool.map((m) => ({ name: m.name, grade: skillScoreOf(m.skills), gender: g }));
+		return pool.map((m) => ({ id: m.id, name: m.name, grade: skillScoreOf(m.skills), gender: g }));
 	}, [members, editingMember, recentActiveIds]);
 
 	if (!ready || !memberLoaded) return null;
@@ -547,6 +547,7 @@ export default function MemberAdminPage() {
 			{editingMember && (
 				<MemberSkillEditModal
 					memberName={editingMember.name}
+					memberId={editingMember.id}
 					gender={editingMember.gender ?? "M"}
 					draft={draft}
 					setDraft={setDraft}

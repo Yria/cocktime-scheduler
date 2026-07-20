@@ -93,7 +93,7 @@ export interface BoardState {
 	cancelEditActions: () => void;
 	/** 지정한 자석들을 소스로 방사형 흩어짐 + 정리(경기 완료로 그룹 해제된 자석용) */
 	scatterMagnets: (ids: string[]) => void;
-	rearrangeAll: (viewW: number, viewH: number) => void;
+	rearrangeAll: (viewW: number, viewH: number, markManual?: boolean) => void;
 	/** 휴식존 표시 토글. */
 	toggleRestZone: () => void;
 	/** 휴식 패널 접기(멱등) — 보드 자석 드래그 시작 시 가림 해소용. */

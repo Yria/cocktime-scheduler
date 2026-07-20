@@ -293,7 +293,7 @@ function ParticipantRow({
 					boxShadow: isPool ? "0 0 0 2px var(--late-pool)" : undefined,
 				}}
 			>
-				<PlayerAvatar name={name} gender={a.member?.gender ?? null} isGuest={isGuest} size={34} />
+				<PlayerAvatar name={name} gender={a.member?.gender ?? null} photoId={isGuest ? undefined : (a.member_id ?? undefined)} size={34} />
 			</div>
 			<span
 				className="text-strong truncate min-w-0"

@@ -7,6 +7,8 @@ import PlayerAvatar from "./PlayerAvatar";
 
 /** 비교 추정에 쓰는 표본 한 명(동성 기준). */
 export interface GradeAnchor {
+	/** 안정적 식별자(members.id 우선, 없으면 session_players.id). 제외·중복 판정 및 사진 키로 쓴다. */
+	id: string;
 	name: string;
 	grade: number;
 	gender: Gender;
@@ -18,8 +20,10 @@ interface GradeInputProps {
 	onChange: (grade: number) => void;
 	/** 비교 표본(동성)을 고르는 기준 성별. */
 	gender: Gender;
-	/** 비교에서 제외할 본인 이름(중복 비교 방지). */
+	/** 편집 대상 본인 이름(아바타/라벨 표시용). */
 	excludeName?: string;
+	/** 편집 대상 본인 id(members.id 등) — 비교에서 제외(동명이인 오제외 방지) + 본인 아바타 사진 키. */
+	excludeId?: string;
 	/**
 	 * 비교 표본. 미지정 시 활성 회원을 직접 로드한다(게스트/신규 입력 흐름).
 	 * 이미 회원 목록을 들고 있는 화면(회원관리·보드)은 넘겨서 추가 조회를 피한다.
@@ -49,6 +53,7 @@ export function GradeInput({
 	onChange,
 	gender,
 	excludeName,
+	excludeId,
 	anchors,
 	title = "실력 등급",
 }: GradeInputProps) {
@@ -76,6 +81,7 @@ export function GradeInput({
 				<ComparisonEstimator
 					gender={gender}
 					excludeName={excludeName}
+					excludeId={excludeId}
 					anchors={anchors}
 					onEstimate={(g) => {
 						onChange(clampGrade(g));
@@ -148,12 +154,14 @@ function GradeScale({
 function ComparisonEstimator({
 	gender,
 	excludeName,
+	excludeId,
 	anchors: providedAnchors,
 	onEstimate,
 	onCancel,
 }: {
 	gender: Gender;
 	excludeName?: string;
+	excludeId?: string;
 	anchors?: GradeAnchor[];
 	onEstimate: (grade: number) => void;
 	onCancel: () => void;
@@ -173,7 +181,7 @@ function ComparisonEstimator({
 					? members.filter((m) => recentIds.has(m.id))
 					: members;
 				setLoaded(
-					pool.map((m) => ({ name: m.name, grade: m.skills.grade, gender: m.gender })),
+					pool.map((m) => ({ id: m.id, name: m.name, grade: m.skills.grade, gender: m.gender })),
 				);
 				setLoading(false);
 			},
@@ -183,23 +191,23 @@ function ComparisonEstimator({
 		};
 	}, [providedAnchors]);
 
-	// 동성 + 본인 제외 + 유효 등급만, 등급 오름차순.
+	// 동성 + 본인 제외(id 기준 — 동명이인 오제외 방지) + 유효 등급만, 등급 오름차순.
 	const pool = useMemo(() => {
 		const src = providedAnchors ?? loaded ?? [];
 		return src
 			.filter(
 				(a) =>
 					a.gender === gender &&
-					a.name !== excludeName &&
+					(excludeId == null || a.id !== excludeId) &&
 					a.grade >= MIN_GRADE &&
 					a.grade <= MAX_GRADE,
 			)
 			.sort((a, b) => a.grade - b.grade);
-	}, [providedAnchors, loaded, gender, excludeName]);
+	}, [providedAnchors, loaded, gender, excludeId]);
 
 	const [lo, setLo] = useState(MIN_GRADE);
 	const [hi, setHi] = useState(MAX_GRADE);
-	const [usedNames, setUsedNames] = useState<Set<string>>(() => new Set());
+	const [usedIds, setUsedIds] = useState<Set<string>>(() => new Set());
 	const [asked, setAsked] = useState(0);
 	// "비슷해요" 로 모은 상대 등급들 — 즉시 확정 대신 평균내어 우열을 가리기 힘든 구간을 수렴시킨다.
 	const [similarAnchors, setSimilarAnchors] = useState<number[]>([]);
@@ -211,7 +219,7 @@ function ComparisonEstimator({
 			let best: GradeAnchor | null = null;
 			let bestDist = Infinity;
 			for (const a of pool) {
-				if (used.has(a.name)) continue;
+				if (used.has(a.id)) continue;
 				if (a.grade < l || a.grade > h) continue;
 				const d = Math.abs(a.grade - mid);
 				if (d < bestDist) {
@@ -261,9 +269,9 @@ function ComparisonEstimator({
 
 		// "비슷"은 "정확히 같다"가 아니라 근방 신호 → 앵커로 모아 평균낸다(즉시 확정 안 함).
 		const nextSims = dir === "similar" ? [...similarAnchors, g] : similarAnchors;
-		const used = new Set(usedNames);
-		used.add(current.name);
-		setUsedNames(used);
+		const used = new Set(usedIds);
+		used.add(current.id);
+		setUsedIds(used);
 		setSimilarAnchors(nextSims);
 		// skip 은 구간을 좁히지 않으므로 질문 번호(asked)도 올리지 않는다.
 		if (dir !== "skip") setAsked((n) => n + 1);
@@ -364,7 +372,7 @@ function ComparisonEstimator({
 
 			{/* VS 아레나 — current 교체 시 key로 리마운트되어 등장 애니메이션 재생 */}
 			<div
-				key={current.name}
+				key={current.id}
 				className="flex items-center justify-center mb-3"
 				style={{ animation: "cmpVsIn .28s ease" }}
 			>
@@ -373,6 +381,7 @@ function ComparisonEstimator({
 					<PlayerAvatar
 						name={subjectName}
 						gender={gender}
+						photoId={excludeId}
 						size={88}
 						ringWidth={3}
 						fallbackChar="나"
@@ -406,6 +415,7 @@ function ComparisonEstimator({
 						<PlayerAvatar
 							name={current.name}
 							gender={current.gender}
+							photoId={current.id}
 							size={88}
 							ringWidth={3}
 						/>

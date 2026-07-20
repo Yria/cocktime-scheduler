@@ -15,6 +15,12 @@ interface UnpaidRow {
 	hasGuest: boolean;
 	chargeId?: number; // 회비 미납 행 — 이월용
 }
+interface PaidRow {
+	payerId: string;
+	name: string;
+	amount: number; // 낸 금액(amount_paid 합)
+	hasGuest: boolean;
+}
 interface SessionCard {
 	id: number;
 	label: string;
@@ -24,6 +30,7 @@ interface SessionCard {
 	paidCount: number;
 	totalCount: number;
 	unpaid: UnpaidRow[];
+	paid: PaidRow[]; // 낸 사람(펼침으로 확인 — 마감 세션도 누가 냈는지 열람)
 	status: "settled" | "open" | "none"; // 마감 / 정산 미완 / 대상 없음
 }
 
@@ -46,7 +53,11 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	const [busy, setBusy] = useState(false);
 
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
-	const roster = useMemo(() => members.filter((m) => m.isActive && !m.isAdmin), [members]);
+	// 회비 부과 대상(진행률 분모) = 활성·비운영진·비게스트·비명예회원 — dues_generate_monthly 룰과 일치.
+	const roster = useMemo(
+		() => members.filter((m) => m.isActive && !m.isAdmin && !m.isGuest && !m.isHonorary),
+		[members],
+	);
 
 	// 회비 진행 — 원 월(period_ym=ym) 기준. 이월된(deferred_to set) 건은 '낸 것처럼' 해결로 카운트.
 	const fee = useMemo(() => {
@@ -86,13 +97,14 @@ export default function SessionsHome({ ym }: { ym: string }) {
 		return monthSessions
 			.map((s): SessionCard => {
 				const charges = chargesBySession.get(s.id) ?? [];
-				// 대납자(payer_hint ?? member)별 미납 합산
-				const byPayer = new Map<string, { remain: number; hasGuest: boolean; paid: boolean }>();
+				// 대납자(payer_hint ?? member)별 미납·납부 합산
+				const byPayer = new Map<string, { remain: number; paidAmt: number; hasGuest: boolean; paid: boolean }>();
 				for (const c of charges) {
 					const payerId = c.payerHint ?? c.memberId;
 					const rem = remaining(c.amountDue, c.amountPaid);
-					const e = byPayer.get(payerId) ?? { remain: 0, hasGuest: false, paid: true };
+					const e = byPayer.get(payerId) ?? { remain: 0, paidAmt: 0, hasGuest: false, paid: true };
 					e.remain += rem;
+					e.paidAmt += c.amountPaid;
 					if (rem > 0) e.paid = false;
 					if (c.payerHint && c.memberId !== payerId) e.hasGuest = true;
 					byPayer.set(payerId, e);
@@ -102,6 +114,10 @@ export default function SessionsHome({ ym }: { ym: string }) {
 					.filter(([, e]) => e.remain > 0)
 					.map(([payerId, e]) => ({ payerId, name: memberById.get(payerId)?.name ?? "(회원)", remain: e.remain, hasGuest: e.hasGuest }))
 					.sort((a, b) => a.name.localeCompare(b.name));
+				const paid: PaidRow[] = payers
+					.filter(([, e]) => e.paid && e.paidAmt > 0)
+					.map(([payerId, e]) => ({ payerId, name: memberById.get(payerId)?.name ?? "(회원)", amount: e.paidAmt, hasGuest: e.hasGuest }))
+					.sort((a, b) => a.name.localeCompare(b.name));
 				const expense = expenseBySession.get(s.id) ?? 0;
 				const income = incomeBySession.get(s.id) ?? 0;
 				const courtLinked = expense > 0;
@@ -109,7 +125,7 @@ export default function SessionsHome({ ym }: { ym: string }) {
 				const totalCount = payers.length;
 				const hasSomething = charges.length > 0 || expense > 0 || income > 0;
 				const status: SessionCard["status"] = !hasSomething ? "none" : courtLinked && unpaid.length === 0 ? "settled" : "open";
-				return { id: s.id, label: sessionLabel(s), scheduledAt: s.scheduledAt, courtLinked, expense, paidCount, totalCount, unpaid, status };
+				return { id: s.id, label: sessionLabel(s), scheduledAt: s.scheduledAt, courtLinked, expense, paidCount, totalCount, unpaid, paid, status };
 			})
 			// 실제로 열리지 않은 세션(부과·지출·수입 전무)은 정산 대상이 아니므로 숨김.
 			.filter((c) => c.status !== "none")
@@ -277,27 +293,43 @@ export default function SessionsHome({ ym }: { ym: string }) {
 									<span style={mark(c.courtLinked)}>{c.courtLinked ? "✓" : "!"}</span>
 									<span className={c.courtLinked ? "text-muted" : "text-[#c2670a]"}>코트지출 {c.courtLinked ? `연결 · ${won(c.expense)}` : "미연결 · 정산함에서 출금→세션 지정"}</span>
 								</div>
-								{/* 수납 진행(막대그래프) */}
+								{/* 수납 진행(막대) — 헤더 탭하면 납부/미납 명단 펼침(마감 세션도 누가 냈는지 확인). */}
 								{c.totalCount > 0 && (
 									<div className="flex flex-col gap-1">
-										<div className="flex items-center gap-1.5" style={{ fontSize: 12 }}>
+										<button
+											type="button"
+											onClick={() => setOpenGroup((g) => (g === `s${c.id}` ? null : `s${c.id}`))}
+											aria-expanded={openGroup === `s${c.id}`}
+											className="flex items-center gap-1.5"
+											style={{ fontSize: 12, background: "none", border: "none", padding: 0, cursor: "pointer", width: "100%", textAlign: "left" }}
+										>
 											<span style={mark(c.unpaid.length === 0)}>{c.unpaid.length === 0 ? "✓" : "!"}</span>
 											<span className={c.unpaid.length === 0 ? "text-muted" : "text-[#c2670a]"}>대관비 수납</span>
 											<span style={{ flex: 1 }} />
 											<span className="text-muted" style={{ fontSize: 11.5 }}>{c.paidCount}/{c.totalCount}{c.unpaid.length > 0 ? ` · 미납 ${c.unpaid.length}` : ""}</span>
-										</div>
-										<Meter ratio={c.totalCount > 0 ? c.paidCount / c.totalCount : 1} done={c.unpaid.length === 0} />
-									</div>
-								)}
-								{c.unpaid.length > 0 && (
-									<div>
-										<SendButton
-											count={c.unpaid.length}
-											open={openGroup === `s${c.id}`}
-											onClick={() => setOpenGroup((g) => (g === `s${c.id}` ? null : `s${c.id}`))}
-										/>
+											<span className="text-faint" style={{ fontSize: 10, fontWeight: 800 }}>{openGroup === `s${c.id}` ? "▲" : "▼"}</span>
+										</button>
+										<Meter ratio={c.paidCount / c.totalCount} done={c.unpaid.length === 0} />
 										{openGroup === `s${c.id}` && (
-											<MemberToggleList groupKey={`s${c.id}`} rows={c.unpaid} excluded={excluded} onToggle={toggleSel} busy={busy} onSend={() => requestNotify(`s${c.id}`, c.unpaid, `${c.label} 대관비가 아직 미납이에요. 확인 부탁드려요`, `${c.label} 대관비`)} />
+											<div className="flex flex-col gap-2" style={{ marginTop: 6 }}>
+												{/* 낸 사람 — 전원 완납(마감)일 때만: 미납이 남아 있으면 미납자만 노출(완납자 숨김) */}
+												{c.paid.length > 0 && c.unpaid.length === 0 && (
+													<div style={{ background: "rgba(120,120,128,0.06)", borderRadius: 10, padding: "9px 10px" }}>
+														<p className="text-faint" style={{ fontSize: 11, marginBottom: 4 }}>납부 완료 {c.paid.length}명</p>
+														{c.paid.map((r) => (
+															<div key={r.payerId} className="flex items-center gap-2" style={{ fontSize: 13, padding: "3px 2px" }}>
+																<span aria-hidden style={{ width: 18, height: 18, borderRadius: 6, flexShrink: 0, background: "#1c8a3b", color: "#fff", fontSize: 11, lineHeight: "18px", textAlign: "center", fontWeight: 900 }}>✓</span>
+																<span className="text-strong" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{r.name}{r.hasGuest && <span className="text-[#0b84ff]" style={{ fontSize: 11, fontWeight: 700, marginLeft: 5 }}>게스트분 포함</span>}</span>
+																<span className="text-[#1c8a3b]" style={{ fontWeight: 700 }}>{won(r.amount)}</span>
+															</div>
+														))}
+													</div>
+												)}
+												{/* 미납 — 취사선택 + 안내 발송 */}
+												{c.unpaid.length > 0 && (
+													<MemberToggleList groupKey={`s${c.id}`} rows={c.unpaid} excluded={excluded} onToggle={toggleSel} busy={busy} onSend={() => requestNotify(`s${c.id}`, c.unpaid, `${c.label} 대관비가 아직 미납이에요. 확인 부탁드려요`, `${c.label} 대관비`)} />
+												)}
+											</div>
 										)}
 									</div>
 								)}

@@ -87,7 +87,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 	// 자유 자석(팀 미소속·비ghost)은 보기 전용에서도 드래그해 로컬 위치 이동 가능(위치는 로컬·미동기화).
 	// 팀 멤버(anchor/ghost)는 멤버십 변경이 되므로 편집자만.
 	const isFreeMagnet = !isGhost && magnet?.teamId == null;
-	// 콕 체크 on인데 미확인 → 비활성(매칭 대기 아님): 드래그 불가, 탭하면 확인 다이얼로그.
+	// 콕 체크 on인데 미확인 → 비활성(매칭 대기 아님): 위치 이동은 가능하되 편성(팀 합류/페어)은 불가(dropResolver가 move/detach로 제한), 탭하면 확인 다이얼로그.
 	const cockPending = cockCheckEnabled && !isGhost && !playing && !resting && player != null && !player.cockChecked;
 	// 드래그 중 다른 자석이 이 자석에 겹쳐 페어 대상이 되면 하이라이트
 	const isHovered = useBoardStore((s) => s.hoverTarget?.kind === "magnet" && s.hoverTarget.id === playerId);
@@ -119,7 +119,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 		node.to({ x: rx, y: ry, duration: 0.22, easing: Konva.Easings.EaseInOut });
 	}, [rx, ry]);
 
-	const photoUrl = useMemo(() => (player ? getPlayerPhotoUrl(player.name) : ""), [player]);
+	const photoUrl = useMemo(() => (player?.memberId ? getPlayerPhotoUrl(player.memberId) : ""), [player]);
 	const [image, imgStatus] = useImage(photoUrl, "anonymous");
 	const hasPhoto = imgStatus === "loaded" && image !== undefined;
 
@@ -202,7 +202,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 			id={`magnet-${playerId}`}
 			x={rx}
 			y={ry}
-			draggable={(isEditor || isFreeMagnet) && !cockPending}
+			draggable={isEditor || isFreeMagnet}
 			listening
 			onDragStart={handleDragStart}
 			onDragMove={handleDragMove}

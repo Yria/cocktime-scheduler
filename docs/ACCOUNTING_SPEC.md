@@ -19,7 +19,7 @@
 ## 1. 도메인 모델
 
 ### 1.1 금액
-- **회비(monthly_fee)**: 5,000원/월. 회원(활성·비운영진·비게스트) 대상, 월 단위(`period_ym`).
+- **회비(monthly_fee)**: 5,000원/월. 회원(활성·비운영진·비게스트·비명예회원) 대상, 월 단위(`period_ym`). **명예회원**(`members.is_honorary`)은 회비 면제(§4).
 - **대관비(court_fee)**: 세션 단위(`session_id`). 두 모드로 갈린다(2026-07). **부과 대상이 모드마다 다르다**:
   - **엔빵**: 세션에 대관 **총액**이 있으면 `총액 ÷ 참석 인원`(**10원 버림**). 대상 = **실제 참석(confirmed/late_pool)만**, **운영진 포함**, **당일취소 제외**. (평일: 총액 입력 → 엔빵. "코트를 실제로 쓴 사람끼리 나눔"이라 당일취소자는 분모·부과에서 뺀다.)
   - **정액**: 총액이 없으면 **인당 6,000원**(`dues_settings.court_fee_default`). 대상 = **참석 + 당일 확정취소**, **운영진 제외**. (토·일: 총액 미입력 → 정액. 당일취소도 자리·약속 비용이라 정액을 부과.)
@@ -42,7 +42,8 @@
 - **`txn_categories`** — 수지 분류(콕공구·이자·정모·기타 등). 관리자 추가/삭제. (코트대관은 카테고리가 아니라 `session_id`.)
 - **`dues_settings`** — 싱글톤: 회비액·대관비 기본액·`offset_days`·클럽 계좌(`bank_name`/`bank_account`/`account_holder`).
 - **`raw_bank_emails`** — 수신 원문 보관(재파싱·감사). **`dues_audit_log`** — append-only 감사 로그.
-- 재사용: `members`(+`membership_started_at`=가입일 보정), `sessions`/`attendances`/`places`, `notifications`→푸시.
+- 재사용: `members`(+`membership_started_at`=가입일 보정, +`is_honorary`=명예회원 회비 면제 플래그), `sessions`/`attendances`/`places`, `notifications`→푸시.
+- **`member_honorary`** — 명예회원 지정 사유(관리자 메모). `member_id`(PK)·`reason`. members RLS(로그인 전원 조회)와 분리해 **is_admin만 조회**(사유 비공개). 쓰기는 `dues_set_honorary` RPC만.
 
 ---
 
@@ -58,14 +59,14 @@
 ### 3.1 정모/현황 (`/dues/:ym`)
 - 목적: **정산 단위(세션)가 잘 마감됐는지** + **누가 무엇을 안 냈는지**.
 - **회비 진행**: 원 월(period_ym=ym) 기준 진행률. 이월된 건(§1.3)은 원 월에서 해결로 카운트, 이월 대상 월에 별도 노출([정산]/[취소]).
-- **세션별 정산 상태**: 세션별 수입(회원 납부+비회원)·지출(대관료) 순액 + 마감/미완. 대관비는 실제 낼 사람(대납 게스트 포함, `payer_hint ?? member`) 기준 합산.
+- **세션별 정산 상태**: 세션별 수입(회원 납부+비회원)·지출(대관료) 순액 + 마감/미완. 대관비는 실제 낼 사람(대납 게스트 포함, `payer_hint ?? member`) 기준 합산. **수납 진행 행을 펼치면** — 미납자가 남아 있으면 **미납자만**(취사선택·안내 발송, 완납자 숨김), **전원 완납(마감)이면 납부자 명단**(낸 사람·낸 금액 — 누가 냈는지 열람).
 - **미납 알림 발송**: **분류(회비/세션) 그룹 단위**로만, 그룹 안 대상 취사선택. 전체 일괄 발송 없음. 게스트·미로그인은 푸시 불가(수동 안내).
 
 ### 3.2 정산함 (`/dues/:ym/inbox`) — 은행 거래 처리
 - **가져오기**: Gmail에서 거래 수집·적재(§7).
 - **입금·출금 한 큐**(날짜순 카드): 미처리 / 부분 처리. 필터(전체/입금/출금 + **금액 완전일치**). 확정 거래는 [회계] 원장에서 열람·취소.
 - **입금 1건**: ① 납부자 지정(이름 자동 제안+검색, 게스트 포함, 여러 명 대납 가능) → ② 처리 선택(상호배타):
-  - **미납 부과 배분**(본인+대납, **월 무관**=크로스먼스) + 필요 시 **신규 회비/세션 즉석 생성**. 금액 자동선택(§5). 한 트랜잭션(`dues_confirm_reconcile`).
+  - **미납 부과 배분**(본인+대납, **월 무관**=크로스먼스) + 필요 시 **신규 회비/세션 즉석 생성**. 신규 세션 칩은 **그 달 열린 세션 중 그 납부자가 참석 확정(confirmed/late_pool)이고 아직 대관비 부과 없는** 것만 노출(미참석·기부과 세션 미노출 — 완납된 세션도 `court`로 감지해 제외, `void`만 재부과. `queryCourtSessions`가 `attendances` 조인해 `attendeeIds` 제공). 신규 회비 칩은 **그 달 회비 부과가 없는 회원만**(완납·부분납·이월 등 이미 부과된 회원 제외 — `void`=무효만 재부과). 금액 자동선택(§5). 한 트랜잭션(`dues_confirm_reconcile`).
   - **참가 예정(open) 세션 선납**: 아직 안 열린 `open` 대관 세션 중 **그 납부자가 확정 참가자(confirmed/late_pool)** 인 것만 "대관비(예정)" 칩으로. now 기준(선택 월 무관, `fetchUpcomingParticipating`). 이미 대관비 부과된(완납 포함) 세션은 제외. 선택 시 위 즉석 생성과 동일 경로로 부과·배분. 세션 취소/무산은 [회계]에서 수동 정리(자동 정리 없음).
   - **카테고리 분류**(콕공구 등) — 납부자 지정 시 그 회원 `paid_by`로 귀속(내 납부 이력에 표시).
   - **비회원(외부) 대관**: 회원 없이 세션 귀속 수입(`dues_confirm_court_external`).
@@ -103,7 +104,8 @@
 - **수동 배치**: `generate_dues_charges(ym)`(is_admin) — 과거 달 보정 등 fallback.
 
 규칙 단일 소스(빌딩블록): `dues_generate_monthly(ym)`(회비) · `dues_generate_session_court(sid)`(세션 대관비). 트리거·ensure·수동배치가 모두 이 둘을 재사용.
-- **회비 룰**: `is_active AND not is_guest AND not 운영진`, 가입월(`membership_started_at ?? created_at` + `offset_days`) 다음 달부터 `amount_due=회비액`.
+- **회비 룰**: `is_active AND not is_guest AND not is_honorary AND not 운영진`, 가입월(`membership_started_at ?? created_at` + `offset_days`) 다음 달부터 `amount_due=회비액`.
+  - **명예회원**(`members.is_honorary`, 회비 관리 설정에서 지정): 회비 면제. 지정/해제는 `dues_set_honorary(member,honorary,reason)`(is_admin). 플래그는 `members.is_honorary`(공개), 사유는 `member_honorary`(관리자 전용) 분리 저장. 회비엔 court 같은 자동 self-heal DELETE가 없으므로, **지정 시 이미 생성된 미납(`status=unpaid`) 회비를 이 RPC가 period_ym 무관 전월 정리**한다(납부·부분납·수동 waived/void는 보존, 현금주의 원장 무영향). **해제 시 삭제분은 복구되지 않는다**: 이후 '아직 부과가 없는 새 달'만 월진입 ensure가 자동 부과하고, 이미 부과가 있는 현월·과거월은 no-op이라 그 달만 `generate_dues_charges(ym)` 수동 배치로 재생성해야 한다.
 - **대관비 룰**: 대관장소(`charges_court_fee`) + `status in (active,closed)` + **경기기록 있음**(무산 제외) 세션에 부과. **금액·대상 모두 총액 유무로 갈림**(§1.1):
   - **엔빵**(총액 `coalesce(세션,규칙) > 0`): `amount_due = 총액 ÷ 참석인원`(10원 버림). 대상 = **confirmed/late_pool 만**(당일취소 제외), **운영진 포함**. 분모(v_head)도 동일 집합.
   - **정액**(총액 없음): `amount_due = 6,000`. 대상 = **confirmed/late_pool + 당일 확정취소**, **운영진 제외**(현행).
@@ -159,6 +161,7 @@
 - 모든 쓰기는 `SECURITY DEFINER` RPC + `is_admin()` 가드. 조회는 RLS.
 - 회원 노출 RPC(`dues_my_payments`·`dues_public_ledger`·`dues_club_account`)는 `current_member_id()` 기반 + **`anon` execute revoke**(로그인 열람 불변식). 비로그인은 빈 결과/차단.
 - `dues_charges`/`dues_allocations`는 관리자 or 본인(payer_hint 포함) 열람. **본인 화면 쿼리엔 본인 필터 필수**(관리자 계정 오노출 방지).
+- `member_honorary`(명예회원 사유)는 **is_admin RLS로 조회 제한**(사유=운영진 메모 비공개). `members.is_honorary` 플래그 자체는 명단 모델상 로그인 회원 조회 허용. 쓰기는 `dues_set_honorary` RPC만.
 - 게스트는 `auth_user_id` 없어 푸시 대상 제외. 클럽 계좌 전체번호는 로그인 회원에게만.
 
 ---
@@ -177,7 +180,7 @@
 - **확정/취소**: `dues_confirm_reconcile`(미납 배분+신규 생성 통합), `dues_confirm_court_external`(비회원 대관), `dues_cancel_match`.
 - **분류/지정**: `dues_set_txn_category`(+`p_paid_by`), `dues_set_txn_session`, `dues_link_refund`/`dues_unlink_refund`.
 - **이월**: `dues_defer_charge`/`dues_undefer_charge`/`dues_settle_deferred`.
-- **부과**: `dues_ensure_monthly`(월진입 회비), `generate_dues_charges`(수동 배치 fallback), 빌딩블록 `dues_generate_monthly`·`dues_generate_session_court`(내부), 트리거 `trg_session_court_on_close`(세션 종료 대관). **알림**: `dues_notify_selected`.
+- **부과**: `dues_ensure_monthly`(월진입 회비), `generate_dues_charges`(수동 배치 fallback), 빌딩블록 `dues_generate_monthly`·`dues_generate_session_court`(내부), 트리거 `trg_session_court_on_close`(세션 종료 대관). **명예회원**: `dues_set_honorary`(지정/해제 + 미납 회비 정리). **알림**: `dues_notify_selected`.
 - **카테고리**: `dues_add_category`/`dues_delete_category`.
 - **회원 노출**: `dues_my_payments`, `dues_public_ledger`, `dues_club_account`.
 - **트리거/내부**: `dues_alloc_guard`·`dues_alloc_sync`(dues_allocations 트리거), `dues_sync_bank_tx`(status 동기 헬퍼).

@@ -70,7 +70,7 @@ export function MemberRow({
 				<PlayerAvatar
 					name={member.name}
 					gender={member.gender}
-					isGuest={member.isGuest}
+					photoId={member.isGuest ? undefined : member.id}
 					size={44}
 				/>
 			</button>

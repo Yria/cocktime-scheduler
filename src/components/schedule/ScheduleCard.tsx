@@ -406,7 +406,11 @@ export default function ScheduleCard({
 									<PlayerAvatar
 										name={a.member?.name ?? "회원"}
 										gender={a.member?.gender ?? null}
-										isGuest={a.member?.is_guest ?? a.invited_by != null}
+										photoId={
+											(a.member?.is_guest ?? a.invited_by != null)
+												? undefined
+												: (a.member_id ?? undefined)
+										}
 										size={28}
 									/>
 								</div>

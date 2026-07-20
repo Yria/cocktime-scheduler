@@ -15,6 +15,8 @@ interface Props {
 	members: AdminMemberRow[];
 	unpaidByMember: Record<string, UnpaidCharge[]>;
 	monthSessions: SessionFeeRow[]; // 이번 달 대관 세션(신규 대관비 생성 후보)
+	monthlyChargedIds: Set<string>; // 그 달 회비 부과가 이미 있는(완납 포함) 회원 — 신규 회비 칩 중복 노출 방지
+	courtChargedByMember: Map<string, Set<number>>; // 회원별 이미 대관비 부과된(완납 포함) 세션 — 신규 세션 칩 중복 노출 방지
 	upcomingSessions: UpcomingSessionRow[]; // 참가 예정(open) 세션 — 본인 참가분만 선납 후보
 	categories: TxnCategory[];
 	monthlyFee: number;
@@ -50,7 +52,7 @@ interface Person {
 
 // 미처리 입금 1건 처리. 납부자 지정 → 그 회원의 기존 미납(본인+대납·월무관) 배분 + 신규(회비/세션) 생성을
 // 함께 골라 [확인] 1회로. 금액(§4)으로 기본 선택 제안. 비회원 대관·비회비 수입 분류도 여기서.
-export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessions, upcomingSessions, categories, monthlyFee, courtFee, refunded, busy, onConfirm, onConfirmCourtExternal, onCategorize }: Props) {
+export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessions, monthlyChargedIds, courtChargedByMember, upcomingSessions, categories, monthlyFee, courtFee, refunded, busy, onConfirm, onConfirmCourtExternal, onCategorize }: Props) {
 	const effectiveAmount = tx.amount - refunded; // 부분 환불 반영: 정산 대상 금액
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
 	const candidates = useMemo(() => suggestMembers(tx.counterpartyName, members), [tx.counterpartyName, members]);
@@ -71,7 +73,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	// 단일 소스: 납부자 + 대납 대상 각각의 '낼 항목(칩)'을 한 로직으로 만들어, 표시·디폴트·합계·확정이 전부 이걸 공유.
 	//  - 기존 미납(unpaidByMember, 사람 간 중복 제거) → 배분
 	//  - (납부자·비게스트·이번달 미부과) 신규 회비 → 생성
-	//  - 신규 세션(이번 달 열린·미부과) → 생성 (표시만, 참석 필터 없어 디폴트 자동선택 제외)
+	//  - 신규 세션(이번 달 열린·참석 확정·미부과) → 생성 (표시만, 디폴트 자동선택 제외)
 	//  - 참가 예정(open·본인 참가확정·미부과) → 생성 (디폴트 자동선택 후보)
 	const people = useMemo<Person[]>(() => {
 		if (!selectedId) return [];
@@ -82,7 +84,9 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 			const unpaid = (unpaidByMember[mid] ?? []).filter((c) => !seen.has(c.id));
 			for (const c of unpaid) seen.add(c.id);
 			const hasMonthly = unpaid.some((c) => c.kind === "monthly_fee" && c.periodYm === depositYm);
-			const chargedSess = new Set(unpaid.filter((c) => c.kind === "court_fee").map((c) => c.sessionId));
+			// 이미 그 회원에게 부과된 세션(완납 포함) — 미납분(unpaid) + 완납 포함 전체(court) 둘 다로: 완납 세션이 신규 칩으로 재노출되는 것 방지.
+			const chargedSess = new Set<number | null>(unpaid.filter((c) => c.kind === "court_fee").map((c) => c.sessionId));
+			for (const sid of courtChargedByMember.get(mid) ?? []) chargedSess.add(sid);
 			const items: ChipItem[] = [];
 			for (const c of unpaid) {
 				const court = c.kind === "court_fee";
@@ -98,11 +102,12 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 					ym: c.periodYm ?? undefined, // 회비 charge의 부과 월(디폴트 회비 매칭용 — 대관은 null)
 				});
 			}
-			if (mid === selectedId && !m?.isGuest && !hasMonthly) {
+			if (mid === selectedId && !m?.isGuest && !hasMonthly && !monthlyChargedIds.has(mid)) {
 				items.push({ key: "monthly", label: `${Number(depositYm.slice(5))}월 회비 ${won(monthlyFee)}`, amount: monthlyFee, role: "monthly", autoDefault: false, poolRank: 9, poolDate: "", ym: depositYm });
 			}
 			for (const s of monthSessions) {
 				if (chargedSess.has(s.id)) continue;
+				if (!s.attendeeIds.includes(mid)) continue; // 그 회원이 참석 확정(confirmed/late_pool)인 세션만 — 미참석 세션 노출 방지
 				items.push({ key: `session:${mid}:${s.id}`, label: `${sessionLabel(s)} 대관비`, amount: courtFee, role: "court", autoDefault: false, poolRank: 8, poolDate: s.scheduledAt ?? "", sessionId: s.id, member: mid });
 			}
 			for (const s of upcomingSessions) {
@@ -111,7 +116,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 			}
 			return { id: mid, name: m?.name ?? "회원", isPayer: mid === selectedId, items };
 		});
-	}, [selectedId, extraIds, unpaidByMember, memberById, monthSessions, upcomingSessions, monthSessionIds, depositYm, monthlyFee, courtFee]);
+	}, [selectedId, extraIds, unpaidByMember, memberById, monthSessions, monthlyChargedIds, courtChargedByMember, upcomingSessions, monthSessionIds, depositYm, monthlyFee, courtFee]);
 
 	const itemByKey = useMemo(() => {
 		const map = new Map<string, ChipItem>();

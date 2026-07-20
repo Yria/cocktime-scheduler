@@ -312,6 +312,7 @@ export default function PlayerPickerList({
 									<PlayerCard
 										name={player.name}
 										gender={player.gender}
+										photoId={player.memberId ?? undefined}
 										skillScore={skillScore(player)}
 										size={photoSize}
 										selected={isSelected}

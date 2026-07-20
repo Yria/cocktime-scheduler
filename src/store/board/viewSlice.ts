@@ -5,7 +5,7 @@ import { MAGNET_SIZE, TEAM_BOX_BELOW } from "../../lib/board/constants";
 import { arrangeBoard } from "../../lib/board/arrange";
 import { scatterFromSource } from "../../lib/board/scatter";
 import { settleFreeMagnets } from "../../lib/board/settle";
-import { playingIdsFromCourts } from "../../lib/board/membership";
+import { cockPendingIds, playingIdsFromCourts } from "../../lib/board/membership";
 import { detachAnchor } from "../../lib/board/draftMutations";
 import { useSessionStore } from "../sessionStore";
 import type { BoardState } from "./types";
@@ -184,12 +184,17 @@ export const createViewSlice: StateCreator<
 		});
 	},
 
-	rearrangeAll: (viewW, viewH) => {
-		const sessionCourts = useSessionStore.getState().courts;
-		const sessionPlayers = useSessionStore.getState().sessionPlayers;
+	rearrangeAll: (viewW, viewH, markManual = false) => {
+		const ss = useSessionStore.getState();
+		const sessionCourts = ss.courts;
+		const sessionPlayers = ss.sessionPlayers;
 		const playingIds = playingIdsFromCourts(sessionCourts);
-		const restingIds = new Set(useSessionStore.getState().restingIds);
+		const restingIds = new Set(ss.restingIds);
+		const cockPending = cockPendingIds(sessionPlayers.values(), ss.cockCheckEnabled);
+		const editing = ss.isEditor;
 		set((s) => {
+			// 정렬 버튼(markManual)로 편집자가 명시 배치하면 자동 fit 중단 — 축소해 둔 비율·정렬 결과를 이후 멤버십/코트 변화가 덮어쓰지 않게.
+			if (markManual && editing) s.manualLayout = true;
 			arrangeBoard({
 				magnets: s.magnets,
 				drafts: s.drafts,
@@ -199,6 +204,7 @@ export const createViewSlice: StateCreator<
 				sessionPlayers,
 				playingIds,
 				restingIds,
+				cockPendingIds: cockPending,
 				viewW,
 				viewH,
 			});

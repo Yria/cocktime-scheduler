@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Gender } from "../../types";
 import { getPlayerPhotoUrl } from "../../lib/playerPhoto";
 import { getNameInitial } from "../../lib/player";
@@ -16,6 +16,8 @@ import {
 interface PlayerCardProps {
 	name: string;
 	gender: Gender | string;
+	/** 사진 키(members.id). 없으면 원격 사진 없이 이니셜로 폴백. */
+	photoId?: string;
 	skillScore?: number; // 실력 등급 1 ~ 10
 	size?: "sm" | "md" | "lg";
 	selected?: boolean;
@@ -37,6 +39,7 @@ export const PLAYER_CARD_SIZES = {
 export default function PlayerCard({
 	name,
 	gender,
+	photoId,
 	skillScore,
 	size = "md",
 	selected = false,
@@ -44,7 +47,10 @@ export default function PlayerCard({
 	onClick,
 }: PlayerCardProps) {
 	const [imgFailed, setImgFailed] = useState(false);
-	const url = getPlayerPhotoUrl(name);
+	// photoId 가 바뀌면 이전 실패 상태 리셋(다른 선수로 재사용 시 새 사진 재시도).
+	useEffect(() => setImgFailed(false), [photoId]);
+	const url = photoId ? getPlayerPhotoUrl(photoId) : "";
+	const showInitial = !photoId || imgFailed;
 	const s = PLAYER_CARD_SIZES[size];
 
 	const ringColor = magnetGenderRing(gender);
@@ -93,7 +99,7 @@ export default function PlayerCard({
 						background: bgLight,
 					}}
 				>
-					{imgFailed ? (
+					{showInitial ? (
 						<div
 							style={{
 								width: "100%",

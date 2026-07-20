@@ -31,6 +31,7 @@ interface Props {
 
 export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 	const user = useAuthStore((s) => s.user);
+	const myMemberId = useAuthStore((s) => s.memberId);
 	const myName = useAuthStore((s) => s.myName);
 	const myGender = useAuthStore((s) => s.myGender);
 	const myBirthYear = useAuthStore((s) => s.myBirthYear);
@@ -125,16 +126,21 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 		setError(null);
 		setBusy(true);
 		const finalName = fullName;
-		// 사진 먼저 업로드(확정 이름 키로). signup 성공 시 updateProfile이 store를 바꿔
-		// 컴포넌트를 언마운트하므로, 사진 업로드/버전 bump는 그 전에 끝낸다.
+		// 사진은 회원 id(members.id) 키로 업로드 — 이름을 바꿔도 사진이 유지되고 동명이인과 섞이지 않는다.
+		// signup 성공 시 updateProfile이 store를 바꿔 컴포넌트를 언마운트하므로, 업로드/버전 bump는 그 전에 끝낸다.
 		if (photoBlob) {
-			const uploaded = await uploadPlayerPhoto(finalName, photoBlob);
+			if (!myMemberId) {
+				setError("회원 정보를 불러오는 중이에요. 잠시 후 다시 시도해 주세요.");
+				setBusy(false);
+				return;
+			}
+			const uploaded = await uploadPlayerPhoto(myMemberId, photoBlob);
 			if (!uploaded) {
 				setError("사진 업로드에 실패했어요. 다시 시도해 주세요.");
 				setBusy(false);
 				return;
 			}
-			bumpPlayerPhotoVersion(finalName);
+			bumpPlayerPhotoVersion(myMemberId);
 		}
 		const ok = await authActions.updateProfile({
 			name: finalName,
@@ -216,13 +222,12 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 							}}
 							aria-label="프로필 사진 변경"
 						>
-							{/* 로컬 프리뷰(방금 고른 사진)는 항상 표시. 없으면 원격 URL, 그것도 실패하면 이니셜.
-							    key=이름: 이름이 바뀌면 사진 URL 도 바뀌므로 리마운트로 onError fallback 을 초기화(새 URL 재시도).
+							{/* 로컬 프리뷰(방금 고른 사진)는 항상 표시. 없으면 내 회원 id 기반 원격 사진, 실패하면 이니셜.
 							    성별 미선택(null) 시엔 성별색 대신 중립 회색(성별 추정 강요 방지). */}
 							<PlayerAvatar
-								key={fullName}
 								name={fullName}
 								gender={gender}
+								photoId={myMemberId ?? undefined}
 								size={96}
 								ringWidth={3}
 								previewSrc={photoPreview ?? undefined}

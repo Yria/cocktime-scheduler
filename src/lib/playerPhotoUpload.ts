@@ -1,7 +1,7 @@
 /**
  * 프로필 사진 업로드 유틸.
  * 선택한 이미지를 정사각 JPEG로 축소·중앙 크롭한 뒤 Supabase Storage에 upsert한다.
- * 파일명 규약은 getPlayerPhotoUrl과 동일(scripts/fetch_photos.py의 service-role 업로드와 호환).
+ * 파일명은 회원 id(members.id) 기반 — getPlayerPhotoUrl/playerPhotoFilename 과 동일 규약.
  */
 import { supabase } from "./supabase/client";
 import { PLAYER_PHOTO_BUCKET, playerPhotoFilename } from "./playerPhoto";
@@ -50,14 +50,14 @@ export async function processImageToSquareJpeg(
 	}
 }
 
-/** 정사각 JPEG Blob을 해당 이름의 Storage 객체로 upsert. 성공 여부 반환. */
+/** 정사각 JPEG Blob을 해당 회원(members.id)의 Storage 객체로 upsert. 성공 여부 반환. */
 export async function uploadPlayerPhoto(
-	name: string,
+	memberId: string,
 	blob: Blob,
 ): Promise<boolean> {
 	const { error } = await supabase.storage
 		.from(PLAYER_PHOTO_BUCKET)
-		.upload(playerPhotoFilename(name), blob, {
+		.upload(playerPhotoFilename(memberId), blob, {
 			contentType: "image/jpeg",
 			upsert: true,
 			// 본인은 ?v= 로 즉시 갱신되므로, 타 사용자 캐시는 10분 내 갱신되도록 짧게.

@@ -16,8 +16,8 @@ interface Props {
  */
 export function MemberPhotoModal({ member, onClose }: Props) {
 	const [failed, setFailed] = useState(false);
-	// 게스트는 이름(md5) 기반 사진이 동명 회원과 충돌하므로 원격 사진을 쓰지 않는다(PlayerAvatar 규약과 동일).
-	const showPhoto = !member.isGuest && member.name.trim() !== "" && !failed;
+	// 게스트는 사진 미등록이라 원격 사진을 쓰지 않고 이니셜 아바타로 폴백한다.
+	const showPhoto = !member.isGuest && !failed;
 	return (
 		<ModalSheet position="center" onClose={onClose} closeOnEscape>
 			<div
@@ -33,7 +33,7 @@ export function MemberPhotoModal({ member, onClose }: Props) {
 			>
 				{showPhoto ? (
 					<img
-						src={getPlayerPhotoUrl(member.name)}
+						src={getPlayerPhotoUrl(member.id)}
 						alt={member.name}
 						onError={() => setFailed(true)}
 						draggable={false}
@@ -49,7 +49,6 @@ export function MemberPhotoModal({ member, onClose }: Props) {
 					<PlayerAvatar
 						name={member.name}
 						gender={member.gender}
-						isGuest={member.isGuest}
 						size={200}
 						ringWidth={3}
 					/>

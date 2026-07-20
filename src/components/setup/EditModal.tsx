@@ -54,6 +54,7 @@ export function EditModal({
 					onChangeGender={onChangeGender}
 					onChangeGrade={onChangeGrade}
 					excludeName={player.name}
+					excludeId={player.id}
 				/>
 
 				{editError && (

@@ -34,7 +34,7 @@ export default function DriverGroupCard({
 			style={{ borderRadius: 14, padding: 12 }}
 		>
 			<div className="flex items-center gap-2.5">
-				<PlayerAvatar name={driver.name} gender={driver.gender} size={34} />
+				<PlayerAvatar name={driver.name} gender={driver.gender} photoId={driver.member_id} size={34} />
 				<div className="min-w-0 flex-1">
 					<div
 						className="text-strong truncate"

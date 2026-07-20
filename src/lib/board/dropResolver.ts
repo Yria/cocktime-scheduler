@@ -63,6 +63,9 @@ export function resolveDropTarget(
 	const self = magnets.get(playerId);
 	if (!self) return { kind: "none" };
 
+	// 콕 미제출자(매칭 대기 아님)는 드래그로 위치 이동만 — 팀 합류/페어/교체(편성)는 불가(콕 확인 후 편성).
+	if (notReadyIds.has(playerId)) return self.teamId !== null ? { kind: "detach", to: drop } : { kind: "move", to: drop };
+
 	// ── anchor(팀구성중) 멤버를 끌어낸 경우 ──────────────────────────
 	if (self.teamId !== null) {
 		// 1) 어떤 팀이든(자기 팀 포함) 슬롯 위면 그 칸 하이라이트 + 드롭 동작:

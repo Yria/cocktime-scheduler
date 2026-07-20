@@ -34,6 +34,7 @@ function SwapCard({
 			<PlayerCard
 				name={p.name}
 				gender={p.gender}
+				photoId={p.memberId ?? undefined}
 				skillScore={skillScore(p)}
 				size="sm"
 				selected={selected}

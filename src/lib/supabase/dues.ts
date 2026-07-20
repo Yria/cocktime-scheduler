@@ -149,6 +149,34 @@ export const duesCancelMatch = (txId: number) =>
 export const duesEnsureMonthly = (ym: string) =>
 	callRpc("dues_ensure_monthly", { p_ym: ym });
 
+/** 명예회원(회비 면제) 지정/해제. 지정 시 이미 생성된 미납 회비를 정리(납부분 보존). 사유는 지정 시에만 저장. */
+export const duesSetHonorary = (
+	memberId: string,
+	honorary: boolean,
+	reason: string | null = null,
+) =>
+	callRpc("dues_set_honorary", {
+		p_member_id: memberId,
+		p_honorary: honorary,
+		p_reason: reason,
+	});
+
+/** 명예회원 지정 사유 맵(memberId→reason). member_honorary(관리자 전용 RLS) — 비관리자는 빈 결과. */
+export async function fetchHonoraryReasons(): Promise<Record<string, string>> {
+	const { data, error } = await supabase
+		.from("member_honorary")
+		.select("member_id, reason");
+	if (error) {
+		console.error("fetchHonoraryReasons:", error);
+		return {};
+	}
+	const out: Record<string, string> = {};
+	for (const r of (data ?? []) as { member_id: string; reason: string | null }[]) {
+		if (r.reason) out[r.member_id] = r.reason;
+	}
+	return out;
+}
+
 /** 외부인(비회원) 대관비: 회원 없이 세션에만 귀속하고 matched 처리('대관비 수납'으로 집계). */
 export const duesConfirmCourtExternal = (txId: number, sessionId: number) =>
 	callRpc("dues_confirm_court_external", { p_tx_id: txId, p_session_id: sessionId });
@@ -663,6 +691,7 @@ interface RawSessionFee {
 	court_count: number | null;
 	court_fee: number | null;
 	places: { name: string | null; charges_court_fee: boolean } | null;
+	attendances: { member_id: string; status: string }[] | null;
 }
 export interface SessionFeeRow {
 	id: number;
@@ -672,15 +701,19 @@ export interface SessionFeeRow {
 	hours: number | null;
 	placeName: string | null;
 	courtFee: number | null; // 실제 입력 지출(= 엔빵 총액)
+	attendeeIds: string[]; // 확정 참가자(confirmed/late_pool) member_id — 정산함 신규 세션 칩 참석 필터용
 }
+
+/** 확정 참가자(confirmed/late_pool) member_id — 대관비 부과·칩 노출의 참석 기준(§1.1). */
+const confirmedAttendeeIds = (attendances: { member_id: string; status: string }[] | null): string[] =>
+	(attendances ?? []).filter((a) => a.status === "confirmed" || a.status === "late_pool").map((a) => a.member_id);
 
 /** 정산함 선납용: 참가 예정(open) 대관 세션 + 확정 참가자 목록. SessionFeeRow + attendeeIds. */
 export interface UpcomingSessionRow extends SessionFeeRow {
-	attendeeIds: string[]; // 확정 참가자(confirmed/late_pool) member_id — 본인이 여기 있는 세션만 칩으로 노출
+	// attendeeIds 는 SessionFeeRow 상속(본인이 여기 있는 세션만 칩으로 노출)
 	chargedMemberIds: string[]; // 이미 대관비(court_fee) 부과된 회원(완납 포함) — 중복 후보 방지(기존 미납·선납 완료 세션 제외)
 }
 interface RawUpcomingSession extends RawSessionFee {
-	attendances: { member_id: string; status: string }[] | null;
 	dues_charges: { member_id: string; kind: string }[] | null;
 }
 
@@ -689,7 +722,7 @@ async function queryCourtSessions(start: string, end: string): Promise<SessionFe
 	// matches!inner 로 경기 없는 세션(무산)을 원천 제외 → 정산함·회계·현황 모든 세션 목록이 일괄로 열린 경기만.
 	const { data, error } = await supabase
 		.from("sessions")
-		.select("id, title, scheduled_at, ends_at, court_count, court_fee, places!inner(name, charges_court_fee), matches!inner(id)")
+		.select("id, title, scheduled_at, ends_at, court_count, court_fee, places!inner(name, charges_court_fee), matches!inner(id), attendances(member_id, status)")
 		.gte("scheduled_at", start)
 		.lt("scheduled_at", end)
 		.in("status", ["active", "closed"])
@@ -712,6 +745,7 @@ async function queryCourtSessions(start: string, end: string): Promise<SessionFe
 			hours,
 			placeName: s.places?.name ?? null,
 			courtFee: s.court_fee,
+			attendeeIds: confirmedAttendeeIds(s.attendances),
 		};
 	});
 }
@@ -758,9 +792,7 @@ export async function fetchUpcomingParticipating(): Promise<UpcomingSessionRow[]
 			hours,
 			placeName: s.places?.name ?? null,
 			courtFee: s.court_fee,
-			attendeeIds: (s.attendances ?? [])
-				.filter((a) => a.status === "confirmed" || a.status === "late_pool")
-				.map((a) => a.member_id),
+			attendeeIds: confirmedAttendeeIds(s.attendances),
 			chargedMemberIds: (s.dues_charges ?? [])
 				.filter((c) => c.kind === "court_fee")
 				.map((c) => c.member_id),

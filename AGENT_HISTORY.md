@@ -396,3 +396,41 @@ b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
 **Answer**: 3-1까지 배포·검증 완료('잘 됨') 후, 통장내역 가져오기 버튼 아래 결과 요약줄 제거 요청. 성공은 이미 토스트로 뜨니 평상시 요약줄은 중복. 단 그 줄이 파싱 실패(`errors`)를 보여주는 유일한 곳이라(토스트는 성공 시 에러 미표시, 실패 메일은 받은편지함 잔존) 완전 삭제 대신 **에러 있을 때만 표시**로 축소 — 평상시엔 숨고 `⚠️`만 남김. `IngestResult.trashed`는 응답 계약이라 타입엔 유지(미표시). tsc/eslint/build 통과, 클라 전용.
 
 ---
+
+## #34
+
+**Prompt**: 게스트는 신경쓰지말고, 이름기반대신 불변고유식별자로 바꿔줘. 그리고 같은 이유로 이름만 키로 쓰고있는게 있는지 찾아봐
+
+**Answer**: 프로필 사진 파일명이 `md5(이름)` 기반이라 동명이인이 같은 Storage 파일을 공유·덮어쓰는 문제. 사진은 회원 단위이므로 불변키로 members.id(UUID, ASCII-safe라 해시 불필요)를 채택. 마이그레이션·시딩스크립트·부수수정 범위는 파괴적 결정이라 사용자 확인 후 진행.
+- 사진 키를 md5(이름) → members.id로 전환: playerPhoto/playerPhotoUpload 유틸에서 md5 제거, PlayerAvatar·PlayerCard에 photoId prop 도입, PlayerAvatar의 isGuest 특별처리 제거(photoId 유무로 판단)
+- 사진 호출부 전부 members.id 계열로 연결(ProfileSetup은 authStore.memberId, 스케줄/참가자는 a.member_id, board는 SessionPlayer.memberId 등) — 게스트는 photoId 미전달로 자연히 이니셜 폴백
+- "이름을 사람 식별키로 쓰는 다른 곳" 조사 → GradeInput 실력비교 추정기(앵커 이름 기반 본인제외/중복제거)를 id 기반으로 함께 수정(GradeAnchor.id·excludeId·usedIds). DebugMatchModal 매치로그는 로그 변환단계에서 id를 버려 이번엔 리포트만, fetch_photos.py는 유지
+- 부가효과: 이름 변경해도 사진 유지, 동명이인·게스트 자연 구분. tsc 통과
+
+---
+
+## #35
+
+**Prompt**: 마이그레이션 된거야? 그대론데?
+
+**Answer**: 스크립트만 작성했고 실제 실행은 안 한 상태였음. requests 의존성이 환경에 없어(.venv도 비어있음) 표준 라이브러리(urllib) 기반으로 스크립트를 리팩토링해 의존성 설치 없이 실행되게 함. dry-run으로 상태 확인 후 사용자 승인받아 실제 복사 수행.
+- 기존 `md5(이름).jpg` → `{members.id}.jpg` 복사 마이그레이션 실행(원본 md5 파일은 보존)
+- 결과: 72명 정상 이관, 32명 사진 미등록(정상), 동명이인 6명(김지훈4·이지은2)은 어느 회원 것인지 판별 불가로 자동 스킵→수동 재지정 필요
+- 안전성: 기존 md5 파일 보존으로 구버전 앱은 계속 동작, 프론트 배포 후 새 앱이 {id}.jpg를 읽음. 되돌리려면 새 {id}.jpg만 삭제
+- 남은 작업: 프론트 배포, 동명이인 6명 사진 재지정
+
+---
+
+## #36
+
+**Prompt**: 회비관리 설정에서 회비를 내지않는 명예회원 입력하는 필드를 넣어줘. 자동완성, 초성검색 되게해줘. 사유도 적을수 있으면 좋아
+
+**Answer**: 이해→리뷰 워크플로로 코드베이스를 병렬 정밀 조사한 뒤 회비 관리 설정 모달에 명예회원(회비 면제) 섹션을 추가함. 핵심 판단:
+- 회비 부과는 `dues_generate_monthly` 단일 소스라 WHERE에 `and not m.is_honorary` 한 줄만 추가하면 ensure/generate/monthly 3경로에 모두 반영됨
+- 회비엔 대관비 같은 self-heal DELETE가 없어, 지정 시 이미 생성된 미납 회비를 `dues_set_honorary` RPC가 한 트랜잭션으로 정리(미납만, 납부·waived는 보존)
+- 초성검색은 은행 전용 `suggestMembers`가 아니라 `matching.ts`의 `nameMatches`를 재사용
+- 사유(`honorary_reason`)를 members 컬럼에 두면 members RLS(로그인 전원 조회)로 노출되므로, 별도 테이블 `member_honorary`(is_admin RLS)로 분리해 관리자 전용으로 잠금. 공개 무방한 `is_honorary` 플래그만 members에 유지
+- 적대적 리뷰(10에이전트) 확정 5건 반영: 진행률 분모(roster)에서 명예회원·게스트 배제, DELETE에 `status='unpaid'` 조건, 해제 실패 시 다이얼로그 닫아 에러 노출, 주석·스펙 문구 정정, 사유 잠금
+- tsc·eslint·테스트 219개 통과. DB 마이그레이션은 미적용(사용자가 supabase db push 필요)
+
+---

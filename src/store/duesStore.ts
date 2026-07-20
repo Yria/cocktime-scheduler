@@ -182,6 +182,12 @@ export const duesActions = {
 		useDuesStore.setState({ bankTxns, sessionTxns, txAllocations });
 	},
 
+	/** 회원 슬라이스만 재조회(명예회원 지정/해제 등 members 필드 변경 후). 로딩 플래그 안 켬(깜빡임 없음). */
+	async refreshMembers() {
+		const members = await fetchMembersForAdmin(true);
+		useDuesStore.setState({ members });
+	},
+
 	/** 내 회비 탭: 본인 부과(대납 포함) + 클럽 계좌 + 실제 납부 이력. (클럽 회계는 loadMyLedger로 분리) */
 	async loadMine(memberId: string) {
 		useDuesStore.setState({ myLoading: true });

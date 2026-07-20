@@ -7,6 +7,8 @@ import { GradeInput, type GradeAnchor } from "../shared/GradeInput";
 
 interface MemberSkillEditModalProps {
 	memberName: string;
+	/** 편집 대상 회원 id(members.id) — 비교에서 본인 제외 + 아바타 사진 키. */
+	memberId: string;
 	/** 비교 추정 표본(동성) 기준 성별. */
 	gender: Gender;
 	draft: PlayerSkills;
@@ -21,6 +23,7 @@ interface MemberSkillEditModalProps {
 
 export function MemberSkillEditModal({
 	memberName,
+	memberId,
 	gender,
 	draft,
 	setDraft,
@@ -43,6 +46,7 @@ export function MemberSkillEditModal({
 					onChange={(grade) => setDraft({ grade })}
 					gender={gender}
 					excludeName={memberName}
+					excludeId={memberId}
 					anchors={anchors}
 				/>
 

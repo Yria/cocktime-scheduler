@@ -11,6 +11,7 @@ import ModalSheet from "../../common/ModalSheet";
 import { Switch } from "../../common/Switch";
 import { inputCls, inputStyle, labelCls, labelStyle } from "../../common/fieldStyles";
 import EmptyState from "../../shared/EmptyState";
+import HonoraryMembersSection from "./HonoraryMembersSection";
 
 interface Props {
 	onClose: () => void;
@@ -188,6 +189,9 @@ export default function DuesSettingsModal({ onClose }: Props) {
 								</div>
 							</div>
 						</div>
+
+						{/* 명예회원(회비 면제) */}
+						<HonoraryMembersSection />
 
 						{/* 장소별 대관장소 여부 */}
 						<div className="pt-1">

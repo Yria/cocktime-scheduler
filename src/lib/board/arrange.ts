@@ -34,6 +34,7 @@ export interface ArrangeInput {
 	sessionPlayers: Map<string, SessionPlayer>;
 	playingIds: Set<string>;
 	restingIds: Set<string>;
+	cockPendingIds: Set<string>; // 콕 미제출(cock_checked=false) 선수 — 자유 자석 정렬에서 맨 뒤로
 	viewW: number;
 	viewH: number;
 }
@@ -48,6 +49,7 @@ export function arrangeBoard(input: ArrangeInput): void {
 		sessionPlayers,
 		playingIds,
 		restingIds,
+		cockPendingIds,
 		viewW,
 		viewH,
 	} = input;
@@ -88,11 +90,14 @@ export function arrangeBoard(input: ArrangeInput): void {
 	// 그룹이 없으면 상단 공백 없이 맨 위부터(코트 전용 영역 개념 없음)
 	const groupAreaBottom = groupRows > 0 ? GROUP_TOP + groupRows * rowH : GROUP_TOP;
 
-	// 2) 나머지 자유 자석을 그룹 영역 아래에 격자 배치 — 경기수 적은 사람 먼저
+	// 2) 나머지 자유 자석을 그룹 영역 아래에 격자 배치 — 콕 미제출자는 맨 뒤로, 그 안에서 경기수 적은 사람 먼저
 	//    (휴식 선수는 휴식존으로 분리되므로 메인 보드 배치에서 제외)
 	const freeMagnets = [...magnets.values()]
 		.filter((m) => m.teamId === null && !playingIds.has(m.playerId) && !restingIds.has(m.playerId))
 		.sort((a, b) => {
+			const pa = cockPendingIds.has(a.playerId) ? 1 : 0;
+			const pb = cockPendingIds.has(b.playerId) ? 1 : 0;
+			if (pa !== pb) return pa - pb; // 콕 미제출자(1) 뒤로
 			const ga = sessionPlayers.get(a.playerId)?.gameCount ?? 0;
 			const gb = sessionPlayers.get(b.playerId)?.gameCount ?? 0;
 			return ga - gb;

@@ -29,6 +29,8 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 	const unpaidByMember = useDuesStore((s) => s.unpaidByMember);
 	const monthlyFee = useDuesStore((s) => s.monthlyFee);
 	const courtFee = useDuesStore((s) => s.courtFee);
+	const monthly = useDuesStore((s) => s.monthly);
+	const court = useDuesStore((s) => s.court);
 	const monthSessions = useDuesStore((s) => s.monthSessions);
 	const upcomingSessions = useDuesStore((s) => s.upcomingSessions);
 	const ledgerSessions = useDuesStore((s) => s.ledgerSessions);
@@ -86,6 +88,20 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 		}
 		return list;
 	}, [pendingVisible, filter, search]);
+
+	// 그 달 회비 부과가 이미 있는(완납 포함) 회원 — 신규 회비 칩을 중복 노출하지 않기 위해(void=무효는 재부과 허용). depositYm=ym 전제.
+	const monthlyChargedIds = useMemo(() => new Set(monthly.filter((c) => c.periodYm === ym && c.status !== "void").map((c) => c.memberId)), [monthly, ym]);
+	// 회원별 이미 대관비 부과된(완납 포함) 세션 — 완납 세션이 신규 세션 칩으로 재노출되는 것 방지(void=무효는 재부과 허용).
+	const courtChargedByMember = useMemo(() => {
+		const m = new Map<string, Set<number>>();
+		for (const c of court) {
+			if (c.status === "void") continue;
+			const set = m.get(c.memberId) ?? new Set<number>();
+			set.add(c.sessionId);
+			m.set(c.memberId, set);
+		}
+		return m;
+	}, [court]);
 
 	// 입금별 연결 환불 합계(부분 환불이면 입금 실효금액 = 입금 − 환불).
 	const refundedByIn = useMemo(() => {
@@ -200,6 +216,8 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 									members={members}
 									unpaidByMember={unpaidByMember}
 									monthSessions={monthSessions}
+									monthlyChargedIds={monthlyChargedIds}
+									courtChargedByMember={courtChargedByMember}
 									upcomingSessions={upcomingSessions}
 									categories={categories}
 									monthlyFee={monthlyFee}

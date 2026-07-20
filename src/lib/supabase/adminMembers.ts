@@ -14,6 +14,7 @@ export interface AdminMemberRow {
 	isActive: boolean;
 	isAdmin: boolean;
 	isGuest: boolean;
+	isHonorary: boolean; // 명예회원(회비 면제). 사유는 member_honorary(관리자 전용) 별도 조회.
 }
 
 interface RawMemberRow {
@@ -26,6 +27,7 @@ interface RawMemberRow {
 	auth_user_id: string | null;
 	is_active: boolean;
 	is_guest: boolean;
+	is_honorary: boolean;
 	user_roles: { role: string }[] | null;
 }
 
@@ -37,7 +39,7 @@ export async function fetchMembersForAdmin(includeGuests = false): Promise<Admin
 	let query = supabase
 		.from("members")
 		.select(
-			"id, name, gender, birth_year, residence, skills, auth_user_id, is_active, is_guest, user_roles(role)",
+			"id, name, gender, birth_year, residence, skills, auth_user_id, is_active, is_guest, is_honorary, user_roles(role)",
 		)
 		.order("name", { ascending: true });
 	if (!includeGuests) query = query.eq("is_guest", false);
@@ -57,6 +59,7 @@ export async function fetchMembersForAdmin(includeGuests = false): Promise<Admin
 		isActive: m.is_active,
 		isAdmin: (m.user_roles ?? []).some((r) => r.role === "admin"),
 		isGuest: m.is_guest,
+		isHonorary: m.is_honorary,
 	}));
 }
 

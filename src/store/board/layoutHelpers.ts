@@ -3,7 +3,7 @@ import { clampAnchor, DEFAULT_VIEWPORT } from "../../lib/board/geometry";
 import { MAGNET_SIZE } from "../../lib/board/constants";
 import { arrangeBoard } from "../../lib/board/arrange";
 import { scatterFromSource, type ScatterShape } from "../../lib/board/scatter";
-import { findReservation, playingIdsFromCourts, teamMembers } from "../../lib/board/membership";
+import { cockPendingIds, findReservation, playingIdsFromCourts, teamMembers } from "../../lib/board/membership";
 import { attachAnchor, detachAnchor, type Draft } from "../../lib/board/draftMutations";
 import { useSessionStore } from "../sessionStore";
 import type { DragSource, SettleState } from "./types";
@@ -104,6 +104,7 @@ export function placeArranged(
 		sessionPlayers: ss.sessionPlayers,
 		playingIds,
 		restingIds,
+		cockPendingIds: cockPendingIds(ss.sessionPlayers.values(), ss.cockCheckEnabled),
 		viewW,
 		viewH,
 	});

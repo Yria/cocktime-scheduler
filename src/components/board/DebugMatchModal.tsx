@@ -78,10 +78,15 @@ export default function DebugMatchModal() {
 
 	const myName = player.name;
 
-	// 동성 세션 선수 비교 표본(본인 제외는 GradeInput이 이름으로 처리).
+	// 동성 세션 선수 비교 표본(본인 제외는 GradeInput이 id로 처리 — 회원은 members.id, 게스트는 session_players.id).
 	const skillAnchors: GradeAnchor[] = [...sessionPlayers.values()]
 		.filter((p) => p.gender === player.gender)
-		.map((p) => ({ name: p.name, grade: skillScoreOf(p.skills), gender: p.gender }));
+		.map((p) => ({
+			id: p.memberId ?? p.id,
+			name: p.name,
+			grade: skillScoreOf(p.skills),
+			gender: p.gender,
+		}));
 
 	const startEdit = () => {
 		setDraft({ grade: skillScoreOf(player.skills) || DEFAULT_GRADE });
@@ -167,6 +172,7 @@ export default function DebugMatchModal() {
 							onChange={(grade) => setDraft({ grade })}
 							gender={player.gender}
 							excludeName={player.name}
+							excludeId={player.memberId ?? player.id}
 							anchors={skillAnchors}
 							title="실력 편집"
 						/>
