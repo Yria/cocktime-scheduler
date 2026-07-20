@@ -60,6 +60,8 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	);
 
 	// 회비 진행 — 원 월(period_ym=ym) 기준. 이월된(deferred_to set) 건은 '낸 것처럼' 해결로 카운트.
+	// 진행률 분모 = 이번 달 '실제 부과된' 회비 수(paid+unpaid)만. roster에 있어도 이번 달 부과가 없는
+	// 신규 유예 회원이나, waived(면제)·void(취소) 건은 애초에 낼 회비가 아니므로 분모에서 제외한다.
 	const fee = useMemo(() => {
 		const own = new Map(monthly.filter((c) => c.periodYm === ym).map((c) => [c.memberId, c]));
 		let paid = 0;
@@ -70,6 +72,7 @@ export default function SessionsHome({ ym }: { ym: string }) {
 			if (c.deferredTo != null) paid++; // 이월 = 해결로 취급
 			else if (c.status === "paid" || c.status === "overpaid") paid++;
 			else if (c.status === "unpaid" || c.status === "partial") unpaid.push({ payerId: m.id, name: m.name, remain: remaining(c.amountDue, c.amountPaid), hasGuest: false, chargeId: c.id });
+			// waived·void 는 paid·unpaid 어디에도 넣지 않음 → 아래 total(분모)에서도 자연히 제외됨.
 		}
 		unpaid.sort((a, b) => a.name.localeCompare(b.name));
 		// 다른 달에서 이월돼 온 회비(이번 달 미정산 대상)
@@ -77,7 +80,7 @@ export default function SessionsHome({ ym }: { ym: string }) {
 			.filter((c) => c.deferredTo === ym)
 			.map((c) => ({ chargeId: c.id, name: memberById.get(c.memberId)?.name ?? "회원", settled: c.status === "waived", fromYm: c.periodYm }))
 			.sort((a, b) => a.name.localeCompare(b.name));
-		return { paid, total: roster.length, unpaid, carried };
+		return { paid, total: paid + unpaid.length, unpaid, carried };
 	}, [monthly, roster, ym, memberById]);
 
 	// 세션별 정산 상태
