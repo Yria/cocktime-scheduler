@@ -20,7 +20,6 @@ interface MemberRowProps {
 	onOpenPhoto: (m: AdminMemberRow) => void;
 	onRequestToggleAdmin: (m: AdminMemberRow) => void;
 	onRequestToggleActive: (m: AdminMemberRow) => void;
-	onRequestDelete: (m: AdminMemberRow) => void;
 }
 
 export function MemberRow({
@@ -34,7 +33,6 @@ export function MemberRow({
 	onOpenPhoto,
 	onRequestToggleAdmin,
 	onRequestToggleActive,
-	onRequestDelete,
 }: MemberRowProps) {
 	const g = genderText(member.gender);
 	const grade = skillScoreOf(member.skills); // 0 = 미설정
@@ -185,8 +183,8 @@ export function MemberRow({
 				</div>
 			</button>
 
-			{/* 액션(컴팩트) — 활성: 운영진·실력·비활성 / 비활성: 활성화·삭제.
-			    본인(isMe)은 비활성/삭제 숨김(자기 자신 편성 이탈·탈퇴 방지 — 탈퇴는 별도 경로). */}
+			{/* 액션(컴팩트) — 활성: 운영진·실력·비활성 / 비활성: 활성화.
+			    본인(isMe)은 비활성 숨김. 회원 하드삭제는 폐지(정산 CASCADE 유실 방지) — 탈퇴=비활성으로 대체, delete_member RPC도 서버에서 차단. */}
 			<div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
 				{member.isActive ? (
 					<>
@@ -228,27 +226,15 @@ export function MemberRow({
 						)}
 					</>
 				) : (
-					<>
-						<button
-							type="button"
-							onClick={() => onRequestToggleActive(member)}
-							disabled={isBusy}
-							title="활성화 — 세션 명단·회비 부과에 다시 포함"
-							style={miniBtn("#16a34a", "rgba(22,163,74,0.12)", isBusy)}
-						>
-							활성화
-						</button>
-						{!isMe && (
-							<button
-								type="button"
-								onClick={() => onRequestDelete(member)}
-								disabled={isBusy}
-								style={miniBtn("#ef4444", "rgba(239,68,68,0.12)", isBusy)}
-							>
-								삭제
-							</button>
-						)}
-					</>
+					<button
+						type="button"
+						onClick={() => onRequestToggleActive(member)}
+						disabled={isBusy}
+						title="활성화 — 세션 명단·회비 부과에 다시 포함"
+						style={miniBtn("#16a34a", "rgba(22,163,74,0.12)", isBusy)}
+					>
+						활성화
+					</button>
 				)}
 			</div>
 		</div>

@@ -88,16 +88,8 @@ export async function revokeAdmin(memberId: string): Promise<RpcResult> {
 	return { ok: true };
 }
 
-export async function deleteMember(memberId: string): Promise<RpcResult> {
-	const { error } = await supabase.rpc("delete_member", {
-		p_member_id: memberId,
-	});
-	if (error) {
-		console.error("deleteMember:", error);
-		return { ok: false, error: error.message };
-	}
-	return { ok: true };
-}
+// deleteMember(delete_member RPC) 폐지 — 회원 하드삭제는 dues/attendances CASCADE 유실로 정산을
+// 꼬이게 해 UI·서버 양쪽에서 차단. 탈퇴는 setMemberActive(false)로, 재가입은 재활성화로 처리.
 
 /**
  * 회원 활성/비활성 토글 — members.is_active 직접 UPDATE(members_admin_write RLS).

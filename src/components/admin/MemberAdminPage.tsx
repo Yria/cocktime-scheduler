@@ -6,7 +6,6 @@ import { skillScoreOf } from "../../lib/teamSelection";
 import type { GradeAnchor } from "../shared/GradeInput";
 import {
 	type AdminMemberRow,
-	deleteMember,
 	fetchMembersForAdmin,
 	grantAdmin,
 	revokeAdmin,
@@ -219,42 +218,9 @@ export default function MemberAdminPage() {
 		}
 	}, [skillEditId, busyId, draft, reload]);
 
-	const doDelete = useCallback(
-		async (m: AdminMemberRow) => {
-			if (busyId) return;
-			setBusyId(m.id);
-			const res = await deleteMember(m.id);
-			setBusyId(null);
-			if (res.ok) {
-				await reload();
-				return;
-			}
-			const err = res.error ?? "";
-			if (err.includes("last admin")) {
-				alert("마지막 운영진은 삭제할 수 없어요.");
-			} else if (err.includes("self")) {
-				alert("본인은 탈퇴를 이용하세요.");
-			} else {
-				alert("삭제에 실패했어요.");
-			}
-		},
-		[busyId, reload],
-	);
-
-	const requestDelete = (m: AdminMemberRow) => {
-		setConfirmState({
-			title: "회원 삭제",
-			message: (
-				<>
-					{`'${m.name}'님을 삭제할까요?`}
-					<br />
-					계정·회원 정보가 삭제되며 되돌릴 수 없습니다.
-				</>
-			),
-			danger: true,
-			run: () => doDelete(m),
-		});
-	};
+	// 회원 하드삭제(delete_member)는 폐지 — 탈퇴는 비활성(is_active=false)으로만.
+	// 하드삭제는 dues_charges/allocations/attendances 를 CASCADE 로 날려 정산을 꼬이게 하므로
+	// UI·서버 RPC 양쪽에서 차단(재가입은 재활성화로 옛 created_at 보존 → 당월 회비 자동 부과).
 
 	// 비활성 회원 수(필터 칩 노출/라벨용).
 	const inactiveCount = useMemo(
@@ -593,7 +559,6 @@ export default function MemberAdminPage() {
 										onOpenPhoto={setPhotoMember}
 										onRequestToggleAdmin={requestToggleAdmin}
 										onRequestToggleActive={requestToggleActive}
-										onRequestDelete={requestDelete}
 									/>
 								);
 							})}
