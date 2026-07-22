@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { GameType, SessionPlayer } from "../../types";
-import { recommendTeammates, autoFillTeammates, RECOMMEND_WEIGHTS, FORCED_WINDOW, type RecommendContext } from "./recommendTeammates";
+import { recommendTeammates, autoFillTeammates, RECOMMEND_WEIGHTS, type RecommendContext } from "./recommendTeammates";
 
 function player(
 	id: string,
@@ -201,37 +201,6 @@ describe("recommendTeammates", () => {
 		expect(get("mLow").breakdown!.skill).toBe(0);
 		// 여자: 시드(여자)와 실력 균형 → 가까운 여자가 먼 여자보다 skill 점수 낮음(우대)
 		expect(get("fClose").breakdown!.skill).toBeLessThan(get("fFar").breakdown!.skill);
-	});
-
-	it("의도적으로 묶였던 쌍(forcedPairs)은 재편성 추천에서 강하게 하위로 밀린다", () => {
-		const confirmed = [player("seed", "M")];
-		const wasForced = player("wasForced", "M"); // seed와 의도적으로 묶였던 상대
-		const fresh = player("fresh", "M");
-		const ranked = recommendTeammates(confirmed, [wasForced, fresh], ctx({
-			forcedPairs: [{ a: "seed", b: "wasForced", fromCount: 10 }],
-			matchAssignCount: 10, // 경과 0 → full 페널티
-		}));
-		expect(ranked[0].player.id).toBe("fresh");
-		const wf = ranked.find((r) => r.player.id === "wasForced")!;
-		const fr = ranked.find((r) => r.player.id === "fresh")!;
-		expect(wf.score - fr.score).toBeCloseTo(RECOMMEND_WEIGHTS.W_FORCED, 5);
-	});
-
-	it("forced 페널티는 라운드 경과로 선형 decay하고 FORCED_WINDOW 경과 후 0", () => {
-		const confirmed = [player("seed", "M")];
-		const wasForced = player("wasForced", "M");
-		const fresh = player("fresh", "M");
-		const fp = [{ a: "seed", b: "wasForced", fromCount: 0 }];
-		const diffAt = (count: number) => {
-			const r = recommendTeammates(confirmed, [wasForced, fresh], ctx({ forcedPairs: fp, matchAssignCount: count }));
-			const wf = r.find((x) => x.player.id === "wasForced")!;
-			const fr = r.find((x) => x.player.id === "fresh")!;
-			return wf.score - fr.score;
-		};
-		// 절반 경과 → 페널티 절반
-		expect(diffAt(FORCED_WINDOW / 2)).toBeCloseTo(RECOMMEND_WEIGHTS.W_FORCED * 0.5, 5);
-		// 윈도우 경과 → 0(차이 없음)
-		expect(diffAt(FORCED_WINDOW)).toBeCloseTo(0, 5);
 	});
 
 	it("같은 조건이면 더 오래 기다린(대기시간 긴) 후보가 우선된다(W_WAIT)", () => {

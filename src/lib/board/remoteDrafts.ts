@@ -13,7 +13,7 @@ import type {
 } from "../../types/board";
 import { centroidAnchor, clampAnchor } from "./geometry";
 
-/** drafts/reservations를 멤버십만으로 정규화한 비교용 문자열(위치·순서 무시). forcedIds·forcedPairs도 포함해 그 변경도 동기되게 한다. */
+/** drafts/reservations를 멤버십만으로 정규화한 비교용 문자열(위치·순서 무시). forcedIds(그룹표시)도 포함해 그 변경도 동기되게 한다. (createdBy는 생성 시 1회 세팅·불변이라 멤버십 변경과 함께 전파되므로 여기선 제외.) */
 export function canonicalizeDrafts(p: BoardDraftsPayload): string {
 	return JSON.stringify({
 		teams: [...p.teams]
@@ -28,9 +28,6 @@ export function canonicalizeDrafts(p: BoardDraftsPayload): string {
 		reservations: [...p.reservations]
 			.map((r) => ({ id: r.id, playerId: r.playerId, teamId: r.teamId, createdMs: r.createdMs }))
 			.sort((a, b) => a.id.localeCompare(b.id)),
-		forcedPairs: [...(p.forcedPairs ?? [])]
-			.map((f) => ({ a: f.a, b: f.b, fromCount: f.fromCount }))
-			.sort((x, y) => (x.a + x.b).localeCompare(y.a + y.b)),
 	});
 }
 
@@ -89,6 +86,7 @@ export function reconcileMembership(
 			createdAt: team.createdMs,
 			...(forcedIds.length ? { forcedIds } : {}),
 			...(slots && Object.keys(slots).length ? { slots } : {}),
+			...(team.createdBy ? { createdBy: team.createdBy } : {}),
 		});
 		for (const id of memberIds) {
 			const m = magnets.get(id);

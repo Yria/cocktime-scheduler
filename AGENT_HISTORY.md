@@ -486,3 +486,81 @@ b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
 - 검증 tsc/vite build/eslint(0 error) 통과. **배포**: 프론트=git push(GitHub Pages), 마이그레이션=`supabase db push` 필요. 7월 charge는 이미 DB 반영 완료.
 
 ---
+
+## #41
+
+**Prompt**: 순서대로 진행해
+
+**Answer**: 보드 실시간 동기화 desync의 근본원인 진단(다각도 조사+적대적 검증+웹 교차검증)을 설계 문서로 남기고, desync를 실제로 끝내는 Stage 1을 구현했다.
+- **진단 확정**: 정합성을 at-most-once realtime 배달에 결합한 게 근본 문제. 지배 원인=`load_session_state`가 `session_players`를 반환 안 해 `resyncFromServer`가 선수(대기열/휴식/콕체크)를 절대 복구 못 함 → 이벤트 하나 유실되면 새로고침 전까지 영구 desync. auth/setAuth·quota는 반증(supabase-js가 setAuth 자동호출, quota는 사일런트 드롭 아님).
+- **설계 원칙**: realtime을 힌트로 강등하고 버전 기반 스냅샷 pull로 정합성 보장. 두 버전 이원화(sync_version=신호/갭감지 vs component version=apply-gating)로 편집자 낙관편집 보호.
+- **설계 문서**: `docs/REALTIME_SYNC_REDESIGN.md`(진단·목표 아키텍처·2단계 계획·외부 근거).
+- **Stage 1 구현**: `load_session_state`에 session_players 추가(마이그레이션) + resyncFromServer가 선수 full-replace(빈스냅샷 가드)·board_drafts/matches 단조 게이팅(force 옵션은 CAS 충돌 롤백)·skipLock 옵션 + sessionEditorLock에 foreground 25s 워치독(REST resync, Realtime 쿼터 무관). SUBSCRIBED 레이스·조용한 소켓 죽음(realtime-py #213)까지 커버.
+- tsc/lint/219 테스트 통과. 전송계층은 안 건드림(저위험·롤백 쉬움).
+
+---
+
+## #42
+
+**Prompt**: main에서 진행. 그리고 스테이지2 진행
+
+**Answer**: realtime 전제 DB 재설계(Stage 2a)를 additive로 구현하고, 트리거 SQL을 런타임 없이 검증하기 위해 3각도 적대적 리뷰 후 CONFIRMED 결함을 수정했다.
+- **Stage 2a**: `sessions.sync_version`(단조 시계) 신설 + bump를 **트리거로 강제**(sessions BEFORE UPDATE + session_players/matches 문장 트리거 — 직접 PostgREST write·종료 트리거·미래 RPC까지 구조적 포섭) + `realtime.send`로 기존 session-bc 채널에 {v} 힌트 broadcast-from-DB. 클라는 힌트>로컬이면 디바운스 pull. postgres_changes는 유지(overlap), 제거+publication drop은 Stage 2b로 게이팅(비가역).
+- **적대적 리뷰 반영(CONFIRMED만)**: ①선수 full-replace의 stale-clobber → 관측버전(lastSeen) 기반 stale 스냅샷 거부 + applied 버전은 pull로만 전진. ②onSessionRowUpdate가 applied 전진시켜 선수 delta 유실 시 힌트 pull 스킵 → applied 전진 제거(관측만). ③잦은 sync-bump마다 락 재계산→가짜 '뺏김' → editorRowChanged 게이트. ④선수 교체 시 코트 유령참조 → 코트 재정합. ⑤editor_lease_until 감시 제외(bump 증폭). ⑥자식 bump/broadcast 예외 RAISE WARNING(관측). ⑦load_session_state EXECUTE authenticated 잠금(anon PII 노출 차단).
+- REFUTED: 전이테이블 분기·종료 캐스케이드 재귀/tuple-concurrent·broadcast WHEN절·힌트-pull 락 레이스.
+- tsc/lint/219 테스트 통과. **realtime.send 4-arg는 첫 사용 → 배포 후 브로드캐스트 E2E 수신 검증 필수(예외는 WARNING 로그).** 배포: `supabase db push`(신규 마이그레이션 2개: Stage1 players + Stage2 sync_version) 먼저 → git push(프론트).
+
+---
+
+## #43
+
+**Prompt**: 처음 임장할때 바로 편집권한이 넘어갔다고 나오는데, 그 상황에선 다이얼로그없이 진해악능?
+
+**Answer**: 첫 입장 시 뜨는 '편집 권한 뺏김' 다이얼로그가 오탐임을 확인하고, 조용히 읽기 전용으로 진입하도록 고쳤다.
+- **원인**: 진입 auto-claim 이 서버의 진짜 편집락 상태를 알기 전(캐시 미채움 → `lockFree` stale=true)에 낙관적으로 편집권을 선점 → 이어 resync 가 '이미 남이 편집 중/크래시 잔존 잠금'을 밝히면 `detectEditorLoss` 가 낙관적 `isEditor=true` 를 기준으로 '뺏김'으로 오인. 사용자는 편집권을 실제로 가진 적이 없어 오탐. (Stage 2 의 잦은 sessions sync-bump 가 이 창을 넓혀 더 자주 노출.)
+- **수정1(핵심)**: 진입 auto-claim 을 첫 권위 락 동기(`lockSynced`) 이후로 지연. resync 로 서버 진실을 확정한 뒤에만 판단 → 남이 편집 중이면 낙관 선점 자체를 안 하고 조용히 읽기 전용(‘OO님이 편집 중’), 자유일 때만 opener 가 자동 편집자.
+- **수정2(방어)**: 낙관 claim 이 거부된 복구 경로(claimNow 실패·claimEditor solo 탈취 실패)의 resync 에 `suppressLossNotice` 를 줘 '뺏김' 알림 억제 — 확정된 적 없는 편집권은 잃어도 알림 대상 아님. 실제 편집 중 탈취당한 경우(확정 편집자→postgres_changes/resync)의 다이얼로그는 그대로 유지.
+- 상태에 `lockSynced` 추가(subscribe/unsubscribe 리셋), resyncFromServer 가 락 확정 후 set. tsc/lint/219 테스트 통과. 프론트 변경만(git push).
+
+---
+
+## #44
+
+**Prompt**: 1. A가 편집중이고 B는 보기모드일때, A가 화면을 빠져나가면 B가 편집모드가 된것처럼 보이지만 실제로 편집은 안됨. 여기서 A가 다시 돌아오면 A가 편집모드가 되고 B는 보기모드로 바뀜. A가 나가더라도, B는 계속 보기모드여야하고 버튼을 수동으로 누를때만 권한을 주게 해. 다만 버튼 눌렀을때 아무도 권한자가 없으면 다이얼로그없이 바로 진행되게. 2. 특정 사용자를 휴식으로 보내고, 그 사용자가 있던 자리에 다른 자석을 끌어오면 마치 거기에 자석이 있는것마냥 그룹핑이 됨. 버그로 보이고 수정해야함. 3. 경기완료눌렀을때도 정렬누른것처럼 되어야함. 4. 편집중인 사람이 매칭확정을 눌렀을때, 보기모드인 사람한테서 잠깐 그룹이 하나 더 있는것처럼 노출됨.
+
+**Answer**: 4개 버그를 병렬 정밀 진단(+적대적 검증) 후 순서대로 수정했다.
+- **버그1(편집락 UX)**: (원인) ViewerLockOverlay가 'isEditor'가 아니라 'holder(남이 보유)' 기준이라 A 이탈로 free가 되면 보기전용 표지가 사라져 편집 가능처럼 보이고, claimEdit이 자유면 드래그로 암묵 self-claim해 B가 편집자가 됨. (수정) ①ViewerLockOverlay를 `lockSynced && !isEditor` 기준으로(편집자 아니면 항상 보기전용) ②claimEdit을 `isEditor`만 반환하도록(드래그 암묵 점유 폐기) → 편집권은 진입 auto-claim(opener 단독) 또는 '가져오기' 버튼으로만. 버튼은 free면 이미 다이얼로그 없이 즉시 claim(onTakeover, 변경 불필요).
+- **버그2(휴식 유령 그룹)**: (원인) 휴식 선수 magnet은 좌표가 남는 설계인데 dropResolver.nearestFreePartner가 restingIds를 안 걸러 근접 페어 후보로 잡아 유령 그룹 생성. (수정) nearestFreePartner/resolveDropTarget에 restingIds 파라미터 추가·가드, handleDrop/handlePlayingMagnetDrop에서 ss.restingIds 전달.
+- **버그3(완료 시 정렬)**: completeMatch가 scatterMagnets(endedIds)만 함 → 편집자(manualLayout=true)는 전체 정렬 안 됨. rearrangeAll(stageW, stageH)로 교체(store.stageW/H는 이미 view 좌표) = '정렬' 버튼과 동일. markManual=false로 1회 정렬만.
+- **버그4(배정 시 뷰어 유령 그룹)**: (원인) match_started(코트) broadcast는 빠르고 board_drafts 해체는 느려, 뷰어가 '코트+해체 전 draft 팀'을 잠깐 동시 노출. healPlayingAnchors가 편집자 전용이라 뷰어는 느린 board_drafts만 의존. (수정) healPlayingAnchors 내부 isEditor 게이트 + useSessionBoardEffects의 `if(isEditor)` 게이트 제거 → 뷰어도 courtSig 변화 시 로컬 정제(영속화는 여전히 편집자만, pushDraftsToRemote no-op). 유령 창을 RTT→1프레임으로 축소.
+- 검증: tsc/lint/219 테스트 통과. dropResolver restingIds는 기본값 optional이라 기존 테스트 무영향. 프론트 변경만(git push). DATABASE.md 편집권 획득 서술 갱신(self-claim 폐기).
+
+---
+
+## #45
+
+**Prompt**: 너가 말한대로 해서 지금 함께 넣는걸로
+
+**Answer**: 버그4(배정 시 뷰어 유령 그룹)의 잔여 1프레임을 렌더 게이팅으로 0프레임까지 제거했다. 렌더와 상태(heal)가 어긋나 깜빡이지 않도록 **단일 공용 규칙**으로 구현.
+- **공용 헬퍼**: `lib/board/membership.ts`에 `wouldDissolveByPlaying(team, reservations, playingIds)` 추가 — I2 해체 판정(경기중 anchor 제외 후 유효 anchor 0명 또는 (유효 anchor+ghost)<2면 해체, ghost는 경기중이어도 유지). 원본/필터 anchor 어느 쪽이든 동일 결과(내부 재필터).
+- **heal 공유**: matchSlice.healPlayingAnchors의 해체 조건을 이 헬퍼로 교체(teamMemberCount import 제거). 필터 후 team으로 호출해도 결과 동일 → 기존 동작 불변(healPlayingAnchors 4개 테스트 통과로 확인).
+- **렌더 게이팅**: TeamBackground에서 `if (!team) return null` 다음에 `if (wouldDissolveByPlaying(...)) return null` — 매칭 확정으로 4 anchor 전원 playing이 된 팀을 그 프레임에 즉시 미렌더(heal의 1프레임 뒤가 아니라 렌더 시점 playingIds로 판정). 4명은 코트 카드로만 보임.
+- 부분 케이스(로스터 편집으로 일부 anchor만 코트행)의 박스 내 개별 멤버 잔상은 heal이 1프레임에 정리(팀 단위 게이트 범위 밖, 실사용 드묾) — 필요 시 members 필터로 후속 강화 가능.
+- 검증: tsc/lint/219 테스트 통과. 프론트 변경만(git push).
+
+---
+
+## #46
+
+**Prompt**: 현재 팀 고정기능이 있는데 이 기능이 의도대로 사용되지 않아 기획을 변경하려고 해. 고정하면 밸런스스코어에 영향을 줄 텐데 그 기능을 제거하고, 우선배치 버튼으로 변경해서, 그룹지정의 역할로만 쓰게 해줘. 그리고 누가 이 그룹을 만들었는지 보이게 해주고.
+
+**Answer**: "고정" 기능을 "우선배치(순수 그룹 지정)"로 바꾸는 기획 변경. 병렬 조사로 두 축(forcedIds=팀별 그룹표시 vs forcedPairs=밸런스 영향)을 분리 확인 후, 열린 결정 3개를 사용자에게 확인(모두 권장안: 순수 그룹표시만·이름만·핀 아이콘)하고 구현.
+- **밸런스 영향 전면 제거**: forcedPairs 경로 삭제 — ForcedPair 타입, board.forcedPairs 상태, addForcedPair/pruneForcedPairs, recommendTeammates의 W_FORCED/buildForcedLookup/forcedDecay/FORCED_WINDOW/forced 점수블록, recommendPool·useTeammateRecommendations의 forcedPairs·matchAssignCount 주입(matchAssignCount는 forced decay 전용이었음), board_drafts 직렬화/canonicalize의 forcedPairs, startMatch의 쌍 기록, applyRemoteDrafts reconcile. 다른 점수(skill/pair/game/rotate/gender/playing/wait)는 독립이라 무영향.
+- **우선배치=순수 그룹표시**: forcedIds(팀별 그룹 표시)는 유지하되 순수 시각+CTA 게이팅만. resolveFreedReservations의 forcedIds 승격 우선권도 제거(myRes[0]) → 완전 비행동. 내부 심볼/board_drafts jsonb 키 forcedIds는 하위호환 위해 유지.
+- **리네임/아이콘**: UI 라벨 "고정배치"→"우선배치"/"우선배치 해제". PlayerMagnet 🔒 자물쇠 → 핀(map-pin) 글리프(인디고 유지, offset 재계산).
+- **생성자 표시**: DraftTeam.createdBy 추가 — 팀 생성 4지점(membershipSlice)에서 currentEditorName()(sessionStore._myName)로 스탬프, board_drafts 직렬화/reconcile 왕복, TeamBackground 라벨에 "· by OO"(wrap:none+ellipsis로 넘침 방지).
+- **하위호환**: 기존 board_drafts의 top-level forcedPairs는 로드 시 무시(크래시 없음)·다음 저장에 드롭. createdBy 없는 레거시 팀은 라벨 접미사 자연 생략.
+- 문서: TEAM_GENERATION_RULES.md의 W_FORCED 행 삭제 + 규칙#5를 "우선배치=비스코어 그룹표시"로 재작성(CLAUDE.md 규칙). 적대적 리뷰 통과(critical/high 0, 라벨 wrap LOW 수정).
+- 검증: tsc/lint/217 테스트 통과(forced 테스트 2개 삭제 반영, 잔존 forced 참조 0). 프론트 변경만(git push).
+
+---

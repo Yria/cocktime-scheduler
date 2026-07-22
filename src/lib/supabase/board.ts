@@ -1,6 +1,8 @@
 import type { BoardDraftsPayload } from "../../types/board";
+import type { SessionPlayer } from "../../types";
 import { supabase } from "./client";
-import type { MatchRow } from "./types";
+import { rowToSessionPlayer } from "./transformers";
+import type { MatchRow, SessionPlayerRow } from "./types";
 
 // ── 보드 drafts 저장 ──────────────────────────────────
 
@@ -13,8 +15,12 @@ export interface SessionStateSnapshot {
 	version: number;
 	/** 코트 배정(matches) 동기화 단조 버전. */
 	matchStateVersion: number;
+	/** 세션 공유상태 단일 리비전 시계 — Broadcast 힌트(v)와 비교해 갭이면 pull. */
+	syncVersion: number;
 	courtCount: number;
 	matches: MatchRow[];
+	/** 세션 전체 선수(권위 스냅샷). resyncFromServer 가 sessionPlayers 를 전량 교체해 놓친 delta 를 치유한다. */
+	players: SessionPlayer[];
 	editorClientId: string | null;
 	editorName: string | null;
 	editorLeaseUntil: string | null;
@@ -34,8 +40,10 @@ export async function dbLoadSessionState(
 		board_drafts: BoardDraftsPayload | null;
 		board_drafts_version: number | null;
 		match_state_version: number | null;
+		sync_version: number | null;
 		court_count: number | null;
 		matches: MatchRow[] | null;
+		session_players: SessionPlayerRow[] | null;
 		editor_client_id: string | null;
 		editor_name: string | null;
 		editor_lease_until: string | null;
@@ -44,8 +52,10 @@ export async function dbLoadSessionState(
 		drafts: d.board_drafts ?? { teams: [], reservations: [] },
 		version: d.board_drafts_version ?? 0,
 		matchStateVersion: d.match_state_version ?? 0,
+		syncVersion: d.sync_version ?? 0,
 		courtCount: d.court_count ?? 0,
 		matches: d.matches ?? [],
+		players: (d.session_players ?? []).map(rowToSessionPlayer),
 		editorClientId: d.editor_client_id ?? null,
 		editorName: d.editor_name ?? null,
 		editorLeaseUntil: d.editor_lease_until ?? null,

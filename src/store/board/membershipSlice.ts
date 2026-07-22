@@ -16,15 +16,14 @@ import { useSessionStore } from "../sessionStore";
 import { toast } from "../toastStore";
 import type { BoardState, DragSource } from "./types";
 import { clampToStage, placeArranged, replaceAtSlot, runSettle } from "./layoutHelpers";
-import { claimEdit } from "./draftsSync";
+import { claimEdit, currentEditorName } from "./draftsSync";
 
-/** 멤버십 슬라이스 — 자석/예비팀/예약(ghost)/고정배치 등 공유 멤버십의 편집 액션. */
+/** 멤버십 슬라이스 — 자석/예비팀/예약(ghost)/우선배치(그룹표시) 등 공유 멤버십의 편집 액션. */
 export type MembershipSlice = Pick<
 	BoardState,
 	| "magnets"
 	| "drafts"
 	| "reservations"
-	| "forcedPairs"
 	| "assigningTeamIds"
 	| "courtAnchors"
 	| "handleDrop"
@@ -50,7 +49,6 @@ export const createMembershipSlice: StateCreator<
 	magnets: new Map<string, MagnetPosition>(),
 	drafts: new Map<string, DraftTeam>(),
 	reservations: new Map<string, Reservation>(),
-	forcedPairs: [],
 	assigningTeamIds: new Set<string>(),
 	courtAnchors: new Map<number, StagePoint>(),
 
@@ -72,9 +70,10 @@ export const createMembershipSlice: StateCreator<
 		const ss = useSessionStore.getState();
 		const playingIds = playingIdsFromCourts(ss.courts);
 		const notReadyIds = cockPendingIds(ss.sessionPlayers.values(), ss.cockCheckEnabled);
+		const restingIds = new Set(ss.restingIds); // 휴식 자석은 페어 대상에서 제외(빈 자리 유령 그룹 방지)
 		set((s) => {
 			s.manualLayout = true; // 편집자가 직접 드래그로 배치/편성 → 이후 자동 정렬 중단(수동이 진실)
-			const target = resolveDropTarget(playerId, drop, s.magnets, s.drafts, s.reservations, playingIds, notReadyIds);
+			const target = resolveDropTarget(playerId, drop, s.magnets, s.drafts, s.reservations, playingIds, notReadyIds, restingIds);
 			let source: DragSource | null = null;
 			switch (target.kind) {
 				case "none":
@@ -118,6 +117,7 @@ export const createMembershipSlice: StateCreator<
 						anchorMemberIds: [playerId, target.partnerId],
 						anchor: clampToStage(s, target.anchor),
 						createdAt: nowMs(),
+						createdBy: currentEditorName(),
 					});
 					a.teamId = id;
 					b.teamId = id;
@@ -168,6 +168,7 @@ export const createMembershipSlice: StateCreator<
 		const ss = useSessionStore.getState();
 		const playingIds = playingIdsFromCourts(ss.courts);
 		const notReadyIds = cockPendingIds(ss.sessionPlayers.values(), ss.cockCheckEnabled);
+		const restingIds = new Set(ss.restingIds); // 휴식 자석은 페어 대상에서 제외(빈 자리 유령 예비팀 방지)
 		set((s) => {
 			let source: DragSource | null = null;
 			// 1) forming/ready 팀의 빈 슬롯(구멍) 위 → 예약 추가. 박스 안 다른 곳이면 슬롯 복귀(no-op).
@@ -191,7 +192,7 @@ export const createMembershipSlice: StateCreator<
 			}
 			// 2) 자유 자석 위 → 새 예비팀(파트너 anchor + 이 선수 ghost)
 			if (!done) {
-				const partner = nearestFreePartner(playerId, drop, s.magnets, playingIds, notReadyIds);
+				const partner = nearestFreePartner(playerId, drop, s.magnets, playingIds, notReadyIds, restingIds);
 				if (partner) {
 					const pm = s.magnets.get(partner.id);
 					if (pm && pm.teamId === null) {
@@ -201,6 +202,7 @@ export const createMembershipSlice: StateCreator<
 							anchorMemberIds: [partner.id],
 							anchor: clampToStage(s, { x: (drop.x + partner.pos.x) / 2, y: (drop.y + partner.pos.y) / 2 }),
 							createdAt: nowMs(),
+							createdBy: currentEditorName(),
 						});
 						pm.teamId = id;
 						const rid = newId();
@@ -230,6 +232,7 @@ export const createMembershipSlice: StateCreator<
 					anchorMemberIds: [target.seedId],
 					anchor: clampToStage(s, { x: seed.x, y: seed.y }),
 					createdAt: nowMs(),
+					createdBy: currentEditorName(),
 				});
 				seed.teamId = teamId;
 			}
@@ -247,6 +250,7 @@ export const createMembershipSlice: StateCreator<
 					anchorMemberIds: [anchorId],
 					anchor: clampToStage(s, { x: am.x, y: am.y }),
 					createdAt: nowMs(),
+					createdBy: currentEditorName(),
 				});
 				am.teamId = teamId;
 			}
@@ -279,10 +283,10 @@ export const createMembershipSlice: StateCreator<
 	autoFillTeam: (teamId) => get().autoFillTarget({ teamId }, []),
 
 	// 추천 모달의 "자동편성" 버튼 공용 — 팀/시드/새팀 어디서나 대기 선수로 나머지를 채워 commit.
-	// extraIds = 모달에서 사용자가 직접 고른 선수(고정으로 먼저 포함하고 나머지를 자동 채움).
+	// extraIds = 모달에서 사용자가 직접 고른 선수(먼저 포함하고 나머지를 자동 채움).
 	autoFillTarget: (target, extraIds = []) => {
 		if (!claimEdit()) return; // 보기 전용 차단
-		const { drafts, reservations, magnets, forcedPairs } = get();
+		const { drafts, reservations, magnets } = get();
 		const ss = useSessionStore.getState();
 		const data = buildRecommendData(
 			target,
@@ -295,8 +299,6 @@ export const createMembershipSlice: StateCreator<
 				courts: ss.courts,
 				pairHistory: ss.pairHistory,
 				lastGameType: ss.lastGameType,
-				matchAssignCount: ss.matchAssignCount,
-				forcedPairs,
 				cockCheckEnabled: ss.cockCheckEnabled,
 			},
 			{ excludePlaying: true }, // 자동편성은 대기 선수만으로 채운다(경기중 제외)

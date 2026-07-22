@@ -40,6 +40,12 @@ export interface SessionChannelHandlers {
 	onResync: () => void;
 	/** session_players row 변경(INSERT/UPDATE/DELETE) — 선수 추가/삭제/상태가 row 단위로 즉시 전파. */
 	onSessionPlayersChange: (payload: SessionPlayersChange) => void;
+	/**
+	 * Broadcast from DB 힌트(Stage 2) — DB 트리거가 sync_version 변경 시 {v}를 브로드캐스트한다. 로컬보다
+	 * 크면 load_session_state pull(디바운스). postgres_changes 유실을 워치독(25s)보다 빠르게 치유하고,
+	 * 향후 postgres_changes 제거의 기반. 힌트는 무의미 정수라 채널은 기존 public 브로드캐스트 채널을 재사용.
+	 */
+	onSyncHint: (version: number) => void;
 }
 
 /**
@@ -59,6 +65,13 @@ export function createSessionChannels(
 			handlers.onBroadcast({ event, payload } as BroadcastPayload),
 		);
 	}
+	// DB발 sync_version 힌트(Stage 2) — 클라이언트가 보내는 도메인 이벤트가 아니라 sessions 트리거의
+	// realtime.send가 이 topic으로 쏜다. payload는 {v:number}. self:false는 클라 발신에만 적용돼 DB발
+	// 브로드캐스트는 발신자 포함 전원이 받는다.
+	channel.on("broadcast", { event: "sync" }, ({ payload }) => {
+		const v = Number((payload as { v?: unknown })?.v);
+		if (Number.isFinite(v)) handlers.onSyncHint(v);
+	});
 	// presence 변경(sync/join/leave) → 보유자/접속자 재산정. join/leave도 명시 구독해 인계 지연 방지.
 	const syncPresence = () => {
 		handlers.onPresenceSync(channel.presenceState() as unknown as PresenceState);

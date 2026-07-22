@@ -3,10 +3,10 @@ import { useBoardStore } from "../../store/boardStore";
 import { TOOLBAR_H, COURT_BAR_H } from "../../lib/board/constants";
 
 /**
- * 편집 잠금(보기 전용) — 다른 기기가 편집 권한 보유 중일 때만 노출.
- * 헤더 아래 보드 전 영역을 덮어 "모든 입력을 차단"한다(배경 탭은 아무 동작 안 함, 선택도 안 됨).
- * 편집권한 모달은 오직 "보기 전용" 버튼으로만 연다.
- * (락 정책: 락이 걸리면 보기 전용 버튼 외엔 전부 막는다 — 단일 차단 지점.)
+ * 편집 잠금(보기 전용) — 내가 편집자가 아니면 노출(자유 상태·남이 보유 모두). 편집권은 오직
+ * '편집 권한 가져오기' 버튼(칩→모달)으로만 획득하므로, 편집자가 나가 락이 free가 돼도 관전자는 계속
+ * 보기 전용으로 보인다(드래그로 암묵 편집 착수 없음 — draftsSync.claimEdit 참고).
+ * 표시용 프레임 + 칩만(pointerEvents:none) — 로컬 pan/zoom 은 허용, 공유 변경은 액션 레벨(isEditor)에서 차단.
  *
  * 색은 서비스에서 안 쓰는 마젠타/푸시아(경기중 주황·대기 초록·정렬 파랑·예약 보라·휴식 시안과 구분).
  * 둘레 글로우 프레임 + 하단-중앙 "보기 전용" 칩은 표시용. 패딩 상하좌우 균일(FRAME_PAD).
@@ -20,12 +20,13 @@ const CHIP_BOTTOM = `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px) + 
 const ACCENT = "217,70,239"; // #D946EF (fuchsia)
 
 export default function ViewerLockOverlay() {
-	const holderClientId = useSessionStore((s) => s.holderClientId);
-	const myClientId = useSessionStore((s) => s._clientId);
+	const isEditor = useSessionStore((s) => s.isEditor);
+	const lockSynced = useSessionStore((s) => s.lockSynced);
 	const openPresence = useBoardStore((s) => s.setPresenceModalOpen);
 
-	// 다른 기기가 보유 중일 때만(자유/내가 보유 시 미노출, 초기 동기화 전 깜빡임 방지)
-	const locked = holderClientId !== null && holderClientId !== myClientId;
+	// 내가 편집자가 아니면 항상 보기 전용 표지 노출(자유·남이 보유 모두). lockSynced 전엔 서버 진실 미확정
+	// (초기 isEditor=false)이라 전원에게 깜빡 뜨는 것 방지로 숨긴다.
+	const locked = lockSynced && !isEditor;
 	if (!locked) return null;
 
 	return (

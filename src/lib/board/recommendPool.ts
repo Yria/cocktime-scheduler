@@ -9,7 +9,7 @@
  *        (옵션 excludePlaying=true면 경기중 선수도 제외 — 자동편성은 대기 선수만으로 채운다.)
  */
 import type { Court, GameType, PairHistory, SessionPlayer } from "../../types";
-import type { DraftTeam, ForcedPair, MagnetPosition, Reservation } from "../../types/board";
+import type { DraftTeam, MagnetPosition, Reservation } from "../../types/board";
 import { playingIdsFromCourts, teamMembers } from "./membership";
 import type { RecommendContext } from "../teamSelection";
 
@@ -21,9 +21,6 @@ export interface RecommendPoolInputs {
 	courts: Court[];
 	pairHistory: PairHistory;
 	lastGameType: Record<string, GameType>;
-	matchAssignCount: number;
-	/** 의도적 그룹 재편성 회피 쌍(decay 적용). */
-	forcedPairs: ForcedPair[];
 	/** 콕 체크 on이면 cockChecked=false 선수는 매칭 대기 아님 → 풀에서 제외. */
 	cockCheckEnabled: boolean;
 }
@@ -60,7 +57,7 @@ export function buildRecommendData(
 	inputs: RecommendPoolInputs,
 	options: { excludePlaying?: boolean } = {},
 ): RecommendData | null {
-	const { drafts, reservations, magnets, sessionPlayers, courts, pairHistory, lastGameType, matchAssignCount, forcedPairs, cockCheckEnabled } = inputs;
+	const { drafts, reservations, magnets, sessionPlayers, courts, pairHistory, lastGameType, cockCheckEnabled } = inputs;
 	const teamId = target.teamId ?? null;
 	const seedId = target.seedId ?? null;
 
@@ -117,8 +114,6 @@ export function buildRecommendData(
 		pairHistory,
 		lastGameType,
 		playingIds,
-		forcedPairs,
-		matchAssignCount,
 	};
 
 	return { confirmed, members, pool, ctx, playingIds };

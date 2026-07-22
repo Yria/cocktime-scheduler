@@ -16,9 +16,16 @@ import { getSessionId, type GetFn, type SetFn } from "./sessionStoreState";
 // 즉 연결만 하고 편집 안 하는 클라(상시 데스크탑 등)는 편집자가 되지 않는다(호깅/플래핑 방지).
 export const LEASE_SECONDS = 20;
 
+// 포어그라운드 능동 갭 감지 워치독 주기(ms). realtime 배달은 at-most-once라(브로드캐스트/postgres_changes
+// 모두 미보장) 조용한 소켓 사망(realtime-py #213)·SUBSCRIBED 레이스(구독 직후 1~3s write 유실)·장수명
+// 연결의 조용한 drop을 visibilitychange/재구독만으론 못 잡는다(상시 foreground 데스크탑 뷰어). 이 주기
+// REST resync가 최후 그물 — Realtime 메시지 쿼터와 무관(REST)하고, 단조/멱등이라 정상 구간엔 no-op.
+const WATCHDOG_MS = 25_000;
+
 let cachedEditor: EditorCache = { clientId: null, name: null, leaseUntilMs: 0 };
 let visibilityHandler: (() => void) | null = null;
 let pageHideHandler: (() => void) | null = null;
+let watchdogTimer: ReturnType<typeof setInterval> | null = null;
 // 락 세대(epoch) — 권위적 락 변경(claim/handoff/resync/row/세션경계)마다 증가. in-flight heartbeat RPC의
 // 늦은 .then이 그 사이 바뀐 상태를 덮어쓰지 않게(handoff/크로스세션 stale 콜백) 가드한다.
 let lockEpoch = 0;
@@ -82,7 +89,8 @@ export function claimNow(get: GetFn, set: SetFn) {
 			};
 			recomputeLock(get, set);
 		} else {
-			void get().resyncFromServer(); // 점유 실패 — 진짜 보유자/자유를 서버에서 다시 읽음
+			// 점유 실패(남이 보유) — 서버 권위로 되돌리되, 낙관 선점은 확정된 적 없으니 '뺏김' 알림은 띄우지 않는다.
+			void get().resyncFromServer({ suppressLossNotice: true });
 		}
 	});
 }
@@ -119,6 +127,14 @@ export function installLockLifecycle(get: GetFn) {
 		if (isEditor && _clientId) void dbBoardReleaseEditor(getSessionId(), _clientId);
 	};
 	window.addEventListener("pagehide", pageHideHandler);
+
+	// 포어그라운드 능동 갭 감지 워치독 — 주기적으로 서버 스냅샷과 조용히 수렴한다(skipLock: 편집 락은
+	// 안 건드림 → 편집자 in-flight claim 방해 없음). 백그라운드면 skip(복귀 시 visibilitychange resync가 담당).
+	if (watchdogTimer) clearInterval(watchdogTimer);
+	watchdogTimer = setInterval(() => {
+		if (document.hidden) return;
+		void get().resyncFromServer({ skipLock: true });
+	}, WATCHDOG_MS);
 }
 
 /** 편집 락 lifecycle 철거(unsubscribe) — DOM 핸들러 해제. */
@@ -130,5 +146,9 @@ export function teardownLockLifecycle() {
 	if (pageHideHandler) {
 		window.removeEventListener("pagehide", pageHideHandler);
 		pageHideHandler = null;
+	}
+	if (watchdogTimer) {
+		clearInterval(watchdogTimer);
+		watchdogTimer = null;
 	}
 }

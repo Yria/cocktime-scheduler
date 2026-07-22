@@ -104,6 +104,29 @@ export function teamMemberCount(
 	return teamMembers(teamId, drafts, reservations).length;
 }
 
+/**
+ * 불변식 I2 — 이 예비팀이 "경기중이 된 anchor" 때문에 해체되어야 하는가.
+ * healPlayingAnchors(상태 정제)와 TeamBackground(렌더 게이팅)가 **공유하는 단일 판정** — 둘이 같은 규칙을
+ * 쓰게 해, 렌더(즉시)와 상태(1프레임 뒤 heal)가 어긋나 깜빡이지 않게 한다.
+ * 규칙: 경기중이 된 anchor를 제외한 유효 anchor가 0명이거나, (유효 anchor + ghost) < 2명이면 해체 대상.
+ * ghost(예약)는 경기중이어도 의도된 '빌려주기'라 유지·산정한다(anchor로 확정된 선수와의 중복은 dedup).
+ * team 인자는 원본(미필터)·필터된 anchor 어느 쪽이든 동일 결과(내부에서 playing anchor를 다시 거른다).
+ */
+export function wouldDissolveByPlaying(
+	team: DraftTeam,
+	reservations: ResMap,
+	playingIds: ReadonlySet<string>,
+): boolean {
+	const liveAnchors = team.anchorMemberIds.filter((id) => !playingIds.has(id));
+	if (liveAnchors.length === 0) return true; // 모든 anchor가 경기중 → 해체
+	const anchorSet = new Set(team.anchorMemberIds);
+	const ghostPlayers = new Set<string>();
+	for (const r of reservations.values()) {
+		if (r.teamId === team.id && !anchorSet.has(r.playerId)) ghostPlayers.add(r.playerId);
+	}
+	return liveAnchors.length + ghostPlayers.size < 2;
+}
+
 export function isMemberOf(
 	playerId: string,
 	teamId: string,

@@ -11,15 +11,12 @@ import {
 	matchPlayerIds,
 	matchPlayerIdsFromCourt,
 	playingIdsFromCourts,
-	teamMemberCount,
 	teamMembers,
+	wouldDissolveByPlaying,
 } from "../../lib/board/membership";
 import {
-	addForcedPair,
 	dissolveDraft,
 	dissolveDraftAfterAssign,
-	effectiveForcedIds,
-	pruneForcedPairs,
 	resolveFreedReservations,
 } from "../../lib/board/draftMutations";
 import { pairPlayers } from "../../lib/teamSelection";
@@ -66,10 +63,6 @@ export const createMatchSlice: StateCreator<
 				s.drafts = drafts;
 				s.reservations = reservations;
 
-				// 의도적 그룹 재편성 회피 쌍 동기 + decay 끝난 것 정리(읽기 시점에도 정리해 무한 보존 방지).
-				s.forcedPairs = payload.forcedPairs ? [...payload.forcedPairs] : [];
-				pruneForcedPairs(s, useSessionStore.getState().matchAssignCount);
-
 				// 원격 변경으로 "새로 필드에 들어온" 자석(팀/예약 → 자유): 내가 드래그하지 않았어도
 				// 드롭과 동일하게 흩어짐을 적용 — 각 자석을 소스로 BFS 방사형으로 주변을 밀어낸다.
 				const r = MAGNET_SIZE / 2;
@@ -114,8 +107,10 @@ export const createMatchSlice: StateCreator<
 	},
 
 	healPlayingAnchors: () => {
-		// 편집자만 영속화(뷰어는 reconcile 파생으로 화면만 정제하므로 불필요 + CAS 충돌 방지).
-		if (!useSessionStore.getState().isEditor) return;
+		// 코트 변화 시 경기중이 된 anchor를 로컬 drafts에서 즉시 제거해 화면을 정제한다(편집자·뷰어 모두).
+		// 뷰어에게도 실행해야, 편집자의 '매칭 확정' 직후 match_started(코트) broadcast는 도착했지만 board_drafts
+		// 해체(dissolve)가 아직 안 온 창에서 '코트+유령 팀'이 동시에 보이는 것을 막는다(그 창을 1프레임으로 축소).
+		// 영속화(pushDraftsToRemote)는 편집자만(draftsSync의 !isEditor no-op) → 뷰어 실행은 순수 로컬·CAS 무관.
 		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 		if (playingIds.size === 0) return;
 		set((s) => {
@@ -130,8 +125,8 @@ export const createMatchSlice: StateCreator<
 					if (team.slots && id in team.slots) delete team.slots[id]; // 슬롯 매핑도 정리
 				}
 				team.anchorMemberIds = team.anchorMemberIds.filter((id) => !playingIds.has(id));
-				// 제거 후 인원이 부족하면(원본 0명 또는 총 2명 미만) 팀 해체(남은 멤버는 자유 자석으로)
-				if (team.anchorMemberIds.length === 0 || teamMemberCount(teamId, s.drafts, s.reservations) < 2) {
+				// 제거 후 인원이 부족하면 팀 해체 — 렌더 게이팅(TeamBackground)과 동일한 공용 규칙으로 판정.
+				if (wouldDissolveByPlaying(team, s.reservations, playingIds)) {
 					dissolveDraft(s, teamId);
 				}
 			}
@@ -182,18 +177,7 @@ export const createMatchSlice: StateCreator<
 			const placedIds = court?.match ? [...court.match.teamA, ...court.match.teamB] : [];
 			const ok = placedIds.length === 4 && placedIds.every((id) => ourIds.has(id));
 			if (ok) {
-				// 의도적 그룹(드래그로 2명+ 묶음)이 경기 시작 → 묶인 멤버들끼리 쌍을 재편성 회피로 기록.
-				const team = drafts.get(teamId);
-				const fourIds = new Set(members.map((m) => m.playerId));
-				const forced = team ? effectiveForcedIds(team, fourIds) : [];
-				const fromCount = useSessionStore.getState().matchAssignCount; // 이 경기 배정 후 값(decay 기준점)
 				set((s) => {
-					if (forced.length >= 2) {
-						for (let i = 0; i < forced.length; i++) {
-							for (let j = i + 1; j < forced.length; j++) addForcedPair(s, forced[i], forced[j], fromCount);
-						}
-					}
-					pruneForcedPairs(s, fromCount); // decay 끝난 오래된 쌍 정리
 					dissolveDraftAfterAssign(s, teamId);
 					// 코트 카드를 방금 그 그룹이 있던 자리에 그대로 표시(좌상단 점프 X)
 					if (teamAnchor) s.courtAnchors.set(empty.id, teamAnchor);
@@ -217,8 +201,10 @@ export const createMatchSlice: StateCreator<
 		// 경기 끝나 자유가 된 선수가 다른 팀에 예약(ghost)으로 잡혀 있었으면 → 그 팀의 정식 멤버(anchor)로 승격.
 		// (예: 경기중인 4번을 abc 팀에 끌어 abc4 예약·고정 → 4번 경기 끝나면 abc4가 4명 정식 팀이 되어 매칭확정 가능.)
 		set((s) => resolveFreedReservations(s, endedIds));
-		// 그룹 해제로 자유 자석이 된 선수에 흩어짐 적용(승격된 선수는 anchor라 scatterMagnets가 건드리지 않음)
-		get().scatterMagnets(endedIds);
+		// 완료 후 '정렬' 버튼과 동일하게 보드 전체 재정렬(끝난 선수만 흩뜨리지 않고 자유 풀 전체를 그리드로 정돈).
+		// store.stageW/stageH 는 이미 view 좌표(setStageSize(viewW,viewH))라 rearrangeAll 인자로 그대로 쓴다.
+		// markManual=false: 1회 정렬만 하고 수동 모드로 고정하지 않는다(뷰어는 courtSig 변화로 자동 정렬도 병행).
+		get().rearrangeAll(get().stageW, get().stageH);
 	},
 
 	setMatchRoster: async (courtId, teamA, teamB) => {

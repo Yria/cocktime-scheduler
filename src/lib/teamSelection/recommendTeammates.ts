@@ -17,7 +17,6 @@
  *  3) W_PLAYING — 경기중 후보 페널티. 대기 선수가 상위에 오도록.
  */
 import type { GameType, SessionPlayer } from "../../types";
-import type { ForcedPair } from "../../types/board";
 import { rankCandidates, type RankContext, type RankedCandidate, type Weights } from "./rankCandidates";
 
 export interface RecommendContext extends RankContext {
@@ -25,36 +24,6 @@ export interface RecommendContext extends RankContext {
 	lastGameType: Record<string, GameType>;
 	/** 현재 코트에서 경기중인 session_player.id */
 	playingIds: ReadonlySet<string>;
-	/** 의도적 그룹(드래그로 직접 묶음)의 재편성 회피 쌍 — 이 둘이 다시 만나면 강한 페널티(decay). */
-	forcedPairs?: ForcedPair[];
-	/** forced 페널티 decay 기준 클럭(세션 누적 배정수 matchAssignCount). 없으면 decay 0(=full). */
-	matchAssignCount?: number;
-}
-
-/** forced 페널티가 0이 되기까지의 경과 라운드(중간 길이). 이 이상 다른 경기가 지나면 회피 해제. */
-export const FORCED_WINDOW = 6;
-
-/** 무순서 쌍 키. */
-function pairKey(a: string, b: string): string {
-	return a < b ? `${a}|${b}` : `${b}|${a}`;
-}
-
-/** forcedPairs → 쌍키별 fromCount(여러 번 묶였으면 가장 최근=fromCount 최대). */
-function buildForcedLookup(forcedPairs?: ForcedPair[]): Map<string, number> {
-	const m = new Map<string, number>();
-	if (!forcedPairs) return m;
-	for (const f of forcedPairs) {
-		const k = pairKey(f.a, f.b);
-		const prev = m.get(k);
-		if (prev === undefined || f.fromCount > prev) m.set(k, f.fromCount);
-	}
-	return m;
-}
-
-/** 경과 라운드 → 선형 decay 계수(0~1). 묶인 직후 1(=full), FORCED_WINDOW 경과 시 0. 음수/NaN은 클램프(레이스·손상 데이터 방어). */
-export function forcedDecay(elapsed: number): number {
-	if (!Number.isFinite(elapsed)) return 0;
-	return Math.max(0, Math.min(1, 1 - elapsed / FORCED_WINDOW));
 }
 
 export interface RecommendWeights extends Weights {
@@ -68,8 +37,6 @@ export interface RecommendWeights extends Weights {
 	W_MIXED_COMPLETE: number;
 	/** 경기중 후보 페널티(대기 선수 우선) */
 	W_PLAYING: number;
-	/** 의도적으로 묶었던 쌍의 재편성 회피 — 묶인 직후 초기 페널티(라운드 경과로 선형 decay, 절대 금지는 아님) */
-	W_FORCED: number;
 }
 
 export const RECOMMEND_WEIGHTS: RecommendWeights = {
@@ -91,7 +58,6 @@ export const RECOMMEND_WEIGHTS: RecommendWeights = {
 	W_GENDER: 50.0, // 혼복 성별 초과 = 하위
 	W_MIXED_COMPLETE: 8.0, // 혼복 구조(남녀 혼합) 완성에 필요한 부족 성별 = 상위
 	W_PLAYING: 30.0, // 경기중 = 하위(대기 우선)
-	W_FORCED: 48.0, // 의도적으로 묶었던 쌍 재편성 = 강하게 하위(W_GENDER급). FORCED_WINDOW 라운드에 걸쳐 0으로 decay
 };
 
 /** 여자가 포함된(양성) 게임 타입인가 — 혼복/혼합. */
@@ -114,7 +80,6 @@ export function recommendTeammates(
 ): RankedCandidate[] {
 	const baseM = confirmed.filter((p) => p.gender === "M").length;
 	const baseF = confirmed.filter((p) => p.gender === "F").length;
-	const forcedLookup = buildForcedLookup(ctx.forcedPairs);
 
 	return rankCandidates(confirmed, pool, ctx, weights)
 		.map(({ player, score, breakdown }) => {
@@ -165,26 +130,10 @@ export function recommendTeammates(
 			const playing = ctx.playingIds.has(player.id) ? weights.W_PLAYING : 0;
 			s += playing;
 
-			// 4) 의도적 그룹 재편성 회피 — confirmed 각 멤버와 후보가 "묶였던 쌍"이면 강한 페널티.
-			//    묶인 직후 W_FORCED(full), 그 뒤 다른 경기가 지날수록(matchAssignCount 증가) 선형 decay → 0이면 자연 복귀.
-			//    pairHistory와 동일하게 confirmed별로 합산(여러 명과 묶였으면 더 멀어짐). 절대 금지가 아니라 "꽤 많이" 하위.
-			let forced = 0;
-			// matchAssignCount(decay 클럭)가 없으면 forced 페널티 미적용(안전) — 클럭 없이는 decay 산정 불가.
-			if (forcedLookup.size > 0 && ctx.matchAssignCount !== undefined) {
-				const mac = ctx.matchAssignCount;
-				for (const subj of confirmed) {
-					const from = forcedLookup.get(pairKey(subj.id, player.id));
-					if (from === undefined) continue;
-					// 음수 경과(크로스클라이언트 동기 레이스: 내 matchAssignCount < 기록된 fromCount)는 forcedDecay가 1로 클램프.
-					forced += weights.W_FORCED * forcedDecay(mac - from);
-				}
-			}
-			s += forced;
-
 			return {
 				player,
 				score: s,
-				breakdown: breakdown ? { ...breakdown, rotate, gender, playing, forced } : undefined,
+				breakdown: breakdown ? { ...breakdown, rotate, gender, playing } : undefined,
 			};
 		})
 		.sort((a, b) => a.score - b.score);

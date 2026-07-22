@@ -681,8 +681,8 @@ describe("detachMember / cancelReservation — 드롭존", () => {
 	});
 });
 
-// ── N2: 4명+예약(ghost)도 함께 고정배치(전원 락) ──
-describe("고정배치 — 4명+예약(ghost) 전원 락(N2)", () => {
+// ── N2: 4명+예약(ghost)도 함께 우선배치(전원 그룹 지정) ──
+describe("우선배치(그룹 지정) — 4명+예약(ghost) 전원 지정(N2)", () => {
 	function seedFullWithGhost() {
 		h.players = new Map(["a", "b", "c", "g"].map((id) => [id, player(id)]));
 		seed({

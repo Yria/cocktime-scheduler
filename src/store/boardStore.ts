@@ -34,12 +34,7 @@ export const useBoardStore = create<BoardState>()(
 // 위치(자석/anchor) 변경은 무시(로컬). 원격 적용 중에는 생략(피드백 루프 방지).
 useBoardStore.subscribe((state, prev) => {
 	if (syncState.applyingRemoteDrafts) return;
-	if (
-		state.drafts === prev.drafts &&
-		state.reservations === prev.reservations &&
-		state.forcedPairs === prev.forcedPairs
-	)
-		return;
+	if (state.drafts === prev.drafts && state.reservations === prev.reservations) return;
 	const payload = serializeBoardDrafts(state);
 	const json = JSON.stringify(payload);
 	if (json === syncState.lastSyncedDraftsJson) return; // 멤버십 동일(위치만 변경) → 생략

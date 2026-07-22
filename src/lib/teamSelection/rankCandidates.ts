@@ -36,8 +36,6 @@ export interface ScoreBreakdown {
 	gender?: number;
 	/** 경기중 페널티 — recommendTeammates에서만 채움 */
 	playing?: number;
-	/** 의도적 그룹 재편성 회피 페널티(decay) — recommendTeammates에서만 채움 */
-	forced?: number;
 }
 
 export interface RankedCandidate {

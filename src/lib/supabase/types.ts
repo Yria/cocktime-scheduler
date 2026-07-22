@@ -34,6 +34,9 @@ export interface SessionRow {
 	// 코트 배정(matches) 동기화 단조 우산(마이그레이션 20260622130000). 모든 매치 변경 RPC가 ++.
 	// 수신측은 이 값이 자신이 아는 것보다 크면 matches 를 권위 재조회(catch-up). DB NOT NULL DEFAULT 0.
 	match_state_version: number;
+	// 세션 공유상태 단일 리비전 시계(마이그레이션 20260722010000). 모든 공유상태 write가 트리거로 ++.
+	// Broadcast from DB 힌트({v})의 기준값 + 수신측 갭 감지. DB NOT NULL DEFAULT 0.
+	sync_version: number;
 	// Phase 4: 일정화 (일정 = 세션)
 	title: string | null;
 	scheduled_at: string | null;

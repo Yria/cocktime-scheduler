@@ -35,6 +35,8 @@ export interface SessionState {
 	boardDraftsVersion: number;
 	/** 코트 배정(matches) 동기화 단조 버전 — 수신 단조 가드 + 갭이면 refetchMatches 트리거. */
 	matchStateVersion: number;
+	/** 세션 공유상태 단일 리비전 시계(Stage 2) — Broadcast 힌트(v)>로컬이면 load_session_state pull. */
+	syncVersion: number;
 	/** 콕 체크 모드 on/off(세션 설정, 공유). on이면 cockChecked=false 선수는 매칭 대기 아님. */
 	cockCheckEnabled: boolean;
 	/** 클럽 전역 설정(콕 쿼터/월 지원량). 콕체크 모달의 지원 안내에 사용. 미로딩 시 null. */
@@ -55,6 +57,9 @@ export interface SessionState {
 	lockFree: boolean;
 	/** 편집권을 다른 사람에게 뺏겼을 때 그 사람 이름(다이얼로그 표시용). null=알림 없음. */
 	editorTakenBy: string | null;
+	/** 첫 권위 락 동기(resyncFromServer)가 끝났는지 — 진입 auto-claim 을 실제 락 상태 확인 후로 지연하는 게이트.
+	 * false 동안은 lockFree 가 stale(캐시 미채움)이라 낙관 선점 시 '가짜 편집권 뺏김' 다이얼로그가 뜬다. */
+	lockSynced: boolean;
 
 	/** 서버 권위 재동기화(resyncFromServer) 진행 중 — 포어그라운드 복귀/재연결 시 "동기화 중" 표시용. */
 	boardSyncing: boolean;
@@ -95,8 +100,15 @@ export interface SessionState {
 	dismissEditorTakenNotice: () => void;
 	/** board_drafts를 단조(새 버전만) 반영 — boardStore 저장 성공/충돌 복구에서 호출. */
 	applyDraftsIfNewer: (drafts: BoardDraftsPayload, version: number) => void;
-	/** 서버에서 board_drafts+버전+편집 락을 다시 읽어 수렴(충돌 복구·재구독 catch-up). */
-	resyncFromServer: (opts?: { indicate?: boolean }) => Promise<void>;
+	/**
+	 * 서버에서 board_drafts+matches+session_players+편집 락을 한 스냅샷으로 다시 읽어 수렴.
+	 * - indicate: "동기화 중" pill 노출(포어그라운드 복귀·재연결). 기본 false(조용한 복구).
+	 * - force: board_drafts 를 버전 단조 게이팅 없이 강제 덮어씀(CAS 충돌 롤백 전용). 기본 false.
+	 * - skipLock: 편집 락은 갱신하지 않음(주기 워치독 전용 — 편집자 in-flight claim 방해 방지).
+	 * - suppressLossNotice: 이 resync 로 편집권을 잃어도 '뺏김' 다이얼로그를 띄우지 않음(낙관 claim 거부 복구용 —
+	 *   확정된 적 없는 편집권은 잃어도 알림 대상 아님).
+	 */
+	resyncFromServer: (opts?: { indicate?: boolean; force?: boolean; skipLock?: boolean; suppressLossNotice?: boolean }) => Promise<void>;
 	/**
 	 * 진행중 matches 를 권위 재조회해 courts 를 수렴시킨다(코트 배정 catch-up).
 	 * targetVersion 이 현재 matchStateVersion 이하면 멱등 skip(force=true 면 강제 — 재연결 복구용).
@@ -123,6 +135,7 @@ export const initialState = {
 	boardDrafts: { teams: [], reservations: [] } as BoardDraftsPayload,
 	boardDraftsVersion: 0,
 	matchStateVersion: 0,
+	syncVersion: 0,
 	cockCheckEnabled: true,
 	groupSettings: null as GroupSettings | null,
 	isEditor: false,
@@ -132,6 +145,7 @@ export const initialState = {
 	holderName: null as string | null,
 	lockFree: true,
 	editorTakenBy: null as string | null,
+	lockSynced: false,
 	boardSyncing: false,
 	_channel: null as RealtimeChannel | null,
 	_metaChannel: null as RealtimeChannel | null,

@@ -1,5 +1,5 @@
 import type { SessionPlayer } from "../../types";
-import type { BoardDraftsPayload, DraftTeam, ForcedPair, MagnetPosition, Reservation, StagePoint } from "../../types/board";
+import type { BoardDraftsPayload, DraftTeam, MagnetPosition, Reservation, StagePoint } from "../../types/board";
 
 /** 드래그-엔드 소스: 무엇을 놓았는지(자석/팀/코트). 흩어짐의 시작점이 된다. */
 export type DragSource = { magnetId: string } | { teamId: string } | { courtId: number };
@@ -16,8 +16,6 @@ export interface BoardState {
 	magnets: Map<string, MagnetPosition>;
 	drafts: Map<string, DraftTeam>;
 	reservations: Map<string, Reservation>;
-	/** 의도적 그룹(드래그로 묶음)이 경기 시작 시 기록하는 재편성 회피 쌍. board_drafts jsonb로 동기·영속(컬럼 추가 없음). */
-	forcedPairs: ForcedPair[];
 	assigningTeamIds: Set<string>;
 	courtAnchors: Map<number, StagePoint>;
 	/**
@@ -68,7 +66,8 @@ export interface BoardState {
 		target: { teamId?: string; seedId?: string; newTeam?: boolean },
 		extraIds?: string[],
 	) => void;
-	/** "고정배치" 토글 — 누르는 시점의 현재 멤버 전체를 🔒 잠금(재편성 회피 대상). 이미 잠겨있으면 해제. 시각/코스트만, 실제 락 아님(드래그로 빼서도 취소). */
+	/** "우선배치"(그룹 지정) 토글 — 누르는 시점의 현재 멤버 전체를 그룹으로 표시(forcedIds). 이미 지정돼 있으면 해제.
+	 *  순수 시각 표시(핀 배지)일 뿐 추천/밸런스 점수엔 영향 없음. 실제 락 아님(드래그로 빼면 자동 취소). */
 	toggleForced: (teamId: string) => void;
 	setTeamAnchor: (teamId: string, x: number, y: number) => void;
 	setCourtAnchor: (courtId: number, x: number, y: number) => void;

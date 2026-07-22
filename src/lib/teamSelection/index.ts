@@ -1,5 +1,5 @@
 export { skillScore, skillScoreOf } from "./rankCandidates";
 export type { RankedCandidate } from "./rankCandidates";
 export { pairPlayers } from "./pairPlayers";
-export { recommendTeammates, autoFillTeammates, RECOMMEND_WEIGHTS, FORCED_WINDOW, forcedDecay } from "./recommendTeammates";
+export { recommendTeammates, autoFillTeammates, RECOMMEND_WEIGHTS } from "./recommendTeammates";
 export type { RecommendContext, RecommendWeights } from "./recommendTeammates";

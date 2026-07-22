@@ -49,8 +49,6 @@ function makeInputs(opts: {
 		courts: opts.courts ?? [],
 		pairHistory: {},
 		lastGameType: {},
-		matchAssignCount: 0,
-		forcedPairs: [],
 		cockCheckEnabled: opts.cockCheckEnabled ?? false,
 	};
 }

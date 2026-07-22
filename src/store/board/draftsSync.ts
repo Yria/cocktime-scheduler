@@ -1,10 +1,15 @@
-import type { BoardDraftsPayload, DraftTeam, ForcedPair, Reservation } from "../../types/board";
+import type { BoardDraftsPayload, DraftTeam, Reservation } from "../../types/board";
 import { teamMembers } from "../../lib/board/membership";
 import { effectiveForcedIds } from "../../lib/board/draftMutations";
 import { dbBoardSaveDrafts } from "../../lib/supabase";
 import { useSessionStore } from "../sessionStore";
 import { useAppStore } from "../appStore";
 import { toast } from "../toastStore";
+
+/** draft 팀 createdBy 스탬프용 — 현재 편집자 표시 이름(sessionStore._myName). 미설정 시 폴백. */
+export function currentEditorName(): string {
+	return useSessionStore.getState()._myName ?? "익명";
+}
 
 // ── 보드 멤버십 공유(drafts/reservations) ────────────────────
 // applyRemoteDrafts(matchSlice)와 boardStore.ts의 subscribe가 함께 읽고 쓰는 모듈 상태.
@@ -16,11 +21,10 @@ export const syncState = {
 	lastSyncedDraftsJson: "",
 };
 
-/** drafts/reservations 멤버십(+forcedIds/forcedPairs)만 직렬화(위치 제외). */
+/** drafts/reservations 멤버십(+forcedIds 그룹표시·createdBy 생성자)만 직렬화(위치 제외). */
 export function serializeBoardDrafts(s: {
 	drafts: Map<string, DraftTeam>;
 	reservations: Map<string, Reservation>;
-	forcedPairs: ForcedPair[];
 }): BoardDraftsPayload {
 	return {
 		teams: [...s.drafts.values()].map((t) => {
@@ -38,6 +42,7 @@ export function serializeBoardDrafts(s: {
 				createdMs: t.createdAt,
 				...(forcedIds.length ? { forcedIds } : {}),
 				...(slots ? { slots } : {}),
+				...(t.createdBy ? { createdBy: t.createdBy } : {}),
 			};
 		}),
 		reservations: [...s.reservations.values()].filter((r) => s.drafts.has(r.teamId)).map((r) => ({
@@ -46,19 +51,15 @@ export function serializeBoardDrafts(s: {
 			teamId: r.teamId,
 			createdMs: r.createdAt,
 		})),
-		...(s.forcedPairs.length ? { forcedPairs: s.forcedPairs } : {}),
 	};
 }
 
 /**
- * 편집 가능하면 true. 이미 보유자면 통과, 남이 편집 중이면 차단, 자유면 낙관적으로 점유(서버 락은
- * 첫 저장 self-claim/heartbeat가 확정). claimEditingIfFree가 동기적으로 isEditor를 올리므로 즉시 반영.
+ * 편집 가능하면 true(= 내가 편집자). 자유(lockFree) 상태여도 드래그로 암묵 점유하지 않는다 — 편집권은
+ * 오직 '편집 권한 가져오기' 버튼(자유면 다이얼로그 없이 즉시)이나 진입 1회 auto-claim(opener)으로만 획득한다.
+ * 이래야 편집자가 나가 락이 free가 돼도 관전자가 드래그만으로 편집자가 되지 않는다.
  */
 export function claimEdit(): boolean {
-	const s = useSessionStore.getState();
-	if (s.isEditor) return true;
-	if (!s.lockFree) return false; // 다른 기기가 편집 중 → 보기 전용
-	s.claimEditingIfFree();
 	return useSessionStore.getState().isEditor;
 }
 
@@ -90,9 +91,11 @@ export function pushDraftsToRemote(payload: BoardDraftsPayload) {
 		const sess = useSessionStore.getState();
 		if (newVersion == null) {
 			// 충돌(version 불일치/락 상실) — 서버 권위로 수렴(미저장 로컬 변경은 되돌려짐).
-			// 단일 편집자 모델에선 드물지만(핸드오프/lease 만료 레이스) 조용한 유실 방지 위해 알린다.
+			// force: resyncFromServer는 기본이 단조 게이팅(로컬 최신이면 안 덮음)이라, 롤백은 반드시 강제로
+			// 서버값을 덮어야 한다(내 미저장 편집을 서버 최신으로 원복). 단일 편집자 모델에선 드물지만
+			// (핸드오프/lease 만료 레이스) 조용한 유실 방지 위해 알린다.
 			pendingDraftsPayload = null;
-			void sess.resyncFromServer();
+			void sess.resyncFromServer({ force: true });
 			toast("편집 권한 충돌로 마지막 변경이 취소되고 최신 상태로 동기화했어요", { variant: "error" });
 			return;
 		}

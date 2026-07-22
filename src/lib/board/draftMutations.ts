@@ -1,8 +1,7 @@
-import type { DraftTeam, ForcedPair, MagnetPosition, Reservation } from "../../types/board";
+import type { DraftTeam, MagnetPosition, Reservation } from "../../types/board";
 import { computeSlotOffset } from "./geometry";
 import { isMemberOf, teamMemberCount, teamMembers } from "./membership";
 import { randomId } from "../randomId";
-import { FORCED_WINDOW } from "../teamSelection";
 
 /** 멤버십 변형 헬퍼가 받는 최소 상태 — 실제 호출부는 boardStore의 full immer 드래프트. */
 export type Draft = { magnets: Map<string, MagnetPosition>; drafts: Map<string, DraftTeam>; reservations: Map<string, Reservation> };
@@ -16,24 +15,12 @@ export function nowMs(): number {
 }
 
 /**
- * 팀의 "의도적(고정배치로 묶은) 멤버" 중 현재 멤버(anchor + ghost)에 남아있는 것만. 2명 이상이면 의도적 그룹.
+ * 팀의 "우선배치(그룹 지정)한 멤버" 중 현재 멤버(anchor + ghost)에 남아있는 것만. 2명 이상이면 의도적 그룹(순수 시각 표시).
  * memberIds = 현재 유효 멤버 id 집합(anchor + 예약 ghost) — 4명+예약 잠금 시 ghost도 포함되므로 anchor만으로 거르지 않는다.
  */
 export function effectiveForcedIds(t: DraftTeam, memberIds: ReadonlySet<string>): string[] {
 	if (!t.forcedIds?.length) return [];
 	return t.forcedIds.filter((id) => memberIds.has(id));
-}
-
-/** 의도적 그룹 경기 시작 시 재편성 회피 쌍 추가(같은 쌍은 최신 fromCount로 갱신). */
-export function addForcedPair(s: { forcedPairs: ForcedPair[] }, a: string, b: string, fromCount: number) {
-	const f = s.forcedPairs.find((p) => (p.a === a && p.b === b) || (p.a === b && p.b === a));
-	if (f) f.fromCount = Math.max(f.fromCount, fromCount);
-	else s.forcedPairs.push({ a, b, fromCount });
-}
-
-/** decay 끝난(경과 ≥ FORCED_WINDOW) 쌍 제거 — 무한 증식 방지. */
-export function pruneForcedPairs(s: { forcedPairs: ForcedPair[] }, currentCount: number) {
-	s.forcedPairs = s.forcedPairs.filter((p) => currentCount - p.fromCount < FORCED_WINDOW);
 }
 
 // ── 내부 헬퍼 (immer draft 상태를 직접 변형) ───────────────
@@ -88,7 +75,7 @@ export function detachAnchor(s: Draft, playerId: string) {
 	mag.teamId = null;
 	if (!team) return;
 	team.anchorMemberIds = team.anchorMemberIds.filter((id) => id !== playerId);
-	// 그룹에서 빠진 사람은 고정배치(forced)에서도 제거 → 다시 넣으면 잠금 리셋(고정 아님)
+	// 그룹에서 빠진 사람은 우선배치(forcedIds 그룹 표시)에서도 제거 → 다시 넣으면 표시 리셋
 	if (team.forcedIds?.length) {
 		team.forcedIds = team.forcedIds.filter((id) => id !== playerId);
 	}
@@ -137,8 +124,8 @@ export function addReservation(s: Draft, playerId: string, teamId: string) {
 /**
  * 경기 종료/로스터 제외로 "자유가 된" 선수의 예약(ghost)을 해소한다 — 빌려뒀던 팀의 정식 멤버(anchor)로 승격.
  * 원본(선수)이 경기중→자유로 바뀔 때 복사본(ghost)이 한 곳으로 수렴되게 하는 공통 처리. completeMatch/setMatchRoster 공용.
- * 승격 대상은 잠금(forcedIds)된 팀 우선, 없으면 가장 오래된 예약. attachAnchor가 그 선수의 모든 예약을 정제하므로
- * 다중 예약도 한 번에 정리된다. 대상 팀이 사라졌으면 고아 예약만 제거.
+ * 승격 대상은 가장 오래된 예약(우선배치는 순수 그룹 표시라 승격 우선권 없음). attachAnchor가 그 선수의 모든 예약을
+ * 정제하므로 다중 예약도 한 번에 정리된다. 대상 팀이 사라졌으면 고아 예약만 제거.
  */
 export function resolveFreedReservations(s: Draft, playerIds: readonly string[]) {
 	for (const pid of playerIds) {
@@ -147,7 +134,7 @@ export function resolveFreedReservations(s: Draft, playerIds: readonly string[])
 		const myRes = [...s.reservations.values()].filter((r) => r.playerId === pid);
 		if (myRes.length === 0) continue;
 		myRes.sort((a, b) => a.createdAt - b.createdAt);
-		const target = myRes.find((r) => s.drafts.get(r.teamId)?.forcedIds?.includes(pid)) ?? myRes[0];
+		const target = myRes[0];
 		if (!s.drafts.get(target.teamId)) {
 			for (const [rid, r] of [...s.reservations]) if (r.playerId === pid) s.reservations.delete(rid);
 			continue;

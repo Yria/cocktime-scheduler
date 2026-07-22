@@ -9,6 +9,7 @@ import {
 	findReservation,
 	isTeamStartable,
 	teamMembers,
+	wouldDissolveByPlaying,
 } from "../../lib/board/membership";
 import {
 	TEAM_W,
@@ -99,17 +100,22 @@ const TeamBackground = memo(function TeamBackground({
 	}, []);
 
 	if (!team) return null;
+	// I2 렌더 게이팅 — 경기중이 된 anchor로 해체될 팀은 그 프레임에 즉시 안 그린다(healPlayingAnchors가
+	// 상태를 정제하는 1프레임 뒤가 아니라 렌더 시점 playingIds로 판정 → '코트+유령 팀' 동시노출 0프레임).
+	// heal과 동일한 wouldDissolveByPlaying 규칙을 공유하므로 렌더/상태가 어긋나 깜빡이지 않는다.
+	if (wouldDissolveByPlaying(team, reservations, playingIds)) return null;
 
 	const members = teamMembers(teamId, drafts, reservations);
 	const count = members.length;
 	const startable = isTeamStartable(teamId, drafts, reservations, magnets, playingIds);
 	const isFull = count === 4;
 	// 매칭확정 가능 = 4명이고 시작 가능(isTeamStartable). 예약(ghost)이 끼어도 그 선수가 자유(경기 끝남)면
-	// startable=true → 매칭확정. 예약자가 아직 경기중이면 startable=false → 고정배치 모드(시작 버튼 대신 잠금).
+	// startable=true → 매칭확정. 예약자가 아직 경기중이면 startable=false → 우선배치 모드(시작 버튼 대신 그룹 지정).
 	const canStart = isFull && startable;
-	// 잠금(🔒) 상태 — "고정배치"로 잠근 멤버(forcedIds) 중 현재 멤버(anchor+ghost)에 남은 것 ≥2.
+	// 우선배치(그룹 지정) 상태 — "우선배치"로 지정한 멤버(forcedIds) 중 현재 멤버(anchor+ghost)에 남은 것 ≥2.
+	// 순수 그룹 표시일 뿐 추천/밸런스 점수엔 영향 없음(핀 배지 시각 표시 + 라벨 전용).
 	const intentional = members.filter((m) => team.forcedIds?.includes(m.playerId)).length >= 2;
-	// CTA: 매칭확정(경기 시작 가능) / 그 외(구성 중 OR 4명이지만 예약자 경기중)=고정배치 토글(1명 비활성, 2명+ 활성).
+	// CTA: 매칭확정(경기 시작 가능) / 그 외(구성 중 OR 4명이지만 예약자 경기중)=우선배치 토글(1명 비활성, 2명+ 활성).
 	//   "자동편성"(자동 채움)은 그룹박스에서 제거되어 추천 모달 안 버튼으로 이동. 구성 중 채움은 빈 슬롯 탭→모달.
 	const ctaEnabled = canStart ? hasEmptyCourt && isEditor : isEditor && count >= 2;
 
@@ -120,22 +126,24 @@ const TeamBackground = memo(function TeamBackground({
 			? { fill: TEAM_RESERVED_BG, stroke: TEAM_RESERVED_STROKE }
 			: { fill: TEAM_FORMING_BG, stroke: TEAM_FORMING_STROKE };
 
-	const labelText = !isFull
+	const baseLabel = !isFull
 		? `팀 구성 중 · ${count}/4`
 		: canStart
 			? "팀 완성 · 4/4"
 			: "4/4 · 예약 포함(경기중)";
+	// 생성자(누가 이 그룹을 만들었는지) 표시 — 이름만. 레거시 팀(createdBy 없음)은 접미사 생략.
+	const labelText = team.createdBy ? `${baseLabel} · by ${team.createdBy}` : baseLabel;
 	const labelColor = startable ? TEAM_READY_STROKE : isFull ? TEAM_RESERVED_STROKE : TEXT_SECONDARY;
 
-	// 라벨: 매칭확정 가능하면 상태 기준(매칭확정/코트 대기), 그 외(구성 중·4명+예약)는 고정 토글.
+	// 라벨: 매칭확정 가능하면 상태 기준(매칭확정/코트 대기), 그 외(구성 중·4명+예약)는 우선배치(그룹 지정) 토글.
 	const ctaLabel = canStart
 		? !hasEmptyCourt
 			? "코트 대기"
 			: "매칭확정"
 		: intentional
-			? "고정 해제"
-			: "고정배치";
-	// 매칭확정=초록 / 잠금=인디고(🔒와 동일) / 고정배치=파랑 / 비활성=회색
+			? "우선배치 해제"
+			: "우선배치";
+	// 매칭확정=초록 / 우선배치 지정됨=인디고(핀 배지와 동일) / 우선배치=파랑 / 비활성=회색
 	const ctaColor = !ctaEnabled
 		? CTA_DISABLED_COLOR
 		: canStart
@@ -156,7 +164,7 @@ const TeamBackground = memo(function TeamBackground({
 	const halfW = TEAM_W / 2;
 	const ctaY = boxBottom - TEAM_PAD - TEAM_CTA_H;
 
-	// 매칭확정 가능=경기 시작. 그 외(구성 중 2+ OR 4명+예약)=고정 토글(누르는 시점 멤버를 🔒 잠금/해제).
+	// 매칭확정 가능=경기 시작. 그 외(구성 중 2+ OR 4명+예약)=우선배치 토글(누르는 시점 멤버를 그룹으로 지정/해제).
 	const handleCta = () => {
 		if (!ctaEnabled) return;
 		if (canStart) void useBoardStore.getState().startMatch(teamId);
@@ -199,6 +207,8 @@ const TeamBackground = memo(function TeamBackground({
 				fontFamily="Inter, system-ui, sans-serif"
 				fill={labelColor}
 				align="center"
+				wrap="none"
+				ellipsis={true}
 				listening={false}
 				perfectDrawEnabled={false}
 			/>
@@ -283,7 +293,7 @@ const TeamBackground = memo(function TeamBackground({
 				);
 			})}
 
-			{/* CTA 버튼 — 4명=매칭확정(경기시작), 구성 중=고정배치 토글(1명 비활성·2명+ 활성, 누르면 현재 멤버 🔒 잠금/해제). */}
+			{/* CTA 버튼 — 4명=매칭확정(경기시작), 구성 중=우선배치 토글(1명 비활성·2명+ 활성, 누르면 현재 멤버를 그룹으로 지정/해제). */}
 			<Group
 				x={0}
 				y={ctaY}

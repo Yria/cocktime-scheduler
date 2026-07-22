@@ -58,6 +58,94 @@ import {
 
 export type { SessionState } from "./sessionStoreState";
 
+/** 두 선수가 화면상 의미있는 필드에서 동일한지(키 순서 무관). resync full-replace 시 불필요 재렌더 회피용. */
+function samePlayer(a: SessionPlayer, b: SessionPlayer): boolean {
+	return (
+		a.id === b.id &&
+		a.playerId === b.playerId &&
+		a.memberId === b.memberId &&
+		a.name === b.name &&
+		a.gender === b.gender &&
+		a.status === b.status &&
+		a.allowMixedSingle === b.allowMixedSingle &&
+		a.gameCount === b.gameCount &&
+		a.mixedCount === b.mixedCount &&
+		a.waitSince === b.waitSince &&
+		a.joinedAtMatch === b.joinedAtMatch &&
+		a.cockChecked === b.cockChecked &&
+		JSON.stringify(a.skills) === JSON.stringify(b.skills)
+	);
+}
+
+/** 현재 sessionPlayers 맵이 서버 스냅샷 선수 배열과 다른지(전량 교체 필요 여부). */
+function playersDiffer(cur: Map<string, SessionPlayer>, next: SessionPlayer[]): boolean {
+	if (cur.size !== next.length) return true;
+	for (const p of next) {
+		const c = cur.get(p.id);
+		if (!c || !samePlayer(c, p)) return true;
+	}
+	return false;
+}
+
+/** sessions row 의 편집 락 컬럼이 현재 캐시된 편집자와 실제로 다른지. Stage 2 의 잦은 sync-bump sessions
+ * UPDATE(선수/매치 변경 발)마다 편집 락을 재계산하면 lockEpoch churn·in-flight claim 무효화·가짜 '뺏김'
+ * 다이얼로그가 생기므로, 편집자 신원/리스가 실제로 바뀐 row 에서만 락을 갱신하기 위한 게이트. */
+function editorRowChanged(row: {
+	editor_client_id?: string | null;
+	editor_name?: string | null;
+	editor_lease_until?: string | null;
+}): boolean {
+	const c = getCachedEditor();
+	const rowLease = row.editor_lease_until ? Date.parse(row.editor_lease_until) : 0;
+	return (
+		(row.editor_client_id ?? null) !== c.clientId ||
+		(row.editor_name ?? null) !== c.name ||
+		rowLease !== c.leaseUntilMs
+	);
+}
+
+// ── Broadcast from DB 힌트 → 디바운스 pull (Stage 2) ────────────────────────
+// DB 트리거가 쏜 {v} 힌트를 받으면 로컬 syncVersion 보다 클 때만 짧은 디바운스 후 load_session_state pull.
+// 다중 힌트(연속 편집)를 1회 pull로 붕괴시키고, 디바운스 창 동안 postgres_changes 가 이미 따라잡았으면
+// (로컬 syncVersion >= target) pull을 생략해 중복 왕복을 없앤다. 즉 정상 구간엔 broadcast가 no-op이고,
+// postgres_changes 유실 시에만 pull이 실제로 발생한다(워치독 25s보다 빠른 치유).
+let syncPullTimer: ReturnType<typeof setTimeout> | null = null;
+let syncPullTarget = 0;
+// 관측된 최신 sync_version = max(브로드캐스트 힌트 v, sessions postgres_changes row.sync_version). 이것보다
+// 오래된 스냅샷(pull)은 stale 로 간주해 적용하지 않는다 — pull 비행 중 도착한 delta 로 이미 갱신된 로컬(예:
+// 방금 경기중이 된 선수)을 stale 스냅샷의 full-replace 가 되돌리는 clobber(리뷰 A-high) 방지.
+let lastSeenSyncVersion = 0;
+const SYNC_PULL_DEBOUNCE_MS = 200;
+
+/** realtime 신호(힌트/postgres_changes)로 관측한 sync_version 을 단조 반영. applied 버전(state.syncVersion)과 별개. */
+function noteSeenSyncVersion(v: number) {
+	if (v > lastSeenSyncVersion) lastSeenSyncVersion = v;
+}
+
+function scheduleSyncPull(get: GetFn, targetVersion: number) {
+	noteSeenSyncVersion(targetVersion);
+	if (targetVersion <= get().syncVersion) return; // 이미 그 리비전까지 pull 완료
+	syncPullTarget = Math.max(syncPullTarget, targetVersion);
+	if (syncPullTimer) return; // 이미 예약됨 — 창 안의 다중 힌트 붕괴
+	syncPullTimer = setTimeout(() => {
+		syncPullTimer = null;
+		const target = syncPullTarget;
+		if (get().syncVersion >= target) return; // 그 사이 다른 pull 이 이미 수렴 → 생략
+		// 힌트발 pull은 편집 락도 갱신(편집락 변경도 sync_version을 올림). 힌트는 커밋 후 발신이라
+		// 서버 최신을 읽으므로 편집자 in-flight claim을 되돌릴 레이스가 없다(워치독의 skipLock과 다름).
+		void get().resyncFromServer();
+	}, SYNC_PULL_DEBOUNCE_MS);
+}
+
+function clearSyncPull() {
+	if (syncPullTimer) {
+		clearTimeout(syncPullTimer);
+		syncPullTimer = null;
+	}
+	syncPullTarget = 0;
+	lastSeenSyncVersion = 0;
+}
+
 export const useSessionStore = create<SessionState>((set, get) => ({
 	...initialState,
 
@@ -308,7 +396,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const res = await dbBoardTakeoverEditor(getSessionId(), _clientId, name, LEASE_SECONDS);
 		if (!res) {
 			// 탈취 실패(네트워크 등) — 낙관 선점했다면 서버 권위로 되돌리고, 아니면 상태 변경 없음.
-			if (solo) void get().resyncFromServer();
+			// 확정 안 된 낙관 선점이라 '뺏김' 알림은 억제(취득 시도가 실패한 것이지 보유권을 잃은 게 아님).
+			if (solo) void get().resyncFromServer({ suppressLossNotice: true });
 			return;
 		}
 		// 권위적 변경 — in-flight heartbeat .then 무효화(setEditorCache가 lockEpoch 증가)
@@ -345,11 +434,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	resyncFromServer: async (opts) => {
 		const sid = getSessionId();
 		if (!sid) return;
-		// load_session_state: board_drafts + matches + 버전 + 편집 락을 단일 트랜잭션 스냅샷으로 — 두 권위가
-		// 항상 같은 시점으로 수렴(옵션 B). 재구독 catch-up · board_save_drafts 충돌 복구 공용 경로.
-		// indicate=true(포어그라운드 복귀·재연결 catch-up)일 때만 "동기화 중" pill 노출. 실패/충돌 복구
-		// resync는 순간적이라 깜빡임을 피하려 표시하지 않는다.
+		// load_session_state: board_drafts + matches + session_players + 버전 + 편집 락을 단일 트랜잭션
+		// 스냅샷으로 — 모든 공유상태가 항상 같은 MVCC 시점으로 수렴. 재구독 catch-up · 충돌 복구 · 포어그라운드
+		// 복귀 · 주기 워치독 공용 경로. indicate=true(포어그라운드 복귀·재연결)일 때만 "동기화 중" pill 노출.
 		const indicate = opts?.indicate ?? false;
+		const force = opts?.force ?? false;
 		let snap: Awaited<ReturnType<typeof dbLoadSessionState>>;
 		if (indicate) set({ boardSyncing: true });
 		try {
@@ -358,22 +447,65 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			if (indicate) set({ boardSyncing: false });
 		}
 		if (!snap) return;
-		// 강제 적용(<= 멱등 가드 우회): 충돌 복구 시 미저장 로컬 편집을 서버값으로 되돌리려면 boardDrafts
-		// 객체참조를 반드시 갈아 SessionBoard의 applyRemoteDrafts(서버 멤버십 reconcile)를 트리거해야 한다.
-		// 코트(courts)도 같은 스냅샷의 matches 로 재구성해 board_drafts 와 시점 일치.
-		set({
-			boardDrafts: snap.drafts,
-			boardDraftsVersion: Math.max(get().boardDraftsVersion, snap.version),
-			courts: matchRowsToCourts(snap.courtCount || get().courts.length, snap.matches),
-			matchStateVersion: Math.max(get().matchStateVersion, snap.matchStateVersion),
-		});
+		// stale 스냅샷 거부(force 제외): pull 비행 중 더 새로운 변경을 realtime 으로 관측했다면(lastSeen>snap)
+		// 이 스냅샷은 그 변경 이전 시점이라, full-replace 되는 선수 등이 이미 갱신된 로컬을 되돌릴 수 있다.
+		// 적용을 건너뛰면 그 새 변경의 힌트가 유발한 다음 pull(더 신선한 스냅샷)이 수렴시킨다. force(CAS 롤백)는
+		// 서버 권위로 강제 원복이므로 우회한다.
+		if (!force && snap.syncVersion < lastSeenSyncVersion) return;
+		// 스냅샷을 권위로 수렴하되 조각별 규율이 다르다:
+		//  · board_drafts/matches: 단조 게이팅 — 로컬이 이미 최신(>=)이면 덮지 않는다. 늦게 도착한 stale
+		//    resync가 편집자의 방금 저장/낙관 편집을 되돌리는 레이스를 막는다. force(CAS 충돌 롤백)만 우회해
+		//    서버값으로 강제 원복(boardDrafts 객체참조를 갈아 SessionBoard의 applyRemoteDrafts reconcile 트리거).
+		//  · session_players: 낙관 로컬편집이 없으므로(모두 apply-after-ack) 서버 권위로 전량 교체. delta
+		//    postgres_changes 유실(삭제 이벤트 포함)을 여기서 흡수 — 실제로 달라졌을 때만 set 해 불필요 재렌더 방지.
+		const s = get();
+		const patch: Partial<SessionState> = {};
+		if (force || snap.version > s.boardDraftsVersion) {
+			patch.boardDrafts = snap.drafts;
+			patch.boardDraftsVersion = snap.version;
+		}
+		if (snap.matchStateVersion > s.matchStateVersion) {
+			patch.courts = matchRowsToCourts(snap.courtCount || s.courts.length, snap.matches);
+			patch.matchStateVersion = snap.matchStateVersion;
+		}
+		if (snap.syncVersion > s.syncVersion) patch.syncVersion = snap.syncVersion;
+		// 빈 스냅샷으로는 로컬 선수를 지우지 않는다: 구 RPC(마이그레이션 미적용, 프론트가 DB보다 먼저 배포되는
+		// 과도기)는 session_players 를 안 실어와 []가 된다. snap.syncVersion>0 이면 Stage 2 RPC 가 응답한 것이라
+		// 빈 배열도 '진짜 0명'으로 신뢰(정당한 전원 퇴장 수렴 허용). syncVersion==0(구 RPC 또는 변경이력 없는 새
+		// 세션)이고 로컬에 선수가 있으면 과도기로 보고 전량 삭제를 막는다(라이브 delta 가 담당).
+		if ((snap.players.length > 0 || snap.syncVersion > 0) && playersDiffer(s.sessionPlayers, snap.players)) {
+			const newMap = new Map(snap.players.map((p) => [p.id, p]));
+			const { waitingIds, restingIds } = rebuildDerivedIds(newMap);
+			patch.sessionPlayers = newMap;
+			patch.waitingIds = waitingIds;
+			patch.restingIds = restingIds;
+			// 코트 정합: 스냅샷 선수에 없는 id 를 참조하는 코트 match 를 비운다(경기중 선수 외부 삭제 + DELETE
+			// delta 유실 대비 — session_players DELETE delta 핸들러와 동일 규율. 권위 복구 경로가 delta 경로의
+			// 정합 처리를 상위집합으로 포함해야 한다). matchStateVersion 갭이 아니어서 courts 재구성을 안 한 경우도 커버.
+			const courtsBase = patch.courts ?? s.courts;
+			let courtsChanged = false;
+			const reconciledCourts = courtsBase.map((c) => {
+				if (c.match && !matchPlayerIds(c.match).every((id) => newMap.has(id))) {
+					courtsChanged = true;
+					return { ...c, match: null };
+				}
+				return c;
+			});
+			if (courtsChanged) patch.courts = reconciledCourts;
+		}
+		if (Object.keys(patch).length) set(patch);
+		// 워치독(skipLock)은 편집 락을 건드리지 않는다 — 편집자의 in-flight 낙관 claim이 주기 pull에
+		// 되돌려지는 것을 막는다. 락 수렴은 라이브 postgres_changes + visibilitychange/재구독 resync가 담당.
+		if (opts?.skipLock) return;
 		// 서버 스냅샷이 권위 — in-flight heartbeat .then 무효화(setEditorCache가 lockEpoch 증가)
 		setEditorCache({
 			clientId: snap.editorClientId,
 			name: snap.editorName,
 			leaseUntilMs: snap.editorLeaseUntil ? Date.parse(snap.editorLeaseUntil) : 0,
 		});
-		recomputeLock(get, set);
+		recomputeLock(get, set, { suppressLossNotice: opts?.suppressLossNotice });
+		// 첫 권위 락 동기 완료 — 진입 auto-claim 게이트 해제(이제 lockFree 가 서버 진실을 반영).
+		if (!get().lockSynced) set({ lockSynced: true });
 	},
 	refetchMatches: async (targetVersion, force = false) => {
 		// 멱등 단조 가드 — 이미 최신이면 중복 SELECT 회피(broadcast 정상 구간). force=true 면 우회(재연결).
@@ -425,14 +557,24 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					if (row.match_state_version != null) {
 						void get().refetchMatches(row.match_state_version);
 					}
-					setCachedEditorFromRow(row);
-					recomputeLock(get, set);
+					// sync_version 은 '관측(lastSeen)'으로만 기록한다 — applied 버전(state.syncVersion)은 올리지
+					// 않는다. sessions row 의 sync_version 도달은 (board_drafts 처럼 이 row 에 실린 데이터는 적용됐어도)
+					// 별 스트림인 session_players delta 의 적용을 함의하지 않기 때문. applied 전진을 여기서 하면 선수
+					// delta 유실 시 힌트 pull 이 스킵돼 fast-heal 이 무력화된다(리뷰 B-high). applied 는 pull(resync)에서만.
+					if (row.sync_version != null) noteSeenSyncVersion(row.sync_version);
+					// 편집 락은 실제로 바뀐 row 에서만 갱신 — sync-bump-only UPDATE 의 lockEpoch churn/가짜 뺏김 방지.
+					if (editorRowChanged(row)) {
+						setCachedEditorFromRow(row);
+						recomputeLock(get, set);
+					}
 				},
 				// 재구독(재연결) 직후 1회 재조회 — SUBSCRIBED~첫 UPDATE 공백 보정(drafts+버전+락 모두).
 				// 자동 점유 없음 — 편집자가 되려면 편집 동작(드래그)이나 '편집 권한 가져오기' 버튼 필요.
 				onResync: () => {
 					void get().resyncFromServer({ indicate: true });
 				},
+				// Broadcast from DB 힌트(Stage 2) — sync_version이 로컬보다 크면 디바운스 후 load_session_state pull.
+				onSyncHint: (v) => scheduleSyncPull(get, v),
 				// session_players row 변경(추가/삭제/상태)을 즉시 반영 — broadcast 누락/지연과 무관하게
 				// 모든 기기의 sessionPlayers가 DB와 수렴(중복·미동기화·다중상태 방지). 보드는 sessionPlayers
 				// 변경 시 initializeFromPool로 자동 재정합(삭제된 선수의 자석·예약 정리).
@@ -467,7 +609,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			},
 		);
 
-		set({ _channel: broadcastChannel, _metaChannel: metaChannel, _clientId: myClientId, _myName: myName });
+		set({ _channel: broadcastChannel, _metaChannel: metaChannel, _clientId: myClientId, _myName: myName, lockSynced: false });
 
 		// 편집 락 lifecycle 설치(서버 권위 락) — 매 구독마다 초기화.
 		resetEditorCache(); // 세션 경계 — 이전 세션의 in-flight heartbeat .then 무효화(lockEpoch 증가)
@@ -480,6 +622,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		// 편집 보유자면 명시 해제(best-effort). 실패(crash 등)해도 "편집 권한 가져오기"(takeover)로 회수.
 		if (isEditor && _clientId) void dbBoardReleaseEditor(getSessionId(), _clientId);
 		teardownLockLifecycle();
+		clearSyncPull();
 		resetEditorCache();
 		if (_channel) supabase.removeChannel(_channel);
 		if (_metaChannel) supabase.removeChannel(_metaChannel);
@@ -495,6 +638,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			holderName: null,
 			lockFree: true,
 			editorTakenBy: null,
+			lockSynced: false,
 		});
 	},
 }));

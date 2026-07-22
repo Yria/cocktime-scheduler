@@ -58,6 +58,7 @@ export function useSessionBoardEffects() {
 	// 거부되고 resync로 읽기 모드로 떨어진다. claimEditingIfFree는 운영진(isAdmin)만 동작(회원은 읽기 전용).
 	const clientId = useSessionStore((s) => s._clientId);
 	const lockFree = useSessionStore((s) => s.lockFree);
+	const lockSynced = useSessionStore((s) => s.lockSynced);
 	const presenceCount = useSessionStore((s) => s.presenceCount);
 	const claimEditingIfFree = useSessionStore((s) => s.claimEditingIfFree);
 	const autoClaimTriedRef = useRef(false);
@@ -65,18 +66,22 @@ export function useSessionBoardEffects() {
 		autoClaimTriedRef.current = false; // 세션(보드) 바뀌면 진입 1회 기회 리셋
 	}, [sessionId]);
 	useEffect(() => {
-		if (autoClaimTriedRef.current || !clientId) return; // 구독 전이면 clientId 세팅 후 재평가
+		// 첫 권위 락 동기(lockSynced) 전에는 lockFree 가 stale(캐시 미채움)이라 낙관 선점 시 '가짜 편집권 뺏김'
+		// 다이얼로그가 뜬다. resync 로 서버 진실을 확정한 뒤에만 판단해, 남이 편집 중/잠금 잔존이면 조용히
+		// 읽기 전용으로 진입한다(자유일 때만 opener 가 편집자로 자동 점유).
+		if (autoClaimTriedRef.current || !clientId || !lockSynced) return;
 		autoClaimTriedRef.current = true; // 최초 1회만 시도 — 이후 free 전이엔 재점유하지 않음(플래핑 방지)
 		if (lockFree && !isEditor && presenceCount <= 1) claimEditingIfFree();
-	}, [clientId, lockFree, isEditor, presenceCount, claimEditingIfFree, sessionId]);
+	}, [clientId, lockSynced, lockFree, isEditor, presenceCount, claimEditingIfFree, sessionId]);
 
-	// ── 불변식 I2 자가 치유(편집자) — 코트 변화 시 경기중이 된 anchor를 예비팀에서 제거 + 영속화 ──
+	// ── 불변식 I2 자가 치유 — 코트 변화 시 경기중이 된 anchor를 예비팀에서 즉시 제거(편집자·뷰어 모두) ──
 	// 경기 시작/로스터 편입으로 코트에 올라간 선수가 동시편집 레이스(유실된 dissolve)나 setMatchRoster
 	// 경로(board_drafts 미변경)로 예비팀에 anchor로 남는 "팀에 있는데 게임중" 중복을 코트 변화 시점에 정리한다.
-	// (뷰어는 applyRemoteDrafts→reconcile이 화면을 정제하므로 편집자만 호출 → 영속화로 모두 수렴.)
+	// 뷰어도 호출 — '매칭 확정' 직후 match_started(코트)는 왔지만 board_drafts 해체가 아직 안 온 창에서
+	// '코트+유령 팀'이 동시에 보이는 잔상을 없앤다(뷰어는 로컬 화면 정제만, 편집자는 추가로 영속화).
 	const healPlayingAnchors = useBoardStore((s) => s.healPlayingAnchors);
 	const courtSig = useCourtSig();
 	useEffect(() => {
-		if (isEditor) healPlayingAnchors();
-	}, [courtSig, isEditor, healPlayingAnchors]);
+		healPlayingAnchors();
+	}, [courtSig, healPlayingAnchors]);
 }

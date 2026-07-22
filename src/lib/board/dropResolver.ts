@@ -34,13 +34,15 @@ export function nearestFreePartner(
 	magnets: ReadonlyMap<string, MagnetPosition>,
 	playingIds: ReadonlySet<string>,
 	notReadyIds: ReadonlySet<string> = new Set(),
+	restingIds: ReadonlySet<string> = new Set(),
 ): { id: string; pos: StagePoint } | null {
 	let bestDist = Number.POSITIVE_INFINITY;
 	let bestId: string | null = null;
 	let bestPos: StagePoint = { x: 0, y: 0 };
 	for (const m of magnets.values()) {
-		// 자기 자신 / 팀 소속 / 경기중 / 콕 미확인(매칭 대기 아님) 선수는 페어 대상에서 제외
-		if (m.playerId === playerId || m.teamId !== null || playingIds.has(m.playerId) || notReadyIds.has(m.playerId)) continue;
+		// 자기 자신 / 팀 소속 / 경기중 / 콕 미확인(매칭 대기 아님) / 휴식 선수는 페어 대상에서 제외.
+		// 휴식 자석은 화면에서 숨겨도 좌표는 남으므로(magnet 유지 설계), 여기서 걸러야 '빈 자리 유령 그룹'을 막는다.
+		if (m.playerId === playerId || m.teamId !== null || playingIds.has(m.playerId) || notReadyIds.has(m.playerId) || restingIds.has(m.playerId)) continue;
 		const d = distance(drop, { x: m.x, y: m.y });
 		if (d <= PAIR_RADIUS && d < bestDist) {
 			bestDist = d;
@@ -59,6 +61,7 @@ export function resolveDropTarget(
 	reservations: ReadonlyMap<string, import("../../types/board").Reservation>,
 	playingIds: ReadonlySet<string> = new Set(),
 	notReadyIds: ReadonlySet<string> = new Set(),
+	restingIds: ReadonlySet<string> = new Set(),
 ): DropTarget {
 	const self = magnets.get(playerId);
 	if (!self) return { kind: "none" };
@@ -86,7 +89,7 @@ export function resolveDropTarget(
 		}
 		if (insideTeam) return { kind: "none" }; // 박스 안이지만 슬롯 아님 → 스냅백
 		// 2) 자유 자석 근접 → 원본 팀에서 빠져 새 페어로 이동(createPair, ghost 예약 아님)
-		const partner = nearestFreePartner(playerId, drop, magnets, playingIds, notReadyIds);
+		const partner = nearestFreePartner(playerId, drop, magnets, playingIds, notReadyIds, restingIds);
 		if (partner) {
 			return {
 				kind: "createPair",
@@ -114,7 +117,7 @@ export function resolveDropTarget(
 	}
 	if (insideAnyTeam) return { kind: "none" }; // 박스 안이지만 슬롯 아님 → 원위치
 	// 2) 다른 자유 자석 근접 → 신규 팀
-	const partner = nearestFreePartner(playerId, drop, magnets, playingIds, notReadyIds);
+	const partner = nearestFreePartner(playerId, drop, magnets, playingIds, notReadyIds, restingIds);
 	if (partner) {
 		return {
 			kind: "createPair",
