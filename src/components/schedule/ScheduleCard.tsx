@@ -8,7 +8,7 @@ import type {
 } from "../../lib/supabase/types";
 import { fmtClock, fmtRange } from "../../lib/schedule/timeFmt";
 import { isLatePoolArrival, latePoolCutoffMs } from "../../lib/schedule/latePool";
-import { waitDisplay } from "../../lib/schedule/waitStatus";
+import { waitDisplay, guestCapForSession } from "../../lib/schedule/waitStatus";
 import { openPlaceMap, type PlaceMapTarget } from "../../lib/kakaoMap";
 import GuestSection from "./GuestSection";
 import LateArrivalSlider from "./LateArrivalSlider";
@@ -90,6 +90,8 @@ export default function ScheduleCard({
 	const confirmed = attendances.filter((a) => a.status === "confirmed");
 	const waiting = attendances.filter((a) => a.status === "waitlisted");
 	const latePool = attendances.filter((a) => a.status === "late_pool");
+	// 게스트 확정 상한 — 주말 무제한/평일 2(서버 session_guest_cap 미러).
+	const guestCap = guestCapForSession(s.scheduled_at);
 	// 인라인 스택 — 확정자 우선, 대기자, 정원 외 늦참 순으로 채움
 	const roster = [...confirmed, ...waiting, ...latePool];
 	const stackList = roster.slice(0, STACK_MAX);
@@ -99,7 +101,7 @@ export default function ScheduleCard({
 		: undefined;
 	// 본인 참석 행은 항상 회원(invited_by=null)이라 게이트가 찼어도 queue 순번(막힌 게스트 제외)으로 나온다.
 	const myWait =
-		mine?.status === "waitlisted" ? waitDisplay(attendances, mine) : null;
+		mine?.status === "waitlisted" ? waitDisplay(attendances, mine, guestCap) : null;
 	const isOpen = s.status === "open";
 	const isActive = s.status === "active";
 	// 참여 버튼 탭 — 2/3 지점 이후면 '완전 늦참' 확인 다이얼로그, 아니면 바로 참여.
@@ -501,6 +503,7 @@ export default function ScheduleCard({
 				isOpen={isOpen}
 				attending={attending}
 				busy={busy}
+				guestCap={guestCap}
 				onAddGuest={onAddGuest}
 				onCancelGuest={onCancelGuest}
 			/>

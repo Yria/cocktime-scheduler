@@ -30,11 +30,13 @@ export type WaitDisplay = { kind: "queue"; rank: number } | { kind: "guestCap" }
 export function waitDisplay(
 	attendances: AttendanceRow[],
 	target: AttendanceRow,
+	guestCap: number | null = GUEST_CONFIRM_CAP,
 ): WaitDisplay {
 	const confirmedGuests = attendances.filter(
 		(a) => a.status === "confirmed" && a.invited_by != null,
 	).length;
-	const gateOpen = confirmedGuests < GUEST_CONFIRM_CAP;
+	// guestCap null = 주말(무제한) → 게이트 항상 열림.
+	const gateOpen = guestCap == null || confirmedGuests < guestCap;
 
 	// 게스트인데 상한이 찼으면 일반 대기열과 분리 — 번호를 붙이지 않는다.
 	if (target.invited_by != null && !gateOpen) return { kind: "guestCap" };
@@ -47,4 +49,22 @@ export function waitDisplay(
 			(a.invited_by == null || gateOpen),
 	).length;
 	return { kind: "queue", rank };
+}
+
+/**
+ * 세션 일시로 게스트 확정 상한을 구한다 — 주말(KST 토/일)=null(무제한), 평일=GUEST_CONFIRM_CAP.
+ * 서버 session_guest_cap(session_id) 와 동일 기준(둘을 반드시 일치시킬 것).
+ */
+export function guestCapForSession(scheduledAt: string | null): number | null {
+	if (!scheduledAt) return GUEST_CONFIRM_CAP;
+	const wd = new Date(scheduledAt).toLocaleDateString("en-US", {
+		timeZone: "Asia/Seoul",
+		weekday: "short",
+	});
+	return wd === "Sat" || wd === "Sun" ? null : GUEST_CONFIRM_CAP;
+}
+
+/** 참석 행이 운영진(admin)인가 — nested user_roles 기준. 정원(확정) 카운트 제외 판정용(서버 is_operator 미러). */
+export function isOperatorAtt(a: AttendanceRow): boolean {
+	return (a.member?.user_roles ?? []).some((r) => r.role === "admin");
 }

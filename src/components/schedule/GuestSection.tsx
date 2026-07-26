@@ -15,6 +15,8 @@ interface Props {
 	/** 본인이 이 세션에 참석(확정/대기) 중인가 — 게스트 신청은 참석자만 가능 */
 	attending: boolean;
 	busy: boolean;
+	/** 게스트 확정 상한 — 주말 null(무제한)/평일 2. 서버 session_guest_cap 미러. */
+	guestCap: number | null;
 	/** 게스트 신청 — 성공/실패 반환(실패 시 모달 유지 + 알림). */
 	onAddGuest: (guest: { name: string; gender: Gender; skills: PlayerSkills }) => Promise<{ ok: boolean; error?: string }>;
 	onCancelGuest: (guestMemberId: string) => void;
@@ -31,6 +33,7 @@ export default function GuestSection({
 	isOpen,
 	attending,
 	busy,
+	guestCap,
 	onAddGuest,
 	onCancelGuest,
 }: Props) {
@@ -74,7 +77,9 @@ export default function GuestSection({
 	};
 	const handleAddClick = () => {
 		// 초대자 본인이 정원 외 늦참이면 게스트도 late_pool 로 접수되므로 확정 상한 경고는 부정확 → 생략.
-		if (myStatus !== "late_pool" && confirmedGuestCount >= 2) setShowGuestWarn(true);
+		// guestCap null = 주말(무제한) → 경고 없이 바로 신청.
+		if (myStatus !== "late_pool" && guestCap != null && confirmedGuestCount >= guestCap)
+			setShowGuestWarn(true);
 		else openGuestForm();
 	};
 
@@ -95,7 +100,7 @@ export default function GuestSection({
 					{myGuests.map((g) => {
 						// 상한이 찬 동안 대기 게스트는 "게스트 정원 대기"(번호 없음), 열려 있으면 통합 순번.
 						const wait =
-							g.status === "waitlisted" ? waitDisplay(attendances, g) : null;
+							g.status === "waitlisted" ? waitDisplay(attendances, g, guestCap) : null;
 						return (
 							<div
 								key={g.member_id}
@@ -174,8 +179,8 @@ export default function GuestSection({
 
 			{showGuestWarn && (
 				<ConfirmDialog
-					title="확정 게스트가 이미 2명이에요"
-					message="세션당 게스트는 최대 2명까지만 참여할 수 있어요. 추가 게스트는 대기로 접수되고, 기존 게스트가 빠지면 순서대로 참여할 수 있어요. 그래도 신청할까요?"
+					title={`확정 게스트가 이미 ${guestCap}명이에요`}
+					message={`세션당 게스트는 최대 ${guestCap}명까지만 참여할 수 있어요. 추가 게스트는 대기로 접수되고, 기존 게스트가 빠지면 순서대로 참여할 수 있어요. 그래도 신청할까요?`}
 					confirmLabel="대기로 신청"
 					onConfirm={() => {
 						setShowGuestWarn(false);

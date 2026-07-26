@@ -1,4 +1,3 @@
-import { skillScoreOf } from "../../lib/teamSelection";
 import type { MatchLogEntry } from "../../lib/supabase/api";
 import type { Gender, PlayerSkills } from "../../types";
 import PlayerBadge from "../shared/PlayerBadge";
@@ -60,7 +59,6 @@ export default function MatchSummary({
 								key={p.name}
 								name={p.name}
 								gender={p.gender}
-								skillScore={skillScoreOf(p.skills)}
 								count={p.game_count}
 							/>
 						))}

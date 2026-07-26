@@ -2,7 +2,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import type { AttendanceRow, SessionRow } from "../../lib/supabase/types";
 import { fmtClock, fmtRange } from "../../lib/schedule/timeFmt";
-import { waitDisplay, type WaitDisplay } from "../../lib/schedule/waitStatus";
+import { waitDisplay, guestCapForSession, isOperatorAtt, type WaitDisplay } from "../../lib/schedule/waitStatus";
 import { useAuthStore } from "../../store/authStore";
 import { scheduleActions } from "../../store/scheduleStore";
 import { toast } from "../../store/toastStore";
@@ -34,6 +34,10 @@ export default function SessionParticipantsModal({
 	const confirmed = attendances.filter((a) => a.status === "confirmed");
 	const waiting = attendances.filter((a) => a.status === "waitlisted");
 	const latePool = attendances.filter((a) => a.status === "late_pool");
+	// 운영진은 정원 외 — 확정 카운트/섹션에서 빼고 별도 "운영진" 섹션으로 렌더한다.
+	const confirmedMembers = confirmed.filter((a) => !isOperatorAtt(a));
+	const confirmedOperators = confirmed.filter((a) => isOperatorAtt(a));
+	const guestCap = guestCapForSession(s.scheduled_at);
 
 	// 운영진만 임의 참석자 제거 가능(본인 행은 제외 — 본인은 카드의 '참여 취소' 사용).
 	const isAdmin = useAuthStore((st) => st.isAdmin);
@@ -99,9 +103,9 @@ export default function SessionParticipantsModal({
 					<EmptyState>아직 참가자가 없습니다.</EmptyState>
 				) : (
 					<>
-						{confirmed.length > 0 && (
-							<Section title={`확정 ${confirmed.length}명`}>
-								{confirmed.map((a) => (
+						{confirmedMembers.length > 0 && (
+							<Section title={`회원 ${confirmedMembers.length}명`}>
+								{confirmedMembers.map((a) => (
 									<ParticipantRow
 										key={a.member_id}
 										row={a}
@@ -113,6 +117,27 @@ export default function SessionParticipantsModal({
 									/>
 								))}
 							</Section>
+						)}
+
+						{confirmedOperators.length > 0 && (
+							<>
+								{confirmedMembers.length > 0 && (
+									<div className="mx-2 my-1.5 border-t border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]" />
+								)}
+								<Section title={`운영진 ${confirmedOperators.length}명`}>
+									{confirmedOperators.map((a) => (
+										<ParticipantRow
+											key={a.member_id}
+											row={a}
+											memberId={memberId}
+											carpoolEnabled={s.carpool_enabled}
+											scheduledAt={s.scheduled_at}
+											canRemove={isAdmin}
+											onRemove={setPendingRemove}
+										/>
+									))}
+								</Section>
+							</>
 						)}
 
 						{waiting.length > 0 && (
@@ -128,7 +153,7 @@ export default function SessionParticipantsModal({
 											memberId={memberId}
 											carpoolEnabled={s.carpool_enabled}
 											scheduledAt={s.scheduled_at}
-											waitInfo={waitDisplay(attendances, a)}
+											waitInfo={waitDisplay(attendances, a, guestCap)}
 											canRemove={isAdmin}
 											onRemove={setPendingRemove}
 										/>
