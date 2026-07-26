@@ -605,3 +605,17 @@ b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
 - **미해결/후속**: 프리패스 오버플로 시 대기 회원 승급 보류(정원=전원 슬롯 기준, 자가해소). 프론트는 staged(git push 필요).
 
 ---
+
+## #50
+
+**Prompt**: 운영진 섹션은 참여운영진이 정원 외로 참가할 때만 그려줘. 이때 "확정 n/m명(운영진 k명), 대기 j명" 식으로 운영진 수 따로 카운트. n은 m+k 맞지?
+
+**Answer**: 표시 규칙 정정 — **정원 초과(프리패스) 운영진만** 별도 표기(정원 안 운영진은 확정에 그대로 포함). n=m+k 맞음(프리패스는 만석일 때만 발동하니 k>0이면 base=정원 m).
+
+- 헬퍼 `splitConfirmedByCapacity(attendances, capacity)`: 확정을 position 순 정렬해 앞 capacity명=base, 초과분=freepassOps(모델상 전원 운영진). capacity null 또는 확정≤정원이면 freepass 없음.
+- 헤더: `확정 {확정총원}/{정원}명` + `(운영진 k명)`은 **k>0일 때만**. 확정총원 = m+k(프리패스 있을 때).
+- 모달: "확정 {base}명" 섹션(정원 안, 회원+정원안운영진) + freepass>0일 때만 "운영진 k명 · 정원 외" 별도 섹션.
+- s59처럼 운영진이 다 정원 안(일찍 신청)이면 k=0 → 별도 섹션·표기 없음(기존 "모든 운영진 분리"에서 교정).
+- ScheduleCard·SessionParticipantsModal·waitStatus.ts 수정. tsc·lint·218테스트·빌드 통과 후 배포(git push).
+
+---

@@ -68,3 +68,21 @@ export function guestCapForSession(scheduledAt: string | null): number | null {
 export function isOperatorAtt(a: AttendanceRow): boolean {
 	return (a.member?.user_roles ?? []).some((r) => r.role === "admin");
 }
+
+/**
+ * 확정 참석을 base(정원 내)와 freepassOps(정원 초과=운영진 프리패스)로 나눈다.
+ * position 오름차순 앞 capacity명이 base, 초과분이 프리패스. 서버 모델상 정원 초과 확정은 전부 운영진.
+ * capacity 가 null(무제한)이거나 확정이 정원 이하면 프리패스 없음(freepassOps=[]).
+ */
+export function splitConfirmedByCapacity(
+	attendances: AttendanceRow[],
+	capacity: number | null,
+): { base: AttendanceRow[]; freepassOps: AttendanceRow[] } {
+	const confirmed = attendances
+		.filter((a) => a.status === "confirmed")
+		.sort((a, b) => a.position - b.position);
+	if (capacity == null || confirmed.length <= capacity) {
+		return { base: confirmed, freepassOps: [] };
+	}
+	return { base: confirmed.slice(0, capacity), freepassOps: confirmed.slice(capacity) };
+}

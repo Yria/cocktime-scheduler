@@ -8,7 +8,7 @@ import type {
 } from "../../lib/supabase/types";
 import { fmtClock, fmtRange } from "../../lib/schedule/timeFmt";
 import { isLatePoolArrival, latePoolCutoffMs } from "../../lib/schedule/latePool";
-import { waitDisplay, guestCapForSession } from "../../lib/schedule/waitStatus";
+import { waitDisplay, guestCapForSession, splitConfirmedByCapacity } from "../../lib/schedule/waitStatus";
 import { openPlaceMap, type PlaceMapTarget } from "../../lib/kakaoMap";
 import GuestSection from "./GuestSection";
 import LateArrivalSlider from "./LateArrivalSlider";
@@ -92,6 +92,8 @@ export default function ScheduleCard({
 	const latePool = attendances.filter((a) => a.status === "late_pool");
 	// 게스트 확정 상한 — 주말 무제한/평일 2(서버 session_guest_cap 미러).
 	const guestCap = guestCapForSession(s.scheduled_at);
+	// 정원 초과 프리패스 운영진(만석일 때 들어온 운영진)만 별도 카운트/표기.
+	const { freepassOps } = splitConfirmedByCapacity(attendances, s.capacity);
 	// 인라인 스택 — 확정자 우선, 대기자, 정원 외 늦참 순으로 채움
 	const roster = [...confirmed, ...waiting, ...latePool];
 	const stackList = roster.slice(0, STACK_MAX);
@@ -285,6 +287,7 @@ export default function ScheduleCard({
 				>
 					확정 {confirmed.length}
 					{s.capacity != null ? `/${s.capacity}` : ""}명
+					{freepassOps.length > 0 ? ` (운영진 ${freepassOps.length}명)` : ""}
 					{waiting.length > 0 ? ` · 대기 ${waiting.length}` : ""}
 					{latePool.length > 0 ? ` · 늦참 ${latePool.length}` : ""}
 				</span>
