@@ -168,7 +168,7 @@ appStore.startOrUpdateSessionAction()
 ### 세션 로드 (새로고침 / 재접속)
 ```
 appStore.loadSessionAction() / checkActiveSessionAction()
-  ├─ api.fetchSessionSnapshot() → DB: SELECT sessions, session_players, matches, pair_history
+  ├─ api.fetchSessionSnapshot() → DB: SELECT sessions, session_players, matches(playing 전체 + completed 최소컬럼 — 그룹 이력·lastGameType 시드용)
   ├─ transformers.snapshotToClientState() → ClientSessionState 변환 (boardDrafts·lastGameType 포함)
   └─ sessionStore.initialize(clientState) → 클라이언트 상태 초기화
 ```
@@ -211,7 +211,7 @@ sessionStore (휴식 토글)
 | 이벤트 | 발생 시점 | 수신 처리 |
 |---|---|---|
 | `match_started` | 매치 코트 배정 | 코트에 매치 추가, 대기열에서 선수 제거 |
-| `match_completed` | 게임 완료 | 코트 비움, 선수→대기열, pair_history 업데이트 (updatedPlayers) |
+| `match_completed` | 게임 완료 | 코트 비움, 선수→대기열, groupHistory 누적(matchId dedup) (updatedPlayers) |
 | `match_roster_updated` | 경기 로스터 수정(`set_match_roster`) | 코트의 teamA/B 교체 + 상태 바뀐 선수 upsert (2026-06-22, H3 해결 — 이전엔 broadcast 없었음) |
 | `session_refresh_required` | 설정 대변경 후 | DB 전체 재로드 |
 

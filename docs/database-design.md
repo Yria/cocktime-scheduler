@@ -140,8 +140,8 @@ CREATE INDEX idx_matches_session_status ON matches(session_id, status);
 
 ### pair_history
 
-세션 내 동반 이력. 후보 점수의 `pairOverlap`(동반 회피)에 사용.
-경기 완료 시 같은 경기 4명(팀A p1-p2, 팀B p1-p2) 페어를 upsert. (RPC `complete_match` 가 팀별 페어 2쌍을 누적)
+세션 내 동반 이력(쌍 단위). **2026-07부터 클라이언트 미사용(deprecated)** — 재결성 회피가 그룹 겹침 단위(`groupHistory`, 완료 `matches` 파생)로 개편되어 이 테이블을 더 이상 조회하지 않는다. 서버 누적은 유지 중이며 추후 정리(cleanup) 후보.
+경기 완료 시 같은 경기 4명 그룹의 **모든 쌍 C(4,2)=6쌍**을 upsert +1 한다 (RPC `complete_match` — `20260611120000`에서 팀 2쌍 → 그룹 6쌍으로 전환, 최신 `20260624020000` 동일. 세션 종료 백필 `complete_session_playing_matches`도 동일 규칙).
 
 ```sql
 CREATE TABLE pair_history (
@@ -154,7 +154,7 @@ CREATE TABLE pair_history (
 ```
 
 > 항상 `player_a < player_b` (UUID 문자열 기준) 순서로 저장하여 역방향 중복 방지.
-> 클라이언트 측 `recordHistory` 는 같은 경기 4명 그룹의 6쌍 전체를 누적하지만, DB `complete_match` 는 실제 팀 페어 2쌍을 누적한다.
+> 클라이언트는 이 테이블 대신 완료 `matches`의 4인 구성(`team_a_p1..team_b_p2`)을 그룹 이력으로 파생해 쓴다(`docs/TEAM_GENERATION_RULES.md` §4).
 
 ---
 
@@ -183,7 +183,7 @@ session_players UPDATE  game_count++                        WHERE id IN [4명]
 session_players UPDATE  mixed_count++                       WHERE 혼복(game_type='혼복') 남자만
 session_players UPDATE  status='waiting', wait_since=NOW()
 
-pair_history UPSERT  (teamA: p1-p2, teamB: p1-p2)
+pair_history UPSERT  (4명 그룹 6쌍 전체)   -- 서버 누적만 유지, 클라이언트 미사용(2026-07 deprecated)
   ON CONFLICT DO UPDATE SET count = count + 1
 
 Broadcast: { event: 'match_completed', payload: { matchId, courtId } }
@@ -227,11 +227,12 @@ ORDER BY game_count ASC, wait_since ASC;
 -- 3. 진행 중인 경기 (코트 상태 복구)
 SELECT * FROM matches WHERE session_id = $1 AND status = 'playing';
 
--- 4. 동반 이력 (후보 점수 pairOverlap용)
-SELECT * FROM pair_history WHERE session_id = $1;
+-- 4. 완료 경기 최소 컬럼 (그룹 이력 = 재결성 회피 + lastGameType 시드)
+SELECT id, team_a_p1, team_a_p2, team_b_p1, team_b_p2, game_type, ended_at
+FROM matches WHERE session_id = $1 AND status = 'completed';
 ```
 
-4개 쿼리로 전체 세션 상태 복원 가능. (팀 후보/대기열 로드는 제거됨)
+4개 쿼리로 전체 세션 상태 복원 가능. (팀 후보/대기열 로드·pair_history 조회는 제거됨)
 
 ---
 

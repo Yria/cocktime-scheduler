@@ -52,10 +52,10 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 	const canAddMore = filledCount < TEAM_SIZE;
 	const emptyCount = Math.max(0, TEAM_SIZE - filledCount);
 
-	const avgSkill = useMemo(() => {
-		const all = [...members, ...selectedPlayers];
-		if (all.length === 0) return 0;
-		return all.reduce((sum, p) => sum + skillScore(p), 0) / all.length;
+	// "실력순" 정렬 기준 밴드 — 알고리즘 skillDiff(스프레드 증가분)와 동일 의미론. 미등급(0)은 제외.
+	const skillBand = useMemo(() => {
+		const grades = [...members, ...selectedPlayers].map(skillScore).filter((g) => g > 0);
+		return grades.length ? { min: Math.min(...grades), max: Math.max(...grades) } : null;
 	}, [members, selectedPlayers]);
 
 	// 디버그: 점수 분해 % 계산용 min/max (ranked score 기준)
@@ -90,11 +90,14 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 			// 경기중 판별은 courts 기반 playingIds(status는 경기 시작 직후 갱신 지연).
 			isPlaying: playingIds.has(item.player.id),
 			rank: index,
-			skillRank: avgSkill > 0 ? Math.abs(skillScore(item.player) - avgSkill) : -skillScore(item.player),
+			// 밴드 안 후보는 동률(0), 밴드를 넓히는 만큼 후순위 — 확정 멤버가 없으면 고실력 우선.
+			skillRank: skillBand
+				? Math.max(0, skillBand.min - skillScore(item.player), skillScore(item.player) - skillBand.max)
+				: -skillScore(item.player),
 			fitnessScore: item.score,
 			waitSince: item.player.waitSince ?? undefined,
 		})),
-		[ranked, avgSkill, playingIds],
+		[ranked, skillBand, playingIds],
 	);
 
 	const handleConfirm = () => {
@@ -212,7 +215,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 							<tr className="text-gray-400 dark:text-gray-500">
 								<th className="text-left pr-2">이름</th>
 								<th className="text-right px-1">실력</th>
-								<th className="text-right px-1">동반</th>
+								<th className="text-right px-1">재결성</th>
 								<th className="text-right px-1">로테</th>
 								<th className="text-right px-1">성별</th>
 								<th className="text-right px-1">경기중</th>
@@ -229,7 +232,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 									<tr key={r.player.id} className="border-t border-gray-100 dark:border-gray-800 text-gray-700 dark:text-gray-300">
 										<td className="text-left pr-2 whitespace-nowrap">{r.player.name}</td>
 										<td className="text-right px-1">{fmtScore(b?.skill)}</td>
-										<td className="text-right px-1">{fmtScore(b?.pair)}</td>
+										<td className="text-right px-1">{fmtScore(b?.group)}</td>
 										<td className="text-right px-1">{fmtScore(b?.rotate)}</td>
 										<td className="text-right px-1">{fmtScore(b?.gender)}</td>
 										<td className="text-right px-1">{fmtScore(b?.playing)}</td>

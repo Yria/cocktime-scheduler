@@ -1,4 +1,3 @@
-import { recordTeam } from "../lib/pairHistory";
 import type { GameType, SessionPlayer } from "../types";
 import type { BoardDraftsPayload } from "../types/board";
 import { useAppStore } from "./appStore";
@@ -71,7 +70,7 @@ export function handleMatchStarted(payload: BroadcastPayloadData, set: SetFn) {
 			),
 			waitingIds,
 			restingIds,
-			// 동반 이력(pairHistory)은 경기 완료 시(handleMatchCompleted)에만 1회 누적한다.
+			// 그룹 이력(groupHistory)은 경기 완료 시(handleMatchCompleted)에만 1회 누적한다.
 			// 경기 시작 시 4명의 직전 게임 타입을 이번 경기 타입으로 기록(완료 후 자유로 돌아와도 유지)
 			lastGameType: { ...state.lastGameType, ...Object.fromEntries([...teamAIds, ...teamBIds].map((id) => [id, safeGameType])) },
 		};
@@ -79,18 +78,25 @@ export function handleMatchStarted(payload: BroadcastPayloadData, set: SetFn) {
 }
 
 export function handleMatchCompleted(payload: BroadcastPayloadData, set: SetFn) {
-	const { courtId, gameType, teamA, teamB, updatedPlayers } = payload;
+	const { matchId, courtId, gameType, teamA, teamB, updatedPlayers } = payload;
 	const teamAPlayers = teamA as [SessionPlayer, SessionPlayer];
 	const teamBPlayers = teamB as [SessionPlayer, SessionPlayer];
 	const allPlayers = [...teamAPlayers, ...teamBPlayers];
 
 	set((state) => {
-		// 같은 경기 4명(teamA+teamB) 그룹 전체의 모든 쌍을 동반 +1. 완료 시점에만 1회 누적(DB와 정합).
-		const newPairHistory = recordTeam(state.pairHistory, {
-			teamA: [teamAPlayers[0].id, teamAPlayers[1].id],
-			teamB: [teamBPlayers[0].id, teamBPlayers[1].id],
-			gameType: gameType as GameType,
-		});
+		// 완료된 경기의 4인 묶음을 그룹 이력에 추가(재결성 회피 원천). 완료 시점에만 1회 누적.
+		// matchId dedup — resync(mergeGroupHistory)가 먼저 같은 매치를 실어왔으면 중복 append 금지
+		// (중복되면 그 조합의 재결성 벌점이 2배가 되고, resync의 id 병합 전제도 깨진다).
+		const mid = typeof matchId === "string" ? matchId : `evt-${courtId}-${state.groupHistory.length}`;
+		const newGroupHistory = state.groupHistory.some((g) => g.matchId === mid)
+			? state.groupHistory
+			: [
+					...state.groupHistory,
+					{
+						matchId: mid,
+						members: [teamAPlayers[0].id, teamAPlayers[1].id, teamBPlayers[0].id, teamBPlayers[1].id],
+					},
+				];
 
 		// Map 업데이트 후 rebuildDerivedIds로 파생 상태 재계산
 		const newMap = upsertPlayers(state.sessionPlayers, updatedPlayers as SessionPlayer[]);
@@ -101,7 +107,7 @@ export function handleMatchCompleted(payload: BroadcastPayloadData, set: SetFn) 
 			courts: state.courts.map((c) => (c.id !== courtId ? c : { ...c, match: null })),
 			waitingIds,
 			restingIds,
-			pairHistory: newPairHistory,
+			groupHistory: newGroupHistory,
 			// 직전 게임 타입 갱신(시작 시 누락된 클라이언트도 완료 시점에 보정)
 			lastGameType: { ...state.lastGameType, ...Object.fromEntries(allPlayers.map((p: SessionPlayer) => [p.id, gameType as GameType])) },
 		};

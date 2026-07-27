@@ -81,33 +81,13 @@
 | 성별 균형 | `W_GENDER` (50.0) | 혼복(2남2녀) 목표에서 한쪽 성별이 3명 이상이 되는 후보에 큰 페널티(하위 노출) |
 | 경기중 후보 | `W_PLAYING` (30.0) | 현재 코트에서 경기 중인 후보에 페널티 → 대기 선수가 상위에 오도록 |
 
-`RECOMMEND_WEIGHTS` 기본값: `W_SKILL 20.0, W_PAIR 8.0, W_GAME 1.0, W_MIXED 0, W_WAIT 2.0, W_ROTATE 6.0, W_GENDER 50.0, W_PLAYING 30.0`.
+> **가중치·점수 공식의 단일 기준은 `docs/TEAM_GENERATION_RULES.md`다.** 이 문서에 수치를 중복 기재하면 드리프트가 생겨(과거 이 자리에 폐기된 deficit 모델·W_SKILL 20 수치가 남아 있었다) 값은 그쪽만 갱신한다.
 
 ### 3-2. 후보 점수 (rankCandidates)
 
-이미 확정된 N명(`confirmed`)이 있을 때, 풀(`pool`)에서 가장 어울리는 후보를 점수 오름차순으로 반환하는 순수 함수.
+이미 확정된 N명(`confirmed`)이 있을 때, 풀(`pool`)에서 가장 어울리는 후보를 점수 오름차순으로 반환하는 순수 함수. 항 구성(2026-07 기준): 실력(팀 등급 밴드 스프레드 증가분) + **그룹 재결성 회피**(과거 완료 경기 4인과의 겹침 수 — 2명<3명<4명 순 벌점 급증) + 경기수(절대 판수, 최우선) + 대기시간. 정확한 공식·가중치·근거는 `docs/TEAM_GENERATION_RULES.md` §2·§7 참조.
 
-- **confirmed가 0명**일 때: deficit(참여율 적자)과 대기시간만 반영
-  - `score = -deficit·W_GAME + mixedCount·W_MIXED - waitMinutes·W_WAIT`
-- **confirmed가 1명 이상**일 때:
-  - `score = skillDiff·W_SKILL + pairOverlap·W_PAIR - deficit·W_GAME + mixedCount·W_MIXED - waitMinutes·W_WAIT`
-  - `skillDiff`: 후보 skillScore와 confirmed 평균 skillScore 차이 (실력 유사할수록 ↓)
-  - `pairOverlap`: confirmed 각각과 함께 뛴 누적 동반 횟수(`pairHistory`) 합산 (적게 뛴 상대일수록 ↓)
-  - `deficit`: 기대 경기수 대비 적자. 클수록 우선 선발 → 점수에 음수로 반영
-
-> deficit·대기시간은 적자/대기가 클수록 점수를 낮춰 우선 선발되게 한다(음수 반영).
-
-#### 참여율(deficit) 공식
-- `eligibleRounds = totalMatchCount − joinedAtMatch`
-- `playProbability = (totalMatchCount × 4) / Σ(모든 활성 선수의 eligibleRounds)`
-- `expectedGames = eligibleRounds × playProbability`
-- `deficit = expectedGames − gameCount`
-- `totalEligible == 0` 또는 `totalMatchCount == 0` 이면 `deficit = 0`
-
-#### 가중치
-
-> **제거됨(deprecated)**: 가중치 프로필 상수 `WEIGHT_PROFILES`(자동 다전략 후보 생성용 5개 프로필 — `gameCountBalanced`/`newCombination`/`skillBalanced`/`mixedCountBalanced`/`waitTimePriority`)는 소비자가 전부 삭제되어 **코드에서 완전히 제거**되었다.
-> 현재 유지되는 가중치는 `recommendTeammates` 의 `RECOMMEND_WEIGHTS`(보드 추천용: `W_SKILL 20.0, W_PAIR 8.0, W_GAME 1.0, W_MIXED 0, W_WAIT 2.0` + `W_ROTATE 6.0, W_GENDER 50.0, W_PLAYING 30.0`)와 `rankCandidates` 내부 기본값 `DEFAULT_WEIGHTS`(`W_SKILL 4.0, W_PAIR 6.0, W_GAME 1.0, W_MIXED 0, W_WAIT 0`) 뿐이다.
+> **제거됨(deprecated)**: deficit(기대 경기수 적자) 모델, 쌍 단위 동반 회피(`pairOverlap`·`W_PAIR`·`pair_history` 조회), 혼복 "여자만" 실력 균형, 가중치 프로필 `WEIGHT_PROFILES`. 상세 이력은 TEAM_GENERATION_RULES 부록.
 
 ### 3-3. 페어 편성 (pairPlayers)
 

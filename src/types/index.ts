@@ -63,12 +63,21 @@ export interface GeneratedTeam {
 }
 
 /**
- * 동반 이력 — session_players.id(UUID) → { 함께 경기한 상대 id: 누적 횟수 }.
- * 같은 경기에 함께 들어간 4명(teamA+teamB) 그룹 전체를 서로 동반으로 누적한다(같은 팀 한정 아님).
+ * 동반 그룹 이력 항목 — 완료된 경기 1건의 4인 묶음.
+ * matchId는 append 중복 방지(broadcast ↔ resync 레이스)와 resync 병합의 기준 키다.
+ * members는 선수 삭제(FK SET NULL) 시 4명 미만일 수 있다.
  */
-export interface PairHistory {
-	[sessionPlayerId: string]: Record<string, number>;
+export interface GroupHistoryEntry {
+	matchId: string;
+	members: readonly string[];
 }
+
+/**
+ * 동반 그룹 이력 — 완료된 경기 1건당 한 항목(순서 무관).
+ * 완료된 matches 에서 파생되며(스냅샷 로드 + match_completed 누적 + resync 병합), 쌍 단위 누적(구 pair_history)을 대체한다.
+ * 회피 단위는 "과거 경기 4인과 새 팀의 겹침 수": 2명(약) < 3명(중) < 4명 재결성(강) 순으로 벌점이 커진다.
+ */
+export type GroupHistory = readonly GroupHistoryEntry[];
 
 export interface SessionSettings {
 	courtCount: number;

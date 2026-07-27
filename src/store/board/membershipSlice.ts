@@ -282,8 +282,11 @@ export const createMembershipSlice: StateCreator<
 
 	autoFillTeam: (teamId) => get().autoFillTarget({ teamId }, []),
 
-	// 추천 모달의 "자동편성" 버튼 공용 — 팀/시드/새팀 어디서나 대기 선수로 나머지를 채워 commit.
+	// 추천 모달의 "자동편성" 버튼 공용 — 팀/시드/새팀 어디서나 나머지 슬롯을 추천순으로 채워 commit.
 	// extraIds = 모달에서 사용자가 직접 고른 선수(먼저 포함하고 나머지를 자동 채움).
+	// 경기중 선수도 팀당 1명까지 ghost 예약으로 뽑을 수 있다(2026-07 개편) — W_PLAYING(30) 페널티를
+	// 안고도 상위인 경우(대기 후보들이 재결성 벌점 등으로 밀릴 때)만 뽑히며, commitTeammates가
+	// 경기중 pick을 자동으로 예약(ghost) 처리한다. 다른 팀에 이미 예약된 선수는 풀에서 제외.
 	autoFillTarget: (target, extraIds = []) => {
 		if (!claimEdit()) return; // 보기 전용 차단
 		const { drafts, reservations, magnets } = get();
@@ -297,23 +300,37 @@ export const createMembershipSlice: StateCreator<
 				magnets,
 				sessionPlayers: ss.sessionPlayers,
 				courts: ss.courts,
-				pairHistory: ss.pairHistory,
+				groupHistory: ss.groupHistory,
 				lastGameType: ss.lastGameType,
 				cockCheckEnabled: ss.cockCheckEnabled,
 			},
-			{ excludePlaying: true }, // 자동편성은 대기 선수만으로 채운다(경기중 제외)
+			{ excludeReserved: true }, // 이중 ghost 예약 방지(경기중 포함은 maxPlaying으로 상한)
 		);
 		if (!data) return;
 		const slotsToFill = 4 - data.confirmed.length; // confirmed = 기존 멤버 + extraIds
-		const picks = slotsToFill > 0 ? autoFillTeammates(data.confirmed, data.pool, data.ctx, slotsToFill) : [];
+		// ghost 상한은 "팀 단위" 1명 — 기존 ghost 예약·다이얼로그에서 직접 고른 경기중 선수(extraIds)를
+		// 차감해서, 자동편성 재실행/조합으로 한 팀에 ghost 2명이 생기지 않게 한다.
+		const playingInTeam = data.confirmed.filter((p) => data.playingIds.has(p.id)).length;
+		const picks =
+			slotsToFill > 0
+				? autoFillTeammates(data.confirmed, data.pool, data.ctx, slotsToFill, undefined, {
+						maxPlaying: Math.max(0, 1 - playingInTeam),
+					})
+				: [];
 		const ids = [...extraIds, ...picks.map((p) => p.id)];
 		if (ids.length === 0) {
-			toast("자동편성할 대기 선수가 없어요", { variant: "error" });
+			toast("자동편성할 선수가 없어요", { variant: "error" });
+			return;
+		}
+		// 새 팀 모드는 anchor(비경기중 1명)가 필수 — 전원 경기중이면 commitTeammates가 조용히
+		// no-op하므로 거짓 부분성공 토스트 대신 정직하게 실패를 알린다.
+		if (target.newTeam && ids.every((id) => data.playingIds.has(id))) {
+			toast("경기중이 아닌 선수가 1명은 필요해요", { variant: "error" });
 			return;
 		}
 		get().commitTeammates(target, ids);
 		if (picks.length < slotsToFill) {
-			toast(`대기 선수가 부족해 ${picks.length + extraIds.length}명만 채웠어요`);
+			toast(`선수가 부족해 ${picks.length + extraIds.length}명만 채웠어요`);
 		}
 	},
 

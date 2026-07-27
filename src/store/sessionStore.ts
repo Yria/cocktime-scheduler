@@ -7,6 +7,7 @@ import {
 	dbBoardTakeoverEditor,
 	dbCompleteMatch,
 	dbEndSession,
+	dbLoadCompletedMatchTeams,
 	dbLoadMatches,
 	dbLoadSessionState,
 	dbSetCockChecked,
@@ -16,7 +17,12 @@ import {
 	supabase,
 } from "../lib/supabase";
 import { createSessionChannels } from "../lib/supabase/sessionChannels";
-import { matchRowsToCourts, rowToSessionPlayer } from "../lib/supabase/transformers";
+import {
+	matchRowsToCourts,
+	matchRowsToGroupHistory,
+	mergeGroupHistory,
+	rowToSessionPlayer,
+} from "../lib/supabase/transformers";
 import type { SessionPlayerRow } from "../lib/supabase/types";
 import { matchPlayerIds } from "../lib/board/membership";
 import { computeLockFromRow, computePresenceList } from "../lib/editLock";
@@ -164,7 +170,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			sessionPlayers: playerMap,
 			waitingIds,
 			restingIds,
-			pairHistory: initial.pairHistory,
+			groupHistory: initial.groupHistory,
 			matchAssignCount: initial.matchAssignCount,
 			lastGameType: initial.lastGameType,
 			boardDrafts: initial.boardDrafts,
@@ -440,9 +446,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const indicate = opts?.indicate ?? false;
 		const force = opts?.force ?? false;
 		let snap: Awaited<ReturnType<typeof dbLoadSessionState>>;
+		let completedTeams: Awaited<ReturnType<typeof dbLoadCompletedMatchTeams>>;
 		if (indicate) set({ boardSyncing: true });
 		try {
-			snap = await dbLoadSessionState(sid);
+			// 그룹 이력(완료 매치)도 함께 권위 재조회 — match_completed broadcast 유실·편집권 이양 후에도
+			// 추천/자동편성이 최신 재결성 이력을 보게 한다(load_session_state RPC는 진행중 매치만 실어옴).
+			[snap, completedTeams] = await Promise.all([
+				dbLoadSessionState(sid),
+				dbLoadCompletedMatchTeams(sid),
+			]);
 		} finally {
 			if (indicate) set({ boardSyncing: false });
 		}
@@ -468,6 +480,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			patch.courts = matchRowsToCourts(snap.courtCount || s.courts.length, snap.matches);
 			patch.matchStateVersion = snap.matchStateVersion;
 		}
+		// 그룹 이력(재결성 회피) — matchId 집합 병합: 서버 권위 + 스냅샷 이후 로컬 선반영분 보존.
+		// (길이 비교는 "resync 교체 직후 같은 매치 broadcast 도착 → 중복 append → catch-up 영구
+		// 무력화" 레이스가 있어 금지 — mergeGroupHistory 주석 참조.)
+		const mergedGroups = mergeGroupHistory(s.groupHistory, matchRowsToGroupHistory(completedTeams));
+		if (mergedGroups !== s.groupHistory) patch.groupHistory = mergedGroups;
 		if (snap.syncVersion > s.syncVersion) patch.syncVersion = snap.syncVersion;
 		// 빈 스냅샷으로는 로컬 선수를 지우지 않는다: 구 RPC(마이그레이션 미적용, 프론트가 DB보다 먼저 배포되는
 		// 과도기)는 session_players 를 안 실어와 []가 된다. snap.syncVersion>0 이면 Stage 2 RPC 가 응답한 것이라

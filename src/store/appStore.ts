@@ -205,7 +205,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 			players: sessionPlayers,
 			waitingIds: sessionPlayers.map((p) => p.id),
 			restingIds: [],
-			pairHistory: {},
+			groupHistory: [],
 			matchAssignCount: 0,
 			lastGameType: {},
 			boardDrafts: { teams: [], reservations: [] },

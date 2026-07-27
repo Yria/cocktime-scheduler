@@ -26,11 +26,17 @@ function player(
 
 function ctx(overrides: Partial<RecommendContext> = {}): RecommendContext {
 	return {
-		pairHistory: {},
+		groupHistory: [],
 		lastGameType: {},
 		playingIds: new Set<string>(),
 		...overrides,
 	};
+}
+
+/** 그룹 이력 항목 헬퍼 — matchId는 멤버 조합에서 파생(테스트 내 유일성만 보장하면 됨). */
+let grpSeq = 0;
+function grp(...members: string[]) {
+	return { matchId: `m${grpSeq++}-${members.join(".")}`, members };
 }
 
 describe("recommendTeammates", () => {
@@ -42,19 +48,31 @@ describe("recommendTeammates", () => {
 		expect(ranked[0].player.id).toBe("close");
 	});
 
-	it("동반 회피는 상대별 제곱(Σc²) — 한 명과 여러 번 만난 후보가 여러 명과 한 번씩 만난 후보보다 강하게 하위", () => {
-		// confirmed 2명(A,B) 동성/동일실력/0판 → 점수는 동반 항(pairOverlap·W_PAIR)만 작동.
+	it("재결성 회피는 그룹 겹침 단위 — 2명 유지(약) < 3명 유지(중) 순으로 벌점이 커진다", () => {
+		// confirmed 2명(A,B) 동성/동일실력/0판 → 점수는 그룹 재결성 항만 작동.
 		const confirmed = [player("A", "M"), player("B", "M")];
-		const heavy = player("heavy", "M"); // A와 2회, B와 0회 → Σc² = 2²+0² = 4
-		const spread = player("spread", "M"); // A와 1회, B와 1회 → Σc² = 1²+1² = 2 (선형 합은 둘 다 2로 동일)
-		const pairHistory = { A: { heavy: 2, spread: 1 }, B: { spread: 1 } };
-		const ranked = recommendTeammates(confirmed, [heavy, spread], ctx({ pairHistory }));
-		expect(ranked[0].player.id).toBe("spread"); // 선형이라면 동점이지만 제곱이 heavy를 밀어냄
-		expect(ranked.find((r) => r.player.id === "heavy")!.breakdown!.pair).toBe(
-			4 * RECOMMEND_WEIGHTS.W_PAIR,
-		);
-		expect(ranked.find((r) => r.player.id === "spread")!.breakdown!.pair).toBe(
-			2 * RECOMMEND_WEIGHTS.W_PAIR,
+		const dup2 = player("dup2", "M"); // 과거 {A,dup2,x,y} → 팀에 그 그룹 2명 유지(k=1)
+		const dup3 = player("dup3", "M"); // 과거 {A,B,dup3,z} → 팀에 그 그룹 3명 유지(k=2)
+		const fresh = player("fresh", "M"); // 겹침 없음
+		const groupHistory = [grp("A", "dup2", "x", "y"), grp("A", "B", "dup3", "z")];
+		const ranked = recommendTeammates(confirmed, [dup2, dup3, fresh], ctx({ groupHistory }));
+		const get = (id: string) => ranked.find((r) => r.player.id === id)!;
+		expect(get("fresh").breakdown!.group).toBe(0);
+		expect(get("dup2").breakdown!.group).toBe(RECOMMEND_WEIGHTS.W_GROUP2);
+		expect(get("dup3").breakdown!.group).toBe(RECOMMEND_WEIGHTS.W_GROUP3);
+		expect(ranked.map((r) => r.player.id)).toEqual(["fresh", "dup2", "dup3"]);
+	});
+
+	it("4명 완전 재결성은 사실상 금지 — 판수가 3판 적어도 재결성 후보가 밀린다", () => {
+		// 과거 {A,B,C,D}. confirmed A,B,C의 마지막 슬롯에 D(0판, 재결성)보다 3판 더 뛴 신규 E가 상위.
+		const confirmed = [player("A", "M"), player("B", "M"), player("C", "M")];
+		const d = player("D", "M"); // gameCount 0이지만 완전 재결성(W_GROUP4)
+		const e = { ...player("E", "M"), gameCount: 3 };
+		const groupHistory = [grp("A", "B", "C", "D")];
+		const ranked = recommendTeammates(confirmed, [d, e], ctx({ groupHistory }));
+		expect(ranked[0].player.id).toBe("E");
+		expect(ranked.find((r) => r.player.id === "D")!.breakdown!.group).toBe(
+			RECOMMEND_WEIGHTS.W_GROUP4,
 		);
 	});
 
@@ -151,7 +169,7 @@ describe("recommendTeammates", () => {
 		);
 		const r = ranked[0];
 		const b = r.breakdown!;
-		const sum = b.skill + b.pair + b.game + b.mixed + b.wait + (b.rotate ?? 0) + (b.gender ?? 0) + (b.playing ?? 0);
+		const sum = b.skill + b.group + b.game + b.mixed + b.wait + (b.rotate ?? 0) + (b.gender ?? 0) + (b.playing ?? 0);
 		expect(sum).toBeCloseTo(r.score, 5);
 	});
 
@@ -187,20 +205,50 @@ describe("recommendTeammates", () => {
 		expect(rm.score - ro.score).toBeCloseTo(2 * RECOMMEND_WEIGHTS.W_ROTATE, 5);
 	});
 
-	it("혼복 그룹에선 남자 후보 실력차는 무시되고(skill 0) 여자 후보만 실력으로 균형된다", () => {
-		// 여자 시드(등급6) + 양성 후보 → 혼복 목표. 남자는 실력 균형 대상 아님, 여자만 시드와 맞춘다.
+	it("혼복 그룹에서도 남자 후보 실력이 반영된다 — 여자만 균형 규칙 제거(2026-07)", () => {
+		// 여자 시드(등급6) + 남성 후보 → 혼복 목표여도 남녀 구분 없이 4명 전원 실력을 맞춘다.
 		const confirmed = [player("f1", "F", 6)];
-		const mHigh = player("mHigh", "M", 10);
-		const mLow = player("mLow", "M", 1);
-		const fClose = player("fClose", "F", 6); // 시드와 일치
-		const fFar = player("fFar", "F", 10);
-		const ranked = recommendTeammates(confirmed, [mHigh, mLow, fClose, fFar], ctx());
+		const mClose = player("mClose", "M", 6); // 시드와 일치
+		const mFar = player("mFar", "M", 10);
+		const ranked = recommendTeammates(confirmed, [mClose, mFar], ctx());
 		const get = (id: string) => ranked.find((r) => r.player.id === id)!;
-		// 남자: 혼복 목표라 실력 균형 대상 아님 → skill 기여 0(실력이 달라도 동일)
-		expect(get("mHigh").breakdown!.skill).toBe(0);
-		expect(get("mLow").breakdown!.skill).toBe(0);
-		// 여자: 시드(여자)와 실력 균형 → 가까운 여자가 먼 여자보다 skill 점수 낮음(우대)
-		expect(get("fClose").breakdown!.skill).toBeLessThan(get("fFar").breakdown!.skill);
+		expect(get("mClose").breakdown!.skill).toBe(0);
+		expect(get("mFar").breakdown!.skill).toBeCloseTo(4 * RECOMMEND_WEIGHTS.W_SKILL, 5);
+		expect(ranked[0].player.id).toBe("mClose");
+	});
+
+	it("skillDiff는 스프레드 증가분 — 밴드 안 후보는 동일(0), 밴드를 넓히는 후보만 벌점", () => {
+		// (구) 평균 거리 방식은 {2,8}(평균 5)에서 중간 등급 5를 항상 '최적합'으로 흡수했다.
+		const confirmed = [player("lo", "M", 2), player("hi", "M", 8)];
+		const mid = player("mid", "M", 5); // 밴드(2~8) 안 — 구 방식이라면 유일한 0점
+		const edge = player("edge", "M", 7); // 밴드 안
+		const widen = player("widen", "M", 10); // 밴드를 2만큼 넓힘
+		const ranked = recommendTeammates(confirmed, [mid, edge, widen], ctx());
+		const get = (id: string) => ranked.find((r) => r.player.id === id)!;
+		expect(get("mid").breakdown!.skill).toBe(0);
+		expect(get("edge").breakdown!.skill).toBe(0); // 중간 등급이 더 이상 특별 우대되지 않는다
+		expect(get("widen").breakdown!.skill).toBeCloseTo(2 * RECOMMEND_WEIGHTS.W_SKILL, 5);
+	});
+
+	it("밴드 하방 확장도 상방과 동일하게 벌점된다", () => {
+		const confirmed = [player("a", "M", 5), player("b", "M", 8)];
+		const below = player("below", "M", 1); // 밴드(5~8)를 아래로 4 넓힘
+		const inside = player("inside", "M", 6);
+		const ranked = recommendTeammates(confirmed, [below, inside], ctx());
+		const get = (id: string) => ranked.find((r) => r.player.id === id)!;
+		expect(get("below").breakdown!.skill).toBeCloseTo(4 * RECOMMEND_WEIGHTS.W_SKILL, 5);
+		expect(get("inside").breakdown!.skill).toBe(0);
+	});
+
+	it("미등급(skillScore 0)은 밴드에서 제외되고, 미등급 후보도 벌점받지 않는다", () => {
+		// 미등급 confirmed가 밴드 하한을 0으로 무너뜨리면 하방 판별이 통째로 꺼진다 — 제외 확인.
+		const confirmed = [player("rated", "M", 8), player("unrated", "M", 0)];
+		const low = player("low", "M", 1); // 등급 있는 confirmed({8}) 기준 7 확장
+		const unratedCand = player("unratedCand", "M", 0); // 정보 없음 → 벌점 없음
+		const ranked = recommendTeammates(confirmed, [low, unratedCand], ctx());
+		const get = (id: string) => ranked.find((r) => r.player.id === id)!;
+		expect(get("low").breakdown!.skill).toBeCloseTo(7 * RECOMMEND_WEIGHTS.W_SKILL, 5);
+		expect(get("unratedCand").breakdown!.skill).toBe(0);
 	});
 
 	it("같은 조건이면 더 오래 기다린(대기시간 긴) 후보가 우선된다(W_WAIT)", () => {
@@ -217,11 +265,14 @@ describe("recommendTeammates", () => {
 		expect(sw.score - lw.score).toBeCloseTo(25 * RECOMMEND_WEIGHTS.W_WAIT, 0);
 	});
 
-	it("선발 우선순위는 경기수 > 중복 회피 > 실력 (W_GAME > W_PAIR > W_SKILL)", () => {
-		// 이 서비스는 '같은 경기 할 4명'을 뽑는 것이고 2v2 실력 균형은 pairPlayers가 따로 잡으므로,
-		// 선발 가중치는 경기수가 최우선, 실력이 최하위여야 한다(회귀 가드).
-		expect(RECOMMEND_WEIGHTS.W_GAME).toBeGreaterThan(RECOMMEND_WEIGHTS.W_PAIR);
-		expect(RECOMMEND_WEIGHTS.W_PAIR).toBeGreaterThan(RECOMMEND_WEIGHTS.W_SKILL);
+	it("가중치 회귀 가드 — 2명 겹침 < 경기수 1판 < 3명 겹침, 4명 재결성 > 경기중 페널티", () => {
+		// 2명 유지+2명 교체는 경기수(1판=W_GAME)를 못 뒤집는 약한 회피여야 하고,
+		// 3명 유지+1명 교체는 1판을 넘어서며, 완전 재결성은 경기중 ghost를 데려오는 것(W_PLAYING)보다
+		// 비싸야 한다("재결성될 바엔 경기중에서 데려온다"). 실력은 경기수보다 약하게.
+		expect(RECOMMEND_WEIGHTS.W_GROUP2).toBeLessThan(RECOMMEND_WEIGHTS.W_GAME);
+		expect(RECOMMEND_WEIGHTS.W_GROUP3).toBeGreaterThan(RECOMMEND_WEIGHTS.W_GAME);
+		expect(RECOMMEND_WEIGHTS.W_GROUP4).toBeGreaterThan(RECOMMEND_WEIGHTS.W_PLAYING);
+		expect(RECOMMEND_WEIGHTS.W_GAME).toBeGreaterThan(RECOMMEND_WEIGHTS.W_SKILL);
 	});
 
 	it("경기수가 실력을 이긴다 — 더 뛴 '실력 쌍둥이'보다 덜 뛴 후보가 우선 선발된다", () => {
@@ -245,21 +296,44 @@ describe("autoFillTeammates — greedy 자동편성", () => {
 		expect(new Set(picks.map((p) => p.id)).size).toBe(2);
 	});
 
-	it("매 라운드 재평가한다 — 한 명을 넣으면 동반 이력에 따라 다음 추천이 달라진다", () => {
-		// 전원 동일 실력/남성 + gameCount=0 → 점수 = 동반 누적(pairHistory)×W_PAIR 만 작동.
+	it("매 라운드 재평가한다 — 한 명을 넣으면 그룹 겹침에 따라 다음 추천이 달라진다", () => {
+		// 전원 동일 실력/남성 + gameCount=0 → 점수 = 그룹 재결성 항만 작동.
 		const confirmed = [player("c1", "M")];
 		const a = player("a", "M");
 		const b = player("b", "M");
 		const x = player("x", "M");
-		// c1 단독 기준: a(0) < b(1) < x(2). a를 먼저 뽑음.
-		// a를 넣은 뒤: b는 a와 5회 동반(누적 6)으로 급락, x는 a와 0회(누적 2)라 x가 b보다 상위.
-		const pairHistory = { c1: { a: 0, b: 1, x: 2 }, a: { b: 5, x: 0 } };
-		const picks = autoFillTeammates(confirmed, [a, b, x], ctx({ pairHistory }), 2);
+		// c1 단독 기준: a(0) < b(c1과 1그룹 = W_GROUP2) < x(c1과 2그룹 = 2×W_GROUP2). a를 먼저 뽑음.
+		// a를 넣은 뒤: b는 a와의 과거 2그룹이 추가로 걸려(합 3×W_GROUP2) 급락, x(2×W_GROUP2)가 상위.
+		const groupHistory = [
+			grp("c1", "b", "m", "n"),
+			grp("a", "b", "p", "q"),
+			grp("a", "b", "p", "q"),
+			grp("c1", "x", "y", "w"),
+			grp("c1", "x", "u", "v"),
+		];
+		const picks = autoFillTeammates(confirmed, [a, b, x], ctx({ groupHistory }), 2);
 		expect(picks.map((p) => p.id)).toEqual(["a", "x"]);
 		// 단순 상위 N(재평가 없음)이라면 [a, b]가 됐을 것 — 재평가가 b를 밀어냈다.
-		const oneShotTop2 = recommendTeammates(confirmed, [a, b, x], ctx({ pairHistory }))
+		const oneShotTop2 = recommendTeammates(confirmed, [a, b, x], ctx({ groupHistory }))
 			.slice(0, 2)
 			.map((r) => r.player.id);
 		expect(oneShotTop2).toEqual(["a", "b"]);
+	});
+
+	it("maxPlaying — 경기중 후보는 상한(팀당 ghost 수)까지만 뽑히고, 기본값(0)은 대기 선수만", () => {
+		// 대기 w1·w2는 판수+재결성 벌점(20+12=32)으로, 경기중 p1·p2(0판, W_PLAYING=30)보다 순수 점수는 하위.
+		const confirmed = [player("A", "M"), player("B", "M")];
+		const w1 = { ...player("w1", "M"), gameCount: 2 };
+		const w2 = { ...player("w2", "M"), gameCount: 2 };
+		const p1 = player("p1", "M");
+		const p2 = player("p2", "M");
+		const groupHistory = [grp("A", "B", "w1", "z1"), grp("A", "B", "w2", "z2")];
+		const c = ctx({ groupHistory, playingIds: new Set(["p1", "p2"]) });
+		// 상한 1: 경기중은 1명(p1)까지만 — 2번째 슬롯은 순수 점수상 p2가 상위여도 대기(w1)로 채운다.
+		const capped = autoFillTeammates(confirmed, [w1, w2, p1, p2], c, 2, undefined, { maxPlaying: 1 });
+		expect(capped.map((p) => p.id)).toEqual(["p1", "w1"]);
+		// 기본(0): 경기중 제외 — 대기 선수만.
+		const waitingOnly = autoFillTeammates(confirmed, [w1, w2, p1, p2], c, 2);
+		expect(waitingOnly.map((p) => p.id)).toEqual(["w1", "w2"]);
 	});
 });

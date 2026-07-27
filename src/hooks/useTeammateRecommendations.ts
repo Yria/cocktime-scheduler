@@ -46,7 +46,7 @@ export function useTeammateRecommendations(
 
 	const sessionPlayers = useSessionStore((s) => s.sessionPlayers);
 	const courts = useSessionStore((s) => s.courts);
-	const pairHistory = useSessionStore((s) => s.pairHistory);
+	const groupHistory = useSessionStore((s) => s.groupHistory);
 	const lastGameType = useSessionStore((s) => s.lastGameType);
 	const cockCheckEnabled = useSessionStore((s) => s.cockCheckEnabled);
 
@@ -60,7 +60,7 @@ export function useTeammateRecommendations(
 		const data = buildRecommendData(
 			{ teamId, seedId, newTeam },
 			selectedIds,
-			{ drafts, reservations, magnets, sessionPlayers, courts, pairHistory, lastGameType, cockCheckEnabled },
+			{ drafts, reservations, magnets, sessionPlayers, courts, groupHistory, lastGameType, cockCheckEnabled },
 		);
 		if (!data) return empty;
 		const { confirmed, members, pool, ctx, playingIds } = data;
@@ -87,5 +87,5 @@ export function useTeammateRecommendations(
 			: recommendTeammates(confirmed, pool, ctx, { ...RECOMMEND_WEIGHTS, W_PLAYING: 0 });
 
 		return { ranked, members, playingIds };
-	}, [teamId, seedId, newTeam, selectedIds, drafts, reservations, magnets, sessionPlayers, courts, pairHistory, lastGameType, cockCheckEnabled]);
+	}, [teamId, seedId, newTeam, selectedIds, drafts, reservations, magnets, sessionPlayers, courts, groupHistory, lastGameType, cockCheckEnabled]);
 }

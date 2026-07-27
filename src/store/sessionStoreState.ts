@@ -5,7 +5,7 @@ import type {
 	GameType,
 	GeneratedTeam,
 	GroupSettings,
-	PairHistory,
+	GroupHistory,
 	SessionPlayer,
 } from "../types";
 import type { BoardDraftsPayload } from "../types/board";
@@ -26,7 +26,7 @@ export interface SessionState {
 	sessionPlayers: Map<string, SessionPlayer>;
 	waitingIds: string[];
 	restingIds: string[];
-	pairHistory: PairHistory;
+	groupHistory: GroupHistory;
 	lastGameType: Record<string, GameType>;
 	matchAssignCount: number;
 	/** 보드 drafts/예약 멤버십(공유). 스냅샷에서 복원해 boardStore가 적용. */
@@ -129,7 +129,7 @@ export const initialState = {
 	sessionPlayers: new Map<string, SessionPlayer>(),
 	waitingIds: [] as string[],
 	restingIds: [] as string[],
-	pairHistory: {} as PairHistory,
+	groupHistory: [] as GroupHistory,
 	lastGameType: {} as Record<string, GameType>,
 	matchAssignCount: 0,
 	boardDrafts: { teams: [], reservations: [] } as BoardDraftsPayload,

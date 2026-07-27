@@ -1,10 +1,9 @@
-import type { Court, GameType, Gender, PairHistory, PlayerSkills, SessionPlayer } from "../../types";
-import { addPair } from "../pairHistory";
+import type { Court, GameType, Gender, GroupHistory, PlayerSkills, SessionPlayer } from "../../types";
 import { normalizeSkills } from "./members";
 import type {
 	ClientSessionState,
+	CompletedMatchTeamRow,
 	MatchRow,
-	PairHistoryRow,
 	SessionPlayerRow,
 	SessionSnapshot,
 } from "./types";
@@ -54,12 +53,29 @@ export function rowToSessionPlayer(row: SessionPlayerRow): SessionPlayer {
 	};
 }
 
-function buildPairHistory(rows: PairHistoryRow[]): PairHistory {
-	const history: PairHistory = {};
-	for (const row of rows) {
-		addPair(history, row.player_a, row.player_b, row.count);
-	}
-	return history;
+/** 완료 매치 row들 → 그룹 이력(경기당 {matchId, 4인 id}). 재결성 회피 벌점의 원천 — 초기 스냅샷과 resync가 공유. */
+export function matchRowsToGroupHistory(completed: CompletedMatchTeamRow[]): GroupHistory {
+	return completed.map((m) => ({
+		matchId: m.id,
+		// 선수 삭제(FK ON DELETE SET NULL)로 빠진 자리는 제외 — 남은 멤버끼리의 겹침만 벌점에 반영.
+		members: [m.team_a_p1, m.team_a_p2, m.team_b_p1, m.team_b_p2].filter(
+			(id): id is string => id !== null,
+		),
+	}));
+}
+
+/**
+ * resync 병합 — 서버(권위) 목록 위에, 그 스냅샷 시점 이후 로컬에 선반영된 항목(완료 RPC 직후
+ * broadcast append)을 matchId 기준으로 보존한다. 길이 비교가 아니라 id 집합 비교라
+ * "resync 교체 직후 같은 매치의 broadcast가 도착해 중복 append → 이후 catch-up 영구 무력화"
+ * 레이스가 없다(append 쪽도 matchId dedup — handleMatchCompleted). 서버에 새 항목이 없으면
+ * 로컬 참조를 그대로 반환해 불필요한 재렌더를 막는다.
+ */
+export function mergeGroupHistory(local: GroupHistory, server: GroupHistory): GroupHistory {
+	const localIds = new Set(local.map((g) => g.matchId));
+	if (!server.some((g) => !localIds.has(g.matchId))) return local;
+	const serverIds = new Set(server.map((g) => g.matchId));
+	return [...server, ...local.filter((g) => !serverIds.has(g.matchId))];
 }
 
 /**
@@ -91,15 +107,22 @@ export function snapshotToClientState(
 ): ClientSessionState {
 	const courtCount = snapshot.session.court_count;
 
-	// Courts — match.teamA/B는 session_players.id 참조
+	// Courts — match.teamA/B는 session_players.id 참조 (진행중 매치만)
 	const courts = matchRowsToCourts(courtCount, snapshot.matches);
 
-	// PairHistory
-	const pairHistory = buildPairHistory(snapshot.pairHistory);
+	// 그룹 이력 — 완료 매치의 4인 묶음(재결성 회피 원천). 쌍 단위 pair_history 사용은 폐기(2026-07).
+	const groupHistory = matchRowsToGroupHistory(snapshot.completedMatches);
 
-	// 직전 게임 타입 — 스냅샷은 진행중 경기만 포함하므로, 진행중 경기 참가자만 seed한다.
-	// (완료 후 자유로 돌아온 선수는 세션 도중 match_completed 브로드캐스트로 갱신됨)
+	// 직전 게임 타입 — 완료 매치(ended_at 오름차순, 나중 경기가 덮어씀) 위에 진행중 매치를 덮어 seed.
+	// (구) 진행중만 seed해서 리로드 직후 대기 선수들의 로테이션 항이 죽는 갭이 있었다.
 	const lastGameType: Record<string, GameType> = {};
+	for (const m of [...snapshot.completedMatches].sort((a, b) =>
+		(a.ended_at ?? "").localeCompare(b.ended_at ?? ""),
+	)) {
+		for (const id of [m.team_a_p1, m.team_a_p2, m.team_b_p1, m.team_b_p2]) {
+			if (id) lastGameType[id] = m.game_type;
+		}
+	}
 	for (const m of snapshot.matches) {
 		for (const id of [m.team_a_p1, m.team_a_p2, m.team_b_p1, m.team_b_p2]) {
 			lastGameType[id] = m.game_type;
@@ -117,5 +140,5 @@ export function snapshotToClientState(
 	const boardDrafts = snapshot.session.board_drafts ?? { teams: [], reservations: [] };
 	const boardDraftsVersion = snapshot.session.board_drafts_version ?? 0;
 
-	return { courts, players: snapshot.players, waitingIds, restingIds, pairHistory, matchAssignCount: snapshot.session.match_assign_count, lastGameType, boardDrafts, boardDraftsVersion, matchStateVersion: snapshot.session.match_state_version ?? 0, cockCheckEnabled: snapshot.session.cock_check_enabled ?? true };
+	return { courts, players: snapshot.players, waitingIds, restingIds, groupHistory, matchAssignCount: snapshot.session.match_assign_count, lastGameType, boardDrafts, boardDraftsVersion, matchStateVersion: snapshot.session.match_state_version ?? 0, cockCheckEnabled: snapshot.session.cock_check_enabled ?? true };
 }

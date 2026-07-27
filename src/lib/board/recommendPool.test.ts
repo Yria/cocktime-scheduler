@@ -47,7 +47,7 @@ function makeInputs(opts: {
 		drafts: new Map((opts.drafts ?? []).map((d) => [d.id, d])),
 		reservations: new Map((opts.reservations ?? []).map((r) => [r.id, r])),
 		courts: opts.courts ?? [],
-		pairHistory: {},
+		groupHistory: [],
 		lastGameType: {},
 		cockCheckEnabled: opts.cockCheckEnabled ?? false,
 	};

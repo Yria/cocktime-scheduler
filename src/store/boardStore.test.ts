@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import type { SessionPlayer, Court, PairHistory, GameType } from "../types";
+import type { SessionPlayer, Court, GroupHistory, GameType } from "../types";
 import type { DraftTeam, MagnetPosition, Reservation } from "../types/board";
 import { DEFAULT_VIEWPORT } from "../lib/board/geometry";
 
@@ -10,7 +10,7 @@ const h = vi.hoisted(() => ({
 	courts: [] as Court[],
 	players: new Map<string, SessionPlayer>(),
 	singleWomanIds: [] as string[],
-	pairHistory: {} as PairHistory,
+	groupHistory: [] as GroupHistory,
 	lastGameType: {} as Record<string, GameType>,
 	matchAssignCount: 0,
 }));
@@ -22,7 +22,7 @@ vi.mock("./sessionStore", () => ({
 			sessionPlayers: h.players,
 			handleAssign: h.handleAssign,
 			handleComplete: h.handleComplete,
-			pairHistory: h.pairHistory,
+			groupHistory: h.groupHistory,
 			lastGameType: h.lastGameType,
 			matchAssignCount: h.matchAssignCount,
 			isEditor: true, // 편집 락: 테스트는 편집자 관점에서 동작 검증
@@ -83,7 +83,7 @@ beforeEach(() => {
 	h.courts = [];
 	h.players = new Map();
 	h.singleWomanIds = [];
-	h.pairHistory = {};
+	h.groupHistory = [];
 	h.lastGameType = {};
 	h.matchAssignCount = 0;
 	useBoardStore.getState().reset();
@@ -588,20 +588,41 @@ describe("autoFillTeam — 구성 중 팀의 빈 슬롯을 추천도순으로 �
 		expect(reservations.size).toBe(0);
 	});
 
-	it("경기중 선수는 제외하고 대기 선수만 채운다(부족하면 빈 슬롯 유지)", () => {
-		h.players = new Map(["a", "b", "c", "d"].map((id) => [id, player(id)]));
-		// d는 코트에서 경기중 → 자동편성 후보에서 제외
-		h.courts = [{ id: 1, match: { teamA: ["d", "x"], teamB: ["y", "z"] } } as unknown as Court];
+	it("경기중 선수도 팀당 1명까지 ghost 예약으로 채운다(2026-07 개편)", () => {
+		h.players = new Map(["a", "b", "c", "d", "e"].map((id) => [id, player(id)]));
+		// d·e는 코트에서 경기중 → 대기(c)로 먼저 채우고, 남은 1슬롯은 경기중 1명만 ghost 예약(상한 1).
+		h.courts = [{ id: 1, match: { teamA: ["d", "e"], teamB: ["y", "z"] } } as unknown as Court];
 		seed({
-			magnets: [mag("a", "T"), mag("b", "T"), mag("c", null), mag("d", null)],
+			magnets: [mag("a", "T"), mag("b", "T"), mag("c", null), mag("d", null), mag("e", null)],
 			drafts: [draft("T", ["a", "b"])],
 		});
 		useBoardStore.getState().autoFillTeam("T");
 		const { drafts, reservations } = useBoardStore.getState();
+		const team = drafts.get("T")!;
 		const ids = teamMembers("T", drafts, reservations).map((m) => m.playerId);
-		// 대기 가능은 c 한 명뿐 → 3명, d는 미포함
-		expect(ids).toEqual(["a", "b", "c"]);
-		expect(ids).not.toContain("d");
+		expect(ids).toHaveLength(4);
+		expect(ids.slice(0, 3)).toEqual(["a", "b", "c"]);
+		// 경기중에서 정확히 1명만, anchor가 아닌 ghost 예약으로 합류
+		const ghost = ids[3];
+		expect(["d", "e"]).toContain(ghost);
+		expect(team.anchorMemberIds).toEqual(["a", "b", "c"]);
+		expect([...reservations.values()].filter((r) => r.teamId === "T")).toHaveLength(1);
+	});
+
+	it("이미 ghost가 있는 팀에 자동편성을 다시 돌려도 ghost가 2명이 되지 않는다(팀 단위 상한)", () => {
+		h.players = new Map(["a", "b", "c", "d", "e"].map((id) => [id, player(id)]));
+		// d·e 경기중. 팀 T = anchor[a,b] + 기존 ghost 예약 d(3명) → 남은 1슬롯.
+		h.courts = [{ id: 1, match: { teamA: ["d", "e"], teamB: ["y", "z"] } } as unknown as Court];
+		seed({
+			magnets: [mag("a", "T"), mag("b", "T"), mag("c", null), mag("d", null), mag("e", null)],
+			drafts: [draft("T", ["a", "b"])],
+			reservations: [{ id: "r1", playerId: "d", teamId: "T", createdAt: 1 }],
+		});
+		useBoardStore.getState().autoFillTeam("T");
+		const { drafts, reservations } = useBoardStore.getState();
+		// 상한 1이 이미 소진(d) → 마지막 슬롯은 경기중 e가 아니라 대기 c로 채워진다.
+		expect(drafts.get("T")!.anchorMemberIds).toEqual(["a", "b", "c"]);
+		expect([...reservations.values()].filter((r) => r.teamId === "T").map((r) => r.playerId)).toEqual(["d"]);
 	});
 
 	it("추천 가능한 대기 선수가 없으면 멤버를 바꾸지 않는다", () => {

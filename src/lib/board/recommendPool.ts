@@ -6,9 +6,9 @@
  * - React/스토어 의존 없음 — 훅(useTeammateRecommendations)과 store 액션(autoFillTeam)이 공유한다.
  *
  * pool = 보드 가용 선수 − 확정 멤버 − 휴식(resting) − 다른 보드 팀에 묶인 선수
- *        (옵션 excludePlaying=true면 경기중 선수도 제외 — 자동편성은 대기 선수만으로 채운다.)
+ *        (옵션 excludePlaying=true면 경기중 선수 제외, excludeReserved=true면 타 팀 ghost 예약자 제외.)
  */
-import type { Court, GameType, PairHistory, SessionPlayer } from "../../types";
+import type { Court, GameType, GroupHistory, SessionPlayer } from "../../types";
 import type { DraftTeam, MagnetPosition, Reservation } from "../../types/board";
 import { playingIdsFromCourts, teamMembers } from "./membership";
 import type { RecommendContext } from "../teamSelection";
@@ -19,7 +19,7 @@ export interface RecommendPoolInputs {
 	magnets: ReadonlyMap<string, MagnetPosition>;
 	sessionPlayers: ReadonlyMap<string, SessionPlayer>;
 	courts: Court[];
-	pairHistory: PairHistory;
+	groupHistory: GroupHistory;
 	lastGameType: Record<string, GameType>;
 	/** 콕 체크 on이면 cockChecked=false 선수는 매칭 대기 아님 → 풀에서 제외. */
 	cockCheckEnabled: boolean;
@@ -49,15 +49,17 @@ export interface RecommendPoolTarget {
  * 추천 입력(confirmed/members/pool/ctx)을 만든다. 대상이 유효하지 않으면 null.
  *
  * @param extraConfirmedIds 진행 중 다중선택분(다이얼로그). 확정 멤버처럼 점수 재계산 + 풀에서 제외.
- * @param options.excludePlaying true면 경기중 선수를 풀에서 제외(자동편성용).
+ * @param options.excludePlaying true면 경기중 선수를 풀에서 제외.
+ * @param options.excludeReserved true면 다른 팀에 ghost 예약된 선수를 풀에서 제외(자동편성용 —
+ *   같은 선수를 두 팀이 동시에 예약하는 이중 booking 방지. 수동 다이얼로그는 사용자 판단에 맡겨 미적용).
  */
 export function buildRecommendData(
 	target: RecommendPoolTarget,
 	extraConfirmedIds: string[],
 	inputs: RecommendPoolInputs,
-	options: { excludePlaying?: boolean } = {},
+	options: { excludePlaying?: boolean; excludeReserved?: boolean } = {},
 ): RecommendData | null {
-	const { drafts, reservations, magnets, sessionPlayers, courts, pairHistory, lastGameType, cockCheckEnabled } = inputs;
+	const { drafts, reservations, magnets, sessionPlayers, courts, groupHistory, lastGameType, cockCheckEnabled } = inputs;
 	const teamId = target.teamId ?? null;
 	const seedId = target.seedId ?? null;
 
@@ -101,6 +103,17 @@ export function buildRecommendData(
 		if (cockCheckEnabled && !p.cockChecked) continue;
 		// 자동편성: 경기중 선수 제외(대기 선수만으로 채운다)
 		if (options.excludePlaying && playingIds.has(p.id)) continue;
+		// 자동편성: 다른 팀에 이미 ghost 예약된 선수 제외(이중 booking 방지). 이 팀 예약분은 memberIds로 이미 확정 취급.
+		if (options.excludeReserved) {
+			let reservedElsewhere = false;
+			for (const r of reservations.values()) {
+				if (r.playerId === p.id && r.teamId !== teamId) {
+					reservedElsewhere = true;
+					break;
+				}
+			}
+			if (reservedElsewhere) continue;
+		}
 		// 보드에 자석이 없는 선수는 제외 — 멤버십 commit은 자석을 전제로 한다
 		// (attachAnchor가 자석 없으면 no-op이라, 풀에 두면 picks 수와 실제 멤버 수가 어긋난다).
 		const mag = magnets.get(p.id);
@@ -111,7 +124,7 @@ export function buildRecommendData(
 	}
 
 	const ctx: RecommendContext = {
-		pairHistory,
+		groupHistory,
 		lastGameType,
 		playingIds,
 	};

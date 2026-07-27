@@ -2,7 +2,7 @@ import type {
 	Court,
 	GameType,
 	Gender,
-	PairHistory,
+	GroupHistory,
 	PlayerSkills,
 	PlayerStatus,
 	SessionPlayer,
@@ -203,18 +203,28 @@ export interface MatchRow {
 	assigned_by: string | null;
 }
 
-export interface PairHistoryRow {
-	session_id: number;
-	player_a: string;
-	player_b: string;
-	count: number;
+/** 완료 매치의 그룹 이력 파생용 최소 컬럼. 선수 삭제 시 team_* 는 NULL(FK ON DELETE SET NULL). */
+export interface CompletedMatchTeamRow {
+	id: string;
+	team_a_p1: string | null;
+	team_a_p2: string | null;
+	team_b_p1: string | null;
+	team_b_p2: string | null;
+	game_type: GameType;
+	ended_at: string | null;
 }
+
+/** 완료 매치 조회 공용 select 컬럼 — player_snapshot 등 무거운 미사용 컬럼 제외. */
+export const COMPLETED_MATCH_TEAM_COLUMNS =
+	"id, team_a_p1, team_a_p2, team_b_p1, team_b_p2, game_type, ended_at";
 
 export interface SessionSnapshot {
 	session: SessionRow;
 	players: SessionPlayer[];
+	/** 진행중(playing) 매치 — 코트 재구성용. */
 	matches: MatchRow[];
-	pairHistory: PairHistoryRow[];
+	/** 완료 매치(최소 컬럼) — 그룹 이력·lastGameType 시드용. */
+	completedMatches: CompletedMatchTeamRow[];
 }
 
 export interface ClientSessionState {
@@ -222,7 +232,7 @@ export interface ClientSessionState {
 	players: SessionPlayer[];
 	waitingIds: string[];
 	restingIds: string[];
-	pairHistory: PairHistory;
+	groupHistory: GroupHistory;
 	matchAssignCount: number;
 	/** session_player.id → 직전(또는 진행중) 경기의 게임 타입. 추천 로테이션 점수용. */
 	lastGameType: Record<string, import("../../types").GameType>;

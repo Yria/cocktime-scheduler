@@ -2,7 +2,8 @@ import type { BoardDraftsPayload } from "../../types/board";
 import type { SessionPlayer } from "../../types";
 import { supabase } from "./client";
 import { rowToSessionPlayer } from "./transformers";
-import type { MatchRow, SessionPlayerRow } from "./types";
+import type { CompletedMatchTeamRow, MatchRow, SessionPlayerRow } from "./types";
+import { COMPLETED_MATCH_TEAM_COLUMNS } from "./types";
 
 // ── 보드 drafts 저장 ──────────────────────────────────
 
@@ -77,6 +78,25 @@ export async function dbLoadMatches(sessionId: number): Promise<MatchRow[]> {
 		return [];
 	}
 	return (data ?? []) as MatchRow[];
+}
+
+/**
+ * 완료(completed) 매치의 4인 구성만 권위 재조회한다 — 그룹 이력(재결성 회피) resync용.
+ * match_completed broadcast 유실·편집권 이양 후에도 추천이 최신 이력을 보도록 resyncFromServer가 호출.
+ */
+export async function dbLoadCompletedMatchTeams(
+	sessionId: number,
+): Promise<CompletedMatchTeamRow[]> {
+	const { data, error } = await supabase
+		.from("matches")
+		.select(COMPLETED_MATCH_TEAM_COLUMNS)
+		.eq("session_id", sessionId)
+		.eq("status", "completed");
+	if (error) {
+		console.error("dbLoadCompletedMatchTeams:", error);
+		return [];
+	}
+	return (data ?? []) as unknown as CompletedMatchTeamRow[];
 }
 
 /** board_claim_editor/handoff RPC 결과(보유자 1행). 0행이면 null(획득/양도 실패). */

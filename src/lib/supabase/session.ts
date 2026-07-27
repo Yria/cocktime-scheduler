@@ -9,12 +9,13 @@ import { supabase } from "./client";
 import { diffSessionPlayers } from "./sessionSync";
 import { rowToSessionPlayer } from "./transformers";
 import type {
+	CompletedMatchTeamRow,
 	MatchRow,
-	PairHistoryRow,
 	SessionPlayerRow,
 	SessionRow,
 	SessionSnapshot,
 } from "./types";
+import { COMPLETED_MATCH_TEAM_COLUMNS } from "./types";
 
 export async function fetchActiveSession(): Promise<SessionRow | null> {
 	const { data } = await supabase
@@ -30,22 +31,27 @@ export async function fetchActiveSession(): Promise<SessionRow | null> {
 export async function fetchSessionSnapshot(
 	sessionId: number,
 ): Promise<SessionSnapshot | null> {
-	const [sessionRes, playersRes, matchesRes, pairHistRes] =
-		await Promise.all([
-			supabase.from("sessions").select("*").eq("id", sessionId).single(),
-			supabase
-				.from("session_players")
-				.select("*")
-				.eq("session_id", sessionId)
-				.order("game_count", { ascending: true })
-				.order("wait_since", { ascending: true }),
-			supabase
-				.from("matches")
-				.select("*")
-				.eq("session_id", sessionId)
-				.eq("status", "playing"),
-			supabase.from("pair_history").select("*").eq("session_id", sessionId),
-		]);
+	const [sessionRes, playersRes, matchesRes, completedRes] = await Promise.all([
+		supabase.from("sessions").select("*").eq("id", sessionId).single(),
+		supabase
+			.from("session_players")
+			.select("*")
+			.eq("session_id", sessionId)
+			.order("game_count", { ascending: true })
+			.order("wait_since", { ascending: true }),
+		supabase
+			.from("matches")
+			.select("*")
+			.eq("session_id", sessionId)
+			.eq("status", "playing"),
+		// 완료 매치는 그룹 이력(재결성 회피)·lastGameType 시드용 — 최소 컬럼만(세션 후반 ~70판의
+		// player_snapshot jsonb 전송 방지). (구) pair_history 조회는 그룹 이력 개편(2026-07)으로 제거.
+		supabase
+			.from("matches")
+			.select(COMPLETED_MATCH_TEAM_COLUMNS)
+			.eq("session_id", sessionId)
+			.eq("status", "completed"),
+	]);
 
 	if (!sessionRes.data) return null;
 
@@ -55,7 +61,7 @@ export async function fetchSessionSnapshot(
 			rowToSessionPlayer,
 		),
 		matches: (matchesRes.data ?? []) as MatchRow[],
-		pairHistory: (pairHistRes.data ?? []) as PairHistoryRow[],
+		completedMatches: (completedRes.data ?? []) as unknown as CompletedMatchTeamRow[],
 	};
 }
 
