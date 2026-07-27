@@ -693,3 +693,14 @@ b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
 - 수동 상급자전 2v2 균형은 interDiff ~2.0(자동 1.1) — 황서진(10) 단독 아웃라이어의 구조적 한계(10+6 vs 7+7이 최선).
 
 ---
+
+## #57
+
+**Prompt**: 남은 정리후보도 진행해 그리고 내가 나중에 실로그로 분석하라할때 어떻게하는지도 문서로 정리하고
+
+**Answer**: DB pair_history 정리와 실로그 분석 런북 문서화를 완료했습니다.
+- 마이그레이션 20260727090000_drop_pair_history: complete_match(20260624020000 정의)와 complete_session_playing_matches(20260726090000 정의)에서 pair_history upsert 블록·전용 변수만 제거하고 테이블 DROP. 백필 함수의 search_path=''+public. 한정을 문자 그대로 보존(2026-07-26 sync 사고 재발 방지). 검증 에이전트가 토큰 단위 diff·의존 객체 전수(RLS/FK/트리거/publication/edge functions)·락 상호작용을 정적 검증해 apply_ok 판정 후, 활성 세션 없음을 확인하고 supabase db push 적용. REST로 테이블 소멸(PGRST205)과 matches 정상 조회 확인.
+- docs/MATCH_LOG_ANALYSIS.md 신규: 실로그 분석 표준 절차 — REST 접근법(스냅샷 등급 사용 원칙 포함), 표준 지표 정의(overlap/재결성·2인 겹침 개인 지표·형평·스프레드·tier hard·노출분포·대기), 시뮬 비교 방법론(실함수 import·시드 몽키패치·가상클록), 감사에서 실제 적발됐던 함정 체크리스트 7종(로스터 셔플·우측절단/min 금지·표본수·유의성·조건부 귀무기준 등), 세션 108 기준점 표.
+- 관련 문서 동기화: TEAM_GENERATION_RULES §4·부록, database-design.md(테이블 삭제 표기·플로우·주요쿼리·RLS), DATABASE.md(RPC 표·플로우·제거 테이블 목록).
+
+---

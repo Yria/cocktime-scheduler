@@ -18,7 +18,7 @@
 | `sessions` | 세션 기본 정보 |
 | `session_players` | 세션 참여자 + 실시간 상태 |
 | `matches` | 코트별 경기 기록 |
-| `pair_history` | 세션 내 동반 이력 |
+| ~~`pair_history`~~ | 세션 내 동반 이력(쌍 단위) — **삭제됨**(2026-07-27, 완료 `matches` 파생으로 대체) |
 
 ### 제거된 객체 (deprecated — 2026-06 리팩토링)
 
@@ -138,23 +138,11 @@ CREATE INDEX idx_matches_session_status ON matches(session_id, status);
 
 ---
 
-### pair_history
+### pair_history — 삭제됨 (2026-07-27)
 
-세션 내 동반 이력(쌍 단위). **2026-07부터 클라이언트 미사용(deprecated)** — 재결성 회피가 그룹 겹침 단위(`groupHistory`, 완료 `matches` 파생)로 개편되어 이 테이블을 더 이상 조회하지 않는다. 서버 누적은 유지 중이며 추후 정리(cleanup) 후보.
-경기 완료 시 같은 경기 4명 그룹의 **모든 쌍 C(4,2)=6쌍**을 upsert +1 한다 (RPC `complete_match` — `20260611120000`에서 팀 2쌍 → 그룹 6쌍으로 전환, 최신 `20260624020000` 동일. 세션 종료 백필 `complete_session_playing_matches`도 동일 규칙).
+세션 내 동반 이력(쌍 단위)이었으나 **테이블·서버 누적 모두 제거됨**(`20260727090000_drop_pair_history`). 재결성 회피가 그룹 겹침 단위(`groupHistory`)로 개편되어(2026-07) 클라이언트가 조회를 중단했고, 이어 `complete_match`·`complete_session_playing_matches`의 6쌍 upsert와 테이블 자체를 삭제했다.
 
-```sql
-CREATE TABLE pair_history (
-  session_id  BIGINT  NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  player_a    UUID    NOT NULL REFERENCES session_players(id),
-  player_b    UUID    NOT NULL REFERENCES session_players(id),
-  count       INT     NOT NULL DEFAULT 1,
-  PRIMARY KEY (session_id, player_a, player_b)
-);
-```
-
-> 항상 `player_a < player_b` (UUID 문자열 기준) 순서로 저장하여 역방향 중복 방지.
-> 클라이언트는 이 테이블 대신 완료 `matches`의 4인 구성(`team_a_p1..team_b_p2`)을 그룹 이력으로 파생해 쓴다(`docs/TEAM_GENERATION_RULES.md` §4).
+> 동반 이력은 완료 `matches`의 4인 구성(`team_a_p1..team_b_p2`)에서 파생한다(`docs/TEAM_GENERATION_RULES.md` §4).
 
 ---
 
@@ -183,8 +171,7 @@ session_players UPDATE  game_count++                        WHERE id IN [4명]
 session_players UPDATE  mixed_count++                       WHERE 혼복(game_type='혼복') 남자만
 session_players UPDATE  status='waiting', wait_since=NOW()
 
-pair_history UPSERT  (4명 그룹 6쌍 전체)   -- 서버 누적만 유지, 클라이언트 미사용(2026-07 deprecated)
-  ON CONFLICT DO UPDATE SET count = count + 1
+-- (제거됨 2026-07-27) pair_history UPSERT — 동반 이력은 완료 matches 파생으로 대체
 
 Broadcast: { event: 'match_completed', payload: { matchId, courtId } }
 ```
@@ -251,7 +238,6 @@ CREATE POLICY sessions_admin_write        ON sessions        FOR ALL    TO authe
 CREATE POLICY session_players_select      ON session_players FOR SELECT TO authenticated USING (true);
 CREATE POLICY session_players_admin_write ON session_players FOR ALL    TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
 
--- matches / pair_history : 아직 anon_all (후속 전환 대상 — board write 는 DEFINER RPC 경유).
-CREATE POLICY "anon_all" ON matches         FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "anon_all" ON pair_history    FOR ALL USING (true) WITH CHECK (true);
+-- matches: anon_all 은 20260715090000 에서 제거(authenticated select + admin write, board write 는 DEFINER RPC 경유).
+-- pair_history: 테이블 자체가 20260727090000 에서 삭제됨.
 ```

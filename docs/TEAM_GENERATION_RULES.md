@@ -155,7 +155,7 @@ wait_since  = now()                                  -- 대기시간(W_WAIT) 누
 - 이력은 **세션 단위**다(완료 매치가 세션 소속). 새 세션이 시작되면 빈 목록에서 다시 쌓인다.
 - (기존의 별도 지표 `lastCoPlayers`·가중치 `W_COPLYR` 는 제거됨.)
 
-> DB 측 `pair_history` 테이블과 `complete_match` RPC 의 6쌍 upsert 는 **서버에 그대로 남아 있지만 클라이언트는 더 이상 조회하지 않는다** — 점수 계산은 완료 `matches` 파생 그룹 이력만 쓴다. 서버 쪽 누적은 추후 정리(cleanup) 후보.
+> DB 측 `pair_history` 테이블과 서버 누적(`complete_match`·세션종료 백필의 6쌍 upsert)은 **제거 완료**(마이그레이션 `20260727090000_drop_pair_history`) — 점수 계산은 완료 `matches` 파생 그룹 이력만 쓴다.
 
 ---
 
@@ -332,7 +332,7 @@ autoFillTeammates(confirmed, pool, ctx, count, weights?, { maxPlaying }):
 
 - **미도착(pending) 선수 제외**: `pending` 상태 자체가 제거됨. 세션 시작 시 전원 `waiting`.
 - **혼복 "여자만" 실력 균형 (성별 인식 skillDiff)**: 혼복 지향 그룹에서 남자 후보 `skillDiff=0`·여자 후보만 확정 여성 평균과 균형을 보던 규칙. 2026-07 제거 — 혼복에서도 전원 실력을 본다(§2 skillDiff 참조). 같은 개편에서 skillDiff 자체도 평균 거리 → 스프레드 증가분으로 교체.
-- **쌍 단위 동반 회피 (`pairHistory`·`W_PAIR`·`Σc²`)**: 두 선수의 누적 동반 횟수를 상대별 제곱해 벌점하던 규칙과 `pair_history` 테이블 클라이언트 조회, `recordTeam`(`src/lib/pairHistory.ts`). 2026-07 제거 — "A·B가 새 멤버 둘과 만나는 것"까지 벌점하는 과잉이라, 그룹 겹침 단위(`W_GROUP2/3/4`, §2)로 대체. DB 측 `pair_history` 누적은 남아 있으나 미사용(cleanup 후보).
+- **쌍 단위 동반 회피 (`pairHistory`·`W_PAIR`·`Σc²`)**: 두 선수의 누적 동반 횟수를 상대별 제곱해 벌점하던 규칙과 `pair_history` 테이블 클라이언트 조회, `recordTeam`(`src/lib/pairHistory.ts`). 2026-07 제거 — 조합의 정체성을 잃는 문제로 그룹 겹침 단위(`W_GROUP2/3/4`, §2)로 대체. DB `pair_history` 테이블·서버 누적도 `20260727090000`에서 삭제 완료.
 - **자동편성 대기 선수 전용 (`excludePlaying:true`)**: 자동편성이 경기중 선수를 아예 제외하던 규칙. 2026-07 제거 — 팀당 1명까지 ghost 허용(§8).
 - **혼복/빡겜 우선배치 강제(`force_mixed`/`force_hard_game`)**: 토글 액션·플래그 제거됨. 추천은 `W_ROTATE` 로 게임 타입을 자연 분산.
 - **selectFour / 대기열 선발 우선순위 단계**: 대기열에서 한 번에 4명을 자동 선발하던 로직 제거. 보드에서 수동 구성 + `recommendTeammates` 추천이 기본이며, **팀 단위 점진적 자동편성은 §8 `autoFillTeammates`(추천 재평가 greedy)로 재도입**되었다(과거의 bulk selectFour와 다름).
