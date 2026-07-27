@@ -36,7 +36,7 @@
 - 이월은 상태(status)를 바꾸지 않는다(그대로 unpaid/partial). 정모/현황·내 회비 모두 "이월 나간 건 제외, 이월 들어온 건 포함"으로 판정.
 
 ### 1.4 핵심 테이블
-- **`dues_charges`** — 부과. `kind(monthly_fee|court_fee)`, `member_id`, `period_ym` XOR `session_id`, `amount_due`, `amount_paid`(트리거 캐시), `status(unpaid|partial|paid|overpaid|waived|void)`, `payer_hint`(게스트 대납자), `deferred_to`. 유니크: (member,period_ym) / (member,session_id).
+- **`dues_charges`** — 부과. `kind(monthly_fee|court_fee)`, `member_id`, `period_ym` XOR `session_id`, `amount_due`, `amount_paid`(트리거 캐시), `status(unpaid|partial|paid|overpaid|waived|void)`, `payer_hint`(게스트 대납자), `deferred_to`, **`is_day_cancel`**(정액 당일 확정취소로 부과된 court_fee 표식 — 현황 별도 노출·부과삭제 대상), **`voided_by`/`voided_at`**(부과삭제=void 한 운영진·시각, 감사·표시). 유니크: (member,period_ym) / (member,session_id).
 - **`dues_allocations`** — 입금↔부과 배분(**가역 레코드**: 취소/재매칭 안전). `bank_tx_id`, `charge_id`(nullable), `member_id`(납부 주체), `amount`, `kind`. 트리거가 charge.amount_paid·status와 bank_tx.status를 유지. **waived/void엔 배분 금지(가드).**
 - **`bank_transactions`** — 은행 거래. `direction(in|out)`, `amount`(양수), `balance_after`, `status(unmatched|proposed|partial|matched)`, `category_id`(수지 분류), `session_id`(대관 지출·비회원 대관 수입 귀속), `refund_of_tx_id`(환불 연결), **`paid_by`(비부과 카테고리 납부의 납부 회원 — 내 납부 이력용)**, `dedup_key`(멱등).
 - **`txn_categories`** — 수지 분류(콕공구·이자·정모·기타 등). 관리자 추가/삭제. (코트대관은 카테고리가 아니라 `session_id`.)
@@ -59,7 +59,8 @@
 ### 3.1 정모/현황 (`/dues/:ym`)
 - 목적: **정산 단위(세션)가 잘 마감됐는지** + **누가 무엇을 안 냈는지**.
 - **회비 진행**: 원 월(period_ym=ym) 기준 진행률. **분모 = 이번 달 실제 부과된 회비 수(납부+미납)** — roster(활성·비운영진·비게스트·비명예)에 있어도 이번 달 부과가 없는 신규 유예 회원(§4)이나 `waived`/`void` 건은 애초에 낼 회비가 아니므로 분모에서 뺀다(그래서 `납부 65/81`처럼 명단 총원과 어긋나지 않고 `미납 N`과 정합). 이월된 건(§1.3)은 원 월에서 해결로 카운트, 이월 대상 월에 별도 노출([정산]/[취소]).
-- **세션별 정산 상태**: 세션별 수입(회원 납부+비회원)·지출(대관료) 순액 + 마감/미완. 대관비는 실제 낼 사람(대납 게스트 포함, `payer_hint ?? member`) 기준 합산. **수납 진행 행을 펼치면** — 미납자가 남아 있으면 **미납자만**(취사선택·안내 발송, 완납자 숨김), **전원 완납(마감)이면 납부자 명단**(낸 사람·낸 금액 — 누가 냈는지 열람).
+- **세션별 정산 상태**: 세션별 수입(회원 납부+비회원)·지출(대관료) 순액 + 마감/미완. 대관비는 실제 낼 사람(대납 게스트 포함, `payer_hint ?? member`) 기준 합산(단 `void`/`waived`는 낼 돈이 아니라 수납 집계·미납 명단에서 제외). **수납 진행 행을 펼치면** — 미납자가 남아 있으면 **미납자만**(취사선택·안내 발송, 완납자 숨김), **전원 완납(마감)이면 납부자 명단**(낸 사람·낸 금액 — 누가 냈는지 열람).
+- **당일취소 부과(정액)**: 정액 세션에서 **당일 확정취소자**(`is_day_cancel`)는 카드에 별도 블록으로 노출한다(자리·약속 비용이라 기본 부과되나 카풀 불발 등 사정 시 뺄 수 있게). 운영진 **[부과삭제]** → `dues_set_charge_status(id,'void')`: row 삭제가 아니라 `status='void'`로 두어 **취소선 + 누가 삭제했는지(`voided_by`)** 표시(감사 `dues_audit_log`). **[되돌리기]** → `'reset'`(배분 캐시 기준 재산정 + `voided_by/at` 해제). 삭제되면 수납 집계·본인 `/my-dues` 미납에서 함께 빠진다(status 기반).
 - **미납 알림 발송**: **분류(회비/세션) 그룹 단위**로만, 그룹 안 대상 취사선택. 전체 일괄 발송 없음. 게스트·미로그인은 푸시 불가(수동 안내).
 
 ### 3.2 정산함 (`/dues/:ym/inbox`) — 은행 거래 처리
@@ -110,7 +111,8 @@
   - **엔빵**(총액 `coalesce(세션,규칙) > 0`): `amount_due = 총액 ÷ 참석인원`(10원 버림). 대상 = **confirmed/late_pool 만**(당일취소 제외), **운영진 포함**. 분모(v_head)도 동일 집합.
   - **정액**(총액 없음): `amount_due = 6,000`. 대상 = **confirmed/late_pool + 당일 확정취소**, **운영진 제외**(현행).
   - 게스트는 `payer_hint=invited_by`. `amount_paid>0` 보존(선납). `dues_set_session_fee`(실제 총액 입력)는 저장 후 대관비를 재생성해 엔빵을 즉시 반영.
-  - self-heal 정리: **①무자격 세션의 미납분 전삭제** + **②자격 세션에서 '이번 부과 대상 술어(위 모드별)에 속하지 않는 회원'의 미납분** — 사전취소 유령 + 엔빵→정액 전환 운영진 고아 + **엔빵의 당일취소 제외분**까지 일괄. `amount_paid>0`(선납)은 보존.
+  - **당일취소 표식**: INSERT 시 `is_day_cancel = (attendances.status='cancelled')`로 세팅(정액 당일취소 분기로만 cancelled가 통과하므로 정확). 재실행(ON CONFLICT DO UPDATE)에도 `amount_due`와 함께 갱신되어 재확정 시 false로 복원.
+  - self-heal 정리: **①무자격 세션의 미납분 전삭제** + **②자격 세션에서 '이번 부과 대상 술어(위 모드별)에 속하지 않는 회원'의 미납분** — 사전취소 유령 + 엔빵→정액 전환 운영진 고아 + **엔빵의 당일취소 제외분**까지 일괄. `amount_paid>0`(선납)은 보존. **①②(및 엔빵 head=0 삭제) 세 경로 모두 `status<>'void'` 가드** — 운영진이 부과삭제(void)한 건은 감사·면제 보존을 위해 어떤 자동정리에서도 지우지 않는다(세션 무자격 전이 후 재자격 시 재부과되어 면제가 사라지는 것 방지, 20260727130000).
 
 ---
 
@@ -180,6 +182,7 @@
 - **확정/취소**: `dues_confirm_reconcile`(미납 배분+신규 생성 통합), `dues_confirm_court_external`(비회원 대관), `dues_cancel_match`.
 - **분류/지정**: `dues_set_txn_category`(+`p_paid_by`), `dues_set_txn_session`, `dues_link_refund`/`dues_unlink_refund`.
 - **이월**: `dues_defer_charge`/`dues_undefer_charge`/`dues_settle_deferred`.
+- **부과 조정**: `dues_set_charge_status`(`void`=부과삭제·취소선 + `voided_by/at` 기록 / `reset`=되돌리기·재산정 / `waived`=면제).
 - **부과**: `dues_ensure_monthly`(월진입 회비), `generate_dues_charges`(수동 배치 fallback), 빌딩블록 `dues_generate_monthly`·`dues_generate_session_court`(내부), 트리거 `trg_session_court_on_close`(세션 종료 대관). **명예회원**: `dues_set_honorary`(지정/해제 + 미납 회비 정리). **알림**: `dues_notify_selected`.
 - **카테고리**: `dues_add_category`/`dues_delete_category`.
 - **회원 노출**: `dues_my_payments`, `dues_public_ledger`, `dues_club_account`.

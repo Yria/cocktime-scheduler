@@ -40,6 +40,8 @@ export interface CourtChargeRow {
 	amountPaid: number;
 	status: ChargeStatus;
 	payerHint: string | null;
+	isDayCancel: boolean; // 정액 당일 확정취소로 부과된 건(현황서 별도 노출 + 부과삭제 대상)
+	voidedBy: string | null; // 부과삭제(void)한 운영진 member_id (누가 삭제했는지)
 }
 
 /** 내 회비 화면용 통합 charge(회비 or 대관비). */
@@ -535,6 +537,10 @@ export const duesDeferCharge = (chargeId: number) => callRpc("dues_defer_charge"
 export const duesUndeferCharge = (chargeId: number) => callRpc("dues_undefer_charge", { p_charge_id: chargeId });
 export const duesSettleDeferred = (chargeId: number) => callRpc("dues_settle_deferred", { p_charge_id: chargeId });
 
+/** 부과 상태 수동 조정: 'void'(부과삭제·취소선, 누가 했는지 기록) / 'reset'(되돌리기·배분 기준 재산정) / 'waived'(면제). */
+export const duesSetChargeStatus = (chargeId: number, status: "void" | "reset" | "waived") =>
+	callRpc("dues_set_charge_status", { p_charge_id: chargeId, p_status: status });
+
 interface RawCourtCharge {
 	id: number;
 	member_id: string;
@@ -543,6 +549,8 @@ interface RawCourtCharge {
 	amount_paid: number;
 	status: string;
 	payer_hint: string | null;
+	is_day_cancel: boolean;
+	voided_by: string | null;
 	sessions: { id: number; title: string | null; scheduled_at: string | null } | null;
 }
 
@@ -552,7 +560,7 @@ export async function fetchCourtCharges(ym: string): Promise<CourtChargeRow[]> {
 	const { data, error } = await supabase
 		.from("dues_charges")
 		.select(
-			"id, member_id, session_id, amount_due, amount_paid, status, payer_hint, sessions!inner(id, title, scheduled_at)",
+			"id, member_id, session_id, amount_due, amount_paid, status, payer_hint, is_day_cancel, voided_by, sessions!inner(id, title, scheduled_at)",
 		)
 		.eq("kind", "court_fee")
 		.gte("sessions.scheduled_at", start)
@@ -571,6 +579,8 @@ export async function fetchCourtCharges(ym: string): Promise<CourtChargeRow[]> {
 		amountPaid: c.amount_paid,
 		status: c.status as ChargeStatus,
 		payerHint: c.payer_hint,
+		isDayCancel: c.is_day_cancel,
+		voidedBy: c.voided_by,
 	}));
 }
 

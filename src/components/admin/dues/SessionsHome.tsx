@@ -1,25 +1,33 @@
 import { Send } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { duesDeferCharge, duesNotifySelected, duesSettleDeferred, duesUndeferCharge } from "../../../lib/supabase/dues";
+import { duesDeferCharge, duesNotifySelected, duesSetChargeStatus, duesSettleDeferred, duesUndeferCharge } from "../../../lib/supabase/dues";
 import { duesActions, useDuesStore } from "../../../store/duesStore";
 import { toast } from "../../../store/toastStore";
 import ConfirmDialog from "../../common/ConfirmDialog";
 import EmptyState from "../../shared/EmptyState";
 import { remaining, sessionLabel, won, ymLabel } from "./duesText";
 
+// 정액 당일취소 부과 메타 — UnpaidRow.dc 로 붙어 미납 명단에 섞여 렌더된다.
+interface DayCancelMeta {
+	chargeId: number;
+	voided: boolean; // status==='void'(부과삭제) → 체크박스 대신 취소선+되돌리기
+	voidedByName: string | null; // 누가 삭제했는지
+}
 interface UnpaidRow {
-	payerId: string;
+	rowKey: string; // 제외 Set·React key 용 고유키(일반/회비=p{payerId}, 당일취소=dc{chargeId})
+	payerId: string; // 미납 알림 대상(게스트면 초대자)
 	name: string;
 	remain: number;
-	hasGuest: boolean;
+	inviterName?: string; // 게스트면 대납 초대자 이름(게스트 행은 payer=초대자)
 	chargeId?: number; // 회비 미납 행 — 이월용
+	dc?: DayCancelMeta; // 있으면 당일취소 부과 행(정액). 납부되면 목록에서 애초에 제외됨.
 }
 interface PaidRow {
 	payerId: string;
 	name: string;
-	amount: number; // 낸 금액(amount_paid 합)
-	hasGuest: boolean;
+	amount: number; // 낸 금액
+	inviterName?: string;
 }
 interface SessionCard {
 	id: number;
@@ -29,8 +37,10 @@ interface SessionCard {
 	expense: number;
 	paidCount: number;
 	totalCount: number;
+	adminCount: number; // 운영진(대관비 면제·정산 완료로 집계) 수
 	unpaid: UnpaidRow[];
 	paid: PaidRow[]; // 낸 사람(펼침으로 확인 — 마감 세션도 누가 냈는지 열람)
+	dayCancel: UnpaidRow[]; // 당일취소 부과 행(미납 명단에 합쳐 렌더 · 납부분 제외)
 	status: "settled" | "open" | "none"; // 마감 / 정산 미완 / 대상 없음
 }
 
@@ -50,6 +60,7 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	const [openGroup, setOpenGroup] = useState<string | null>(null); // 펼친 발송 그룹
 	const [excluded, setExcluded] = useState<Set<string>>(new Set()); // 발송 제외(groupKey:payerId)
 	const [notifyReq, setNotifyReq] = useState<{ ids: string[]; msg: string; label: string } | null>(null);
+	const [voidReq, setVoidReq] = useState<{ chargeId: number; name: string; label: string } | null>(null); // 당일취소 부과삭제 확인
 	const [busy, setBusy] = useState(false);
 
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
@@ -71,7 +82,7 @@ export default function SessionsHome({ ym }: { ym: string }) {
 			if (!c) continue;
 			if (c.deferredTo != null) paid++; // 이월 = 해결로 취급
 			else if (c.status === "paid" || c.status === "overpaid") paid++;
-			else if (c.status === "unpaid" || c.status === "partial") unpaid.push({ payerId: m.id, name: m.name, remain: remaining(c.amountDue, c.amountPaid), hasGuest: false, chargeId: c.id });
+			else if (c.status === "unpaid" || c.status === "partial") unpaid.push({ rowKey: `p${m.id}`, payerId: m.id, name: m.name, remain: remaining(c.amountDue, c.amountPaid), chargeId: c.id });
 			// waived·void 는 paid·unpaid 어디에도 넣지 않음 → 아래 total(분모)에서도 자연히 제외됨.
 		}
 		unpaid.sort((a, b) => a.name.localeCompare(b.name));
@@ -100,35 +111,51 @@ export default function SessionsHome({ ym }: { ym: string }) {
 		return monthSessions
 			.map((s): SessionCard => {
 				const charges = chargesBySession.get(s.id) ?? [];
-				// 대납자(payer_hint ?? member)별 미납·납부 합산
-				const byPayer = new Map<string, { remain: number; paidAmt: number; hasGuest: boolean; paid: boolean }>();
-				for (const c of charges) {
-					const payerId = c.payerHint ?? c.memberId;
-					const rem = remaining(c.amountDue, c.amountPaid);
-					const e = byPayer.get(payerId) ?? { remain: 0, paidAmt: 0, hasGuest: false, paid: true };
-					e.remain += rem;
-					e.paidAmt += c.amountPaid;
-					if (rem > 0) e.paid = false;
-					if (c.payerHint && c.memberId !== payerId) e.hasGuest = true;
-					byPayer.set(payerId, e);
-				}
-				const payers = [...byPayer.entries()];
-				const unpaid: UnpaidRow[] = payers
-					.filter(([, e]) => e.remain > 0)
-					.map(([payerId, e]) => ({ payerId, name: memberById.get(payerId)?.name ?? "(회원)", remain: e.remain, hasGuest: e.hasGuest }))
+				// court_fee 부과 = 참석 머릿수 1인 1행(게스트도 개별 행). void·waived·당일취소·운영진(대관비 면제)은 제외.
+				const regular = charges.filter(
+					(c) => !c.isDayCancel && c.status !== "void" && c.status !== "waived" && !memberById.get(c.memberId)?.isAdmin,
+				);
+				const rowOf = (c: (typeof charges)[number]): UnpaidRow => ({
+					rowKey: `c${c.id}`,
+					payerId: c.payerHint ?? c.memberId,
+					name: memberById.get(c.memberId)?.name ?? "(회원)",
+					remain: remaining(c.amountDue, c.amountPaid),
+					inviterName: c.payerHint && c.payerHint !== c.memberId ? (memberById.get(c.payerHint)?.name ?? "회원") : undefined,
+				});
+				// 당일취소 부과(정액) — 개별 charge 행. 사유 없으면 체크박스=미납안내, void면 취소선+되돌리기. 납부되면 제외.
+				const dayCancel: UnpaidRow[] = charges
+					.filter((c) => c.isDayCancel && c.amountPaid === 0)
+					.map((c) => ({
+						...rowOf(c),
+						rowKey: `dc${c.id}`,
+						dc: {
+							chargeId: c.id,
+							voided: c.status === "void",
+							voidedByName: c.voidedBy ? (memberById.get(c.voidedBy)?.name ?? "운영진") : null,
+						},
+					}))
+					.sort((a, b) => Number(a.dc!.voided) - Number(b.dc!.voided) || a.name.localeCompare(b.name));
+				const unpaid: UnpaidRow[] = regular
+					.filter((c) => remaining(c.amountDue, c.amountPaid) > 0)
+					.map(rowOf)
 					.sort((a, b) => a.name.localeCompare(b.name));
-				const paid: PaidRow[] = payers
-					.filter(([, e]) => e.paid && e.paidAmt > 0)
-					.map(([payerId, e]) => ({ payerId, name: memberById.get(payerId)?.name ?? "(회원)", amount: e.paidAmt, hasGuest: e.hasGuest }))
+				const paid: PaidRow[] = regular
+					.filter((c) => remaining(c.amountDue, c.amountPaid) === 0 && c.amountPaid > 0)
+					.map((c) => ({ payerId: c.payerHint ?? c.memberId, name: memberById.get(c.memberId)?.name ?? "(회원)", amount: c.amountPaid, inviterName: c.payerHint && c.payerHint !== c.memberId ? (memberById.get(c.payerHint)?.name ?? "회원") : undefined }))
 					.sort((a, b) => a.name.localeCompare(b.name));
+				// 운영진은 회비·대관비를 걷지 않음 → 확정 참석 인원(attendeeIds)만큼 정산 완료로 분자·분모에 포함.
+				const adminCount = s.attendeeIds.filter((id) => memberById.get(id)?.isAdmin).length;
 				const expense = expenseBySession.get(s.id) ?? 0;
 				const income = incomeBySession.get(s.id) ?? 0;
 				const courtLinked = expense > 0;
-				const paidCount = payers.filter(([, e]) => e.paid).length;
-				const totalCount = payers.length;
+				const activeDayCancel = dayCancel.filter((r) => !r.dc!.voided).length;
+				// N(정산완료)=비운영진 납부 머릿수+운영진. M(전체)=비운영진 부과 머릿수+운영진 참석+사유없는 당일취소. 미납=M−N.
+				const paidCount = regular.length - unpaid.length + adminCount;
+				const totalCount = regular.length + adminCount + activeDayCancel;
 				const hasSomething = charges.length > 0 || expense > 0 || income > 0;
-				const status: SessionCard["status"] = !hasSomething ? "none" : courtLinked && unpaid.length === 0 ? "settled" : "open";
-				return { id: s.id, label: sessionLabel(s), scheduledAt: s.scheduledAt, courtLinked, expense, paidCount, totalCount, unpaid, paid, status };
+				const outstanding = unpaid.length + activeDayCancel;
+				const status: SessionCard["status"] = !hasSomething ? "none" : courtLinked && outstanding === 0 ? "settled" : "open";
+				return { id: s.id, label: sessionLabel(s), scheduledAt: s.scheduledAt, courtLinked, expense, paidCount, totalCount, adminCount, unpaid, paid, dayCancel, status };
 			})
 			// 실제로 열리지 않은 세션(부과·지출·수입 전무)은 정산 대상이 아니므로 숨김.
 			.filter((c) => c.status !== "none")
@@ -169,7 +196,8 @@ export default function SessionsHome({ ym }: { ym: string }) {
 			return n;
 		});
 	const requestNotify = (groupKey: string, rows: UnpaidRow[], msg: string, label: string) => {
-		const ids = rows.filter((r) => !excluded.has(`${groupKey}:${r.payerId}`)).map((r) => r.payerId);
+		// void(부과삭제) 행은 발송 대상 아님. 같은 payer가 여러 행(본인+게스트 대납)이면 중복 제거.
+		const ids = [...new Set(rows.filter((r) => !r.dc?.voided && !excluded.has(`${groupKey}:${r.rowKey}`)).map((r) => r.payerId))];
 		if (ids.length === 0) {
 			toast("선택된 회원이 없어요.", { variant: "info" });
 			return;
@@ -284,6 +312,9 @@ export default function SessionsHome({ ym }: { ym: string }) {
 			) : (
 				sessionCards.map((c) => {
 					const done = c.status === "settled";
+					const activeDayCancel = c.dayCancel.filter((r) => !r.dc!.voided).length;
+					const outstanding = c.unpaid.length + activeDayCancel; // 일반 미납 + 사유없는 당일취소
+					const notifyRows = [...c.unpaid, ...c.dayCancel]; // 미납·당일취소 통합 명단
 					return (
 						<div key={c.id} className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px", opacity: done ? 0.85 : 1 }}>
 							<div className="flex items-center gap-2">
@@ -296,8 +327,8 @@ export default function SessionsHome({ ym }: { ym: string }) {
 									<span style={mark(c.courtLinked)}>{c.courtLinked ? "✓" : "!"}</span>
 									<span className={c.courtLinked ? "text-muted" : "text-[#c2670a]"}>코트지출 {c.courtLinked ? `연결 · ${won(c.expense)}` : "미연결 · 정산함에서 출금→세션 지정"}</span>
 								</div>
-								{/* 수납 진행(막대) — 헤더 탭하면 납부/미납 명단 펼침(마감 세션도 누가 냈는지 확인). */}
-								{c.totalCount > 0 && (
+								{/* 수납 진행(막대) — 헤더 탭하면 납부/미납 명단 + 당일취소 부과 펼침(마감 세션도 누가 냈는지 확인). */}
+								{(c.totalCount > 0 || c.dayCancel.length > 0) && (
 									<div className="flex flex-col gap-1">
 										<button
 											type="button"
@@ -306,32 +337,42 @@ export default function SessionsHome({ ym }: { ym: string }) {
 											className="flex items-center gap-1.5"
 											style={{ fontSize: 12, background: "none", border: "none", padding: 0, cursor: "pointer", width: "100%", textAlign: "left" }}
 										>
-											<span style={mark(c.unpaid.length === 0)}>{c.unpaid.length === 0 ? "✓" : "!"}</span>
-											<span className={c.unpaid.length === 0 ? "text-muted" : "text-[#c2670a]"}>대관비 수납</span>
+											<span style={mark(outstanding === 0)}>{outstanding === 0 ? "✓" : "!"}</span>
+											<span className={outstanding === 0 ? "text-muted" : "text-[#c2670a]"}>대관비 수납</span>
 											<span style={{ flex: 1 }} />
-											<span className="text-muted" style={{ fontSize: 11.5 }}>{c.paidCount}/{c.totalCount}{c.unpaid.length > 0 ? ` · 미납 ${c.unpaid.length}` : ""}</span>
+											{c.totalCount > 0 && <span className="text-muted" style={{ fontSize: 11.5 }}>{c.paidCount}/{c.totalCount}{outstanding > 0 ? ` · 미납 ${outstanding}` : ""}</span>}
 											<span className="text-faint" style={{ fontSize: 10, fontWeight: 800 }}>{openGroup === `s${c.id}` ? "▲" : "▼"}</span>
 										</button>
-										<Meter ratio={c.paidCount / c.totalCount} done={c.unpaid.length === 0} />
+										{c.totalCount > 0 && <Meter ratio={c.paidCount / c.totalCount} done={outstanding === 0} />}
 										{openGroup === `s${c.id}` && (
 											<div className="flex flex-col gap-2" style={{ marginTop: 6 }}>
 												{/* 낸 사람 — 전원 완납(마감)일 때만: 미납이 남아 있으면 미납자만 노출(완납자 숨김) */}
-												{c.paid.length > 0 && c.unpaid.length === 0 && (
+												{c.paid.length > 0 && outstanding === 0 && (
 													<div style={{ background: "rgba(120,120,128,0.06)", borderRadius: 10, padding: "9px 10px" }}>
 														<p className="text-faint" style={{ fontSize: 11, marginBottom: 4 }}>납부 완료 {c.paid.length}명</p>
 														{c.paid.map((r) => (
 															<div key={r.payerId} className="flex items-center gap-2" style={{ fontSize: 13, padding: "3px 2px" }}>
 																<span aria-hidden style={{ width: 18, height: 18, borderRadius: 6, flexShrink: 0, background: "#1c8a3b", color: "#fff", fontSize: 11, lineHeight: "18px", textAlign: "center", fontWeight: 900 }}>✓</span>
-																<span className="text-strong" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{r.name}{r.hasGuest && <span className="text-[#0b84ff]" style={{ fontSize: 11, fontWeight: 700, marginLeft: 5 }}>게스트분 포함</span>}</span>
+																<span className="text-strong flex items-center gap-1.5" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}><span style={{ minWidth: 0 }}>{r.name}</span>{r.inviterName && <span className="text-[#0b84ff]" style={{ fontSize: 10.5, fontWeight: 700, flexShrink: 0 }}>게스트 · {r.inviterName} 대납</span>}</span>
 																<span className="text-[#1c8a3b]" style={{ fontWeight: 700 }}>{won(r.amount)}</span>
 															</div>
 														))}
 													</div>
 												)}
-												{/* 미납 — 취사선택 + 안내 발송 */}
-												{c.unpaid.length > 0 && (
-													<MemberToggleList groupKey={`s${c.id}`} rows={c.unpaid} excluded={excluded} onToggle={toggleSel} busy={busy} onSend={() => requestNotify(`s${c.id}`, c.unpaid, `${c.label} 대관비가 아직 미납이에요. 확인 부탁드려요`, `${c.label} 대관비`)} />
+												{/* 미납 + 당일취소 통합 명단 — 취사선택·안내 발송, 당일취소는 부과삭제/되돌리기 */}
+												{notifyRows.length > 0 && (
+													<MemberToggleList
+														groupKey={`s${c.id}`}
+														rows={notifyRows}
+														excluded={excluded}
+														onToggle={toggleSel}
+														busy={busy}
+														onSend={() => requestNotify(`s${c.id}`, notifyRows, `${c.label} 대관비가 아직 미납이에요. 확인 부탁드려요`, `${c.label} 대관비`)}
+														onVoidRequest={(chargeId, name) => setVoidReq({ chargeId, name, label: c.label })}
+														onReset={(chargeId) => runCharge(() => duesSetChargeStatus(chargeId, "reset"), "되돌리기 실패")}
+													/>
 												)}
+												{c.adminCount > 0 && <p className="text-faint" style={{ fontSize: 11, lineHeight: 1.4, marginTop: 2 }}>운영진 {c.adminCount}명은 대관비를 걷지 않아 정산 완료로 집계돼요.</p>}
 											</div>
 										)}
 									</div>
@@ -351,6 +392,23 @@ export default function SessionsHome({ ym }: { ym: string }) {
 					onCancel={() => setNotifyReq(null)}
 					onDismiss={() => setNotifyReq(null)}
 					onConfirm={doNotify}
+				/>
+			)}
+
+			{voidReq && (
+				<ConfirmDialog
+					title="당일취소 부과 삭제"
+					message={`${voidReq.name}님의 '${voidReq.label}' 당일취소 대관비 부과를 삭제할까요? 명단에 취소선으로 남고 누가 삭제했는지 기록돼요(되돌리기 가능).`}
+					confirmLabel="부과삭제"
+					tone="danger"
+					maxWidth="xs"
+					onCancel={() => setVoidReq(null)}
+					onDismiss={() => setVoidReq(null)}
+					onConfirm={() => {
+						const r = voidReq;
+						setVoidReq(null);
+						void runCharge(() => duesSetChargeStatus(r.chargeId, "void"), "부과삭제 실패");
+					}}
 				/>
 			)}
 		</div>
@@ -421,44 +479,75 @@ function NotifyGroup({ title, subtitle, meter, groupKey, unpaid, open, onOpen, e
 	);
 }
 
-// 발송 대상 회원 취사선택(기본 전원 포함) + 발송. 회비면 각 회원 '이월' 가능.
-function MemberToggleList({ groupKey, rows, excluded, onToggle, busy, onSend, onDefer }: {
+// 발송 대상 회원 취사선택(기본 전원 포함) + 발송. 회비면 각 회원 '이월', 세션 당일취소면 '부과삭제/되돌리기'.
+function MemberToggleList({ groupKey, rows, excluded, onToggle, busy, onSend, onDefer, onVoidRequest, onReset }: {
 	groupKey: string;
 	rows: UnpaidRow[];
 	excluded: Set<string>;
 	onToggle: (key: string) => void;
 	busy: boolean;
 	onSend: () => void;
-	onDefer?: (chargeId: number) => void;
+	onDefer?: (chargeId: number) => void; // 회비: 다음 달로 이월
+	onVoidRequest?: (chargeId: number, name: string) => void; // 당일취소: 부과삭제(확인 다이얼로그)
+	onReset?: (chargeId: number) => void; // 당일취소: 부과삭제 되돌리기
 }) {
-	const selCount = rows.filter((r) => !excluded.has(`${groupKey}:${r.payerId}`)).length;
+	const hasDayCancel = rows.some((r) => r.dc);
+	const selectable = rows.filter((r) => !r.dc?.voided); // void 행은 발송 대상 아님
+	const selCount = selectable.filter((r) => !excluded.has(`${groupKey}:${r.rowKey}`)).length;
 	return (
 		<div className="flex flex-col" style={{ gap: 2, marginTop: 8, background: "rgba(120,120,128,0.06)", borderRadius: 10, padding: "9px 10px" }}>
 			<p className="text-faint" style={{ fontSize: 11, marginBottom: 4 }}>안내 보낼 사람 · 탭하면 제외{onDefer ? " · 이월=다음 달로" : ""}</p>
+			{hasDayCancel && <p className="text-faint" style={{ fontSize: 11, lineHeight: 1.45, marginBottom: 4 }}>당일취소는 자리값이라 정액이 기본 부과돼요. 사정이 있으면 [부과삭제]로 뺄 수 있어요(취소선·되돌리기).</p>}
 			{rows.map((r) => {
-				const on = !excluded.has(`${groupKey}:${r.payerId}`);
+				const key = `${groupKey}:${r.rowKey}`;
+				// 부과삭제된 당일취소 — 체크박스 없이 취소선 + 되돌리기
+				if (r.dc?.voided) {
+					return (
+						<div key={r.rowKey} className="flex items-center gap-2" style={{ fontSize: 13, padding: "4px 2px" }}>
+							<span aria-hidden style={{ width: 18, height: 18, flexShrink: 0 }} />
+							<span className="flex items-center gap-1.5" style={{ flex: 1, minWidth: 0 }}>
+								<span className="text-strong" style={{ fontWeight: 600, minWidth: 0, opacity: 0.45, textDecoration: "line-through" }}>{r.name}</span>
+								<span className="text-faint" style={{ fontSize: 10.5, fontWeight: 700, flexShrink: 0 }}>당일취소</span>
+								{r.inviterName && <span className="text-[#0b84ff]" style={{ fontSize: 10.5, fontWeight: 700, flexShrink: 0 }}>게스트 · {r.inviterName} 대납</span>}
+								<span className="text-faint" style={{ fontSize: 11, flexShrink: 0 }}>삭제함{r.dc.voidedByName ? ` · ${r.dc.voidedByName}` : ""}</span>
+							</span>
+							<span className="text-faint" style={{ fontWeight: 700, opacity: 0.45, textDecoration: "line-through", flexShrink: 0 }}>{won(r.remain)}</span>
+							<button type="button" onClick={() => onReset?.(r.dc!.chargeId)} disabled={busy} className="text-[#0b84ff]" style={{ fontSize: 11.5, fontWeight: 700, background: "rgba(11,132,255,0.1)", border: "none", borderRadius: 7, padding: "3px 8px", cursor: "pointer", flexShrink: 0 }}>되돌리기</button>
+						</div>
+					);
+				}
+				const on = !excluded.has(key);
 				return (
-					<div key={r.payerId} className="flex items-center gap-2" style={{ fontSize: 13 }}>
+					<div key={r.rowKey} className="flex items-center gap-2" style={{ fontSize: 13 }}>
 						<button
 							type="button"
-							onClick={() => onToggle(`${groupKey}:${r.payerId}`)}
+							onClick={() => onToggle(key)}
 							aria-pressed={on}
 							className="flex items-center gap-2"
 							style={{ flex: 1, minWidth: 0, padding: "4px 2px", background: "none", border: "none", cursor: "pointer", textAlign: "left", opacity: on ? 1 : 0.4 }}
 						>
 							<span aria-hidden style={{ width: 18, height: 18, borderRadius: 6, flexShrink: 0, border: on ? "1.5px solid #c2670a" : "1.5px solid rgba(120,120,128,0.5)", background: on ? "#c2670a" : "transparent", color: "#fff", fontSize: 11, lineHeight: "15px", textAlign: "center", fontWeight: 900 }}>{on ? "✓" : ""}</span>
-							<span className="text-strong" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{r.name}{r.hasGuest && <span className="text-[#0b84ff]" style={{ fontSize: 11, fontWeight: 700, marginLeft: 5 }}>게스트분 포함</span>}</span>
-							<span className="text-[#d1362c]" style={{ fontWeight: 700 }}>{won(r.remain)}</span>
+							<span className="text-strong flex items-center gap-1.5" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>
+								<span style={{ minWidth: 0 }}>{r.name}</span>
+								{r.dc && <span className="text-faint" style={{ fontSize: 10.5, fontWeight: 700, flexShrink: 0 }}>당일취소</span>}
+								{r.inviterName && <span className="text-[#0b84ff]" style={{ fontSize: 10.5, fontWeight: 700, flexShrink: 0 }}>게스트 · {r.inviterName} 대납</span>}
+							</span>
+							<span className="text-[#d1362c]" style={{ fontWeight: 700, flexShrink: 0 }}>{won(r.remain)}</span>
 						</button>
-						{onDefer && r.chargeId != null && (
+						{onDefer && r.chargeId != null && !r.dc && (
 							<button type="button" onClick={() => r.chargeId != null && onDefer(r.chargeId)} disabled={busy} className="text-[#0b84ff]" style={{ fontSize: 11.5, fontWeight: 700, background: "rgba(11,132,255,0.1)", border: "none", borderRadius: 7, padding: "3px 8px", cursor: "pointer", flexShrink: 0 }}>이월</button>
+						)}
+						{r.dc && onVoidRequest && (
+							<button type="button" onClick={() => onVoidRequest(r.dc!.chargeId, r.name)} disabled={busy} className="text-[#d1362c]" style={{ fontSize: 11.5, fontWeight: 700, background: "rgba(209,54,44,0.1)", border: "none", borderRadius: 7, padding: "3px 8px", cursor: "pointer", flexShrink: 0 }}>부과삭제</button>
 						)}
 					</div>
 				);
 			})}
-			<button type="button" onClick={onSend} disabled={busy || selCount === 0} className="rounded-[9px] py-2 disabled:opacity-40" style={{ fontSize: 13, fontWeight: 800, color: "#fff", background: selCount > 0 ? "#c2670a" : "rgba(120,120,128,0.3)", marginTop: 6 }}>
-				{selCount > 0 ? `${selCount}명에게 미납 안내 보내기` : "보낼 사람을 선택하세요"}
-			</button>
+			{selectable.length > 0 && (
+				<button type="button" onClick={onSend} disabled={busy || selCount === 0} className="rounded-[9px] py-2 disabled:opacity-40" style={{ fontSize: 13, fontWeight: 800, color: "#fff", background: selCount > 0 ? "#c2670a" : "rgba(120,120,128,0.3)", marginTop: 6 }}>
+					{selCount > 0 ? `${selCount}명에게 미납 안내 보내기` : "보낼 사람을 선택하세요"}
+				</button>
+			)}
 		</div>
 	);
 }
