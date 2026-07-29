@@ -189,6 +189,39 @@ export function isTeamStartable(
 }
 
 /**
+ * 매칭확정 순번(1-base) — 확정된 팀들을 confirmedMs 오름차순(동률 시 id)으로 세운 순서.
+ * 미확정 팀은 null. 라벨("확정 #n")과 "다음 경기" 판정이 같은 정렬을 공유한다.
+ */
+export function confirmRank(teamId: string, drafts: DraftMap): number | null {
+	const team = drafts.get(teamId);
+	if (!team || team.confirmedMs == null) return null;
+	const confirmed = [...drafts.values()]
+		.filter((t) => t.confirmedMs != null)
+		.sort((a, b) => a.confirmedMs! - b.confirmedMs! || a.id.localeCompare(b.id));
+	const idx = confirmed.findIndex((t) => t.id === teamId);
+	return idx >= 0 ? idx + 1 : null;
+}
+
+/**
+ * "다음 경기" 팀 — 확정된 팀 중 가장 먼저 확정됐고 지금 경기시작 가능한 팀 id(없으면 null).
+ * 코트가 비었을 때 이 팀의 경기시작 버튼이 반짝여 누름을 유도한다(강제 아님 — 다른 확정 팀도 시작 가능).
+ */
+export function nextUpConfirmedTeamId(
+	drafts: DraftMap,
+	reservations: ResMap,
+	magnets: MagMap,
+	playingIds: Set<string>,
+): string | null {
+	const confirmed = [...drafts.values()]
+		.filter((t) => t.confirmedMs != null)
+		.sort((a, b) => a.confirmedMs! - b.confirmedMs! || a.id.localeCompare(b.id));
+	for (const t of confirmed) {
+		if (isTeamStartable(t.id, drafts, reservations, magnets, playingIds)) return t.id;
+	}
+	return null;
+}
+
+/**
  * 콕 체크 on인데 아직 콕 미확인(cockChecked=false)인 선수 id(session_player.id) 집합.
  * 이 선수들은 "매칭 대기 아님" — 보드엔 비활성으로 보이고 페어/추천/자동편성에서 제외된다.
  * cockCheckEnabled=false면 빈 집합(전원 매칭 대기).

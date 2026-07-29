@@ -7,15 +7,15 @@ import { useSessionStore } from "../store/sessionStore";
 
 /**
  * 보드 자석 드래그/드롭 핸들러 묶음.
- * - 드래그 이동 중: 휴식 필드 hover → hot, '팀에서 빼기' 드롭존 hover → detachHot, 겹침 대상 → hoverTarget(하이라이트).
- * - 드롭: 네비 영역(팀 소속) → detach / 하단 휴식 필드 → 휴식 / 그 외 → 자유 배치(handleDrop).
- *   휴식 펼침 패널은 칠판 안 넓은 영역이라, 패널 위에 놓여 있던 자유 자석을 살짝 움직였다고 휴식되지 않게
- *   "그 존에서 출발했으면(dragInfo.from) 같은 존 드롭은 무효" 가드를 둔다(startedInRest). detach는 존이
- *   칠판 밖(네비)이라 자석이 거기서 출발할 수 없어 출발 가드가 필요 없다.
+ * - 드래그 이동 중: 휴식존 hover → hot, '팀에서 빼기' 드롭존 hover → detachHot, 겹침 대상 → hoverTarget(하이라이트).
+ * - 드롭: 네비 영역(팀 소속) → detach / 하단 휴식존 → 휴식 토글 / 그 외 → 자유 배치(handleDrop).
+ *   **휴식 토글**: 하단 휴식존(칠판 하단 경계 아래 = 바텀 바)에 놓으면 대기자는 휴식으로, 휴식자는 복귀로
+ *   — 진입·해제가 같은 존의 대칭 동작이다(2026-07 펼침 패널 폐지). 존이 칠판 밖이라 자석이 거기서
+ *   출발할 수 없으므로 detach와 마찬가지로 "출발 존" 가드가 필요 없다.
  * - ghost: 드롭존 → 예약 취소, 그 외 → handleGhostDrop.
  * 좌표(cx,cy)는 PlayerMagnet에서 줌/팬 보정된 논리 좌표. viewH = 보이는 논리 영역 높이(stageH/scale).
  */
-export function useBoardDragHandlers(viewH: number, restFieldH: number) {
+export function useBoardDragHandlers(viewH: number) {
 	const setRestFieldHot = useBoardStore((s) => s.setRestFieldHot);
 	const restPlayer = useBoardStore((s) => s.restPlayer);
 	const unrestPlayer = useBoardStore((s) => s.unrestPlayer);
@@ -32,14 +32,14 @@ export function useBoardDragHandlers(viewH: number, restFieldH: number) {
 			const point = { x: cx, y: cy };
 			const store = useBoardStore.getState();
 
-			// 휴식 필드 hot
-			const restHot = isInRestField(point, viewH, restFieldH);
+			// 휴식존 hot
+			const restHot = isInRestField(point, viewH);
 			if (restHot !== hotRef.current) {
 				hotRef.current = restHot;
 				setRestFieldHot(restHot);
 			}
 
-			// 휴식 필드 위에선 드롭이 항상 휴식 우선(onMagnetDragEnd)이라 빼기/겹침 해석 결과가 버려진다.
+			// 휴식존 위에선 드롭이 항상 휴식 토글 우선(onMagnetDragEnd)이라 빼기/겹침 해석 결과가 버려진다.
 			// 매 프레임 resolveDropTarget(O(자석수))·cockPendingIds(O(선수수))를 도는 낭비를 생략 → 휴식존 프레임드랍 해소.
 			if (restHot) {
 				store.setDetachHot(false);
@@ -68,7 +68,7 @@ export function useBoardDragHandlers(viewH: number, restFieldH: number) {
 			else if (target.kind === "createPair") hover = { kind: "magnet", id: target.partnerId };
 			store.setHoverTarget(hover);
 		},
-		[viewH, restFieldH, setRestFieldHot],
+		[viewH, setRestFieldHot],
 	);
 
 	const clearHot = useCallback(() => {
@@ -78,7 +78,7 @@ export function useBoardDragHandlers(viewH: number, restFieldH: number) {
 		}
 	}, [setRestFieldHot]);
 
-	// 자유/anchor 드래그-엔드: 빼기존(팀 소속) → detach / 휴식 필드 → 휴식 / 그 외 → handleDrop.
+	// 자유/anchor/휴식 드래그-엔드: 빼기존(팀 소속) → detach / 휴식존 → 휴식 토글 / 그 외 → handleDrop.
 	const onMagnetDragEnd = useCallback(
 		(playerId: string, cx: number, cy: number) => {
 			clearHot();
@@ -95,30 +95,16 @@ export function useBoardDragHandlers(viewH: number, restFieldH: number) {
 				store.detachMember(playerId, point);
 				return;
 			}
-			// 휴식 출발 가드(펼침 패널 전용): 같은 휴식 영역에서 출발했다면 그 영역 드롭은 무효(스냅백).
-			// 접힘 상태(restFieldH=0)면 origin.y ≥ stageH가 성립할 수 없어 가드가 자동 비활성(영향 없음).
-			// 중요 — 막힌 경우 handleDrop으로 "폴백하지 않고" return한다: 폴백하면 resolveDropTarget이
-			// 휴식 영역 빈 공간 앵커 드롭을 다른 동작으로 재해석해 가드를 우회할 수 있다. return하면
-			// PlayerMagnet이 앵커=슬롯·자유=원위치로 스냅백한다.
-			const origin = store.dragInfo?.from ?? null;
-			const startedInRest = origin != null && isInRestField(origin, viewH, restFieldH);
-			if (isInRestField(point, viewH, restFieldH)) {
-				if (!startedInRest) restPlayer(playerId); // 시작이 휴식 영역이면 무효(스냅백)
+			// 하단 휴식존 드롭 → 휴식 토글(대기자는 휴식 진입, 휴식자는 복귀). 자석은 두 경우 모두
+			// 보드에 남고 위치는 restPlayer/unrestPlayer가 정렬 자리로 잡는다.
+			if (isInRestField(point, viewH)) {
+				if (useSessionStore.getState().restingIds.includes(playerId)) unrestPlayer(playerId);
+				else restPlayer(playerId);
 				return;
 			}
 			handleDrop(playerId, point);
 		},
-		[handleDrop, restFieldH, viewH, restPlayer, clearHot],
-	);
-
-	// 휴식 자석 드래그-엔드: 패널 밖(위)으로 빼면 복귀, 패널 안이면 슬롯으로 스냅백(PlayerMagnet 처리).
-	const onRestingDragEnd = useCallback(
-		(playerId: string, cx: number, cy: number) => {
-			clearHot();
-			// 패널 열림 상태에서만 호출되므로 restFieldH = 펼침 패널 높이. 패널 밖(위)으로 빼면 복귀.
-			if (!isInRestField({ x: cx, y: cy }, viewH, restFieldH)) unrestPlayer(playerId, { x: cx, y: cy });
-		},
-		[viewH, restFieldH, unrestPlayer, clearHot],
+		[handleDrop, viewH, restPlayer, unrestPlayer, clearHot],
 	);
 
 	// ghost 드래그-엔드: 빼기존(네비) → 예약 취소, 그 외 → handleGhostDrop.
@@ -135,5 +121,5 @@ export function useBoardDragHandlers(viewH: number, restFieldH: number) {
 		[handleGhostDrop],
 	);
 
-	return { onMagnetDragMove, onMagnetDragEnd, onRestingDragEnd, onGhostDragEnd };
+	return { onMagnetDragMove, onMagnetDragEnd, onGhostDragEnd };
 }

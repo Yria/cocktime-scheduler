@@ -15,6 +15,7 @@ import {
 	wouldDissolveByPlaying,
 } from "../../lib/board/membership";
 import {
+	clearConfirmIfBelowFull,
 	dissolveDraft,
 	dissolveDraftAfterAssign,
 	resolveFreedReservations,
@@ -128,6 +129,8 @@ export const createMatchSlice: StateCreator<
 				// 제거 후 인원이 부족하면 팀 해체 — 렌더 게이팅(TeamBackground)과 동일한 공용 규칙으로 판정.
 				if (wouldDissolveByPlaying(team, s.reservations, playingIds)) {
 					dissolveDraft(s, teamId);
+				} else {
+					clearConfirmIfBelowFull(s, teamId); // 살아남았지만 4명 미만이면 매칭확정 해제
 				}
 			}
 		});

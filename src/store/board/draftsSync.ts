@@ -21,7 +21,7 @@ export const syncState = {
 	lastSyncedDraftsJson: "",
 };
 
-/** drafts/reservations 멤버십(+forcedIds 그룹표시·createdBy 생성자)만 직렬화(위치 제외). */
+/** drafts/reservations 멤버십(+forcedIds 그룹표시·createdBy 생성자·confirmedMs 매칭확정)만 직렬화(위치 제외). */
 export function serializeBoardDrafts(s: {
 	drafts: Map<string, DraftTeam>;
 	reservations: Map<string, Reservation>;
@@ -43,6 +43,7 @@ export function serializeBoardDrafts(s: {
 				...(forcedIds.length ? { forcedIds } : {}),
 				...(slots ? { slots } : {}),
 				...(t.createdBy ? { createdBy: t.createdBy } : {}),
+				...(t.confirmedMs != null ? { confirmedMs: t.confirmedMs } : {}),
 			};
 		}),
 		reservations: [...s.reservations.values()].filter((r) => s.drafts.has(r.teamId)).map((r) => ({

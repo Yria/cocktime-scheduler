@@ -13,7 +13,7 @@ import type {
 } from "../../types/board";
 import { centroidAnchor, clampAnchor } from "./geometry";
 
-/** drafts/reservations를 멤버십만으로 정규화한 비교용 문자열(위치·순서 무시). forcedIds(그룹표시)도 포함해 그 변경도 동기되게 한다. (createdBy는 생성 시 1회 세팅·불변이라 멤버십 변경과 함께 전파되므로 여기선 제외.) */
+/** drafts/reservations를 멤버십만으로 정규화한 비교용 문자열(위치·순서 무시). forcedIds(그룹표시)·createdBy(멤버 추가 시 갱신)·confirmedMs(매칭확정)도 포함해 그 변경만 있어도 동기되게 한다. */
 export function canonicalizeDrafts(p: BoardDraftsPayload): string {
 	return JSON.stringify({
 		teams: [...p.teams]
@@ -23,6 +23,8 @@ export function canonicalizeDrafts(p: BoardDraftsPayload): string {
 				createdMs: t.createdMs,
 				forcedIds: [...(t.forcedIds ?? [])].sort(),
 				slots: Object.entries(t.slots ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+				createdBy: t.createdBy ?? null,
+				confirmedMs: t.confirmedMs ?? null,
 			}))
 			.sort((a, b) => a.id.localeCompare(b.id)),
 		reservations: [...p.reservations]
@@ -79,6 +81,9 @@ export function reconcileMembership(
 		const slots = team.slots
 			? Object.fromEntries(Object.entries(team.slots).filter(([pid]) => magnets.has(pid)))
 			: undefined;
+		// 매칭확정(confirmedMs)은 유효 멤버(anchor + 이 팀 ghost, 중복 제외)가 4명일 때만 유지 —
+		// I1/I2 필터로 인원이 줄었는데 확정 표시가 남는 스테일을 동기 경계에서 정제한다.
+		const memberCount = memberIds.length + new Set(ghostIds.filter((id) => !memberIds.includes(id))).size;
 		drafts.set(team.id, {
 			id: team.id,
 			anchorMemberIds: memberIds,
@@ -87,6 +92,7 @@ export function reconcileMembership(
 			...(forcedIds.length ? { forcedIds } : {}),
 			...(slots && Object.keys(slots).length ? { slots } : {}),
 			...(team.createdBy ? { createdBy: team.createdBy } : {}),
+			...(team.confirmedMs != null && memberCount >= 4 ? { confirmedMs: team.confirmedMs } : {}),
 		});
 		for (const id of memberIds) {
 			const m = magnets.get(id);

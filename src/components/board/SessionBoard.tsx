@@ -8,7 +8,6 @@ import { useSessionBoardEffects } from "../../hooks/useSessionBoardEffects";
 import { useBoardStore } from "../../store/boardStore";
 import { useSessionStore } from "../../store/sessionStore";
 import { playingIdsFromCourts } from "../../lib/board/membership";
-import { restZoneHeight } from "../../lib/board/geometry";
 import {
 	TOOLBAR_H,
 	COURT_BAR_H,
@@ -20,7 +19,6 @@ import BoardToolbar from "./BoardToolbar";
 import RestBar from "./RestBar";
 import CourtMatchCard from "./CourtMatchCard";
 import PlayerMagnet from "./PlayerMagnet";
-import RestZonePanel from "./RestZonePanel";
 import TeamBackground from "./TeamBackground";
 import DetachZoneOverlay from "./DetachZoneOverlay";
 import RestDropOverlay from "./RestDropOverlay";
@@ -48,7 +46,7 @@ export default function SessionBoard() {
 	const stageH = ch || 600;
 
 	// 줌·자동정렬 레이아웃(스케일/뷰포트/줌 핸들러/자동 fit) — useBoardStageLayout으로 분리.
-	const { scale, setScale, viewW, viewH, arrangeAtCurrentScale, onStageWheel, onStageTouchMove, onStageTouchEnd } =
+	const { scale, setScale, viewH, arrangeAtCurrentScale, onStageWheel, onStageTouchMove, onStageTouchEnd } =
 		useBoardStageLayout(stageW, stageH, cw, ch);
 	// 세션 동기화/편집권 부수효과(풀 초기화·원격 멤버십 적용·Realtime 구독·자동 점유·I2 자가치유) — useSessionBoardEffects로 분리.
 	useSessionBoardEffects();
@@ -61,15 +59,12 @@ export default function SessionBoard() {
 	// isEditor — 추천 다이얼로그 차단 등에 사용(원격 멤버십 적용 effect는 useSessionBoardEffects에서 별도 구독).
 	const isEditor = useSessionStore((s) => s.isEditor);
 
-	// 휴식 필드(하단 바) — 바 탭으로 패널 열고 닫음. 자석을 끌어 내리면 휴식, 빼면 복귀.
-	const restZoneOpen = useBoardStore((s) => s.restZoneOpen);
-	const restFieldHot = useBoardStore((s) => s.restFieldHot);
 	// 포어그라운드 복귀/재연결 시 서버 권위 재동기화 진행 표시.
 	const boardSyncing = useSessionStore((s) => s.boardSyncing);
 	// 팀 소속 자석을 드래그하는 동안에만 네비 영역 '팀에서 빼기' 드롭존 오버레이 노출
 	const showDetach = useBoardStore((s) => s.dragInfo?.detachable ?? false);
-	// 휴식 가능 자석을 드래그하는 동안에만 바텀 바 영역 '휴식하기' 드롭존 오버레이 노출(펼침 시엔 패널이 드롭존이라 제외)
-	const showRest = useBoardStore((s) => s.dragInfo?.restable ?? false) && !restZoneOpen;
+	// 자석을 드래그하는 동안에만 바텀 바 영역 휴식 드롭존 오버레이 노출(휴식자면 '복귀' 문구)
+	const showRest = useBoardStore((s) => s.dragInfo?.restable ?? false);
 	const restingSet = useMemo(() => new Set(restingIds), [restingIds]);
 
 	// 자유 자석: 팀 미소속(teamId null) && 경기중 아님
@@ -82,10 +77,12 @@ export default function SessionBoard() {
 			return ids;
 		}),
 	);
-	// 자유 자석: 경기중·휴식 제외(휴식 선수는 휴식존에만 노출, 추천·메인보드에서 안 보임)
+	// 경기중만 제외 — 휴식 선수도 "휴식" 딱지를 달고 제자리에 렌더한다(2026-07 휴식 패널 폐지).
+	// 보드에서 사라지면 운영진이 "버그로 없어졌다"고 오인해 게스트를 중복 추가하는 사고가 있었다.
+	// (편성 제외는 별개 경로 — recommendPool이 status='resting'을 풀에서 걸러낸다.)
 	const visibleFreeIds = useMemo(
-		() => freeMagnetIds.filter((id) => !playingIds.has(id) && !restingSet.has(id)),
-		[freeMagnetIds, playingIds, restingSet],
+		() => freeMagnetIds.filter((id) => !playingIds.has(id)),
+		[freeMagnetIds, playingIds],
 	);
 
 	const draftIds = useBoardStore(useShallow((s) => Array.from(s.drafts.keys())));
@@ -132,7 +129,7 @@ export default function SessionBoard() {
 	// ── 편집→보기 전환 시 진행 중 편집 액션 일괄 취소 ──────────────
 	// 편집 권한을 잃으면(양도/탈취/lease 만료로 isEditor true→false) 띄워둔 편집 모달(추천/경기수정/콕확인)과
 	// 드래그·배정중 부수상태를 모두 닫는다. prevIsEditor ref로 true→false 전이에서만 실행(마운트 false→false 무시).
-	// (접속자 모달·휴식 패널은 뷰어도 쓰는 보기용이라 유지.)
+	// (접속자 모달은 뷰어도 쓰는 보기용이라 유지.)
 	const cancelEditActions = useBoardStore((s) => s.cancelEditActions);
 	const prevIsEditor = useRef(isEditor);
 	useEffect(() => {
@@ -145,14 +142,9 @@ export default function SessionBoard() {
 		prevIsEditor.current = isEditor;
 	}, [isEditor, cancelEditActions]);
 
-	// 휴식 필드 높이 — 펼침이면 인원수만큼 여러 줄로 확장(패널과 동일 산식)해 패널 영역 전체가 드롭존,
-	// 접힘이면 0 → 자석을 칠판 하단 경계 너머 바텀 바(RestBar)까지 내려야(논리 y ≥ viewH) 휴식한다.
-	// 드롭 판정(useBoardDragHandlers)과 패널 렌더(RestZonePanel)가 같은 산식을 써 영역이 정확히 일치한다.
-	const restFieldH = restZoneOpen ? restZoneHeight(restingIds.length, viewW, viewH) : 0;
-
-	// 드래그/드롭 핸들러(휴식 hot 하이라이트·휴식 처리·자유 배치·예약 드롭)
-	const { onMagnetDragMove, onMagnetDragEnd, onRestingDragEnd, onGhostDragEnd } =
-		useBoardDragHandlers(viewH, restFieldH);
+	// 드래그/드롭 핸들러(휴식 hot 하이라이트·휴식 토글·자유 배치·예약 드롭).
+	// 휴식 드롭존은 칠판 하단 경계 너머(논리 y ≥ viewH = 바텀 바 RestBar 영역)라 높이 인자가 없다.
+	const { onMagnetDragMove, onMagnetDragEnd, onGhostDragEnd } = useBoardDragHandlers(viewH);
 
 	// Stage 좌상단(0,0) 고정 — 줌 핸들러(휠/핀치)와 좌표 설명은 useBoardStageLayout 참조.
 	const stageX = 0;
@@ -202,7 +194,7 @@ export default function SessionBoard() {
 							/>
 						))}
 						{visibleFreeIds.map((id) => (
-							<PlayerMagnet key={id} playerId={id} onDragEnd={onMagnetDragEnd} onDragMove={onMagnetDragMove} onClick={onMagnetClick} onCockCheck={onCockCheck} />
+							<PlayerMagnet key={id} playerId={id} resting={restingSet.has(id)} onDragEnd={onMagnetDragEnd} onDragMove={onMagnetDragMove} onClick={onMagnetClick} onCockCheck={onCockCheck} />
 						))}
 						{/* 코트 카드는 상단 레인에 맨 위로 렌더 — 경기완료 버튼이 항상 클릭 가능하도록 */}
 						{occupiedCourts.map((c, i) => (
@@ -214,30 +206,16 @@ export default function SessionBoard() {
 								onEditMatch={onEditMatch}
 							/>
 						))}
-						{/* 휴식 패널 — 펼침(restZoneOpen) 시에만 stage에 렌더.
-						    접힘 상태의 드래그 활성 피드백은 stage 밴드 없이 푸터(RestBar) 점등으로만 표현. */}
-						{restZoneOpen && (
-							<RestZonePanel
-								stageW={viewW}
-								stageH={viewH}
-								restingIds={restingIds}
-								restFieldHot={restFieldHot}
-								onRestingDragEnd={onRestingDragEnd}
-								onMagnetDragMove={onMagnetDragMove}
-							/>
-						)}
 					</Layer>
 				</Stage>
 			</div>
 			{/* 좌하단 + 버튼 — 빈 추천 모달을 열어 새 팀을 만든다(편집자만, 정렬 버튼과 대칭·동일 크기) */}
-			{isEditor && !restZoneOpen && (
-				<NewTeamFab onClick={() => setRecommendTarget({ newTeam: true })} />
-			)}
+			{isEditor && <NewTeamFab onClick={() => setRecommendTarget({ newTeam: true })} />}
 			<RestBar />
 			{/* 줌 컨트롤(우상단) — 0.5~1배 축소(편집/보기 공통) */}
 			<ZoomControls setScale={setScale} />
-			{/* 우하단 플로팅 정렬 버튼 — 휴식 패널 열림 시 숨김(겹침 방지) */}
-			{!restZoneOpen && <ArrangeFab onClick={arrangeAtCurrentScale} />}
+			{/* 우하단 플로팅 정렬 버튼 */}
+			<ArrangeFab onClick={arrangeAtCurrentScale} />
 			{recommendTarget && (
 				<RecommendTeammateDialog
 					teamId={recommendTarget.teamId ?? undefined}

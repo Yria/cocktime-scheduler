@@ -30,8 +30,17 @@ export interface DraftTeam {
 	 * 멤버십(anchorMemberIds)과 분리 — 없거나 매핑 안 된 멤버는 빈 슬롯을 순서대로 채움(하위호환).
 	 */
 	slots?: Record<string, number>;
-	/** 이 팀을 만든 편집자 표시 이름(sessionStore._myName 스냅샷). 생성 시 1회 세팅·이후 불변. 레거시 팀은 undefined. */
+	/**
+	 * 이 그룹을 "만든" 편집자 표시 이름(sessionStore._myName 스냅샷). 기획상 "만든 시점"은 2명 이상이
+	 * 사각형으로 묶이는 순간이며, 이후 다른 편집자가 새 멤버를 넣으면 그 사람으로 갱신된다
+	 * (A가 2명 묶음 → by A, B가 1명 추가 → by B). 멤버 제거·팀내 슬롯 이동·ghost 승격은 갱신하지 않는다.
+	 */
 	createdBy?: string;
+	/**
+	 * 매칭확정 시각(epoch ms). undefined면 미확정. 확정 순서 = confirmedMs 오름차순(동률 시 id).
+	 * 4명 미만으로 줄어들면 해제(clearConfirmIfBelowFull). 멤버 교체(스왑 등)로 4명이 유지되면 순번 보존.
+	 */
+	confirmedMs?: number;
 }
 
 /** 예약(ghost) — "이 선수를 이 예비팀에 빌려줌". 한 선수가 여러 개 가질 수 있다. */
@@ -48,7 +57,7 @@ export interface Reservation {
  * 위치(anchor x/y)는 각 클라이언트 로컬이므로 포함하지 않는다.
  */
 export interface BoardDraftsPayload {
-	teams: { id: string; memberIds: string[]; createdMs: number; forcedIds?: string[]; slots?: Record<string, number>; createdBy?: string }[];
+	teams: { id: string; memberIds: string[]; createdMs: number; forcedIds?: string[]; slots?: Record<string, number>; createdBy?: string; confirmedMs?: number }[];
 	reservations: { id: string; playerId: string; teamId: string; createdMs: number }[];
 }
 

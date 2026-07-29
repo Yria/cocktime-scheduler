@@ -41,7 +41,8 @@ export function nearestFreePartner(
 	let bestPos: StagePoint = { x: 0, y: 0 };
 	for (const m of magnets.values()) {
 		// 자기 자신 / 팀 소속 / 경기중 / 콕 미확인(매칭 대기 아님) / 휴식 선수는 페어 대상에서 제외.
-		// 휴식 자석은 화면에서 숨겨도 좌표는 남으므로(magnet 유지 설계), 여기서 걸러야 '빈 자리 유령 그룹'을 막는다.
+		// 휴식 자석은 딱지를 달고 보드에 그대로 남으므로(2026-07 패널 폐지), 여기서 걸러야 옆에 놓았다고
+		// 휴식자와 그룹이 묶이지 않는다.
 		if (m.playerId === playerId || m.teamId !== null || playingIds.has(m.playerId) || notReadyIds.has(m.playerId) || restingIds.has(m.playerId)) continue;
 		const d = distance(drop, { x: m.x, y: m.y });
 		if (d <= PAIR_RADIUS && d < bestDist) {
@@ -68,6 +69,10 @@ export function resolveDropTarget(
 
 	// 콕 미제출자(매칭 대기 아님)는 드래그로 위치 이동만 — 팀 합류/페어/교체(편성)는 불가(콕 확인 후 편성).
 	if (notReadyIds.has(playerId)) return self.teamId !== null ? { kind: "detach", to: drop } : { kind: "move", to: drop };
+
+	// 휴식 선수도 위치 이동만 — 휴식 해제는 "하단 휴식존에 다시 드롭"이 유일한 경로(useBoardDragHandlers)라,
+	// 팀에 끌어다 놓아 몰래 편성되는 길을 막는다(딱지 붙은 채 팀에 들어가 있는 모순 상태 방지).
+	if (restingIds.has(playerId)) return self.teamId !== null ? { kind: "detach", to: drop } : { kind: "move", to: drop };
 
 	// ── anchor(팀구성중) 멤버를 끌어낸 경우 ──────────────────────────
 	if (self.teamId !== null) {

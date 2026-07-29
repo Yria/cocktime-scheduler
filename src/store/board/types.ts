@@ -28,19 +28,16 @@ export interface BoardState {
 	/** 실제 stage(보드 캔버스) 크기 — 흩어짐 바운더리 클램프용. SessionBoard가 갱신. */
 	stageW: number;
 	stageH: number;
-	/** 휴식존(하단 패널) 표시 여부 — 플로팅 버튼으로 토글. */
-	restZoneOpen: boolean;
-	/** 드래그 중인 자석이 휴식 필드 위에 있는지(액티베이트 하이라이트용). */
+	/** 드래그 중인 자석이 하단 휴식존 위에 있는지(액티베이트 하이라이트용). */
 	restFieldHot: boolean;
 	/** 접속자/편집권한 모달 표시 — 헤더 칩 또는 보기전용 칩에서 연다. */
 	presenceModalOpen: boolean;
 	/**
 	 * 드래그 중인 자석 정보(드롭존 표시·하이라이트용). null이면 드래그 안 함.
 	 * - detachable=팀 소속(anchor/ghost) → 상단 '팀에서 빼기' 밴드 노출.
-	 * - restable=휴식 가능(편집자의 free/anchor 대기 자석) → 하단 '휴식하기' 밴드 노출.
-	 * - from=드래그 시작 논리좌표 → 출발 존(빼기/휴식)에서 같은 존으로의 드롭을 무효화하는 가드용.
+	 * - restable=하단 휴식존 드롭 가능(편집자의 free/anchor 자석. 휴식자 포함 — 같은 존 드롭이 복귀 토글).
 	 */
-	dragInfo: { playerId: string; detachable: boolean; restable: boolean; from: StagePoint } | null;
+	dragInfo: { playerId: string; detachable: boolean; restable: boolean } | null;
 	/** 드래그 중 현재 겹침 대상(하이라이트). slot=팀의 특정 칸(빈칸/교체), magnet=페어 상대. */
 	hoverTarget: { kind: "slot"; teamId: string; slotIndex: number } | { kind: "magnet"; id: string } | null;
 	/** 드래그가 상단 '팀에서 빼기' 드롭존 위에 있는지(hot). */
@@ -69,6 +66,13 @@ export interface BoardState {
 	/** "우선배치"(그룹 지정) 토글 — 누르는 시점의 현재 멤버 전체를 그룹으로 표시(forcedIds). 이미 지정돼 있으면 해제.
 	 *  순수 시각 표시(핀 배지)일 뿐 추천/밸런스 점수엔 영향 없음. 실제 락 아님(드래그로 빼면 자동 취소). */
 	toggleForced: (teamId: string) => void;
+	/**
+	 * 매칭확정(1단계) — 4명 완성·시작 가능한 팀을 "확정"으로 표시하고 확정 시각(confirmedMs)을 기록.
+	 * 확정 순서가 대기열이 되어, 코트가 비면 가장 먼저 확정한 팀의 경기시작 버튼이 반짝인다.
+	 */
+	confirmTeam: (teamId: string) => void;
+	/** 매칭확정 취소 — confirmedMs 제거(뒤 팀들의 순번은 자동 당겨짐). */
+	unconfirmTeam: (teamId: string) => void;
 	setTeamAnchor: (teamId: string, x: number, y: number) => void;
 	setCourtAnchor: (courtId: number, x: number, y: number) => void;
 	/** 실제 stage 크기 등록(흩어짐 바운더리용) */
@@ -93,14 +97,10 @@ export interface BoardState {
 	/** 지정한 자석들을 소스로 방사형 흩어짐 + 정리(경기 완료로 그룹 해제된 자석용) */
 	scatterMagnets: (ids: string[]) => void;
 	rearrangeAll: (viewW: number, viewH: number, markManual?: boolean) => void;
-	/** 휴식존 표시 토글. */
-	toggleRestZone: () => void;
-	/** 휴식 패널 접기(멱등) — 보드 자석 드래그 시작 시 가림 해소용. */
-	closeRestZone: () => void;
-	/** 휴식 필드 액티베이트(hot) 상태 설정. */
+	/** 휴식존(하단 바) 액티베이트(hot) 상태 설정. */
 	setRestFieldHot: (hot: boolean) => void;
 	/** 드래그 시작/종료 시 드래그 정보 설정(null=종료). */
-	setDragInfo: (info: { playerId: string; detachable: boolean; restable: boolean; from: StagePoint } | null) => void;
+	setDragInfo: (info: { playerId: string; detachable: boolean; restable: boolean } | null) => void;
 	/** 드래그 중 겹침 대상 하이라이트 설정(변화 시에만 반영). */
 	setHoverTarget: (t: { kind: "slot"; teamId: string; slotIndex: number } | { kind: "magnet"; id: string } | null) => void;
 	/** '팀에서 빼기' 드롭존 hot 설정(변화 시에만 반영). */
@@ -115,10 +115,10 @@ export interface BoardState {
 	removeMemberFromBoard: (playerId: string) => void;
 	/** 접속자/편집권한 모달 표시 토글. */
 	setPresenceModalOpen: (open: boolean) => void;
-	/** 선수를 휴식 처리(보드 멤버십에서 제거 + status='resting'). */
+	/** 선수를 휴식 처리(보드 멤버십에서 제거 + status='resting'). 자석은 "휴식" 딱지를 달고 보드에 남는다. */
 	restPlayer: (playerId: string) => void;
-	/** 휴식 선수를 복귀(status='waiting', 평균 판수 보정) + 자유 자석으로 drop 위치에 배치. */
-	unrestPlayer: (playerId: string, drop: StagePoint) => void;
+	/** 휴식 선수를 복귀(status='waiting', 평균 판수 보정). 자석은 정렬되는 자유 자석 위치로. */
+	unrestPlayer: (playerId: string) => void;
 	startMatch: (teamId: string) => Promise<void>;
 	completeMatch: (courtId: number) => Promise<void>;
 	/** 경기 수정: 진행중 매치의 최종 로스터 설정(빠진 선수는 자유 자석으로 흩어짐). */

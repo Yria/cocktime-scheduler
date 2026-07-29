@@ -3,7 +3,7 @@ import { TOOLBAR_H, COURT_BAR_H } from "../../lib/board/constants";
 import Spinner from "../shared/Spinner";
 
 // SessionBoard의 DOM 크롬(플로팅 버튼·배지) 프레젠테이셔널 컴포넌트 묶음.
-// 렌더 조건(boardSyncing / isEditor && !restZoneOpen / !restZoneOpen)은 SessionBoard 호출부에 유지한다.
+// 렌더 조건(boardSyncing / isEditor)은 SessionBoard 호출부에 유지한다.
 
 const zoomBtnStyle: React.CSSProperties = {
 	width: 36,

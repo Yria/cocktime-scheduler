@@ -5,12 +5,20 @@ import { resolveDropTarget, nearestFreePartner } from "../../lib/board/dropResol
 import {
 	cockPendingIds,
 	isMemberOf,
+	isTeamStartable,
 	playingIdsFromCourts,
 	teamMemberCount,
 	teamMembers,
 } from "../../lib/board/membership";
 import { buildRecommendData } from "../../lib/board/recommendPool";
-import { addReservation, attachAnchor, detachAnchor, newId, nowMs } from "../../lib/board/draftMutations";
+import {
+	addReservation,
+	attachAnchor,
+	clearConfirmIfBelowFull,
+	detachAnchor,
+	newId,
+	nowMs,
+} from "../../lib/board/draftMutations";
 import { autoFillTeammates } from "../../lib/teamSelection";
 import { useSessionStore } from "../sessionStore";
 import { toast } from "../toastStore";
@@ -30,6 +38,8 @@ export type MembershipSlice = Pick<
 	| "handleGhostDrop"
 	| "handlePlayingMagnetDrop"
 	| "commitTeammates"
+	| "confirmTeam"
+	| "unconfirmTeam"
 	| "toggleForced"
 	| "autoFillTeam"
 	| "autoFillTarget"
@@ -88,11 +98,11 @@ export const createMembershipSlice: StateCreator<
 					break;
 				}
 				case "attach":
-					attachAnchor(s, playerId, target.teamId, target.slot);
+					attachAnchor(s, playerId, target.teamId, target.slot, currentEditorName());
 					source = { teamId: target.teamId };
 					break;
 				case "replace":
-					replaceAtSlot(s, playerId, target.teamId, target.slot);
+					replaceAtSlot(s, playerId, target.teamId, target.slot, currentEditorName());
 					source = { teamId: target.teamId };
 					break;
 				case "detach": {
@@ -135,25 +145,29 @@ export const createMembershipSlice: StateCreator<
 		set((s) => {
 			const r = s.reservations.get(resId);
 			if (!r) return;
+			const fromTeamId = r.teamId;
 			// 다른 예비팀 위 → 예약 대상 변경(reReserve). 옮길 수 없으면 no-op(스냅백, 예약 유지).
 			let done = false;
 			for (const d of s.drafts.values()) {
-				if (d.id === r.teamId) continue;
+				if (d.id === fromTeamId) continue;
 				if (!isInsideTeamBounds(drop, d.anchor)) continue;
 				if (
 					!isMemberOf(r.playerId, d.id, s.drafts, s.reservations) &&
 					teamMemberCount(d.id, s.drafts, s.reservations) < 4
 				) {
 					r.teamId = d.id;
+					d.createdBy = currentEditorName(); // 새 인원(ghost)을 넣은 편집자로 갱신
+					clearConfirmIfBelowFull(s, fromTeamId); // ghost가 빠진 원 팀은 4명 미만이면 확정 해제
 				}
 				done = true;
 				break;
 			}
 			if (!done) {
 				// 원래 팀 위 → 스냅백(no-op), 빈 공간 → 예약 취소
-				const own = s.drafts.get(r.teamId);
+				const own = s.drafts.get(fromTeamId);
 				if (!(own && isInsideTeamBounds(drop, own.anchor))) {
 					s.reservations.delete(resId);
+					clearConfirmIfBelowFull(s, fromTeamId);
 				}
 			}
 			// ghost가 속한(또는 속했던) 팀에서 흩어짐
@@ -183,7 +197,7 @@ export const createMembershipSlice: StateCreator<
 				// 빈 슬롯에만 예약(점유 칸엔 경기중 선수 끼워넣기 안 함 — 복귀). 슬롯 위치 기록.
 				const occupied = teamMembers(d.id, s.drafts, s.reservations).some((m) => m.slot === slotIdx);
 				if (!occupied && teamMemberCount(d.id, s.drafts, s.reservations) < 4) {
-					addReservation(s, playerId, d.id);
+					addReservation(s, playerId, d.id, currentEditorName());
 					d.slots = d.slots ?? {};
 					d.slots[playerId] = slotIdx;
 					source = { teamId: d.id };
@@ -259,11 +273,32 @@ export const createMembershipSlice: StateCreator<
 				if (isMemberOf(pid, teamId, s.drafts, s.reservations)) continue;
 				if (teamMemberCount(teamId, s.drafts, s.reservations) >= 4) break;
 				// 경기중 선수는 예약(ghost), 그 외는 정식 멤버(anchor)
-				if (playingIds.has(pid)) addReservation(s, pid, teamId);
-				else attachAnchor(s, pid, teamId);
+				if (playingIds.has(pid)) addReservation(s, pid, teamId, currentEditorName());
+				else attachAnchor(s, pid, teamId, undefined, currentEditorName());
 			}
 			// 그룹 생성/채움 후 겹친 자유 자석 흩어짐
 			runSettle(s, { teamId });
+		});
+	},
+
+	confirmTeam: (teamId) => {
+		if (!claimEdit()) return; // 보기 전용 차단
+		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
+		set((s) => {
+			const team = s.drafts.get(teamId);
+			if (!team || team.confirmedMs != null) return; // 없음/이미 확정 → no-op
+			// 확정은 "지금 시작 가능한 4명"만 — 예약(ghost)의 원본이 아직 경기중이면 불가(그 팀은 우선배치 CTA 유지).
+			if (!isTeamStartable(teamId, s.drafts, s.reservations, s.magnets, playingIds)) return;
+			team.confirmedMs = nowMs(); // 확정 순서의 기준(오름차순 = 대기열)
+		});
+	},
+
+	unconfirmTeam: (teamId) => {
+		if (!claimEdit()) return; // 보기 전용 차단
+		set((s) => {
+			const team = s.drafts.get(teamId);
+			if (!team || team.confirmedMs == null) return;
+			delete team.confirmedMs;
 		});
 	},
 
@@ -351,6 +386,7 @@ export const createMembershipSlice: StateCreator<
 			if (!r) return;
 			const teamId = r.teamId;
 			s.reservations.delete(resId);
+			clearConfirmIfBelowFull(s, teamId); // 인원이 줄면 매칭확정 해제
 			if (s.drafts.get(teamId)) runSettle(s, { teamId });
 		});
 	},
@@ -363,6 +399,7 @@ export const createMembershipSlice: StateCreator<
 				if (r.playerId === playerId) {
 					const teamId = r.teamId;
 					s.reservations.delete(rid);
+					clearConfirmIfBelowFull(s, teamId); // 인원이 줄면 매칭확정 해제
 					if (s.drafts.get(teamId)) runSettle(s, { teamId });
 					return;
 				}
@@ -381,9 +418,18 @@ export const createMembershipSlice: StateCreator<
 		set((s) => {
 			// 보드 멤버십에서 제거: 팀 anchor 해제 + 이 선수를 가리키는 예약(ghost) 삭제.
 			detachAnchor(s, playerId);
+			const ghostLostTeamIds = new Set<string>();
 			for (const [rid, r] of [...s.reservations]) {
-				if (r.playerId === playerId) s.reservations.delete(rid);
+				if (r.playerId !== playerId) continue;
+				s.reservations.delete(rid);
+				ghostLostTeamIds.add(r.teamId);
 			}
+			// ghost가 빠진 팀은 4명 미만이면 매칭확정 해제
+			for (const tid of ghostLostTeamIds) clearConfirmIfBelowFull(s, tid);
+			// 휴식자도 "휴식" 딱지를 달고 보드에 남는다(2026-07 휴식 패널 폐지) → 드롭 지점(하단 바 =
+			// 칠판 밖)이 아니라 자유 자석 격자의 정렬 위치로 보낸다. 보드에서 사라지면 운영진이 "버그로
+			// 없어졌다"고 오인해 게스트를 중복 추가하는 사고가 있었다.
+			placeArranged(s, playerId, true);
 		});
 		// status='resting' (휴식 진입). 다른 클라이언트에 player_updated 전파.
 		void useSessionStore.getState().setResting(playerId, true);
@@ -391,7 +437,8 @@ export const createMembershipSlice: StateCreator<
 
 	unrestPlayer: (playerId) => {
 		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
-		// status='waiting' 복귀(평균 판수 보정). 복귀 자석은 정렬되는 위치로 배치(드롭 지점 무시).
+		// status='waiting' 복귀(평균 판수 보정). 복귀 자석은 정렬되는 위치로 배치 — 해제 드롭 지점은
+		// 항상 칠판 밖(하단 휴식 바)이라 쓸 수 없다.
 		void useSessionStore.getState().setResting(playerId, false);
 		set((s) => {
 			const m = s.magnets.get(playerId);

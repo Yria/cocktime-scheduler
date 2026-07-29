@@ -19,7 +19,6 @@ export type ViewSlice = Pick<
 	| "stageW"
 	| "stageH"
 	| "scale"
-	| "restZoneOpen"
 	| "restFieldHot"
 	| "presenceModalOpen"
 	| "dragInfo"
@@ -34,8 +33,6 @@ export type ViewSlice = Pick<
 	| "cancelEditActions"
 	| "scatterMagnets"
 	| "rearrangeAll"
-	| "toggleRestZone"
-	| "closeRestZone"
 	| "setRestFieldHot"
 	| "setDragInfo"
 	| "setHoverTarget"
@@ -55,7 +52,6 @@ export const createViewSlice: StateCreator<
 	stageW: 0,
 	stageH: 0,
 	scale: loadScale(),
-	restZoneOpen: false,
 	restFieldHot: false,
 	presenceModalOpen: false,
 	dragInfo: null,
@@ -211,18 +207,6 @@ export const createViewSlice: StateCreator<
 		});
 	},
 
-	toggleRestZone: () => {
-		set((s) => {
-			s.restZoneOpen = !s.restZoneOpen;
-		});
-	},
-
-	closeRestZone: () => {
-		set((s) => {
-			if (s.restZoneOpen) s.restZoneOpen = false;
-		});
-	},
-
 	setRestFieldHot: (hot) => {
 		// 값이 같으면 immer가 동일 상태를 반환해 리렌더 없음(드래그 프레임마다 호출돼도 안전).
 		set((s) => {
@@ -280,7 +264,6 @@ export const createViewSlice: StateCreator<
 			s.manualLayout = false;
 			s.stageW = 0;
 			s.stageH = 0;
-			s.restZoneOpen = false;
 			s.restFieldHot = false;
 			s.presenceModalOpen = false;
 			s.dragInfo = null;

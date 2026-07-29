@@ -67,16 +67,15 @@ export function useBoardStageLayout(stageW: number, stageH: number, cw: number, 
 
 	// 자동 스케일 + 정렬 — 렌더 없이 "다 들어가는 최대 배율"을 계산해 적용한 뒤 그 배율의 뷰로 정렬한다.
 	// (자석이 화면을 넘치면 자동 축소, 여유 있으면 1배까지 키움 — "최대가 베스트"). 자동정렬 effect와 정렬 버튼 공용.
-	// 카운트는 arrangeBoard와 동일 기준(그룹=경기중 코트+팀, 자유=teamId null·비경기중·비휴식)으로 fresh 계산.
+	// 카운트는 arrangeBoard와 동일 기준(그룹=경기중 코트+팀, 자유=teamId null·비경기중 — 휴식자도 보드에 남으므로 포함)으로 fresh 계산.
 	const fitAndArrange = useCallback(() => {
 		if (stageW <= 0 || stageH <= 0) return;
 		const bs = useBoardStore.getState();
 		const ss = useSessionStore.getState();
 		const playing = playingIdsFromCourts(ss.courts);
-		const resting = new Set(ss.restingIds);
 		let freeCount = 0;
 		for (const m of bs.magnets.values()) {
-			if (m.teamId === null && !playing.has(m.playerId) && !resting.has(m.playerId)) freeCount++;
+			if (m.teamId === null && !playing.has(m.playerId)) freeCount++;
 		}
 		const groupCount = ss.courts.filter((c) => c.match).length + bs.drafts.size;
 		const fit = computeFitScale(stageW, stageH, groupCount, freeCount, {

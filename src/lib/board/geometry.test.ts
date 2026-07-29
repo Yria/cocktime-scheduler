@@ -7,7 +7,7 @@ import {
 	slotIndexAt,
 	isInDetachZone,
 } from "./geometry";
-import { SLOT_SIZE, SLOT_GAP, DETACH_ZONE_H } from "./constants";
+import { SLOT_SIZE, SLOT_GAP } from "./constants";
 
 describe("distance", () => {
 	it("같은 좌표는 0", () => {
@@ -78,6 +78,6 @@ describe("isInDetachZone", () => {
 	});
 	it("칠판 안(y > 0)이면 false — 예전 상단 strip(y≤72)은 더 이상 빼기존이 아님", () => {
 		expect(isInDetachZone({ x: 100, y: 1 })).toBe(false);
-		expect(isInDetachZone({ x: 100, y: DETACH_ZONE_H })).toBe(false);
+		expect(isInDetachZone({ x: 100, y: 72 })).toBe(false);
 	});
 });

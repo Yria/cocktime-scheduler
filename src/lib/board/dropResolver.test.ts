@@ -126,3 +126,36 @@ describe("resolveDropTarget — anchor 멤버", () => {
 		expect(t).toEqual({ kind: "createPair", partnerId: "c", anchor: { x: 900, y: 900 } });
 	});
 });
+
+// 휴식 선수 — 딱지를 달고 보드에 남되(2026-07 휴식 패널 폐지) 편성은 불가.
+// 해제는 "하단 휴식존에 다시 드롭"이 유일한 경로라, 팀에 끌어다 놓아도 위치만 움직여야 한다.
+describe("resolveDropTarget — 휴식 선수", () => {
+	const resting = new Set(["r"]);
+
+	it("팀 빈 슬롯 위에 놓아도 합류하지 않고 move", () => {
+		const m = magnets(mag("a", 300, 300, "T"), mag("r", 500, 500));
+		const t = resolveDropTarget(
+			"r",
+			{ x: 335, y: 335 },
+			m,
+			drafts(draft("T", ["a"], 300, 300)),
+			noRes,
+			new Set(),
+			new Set(),
+			resting,
+		);
+		expect(t).toEqual({ kind: "move", to: { x: 335, y: 335 } });
+	});
+
+	it("다른 자유 자석에 겹쳐도 페어가 만들어지지 않고 move", () => {
+		const m = magnets(mag("a", 100, 100), mag("r", 500, 500));
+		const t = resolveDropTarget("r", { x: 110, y: 100 }, m, new Map(), noRes, new Set(), new Set(), resting);
+		expect(t).toEqual({ kind: "move", to: { x: 110, y: 100 } });
+	});
+
+	it("휴식자가 페어 상대로도 안 잡힌다(대기 자석을 휴식자에 겹쳐도 move)", () => {
+		const m = magnets(mag("r", 100, 100), mag("b", 500, 500));
+		const t = resolveDropTarget("b", { x: 110, y: 100 }, m, new Map(), noRes, new Set(), new Set(), resting);
+		expect(t).toEqual({ kind: "move", to: { x: 110, y: 100 } });
+	});
+});

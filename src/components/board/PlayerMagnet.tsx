@@ -45,15 +45,13 @@ interface Props {
 	reservationId?: string;
 	/** 코트 배치된 경기중 선수 — 드래그 시 예약 생성, 항상 슬롯 복귀 */
 	playing?: boolean;
-	/** 휴식존에 들어간 휴식 선수 — 흐리게+배지, 존 밖으로 드래그 시 복귀 */
+	/** 휴식 선수 — 흐리게 + "휴식" 배지를 달고 보드에 그대로 남는다. 하단 휴식존에 다시 놓으면 복귀. */
 	resting?: boolean;
 	/** 우선배치(그룹 지정)된 멤버 — 핀 배지 표시(시각 전용, 점수 영향 없음). 내부 prop명은 forcedIds와 일관되게 forced 유지. */
 	forced?: boolean;
 	onDragEnd?: (playerId: string, cx: number, cy: number) => void;
 	onGhostDragEnd?: (resId: string, cx: number, cy: number) => void;
 	onPlayingDragEnd?: (playerId: string, cx: number, cy: number) => void;
-	/** 휴식 자석 드래그-엔드(절대좌표) — 존 밖이면 복귀 처리 */
-	onRestingDragEnd?: (playerId: string, cx: number, cy: number) => void;
 	/** 드래그 이동 중 절대좌표 — 휴식 필드 hover 감지 등 */
 	onDragMove?: (playerId: string, cx: number, cy: number) => void;
 	/** 자석 탭(드래그 아님) — 추천 팀원 모달 열기 */
@@ -74,7 +72,6 @@ const PlayerMagnet = memo(function PlayerMagnet({
 	onDragEnd,
 	onGhostDragEnd,
 	onPlayingDragEnd,
-	onRestingDragEnd,
 	onDragMove,
 	onClick,
 	onCockCheck,
@@ -140,7 +137,8 @@ const PlayerMagnet = memo(function PlayerMagnet({
 	}, [isGhost, hasPhoto, image]);
 
 	// ── 더블탭 → "어딘가에서 빠짐"(해체/예약취소/휴식복귀) ──────────────────
-	// 그룹 anchor → 팀에서 빼기, ghost → 예약 취소, 휴식 → 복귀. 자유 자석/경기중은 빠질 곳이 없어 무동작.
+	// 그룹 anchor → 팀에서 빼기, ghost → 예약 취소, 휴식 → 복귀(하단 휴식존 드롭과 같은 결과).
+	// 자유 자석/경기중은 빠질 곳이 없어 무동작.
 	// 현재 렌더 위치(slot offset 반영)를 drop으로 넘겨 그 자리에서 자연스럽게 흩어지게 한다.
 	const removeFromGroup = useCallback(() => {
 		const store = useBoardStore.getState();
@@ -150,7 +148,7 @@ const PlayerMagnet = memo(function PlayerMagnet({
 		if (isGhost) {
 			if (reservationId) store.cancelReservation(reservationId);
 		} else if (resting) {
-			store.unrestPlayer(playerId, pos);
+			store.unrestPlayer(playerId);
 		} else if (!playing && store.magnets.get(playerId)?.teamId != null) {
 			store.detachMember(playerId, pos);
 		}
@@ -165,14 +163,12 @@ const PlayerMagnet = memo(function PlayerMagnet({
 		playerId,
 		isGhost,
 		playing,
-		resting,
 		reservationId,
 		offsetX,
 		offsetY,
 		onDragEnd,
 		onGhostDragEnd,
 		onPlayingDragEnd,
-		onRestingDragEnd,
 		onDragMove,
 		clearTap,
 		clearLongPress,

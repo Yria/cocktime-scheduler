@@ -39,6 +39,10 @@ function grp(...members: string[]) {
 	return { matchId: `m${grpSeq++}-${members.join(".")}`, members };
 }
 
+/** 밴드 확장폭 k의 실력 벌점 — 공식(W_SKILL·k^W_SKILL_EXP)과 동기. 값이 아니라 관계를 검증하기 위한 헬퍼. */
+const skillPenalty = (k: number) =>
+	k ** (RECOMMEND_WEIGHTS.W_SKILL_EXP ?? 1) * RECOMMEND_WEIGHTS.W_SKILL;
+
 describe("recommendTeammates", () => {
 	it("실력이 비슷한 후보가 상위(낮은 점수)에 온다", () => {
 		const confirmed = [player("c1", "M", 6)]; // 등급 6
@@ -213,7 +217,7 @@ describe("recommendTeammates", () => {
 		const ranked = recommendTeammates(confirmed, [mClose, mFar], ctx());
 		const get = (id: string) => ranked.find((r) => r.player.id === id)!;
 		expect(get("mClose").breakdown!.skill).toBe(0);
-		expect(get("mFar").breakdown!.skill).toBeCloseTo(4 * RECOMMEND_WEIGHTS.W_SKILL, 5);
+		expect(get("mFar").breakdown!.skill).toBeCloseTo(skillPenalty(4), 5);
 		expect(ranked[0].player.id).toBe("mClose");
 	});
 
@@ -227,7 +231,7 @@ describe("recommendTeammates", () => {
 		const get = (id: string) => ranked.find((r) => r.player.id === id)!;
 		expect(get("mid").breakdown!.skill).toBe(0);
 		expect(get("edge").breakdown!.skill).toBe(0); // 중간 등급이 더 이상 특별 우대되지 않는다
-		expect(get("widen").breakdown!.skill).toBeCloseTo(2 * RECOMMEND_WEIGHTS.W_SKILL, 5);
+		expect(get("widen").breakdown!.skill).toBeCloseTo(skillPenalty(2), 5);
 	});
 
 	it("밴드 하방 확장도 상방과 동일하게 벌점된다", () => {
@@ -236,7 +240,7 @@ describe("recommendTeammates", () => {
 		const inside = player("inside", "M", 6);
 		const ranked = recommendTeammates(confirmed, [below, inside], ctx());
 		const get = (id: string) => ranked.find((r) => r.player.id === id)!;
-		expect(get("below").breakdown!.skill).toBeCloseTo(4 * RECOMMEND_WEIGHTS.W_SKILL, 5);
+		expect(get("below").breakdown!.skill).toBeCloseTo(skillPenalty(4), 5);
 		expect(get("inside").breakdown!.skill).toBe(0);
 	});
 
@@ -247,7 +251,7 @@ describe("recommendTeammates", () => {
 		const unratedCand = player("unratedCand", "M", 0); // 정보 없음 → 벌점 없음
 		const ranked = recommendTeammates(confirmed, [low, unratedCand], ctx());
 		const get = (id: string) => ranked.find((r) => r.player.id === id)!;
-		expect(get("low").breakdown!.skill).toBeCloseTo(7 * RECOMMEND_WEIGHTS.W_SKILL, 5);
+		expect(get("low").breakdown!.skill).toBeCloseTo(skillPenalty(7), 5);
 		expect(get("unratedCand").breakdown!.skill).toBe(0);
 	});
 
@@ -265,6 +269,17 @@ describe("recommendTeammates", () => {
 		expect(sw.score - lw.score).toBeCloseTo(25 * RECOMMEND_WEIGHTS.W_WAIT, 0);
 	});
 
+	it("큰 밴드 확장은 경기수를 넘어선다 — 제곱 벌점의 목적(2026-07-29)", () => {
+		// 구 선형(3.0k)에서는 5등급 확장이 15점(1.5판)이라 2판 차이에 밀려 '많이 벌어진 팀'이 그대로
+		// 편성됐다. 남녀 등급 분포가 어긋난 로스터의 혼복(2남2녀 강제)에서 스프레드가 커진 원인.
+		const confirmed = [player("seed", "M", 8)];
+		const far = { ...player("far", "M", 3), gameCount: 0 }; // 밴드를 5 넓힘, 0판
+		const near = { ...player("near", "M", 8), gameCount: 2 }; // 실력 일치, 2판 더 뜀
+		const ranked = recommendTeammates(confirmed, [far, near], ctx());
+		expect(skillPenalty(5)).toBeGreaterThan(2 * RECOMMEND_WEIGHTS.W_GAME);
+		expect(ranked[0].player.id).toBe("near");
+	});
+
 	it("가중치 회귀 가드 — 2명 겹침 < 경기수 1판 < 3명 겹침, 4명 재결성 > 경기중 페널티", () => {
 		// 2명 유지+2명 교체는 경기수(1판=W_GAME)를 못 뒤집는 약한 회피여야 하고,
 		// 3명 유지+1명 교체는 1판을 넘어서며, 완전 재결성은 경기중 ghost를 데려오는 것(W_PLAYING)보다
@@ -273,14 +288,20 @@ describe("recommendTeammates", () => {
 		expect(RECOMMEND_WEIGHTS.W_GROUP3).toBeGreaterThan(RECOMMEND_WEIGHTS.W_GAME);
 		expect(RECOMMEND_WEIGHTS.W_GROUP4).toBeGreaterThan(RECOMMEND_WEIGHTS.W_PLAYING);
 		expect(RECOMMEND_WEIGHTS.W_GAME).toBeGreaterThan(RECOMMEND_WEIGHTS.W_SKILL);
+		// 실력(제곱) 임계: 2등급 확장까지는 경기수 1판이 우선, 3등급 확장부터 실력이 넘어선다.
+		expect(skillPenalty(2)).toBeLessThan(RECOMMEND_WEIGHTS.W_GAME);
+		expect(skillPenalty(3)).toBeGreaterThan(RECOMMEND_WEIGHTS.W_GAME);
+		// "재결성될 바엔 벌어진 팀" 순서 보존 — 등급 1~10에서 현실적 최대 확장(6)보다 W_GROUP4가 커야 한다.
+		expect(RECOMMEND_WEIGHTS.W_GROUP4).toBeGreaterThan(skillPenalty(6));
 	});
 
-	it("경기수가 실력을 이긴다 — 더 뛴 '실력 쌍둥이'보다 덜 뛴 후보가 우선 선발된다", () => {
+	it("경기수가 실력을 이긴다 — 작은 밴드 확장(2등급)은 1판 차이를 못 뒤집는다", () => {
 		const confirmed = [player("seed", "M", 6)]; // 등급 6
-		const similar = { ...player("similar", "M", 6), gameCount: 2 }; // 실력 동일하지만 2판 더 뜀
-		const fewGames = { ...player("fewGames", "M", 1), gameCount: 0 }; // 실력 다르지만 0판
+		const similar = { ...player("similar", "M", 6), gameCount: 1 }; // 실력 동일하지만 1판 더 뜀
+		const fewGames = { ...player("fewGames", "M", 4), gameCount: 0 }; // 밴드를 2 넓히지만 0판
 		const ranked = recommendTeammates(confirmed, [similar, fewGames], ctx());
-		// 실력만 봤다면 similar가 1순위였겠지만, 경기수 우선이라 덜 뛴 fewGames가 앞선다.
+		// 2등급 확장(1.5·2²=6) < 1판(10) → 덜 뛴 fewGames가 앞선다("경기수 > 실력" 철학).
+		expect(skillPenalty(2)).toBeLessThan(RECOMMEND_WEIGHTS.W_GAME);
 		expect(ranked[0].player.id).toBe("fewGames");
 	});
 });

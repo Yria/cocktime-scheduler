@@ -25,6 +25,16 @@ export function effectiveForcedIds(t: DraftTeam, memberIds: ReadonlySet<string>)
 
 // ── 내부 헬퍼 (immer draft 상태를 직접 변형) ───────────────
 
+/**
+ * 매칭확정 해제 가드 — 멤버가 빠져 4명 미만이 된 팀은 확정(confirmedMs)을 지운다.
+ * 모든 "인원이 줄 수 있는" 뮤테이션(detach/예약삭제/heal) 끝에서 호출. 4명 유지되는 교체(스왑)는 순번 보존.
+ */
+export function clearConfirmIfBelowFull(s: Draft, teamId: string) {
+	const team = s.drafts.get(teamId);
+	if (!team || team.confirmedMs == null) return;
+	if (teamMemberCount(teamId, s.drafts, s.reservations) < 4) delete team.confirmedMs;
+}
+
 export function dissolveDraft(s: Draft, teamId: string) {
 	const team = s.drafts.get(teamId);
 	if (team) {
@@ -84,18 +94,31 @@ export function detachAnchor(s: Draft, playerId: string) {
 	// 남은 인원이 너무 적으면(원본 0명 또는 총 2명 미만) 팀 해체
 	if (team.anchorMemberIds.length === 0 || teamMemberCount(teamId, s.drafts, s.reservations) < 2) {
 		dissolveDraft(s, teamId);
+		return;
 	}
+	clearConfirmIfBelowFull(s, teamId); // 4명 미만이 됐으면 매칭확정 해제
 }
 
-export function attachAnchor(s: Draft, playerId: string, teamId: string, slot?: number) {
+/**
+ * 선수를 팀 정식 멤버(anchor)로 합류. by = 이 액션을 수행한 편집자 표시 이름 —
+ * "새 인원"이 팀에 들어갈 때만 createdBy를 갱신한다(ghost 승격·팀내 재배치·자동 승격은 미갱신).
+ */
+export function attachAnchor(s: Draft, playerId: string, teamId: string, slot?: number, by?: string) {
 	const mag = s.magnets.get(playerId);
 	const team = s.drafts.get(teamId);
 	if (!mag || !team) return;
+	// createdBy 갱신 판정은 예약 정제 전에 — 이 팀의 ghost였다면(승격) "이미 그룹 안 사람"이라 갱신 대상 아님.
+	const wasMember = isMemberOf(playerId, teamId, s.drafts, s.reservations);
 	// anchor로 확정되면 이 선수는 어느 팀에서도 빌려질(ghost) 수 없다(anchor xor ghost). 모든 예약(타 팀 포함) 정제.
 	// — 원본(선수)이 anchor로 바뀌는데 복사본(ghost)이 다른 팀에 남는 구조적 결함 방지. ghost 승격도 이 경로로 처리.
+	const ghostLostTeamIds = new Set<string>();
 	for (const [rid, r] of [...s.reservations]) {
-		if (r.playerId === playerId) s.reservations.delete(rid);
+		if (r.playerId !== playerId) continue;
+		s.reservations.delete(rid);
+		if (r.teamId !== teamId) ghostLostTeamIds.add(r.teamId);
 	}
+	// ghost를 잃은 다른 팀은 4명 미만이 됐으면 매칭확정 해제
+	for (const tid of ghostLostTeamIds) clearConfirmIfBelowFull(s, tid);
 	const setSlot = () => {
 		if (slot === undefined) return; // 미지정 → teamMembers fallback(빈칸 순서대로)
 		team.slots = team.slots ?? {};
@@ -111,14 +134,18 @@ export function attachAnchor(s: Draft, playerId: string, teamId: string, slot?: 
 	team.anchorMemberIds.push(playerId);
 	mag.teamId = teamId;
 	setSlot();
+	if (by && !wasMember) team.createdBy = by; // 새 인원을 넣은 편집자로 갱신
 }
 
-export function addReservation(s: Draft, playerId: string, teamId: string) {
-	if (!s.drafts.get(teamId)) return;
+/** 예약(ghost) 추가. by = 수행 편집자 — ghost도 사각형에 보이는 인원 추가이므로 createdBy 갱신. */
+export function addReservation(s: Draft, playerId: string, teamId: string, by?: string) {
+	const team = s.drafts.get(teamId);
+	if (!team) return;
 	if (isMemberOf(playerId, teamId, s.drafts, s.reservations)) return;
 	if (teamMemberCount(teamId, s.drafts, s.reservations) >= 4) return;
 	const id = newId();
 	s.reservations.set(id, { id, playerId, teamId, createdAt: nowMs() });
+	if (by) team.createdBy = by;
 }
 
 /**

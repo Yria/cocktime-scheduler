@@ -52,6 +52,12 @@ export interface RankedCandidate {
 export interface Weights {
 	/** 실력(스프레드 증가분) — 팀 등급 밴드를 넓히는 후보만 벌점, 2v2 균형은 pairPlayers가 맡는다. */
 	W_SKILL: number;
+	/**
+	 * 실력 벌점의 지수 — `skillDiff = 확장폭 ** W_SKILL_EXP`. 미지정이면 1(선형).
+	 * 확장폭이 클수록 초선형으로 무거워져 "많이 벌어진 팀"을 강하게 억제하는 튜닝 knob이다.
+	 * (선형에서는 6등급 확장이 3등급 확장의 2배 벌점뿐이라 판수 2~3판 차이에 밀려 벌어진 시드가 그대로 생겼다.)
+	 */
+	W_SKILL_EXP?: number;
 	/** 재결성 회피(약) — 후보 합류로 과거 그룹과 2명이 겹치는 경우(2명 유지+2명 교체) 그룹당 벌점. */
 	W_GROUP2: number;
 	/** 재결성 회피(중) — 과거 그룹과 3명이 겹치는 경우(3명 유지+1명 교체) 그룹당 벌점. */
@@ -75,10 +81,16 @@ export interface Weights {
 //   (경기중 ghost 페널티 W_PLAYING 30·혼복 성별 페널티 W_GENDER 50보다도 크게).
 //   200시드 스윕 근거: (2,12,40)은 2인 겹침 회피가 구 Σc²의 1/4로 약해져 순후퇴(overlap3 3.9% vs 기준 1.3%),
 //   (8,24,60)에서 overlap3 0.7%·overlap2 67%·고유 동반 16.2명으로 전 지표가 기준선을 넘어선다.
-// - W_SKILL 3.0 (스프레드 증가분 방식): 밴드 안 후보는 전부 0이라 실력 항은 "밴드를 넓히는 후보"에만
-//   작동한다. 3.0이면 3등급 초과 확장부터 경기수 1판 차이를 넘어서고 그 이하 확장은 경기수 우선.
-//   (200시드 시뮬 스윕 근거: 평균 스프레드 3.90→3.51·타이트(≤2) 26→33%, 판수 형평 비용 std +0.018.)
-const DEFAULT_WEIGHTS: Weights = { W_SKILL: 3.0, W_GROUP2: 8.0, W_GROUP3: 24.0, W_GROUP4: 60.0, W_GAME: 10.0, W_MIXED: 0, W_WAIT: 0 };
+// - W_SKILL 1.5 · W_SKILL_EXP 2 (스프레드 증가분의 제곱, 2026-07-29): 밴드 안 후보는 전부 0이라 실력 항은
+//   "밴드를 넓히는 후보"에만 작동한다. 확장폭 k에 대해 벌점 = 1.5·k² → k=2는 6(경기수 1판 10 미만, 경기수
+//   우선), k=3은 13.5, k=4는 24, k=6은 54로 초선형 급증. 구 선형(3.0k)은 k=6이 18(1.8판)에 불과해
+//   판수 2판 차이에 밀려 "많이 벌어진 팀"이 그대로 편성됐다 — 특히 남녀 등급 분포가 어긋난 로스터의
+//   혼복(2남2녀 강제)에서 밴드가 벌어지고, 그 뒤로는 밴드 안 후보가 전부 0점이라 실력 심사가 꺼졌다.
+//   (300시드·로스터 3종 스윕 근거: 혼복 스프레드 4.49→4.11 / 3.07→2.92 / 5.14→4.37, 전체 3.70→3.39,
+//    판수 형평 비용 gcStd +0.00, 3인 겹침 0.4→0.8%, interDiff 1.33→1.15. 같은 스프레드를 선형 W6.0으로
+//    달성하면 gcStd +0.02·interDiff 1.26으로 열위 — 제곱이 파레토 우월. 상세: docs/MATCH_LOG_ANALYSIS.md §4b)
+//   W_GROUP4(60) > k=6 확장(54)은 유지 — "재결성될 바엔 벌어진 팀" 순서가 뒤집히지 않는다.
+const DEFAULT_WEIGHTS: Weights = { W_SKILL: 1.5, W_SKILL_EXP: 2, W_GROUP2: 8.0, W_GROUP3: 24.0, W_GROUP4: 60.0, W_GAME: 10.0, W_MIXED: 0, W_WAIT: 0 };
 
 // ─────────────────────────────────────────────
 // 스킬 점수 유틸
@@ -141,8 +153,9 @@ function computeScore(
 		return { score: breakdown.game + breakdown.mixed + breakdown.wait, breakdown };
 	}
 
-	// 실력 차이: 후보 합류 시 팀 등급 밴드(min~max)의 "스프레드 증가분".
-	// 기존 밴드 안(min ≤ 후보 ≤ max) 후보는 전부 0으로 동일하고, 밴드를 넓히는 후보만 넓힌 만큼 벌점.
+	// 실력 차이: 후보 합류 시 팀 등급 밴드(min~max)의 "스프레드 증가분"을 W_SKILL_EXP 제곱한 값.
+	// 기존 밴드 안(min ≤ 후보 ≤ max) 후보는 전부 0으로 동일하고, 밴드를 넓히는 후보만 벌점 —
+	// 제곱이라 조금 넓히는 건 여전히 경기수에 밀리고(k=2 → 6 < 1판 10), 크게 넓히는 건 강하게 배제된다.
 	// confirmed 1명일 때는 |후보 − 확정| 로 평균 방식과 동일하게 동작한다.
 	// (구) "confirmed 평균과의 거리"는 이미 벌어진 팀(예: {2,8} 평균 5)에서 중간 등급(5)을 항상
 	// '최적합(0)'으로 판정해 중간 등급이 이질 팀의 필러로 흡수되는 비대칭이 있었다 — 스프레드
@@ -153,10 +166,11 @@ function computeScore(
 	// 제외하고(0이 밴드 하한을 무너뜨려 하방 판별이 꺼지는 것 방지), 미등급 후보 본인도 벌점하지 않는다.
 	const candidateGrade = skillScore(candidate);
 	const grades = confirmed.map(skillScore).filter((g) => g > 0);
-	const skillDiff =
+	const spreadGrowth =
 		candidateGrade > 0 && grades.length > 0
 			? Math.max(0, Math.min(...grades) - candidateGrade, candidateGrade - Math.max(...grades))
 			: 0;
+	const skillDiff = spreadGrowth > 0 ? spreadGrowth ** (weights.W_SKILL_EXP ?? 1) : 0;
 
 	// 그룹 재결성 회피: 과거 완료 경기의 4인 그룹 G(후보가 속했던 것) 각각에 대해 k = |G ∩ confirmed|.
 	// 후보 합류로 새 팀이 그 그룹과 2명(k=1)·3명(k=2)·4명(k=3) 겹치게 되는 만큼 단계적으로 벌점한다.

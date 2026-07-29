@@ -90,11 +90,16 @@ export function arrangeBoard(input: ArrangeInput): void {
 	// 그룹이 없으면 상단 공백 없이 맨 위부터(코트 전용 영역 개념 없음)
 	const groupAreaBottom = groupRows > 0 ? GROUP_TOP + groupRows * rowH : GROUP_TOP;
 
-	// 2) 나머지 자유 자석을 그룹 영역 아래에 격자 배치 — 콕 미제출자는 맨 뒤로, 그 안에서 경기수 적은 사람 먼저
-	//    (휴식 선수는 휴식존으로 분리되므로 메인 보드 배치에서 제외)
+	// 2) 나머지 자유 자석을 그룹 영역 아래에 격자 배치 — 매칭 대기가 앞, 콕 미제출자 뒤, 휴식자 맨 뒤.
+	//    그 안에서 경기수 적은 사람 먼저.
+	//    휴식 선수도 "휴식" 딱지를 달고 보드에 남는다(2026-07: 구 휴식 패널 폐지) — 보드에서 사라지면 운영진이
+	//    "버그로 없어졌다"고 오인해 게스트를 중복 추가하는 사고가 있었다. 정렬 순서만 맨 뒤로 밀어 구분한다.
 	const freeMagnets = [...magnets.values()]
-		.filter((m) => m.teamId === null && !playingIds.has(m.playerId) && !restingIds.has(m.playerId))
+		.filter((m) => m.teamId === null && !playingIds.has(m.playerId))
 		.sort((a, b) => {
+			const ra = restingIds.has(a.playerId) ? 1 : 0;
+			const rb = restingIds.has(b.playerId) ? 1 : 0;
+			if (ra !== rb) return ra - rb; // 휴식자(1) 맨 뒤로
 			const pa = cockPendingIds.has(a.playerId) ? 1 : 0;
 			const pb = cockPendingIds.has(b.playerId) ? 1 : 0;
 			if (pa !== pb) return pa - pb; // 콕 미제출자(1) 뒤로
@@ -122,7 +127,7 @@ const FIT_BOTTOM_MARGIN = 6;
  * 렌더 없이(순수) 현재 구성이 차지하는 보드 세로 높이(px)를 계산한다 — arrangeBoard의 배치 공식과 동일.
  * 그룹 격자 + 그 아래 자유 자석 격자의 최하단(자연 배치, settle 클램프 전 기준).
  * @param groupCount 경기중 코트 + 팀(draft) 수 (arrangeBoard의 그룹 격자 항목 수와 동일)
- * @param freeCount  자유 자석 수 (teamId=null·비경기중·비휴식 — arrangeBoard freeMagnets와 동일 기준)
+ * @param freeCount  자유 자석 수 (teamId=null·비경기중 — 휴식자 포함, arrangeBoard freeMagnets와 동일 기준)
  * @param viewW      보이는 논리 가로(=stageW/scale) — 줄바꿈 열 수를 결정
  */
 export function requiredBoardHeight(groupCount: number, freeCount: number, viewW: number): number {

@@ -7,6 +7,8 @@ import {
 	isTeamStartable,
 	playingIdsFromCourts,
 	cockPendingIds,
+	confirmRank,
+	nextUpConfirmedTeamId,
 } from "./membership";
 import type { DraftTeam, MagnetPosition, Reservation } from "../../types/board";
 import type { Court, SessionPlayer } from "../../types";
@@ -118,6 +120,61 @@ describe("playingIdsFromCourts", () => {
 			{ id: 2, match: null },
 		];
 		expect(playingIdsFromCourts(courts)).toEqual(new Set(["a", "b", "c", "d"]));
+	});
+});
+
+describe("confirmRank / nextUpConfirmedTeamId — 매칭확정 순서", () => {
+	const confirmedDraft = (id: string, memberIds: string[], confirmedMs?: number): DraftTeam => ({
+		...draft(id, memberIds),
+		...(confirmedMs != null ? { confirmedMs } : {}),
+	});
+
+	it("confirmRank: confirmedMs 오름차순 1-base 순번, 미확정 팀은 null", () => {
+		const drafts = mapOf(
+			[
+				confirmedDraft("A", ["a1", "a2", "a3", "a4"], 300),
+				confirmedDraft("B", ["b1", "b2", "b3", "b4"], 100),
+				confirmedDraft("C", ["c1", "c2"]), // 미확정
+			],
+			(d) => d.id,
+		);
+		expect(confirmRank("B", drafts)).toBe(1);
+		expect(confirmRank("A", drafts)).toBe(2);
+		expect(confirmRank("C", drafts)).toBeNull();
+		expect(confirmRank("없는팀", drafts)).toBeNull();
+	});
+
+	it("confirmRank: confirmedMs 동률이면 id 오름차순으로 결정적", () => {
+		const drafts = mapOf(
+			[confirmedDraft("B", ["b1", "b2", "b3", "b4"], 100), confirmedDraft("A", ["a1", "a2", "a3", "a4"], 100)],
+			(d) => d.id,
+		);
+		expect(confirmRank("A", drafts)).toBe(1);
+		expect(confirmRank("B", drafts)).toBe(2);
+	});
+
+	it("nextUpConfirmedTeamId: 가장 먼저 확정된 '시작 가능' 팀 — 앞 팀이 시작 불가면 다음 팀", () => {
+		// B(100)가 최선이지만 멤버 b1이 경기중 → 시작 불가. 다음 확정 A(300)가 next-up.
+		const drafts = mapOf(
+			[
+				confirmedDraft("A", ["a1", "a2", "a3", "a4"], 300),
+				confirmedDraft("B", ["b1", "b2", "b3", "b4"], 100),
+			],
+			(d) => d.id,
+		);
+		const magnets = mapOf(
+			["a1", "a2", "a3", "a4"].map((id) => mag(id, "A")).concat(["b1", "b2", "b3", "b4"].map((id) => mag(id, "B"))),
+			(m) => m.playerId,
+		);
+		expect(nextUpConfirmedTeamId(drafts, new Map(), magnets, new Set())).toBe("B");
+		expect(nextUpConfirmedTeamId(drafts, new Map(), magnets, new Set(["b1"]))).toBe("A");
+		expect(nextUpConfirmedTeamId(drafts, new Map(), magnets, new Set(["a1", "b1"]))).toBeNull();
+	});
+
+	it("nextUpConfirmedTeamId: 확정 팀이 없으면 null", () => {
+		const drafts = mapOf([draft("T", ["a", "b", "c", "d"])], (d) => d.id);
+		const magnets = mapOf(["a", "b", "c", "d"].map((id) => mag(id, "T")), (m) => m.playerId);
+		expect(nextUpConfirmedTeamId(drafts, new Map(), magnets, new Set())).toBeNull();
 	});
 });
 

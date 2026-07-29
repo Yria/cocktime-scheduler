@@ -85,12 +85,20 @@ export const TEAM_RESERVED_BG = "#2E1065";
 export const TEAM_RESERVED_STROKE = "#A78BFA";
 export const TEAM_QUEUED_BG = "#1E293B";
 export const TEAM_QUEUED_STROKE = "#3B82F6";
+// 매칭확정된 팀 박스(대기열) — 완성(초록)·경기중(주황)과 구분되는 딥 블루
+export const TEAM_CONFIRMED_BG = "#172554";
+export const TEAM_CONFIRMED_STROKE = "#3B82F6";
 
 // CTA
 export const CTA_START_COLOR = "#22C55E";
 export const CTA_QUEUE_COLOR = "#3B82F6";
 export const CTA_FINISH_COLOR = "#3B82F6";
 export const CTA_DISABLED_COLOR = "#475569";
+// 경기시작 CTA — 코트 카드(주황)로 넘어가는 전이라 주황 계열. FLASH는 반짝임 밝은 프레임.
+export const CTA_PLAY_COLOR = "#F59E0B";
+export const CTA_PLAY_FLASH = "#FBBF24";
+// 확정취소(✕) 미니 버튼
+export const CTA_UNCONFIRM_COLOR = "#334155";
 
 // Reservation (ghost) 시각화
 export const RESERVATION_OPACITY = 0.5;
@@ -114,8 +122,7 @@ export const RESTING_OPACITY = 0.55;
 export const RESTING_BADGE_BG = "#475569";
 
 // 팀에서 빼기(detach) 드롭존 — 팀 소속 자석 드래그 중에만 네비 영역에 DOM 오버레이로 노출(휴식존과 구분되는 레드/로즈).
-// 판정 경계는 칠판 상단(y≤0); DETACH_ZONE_H는 펼침 휴식 패널이 칠판 최상단까지 차오르지 않게 하는 상단 안전 마진(restZoneHeight)으로만 쓰인다.
-export const DETACH_ZONE_H = 72; // 펼침 휴식 패널 상단 안전 마진(논리)
+// 판정 경계는 칠판 상단(y≤0). (구 DETACH_ZONE_H는 폐지된 펼침 휴식 패널의 상단 안전 마진 전용이라 함께 제거 — 2026-07.)
 export const DETACH_ZONE_BG = "rgba(76,29,29,0.92)"; // 다크 로즈(반투명)
 export const DETACH_ZONE_STROKE = "#7F1D1D";
 export const DETACH_ZONE_LABEL = "#FCA5A5";

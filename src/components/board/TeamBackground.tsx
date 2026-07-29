@@ -1,4 +1,4 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { Group, Rect, Text, Circle, Line } from "react-konva";
 import type Konva from "konva";
 import { useBoardStore } from "../../store/boardStore";
@@ -6,8 +6,10 @@ import { useSessionStore } from "../../store/sessionStore";
 import { computeSlotOffset, emptySlotIndices } from "../../lib/board/geometry";
 import { isSelfDrag, stopTap } from "../../lib/board/konvaEvents";
 import {
+	confirmRank,
 	findReservation,
 	isTeamStartable,
+	nextUpConfirmedTeamId,
 	teamMembers,
 	wouldDissolveByPlaying,
 } from "../../lib/board/membership";
@@ -29,14 +31,23 @@ import {
 	TEAM_READY_STROKE,
 	TEAM_RESERVED_BG,
 	TEAM_RESERVED_STROKE,
+	TEAM_CONFIRMED_BG,
+	TEAM_CONFIRMED_STROKE,
 	TEXT_SECONDARY,
 	STROKE_DEFAULT,
 	CTA_START_COLOR,
 	CTA_QUEUE_COLOR,
 	CTA_DISABLED_COLOR,
+	CTA_PLAY_COLOR,
+	CTA_PLAY_FLASH,
+	CTA_UNCONFIRM_COLOR,
 	HILITE_STROKE,
 } from "../../lib/board/constants";
 import PlayerMagnet from "./PlayerMagnet";
+
+/** 확정취소(✕) 미니 버튼 폭 — 경기시작 버튼 좌측에 배치, 나머지가 메인 버튼. */
+const UNCONFIRM_W = 28;
+const UNCONFIRM_GAP = 6;
 
 interface Props {
 	teamId: string;
@@ -99,6 +110,25 @@ const TeamBackground = memo(function TeamBackground({
 		if (isSelfDrag(e)) e.target.moveToTop();
 	}, []);
 
+	// ── 경기시작 버튼 반짝임 — "다음 경기"(가장 먼저 확정 + 시작 가능) 팀이고 코트가 비었을 때만.
+	// 훅은 아래 조기 return보다 앞이어야 하므로 team 부재를 허용해 판정한다. 550ms 토글(setInterval)이라
+	// Konva 레이어 redraw는 초당 2회뿐(연속 애니메이션 아님 — 모바일 배터리/프레임 영향 최소).
+	const blinkActive =
+		team != null &&
+		team.confirmedMs != null &&
+		hasEmptyCourt &&
+		isEditor &&
+		nextUpConfirmedTeamId(drafts, reservations, magnets, playingIds) === teamId;
+	const [flash, setFlash] = useState(false);
+	useEffect(() => {
+		if (!blinkActive) {
+			setFlash(false);
+			return;
+		}
+		const t = window.setInterval(() => setFlash((f) => !f), 550);
+		return () => window.clearInterval(t);
+	}, [blinkActive]);
+
 	if (!team) return null;
 	// I2 렌더 게이팅 — 경기중이 된 anchor로 해체될 팀은 그 프레임에 즉시 안 그린다(healPlayingAnchors가
 	// 상태를 정제하는 1프레임 뒤가 아니라 렌더 시점 playingIds로 판정 → '코트+유령 팀' 동시노출 0프레임).
@@ -112,45 +142,69 @@ const TeamBackground = memo(function TeamBackground({
 	// 매칭확정 가능 = 4명이고 시작 가능(isTeamStartable). 예약(ghost)이 끼어도 그 선수가 자유(경기 끝남)면
 	// startable=true → 매칭확정. 예약자가 아직 경기중이면 startable=false → 우선배치 모드(시작 버튼 대신 그룹 지정).
 	const canStart = isFull && startable;
+	// 3단계 흐름: [매칭확정](canStart·미확정) → [경기시작](확정됨) → [경기완료](코트 카드).
+	// 확정 표시는 지금 시작 가능한 팀에만 유효 — 동기화 레이스로 confirmedMs만 남은 스테일은 무시(렌더 게이팅).
+	const confirmed = canStart && team.confirmedMs != null;
+	const rank = confirmed ? confirmRank(teamId, drafts) : null;
 	// 우선배치(그룹 지정) 상태 — "우선배치"로 지정한 멤버(forcedIds) 중 현재 멤버(anchor+ghost)에 남은 것 ≥2.
 	// 순수 그룹 표시일 뿐 추천/밸런스 점수엔 영향 없음(핀 배지 시각 표시 + 라벨 전용).
 	const intentional = members.filter((m) => team.forcedIds?.includes(m.playerId)).length >= 2;
-	// CTA: 매칭확정(경기 시작 가능) / 그 외(구성 중 OR 4명이지만 예약자 경기중)=우선배치 토글(1명 비활성, 2명+ 활성).
-	//   "자동편성"(자동 채움)은 그룹박스에서 제거되어 추천 모달 안 버튼으로 이동. 구성 중 채움은 빈 슬롯 탭→모달.
-	const ctaEnabled = canStart ? hasEmptyCourt && isEditor : isEditor && count >= 2;
+	// CTA: 확정됨=경기시작(빈 코트 필요) / 매칭확정(코트 불필요 — 대기열 등록) /
+	//   그 외(구성 중 OR 4명이지만 예약자 경기중)=우선배치 토글(1명 비활성, 2명+ 활성).
+	const ctaEnabled = confirmed
+		? isEditor && hasEmptyCourt
+		: canStart
+			? isEditor
+			: isEditor && count >= 2;
 
-	// 박스 스타일: 시작 가능=초록 / 4명이지만 예약자 경기중=보라(실제 경기중 코트 주황과 구분) / 구성 중=회색
-	const style = startable
-		? { fill: TEAM_READY_BG, stroke: TEAM_READY_STROKE }
-		: isFull
-			? { fill: TEAM_RESERVED_BG, stroke: TEAM_RESERVED_STROKE }
-			: { fill: TEAM_FORMING_BG, stroke: TEAM_FORMING_STROKE };
+	// 박스 스타일: 확정=딥블루(대기열) / 시작 가능=초록 / 4명이지만 예약자 경기중=보라 / 구성 중=회색
+	const style = confirmed
+		? { fill: TEAM_CONFIRMED_BG, stroke: TEAM_CONFIRMED_STROKE }
+		: startable
+			? { fill: TEAM_READY_BG, stroke: TEAM_READY_STROKE }
+			: isFull
+				? { fill: TEAM_RESERVED_BG, stroke: TEAM_RESERVED_STROKE }
+				: { fill: TEAM_FORMING_BG, stroke: TEAM_FORMING_STROKE };
 
 	const baseLabel = !isFull
 		? `팀 구성 중 · ${count}/4`
-		: canStart
-			? "팀 완성 · 4/4"
-			: "4/4 · 예약 포함(경기중)";
-	// 생성자(누가 이 그룹을 만들었는지) 표시 — 이름만. 레거시 팀(createdBy 없음)은 접미사 생략.
+		: confirmed
+			? `매칭확정 ${rank ?? "?"}번째`
+			: canStart
+				? "팀 완성 · 4/4"
+				: "4/4 · 예약 포함(경기중)";
+	// 생성자(누가 이 그룹을 만들었는지 — 마지막으로 멤버를 넣은 편집자) 표시. 레거시 팀(createdBy 없음)은 생략.
 	const labelText = team.createdBy ? `${baseLabel} · by ${team.createdBy}` : baseLabel;
-	const labelColor = startable ? TEAM_READY_STROKE : isFull ? TEAM_RESERVED_STROKE : TEXT_SECONDARY;
+	const labelColor = confirmed
+		? TEAM_CONFIRMED_STROKE
+		: startable
+			? TEAM_READY_STROKE
+			: isFull
+				? TEAM_RESERVED_STROKE
+				: TEXT_SECONDARY;
 
-	// 라벨: 매칭확정 가능하면 상태 기준(매칭확정/코트 대기), 그 외(구성 중·4명+예약)는 우선배치(그룹 지정) 토글.
-	const ctaLabel = canStart
-		? !hasEmptyCourt
-			? "코트 대기"
-			: "매칭확정"
-		: intentional
-			? "우선배치 해제"
-			: "우선배치";
-	// 매칭확정=초록 / 우선배치 지정됨=인디고(핀 배지와 동일) / 우선배치=파랑 / 비활성=회색
+	// 라벨: 확정됨=경기시작(코트 없으면 대기 안내), 매칭확정 가능=매칭확정, 그 외=우선배치 토글.
+	const ctaLabel = confirmed
+		? hasEmptyCourt
+			? "경기시작"
+			: "코트 대기"
+		: canStart
+			? "매칭확정"
+			: intentional
+				? "우선배치 해제"
+				: "우선배치";
+	// 경기시작=주황(코트 카드로 전이, 반짝일 땐 밝은 주황) / 매칭확정=초록 / 우선배치 지정됨=인디고 / 우선배치=파랑 / 비활성=회색
 	const ctaColor = !ctaEnabled
 		? CTA_DISABLED_COLOR
-		: canStart
-			? CTA_START_COLOR
-			: intentional
-				? "#6366F1"
-				: CTA_QUEUE_COLOR;
+		: confirmed
+			? blinkActive && flash
+				? CTA_PLAY_FLASH
+				: CTA_PLAY_COLOR
+			: canStart
+				? CTA_START_COLOR
+				: intentional
+					? "#6366F1"
+					: CTA_QUEUE_COLOR;
 
 	// 드래그 중인 자석(이 팀 멤버면)의 슬롯은 빈 칸으로 취급 → 그 자리에 (+) 노출(자석은 Konva가 들고 이동 중).
 	const occupiedSlots = new Set(members.filter((m) => m.playerId !== draggedId).map((m) => m.slot));
@@ -164,12 +218,18 @@ const TeamBackground = memo(function TeamBackground({
 	const halfW = TEAM_W / 2;
 	const ctaY = boxBottom - TEAM_PAD - TEAM_CTA_H;
 
-	// 매칭확정 가능=경기 시작. 그 외(구성 중 2+ OR 4명+예약)=우선배치 토글(누르는 시점 멤버를 그룹으로 지정/해제).
+	// 확정됨=경기시작(코트 배치), 매칭확정 가능=확정(대기열 등록), 그 외=우선배치 토글.
 	const handleCta = () => {
 		if (!ctaEnabled) return;
-		if (canStart) void useBoardStore.getState().startMatch(teamId);
+		if (confirmed) void useBoardStore.getState().startMatch(teamId);
+		else if (canStart) useBoardStore.getState().confirmTeam(teamId);
 		else useBoardStore.getState().toggleForced(teamId);
 	};
+
+	// 확정취소(✕) — 확정된 팀에만, CTA 좌측 미니 버튼(편집자만). 메인 버튼은 그만큼 오른쪽에서 시작.
+	const showUnconfirm = confirmed && isEditor;
+	const ctaMainX = showUnconfirm ? UNCONFIRM_W + UNCONFIRM_GAP : 0;
+	const ctaMainW = TEAM_W - TEAM_PAD * 2 - ctaMainX;
 
 	return (
 		<Group
@@ -293,7 +353,36 @@ const TeamBackground = memo(function TeamBackground({
 				);
 			})}
 
-			{/* CTA 버튼 — 4명=매칭확정(경기시작), 구성 중=우선배치 토글(1명 비활성·2명+ 활성, 누르면 현재 멤버를 그룹으로 지정/해제). */}
+			{/* 확정취소(✕) — 확정된 팀의 CTA 좌측 미니 버튼(편집자만). 누르면 확정 해제(순번 반납). */}
+			{showUnconfirm && (
+				<Group x={-halfW + TEAM_PAD} y={ctaY} {...stopTap(() => useBoardStore.getState().unconfirmTeam(teamId))}>
+					<Rect
+						width={UNCONFIRM_W}
+						height={TEAM_CTA_H}
+						cornerRadius={8}
+						fill={CTA_UNCONFIRM_COLOR}
+						perfectDrawEnabled={false}
+					/>
+					<Line
+						points={[UNCONFIRM_W / 2 - 5, TEAM_CTA_H / 2 - 5, UNCONFIRM_W / 2 + 5, TEAM_CTA_H / 2 + 5]}
+						stroke="#CBD5E1"
+						strokeWidth={2}
+						lineCap="round"
+						listening={false}
+						perfectDrawEnabled={false}
+					/>
+					<Line
+						points={[UNCONFIRM_W / 2 + 5, TEAM_CTA_H / 2 - 5, UNCONFIRM_W / 2 - 5, TEAM_CTA_H / 2 + 5]}
+						stroke="#CBD5E1"
+						strokeWidth={2}
+						lineCap="round"
+						listening={false}
+						perfectDrawEnabled={false}
+					/>
+				</Group>
+			)}
+
+			{/* CTA 버튼 — 확정됨=경기시작(다음 경기 팀은 반짝임), 4명=매칭확정, 구성 중=우선배치 토글. */}
 			<Group
 				x={0}
 				y={ctaY}
@@ -308,18 +397,23 @@ const TeamBackground = memo(function TeamBackground({
 				onTap={handleCta}
 			>
 				<Rect
-					x={-halfW + TEAM_PAD}
+					x={-halfW + TEAM_PAD + ctaMainX}
 					y={0}
-					width={TEAM_W - TEAM_PAD * 2}
+					width={ctaMainW}
 					height={TEAM_CTA_H}
 					cornerRadius={8}
 					fill={ctaColor}
+					stroke={blinkActive && flash ? "#FDE68A" : undefined}
+					strokeWidth={blinkActive && flash ? 2 : 0}
+					shadowColor={CTA_PLAY_FLASH}
+					shadowBlur={14}
+					shadowEnabled={blinkActive && flash && !dragging}
 					perfectDrawEnabled={false}
 				/>
 				<Text
-					x={-halfW + TEAM_PAD}
+					x={-halfW + TEAM_PAD + ctaMainX}
 					y={0}
-					width={TEAM_W - TEAM_PAD * 2}
+					width={ctaMainW}
 					height={TEAM_CTA_H}
 					text={ctaLabel}
 					fontSize={13}
