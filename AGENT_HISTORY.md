@@ -823,3 +823,19 @@ b. 말한대로 수정 / c. 말한대로 수정 / d. 말한대오 수정
 - docs/TEAM_GENERATION_RULES.md·MATCH_LOG_ANALYSIS.md 동기화, 시뮬 하네스는 검증 후 삭제
 
 ---
+
+## #67
+
+**Prompt**: 우선배치 기능이 의미기없어서 우선배치및 스코어계산을 빼줘
+
+**Answer**: 우선배치(forcedIds) 기능을 전 계층에서 제거했습니다. 먼저 확인한 사실 하나 — 우선배치의 스코어 영향 경로(forcedPairs·W_FORCED·decay)는 이미 2026-07에 제거되어 현재는 점수에 일절 영향이 없는 순수 시각 배지였습니다. 그래서 "스코어 계산 제거"는 대상이 없었고, 의미 없이 남아 있던 기능 자체를 걷어냈습니다.
+
+- 데이터/동기: DraftTeam.forcedIds·BoardDraftsPayload 필드, effectiveForcedIds, toggleForced 액션, 직렬화(serializeBoardDrafts)·정규화(canonicalizeDrafts)·reconcile의 forcedIds 유지 로직, detachAnchor·replaceAtSlot의 forcedIds 정리 코드
+- UI: PlayerMagnet의 forced prop과 인디고 핀 배지, TeamBackground의 intentional 판정·CTA 라벨/색 분기, 미사용이 된 CTA_QUEUE_COLOR 상수와 Path import
+- CTA 대체: 우선배치가 차지했던 자리(구성 중 2~3명, 또는 4명이지만 예약자가 경기중)는 누를 액션이 없어 회색 비활성 안내로 바꿨습니다 — 4명 미만은 "N명 더 필요", 예약자 경기중은 "예약 대기". 박스를 숨기지 않은 이유는 박스 높이=드래그 히트영역 불변식을 깨지 않기 위함입니다
+- 테스트: 우선배치 전용 테스트 2건(N2) 제거, 나머지 257건 통과
+- 문서: TEAM_GENERATION_RULES.md의 비스코어 항목을 생성자 표시만 남기고 정리 후 제거 이력을 부록에 기록, session-board.md의 CTA 3단계 서술 갱신
+
+기존 세션의 board_drafts jsonb에 남아 있는 forcedIds 값은 이제 아무도 읽지 않아 무해하게 무시됩니다.
+
+---

@@ -13,7 +13,7 @@ import type {
 } from "../../types/board";
 import { centroidAnchor, clampAnchor } from "./geometry";
 
-/** drafts/reservations를 멤버십만으로 정규화한 비교용 문자열(위치·순서 무시). forcedIds(그룹표시)·createdBy(멤버 추가 시 갱신)·confirmedMs(매칭확정)도 포함해 그 변경만 있어도 동기되게 한다. */
+/** drafts/reservations를 멤버십만으로 정규화한 비교용 문자열(위치·순서 무시). createdBy(멤버 추가 시 갱신)·confirmedMs(매칭확정)도 포함해 그 변경만 있어도 동기되게 한다. */
 export function canonicalizeDrafts(p: BoardDraftsPayload): string {
 	return JSON.stringify({
 		teams: [...p.teams]
@@ -21,7 +21,6 @@ export function canonicalizeDrafts(p: BoardDraftsPayload): string {
 				id: t.id,
 				memberIds: [...t.memberIds].sort(),
 				createdMs: t.createdMs,
-				forcedIds: [...(t.forcedIds ?? [])].sort(),
 				slots: Object.entries(t.slots ?? {}).sort(([a], [b]) => a.localeCompare(b)),
 				createdBy: t.createdBy ?? null,
 				confirmedMs: t.confirmedMs ?? null,
@@ -71,12 +70,10 @@ export function reconcileMembership(
 		if (memberIds.length === 0) continue;
 		for (const id of memberIds) assignedAnchor.add(id);
 		const anchor = oldAnchors.get(team.id) ?? centroidAnchor(memberIds, magnets);
-		// forcedIds는 살아남은 멤버(anchor + 이 팀의 예약 ghost)와의 교집합만 유지(빠진 멤버 자동 제외 → ≥2 판정이 현재 멤버 기준).
-		// ghost도 포함해야 "4명+예약 잠금"의 ghost 락이 동기 후에도 보존된다.
+		// 이 팀에 예약(ghost)된 선수 — 아래 매칭확정 유효 인원 판정에 쓴다.
 		const ghostIds = payload.reservations
 			.filter((r) => r.teamId === team.id && magnets.has(r.playerId))
 			.map((r) => r.playerId);
-		const forcedIds = (team.forcedIds ?? []).filter((id) => memberIds.includes(id) || ghostIds.includes(id));
 		// 슬롯 위치 — 자석이 살아있는 멤버 것만 유지(스테일 키는 teamMembers가 무시하므로 안전).
 		const slots = team.slots
 			? Object.fromEntries(Object.entries(team.slots).filter(([pid]) => magnets.has(pid)))
@@ -89,7 +86,6 @@ export function reconcileMembership(
 			anchorMemberIds: memberIds,
 			anchor: clampAnchor(anchor, vw, vh),
 			createdAt: team.createdMs,
-			...(forcedIds.length ? { forcedIds } : {}),
 			...(slots && Object.keys(slots).length ? { slots } : {}),
 			...(team.createdBy ? { createdBy: team.createdBy } : {}),
 			...(team.confirmedMs != null && memberCount >= 4 ? { confirmedMs: team.confirmedMs } : {}),

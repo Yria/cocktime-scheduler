@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { Group, Circle, Arc, Image as KonvaImage, Path, Rect, Text } from "react-konva";
+import { Group, Circle, Arc, Image as KonvaImage, Rect, Text } from "react-konva";
 import useImage from "use-image";
 import Konva from "konva";
 import { useBoardStore } from "../../store/boardStore";
@@ -47,8 +47,6 @@ interface Props {
 	playing?: boolean;
 	/** 휴식 선수 — 흐리게 + "휴식" 배지를 달고 보드에 그대로 남는다. 하단 휴식존에 다시 놓으면 복귀. */
 	resting?: boolean;
-	/** 우선배치(그룹 지정)된 멤버 — 핀 배지 표시(시각 전용, 점수 영향 없음). 내부 prop명은 forcedIds와 일관되게 forced 유지. */
-	forced?: boolean;
 	onDragEnd?: (playerId: string, cx: number, cy: number) => void;
 	onGhostDragEnd?: (resId: string, cx: number, cy: number) => void;
 	onPlayingDragEnd?: (playerId: string, cx: number, cy: number) => void;
@@ -68,7 +66,6 @@ const PlayerMagnet = memo(function PlayerMagnet({
 	reservationId,
 	playing = false,
 	resting = false,
-	forced = false,
 	onDragEnd,
 	onGhostDragEnd,
 	onPlayingDragEnd,
@@ -351,25 +348,6 @@ const PlayerMagnet = memo(function PlayerMagnet({
 
 			{/* 휴식 뱃지 */}
 			{resting && <MagnetBadge text="휴식" fill={RESTING_BADGE_BG} />}
-
-			{/* 우선배치(그룹 지정) 뱃지 — "우선배치"로 지정한 그룹 멤버(시각 전용, 실제 잠금 아님 — 드래그로 빼서 취소).
-			    인디고 원 배지 + 흰색 핀(map-pin) 글리프. 밸런스/추천 점수엔 영향 없고 '이 팀은 의도적 그룹'임을 표시만 한다.
-			    anchor + ghost(4명+예약 지정)에 전달 — 예약/휴식/콕 배지(우상단)와 겹치지 않게 우하단에 둔다. */}
-			{forced && (
-				<Group x={MAGNET_R - 8} y={MAGNET_R - 8} listening={false}>
-					<Circle radius={9} fill="#6366F1" stroke="#FFFFFF" strokeWidth={1.5} listening={false} perfectDrawEnabled={false} />
-					<Path
-						data="M12 2a6 6 0 0 0-6 6c0 4.2 6 12 6 12s6-7.8 6-12a6 6 0 0 0-6-6zm0 8.2A2.2 2.2 0 1 1 12 5.8a2.2 2.2 0 0 1 0 4.4z"
-						fill="#FFFFFF"
-						scaleX={0.44}
-						scaleY={0.44}
-						offsetX={12}
-						offsetY={11}
-						listening={false}
-						perfectDrawEnabled={false}
-					/>
-				</Group>
-			)}
 		</Group>
 	);
 });

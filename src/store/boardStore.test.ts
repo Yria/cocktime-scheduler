@@ -711,34 +711,6 @@ describe("detachMember / cancelReservation — 드롭존", () => {
 	});
 });
 
-// ── N2: 4명+예약(ghost)도 함께 우선배치(전원 그룹 지정) ──
-describe("우선배치(그룹 지정) — 4명+예약(ghost) 전원 지정(N2)", () => {
-	function seedFullWithGhost() {
-		h.players = new Map(["a", "b", "c", "g"].map((id) => [id, player(id)]));
-		seed({
-			magnets: [mag("a", "T"), mag("b", "T"), mag("c", "T"), mag("g", null)],
-			drafts: [draft("T", ["a", "b", "c"])],
-			reservations: [res("r1", "g", "T")],
-		});
-	}
-
-	it("toggleForced: anchor 3 + ghost 1 = 4명 전원을 forcedIds에 넣는다", () => {
-		seedFullWithGhost();
-		const st = useBoardStore.getState();
-		expect(teamMembers("T", st.drafts, st.reservations)).toHaveLength(4); // 4명(예약 포함)
-		st.toggleForced("T");
-		const fids = useBoardStore.getState().drafts.get("T")!.forcedIds ?? [];
-		expect([...fids].sort()).toEqual(["a", "b", "c", "g"]); // ghost도 락
-	});
-
-	it("toggleForced 재호출 시 해제", () => {
-		seedFullWithGhost();
-		useBoardStore.getState().toggleForced("T"); // 잠금
-		useBoardStore.getState().toggleForced("T"); // 해제
-		expect(useBoardStore.getState().drafts.get("T")!.forcedIds).toEqual([]);
-	});
-});
-
 // ── 요구4: 경기완료 → 프리 ─────────────────────────────────
 describe("요구4 — 경기완료(completeMatch → handleComplete DB 연동)", () => {
 	it("경기완료 클릭 → handleComplete(courtId) 호출", async () => {

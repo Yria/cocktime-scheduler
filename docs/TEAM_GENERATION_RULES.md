@@ -256,14 +256,7 @@ score = intraDiff × 0.5 + interDiff × 1.5
    - 혼복 완성 보너스: `confirmed`가 이미 남녀 혼합(`baseM>0 && baseF>0`, 혼복 구조)이면, 2남2녀에 아직 부족한(2명 미만) 성별 후보에 `−W_MIXED_COMPLETE`(상위 노출). 1남1녀처럼 양쪽 다 부족하면 동일 가산이라 편향이 없다.
 3. **경기중 페널티 (`W_PLAYING`)**: 후보가 `playingIds` 에 있으면 `+W_PLAYING`(대기 선수가 상위로).
 4. **오래 쉰 사람 우선 (`W_WAIT`, 2절 base에서 반영)**: 대기 경과 분(分)에 비례해 점수를 낮춘다(`−waitMinutes·W_WAIT`). 8명 1코트처럼 4/4가 딱 떨어질 때 "누군 2번 연속·1번 휴식 / 누군 2번 휴식·1번 출전"으로 갈리는 연속 휴식 편차를 완화 — 같은(또는 비슷한) 판수면 **더 오래 기다린 사람**이 다음 경기에 확실히 들어온다. `waitSince`는 경기 완료/휴식 복귀로 대기 진입할 때 갱신되므로(자연 리셋) 계속 못 들어간 사람만 값이 커진다. `W_WAIT`(분당 가중)는 실제 휴식 시간에 비례하는 **튜닝 knob** — 너무 세거나 약하면 조절.
-> **비(非)스코어 UI 요소 — "우선배치"(그룹 지정)**: 아래 5번은 **점수/추천에 영향을 주지 않는다**. 스코어링 가산 요소가 아니라 순수 시각 그룹 표시라 이 목록에 두되 "비스코어"로 명시한다. (구 "고정배치"는 경기 시작 시 쌍을 `forcedPairs`로 기록해 추천에 `W_FORCED` 페널티를 줬으나, 2026-07 기획 변경으로 그 밸런스 영향 경로(`forcedPairs`·`W_FORCED`·decay)를 **전면 제거**했다.)
-
-5. **"우선배치"(그룹 지정) — 표시 전용, 점수 영향 없음**: 운영진이 그룹(구성 중)에서 **"우선배치" 버튼을 누르면** 그 시점의 멤버 전체를 그룹으로 표시(`forcedIds`)한다. **추천·자동편성·밸런스 점수에 일절 영향을 주지 않는다** — 그저 "이 팀은 의도적으로 묶은 그룹"임을 핀 배지로 나타낸다. 예약 승격 우선권 등 어떤 행동 효과도 없다(순수 시각).
-   - **트리거**: `toggleForced(teamId)` — 누르면 `forcedIds = 현재 멤버 전체(anchor + ghost)`. 다시 누르면 해제. 실제 락 아님 — 멤버를 드래그로 빼면 `forcedIds ∩ 현재 멤버`로 자동 취소(배지 사라짐).
-   - **버튼 노출 조건**: 구성 중(2명+ 활성, 1명 비활성). **4명이라도 예약(ghost=경기중 빌려온 선수)이 끼면** 매칭 시작 불가이므로 시작 버튼 대신 **"우선배치"** 가 뜨고, 이때 지정하면 예약 포함 전원 표시. 4명 전원이 시작 가능하면 3단계 CTA(매칭확정 → 경기시작 — `docs/session-board.md` §8 참조).
-   - **UI**: 핀(map-pin) 벡터 배지(anchor·ghost 모두, 인디고). 버튼 라벨 "우선배치"↔"우선배치 해제". 그룹박스의 "자동편성"은 추천 모달 안 버튼으로 이동(`autoFillTarget`).
-   - **생성자 표시(비스코어)**: 팀 박스 라벨에 그 그룹에 사람을 넣은 편집자 이름을 `· by OO`로 표시한다(`DraftTeam.createdBy` — 2명 묶는 시점 기록, 이후 새 멤버를 추가한 편집자로 갱신. `sessionStore._myName` 스냅샷). 점수와 무관한 메타 정보.
-   - **저장/동기**: 별도 컬럼 없이 `board_drafts` jsonb(`forcedIds`·`createdBy`·`confirmedMs` 매칭확정 시각)에 함께 — 기존 board_drafts 동기·영속 경로 재사용.
+> **비(非)스코어 UI 요소 — 생성자 표시**: 팀 박스 라벨에 그 그룹에 사람을 넣은 편집자 이름을 `· by OO`로 표시한다(`DraftTeam.createdBy` — 2명 묶는 시점 기록, 이후 새 멤버를 추가한 편집자로 갱신. `sessionStore._myName` 스냅샷). 점수와 무관한 메타 정보이며, `board_drafts` jsonb(`createdBy`·`confirmedMs` 매칭확정 시각)에 함께 실려 기존 동기·영속 경로를 재사용한다.
 
 ### RecommendContext 추가 입력
 
@@ -344,6 +337,7 @@ autoFillTeammates(confirmed, pool, ctx, count, weights?, { maxPlaying }):
 - **쌍 단위 동반 회피 (`pairHistory`·`W_PAIR`·`Σc²`)**: 두 선수의 누적 동반 횟수를 상대별 제곱해 벌점하던 규칙과 `pair_history` 테이블 클라이언트 조회, `recordTeam`(`src/lib/pairHistory.ts`). 2026-07 제거 — 조합의 정체성을 잃는 문제로 그룹 겹침 단위(`W_GROUP2/3/4`, §2)로 대체. DB `pair_history` 테이블·서버 누적도 `20260727090000`에서 삭제 완료.
 - **자동편성 대기 선수 전용 (`excludePlaying:true`)**: 자동편성이 경기중 선수를 아예 제외하던 규칙. 2026-07 제거 — 팀당 1명까지 ghost 허용(§8).
 - **혼복/빡겜 우선배치 강제(`force_mixed`/`force_hard_game`)**: 토글 액션·플래그 제거됨. 추천은 `W_ROTATE` 로 게임 타입을 자연 분산.
+- **"우선배치"(그룹 지정, `forcedIds`·`toggleForced`·`effectiveForcedIds`·핀 배지)**: 2026-07-29 제거. 2026-07에 밸런스 영향 경로(`forcedPairs`·`W_FORCED`·decay)를 떼어낸 뒤로는 **점수·행동 효과가 하나도 없는 순수 시각 배지**만 남아 실사용 의미가 없었다. 함께 사라진 CTA 자리(구성 중 2~3명, 또는 4명이지만 예약자가 경기중)는 회색 비활성 안내(`N명 더 필요` / `예약 대기`)로 대체 — 박스 높이·히트영역 불변식은 그대로다.
 - **selectFour / 대기열 선발 우선순위 단계**: 대기열에서 한 번에 4명을 자동 선발하던 로직 제거. 보드에서 수동 구성 + `recommendTeammates` 추천이 기본이며, **팀 단위 점진적 자동편성은 §8 `autoFillTeammates`(추천 재평가 greedy)로 재도입**되었다(과거의 bulk selectFour와 다름).
 - **다전략 후보 생성(`generateBulkTeamCandidates`)**: `coPlayerAvoidance` 포함 5전략, 보충 모드(supplement), `usedPlayerIds` 다양성, `team_candidates` 저장/`candidates_updated` 브로드캐스트 등 전부 제거.
 - **가중치 프로필(`WEIGHT_PROFILES`)**: 위 다전략 후보 생성용 5개 프로필(`gameCountBalanced`/`newCombination`/`skillBalanced`/`mixedCountBalanced`/`waitTimePriority`) 상수. 소비자 전원 삭제로 코드에서 완전히 제거됨.

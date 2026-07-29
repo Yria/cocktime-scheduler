@@ -1,6 +1,5 @@
 import type { BoardDraftsPayload, DraftTeam, Reservation } from "../../types/board";
 import { teamMembers } from "../../lib/board/membership";
-import { effectiveForcedIds } from "../../lib/board/draftMutations";
 import { dbBoardSaveDrafts } from "../../lib/supabase";
 import { useSessionStore } from "../sessionStore";
 import { useAppStore } from "../appStore";
@@ -21,7 +20,7 @@ export const syncState = {
 	lastSyncedDraftsJson: "",
 };
 
-/** drafts/reservations 멤버십(+forcedIds 그룹표시·createdBy 생성자·confirmedMs 매칭확정)만 직렬화(위치 제외). */
+/** drafts/reservations 멤버십(+createdBy 생성자·confirmedMs 매칭확정)만 직렬화(위치 제외). */
 export function serializeBoardDrafts(s: {
 	drafts: Map<string, DraftTeam>;
 	reservations: Map<string, Reservation>;
@@ -29,7 +28,6 @@ export function serializeBoardDrafts(s: {
 	return {
 		teams: [...s.drafts.values()].map((t) => {
 			const memberIds = new Set(teamMembers(t.id, s.drafts, s.reservations).map((m) => m.playerId));
-			const forcedIds = effectiveForcedIds(t, memberIds);
 			// 슬롯은 현재 멤버(anchor+ghost) 것만 동기화 — 취소된 예약 등 스테일 키 제거.
 			let slots: Record<string, number> | undefined;
 			if (t.slots && Object.keys(t.slots).length) {
@@ -40,7 +38,6 @@ export function serializeBoardDrafts(s: {
 				id: t.id,
 				memberIds: [...t.anchorMemberIds],
 				createdMs: t.createdAt,
-				...(forcedIds.length ? { forcedIds } : {}),
 				...(slots ? { slots } : {}),
 				...(t.createdBy ? { createdBy: t.createdBy } : {}),
 				...(t.confirmedMs != null ? { confirmedMs: t.confirmedMs } : {}),

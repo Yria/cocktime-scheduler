@@ -26,7 +26,7 @@ import type { BoardState, DragSource } from "./types";
 import { clampToStage, placeArranged, replaceAtSlot, runSettle } from "./layoutHelpers";
 import { claimEdit, currentEditorName } from "./draftsSync";
 
-/** 멤버십 슬라이스 — 자석/예비팀/예약(ghost)/우선배치(그룹표시) 등 공유 멤버십의 편집 액션. */
+/** 멤버십 슬라이스 — 자석/예비팀/예약(ghost) 등 공유 멤버십의 편집 액션. */
 export type MembershipSlice = Pick<
 	BoardState,
 	| "magnets"
@@ -40,7 +40,6 @@ export type MembershipSlice = Pick<
 	| "commitTeammates"
 	| "confirmTeam"
 	| "unconfirmTeam"
-	| "toggleForced"
 	| "autoFillTeam"
 	| "autoFillTarget"
 	| "detachMember"
@@ -287,7 +286,7 @@ export const createMembershipSlice: StateCreator<
 		set((s) => {
 			const team = s.drafts.get(teamId);
 			if (!team || team.confirmedMs != null) return; // 없음/이미 확정 → no-op
-			// 확정은 "지금 시작 가능한 4명"만 — 예약(ghost)의 원본이 아직 경기중이면 불가(그 팀은 우선배치 CTA 유지).
+			// 확정은 "지금 시작 가능한 4명"만 — 예약(ghost)의 원본이 아직 경기중이면 불가(그 팀은 '예약 대기' 안내).
 			if (!isTeamStartable(teamId, s.drafts, s.reservations, s.magnets, playingIds)) return;
 			team.confirmedMs = nowMs(); // 확정 순서의 기준(오름차순 = 대기열)
 		});
@@ -299,19 +298,6 @@ export const createMembershipSlice: StateCreator<
 			const team = s.drafts.get(teamId);
 			if (!team || team.confirmedMs == null) return;
 			delete team.confirmedMs;
-		});
-	},
-
-	toggleForced: (teamId) => {
-		if (!claimEdit()) return; // 보기 전용 차단
-		set((s) => {
-			const team = s.drafts.get(teamId);
-			if (!team) return;
-			// 현재 멤버(anchor + ghost) 전체 — 4명+예약 잠금 시 예약(ghost)도 함께 락한다("4명 다 락").
-			const memberIds = teamMembers(teamId, s.drafts, s.reservations).map((m) => m.playerId);
-			const effective = (team.forcedIds ?? []).filter((id) => memberIds.includes(id));
-			// 이미 잠금(유효 2+)이면 해제, 아니면 "지금 그룹에 포함된 멤버" 전체를 잠금(이후 추가/제거는 효과 ∩ 또는 재토글).
-			team.forcedIds = effective.length >= 2 ? [] : memberIds;
 		});
 	},
 

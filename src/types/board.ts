@@ -21,11 +21,6 @@ export interface DraftTeam {
 	anchor: StagePoint;
 	createdAt: number;
 	/**
-	 * 운영진이 "드래그로 직접 묶은" 멤버 id (자동편성·추천 픽 제외). 2명 이상이면 "의도적 그룹".
-	 * 실효값은 항상 현재 멤버와의 교집합으로 해석(멤버가 빠지면 자동 제외 — serialize/reconcile에서 필터).
-	 */
-	forcedIds?: string[];
-	/**
 	 * 멤버의 슬롯 위치(playerId → 0..3). 드롭한 칸에 정확히 배치(가운데 빈칸 허용)하기 위한 맵.
 	 * 멤버십(anchorMemberIds)과 분리 — 없거나 매핑 안 된 멤버는 빈 슬롯을 순서대로 채움(하위호환).
 	 */
@@ -57,7 +52,7 @@ export interface Reservation {
  * 위치(anchor x/y)는 각 클라이언트 로컬이므로 포함하지 않는다.
  */
 export interface BoardDraftsPayload {
-	teams: { id: string; memberIds: string[]; createdMs: number; forcedIds?: string[]; slots?: Record<string, number>; createdBy?: string; confirmedMs?: number }[];
+	teams: { id: string; memberIds: string[]; createdMs: number; slots?: Record<string, number>; createdBy?: string; confirmedMs?: number }[];
 	reservations: { id: string; playerId: string; teamId: string; createdMs: number }[];
 }
 

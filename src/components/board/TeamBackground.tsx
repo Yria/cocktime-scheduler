@@ -36,7 +36,6 @@ import {
 	TEXT_SECONDARY,
 	STROKE_DEFAULT,
 	CTA_START_COLOR,
-	CTA_QUEUE_COLOR,
 	CTA_DISABLED_COLOR,
 	CTA_PLAY_COLOR,
 	CTA_PLAY_FLASH,
@@ -140,22 +139,16 @@ const TeamBackground = memo(function TeamBackground({
 	const startable = isTeamStartable(teamId, drafts, reservations, magnets, playingIds);
 	const isFull = count === 4;
 	// 매칭확정 가능 = 4명이고 시작 가능(isTeamStartable). 예약(ghost)이 끼어도 그 선수가 자유(경기 끝남)면
-	// startable=true → 매칭확정. 예약자가 아직 경기중이면 startable=false → 우선배치 모드(시작 버튼 대신 그룹 지정).
+	// startable=true → 매칭확정. 예약자가 아직 경기중이면 startable=false → 액션 없음(대기 안내만).
 	const canStart = isFull && startable;
 	// 3단계 흐름: [매칭확정](canStart·미확정) → [경기시작](확정됨) → [경기완료](코트 카드).
 	// 확정 표시는 지금 시작 가능한 팀에만 유효 — 동기화 레이스로 confirmedMs만 남은 스테일은 무시(렌더 게이팅).
 	const confirmed = canStart && team.confirmedMs != null;
 	const rank = confirmed ? confirmRank(teamId, drafts) : null;
-	// 우선배치(그룹 지정) 상태 — "우선배치"로 지정한 멤버(forcedIds) 중 현재 멤버(anchor+ghost)에 남은 것 ≥2.
-	// 순수 그룹 표시일 뿐 추천/밸런스 점수엔 영향 없음(핀 배지 시각 표시 + 라벨 전용).
-	const intentional = members.filter((m) => team.forcedIds?.includes(m.playerId)).length >= 2;
 	// CTA: 확정됨=경기시작(빈 코트 필요) / 매칭확정(코트 불필요 — 대기열 등록) /
-	//   그 외(구성 중 OR 4명이지만 예약자 경기중)=우선배치 토글(1명 비활성, 2명+ 활성).
-	const ctaEnabled = confirmed
-		? isEditor && hasEmptyCourt
-		: canStart
-			? isEditor
-			: isEditor && count >= 2;
+	//   그 외(구성 중 OR 4명이지만 예약자 경기중)=누를 것이 없음 → 비활성 상태 안내.
+	//   (구 "우선배치"(forcedIds 그룹 표시) 토글은 2026-07-29 제거 — 점수·행동 효과가 없어 의미가 없었다.)
+	const ctaEnabled = confirmed ? isEditor && hasEmptyCourt : canStart && isEditor;
 
 	// 박스 스타일: 확정=딥블루(대기열) / 시작 가능=초록 / 4명이지만 예약자 경기중=보라 / 구성 중=회색
 	const style = confirmed
@@ -183,28 +176,25 @@ const TeamBackground = memo(function TeamBackground({
 				? TEAM_RESERVED_STROKE
 				: TEXT_SECONDARY;
 
-	// 라벨: 확정됨=경기시작(코트 없으면 대기 안내), 매칭확정 가능=매칭확정, 그 외=우선배치 토글.
+	// 라벨: 확정됨=경기시작(코트 없으면 대기 안내), 매칭확정 가능=매칭확정,
+	//   그 외=왜 아직 못 누르는지 안내(4명 미만 / 예약자가 경기중) — 회색 비활성.
 	const ctaLabel = confirmed
 		? hasEmptyCourt
 			? "경기시작"
 			: "코트 대기"
 		: canStart
 			? "매칭확정"
-			: intentional
-				? "우선배치 해제"
-				: "우선배치";
-	// 경기시작=주황(코트 카드로 전이, 반짝일 땐 밝은 주황) / 매칭확정=초록 / 우선배치 지정됨=인디고 / 우선배치=파랑 / 비활성=회색
+			: isFull
+				? "예약 대기"
+				: `${4 - count}명 더 필요`;
+	// 경기시작=주황(코트 카드로 전이, 반짝일 땐 밝은 주황) / 매칭확정=초록 / 비활성=회색
 	const ctaColor = !ctaEnabled
 		? CTA_DISABLED_COLOR
 		: confirmed
 			? blinkActive && flash
 				? CTA_PLAY_FLASH
 				: CTA_PLAY_COLOR
-			: canStart
-				? CTA_START_COLOR
-				: intentional
-					? "#6366F1"
-					: CTA_QUEUE_COLOR;
+			: CTA_START_COLOR;
 
 	// 드래그 중인 자석(이 팀 멤버면)의 슬롯은 빈 칸으로 취급 → 그 자리에 (+) 노출(자석은 Konva가 들고 이동 중).
 	const occupiedSlots = new Set(members.filter((m) => m.playerId !== draggedId).map((m) => m.slot));
@@ -218,12 +208,11 @@ const TeamBackground = memo(function TeamBackground({
 	const halfW = TEAM_W / 2;
 	const ctaY = boxBottom - TEAM_PAD - TEAM_CTA_H;
 
-	// 확정됨=경기시작(코트 배치), 매칭확정 가능=확정(대기열 등록), 그 외=우선배치 토글.
+	// 확정됨=경기시작(코트 배치), 매칭확정 가능=확정(대기열 등록). 그 외는 ctaEnabled=false라 도달하지 않는다.
 	const handleCta = () => {
 		if (!ctaEnabled) return;
 		if (confirmed) void useBoardStore.getState().startMatch(teamId);
 		else if (canStart) useBoardStore.getState().confirmTeam(teamId);
-		else useBoardStore.getState().toggleForced(teamId);
 	};
 
 	// 확정취소(✕) — 확정된 팀에만, CTA 좌측 미니 버튼(편집자만). 메인 버튼은 그만큼 오른쪽에서 시작.
@@ -333,7 +322,6 @@ const TeamBackground = memo(function TeamBackground({
 							offsetY={off.y}
 							kind="ghost"
 							reservationId={res?.id}
-							forced={intentional && (team.forcedIds?.includes(m.playerId) ?? false)}
 							onGhostDragEnd={onGhostDragEnd}
 							onDragMove={onMagnetDragMove}
 						/>
@@ -346,7 +334,6 @@ const TeamBackground = memo(function TeamBackground({
 						offsetX={off.x}
 						offsetY={off.y}
 						kind="anchor"
-						forced={intentional && (team.forcedIds?.includes(m.playerId) ?? false)}
 						onDragEnd={onMagnetDragEnd}
 						onDragMove={onMagnetDragMove}
 					/>
@@ -382,7 +369,7 @@ const TeamBackground = memo(function TeamBackground({
 				</Group>
 			)}
 
-			{/* CTA 버튼 — 확정됨=경기시작(다음 경기 팀은 반짝임), 4명=매칭확정, 구성 중=우선배치 토글. */}
+			{/* CTA 버튼 — 확정됨=경기시작(다음 경기 팀은 반짝임), 4명=매칭확정, 그 외=회색 비활성 안내. */}
 			<Group
 				x={0}
 				y={ctaY}

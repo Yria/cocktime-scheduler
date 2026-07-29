@@ -91,7 +91,6 @@ export const TEAM_CONFIRMED_STROKE = "#3B82F6";
 
 // CTA
 export const CTA_START_COLOR = "#22C55E";
-export const CTA_QUEUE_COLOR = "#3B82F6";
 export const CTA_FINISH_COLOR = "#3B82F6";
 export const CTA_DISABLED_COLOR = "#475569";
 // 경기시작 CTA — 코트 카드(주황)로 넘어가는 전이라 주황 계열. FLASH는 반짝임 밝은 프레임.

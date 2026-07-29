@@ -63,9 +63,6 @@ export interface BoardState {
 		target: { teamId?: string; seedId?: string; newTeam?: boolean },
 		extraIds?: string[],
 	) => void;
-	/** "우선배치"(그룹 지정) 토글 — 누르는 시점의 현재 멤버 전체를 그룹으로 표시(forcedIds). 이미 지정돼 있으면 해제.
-	 *  순수 시각 표시(핀 배지)일 뿐 추천/밸런스 점수엔 영향 없음. 실제 락 아님(드래그로 빼면 자동 취소). */
-	toggleForced: (teamId: string) => void;
 	/**
 	 * 매칭확정(1단계) — 4명 완성·시작 가능한 팀을 "확정"으로 표시하고 확정 시각(confirmedMs)을 기록.
 	 * 확정 순서가 대기열이 되어, 코트가 비면 가장 먼저 확정한 팀의 경기시작 버튼이 반짝인다.

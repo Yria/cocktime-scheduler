@@ -186,9 +186,6 @@ export function replaceAtSlot(
 		fromTeam.slots = fromTeam.slots ?? {};
 		delete fromTeam.slots[playerId];
 		if (fromSlot !== undefined) fromTeam.slots[occupant.playerId] = fromSlot;
-		// 팀을 떠난 사람은 우선배치(그룹 표시)에서 제거(들어온 사람은 미지정 상태로 시작)
-		if (team.forcedIds?.length) team.forcedIds = team.forcedIds.filter((id) => id !== occupant.playerId);
-		if (fromTeam.forcedIds?.length) fromTeam.forcedIds = fromTeam.forcedIds.filter((id) => id !== playerId);
 		// 두 팀 모두 새 사람이 들어갔으므로 createdBy 갱신. 인원 불변 → 확정(confirmedMs) 순번은 양쪽 보존.
 		if (by) {
 			team.createdBy = by;
@@ -204,7 +201,6 @@ export function replaceAtSlot(
 	else team.anchorMemberIds.push(playerId);
 	if (omag) omag.teamId = null;
 	if (pmag) pmag.teamId = teamId;
-	if (team.forcedIds?.length) team.forcedIds = team.forcedIds.filter((id) => id !== occupant.playerId);
 	team.slots = team.slots ?? {};
 	if (occupant.playerId in team.slots) delete team.slots[occupant.playerId];
 	team.slots[playerId] = slotIndex;
