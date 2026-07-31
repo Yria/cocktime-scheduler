@@ -60,7 +60,10 @@ export function useBoardDragHandlers(viewH: number) {
 			const ss = useSessionStore.getState();
 			const playingIds = playingIdsFromCourts(ss.courts);
 			const notReadyIds = cockPendingIds(ss.sessionPlayers.values(), ss.cockCheckEnabled);
-			const target = resolveDropTarget(playerId, point, store.magnets, store.drafts, store.reservations, playingIds, notReadyIds);
+			// restingIds 를 빼먹으면 하이라이트가 실제 드롭(handleDrop)과 갈려, 성립하지 않는 그룹/합류를
+			// 미리 약속해 버린다(휴식 자석은 페어 대상에서 제외되므로 실제로는 move 로 떨어진다).
+			const restingIds = new Set(ss.restingIds);
+			const target = resolveDropTarget(playerId, point, store.magnets, store.drafts, store.reservations, playingIds, notReadyIds, restingIds);
 			// 슬롯 단위 하이라이트 — 합류(빈칸)/교체(점유) 모두 가리킨 칸을 하이라이트. 페어는 상대 자석.
 			let hover: { kind: "slot"; teamId: string; slotIndex: number } | { kind: "magnet"; id: string } | null = null;
 			if (target.kind === "attach" && target.slot !== undefined) hover = { kind: "slot", teamId: target.teamId, slotIndex: target.slot };

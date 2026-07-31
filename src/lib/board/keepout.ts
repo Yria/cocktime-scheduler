@@ -30,11 +30,16 @@ export function computeBounds(
 	viewportH: number,
 	topMargin = 0,
 ): Bounds {
+	const maxY = viewportH - MAG_R - 4;
 	return {
 		minX: MAG_R + 4,
-		minY: Math.max(MAG_R + 4, topMargin + MAG_R),
+		// topMargin(그룹 밴드 하단 등)이 화면 높이를 넘으면 minY > maxY 로 역전돼, 클램프
+		// `max(minY, min(maxY, y))` 에서 minY 가 이겨 **모든 자유 자석이 Stage 밖(y=minY)으로 고정**된다
+		// → 대기 선수가 통째로 안 보인다(실측: 그룹 5개·390×700 에서 minY=744 > maxY=664).
+		// 화면 안이 최우선이므로 maxY 를 상한으로 둔다(공간이 부족하면 겹치더라도 보이는 쪽).
+		minY: Math.min(Math.max(MAG_R + 4, topMargin + MAG_R), maxY),
 		maxX: viewportW - MAG_R - 4,
-		maxY: viewportH - MAG_R - 4,
+		maxY,
 	};
 }
 

@@ -27,6 +27,7 @@ export function useBoardStageLayout(stageW: number, stageH: number, cw: number, 
 	// 줌 배율 — boardStore 공용 상태(수동 줌·자동 fit). viewW/viewH = stage/scale(보이는 논리 영역).
 	const scale = useBoardStore((s) => s.scale);
 	const setScale = useBoardStore((s) => s.setScale);
+	const setAutoScale = useBoardStore((s) => s.setAutoScale);
 	const viewW = stageW / scale;
 	const viewH = stageH / scale;
 
@@ -83,9 +84,14 @@ export function useBoardStageLayout(stageW: number, stageH: number, cw: number, 
 			max: ZOOM_MAX,
 			step: 0.05,
 		});
-		setScale(fit); // store가 클램프·영속
-		rearrangeAll(stageW / fit, stageH / fit);
-	}, [stageW, stageH, rearrangeAll, setScale]);
+		// 사용자가 맞춘 배율(userScale)은 **상한**으로만 존중한다 — 자동 확대는 하지 않고(맞춰둔 배율이
+		// 매번 풀리던 문제), 내용이 그 배율에 안 들어가면 축소는 한다. 고정해 버리면 자유 자석이
+		// 그룹 밴드 아래로 밀려 화면(stage) 밖으로 나가 통째로 안 보인다(실측: y=744 > stageH=700).
+		// userScale 은 setAutoScale 이 건드리지 않으므로, 여유가 생기면 다시 그 배율로 복귀한다.
+		const target = bs.userScale != null ? Math.min(bs.userScale, fit) : fit;
+		setAutoScale(target); // store가 클램프(저장·userScale 갱신 없음 — 수동 조정과 구분)
+		rearrangeAll(stageW / target, stageH / target);
+	}, [stageW, stageH, rearrangeAll, setAutoScale]);
 
 	// 정렬 버튼(수동): 현재 줌은 그대로 두고 지금 보이는 화면 크기(viewW×viewH = stage/scale) 기준으로만 정렬한다.
 	// fitAndArrange처럼 줌을 '다 들어가는 최대 배율'로 바꾸지 않으므로, 축소해 둔 상태에서 정렬해도 확대되지 않는다.

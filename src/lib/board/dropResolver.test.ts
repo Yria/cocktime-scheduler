@@ -125,6 +125,37 @@ describe("resolveDropTarget — anchor 멤버", () => {
 		const t = resolveDropTarget("a", { x: 900, y: 900 }, m, drafts(draft("T1", ["a"], 300, 300)), noRes);
 		expect(t).toEqual({ kind: "createPair", partnerId: "c", anchor: { x: 900, y: 900 } });
 	});
+
+	// 빼내기 경로의 페어 반경은 PAIR_RADIUS(57.6)보다 좁은 PAIR_RADIUS_DETACH(=MAGNET_R=32) 다.
+	// 자유 자석 격자의 중심거리가 74(지름+MAG_GAP)라, 넓은 반경이면 "자석 사이 빈틈"에 놓아도 옆 사람과
+	// 그룹이 묶였다(운영진 신고 2026-07-31). 이 두 테스트가 그 경계를 고정한다.
+	it("빼낼 때 자석 사이 빈틈(중심거리 37) → 페어 없이 detach", () => {
+		// 격자 이웃 c(900,900)·d(974,900) 사이 중간 지점 = 양쪽에서 37px (넓은 반경 57.6이면 오그룹)
+		const m = magnets(mag("a", 300, 300, "T1"), mag("c", 900, 900), mag("d", 974, 900));
+		const t = resolveDropTarget("a", { x: 937, y: 900 }, m, drafts(draft("T1", ["a"], 300, 300)), noRes);
+		expect(t).toEqual({ kind: "detach", to: { x: 937, y: 900 } });
+	});
+
+	it("빼낼 때 확실히 겹치면(중심거리 30) → createPair 유지", () => {
+		const m = magnets(mag("a", 300, 300, "T1"), mag("c", 900, 900));
+		const t = resolveDropTarget("a", { x: 930, y: 900 }, m, drafts(draft("T1", ["a"], 300, 300)), noRes);
+		expect(t).toEqual({ kind: "createPair", partnerId: "c", anchor: { x: 915, y: 900 } });
+	});
+});
+
+// 자유 자석끼리는 기존 반경(PAIR_RADIUS=57.6) 그대로 — 빼내기 경로만 좁혔다는 비대칭을 고정한다.
+describe("resolveDropTarget — 페어 반경 비대칭", () => {
+	it("자유 자석은 중심거리 50에서도 createPair(반경 유지)", () => {
+		const m = magnets(mag("a", 100, 100), mag("b", 500, 500));
+		const t = resolveDropTarget("b", { x: 150, y: 100 }, m, new Map(), noRes);
+		expect(t.kind).toBe("createPair");
+	});
+
+	it("같은 거리(50)에서 anchor 빼내기는 detach", () => {
+		const m = magnets(mag("a", 300, 300, "T1"), mag("c", 900, 900));
+		const t = resolveDropTarget("a", { x: 950, y: 900 }, m, drafts(draft("T1", ["a"], 300, 300)), noRes);
+		expect(t.kind).toBe("detach");
+	});
 });
 
 // 휴식 선수 — 딱지를 달고 보드에 남되(2026-07 휴식 패널 폐지) 편성은 불가.

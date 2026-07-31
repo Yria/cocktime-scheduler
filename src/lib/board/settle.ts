@@ -47,6 +47,27 @@ function pushMagnetFromTeam(m: MagnetPosition, t: DraftTeam, bounds: Bounds): bo
 	return true;
 }
 
+/**
+ * 고정 자석(fixed) 위에 겹친 이동 가능 자석(m)만 밀어낸다 — 고정 쪽은 절대 움직이지 않는다.
+ * pushMagnetPair 는 양쪽을 반씩 밀어 "위치 보존" 계약을 깨므로 고정 상대에는 쓸 수 없다.
+ */
+function pushMagnetOffFixed(m: MagnetPosition, fixed: MagnetPosition): boolean {
+	let dx = m.x - fixed.x;
+	let dy = m.y - fixed.y;
+	let dist = Math.sqrt(dx * dx + dy * dy);
+	if (dist >= MIN_MAG_DIST) return false;
+	if (dist < 0.1) {
+		// 좌표가 완전히 겹친 경우(팀 자리에 남은 자석 위로 다른 자석이 들어온 상황) 결정적 각도로 분리
+		const angle = tieAngle(m.playerId, fixed.playerId);
+		dx = Math.cos(angle);
+		dy = Math.sin(angle);
+		dist = 1;
+	}
+	m.x = fixed.x + (dx / dist) * MIN_MAG_DIST;
+	m.y = fixed.y + (dy / dist) * MIN_MAG_DIST;
+	return true;
+}
+
 function pushMagnetPair(a: MagnetPosition, b: MagnetPosition): boolean {
 	const dx = b.x - a.x;
 	const dy = b.y - a.y;
@@ -125,10 +146,27 @@ export function settleFreeMagnets(
 	viewportH: number,
 	excludeIds?: ReadonlySet<string>,
 	topMargin = 0,
+	/**
+	 * 위치는 보존해야 하지만 **충돌 대상으로는 반드시 고려해야 하는** 자유 자석 id
+	 * (= 사용자가 직접 배치해 둔 기존 자석). excludeIds 는 free 목록에서 아예 빠져 충돌 판정조차
+	 * 되지 않으므로, 이걸 안 넘기면 새로 필드에 들어온 자석이 기존 자석과 **완전히 겹친 채** 남아
+	 * 화면에서 가려진다(팀 박스 keep-out 이 우연히 밀어주던 경우만 살아났음).
+	 * 여기 넣은 자석은 움직이지 않고, 겹친 이동 가능 자석만 비켜난다.
+	 */
+	fixedIds?: ReadonlySet<string>,
 ): void {
 	const teams = [...drafts.values()];
 	const free = freeMagnets(magnets, excludeIds);
 	if (free.length === 0) return;
+
+	// 고정(움직이지 않지만 충돌하는) 자유 자석 — 경기중 자석은 코트 카드에 그려지므로 대상이 아니다
+	// (호출자가 playing 을 fixedIds 에 넣지 않는다).
+	const fixed: MagnetPosition[] = [];
+	if (fixedIds?.size) {
+		for (const m of magnets.values()) {
+			if (m.teamId === null && fixedIds.has(m.playerId)) fixed.push(m);
+		}
+	}
 
 	const bounds = computeBounds(viewportW, viewportH, topMargin);
 
@@ -138,6 +176,9 @@ export function settleFreeMagnets(
 		for (const m of free) {
 			for (const t of teams) {
 				if (pushMagnetFromTeam(m, t, bounds)) moved = true;
+			}
+			for (const f of fixed) {
+				if (pushMagnetOffFixed(m, f)) moved = true;
 			}
 		}
 
@@ -156,9 +197,19 @@ export function settleFreeMagnets(
 		if (!moved) break;
 	}
 
+	// 팀 박스 **또는 고정 자석** 위에 남은 자석은 빈자리로 재배치한다. 고정 자석 겹침을 여기서 안 잡으면,
+	// 고정 자석이 촘촘할 때(정렬 격자 간격 74 < MIN_MAG_DIST*2=128) 밀어내기만으로는 원리적으로 해소가
+	// 불가능해 겹친 채 끝난다 — 밀려난 자리가 곧 다른 고정 자석의 반경 안이라 매 반복 튕겨 다니기 때문이다.
+	const obstacleMagnets = fixed.length ? [...free, ...fixed] : free;
+	const overlapsFixed = (m: MagnetPosition) =>
+		fixed.some(
+			(f) =>
+				f.playerId !== m.playerId &&
+				(m.x - f.x) ** 2 + (m.y - f.y) ** 2 < MIN_MAG_DIST * MIN_MAG_DIST,
+		);
 	for (const m of free) {
-		if (isOverlappingAnyTeam(m, teams)) {
-			const spot = findFreeSpot({ x: m.x, y: m.y }, teams, free, m.playerId, bounds);
+		if (isOverlappingAnyTeam(m, teams) || overlapsFixed(m)) {
+			const spot = findFreeSpot({ x: m.x, y: m.y }, teams, obstacleMagnets, m.playerId, bounds);
 			m.x = spot.x;
 			m.y = spot.y;
 		}

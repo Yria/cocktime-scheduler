@@ -12,34 +12,84 @@ const VH = 800;
 describe("reconcileMembership — 불변식 I1(중복 anchor 제거)", () => {
 	it("같은 선수가 두 팀 memberIds에 있으면 먼저 만들어진(createdMs↑) 팀만 유지", () => {
 		const payload: BoardDraftsPayload = {
+			// B 는 p1 을 빼앗겨도 2명이 남아야 유지된다(1명만 남으면 I3 로 드롭 — 아래 별도 테스트)
 			teams: [
-				{ id: "B", memberIds: ["p1", "p3"], createdMs: 10 },
+				{ id: "B", memberIds: ["p1", "p3", "p4"], createdMs: 10 },
 				{ id: "A", memberIds: ["p1", "p2"], createdMs: 0 },
 			],
 			reservations: [],
 		};
-		const mags = magnets(["p1", "p2", "p3"]);
+		const mags = magnets(["p1", "p2", "p3", "p4"]);
 		const { drafts } = reconcileMembership(payload, mags, noAnchors, VW, VH, new Set());
 
 		expect(drafts.get("A")!.anchorMemberIds.sort()).toEqual(["p1", "p2"]);
-		expect(drafts.get("B")!.anchorMemberIds).toEqual(["p3"]); // p1은 A가 가져가 B에서 제거
+		expect(drafts.get("B")!.anchorMemberIds.sort()).toEqual(["p3", "p4"]); // p1은 A가 가져가 B에서 제거
 		expect(mags.get("p1")!.teamId).toBe("A"); // 보유 팀과 자석이 일치
 	});
 
 	it("createdMs가 같으면 id가 앞선 팀이 유지(결정적 tie-break)", () => {
 		const payload: BoardDraftsPayload = {
+			// zeta 는 p1 을 빼앗겨도 2명이 남아야 유지된다(1명만 남으면 I3 로 드롭)
 			teams: [
-				{ id: "zeta", memberIds: ["p1", "p2"], createdMs: 5 },
+				{ id: "zeta", memberIds: ["p1", "p2", "p4"], createdMs: 5 },
 				{ id: "alpha", memberIds: ["p1", "p3"], createdMs: 5 },
 			],
 			reservations: [],
 		};
-		const mags = magnets(["p1", "p2", "p3"]);
+		const mags = magnets(["p1", "p2", "p3", "p4"]);
 		const { drafts } = reconcileMembership(payload, mags, noAnchors, VW, VH, new Set());
 
 		expect(drafts.get("alpha")!.anchorMemberIds.sort()).toEqual(["p1", "p3"]);
-		expect(drafts.get("zeta")!.anchorMemberIds).toEqual(["p2"]);
+		expect(drafts.get("zeta")!.anchorMemberIds.sort()).toEqual(["p2", "p4"]);
 		expect(mags.get("p1")!.teamId).toBe("alpha");
+	});
+});
+
+describe("reconcileMembership — 불변식 I3(유효 인원 2명 미만 팀은 드롭)", () => {
+	// 회귀: 1인 팀이 남으면 팀 박스는 렌더 게이팅(wouldDissolveByPlaying)으로 안 그려지는데 멤버 자석의
+	// teamId 는 그 팀을 가리켜 자유 자석 필터에서도 빠졌다 → 그 선수가 보드에서 통째로 사라짐(2026-07-31 사고).
+	it("서버 payload 의 1인 팀은 드롭되고 그 멤버는 자유 자석으로 남는다", () => {
+		const payload: BoardDraftsPayload = {
+			teams: [{ id: "solo", memberIds: ["p1"], createdMs: 0 }],
+			reservations: [],
+		};
+		const mags = magnets(["p1", "p2"]);
+		const { drafts } = reconcileMembership(payload, mags, noAnchors, VW, VH, new Set());
+
+		expect(drafts.has("solo")).toBe(false);
+		expect(mags.get("p1")!.teamId).toBeNull(); // 자유 자석으로 렌더됨(실종 방지)
+	});
+
+	it("2명 팀에서 1명이 경기중이 되면 남은 1명도 자유로 풀린다(I2 필터 후 1명 → I3 드롭)", () => {
+		const payload: BoardDraftsPayload = {
+			teams: [{ id: "T", memberIds: ["a", "b"], createdMs: 0 }],
+			reservations: [],
+		};
+		const mags = magnets(["a", "b"]);
+		const { drafts } = reconcileMembership(payload, mags, noAnchors, VW, VH, new Set(["b"]));
+
+		expect(drafts.has("T")).toBe(false);
+		expect(mags.get("a")!.teamId).toBeNull(); // 실종되지 않고 필드로
+	});
+
+	it("anchor 1명 + ghost(예약) 1명이면 유효 2명이라 팀이 유지된다", () => {
+		const payload: BoardDraftsPayload = {
+			teams: [{ id: "T", memberIds: ["a"], createdMs: 0 }],
+			reservations: [{ id: "r1", playerId: "g", teamId: "T", createdMs: 1 }],
+		};
+		const mags = magnets(["a", "g"]);
+		const { drafts, reservations } = reconcileMembership(
+			payload,
+			mags,
+			noAnchors,
+			VW,
+			VH,
+			new Set(["g"]), // ghost 는 경기중이어도 의도된 빌려주기라 유지
+		);
+
+		expect(drafts.has("T")).toBe(true);
+		expect(mags.get("a")!.teamId).toBe("T");
+		expect(reservations.size).toBe(1);
 	});
 });
 

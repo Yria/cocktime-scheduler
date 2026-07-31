@@ -26,6 +26,27 @@ export function clearConfirmIfBelowFull(s: Draft, teamId: string) {
 	if (teamMemberCount(teamId, s.drafts, s.reservations) < 4) delete team.confirmedMs;
 }
 
+/**
+ * 인원 바닥 가드 — 유효 인원(anchor + 이 팀 ghost, 중복 제외)이 2명 미만인 팀은 해체한다.
+ * 해체했으면 true(호출부는 확정 해제를 더 할 필요가 없다).
+ *
+ * **왜 필수인가**: 1인 팀을 남기면 그 선수가 화면에서 통째로 사라진다(2026-07-31 실제 사고).
+ * 팀 박스는 렌더 게이팅(membership.wouldDissolveByPlaying: 유효 인원 < 2 → 안 그림)으로 사라지는데,
+ * 남은 멤버 자석의 teamId 는 그 팀을 계속 가리켜 자유 자석 필터(teamId===null)에서도 빠지기 때문이다.
+ * 정렬·새로고침·워치독 어느 것도 복구하지 못하고, 편집자면 그 상태가 서버 board_drafts 로 저장된다.
+ *
+ * 그래서 "인원이 줄 수 있는" 모든 뮤테이션은 clearConfirmIfBelowFull 대신/함께 이걸 호출해야 한다.
+ * detachAnchor 에만 있던 규칙을 공용으로 올린 것 — anchor 가 빠지는 경로뿐 아니라 **ghost(예약)가
+ * 빠지는 경로**(예약 취소·재예약·휴식·anchor 승격 시 타 팀 ghost 회수)도 같은 바닥을 지켜야 한다.
+ * 경기중 anchor 때문에 유효 인원이 줄어드는 경우는 healPlayingAnchors 가 playingIds 로 판정해 담당한다.
+ */
+export function dissolveIfUnderTwo(s: Draft, teamId: string): boolean {
+	if (!s.drafts.has(teamId)) return false;
+	if (teamMemberCount(teamId, s.drafts, s.reservations) >= 2) return false;
+	dissolveDraft(s, teamId);
+	return true;
+}
+
 export function dissolveDraft(s: Draft, teamId: string) {
 	const team = s.drafts.get(teamId);
 	if (team) {
@@ -79,10 +100,11 @@ export function detachAnchor(s: Draft, playerId: string) {
 	// 슬롯 매핑에서도 제거 → 그 칸이 빈 슬롯으로 (다시 넣으면 새로 배치)
 	if (team.slots && playerId in team.slots) delete team.slots[playerId];
 	// 남은 인원이 너무 적으면(원본 0명 또는 총 2명 미만) 팀 해체
-	if (team.anchorMemberIds.length === 0 || teamMemberCount(teamId, s.drafts, s.reservations) < 2) {
+	if (team.anchorMemberIds.length === 0) {
 		dissolveDraft(s, teamId);
 		return;
 	}
+	if (dissolveIfUnderTwo(s, teamId)) return;
 	clearConfirmIfBelowFull(s, teamId); // 4명 미만이 됐으면 매칭확정 해제
 }
 
@@ -104,8 +126,11 @@ export function attachAnchor(s: Draft, playerId: string, teamId: string, slot?: 
 		s.reservations.delete(rid);
 		if (r.teamId !== teamId) ghostLostTeamIds.add(r.teamId);
 	}
-	// ghost를 잃은 다른 팀은 4명 미만이 됐으면 매칭확정 해제
-	for (const tid of ghostLostTeamIds) clearConfirmIfBelowFull(s, tid);
+	// ghost를 잃은 다른 팀은 1명만 남으면 해체(실종 방지), 살아남았으면 4명 미만 시 확정 해제.
+	// (경기완료 승격 resolveFreedReservations → attachAnchor 경로가 다중 예약 팀을 1인으로 만드는 실제 경로다.)
+	for (const tid of ghostLostTeamIds) {
+		if (!dissolveIfUnderTwo(s, tid)) clearConfirmIfBelowFull(s, tid);
+	}
 	const setSlot = () => {
 		if (slot === undefined) return; // 미지정 → teamMembers fallback(빈칸 순서대로)
 		team.slots = team.slots ?? {};

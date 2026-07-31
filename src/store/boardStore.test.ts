@@ -575,6 +575,29 @@ describe("commitTeammates — 다중 선택 커밋", () => {
 		useBoardStore.getState().commitTeammates({ seedId: "seed" }, ["partner"]);
 		expect(useBoardStore.getState().drafts.size).toBe(1); // 새 팀 생성 안 됨
 	});
+
+	// 회귀(2026-08-01): 해체 규칙이 "인원이 줄 때"만 걸려 있어 **팀이 태어날 때** 바닥은 아무도 안 지켰다.
+	// 새 그룹 만들기에서 1명만 고르면 유효 인원 1인 팀이 생기고 → 팀 박스는 렌더 게이팅으로 안 그려지는데
+	// 자석 teamId 는 그 팀을 가리켜 자유 자석에서도 빠져 그 선수가 화면에서 사라진다(서버로도 퍼진다).
+	it("새 팀 모드: 1명만 선택하면 팀을 만들지 않는다(자석은 자유 유지)", () => {
+		h.courts = [];
+		h.players = new Map(["solo"].map((id) => [id, player(id)]));
+		seed({ magnets: [mag("solo", null, 200, 400)] });
+		useBoardStore.getState().commitTeammates({ newTeam: true }, ["solo"]);
+		const s = useBoardStore.getState();
+		expect(s.drafts.size).toBe(0);
+		expect(s.magnets.get("solo")!.teamId).toBeNull();
+	});
+
+	it("새 팀 모드: 2명이면 정상 생성", () => {
+		h.courts = [];
+		h.players = new Map(["a", "b"].map((id) => [id, player(id)]));
+		seed({ magnets: [mag("a", null, 200, 400), mag("b", null, 400, 400)] });
+		useBoardStore.getState().commitTeammates({ newTeam: true }, ["a", "b"]);
+		const s = useBoardStore.getState();
+		expect(s.drafts.size).toBe(1);
+		expect([...[...s.drafts.values()][0].anchorMemberIds].sort()).toEqual(["a", "b"]);
+	});
 });
 
 // ── 자동편성(autoFillTeam) ───────────────────────────────────
@@ -708,6 +731,156 @@ describe("detachMember / cancelReservation — 드롭존", () => {
 		});
 		useBoardStore.getState().cancelReservation("r1");
 		expect(useBoardStore.getState().reservations.has("r1")).toBe(false);
+		// 남은 인원 1명 → 팀 해체. 안 하면 a 의 자석 teamId 가 렌더되지 않는 팀을 가리켜 a 가 화면에서 사라진다.
+		expect(useBoardStore.getState().drafts.has("T")).toBe(false);
+		expect(useBoardStore.getState().magnets.get("a")!.teamId).toBeNull();
+	});
+});
+
+// ── 1인 팀 금지(선수 실종 방지) — ghost 가 빠지는 로컬 편집 경로 전수 ──────────
+// 2026-07-31 사고: 유효 인원 1명인 팀이 남으면 팀 박스는 렌더 게이팅(wouldDissolveByPlaying)으로 사라지는데
+// 남은 anchor 의 자석 teamId 는 그 팀을 가리켜 자유 자석 필터에서도 빠져 선수가 화면에서 통째로 사라진다.
+// 정렬·새로고침·워치독 모두 복구 불가였고, 편집자면 그 상태가 서버 board_drafts 로 저장됐다.
+// I3(reconcileMembership)는 원격→로컬 경계만 막으므로 로컬 뮤테이션은 dissolveIfUnderTwo 로 같은 바닥을 지켜야 한다.
+describe("1인 팀 금지 — ghost가 빠지는 로컬 경로", () => {
+	// 경기중 선수를 빌려 만든 2인 팀(anchor 1 + ghost 1) 픽스처
+	function seedBorrowed() {
+		h.players = new Map(["a", "g"].map((id) => [id, player(id)]));
+		seed({
+			magnets: [mag("a", "T", 300, 400), mag("g", null, 500, 400)],
+			drafts: [draft("T", ["a"], 300, 400)],
+			reservations: [res("r1", "g", "T")],
+		});
+	}
+	function expectDissolved() {
+		const s = useBoardStore.getState();
+		expect(s.drafts.has("T")).toBe(false);
+		expect(s.magnets.get("a")!.teamId).toBeNull(); // 자유 자석으로 렌더됨
+	}
+
+	it("빼기존 드롭(cancelReservation)", () => {
+		seedBorrowed();
+		useBoardStore.getState().cancelReservation("r1");
+		expectDissolved();
+	});
+
+	it("보드에서 제거(removeMemberFromBoard, ghost 분기)", () => {
+		seedBorrowed();
+		useBoardStore.getState().removeMemberFromBoard("g");
+		expectDissolved();
+	});
+
+	it("휴식 처리(restPlayer — ghost 를 휴식으로)", () => {
+		seedBorrowed();
+		useBoardStore.getState().restPlayer("g");
+		expectDissolved();
+	});
+
+	it("ghost 를 빈 공간에 드롭(handleGhostDrop 예약 취소 분기)", () => {
+		seedBorrowed();
+		useBoardStore.getState().handleGhostDrop("r1", { x: 50, y: 700 }); // 어느 팀 박스와도 무관한 좌표
+		expectDissolved();
+	});
+
+	it("ghost 를 다른 팀으로 재예약(handleGhostDrop reReserve — 원 팀이 1명으로 줄어듦)", () => {
+		h.players = new Map(["a", "g", "x", "y"].map((id) => [id, player(id)]));
+		seed({
+			magnets: [mag("a", "T", 300, 400), mag("g", null, 500, 400), mag("x", "U", 300, 100), mag("y", "U", 340, 100)],
+			drafts: [draft("T", ["a"], 300, 400), draft("U", ["x", "y"], 300, 100)],
+			reservations: [res("r1", "g", "T")],
+		});
+		useBoardStore.getState().handleGhostDrop("r1", { x: 300, y: 100 }); // 팀 U 박스 안
+		const s = useBoardStore.getState();
+		expect([...s.reservations.values()][0]?.teamId).toBe("U"); // 재예약 성공
+		expect(s.drafts.has("T")).toBe(false); // 원 팀은 1명만 남아 해체
+		expect(s.magnets.get("a")!.teamId).toBeNull();
+	});
+
+	// 촘촘한 고정 자석(정렬 격자 간격 74 < MIN_MAG_DIST*2=128) 사이로 풀려난 자석은 밀어내기만으로는
+	// 원리적으로 겹침이 해소되지 않는다(밀려난 자리가 곧 다른 고정 자석 반경 안) → 빈자리 재배치가 필요.
+	it("1인 팀 드롭으로 풀려난 자석이 촘촘한 기존 자석 2개 사이에서도 겹치지 않게 재배치된다", () => {
+		h.courts = [];
+		useBoardStore.getState().setStageSize(2000, 2000);
+		h.players = new Map(["x", "f1", "f2"].map((id) => [id, player(id)]));
+		seed({
+			magnets: [mag("x", "SOLO", 337, 400), mag("f1", null, 300, 400), mag("f2", null, 374, 400)],
+			drafts: [draft("SOLO", ["x"], 337, 400)],
+		});
+		useBoardStore.getState().applyRemoteDrafts({
+			teams: [{ id: "SOLO", memberIds: ["x"], createdMs: 1 }],
+			reservations: [],
+		});
+
+		const s = useBoardStore.getState();
+		const x = s.magnets.get("x")!;
+		const f1 = s.magnets.get("f1")!;
+		const f2 = s.magnets.get("f2")!;
+		expect(s.drafts.has("SOLO")).toBe(false);
+		expect(x.teamId).toBeNull();
+		// 기존(사용자 배치) 자석은 제자리
+		expect([f1.x, f1.y]).toEqual([300, 400]);
+		expect([f2.x, f2.y]).toEqual([374, 400]);
+		// 풀려난 자석은 양쪽 모두와 겹치지 않는다(MIN_MAG_DIST=64)
+		expect(Math.hypot(x.x - f1.x, x.y - f1.y)).toBeGreaterThanOrEqual(64);
+		expect(Math.hypot(x.x - f2.x, x.y - f2.y)).toBeGreaterThanOrEqual(64);
+	});
+
+	// 세션 설정에서 선수가 빠지면(경기중 게스트 삭제 등) 그를 빌려 쓰던 팀의 예약이 사라진다 —
+	// 원래 확정 해제조차 없던 자리라 call-site 열거에서 구조적으로 누락됐던 7번째 경로.
+	it("세션에서 선수 이탈(initializeFromPool)로 ghost 가 사라져도 1인 팀은 안 남는다", () => {
+		h.players = new Map(["a", "g"].map((id) => [id, player(id)]));
+		seed({
+			magnets: [mag("a", "T", 300, 400), mag("g", null, 500, 400)],
+			drafts: [draft("T", ["a"], 300, 400)],
+			reservations: [res("r1", "g", "T")],
+		});
+		// 풀에서 g 가 빠짐 → g 자석·예약 삭제
+		useBoardStore.getState().initializeFromPool([player("a")]);
+		const s = useBoardStore.getState();
+		expect(s.magnets.has("g")).toBe(false);
+		expect(s.drafts.has("T")).toBe(false); // 남은 a 가 실종되지 않도록 해체
+		expect(s.magnets.get("a")!.teamId).toBeNull();
+	});
+
+	it("과잉 해체 방지 — 3인 팀은 ghost 가 빠져도 유지된다", () => {
+		h.players = new Map(["a", "b", "g"].map((id) => [id, player(id)]));
+		seed({
+			magnets: [mag("a", "T", 300, 400), mag("b", "T", 340, 400), mag("g", null, 500, 400)],
+			drafts: [draft("T", ["a", "b"], 300, 400)],
+			reservations: [res("r1", "g", "T")],
+		});
+		useBoardStore.getState().cancelReservation("r1");
+		const s = useBoardStore.getState();
+		expect([...s.drafts.get("T")!.anchorMemberIds].sort()).toEqual(["a", "b"]);
+		expect(s.magnets.get("a")!.teamId).toBe("T");
+	});
+});
+
+// ── 보드 배율 — 수동 조정만 기억하고, 넘칠 때 자동 축소는 막지 않는다 ──────────
+// 잠금을 "배율 고정"으로 구현하면 로스터가 커진 세션에서 자유 자석이 그룹 밴드 아래로 밀려 화면 밖으로
+// 나가 통째로 안 보인다(실측 y=744 > stageH=700). 그래서 userScale 은 자동 fit 의 **상한**으로만 쓴다.
+describe("보드 배율(userScale) — 수동 조정 기억 vs 자동 축소", () => {
+	beforeEach(() => {
+		useBoardStore.setState({ scale: 1, userScale: null }); // reset()은 기기 설정인 배율을 건드리지 않으므로 명시 초기화
+	});
+
+	it("수동 setScale 은 사용자 배율로 기억된다", () => {
+		useBoardStore.getState().setScale(0.7);
+		expect(useBoardStore.getState().scale).toBe(0.7);
+		expect(useBoardStore.getState().userScale).toBe(0.7);
+	});
+
+	it("값이 안 바뀌는 조작(최대에서 ＋)은 잠그지 않는다", () => {
+		useBoardStore.getState().setScale((s) => s + 0.1); // ZOOM_MAX=1 클램프 → no-op
+		expect(useBoardStore.getState().scale).toBe(1);
+		expect(useBoardStore.getState().userScale).toBeNull(); // 아무 변화도 없었으므로 자동 fit 유지
+	});
+
+	it("자동 fit(setAutoScale)은 사용자 배율을 덮지 않는다 — 여유가 생기면 복귀할 수 있어야 한다", () => {
+		useBoardStore.getState().setScale(0.9);
+		useBoardStore.getState().setAutoScale(0.6); // 내용이 넘쳐 축소된 상황
+		expect(useBoardStore.getState().scale).toBe(0.6);
+		expect(useBoardStore.getState().userScale).toBe(0.9);
 	});
 });
 
@@ -824,12 +997,12 @@ describe("applyRemoteDrafts — 공유된 보드 멤버십을 로컬에 반영(�
 		h.courts = [];
 		useBoardStore.getState().setStageSize(2000, 2000);
 		seed({
-			magnets: [mag("a", "OLD", 100, 300), mag("b", "OLD", 130, 300)],
+			magnets: [mag("a", "OLD", 100, 300), mag("b", "OLD", 130, 300), mag("c", null, 700, 700)],
 			drafts: [draft("OLD", ["a", "b"], 100, 300)],
 		});
-		// 원격에는 OLD가 없고 a만 가진 NEW 팀
+		// 원격에는 OLD가 없고 a·c 를 가진 NEW 팀(2명 — 1명이면 I3 로 드롭되므로 팀 교체 검증이 안 된다)
 		useBoardStore.getState().applyRemoteDrafts({
-			teams: [{ id: "NEW", memberIds: ["a"], createdMs: 5 }],
+			teams: [{ id: "NEW", memberIds: ["a", "c"], createdMs: 5 }],
 			reservations: [],
 		});
 
@@ -859,14 +1032,19 @@ describe("applyRemoteDrafts — 공유된 보드 멤버십을 로컬에 반영(�
 	it("원격으로 팀에서 빠져 새로 필드에 들어온 자석은 겹친 자석과 흩어진다", () => {
 		h.courts = [];
 		useBoardStore.getState().setStageSize(2000, 2000);
-		// a,b: 팀 T1 멤버. c: 자유 자석으로 a와 정확히 같은 좌표(빠지면 즉시 겹침)
+		// a,b,d: 팀 T1 멤버. c: 자유 자석으로 a와 정확히 같은 좌표(빠지면 즉시 겹침)
 		seed({
-			magnets: [mag("a", "T1", 300, 400), mag("b", "T1", 320, 400), mag("c", null, 300, 400)],
-			drafts: [draft("T1", ["a", "b"], 310, 400)],
+			magnets: [
+				mag("a", "T1", 300, 400),
+				mag("b", "T1", 320, 400),
+				mag("d", "T1", 340, 400),
+				mag("c", null, 300, 400),
+			],
+			drafts: [draft("T1", ["a", "b", "d"], 310, 400)],
 		});
-		// 원격: T1에서 a 제거(b만 남음) → a가 자유로 필드에 들어옴
+		// 원격: T1에서 a 제거(b·d 2명 남아 팀 유지) → a가 자유로 필드에 들어옴
 		useBoardStore.getState().applyRemoteDrafts({
-			teams: [{ id: "T1", memberIds: ["b"], createdMs: 1 }],
+			teams: [{ id: "T1", memberIds: ["b", "d"], createdMs: 1 }],
 			reservations: [],
 		});
 
@@ -876,6 +1054,33 @@ describe("applyRemoteDrafts — 공유된 보드 멤버십을 로컬에 반영(�
 		expect(a.teamId).toBeNull(); // 필드로 진입
 		const dist = Math.hypot(a.x - c.x, a.y - c.y);
 		expect(dist).toBeGreaterThan(60); // 흩어져 겹치지 않음(MIN_MAG_DIST≈64)
+	});
+
+	// 회귀(2026-07-31): 1인 팀 드롭(I3)으로 자유가 된 자석이 기존 자유 자석과 정확히 겹쳐 남으면
+	// "실종"이 "가려짐"으로 바뀔 뿐이다. 팀이 사라져 keep-out 이 없어도 겹침이 풀려야 한다.
+	it("1인 팀 드롭으로 자유가 된 자석도 기존 자석과 겹치지 않게 비켜난다", () => {
+		h.courts = [];
+		useBoardStore.getState().setStageSize(2000, 2000);
+		// x: 팀 SOLO 의 유일 멤버(= 팀 자리에 있음). c: 사용자가 배치해 둔 자유 자석, 좌표 완전 일치
+		seed({
+			magnets: [mag("x", "SOLO", 300, 400), mag("c", null, 300, 400)],
+			drafts: [draft("SOLO", ["x"], 300, 400)],
+		});
+		// 원격에도 1인 팀 그대로 → I3 로 드롭되고 x 는 자유가 된다
+		useBoardStore.getState().applyRemoteDrafts({
+			teams: [{ id: "SOLO", memberIds: ["x"], createdMs: 1 }],
+			reservations: [],
+		});
+
+		const s = useBoardStore.getState();
+		const x = s.magnets.get("x")!;
+		const c = s.magnets.get("c")!;
+		expect(s.drafts.has("SOLO")).toBe(false);
+		expect(x.teamId).toBeNull();
+		// 기존 자석(c)은 사용자가 둔 자리 그대로, 새로 풀린 x 가 비켜난다
+		expect(c.x).toBe(300);
+		expect(c.y).toBe(400);
+		expect(Math.hypot(x.x - c.x, x.y - c.y)).toBeGreaterThan(60);
 	});
 });
 

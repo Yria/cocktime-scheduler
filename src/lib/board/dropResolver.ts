@@ -13,7 +13,7 @@
  */
 import type { DraftTeam, MagnetPosition, StagePoint } from "../../types/board";
 import { distance, isInsideTeamBounds, slotIndexAt } from "./geometry";
-import { PAIR_RADIUS } from "./constants";
+import { PAIR_RADIUS, PAIR_RADIUS_DETACH } from "./constants";
 import { isMemberOf, teamMembers } from "./membership";
 
 export function statusForCount(n: number): "forming" | "ready" {
@@ -35,6 +35,8 @@ export function nearestFreePartner(
 	playingIds: ReadonlySet<string>,
 	notReadyIds: ReadonlySet<string> = new Set(),
 	restingIds: ReadonlySet<string> = new Set(),
+	/** 그룹화 판정 반경. 팀에서 빼내는 드래그는 더 엄격한 PAIR_RADIUS_DETACH 를 넘긴다. */
+	radius: number = PAIR_RADIUS,
 ): { id: string; pos: StagePoint } | null {
 	let bestDist = Number.POSITIVE_INFINITY;
 	let bestId: string | null = null;
@@ -45,7 +47,7 @@ export function nearestFreePartner(
 		// 휴식자와 그룹이 묶이지 않는다.
 		if (m.playerId === playerId || m.teamId !== null || playingIds.has(m.playerId) || notReadyIds.has(m.playerId) || restingIds.has(m.playerId)) continue;
 		const d = distance(drop, { x: m.x, y: m.y });
-		if (d <= PAIR_RADIUS && d < bestDist) {
+		if (d <= radius && d < bestDist) {
 			bestDist = d;
 			bestId = m.playerId;
 			bestPos = { x: m.x, y: m.y };
@@ -93,8 +95,18 @@ export function resolveDropTarget(
 			return { kind: "attach", teamId: d.id, slot: slotIdx };
 		}
 		if (insideTeam) return { kind: "none" }; // 박스 안이지만 슬롯 아님 → 스냅백
-		// 2) 자유 자석 근접 → 원본 팀에서 빠져 새 페어로 이동(createPair, ghost 예약 아님)
-		const partner = nearestFreePartner(playerId, drop, magnets, playingIds, notReadyIds, restingIds);
+		// 2) 자유 자석과 확실히 겹침 → 원본 팀에서 빠져 새 페어로 이동(createPair, ghost 예약 아님).
+		//    빼내는 드래그는 반경을 좁게(PAIR_RADIUS_DETACH) — 자석 사이 빈틈에 놓았을 때 엉뚱한 사람과
+		//    묶이지 않고 아래 3)의 detach 로 떨어지게 한다.
+		const partner = nearestFreePartner(
+			playerId,
+			drop,
+			magnets,
+			playingIds,
+			notReadyIds,
+			restingIds,
+			PAIR_RADIUS_DETACH,
+		);
 		if (partner) {
 			return {
 				kind: "createPair",

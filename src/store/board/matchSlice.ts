@@ -2,7 +2,7 @@ import type { StateCreator } from "zustand";
 import type { SessionPlayer } from "../../types";
 import type { StagePoint } from "../../types/board";
 import { DEFAULT_VIEWPORT } from "../../lib/board/geometry";
-import { MAGNET_SIZE } from "../../lib/board/constants";
+import { MAGNET_SIZE, TEAM_BOX_BELOW } from "../../lib/board/constants";
 import { canonicalizeDrafts, reconcileMembership } from "../../lib/board/remoteDrafts";
 import { scatterFromSource } from "../../lib/board/scatter";
 import { settleFreeMagnets } from "../../lib/board/settle";
@@ -87,8 +87,21 @@ export const createMatchSlice: StateCreator<
 						0,
 					);
 				}
-				// 잔여 겹침 정리 — 새로 들어온 자석만 대상(기존 사용자 배치 자석은 보존), 화면 경계로만
-				settleFreeMagnets(s.magnets, s.drafts, vw, vh, settleExclude, 0);
+				// 잔여 겹침 정리 — 움직이는 대상은 새로 들어온 자석만(기존 사용자 배치 자석은 보존)이지만,
+				// 기존 자석은 fixedIds 로 넘겨 **충돌 대상으로는 반드시 고려**한다. 안 넘기면 새로 들어온
+				// 자석이 기존 자석 위에 완전히 겹쳐 남아 가려진다(팀 해체로 keep-out 이 사라진 경우).
+				// 단 경기중 자석은 제외한다 — 코트 카드로만 그려지고 x/y 는 옛 팀 슬롯에 남은 스테일 값이라
+				// (dissolveDraftAfterAssign) 그대로 넘기면 화면에 없는 유령 좌표가 장애물로 작동한다.
+				const fixedIds = new Set<string>();
+				for (const id of prevFreeIds) if (!playingIds.has(id)) fixedIds.add(id);
+				// 코트 레인 하단을 topMargin 으로 준다 — settle 은 코트 카드를 장애물로 모르는데(drafts 만 봄)
+				// 0 을 주면 겹침을 피해 재배치된 자석이 **불투명 코트 카드 밑으로** 올라가 가려진다.
+				// (자유 자석은 코트 카드보다 먼저 그려진다 — SessionBoard 렌더 순서.)
+				let courtBottom = 0;
+				for (const a of s.courtAnchors.values()) {
+					courtBottom = Math.max(courtBottom, a.y + TEAM_BOX_BELOW);
+				}
+				settleFreeMagnets(s.magnets, s.drafts, vw, vh, settleExclude, courtBottom, fixedIds);
 			});
 			// 방금 적용한 멤버십을 기준선으로 — 이후 위치만 바뀌면 재브로드캐스트 안 함
 			syncState.lastSyncedDraftsJson = JSON.stringify(serializeBoardDrafts(get()));

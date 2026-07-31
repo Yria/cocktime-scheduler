@@ -2,6 +2,7 @@ import type { StateCreator } from "zustand";
 import type { DraftTeam, MagnetPosition, Reservation, StagePoint } from "../../types/board";
 import { isInsideTeamBounds, slotIndexAt } from "../../lib/board/geometry";
 import { resolveDropTarget, nearestFreePartner } from "../../lib/board/dropResolver";
+import { PAIR_RADIUS_DETACH } from "../../lib/board/constants";
 import {
 	cockPendingIds,
 	isMemberOf,
@@ -16,6 +17,7 @@ import {
 	attachAnchor,
 	clearConfirmIfBelowFull,
 	detachAnchor,
+	dissolveIfUnderTwo,
 	newId,
 	nowMs,
 } from "../../lib/board/draftMutations";
@@ -156,7 +158,8 @@ export const createMembershipSlice: StateCreator<
 				) {
 					r.teamId = d.id;
 					d.createdBy = currentEditorName(); // 새 인원(ghost)을 넣은 편집자로 갱신
-					clearConfirmIfBelowFull(s, fromTeamId); // ghost가 빠진 원 팀은 4명 미만이면 확정 해제
+					// ghost가 빠진 원 팀: 1명만 남으면 해체(안 하면 남은 anchor가 화면에서 사라진다), 아니면 확정만 해제
+						if (!dissolveIfUnderTwo(s, fromTeamId)) clearConfirmIfBelowFull(s, fromTeamId);
 				}
 				done = true;
 				break;
@@ -166,7 +169,9 @@ export const createMembershipSlice: StateCreator<
 				const own = s.drafts.get(fromTeamId);
 				if (!(own && isInsideTeamBounds(drop, own.anchor))) {
 					s.reservations.delete(resId);
-					clearConfirmIfBelowFull(s, fromTeamId);
+					// 예약 취소로 1명만 남으면 팀 해체 — 안 하면 남은 anchor가 화면에서 사라진다(운영진 신고 경로:
+					// 경기중 선수를 빌려 만든 2인 팀에서 ghost를 빼기존에 드롭)
+					if (!dissolveIfUnderTwo(s, fromTeamId)) clearConfirmIfBelowFull(s, fromTeamId);
 				}
 			}
 			// ghost가 속한(또는 속했던) 팀에서 흩어짐
@@ -204,8 +209,19 @@ export const createMembershipSlice: StateCreator<
 				break; // 슬롯 판정 끝 → 종료(겹친 다른 팀 탐색 안 함: bounds 안이면 done)
 			}
 			// 2) 자유 자석 위 → 새 예비팀(파트너 anchor + 이 선수 ghost)
+			//    반경은 좁은 쪽(PAIR_RADIUS_DETACH) — 대기 자석 격자(중심거리 74)의 빈틈에 놓았을 때 옆 사람과
+			//    엉뚱한 팀이 생기던 문제를 막는다(운영진 신고). 코트에서 끌어낸 자석은 여기서 no-op 이면
+			//    슬롯으로 복귀하므로, 좁힌 만큼 "취소" 좌표가 생긴다.
 			if (!done) {
-				const partner = nearestFreePartner(playerId, drop, s.magnets, playingIds, notReadyIds, restingIds);
+				const partner = nearestFreePartner(
+					playerId,
+					drop,
+					s.magnets,
+					playingIds,
+					notReadyIds,
+					restingIds,
+					PAIR_RADIUS_DETACH,
+				);
 				if (partner) {
 					const pm = s.magnets.get(partner.id);
 					if (pm && pm.teamId === null) {
@@ -274,6 +290,14 @@ export const createMembershipSlice: StateCreator<
 				// 경기중 선수는 예약(ghost), 그 외는 정식 멤버(anchor)
 				if (playingIds.has(pid)) addReservation(s, pid, teamId, currentEditorName());
 				else attachAnchor(s, pid, teamId, undefined, currentEditorName());
+			}
+			// 인원 바닥 — "팀이 태어날 때"도 지켜야 한다. 새 그룹 만들기(NewTeamFab)에서 1명만 고르거나
+			// 자동 채움이 후보 부족으로 1명만 채우면 유효 인원 1인 팀이 생기고 그 선수가 화면에서 사라진다
+			// (팀 박스는 렌더 게이팅으로 안 그려지는데 자석 teamId 는 그 팀을 가리켜 자유 자석에서도 빠짐).
+			// 기존 팀(target.teamId)은 이미 2명 이상이라 no-op.
+			if (dissolveIfUnderTwo(s, teamId)) {
+				toast("혼자서는 그룹이 안 돼요 — 2명 이상 골라 주세요", { variant: "error" });
+				return;
 			}
 			// 그룹 생성/채움 후 겹친 자유 자석 흩어짐
 			runSettle(s, { teamId });
@@ -372,7 +396,8 @@ export const createMembershipSlice: StateCreator<
 			if (!r) return;
 			const teamId = r.teamId;
 			s.reservations.delete(resId);
-			clearConfirmIfBelowFull(s, teamId); // 인원이 줄면 매칭확정 해제
+			// 1명만 남으면 팀 해체(실종 방지), 아니면 4명 미만 시 확정만 해제
+			if (!dissolveIfUnderTwo(s, teamId)) clearConfirmIfBelowFull(s, teamId);
 			if (s.drafts.get(teamId)) runSettle(s, { teamId });
 		});
 	},
@@ -385,7 +410,8 @@ export const createMembershipSlice: StateCreator<
 				if (r.playerId === playerId) {
 					const teamId = r.teamId;
 					s.reservations.delete(rid);
-					clearConfirmIfBelowFull(s, teamId); // 인원이 줄면 매칭확정 해제
+					// 1명만 남으면 팀 해체(실종 방지), 아니면 4명 미만 시 확정만 해제
+					if (!dissolveIfUnderTwo(s, teamId)) clearConfirmIfBelowFull(s, teamId);
 					if (s.drafts.get(teamId)) runSettle(s, { teamId });
 					return;
 				}
@@ -410,8 +436,10 @@ export const createMembershipSlice: StateCreator<
 				s.reservations.delete(rid);
 				ghostLostTeamIds.add(r.teamId);
 			}
-			// ghost가 빠진 팀은 4명 미만이면 매칭확정 해제
-			for (const tid of ghostLostTeamIds) clearConfirmIfBelowFull(s, tid);
+			// ghost가 빠진 팀은 1명만 남으면 해체(실종 방지), 살아남았으면 4명 미만 시 확정 해제
+			for (const tid of ghostLostTeamIds) {
+				if (!dissolveIfUnderTwo(s, tid)) clearConfirmIfBelowFull(s, tid);
+			}
 			// 휴식자도 "휴식" 딱지를 달고 보드에 남는다(2026-07 휴식 패널 폐지) → 드롭 지점(하단 바 =
 			// 칠판 밖)이 아니라 자유 자석 격자의 정렬 위치로 보낸다. 보드에서 사라지면 운영진이 "버그로
 			// 없어졌다"고 오인해 게스트를 중복 추가하는 사고가 있었다.

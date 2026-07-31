@@ -76,8 +76,15 @@ export interface BoardState {
 	setStageSize: (w: number, h: number) => void;
 	/** 보드 줌 배율(0.5~1). 수동 줌·자동 fit 공용. */
 	scale: number;
-	/** 줌 배율 설정(클램프 + localStorage 영속). 함수형 업데이트 지원. */
+	/**
+	 * 사용자가 직접 맞춘 배율(없으면 null). 자동 fit 의 **상한**으로만 쓴다 — 확대는 하지 않고,
+	 * 내용이 화면을 넘치면 축소는 허용한다(고정하면 자유 자석이 화면 밖으로 밀려 안 보인다).
+	 */
+	userScale: number | null;
+	/** 수동 줌 배율 설정(클램프 + localStorage 영속 + userScale 갱신). 함수형 업데이트 지원. */
 	setScale: (v: number | ((prev: number) => number)) => void;
+	/** 자동 fit 배율 설정 — 저장·userScale 갱신 없이 실제 배율만 바꾼다. */
+	setAutoScale: (v: number) => void;
 	/** 드래그-엔드 후 소스(팀/코트)에서 겹친 자유 자석을 흩어지게 */
 	settleBoard: (source: DragSource) => void;
 	/** 공유된 보드 멤버십(payload)을 로컬에 적용(위치는 로컬에서 결정). 스냅샷/브로드캐스트 수신용. */

@@ -68,19 +68,32 @@ export function reconcileMembership(
 			(id) => magnets.has(id) && !assignedAnchor.has(id) && !playingIds.has(id), // I1 + I2
 		);
 		if (memberIds.length === 0) continue;
+		// 이 팀에 예약(ghost)된 선수 — 유효 인원 판정과 아래 매칭확정 유지에 쓴다.
+		// 아래 예약 루프가 실제로 살려두는 것과 **같은 조건**으로 센다 — anchor 로 확정된 선수는 ghost 가 될 수
+		// 없어(anchor xor ghost) 버려지므로, 그런 ghost 로 인원을 채워 I3 를 통과시키면 최종적으로 anchor 1명만
+		// 남아 막으려던 실종이 그대로 재현된다.
+		const ghostIds = payload.reservations
+			.filter((r) => r.teamId === team.id && magnets.has(r.playerId) && !assignedAnchor.has(r.playerId))
+			.map((r) => r.playerId);
+		// I3) 유효 인원(anchor + ghost, 중복 제외)이 2명 미만인 팀은 만들지 않는다 — 렌더 게이팅
+		//     (TeamBackground 의 wouldDissolveByPlaying)과 **같은 규칙**을 상태 변환 단계에서도 강제.
+		//     안 맞추면 화면에서 선수가 통째로 사라진다(2026-07-31 실제 사고): 팀 박스는 게이팅으로 안 그려지는데
+		//     남은 멤버의 자석 teamId 는 그 팀을 가리켜 자유 자석 필터(teamId===null)에서도 빠진다. heal
+		//     (healPlayingAnchors)은 "경기중 anchor 가 있는 팀"만 손대므로 남은 1명이 비경기중이면 조기 반환 →
+		//     영구 고착이고, 1인 팀이 서버 board_drafts 에 저장돼 있어 새로고침·전 기기에서 똑같이 재현됐다.
+		//     여기서 드롭하면 멤버 자석은 teamId=null 로 남아(위에서 초기화) 자유 자석으로 정상 표시된다.
+		const effectiveCount =
+			memberIds.length + new Set(ghostIds.filter((id) => !memberIds.includes(id))).size;
+		if (effectiveCount < 2) continue;
 		for (const id of memberIds) assignedAnchor.add(id);
 		const anchor = oldAnchors.get(team.id) ?? centroidAnchor(memberIds, magnets);
-		// 이 팀에 예약(ghost)된 선수 — 아래 매칭확정 유효 인원 판정에 쓴다.
-		const ghostIds = payload.reservations
-			.filter((r) => r.teamId === team.id && magnets.has(r.playerId))
-			.map((r) => r.playerId);
 		// 슬롯 위치 — 자석이 살아있는 멤버 것만 유지(스테일 키는 teamMembers가 무시하므로 안전).
 		const slots = team.slots
 			? Object.fromEntries(Object.entries(team.slots).filter(([pid]) => magnets.has(pid)))
 			: undefined;
 		// 매칭확정(confirmedMs)은 유효 멤버(anchor + 이 팀 ghost, 중복 제외)가 4명일 때만 유지 —
 		// I1/I2 필터로 인원이 줄었는데 확정 표시가 남는 스테일을 동기 경계에서 정제한다.
-		const memberCount = memberIds.length + new Set(ghostIds.filter((id) => !memberIds.includes(id))).size;
+		const memberCount = effectiveCount;
 		drafts.set(team.id, {
 			id: team.id,
 			anchorMemberIds: memberIds,

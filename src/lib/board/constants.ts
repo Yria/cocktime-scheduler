@@ -54,6 +54,11 @@ export const TEAM_BOX_BELOW = TEAM_GRID_HALF + TEAM_PAD + TEAM_CTA_GAP + TEAM_CT
 export const TEAM_HIT_PADDING = 16;
 // 그룹화: 두 자석이 지름의 10% 이상 겹칠 때만(중심거리 ≤ 0.9·지름). 살짝 닿는 정도로는 그룹 X.
 export const PAIR_RADIUS = MAGNET_SIZE * 0.9;
+// 그룹에서 빼내는 드래그(anchor → 바깥)는 더 엄격한 반경으로만 새 그룹을 만든다.
+// 자유 자석 격자 간격이 지름+10px 라 0.9·지름(=57.6)이면 "자석 사이 빈틈"에 놓아도 옆 사람과 그룹이
+// 묶였다(운영진 신고 2026-07-31: 빼내려고 빈 자리에 뒀는데 엉뚱한 사람과 그룹이 됨). 이 거리(=반지름)면
+// 절반 이상 확실히 겹쳐야 그룹이 되고, 빈틈에 놓으면 의도대로 팀에서 빠진다(detach).
+export const PAIR_RADIUS_DETACH = MAGNET_R;
 
 // Empty slot
 export const EMPTY_SLOT_SIZE = 44;

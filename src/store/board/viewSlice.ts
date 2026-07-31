@@ -6,10 +6,14 @@ import { arrangeBoard } from "../../lib/board/arrange";
 import { scatterFromSource } from "../../lib/board/scatter";
 import { settleFreeMagnets } from "../../lib/board/settle";
 import { cockPendingIds, playingIdsFromCourts } from "../../lib/board/membership";
-import { detachAnchor } from "../../lib/board/draftMutations";
+import {
+	clearConfirmIfBelowFull,
+	detachAnchor,
+	dissolveIfUnderTwo,
+} from "../../lib/board/draftMutations";
 import { useSessionStore } from "../sessionStore";
 import type { BoardState } from "./types";
-import { clampScale, loadScale, SCALE_KEY } from "./zoom";
+import { clampScale, loadScale, loadUserScale, SCALE_KEY, SCALE_LOCK_KEY } from "./zoom";
 import { clampToStage, gridPos, runSettle } from "./layoutHelpers";
 
 /** 뷰/레이아웃 슬라이스 — 줌·스테이지 크기·드래그 하이라이트·정렬/흩어짐·풀 초기화·리셋. */
@@ -28,7 +32,9 @@ export type ViewSlice = Pick<
 	| "setTeamAnchor"
 	| "setCourtAnchor"
 	| "setStageSize"
+	| "userScale"
 	| "setScale"
+	| "setAutoScale"
 	| "settleBoard"
 	| "cancelEditActions"
 	| "scatterMagnets"
@@ -52,6 +58,8 @@ export const createViewSlice: StateCreator<
 	stageW: 0,
 	stageH: 0,
 	scale: loadScale(),
+	// 사용자가 직접 맞춘 배율(없으면 null) — 자동 fit 의 상한. 확대는 막고, 넘칠 때 축소는 허용한다.
+	userScale: loadUserScale(),
 	restFieldHot: false,
 	presenceModalOpen: false,
 	dragInfo: null,
@@ -74,13 +82,22 @@ export const createViewSlice: StateCreator<
 			for (const id of s.magnets.keys()) {
 				if (!ids.has(id)) toRemove.push(id);
 			}
+			const ghostLostTeamIds = new Set<string>();
 			for (const id of toRemove) {
-				detachAnchor(s, id);
+				detachAnchor(s, id); // anchor 쪽 인원 바닥은 detachAnchor 안에서 처리된다
 				// 이 선수를 가리키던 예약도 정리
 				for (const [rid, r] of [...s.reservations]) {
-					if (r.playerId === id) s.reservations.delete(rid);
+					if (r.playerId === id) {
+						ghostLostTeamIds.add(r.teamId);
+						s.reservations.delete(rid);
+					}
 				}
 				s.magnets.delete(id);
+			}
+			// ghost 를 잃은 팀이 1명만 남으면 해체 — 다른 ghost 제거 경로와 같은 바닥.
+			// (세션 설정에서 경기중 게스트를 삭제하면 그를 빌려 쓰던 2인 팀이 1인으로 남아 anchor 가 실종됐다.)
+			for (const tid of ghostLostTeamIds) {
+				if (!dissolveIfUnderTwo(s, tid)) clearConfirmIfBelowFull(s, tid);
 			}
 		});
 	},
@@ -109,17 +126,33 @@ export const createViewSlice: StateCreator<
 		});
 	},
 
+	// 수동 줌(±버튼·휠·핀치) — 이 기기가 원하는 배율(userScale)로 기억·영속한다. 이후 자동 fit 은 이 값을
+	// **상한**으로만 써서 확대하지 않는다(useBoardStageLayout.fitAndArrange) → 다음 진입에도 맞춰둔 배율로 열린다.
 	setScale: (v) => {
 		const next = clampScale(typeof v === "function" ? v(get().scale) : v);
+		// 값이 안 바뀌는 조작(최대에서 ＋, 최소에서 －, 라운딩에 먹힌 핀치 한 틱)은 사용자 의도로 보지 않는다.
+		// 여기서 잠금을 확정하면 "아무 변화도 못 봤는데 자동 fit 이 영구 비활성"이 된다.
+		if (next === get().scale) return;
+		set((s) => {
+			s.scale = next;
+			s.userScale = next;
+		});
+		try {
+			localStorage.setItem(SCALE_KEY, String(next));
+			localStorage.setItem(SCALE_LOCK_KEY, "1"); // 수동 조정 표식(자동 fit 은 이 키를 쓰지 않는다)
+		} catch {
+			// localStorage 불가(시크릿 등) — 영속 생략
+		}
+	},
+
+	// 자동 fit 전용 — 배율만 맞추고 저장·userScale 갱신은 하지 않는다(사용자가 맞춘 값과 구분).
+	// 내용이 넘쳐 축소된 뒤에도 userScale 은 그대로 남아, 여유가 생기면 그 배율로 복귀한다.
+	setAutoScale: (v) => {
+		const next = clampScale(v);
 		if (next === get().scale) return;
 		set((s) => {
 			s.scale = next;
 		});
-		try {
-			localStorage.setItem(SCALE_KEY, String(next));
-		} catch {
-			// localStorage 불가(시크릿 등) — 영속 생략
-		}
 	},
 
 	settleBoard: (source) => {

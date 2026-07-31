@@ -90,9 +90,11 @@ export function placeArranged(
 	const restingIds = new Set(ss.restingIds);
 	if (asResting) restingIds.add(playerId);
 	else restingIds.delete(playerId);
-	const scale = s.scale || 1;
-	const viewW = (s.stageW || DEFAULT_VIEWPORT.vw) / scale;
-	const viewH = (s.stageH || DEFAULT_VIEWPORT.vh) / scale;
+	// s.stageW/stageH 는 이미 **view 좌표**(setStageSize 의 유일 호출부 useBoardStageLayout 이 stage/scale 을 넘긴다).
+	// 여기서 scale 로 또 나누면 배율 1 미만일 때 클론 격자가 실제보다 넓게 계산돼(cols/magCols 과다),
+	// 휴식·빼내기·보드에서 제거한 자석이 대기 줄이 아니라 엉뚱한 좌표(그룹 밴드 위 등)에 놓인다.
+	const viewW = s.stageW || DEFAULT_VIEWPORT.vw;
+	const viewH = s.stageH || DEFAULT_VIEWPORT.vh;
 	const magClone = new Map<string, MagnetPosition>();
 	for (const [k, v] of s.magnets) magClone.set(k, { ...v });
 	const draftClone = new Map<string, DraftTeam>();

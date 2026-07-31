@@ -108,7 +108,11 @@ export function arrangeBoard(input: ArrangeInput): void {
 			return ga - gb;
 		});
 	const magCols = Math.max(1, Math.floor(viewW / (MAGNET_SIZE + MAG_GAP)));
-	const freeStartY = groupAreaBottom + MAGNET_SIZE / 2 + FREE_TOP_PAD;
+	// 그룹이 많아 밴드가 화면을 넘겨도 자유 자석 줄은 화면 안에서 시작해야 한다 — 안 그러면 대기 선수가
+	// 전원 Stage 밖으로 배치돼 통째로 안 보인다(자동 fit 이 축소로 구제하지만 manualLayout=true 인 편집자는
+	// 그 경로를 안 탄다). 좁으면 그룹과 겹치더라도 "보이는 쪽"을 택한다.
+	const freeTop = Math.min(groupAreaBottom, Math.max(0, viewH - MAGNET_SIZE - 8));
+	const freeStartY = freeTop + MAGNET_SIZE / 2 + FREE_TOP_PAD;
 	freeMagnets.forEach((m, i) => {
 		const col = i % magCols;
 		const row = Math.floor(i / magCols);
@@ -117,7 +121,7 @@ export function arrangeBoard(input: ArrangeInput): void {
 	});
 
 	// 3) 남은 겹침 정리 + 화면 바운더리 클램프 (그룹 영역 아래로)
-	settleFreeMagnets(magnets, drafts, viewW, viewH, playingIds, groupAreaBottom);
+	settleFreeMagnets(magnets, drafts, viewW, viewH, playingIds, freeTop);
 }
 
 // 자동 스케일(렌더 없이 계산) — fit 판정의 하단 여백(settle 클램프 maxY ≈ viewH−MAG_R−4와 정합).
