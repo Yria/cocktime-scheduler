@@ -44,6 +44,8 @@ export default function GuestSection({
 	const [submitting, setSubmitting] = useState(false);
 	// 게스트 2명 이상 시 "참여 어려울 수 있음" 경고 다이얼로그
 	const [showGuestWarn, setShowGuestWarn] = useState(false);
+	// 게스트 취소 재확인 — 실수 취소 시 확정 자리가 대기자에게 넘어가 되돌리기 어렵다.
+	const [pendingCancel, setPendingCancel] = useState<AttendanceRow | null>(null);
 
 	// 내가 데려온 게스트(취소 제외는 상위에서 필터됨)
 	const myGuests = useMemo(
@@ -133,7 +135,7 @@ export default function GuestSection({
 								{isOpen && (
 									<button
 										type="button"
-										onClick={() => onCancelGuest(g.member_id)}
+										onClick={() => setPendingCancel(g)}
 										disabled={busy}
 										style={{
 											fontSize: 12,
@@ -188,6 +190,32 @@ export default function GuestSection({
 					}}
 					onCancel={() => setShowGuestWarn(false)}
 					onDismiss={() => setShowGuestWarn(false)}
+				/>
+			)}
+
+			{/* 게스트 취소 재확인 — 확정 게스트를 실수로 취소하면 자리가 대기자에게 바로 넘어가 복구가 어렵다. */}
+			{pendingCancel && (
+				<ConfirmDialog
+					title={`${pendingCancel.member?.name ?? "게스트"} 님의 참여를 취소할까요?`}
+					message={
+						pendingCancel.status === "waitlisted"
+							? "게스트 대기 신청이 취소됩니다."
+							: pendingCancel.status === "late_pool"
+								? "게스트의 정원 외 늦참 신청이 취소됩니다."
+								: "게스트의 참석 신청이 취소됩니다. 대기자가 있으면 그 자리는 바로 다음 순번에게 넘어가고, 되돌릴 수 없어요."
+					}
+					confirmLabel="참여 취소"
+					cancelLabel="닫기"
+					tone="danger"
+					busy={busy}
+					busyLabel="취소 중…"
+					onConfirm={() => {
+						const target = pendingCancel;
+						setPendingCancel(null);
+						onCancelGuest(target.member_id);
+					}}
+					onCancel={() => setPendingCancel(null)}
+					onDismiss={() => setPendingCancel(null)}
 				/>
 			)}
 
