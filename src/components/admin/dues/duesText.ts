@@ -40,6 +40,18 @@ export function ymLabel(ym: string): string {
 	return `${y}년 ${m}월`;
 }
 
+/** 서비스 시작 월. 이보다 이전 달은 통장·부과 데이터가 아예 없으므로 회계 열람 대상이 아니다. */
+export const SERVICE_START_YM = "2026-07";
+
+/**
+ * 공개 회계(클럽 회계)에서 열람 가능한 최신 월 = 지난달(당월은 정산 중이라 비공개).
+ * 단 서비스 시작 월보다 앞으로는 내려가지 않는다(빈 달만 보이는 걸 방지).
+ */
+export function publicLedgerMaxYm(): string {
+	const last = shiftYm(currentYm(), -1);
+	return last < SERVICE_START_YM ? SERVICE_START_YM : last; // 'YYYY-MM' 은 사전순=시간순
+}
+
 const STATUS_LABEL: Record<ChargeStatus, string> = {
 	unpaid: "미납",
 	partial: "부분납",

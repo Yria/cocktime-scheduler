@@ -9,6 +9,30 @@ export function NetAmount({ n }: { n: number }) {
 }
 
 /**
+ * 항목별 정산 한 줄: 이름(+보조설명) · 들어온/나간 돈 세부 · 순액.
+ * 운영진 [회계]와 회원 [클럽 회계]가 공용 — 같은 달 같은 숫자를 같은 모양으로 보여준다.
+ * 세부는 수입·지출이 **양쪽 다 있을 때만** 표시(한쪽만이면 순액과 같은 숫자라 중복).
+ */
+export function LedgerRow({ name, nameColor, sub, inAmt = 0, outAmt = 0, right }: { name: string; nameColor?: string; sub?: string; inAmt?: number; outAmt?: number; right: ReactNode }) {
+	const both = inAmt > 0 && outAmt > 0;
+	return (
+		<div className="flex items-center gap-2" style={{ fontSize: 13.5 }}>
+			<span style={{ flex: 1, minWidth: 0, fontWeight: 600, color: nameColor }} className={nameColor ? undefined : "text-strong"}>
+				{name}
+				{sub && <span className="text-faint" style={{ fontWeight: 500, fontSize: 11.5 }}> · {sub}</span>}
+			</span>
+			{both && (
+				<span className="flex items-center gap-1.5" style={{ fontSize: 11.5, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", flexShrink: 0 }}>
+					<span className="text-[#1c8a3b]">+{inAmt.toLocaleString("ko-KR")}</span>
+					<span className="text-[#d1362c]">−{outAmt.toLocaleString("ko-KR")}</span>
+				</span>
+			)}
+			{right && <span style={{ minWidth: 74, textAlign: "right" }}>{right}</span>}
+		</div>
+	);
+}
+
+/**
  * 선택 토글 칩(초록 활성 + ✓ 접두). 정산함 입금 항목칩·출금 선택칩 공용.
  * key 는 상위 map 에서 <ToggleChip key=… /> 로 지정.
  */

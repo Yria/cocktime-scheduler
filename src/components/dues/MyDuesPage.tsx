@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore";
 import { duesActions, useDuesStore } from "../../store/duesStore";
 import AppScreen from "../common/AppScreen";
-import { currentYm, shiftYm } from "../admin/dues/duesText";
+import { publicLedgerMaxYm } from "../admin/dues/duesText";
 import MyDuesTab from "./MyDuesTab";
 import MyLedgerTab from "./MyLedgerTab";
 
@@ -31,7 +31,7 @@ export default function MyDuesPage() {
 	const goPage = (p: Page) => navigate(p === "home" ? "/my-dues" : `/my-dues/${p}`);
 	const refresh = () => {
 		if (page === "home") void duesActions.loadMine(memberId);
-		else void duesActions.loadMyLedger(useDuesStore.getState().myLedgerYm ?? shiftYm(currentYm(), -1), true);
+		else void duesActions.loadMyLedger(useDuesStore.getState().myLedgerYm ?? publicLedgerMaxYm(), true);
 	};
 
 	return (
