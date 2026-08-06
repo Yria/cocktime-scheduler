@@ -288,10 +288,12 @@ alter table public.sessions
 | `cancel_attendance` | `(p_session_id bigint) → void` | 로그인 회원(본인) | 본인 취소(멱등). 카풀 의향(`carpool_role`/`carpool_seats`) 함께 해제(재참석 시 부활 방지). confirmed였으면 카운터 감소 + 대기 1순위 자동 승급 + 알림 |
 | `admin_cancel_attendance` | `(p_session_id bigint, p_member_id uuid) → void` | 운영진 | 운영진이 참여목록에서 임의 참석자(회원/게스트) 제거. cancel_attendance 패턴 + is_admin() 게이팅. confirmed였고 open이면 대기 1순위 자동 승급. 제거 당사자에게 `removed` 알림(누가 제거했는지 by_name 포함, 게스트면 초대회원에 guest_name). 수신자가 운영진 본인이면 생략 |
 | `promote_waitlist` | `(p_session_id bigint) → int` | 운영진 | 정원 상향 후 여유만큼 대기자 일괄 승급 + 각자 알림. 승급 수 반환. ⚠️ 미배선(dead) — 실제 승급/강등은 `set_session_capacity` 가 담당 |
-| `set_session_capacity` | `(p_session_id bigint, p_capacity int) → jsonb{promoted,demoted}` | 운영진 | 정원 UPDATE+재조정 원자 RPC. open 세션만 재조정: 정원↑/무제한→대기자 승격(position ASC, **게스트는 확정 2명 미만일 때만**), 정원↓→초과 confirmed 강등(position DESC, position 보존). 알림 대상 `coalesce(invited_by, member_id)`(게스트면 payload.guest_name). 승격 `promoted`/강등 `demoted`. 잠금 sessions→session_counters→attendances |
+| `set_session_capacity` | `(p_session_id bigint, p_capacity int) → jsonb{promoted,demoted}` | 운영진 | 정원 UPDATE+재조정 원자 RPC. open 세션만 재조정: 정원↑/무제한→대기자 승격(position ASC, **게스트는 확정 2명 미만일 때만**), 정원↓→초과 confirmed 강등(position DESC, position 보존). 알림 대상 `coalesce(invited_by, member_id)`(게스트면 payload.guest_name). 승격 `promoted`/강등 `demoted`. 잠금 sessions→session_counters→attendances. open 이 아닌 세션도 **카운터는 실제값으로 정합**(20260806010000 — 종료 세션 드리프트 잔존 방지) |
 | `add_guest_attendance` | `(p_session_id bigint, p_name text, p_gender text, p_skills jsonb) → attendances` | 로그인 회원(참석 중) | 게스트(계정 없는 member) 신청. 본인 참석(confirmed/waitlisted/late_pool) 필수. **동명 활성 회원 차단(`name_is_member`)**. 정원 여유 + **확정 게스트 2명 미만**이면 confirmed, 아니면 waitlisted(초대자 late_pool이면 게스트도 late_pool). §4.3 게스트 확정 상한 |
 | `cancel_guest_attendance` | `(p_session_id bigint, p_guest_member_id uuid) → void` | 로그인 회원(초대자) | 본인이 데려온 게스트 취소(멱등). confirmed였으면 카운터 감소 + open이면 대기 1순위 승급(상한 인식). 승급 알림 `coalesce(invited_by, member_id)` |
-| `promote_next_waitlisted` | `(p_session_id bigint) → attendances` | 내부(SECURITY DEFINER RPC 전용) | 대기 1순위 승급 헬퍼. 게스트는 확정 2명 미만일 때만 대상. `session_counters` 락 보유 전제, confirmed_count +1, **알림 없음**(호출자 책임). 대상 없으면 NULL 로우 |
+| `promote_next_waitlisted` | `(p_session_id bigint) → attendances` | 내부(SECURITY DEFINER RPC 전용) | 대기 1순위 승급 헬퍼. 게스트는 확정 2명 미만일 때만 대상. 락은 스스로 확보(`session_counter_sync`), 정원 판정은 **실제 confirmed 행 수** 기준, confirmed_count 를 실제값+1 로 세팅, **알림 없음**(호출자 책임). 대상 없으면 NULL 로우. `FOR UPDATE`(SKIP LOCKED 아님 — 후보가 잠겨 조용히 0명이 되는 것을 막는다). 마이그레이션 20260806010000 |
+| `promote_waitlist_fill` | `(p_session_id bigint) → int` | 내부 | **빈자리 수만큼** 반복 승격 + 각자 `promoted` 알림. 승격 인원 반환. 취소/늦참풀진입 계열 RPC가 open 세션에서 호출한다(이벤트당 1명만 채우던 규칙 때문에 한 번 생긴 빈자리가 영구히 남던 문제를 제거). 마이그레이션 20260806010000 |
+| `session_counter_sync` | `(p_session_id bigint) → int` | 내부 | `session_counters` 행을 잠그고 **실제 confirmed 행 수로 덮어써** 드리프트를 자가 치유하고 그 값을 반환. 모든 정원 판정 지점이 ±1 산술 대신 이 함수를 쓴다(카운터를 파생값으로 강등). 마이그레이션 20260806010000 |
 | `cancel_session` | `(p_session_id bigint) → void` | 운영진 | status='cancelled' + 전체 참석자 알림 |
 | `bridge_confirmed_to_players` | `(p_session_id bigint) → void` | 운영진 | **Phase 6**: confirmed 참석자를 session_players로 일괄 INSERT(members→스냅샷, gender NULL 가드). 보드 로직 0변경 |
 | `set_session_status` | `(p_session_id bigint, p_status text) → void` | 운영진 | 상태 전이(draft→open→active→closed) |
@@ -300,9 +302,12 @@ alter table public.sessions
 
 - **직렬화 지점은 `session_counters` 행의 `FOR UPDATE` 단독.** sessions는 status 검증용 `SELECT`(필요 시 `FOR SHARE`)만 — 편성 경로(sessions UPDATE)와 락 분리.
 - 카운터 행 보장: `INSERT … ON CONFLICT (session_id) DO NOTHING` 후 `SELECT … FOR UPDATE`.
-- 정원 판정은 **`count(*)` 금지**, `session_counters.confirmed_count`만 권위. (예외: **게스트 확정 하위상한(2명)** 은 카운터를 두지 않고, `session_counters` 락 안에서 `count(*)` 로 판정한다 — §4.3 게스트 확정 상한.)
+- 정원 판정은 **`session_counters` 행 락 안에서 실제 `count(*)`**(마이그레이션 `20260806010000` `session_counter_sync()`). 직렬화는 여전히 카운터 행 `FOR UPDATE` 가 담당하지만 **값의 권위는 attendances 실제 행**이고, `confirmed_count` 는 그 값으로 덮어써지는 **파생 캐시**다.
+  - 변경 이유: `confirmed_count` 를 ±1 산술로만 관리하던 동안, 어떤 이유로든 실제 행보다 커지면(유령 자리) 빈자리가 있어도 승격이 **영구 정지**했고 감지·복구 장치가 없었다(2026-08-06 목 세션 30시간 정지 사고). 이제 모든 정원 판정 지점이 호출 시마다 자가 치유한다.
+  - `late_pool` 은 `confirmed` 가 아니므로 자동으로 카운터에서 빠진다(정원 외 유지).
 - `position = nextval('attendance_position_seq')` — 경쟁 없는 단조 순번. 대기 1순위 = `status='waitlisted' ORDER BY position ASC`.
-- 자동 승급: `… FOR UPDATE SKIP LOCKED LIMIT 1` 로 1순위 선택(동시 취소 시 중복 승급 방지).
+- 자동 승급: `… FOR UPDATE LIMIT 1`(`SKIP LOCKED` 제거, `20260806010000`) — 후보 행이 순간 잠겼을 때 조용히 "승격자 없음"이 되던 위험을 없앴다. 중복 승급은 카운터 행 락으로 이미 배제된다. 그리고 승격은 **빈자리 수만큼 루프**(`promote_waitlist_fill`) — 이벤트당 1명만 채우면 한 번 생긴 빈자리가 남는다.
+- **운영진 프리패스(부과 없는 일정)**: 만석이어도 **확정 운영진 총수 < 2** 일 때 대기 중 운영진 1명을 정원 초과 확정. **정원 안에 이미 들어와 있는 운영진도 이 2명에 포함**된다(2026-08-06 운영자 확정, 마이그레이션 `20260806020000`). 정원 18 기준: ①회원16+운영진2=18 만석 → 3번째 운영진 대기 ②거기서 운영진 1명 취소 → 대기 1순위가 누구든 참여 ③회원17+운영진1=18 만석에서 운영진 참여 → 초과 확정 19명 ④거기서 회원 1명 취소 → 회원16+운영진2=18 → 아무도 승격 안 됨.
 - 알림 INSERT는 **같은 트랜잭션**에서 → 승급 롤백 시 알림도 미발생(불일치 차단).
 - `cancel_attendance`는 이미 취소/미신청이면 예외 없이 `RETURN`(멱등).
 
