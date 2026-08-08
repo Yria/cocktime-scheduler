@@ -1,16 +1,10 @@
-import { Copy } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import type { MyChargeRow, MyPayment } from "../../lib/supabase/dues";
+import type { MyPayment } from "../../lib/supabase/dues";
 import { duesActions, useDuesStore } from "../../store/duesStore";
-import { toast } from "../../store/toastStore";
 import EmptyState from "../shared/EmptyState";
 import { currentYm, fmtMD, remaining, won, ymLabel } from "../admin/dues/duesText";
-
-function chargeLabel(c: MyChargeRow): string {
-	if (c.kind === "monthly_fee") return `${c.periodYm ? `${Number(c.periodYm.slice(5))}월` : ""} 회비`;
-	const d = c.scheduledAt ? fmtMD(c.scheduledAt) : (c.sessionTitle ?? "세션");
-	return `${d} 대관비${c.isProxy ? " (게스트 대납)" : ""}`;
-}
+import AccountCopyRow from "./AccountCopyRow";
+import { chargeLabel, selectUnpaid, unpaidSum } from "./myUnpaid";
 
 // 내 회비 탭: ① 회비 납부(이번 달 미납 + 계좌 전체번호·복사) ② 납부 이력(실제 낸 것만, 월별).
 export default function MyDuesTab({ memberId }: { memberId: string }) {
@@ -24,19 +18,9 @@ export default function MyDuesTab({ memberId }: { memberId: string }) {
 	}, [memberId]);
 
 	const ym = currentYm();
-	// 전체 미납/부분납. 대관비는 월 무관 전부, 회비는 실효 월(이월=deferred_to, 없으면 period_ym)이
-	// 이번 달 이하인 것만(미래로 이월된 건 아직 안 뜸). 회비 시스템 정산은 이번 달부터라 과거 회비 미납은 없음.
-	const unpaidAll = useMemo(
-		() =>
-			charges.filter(
-				(c) =>
-					(c.status === "unpaid" || c.status === "partial") &&
-					(c.kind === "court_fee" ||
-						(c.kind === "monthly_fee" && (c.deferredTo ?? c.periodYm ?? "") <= ym)),
-			),
-		[charges, ym],
-	);
-	const unpaidTotal = unpaidAll.reduce((s, c) => s + remaining(c.amountDue, c.amountPaid), 0);
+	// 미납 판정은 myUnpaid.selectUnpaid 공유(진입 알림과 정의 일치).
+	const unpaidAll = useMemo(() => selectUnpaid(charges, ym), [charges, ym]);
+	const unpaidTotal = unpaidSum(unpaidAll);
 
 	// 납부 이력 월별 그룹(RPC가 이미 최신순 → 삽입순 유지)
 	const groups = useMemo(() => {
@@ -48,17 +32,6 @@ export default function MyDuesTab({ memberId }: { memberId: string }) {
 		}
 		return [...m.entries()];
 	}, [payments]);
-
-	const copyAccount = async () => {
-		const num = account?.account?.replace(/\s/g, "");
-		if (!num) return;
-		try {
-			await navigator.clipboard.writeText(num);
-			toast("계좌번호를 복사했어요", { variant: "success" });
-		} catch {
-			toast("복사가 안 돼요 — 번호를 길게 눌러 복사하세요", { variant: "error" });
-		}
-	};
 
 	if (loading) return <EmptyState loading style={{ padding: "2.5rem 0" }} />;
 
@@ -94,23 +67,8 @@ export default function MyDuesTab({ memberId }: { memberId: string }) {
 					)}
 
 					{/* 계좌 */}
-					{account?.account ? (
-						<>
-							<div style={{ borderTop: "1px solid rgba(11,132,255,0.18)", margin: "12px 0 10px" }} />
-							<div className="flex items-center gap-2">
-								<span className="text-strong" style={{ fontSize: 16, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{account.bankName ? `${account.bankName} ` : ""}{account.account}</span>
-								<button type="button" onClick={copyAccount} aria-label="계좌번호 복사" className="text-[#0b84ff] flex items-center gap-1" style={{ marginLeft: "auto", fontSize: 12.5, fontWeight: 700, border: "1px solid #0b84ff", background: "transparent", borderRadius: 8, padding: "4px 10px", cursor: "pointer", flexShrink: 0 }}>
-									<Copy size={13} strokeWidth={2.2} /> 복사
-								</button>
-							</div>
-							{account.accountHolder && <p className="text-muted" style={{ fontSize: 13, marginTop: 4 }}>예금주 {account.accountHolder}</p>}
-						</>
-					) : (
-						<>
-							<div style={{ borderTop: "1px solid rgba(11,132,255,0.18)", margin: "12px 0 10px" }} />
-							<p className="text-faint" style={{ fontSize: 13 }}>입금 계좌가 아직 등록되지 않았어요. 운영진에게 문의하세요.</p>
-						</>
-					)}
+					<div style={{ borderTop: "1px solid rgba(11,132,255,0.18)", margin: "12px 0 10px" }} />
+					<AccountCopyRow account={account} />
 				</div>
 			</div>
 

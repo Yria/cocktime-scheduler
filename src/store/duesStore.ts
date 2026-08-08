@@ -65,6 +65,14 @@ interface DuesState {
 	myLedger: PublicLedger | null; // 클럽 공개 회계(항목별만) — 선택 월
 	myLedgerYm: string | null; // myLedger가 담고 있는 월
 	myLedgerLoading: boolean;
+
+	// ── 미납 진입 알림(UnpaidDuesAlert) ─────────────────────────────
+	// 앱 진입 시 1회 조회하는 독립 스냅샷. /my-dues 의 myCharges/account 와 분리해
+	// 두 화면의 로드 라이프사이클이 서로를 덮지 않게 한다.
+	unpaidAlertCheckedFor: string | null; // 조회를 마친 memberId(중복 조회 가드)
+	unpaidAlertCharges: MyChargeRow[]; // 본인 부과 전체(미납 판정은 화면에서 selectUnpaid)
+	unpaidAlertAccount: ClubAccount | null;
+	unpaidAlertDismissed: boolean; // 이번 앱 실행에서 닫음(영속 X → 다음에 앱을 열면 다시 뜬다)
 }
 
 export const useDuesStore = create<DuesState>(() => ({
@@ -90,6 +98,10 @@ export const useDuesStore = create<DuesState>(() => ({
 	myLedger: null,
 	myLedgerYm: null,
 	myLedgerLoading: true,
+	unpaidAlertCheckedFor: null,
+	unpaidAlertCharges: [],
+	unpaidAlertAccount: null,
+	unpaidAlertDismissed: false,
 }));
 
 /** ISO(timestamptz)가 KST 기준 ym('YYYY-MM')에 속하는지. monthSessions 파생용. */
@@ -197,6 +209,40 @@ export const duesActions = {
 			fetchMyPayments(),
 		]);
 		useDuesStore.setState({ myCharges, account, myPayments, myLoading: false });
+	},
+
+	/**
+	 * 미납 진입 알림용 조회 — 앱을 열 때(회원 확정 시) 1회. 같은 memberId 로는 다시 조회하지 않는다.
+	 * 판정(미납 여부)은 화면(UnpaidDuesAlert)이 하고, 여기선 데이터만 채운다.
+	 * 계좌는 단일행 RPC라 미납 유무와 무관하게 같이 받는다(왕복 1회 절약).
+	 */
+	async checkUnpaidAlert(memberId: string) {
+		if (useDuesStore.getState().unpaidAlertCheckedFor === memberId) return;
+		// 조회 시작 시점에 마킹 — 같은 실행에서 effect 가 두 번 뛰어도 중복 요청이 안 나가게.
+		useDuesStore.setState({ unpaidAlertCheckedFor: memberId });
+		const [charges, account] = await Promise.all([
+			fetchMyCharges(memberId),
+			fetchClubAccount(),
+		]);
+		useDuesStore.setState({
+			unpaidAlertCharges: charges,
+			unpaidAlertAccount: account,
+		});
+	},
+
+	/** 미납 알림 닫기 — 이번 앱 실행에만 유효(localStorage 미사용). 다음에 앱을 열면 미납이 남아있는 한 다시 뜬다. */
+	dismissUnpaidAlert() {
+		useDuesStore.setState({ unpaidAlertDismissed: true });
+	},
+
+	/** 로그아웃/계정 전환 — 알림 스냅샷 폐기(다른 회원의 미납이 남아 보이지 않게). */
+	resetUnpaidAlert() {
+		useDuesStore.setState({
+			unpaidAlertCheckedFor: null,
+			unpaidAlertCharges: [],
+			unpaidAlertAccount: null,
+			unpaidAlertDismissed: false,
+		});
 	},
 
 	/** 클럽 회계 탭: 선택 월의 공개 회계(당월 제외는 화면에서 가드). 같은 ym 캐시 + 경합 가드(마지막 요청만 반영). */

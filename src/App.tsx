@@ -8,6 +8,7 @@ import SessionSetup from "./components/SessionSetup";
 import MemberAdminPage from "./components/admin/MemberAdminPage";
 import DuesAdminPage from "./components/admin/dues/DuesAdminPage";
 import MyDuesPage from "./components/dues/MyDuesPage";
+import UnpaidDuesAlert from "./components/dues/UnpaidDuesAlert";
 import RegularNoticePage from "./components/schedule/RegularNoticePage";
 import SchedulePage from "./components/schedule/SchedulePage";
 import { useDarkMode } from "./hooks/useDarkMode";
@@ -190,6 +191,9 @@ export default function App() {
 				<Route path="/logs" element={<LogPage />} />
 				<Route path="*" element={<Navigate to="/" replace />} />
 			</Routes>
+			{/* 미납(회비·대관비) 진입 알림 — 앱을 열 때 미납이 있으면 납부 내역·계좌 안내.
+			    보드(/session)에선 경기 운영 화면을 가리지 않도록 띄우지 않는다. */}
+			{!isBoard && <UnpaidDuesAlert />}
 			<Toaster />
 		</div>
 	);
