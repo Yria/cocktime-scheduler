@@ -21,6 +21,19 @@ import ConfirmDialog from "../common/ConfirmDialog";
 /** 인라인 아바타 스택에 노출할 최대 인원(초과분은 +N 칩) */
 const STACK_MAX = 6;
 
+/**
+ * 식사 세그먼트(참여·안 먹음)가 카풀 3등분 칸과 **정확히 같은 폭**이 되게 하는 flex-basis.
+ *
+ * 카풀은 트랙 하나가 줄 전체 폭 W 를 쓰고 그 안에서 3등분된다:
+ *   W = padding(2+2) + 3C + gap(2+2)  →  C = (W - 8) / 3
+ * 식사는 [세그먼트 2칸] + [알약 1칸] 이라 세그먼트가 가져야 할 폭은
+ *   A = 2C + padding(4) + gap(2) = 2C + 6
+ * 이므로 basis 를 아래 calc 로 고정하고(100% = 래퍼 폭 = W), 알약은 flex:1 로 남은 폭을 받으면
+ * 그 값이 정확히 C 가 된다(W - 2 - A = C). 래퍼 gap 을 트랙 내부와 같은 2px 로 둔 것이 전제 —
+ * ctl-row 의 10px gap 을 그대로 쓰면 칸이 3~4px 어긋난다(그래서 래퍼로 한 번 더 감싼다).
+ */
+const MEAL_SEG_BASIS = "0 0 calc((100% - 8px) / 3 * 2 + 6px)";
+
 interface Props {
 	session: SessionRow;
 	placeName: string | null;
@@ -503,38 +516,50 @@ export default function ScheduleCard({
 			{mealOn && (attending || s.meal_place) && (
 				<div className="ctl-row">
 					<span className="ctl-label">식사</span>
-					{attending && (
+					{attending ? (
+						// 카풀 트랙과 같은 폭(flex:1)을 잡고, 내부를 트랙과 같은 gap 2px 로 나눈다.
+						// 가게가 없으면 세그먼트가 그대로 풀폭(flex:1) — 카풀과 동일한 모습.
 						<div
-							className="ctl-seg"
-							style={s.meal_place ? { flex: 2 } : undefined}
+							style={{ flex: 1, display: "flex", gap: 2, minWidth: 0 }}
 						>
-							{([true, false] as const).map((v) => {
-								const active = (mine?.meal_joining ?? true) === v;
-								return (
-									<button
-										key={String(v)}
-										type="button"
-										onClick={() => onSetMeal(v)}
-										disabled={busy}
-										className={active ? "on" : ""}
-										style={
-											active
-												? { background: v ? "#2c7a57" : "#94a3b8" }
-												: undefined
-										}
-									>
-										{v ? "참여" : "안 먹음"}
-									</button>
-								);
-							})}
+							<div
+								className="ctl-seg"
+								style={s.meal_place ? { flex: MEAL_SEG_BASIS } : undefined}
+							>
+								{([true, false] as const).map((v) => {
+									const active = (mine?.meal_joining ?? true) === v;
+									return (
+										<button
+											key={String(v)}
+											type="button"
+											onClick={() => onSetMeal(v)}
+											disabled={busy}
+											className={active ? "on" : ""}
+											style={
+												active
+													? { background: v ? "#2c7a57" : "#94a3b8" }
+													: undefined
+											}
+										>
+											{v ? "참여" : "안 먹음"}
+										</button>
+									);
+								})}
+							</div>
+							<MealPlaceLink
+								name={s.meal_place}
+								lat={s.meal_place_lat}
+								lng={s.meal_place_lng}
+								variant="card"
+							/>
 						</div>
+					) : (
+						<MealPlaceLink
+							name={s.meal_place}
+							lat={s.meal_place_lat}
+							lng={s.meal_place_lng}
+						/>
 					)}
-					<MealPlaceLink
-						name={s.meal_place}
-						lat={s.meal_place_lat}
-						lng={s.meal_place_lng}
-						variant={attending ? "card" : "page"}
-					/>
 				</div>
 			)}
 
