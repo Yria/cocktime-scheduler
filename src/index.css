@@ -3,9 +3,13 @@
 
 * {
 	-webkit-tap-highlight-color: transparent;
+	/* 이모지 폰트를 sans-serif **앞**에 둔다. font-family 폴백은 글리프 단위라 본문 폰트에 없는
+	   이모지만 여기서 찾는다. sans-serif 는 항상 매치되므로 그 뒤에 적으면 무시된다 —
+	   그래서 🍚 처럼 일부 이모지가 대체 글리프(빈 회색 원)로 그려지던 문제가 있었다. */
 	font-family:
 		-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
-		"Apple SD Gothic Neo", "Pretendard Variable", "Pretendard", sans-serif;
+		"Apple SD Gothic Neo", "Pretendard Variable", "Pretendard",
+		"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
 	box-sizing: border-box;
 }
 

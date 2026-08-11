@@ -160,7 +160,7 @@ export default function GuestSection({
 												opacity: busy ? 0.5 : 1,
 											}}
 										>
-											{g.meal_joining ? "🍚 식사" : "식사 안 함"}
+											{g.meal_joining ? "식사 참여" : "식사 안 함"}
 										</button>
 									)}
 									{isOpen && (

@@ -319,7 +319,7 @@ export default function ScheduleCard({
 					{freepassOps.length > 0 ? ` (운영진 ${freepassOps.length}명)` : ""}
 					{waiting.length > 0 ? ` · 대기 ${waiting.length}` : ""}
 					{latePool.length > 0 ? ` · 늦참 ${latePool.length}` : ""}
-					{mealOn ? ` · 🍚 ${mealJoin}` : ""}
+					{mealOn ? ` · 식사 ${mealJoin}` : ""}
 				</span>
 
 				{isOpen || isActive ? (

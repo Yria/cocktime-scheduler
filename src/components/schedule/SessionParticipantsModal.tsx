@@ -95,7 +95,7 @@ export default function SessionParticipantsModal({
 					{freepassOps.length > 0 ? ` (운영진 ${freepassOps.length}명)` : ""}
 					{waiting.length > 0 ? ` · 대기 ${waiting.length}` : ""}
 					{latePool.length > 0 ? ` · 늦참 ${latePool.length}` : ""}
-					{mealOn ? ` · 🍚 식사 ${mealJoin}명` : ""}
+					{mealOn ? ` · 식사 ${mealJoin}명` : ""}
 				</div>
 			</div>
 
@@ -368,7 +368,7 @@ function ParticipantRow({
 				style={{ fontSize: 12, fontWeight: 700 }}
 			>
 				{mealOn && !a.meal_joining && (
-					<span className="text-faint">🍽️ 식사 안 함</span>
+					<span className="text-faint">식사 안 함</span>
 				)}
 				{lateArrival &&
 					(isPool ? (
