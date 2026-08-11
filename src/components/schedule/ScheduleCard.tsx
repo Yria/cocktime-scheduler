@@ -42,6 +42,10 @@ interface Props {
 	onCancel: () => void;
 	onStartSession: () => void;
 	onSetCarpool: (role: CarpoolRole) => void;
+	/** 정모 식사(회식) 참여 여부 — 정모 + 식사 체크 회차에서만 노출. 기본 참여. */
+	onSetMeal: (joining: boolean) => void;
+	/** 내가 데려온 게스트의 식사 참여 여부(게스트는 계정이 없어 초대 회원이 대신 고른다). */
+	onSetGuestMeal: (guestMemberId: string, joining: boolean) => void;
 	/** 늦참 도착 오프셋(분) 설정 — 8시 경계를 넘지 않는 같은 존 내 이동(상태 불변, 디바운스). */
 	onSetLate: (minutes: number) => void;
 	/** 8시 경계 전환(정원 외 늦참 진입/복귀) 적용 — 확인 후 호출. status·정원 재동기화 포함. */
@@ -70,6 +74,8 @@ export default function ScheduleCard({
 	onCancel,
 	onStartSession,
 	onSetCarpool,
+	onSetMeal,
+	onSetGuestMeal,
 	onSetLate,
 	onApplyLatePool,
 	onAddGuest,
@@ -118,6 +124,12 @@ export default function ScheduleCard({
 		(a) => a.carpool_role === "need_ride",
 	).length;
 	const attending = mine != null && mine.status !== "cancelled";
+	// 정모 식사 체크 노출 — 정모 + 회차 토글이 둘 다 켜져 있을 때(서버 RPC 게이트와 동일 조건).
+	const mealOn = s.is_regular && s.meal_enabled;
+	// 식사 인원 = 실제로 오는 사람(확정 + 정원 외 늦참) 중 참여. 대기자는 승격돼야 오므로 제외.
+	const mealJoin = [...confirmed, ...latePool].filter(
+		(a) => a.meal_joining,
+	).length;
 
 	// 늦참 슬라이더 표시값 — 경계 확인 대기 중이면 후보값을 미리 보여준다(확정 전까지 서버 미반영).
 	const committedLate = mine?.late_minutes ?? 0;
@@ -290,6 +302,7 @@ export default function ScheduleCard({
 					{freepassOps.length > 0 ? ` (운영진 ${freepassOps.length}명)` : ""}
 					{waiting.length > 0 ? ` · 대기 ${waiting.length}` : ""}
 					{latePool.length > 0 ? ` · 늦참 ${latePool.length}` : ""}
+					{mealOn ? ` · 🍚 ${mealJoin}` : ""}
 				</span>
 
 				{isOpen || isActive ? (
@@ -477,6 +490,31 @@ export default function ScheduleCard({
 				</div>
 			)}
 
+			{/* 식사(회식) 참여 (참석자) — 정모 + 식사 체크 회차에서만. 카풀과 같은 세그먼트 컨트롤.
+			    기본이 '참여'라 미선택 상태가 따로 없다(안 먹는 사람만 '안 먹음'으로 바꾼다). */}
+			{attending && mealOn && (
+				<div className="ctl-row">
+					<span className="ctl-label">식사</span>
+					<div className="ctl-seg">
+						{([true, false] as const).map((v) => {
+							const active = (mine?.meal_joining ?? true) === v;
+							return (
+								<button
+									key={String(v)}
+									type="button"
+									onClick={() => onSetMeal(v)}
+									disabled={busy}
+									className={active ? "on" : ""}
+									style={active ? { background: v ? "#2c7a57" : "#94a3b8" } : undefined}
+								>
+									{v ? "참여" : "안 먹음"}
+								</button>
+							);
+						})}
+					</div>
+				</div>
+			)}
+
 			{/* 늦참 체크 (참석자) — 시작·종료가 정해진 open 일정에서만. 8시 경계는 handleSlide가 게이팅. */}
 			{attending && isOpen && s.scheduled_at && s.ends_at && (
 				<LateArrivalSlider
@@ -507,8 +545,10 @@ export default function ScheduleCard({
 				attending={attending}
 				busy={busy}
 				guestCap={guestCap}
+				mealOn={mealOn}
 				onAddGuest={onAddGuest}
 				onCancelGuest={onCancelGuest}
+				onSetGuestMeal={onSetGuestMeal}
 			/>
 
 			{/* 참여취소 재확인 — 실수 취소 방지(대기/참석/정원 외 늦참 문구 분기) */}

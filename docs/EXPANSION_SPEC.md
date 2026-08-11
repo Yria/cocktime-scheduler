@@ -85,6 +85,7 @@ $$;
 | `sessions.status` | `'draft'` `'open'` `'active'` `'closed'` `'cancelled'` | 상태기계 ↓ |
 | `attendances.status` | `'confirmed'` `'waitlisted'` `'cancelled'` `'late_pool'` | 정원 큐 3종 + 정원 외 늦참 풀(`late_pool`). going/waitlist 표기 금지. `late_pool` = 후반 2/3 지점 이후 도착 신청, `confirmed_count` 미포함(§ 늦참 풀) |
 | `attendances.carpool_role` | `'none'` `'can_drive'` `'need_ride'` | 기본 `'none'` |
+| `attendances.meal_joining` | `true` `false` (boolean) | 정모 식사(회식) 참여. **기본 `true`(참여)** — "기본 참여, 안 먹는 사람만 해제" 모델이라 미응답/참여를 구분하지 않는다(3택 아님). `sessions.is_regular AND sessions.meal_enabled` 회차에서만 의미. 쓰기 `set_meal_joining(bigint,boolean,uuid)` — 본인 또는 내가 데려온 게스트. 취소 시 `true` 로 복원(BEFORE UPDATE 트리거 `trg_att_reset_meal` — 취소 경로 3개에 술어를 복제하지 않기 위해). 마이그레이션 `20260811010000` |
 | `notifications.type` | `'promoted'` `'demoted'` `'session_cancelled'` `'session_closed'` `'session_open'` `'carpool_muster'` `'schedule_added'` `'new_member'` `'removed'` `'noshow'` | 신규 타입은 여기 + `notifications.ts`/`send-push` 메시지 양쪽에 추가 |
 
 ### sessions 상태기계
@@ -273,6 +274,7 @@ alter table public.sessions
 
 - **종료 시각**: 규칙은 `end_time`, 회차는 `ends_at`. `recurring_valid_occurrences` 뷰가 `occ_ends_at`(종료<시작이면 다음날)을 계산, `sync` B/C 단계가 회차 `ends_at`·`carpool_enabled`를 규칙값으로 전파(미오버라이드 draft 한정).
 - **카풀 토글**: 회차 `carpool_enabled`가 true 일 때만 ScheduleCard 에 카풀 가능/필요 선택·집계 노출. 신규 일정 기본값은 **요일이 주말이면 on**(편집기에서 자동 추종, 운영진 수동 변경 가능).
+- **식사 체크 토글**(`20260811010000`): 회차 `meal_enabled` + `is_regular` 가 **둘 다** true 일 때만 식사 참여 선택·집계 노출(회식 없는 정모가 있어 정모 플래그만으로 자동 노출하지 않는다). 카풀과 달리 `recurring_schedules` 에 미러 컬럼을 두지 않아 규칙 sync 가 회차 값을 덮지 않는다(`is_regular` 와 동일 취급). 식사 인원 집계 기준 = **확정 + 정원 외 늦참** 중 참여(대기자는 승격돼야 오므로 제외하되, 선택 UI 는 대기자에게도 노출).
 - **홈 진행 하이라이트**: 시작 시각(`scheduled_at`)이 지난 `open` 회차는 목록 맨 위로 분리·하이라이트되고 운영진에게 `세션 시작 · 보드 열기` 버튼 노출. 시작 전에는 버튼을 숨긴다(시작 이후 **종료 시각 전까지** 유지). 30초 tick 으로 도달 감지.
 - **종료 일정 숨김(홈)**: 종료 시각(`ends_at`)이 지난 `open` 회차는 홈 목록에서 제외한다(`isPastSchedule`, 30초 tick 으로 재평가) — 위 `ends_at` 상한 가드와 동일 기준의 클라이언트 미노출 처리. `active`(진행중) 회차는 종료 시각과 무관하게 유지(운영 중 세션을 목록에서 지우지 않음). 30초 tick 윈도우의 stale 클릭은 서버 `session ended` 가드가 막고, 홈은 이를 "이미 종료된 일정입니다"로 표시.
 

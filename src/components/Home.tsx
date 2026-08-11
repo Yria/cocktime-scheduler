@@ -146,6 +146,21 @@ export default function Home({ onStart }: Props) {
 		[],
 	);
 
+	// 정모 식사(회식) 참여 — 본인 / 내가 데려온 게스트. 카풀과 같이 실패는 스토어가 롤백만 한다.
+	const handleSetMeal = useCallback(
+		async (sessionId: number, joining: boolean) => {
+			await scheduleActions.setMeal(sessionId, joining);
+		},
+		[],
+	);
+
+	const handleSetGuestMeal = useCallback(
+		async (sessionId: number, guestMemberId: string, joining: boolean) => {
+			await scheduleActions.setGuestMeal(sessionId, guestMemberId, joining);
+		},
+		[],
+	);
+
 	const handleSetLate = useCallback((sessionId: number, minutes: number) => {
 		scheduleActions.setLate(sessionId, minutes);
 	}, []);
@@ -371,6 +386,10 @@ export default function Home({ onStart }: Props) {
 								onCancel={() => handleCancel(s.id)}
 								onStartSession={() => handleStartSession(s.id)}
 								onSetCarpool={(role) => handleSetCarpool(s.id, role)}
+								onSetMeal={(joining) => handleSetMeal(s.id, joining)}
+								onSetGuestMeal={(gid, joining) =>
+									handleSetGuestMeal(s.id, gid, joining)
+								}
 							onSetLate={(minutes) => handleSetLate(s.id, minutes)}
 								onApplyLatePool={(minutes) => handleApplyLatePool(s.id, minutes)}
 								onAddGuest={(guest) => handleAddGuest(s.id, guest)}

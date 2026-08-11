@@ -143,6 +143,7 @@ export interface OccurrencePatch {
 	courtFee?: number | null; // 이 회차 엔빵 대관비 총액(원). null=규칙 기본값 사용. 부과 시점 coalesce(세션,규칙)
 	isRegular?: boolean; // 정모 여부
 	noticeMd?: string | null; // 정모 안내/대진표 본문(마크다운)
+	mealEnabled?: boolean; // 정모 식사(회식) 참여 체크 노출 — 정모일 때만 의미
 }
 
 /** 한 회차만 개별 수정(장소/시간/인원/카풀/정모). is_overridden=true 로 sync 덮어쓰기 방지. */
@@ -159,6 +160,7 @@ export async function updateOccurrence(
 	if (patch.courtFee !== undefined) row.court_fee = patch.courtFee;
 	if (patch.isRegular != null) row.is_regular = patch.isRegular;
 	if (patch.noticeMd !== undefined) row.notice_md = patch.noticeMd;
+	if (patch.mealEnabled != null) row.meal_enabled = patch.mealEnabled;
 	const { data, error } = await supabase
 		.from("sessions")
 		.update(row)
@@ -257,6 +259,7 @@ export interface OneOffInput {
 	courtFee?: number | null; // 엔빵 대관비 총액(원). null=총액 없음(→정액 6천)
 	isRegular?: boolean; // 정모 여부
 	noticeMd?: string | null; // 정모 안내/대진표 본문(마크다운)
+	mealEnabled?: boolean; // 정모 식사(회식) 참여 체크 노출 — 정모일 때만 의미
 }
 
 /**
@@ -285,6 +288,7 @@ export async function createOneOffOccurrence(
 			recurring_schedule_id: null,
 			is_regular: input.isRegular ?? false,
 			notice_md: input.noticeMd ?? null,
+			meal_enabled: input.mealEnabled ?? false,
 			created_by: createdBy,
 		})
 		.select()

@@ -247,6 +247,25 @@ export async function setCarpoolRole(
 	return { ok: true };
 }
 
+/** 정모 식사(회식) 참여 설정. 대상 미지정=본인, 지정 시 내가 데려온 게스트(계정이 없어 대신 고른다).
+ *  서버가 정모(is_regular) + 식사 체크(meal_enabled) 회차인지, 취소 아닌 참석 행인지 게이팅한다. */
+export async function setMealJoining(
+	sessionId: number,
+	joining: boolean,
+	memberId?: string,
+): Promise<{ ok: boolean; error?: string }> {
+	const { error } = await supabase.rpc("set_meal_joining", {
+		p_session_id: sessionId,
+		p_joining: joining,
+		p_member_id: memberId ?? null,
+	});
+	if (error) {
+		console.error("setMealJoining:", error);
+		return { ok: false, error: error.message };
+	}
+	return { ok: true };
+}
+
 /** 본인 늦참(도착 오프셋, 분) 설정(참석자). 0=정시.
  *  도착이 8시(KST 20:00) 이상이면 서버가 정원 외 풀(late_pool)로 전환하고, 미만으로 되돌리면 큐로 복귀.
  *  반환 status = 반영된 권위 상태(confirmed/waitlisted/late_pool), promoted = 자동 승급 인원. */

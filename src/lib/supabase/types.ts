@@ -56,6 +56,9 @@ export interface SessionRow {
 	// 정모(정기모임) + 회원 열람용 안내/대진표(마이그레이션 20260630010000)
 	is_regular: boolean; // 이 회차가 정모인가
 	notice_md: string | null; // 회원에게 보여줄 본문(마크다운, GFM 표). 운영진 수동 작성.
+	/** 정모 식사(회식) 참여 체크 노출 on/off. 정모라도 회식 없는 회차가 있어 별도 토글.
+	 *  is_regular && meal_enabled 일 때만 참석자에게 식사 컨트롤이 뜬다. 마이그레이션 20260811010000 */
+	meal_enabled: boolean;
 }
 
 /**
@@ -129,6 +132,9 @@ export interface AttendanceRow {
 	carpool_seats: number | null;
 	/** 늦참 오프셋(분). scheduled_at 기준 도착 지연. 0=정시, 30·60…(30분 단위). 마이그레이션 20260706030000. */
 	late_minutes: number;
+	/** 정모 식사(회식) 참여 여부. sessions.meal_enabled 회차에서만 의미. 기본 true(참여) —
+	 *  "기본 참여, 안 먹는 사람만 해제" 모델이라 미응답과 참여를 구분하지 않는다. 마이그레이션 20260811010000. */
+	meal_joining: boolean;
 	requested_at: string;
 	confirmed_at: string | null;
 	cancelled_at: string | null;

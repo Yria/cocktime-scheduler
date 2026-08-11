@@ -17,9 +17,13 @@ interface Props {
 	busy: boolean;
 	/** 게스트 확정 상한 — 주말 null(무제한)/평일 2. 서버 session_guest_cap 미러. */
 	guestCap: number | null;
+	/** 정모 식사(회식) 체크 회차 — 게스트 행에도 식사 참여 토글을 노출한다. */
+	mealOn: boolean;
 	/** 게스트 신청 — 성공/실패 반환(실패 시 모달 유지 + 알림). */
 	onAddGuest: (guest: { name: string; gender: Gender; skills: PlayerSkills }) => Promise<{ ok: boolean; error?: string }>;
 	onCancelGuest: (guestMemberId: string) => void;
+	/** 게스트 식사 참여 변경 — 게스트는 계정이 없어 데려온 회원이 대신 고른다. */
+	onSetGuestMeal: (guestMemberId: string, joining: boolean) => void;
 }
 
 /**
@@ -34,8 +38,10 @@ export default function GuestSection({
 	attending,
 	busy,
 	guestCap,
+	mealOn,
 	onAddGuest,
 	onCancelGuest,
+	onSetGuestMeal,
 }: Props) {
 	const [showModal, setShowModal] = useState(false);
 	const [name, setName] = useState("");
@@ -132,24 +138,50 @@ export default function GuestSection({
 													: `대기 ${wait?.rank ?? 0}번째`}
 									</span>
 								</span>
-								{isOpen && (
-									<button
-										type="button"
-										onClick={() => setPendingCancel(g)}
-										disabled={busy}
-										style={{
-											fontSize: 12,
-											fontWeight: 600,
-											color: "#ef4444",
-											background: "none",
-											border: "none",
-											cursor: busy ? "not-allowed" : "pointer",
-											opacity: busy ? 0.5 : 1,
-										}}
-									>
-										취소
-									</button>
-								)}
+								<div className="flex items-center gap-2 flex-shrink-0">
+									{/* 정모 식사 체크 회차: 게스트 몫도 데려온 회원이 대신 고른다(기본 참여) */}
+									{mealOn && (
+										<button
+											type="button"
+											onClick={() => onSetGuestMeal(g.member_id, !g.meal_joining)}
+											disabled={busy}
+											aria-pressed={g.meal_joining}
+											style={{
+												fontSize: 11,
+												fontWeight: 700,
+												color: g.meal_joining ? "#2c7a57" : "#94a3b8",
+												background: g.meal_joining
+													? "rgba(44,122,87,0.12)"
+													: "rgba(148,163,184,0.16)",
+												border: "none",
+												borderRadius: 999,
+												padding: "3px 9px",
+												cursor: busy ? "not-allowed" : "pointer",
+												opacity: busy ? 0.5 : 1,
+											}}
+										>
+											{g.meal_joining ? "🍚 식사" : "식사 안 함"}
+										</button>
+									)}
+									{isOpen && (
+										<button
+											type="button"
+											onClick={() => setPendingCancel(g)}
+											disabled={busy}
+											style={{
+												fontSize: 12,
+												fontWeight: 600,
+												color: "#ef4444",
+												background: "none",
+												border: "none",
+												cursor: busy ? "not-allowed" : "pointer",
+												opacity: busy ? 0.5 : 1,
+											}}
+										>
+											취소
+										</button>
+									)}
+								</div>
 							</div>
 						);
 					})}

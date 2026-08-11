@@ -64,6 +64,9 @@ export function useOccurrenceForm(
 	const [noticeMd, setNoticeMd] = useState<string>(
 		() => occurrence?.notice_md ?? "",
 	);
+	const [mealEnabled, setMealEnabled] = useState<boolean>(
+		() => occurrence?.meal_enabled ?? false,
+	);
 
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -119,6 +122,8 @@ export function useOccurrenceForm(
 				courtFee: parseCourtFee(courtFeeStr),
 				isRegular,
 				noticeMd: noticeMd.trim() ? noticeMd : null,
+				// 정모가 아니면 식사 체크도 끈 상태로 저장(정모 off 회차에 유령 게이트가 남지 않게)
+				mealEnabled: isRegular && mealEnabled,
 			});
 		});
 	}
@@ -137,6 +142,7 @@ export function useOccurrenceForm(
 				courtFee: parseCourtFee(courtFeeStr),
 				isRegular,
 				noticeMd: noticeMd.trim() ? noticeMd : null,
+				mealEnabled: isRegular && mealEnabled,
 			});
 		});
 	}
@@ -185,6 +191,8 @@ export function useOccurrenceForm(
 		setIsRegular,
 		noticeMd,
 		setNoticeMd,
+		mealEnabled,
+		setMealEnabled,
 		busy,
 		error,
 		handleCreate,

@@ -11,6 +11,7 @@ import {
 	joinSession,
 	setCarpoolRole,
 	setLateMinutes,
+	setMealJoining,
 	syncOccurrences,
 } from "../lib/supabase/schedule";
 import { dbEndSession } from "../lib/supabase/actions";
@@ -82,10 +83,12 @@ function findMine(sessionId: number): AttendanceRow | undefined {
 		);
 }
 
-/** 내 참석 행을 즉시 in-place 패치(화면 선반영). memberId 없으면 no-op. */
-function patchMine(sessionId: number, patch: Partial<AttendanceRow>) {
-	const memberId = useAuthStore.getState().memberId;
-	if (!memberId) return;
+/** 참석 행 하나를 즉시 in-place 패치(화면 선반영). 본인/게스트 공용. */
+function patchRow(
+	sessionId: number,
+	memberId: string,
+	patch: Partial<AttendanceRow>,
+) {
 	useScheduleStore.setState((s) => ({
 		attendances: s.attendances.map((a) =>
 			a.session_id === sessionId && a.member_id === memberId
@@ -93,6 +96,25 @@ function patchMine(sessionId: number, patch: Partial<AttendanceRow>) {
 				: a,
 		),
 	}));
+}
+
+/** 내 참석 행을 즉시 in-place 패치(화면 선반영). memberId 없으면 no-op. */
+function patchMine(sessionId: number, patch: Partial<AttendanceRow>) {
+	const memberId = useAuthStore.getState().memberId;
+	if (!memberId) return;
+	patchRow(sessionId, memberId, patch);
+}
+
+/** 특정 참석 행(게스트 포함) — 낙관적 업데이트 롤백 기준값 조회용. */
+function findRow(
+	sessionId: number,
+	memberId: string,
+): AttendanceRow | undefined {
+	return useScheduleStore
+		.getState()
+		.attendances.find(
+			(a) => a.session_id === sessionId && a.member_id === memberId,
+		);
 }
 
 /** 늦참 슬라이더 세션별 디바운스 타이머(마지막 조작 후 500ms에 서버 전송). */
@@ -162,6 +184,31 @@ export const scheduleActions = {
 		patchMine(sessionId, { carpool_role: role }); // 낙관적
 		const res = await setCarpoolRole(sessionId, role);
 		if (!res.ok) patchMine(sessionId, { carpool_role: prev }); // 롤백
+		return res;
+	},
+
+	/** 정모 식사(회식) 참여 — 화면 선반영 후 즉시 서버 전송. 실패 시 이전 값으로 롤백.
+	 *  상태(status)를 바꾸지 않으므로 카풀과 같이 재조회하지 않는다(늦참 디바운스/직렬화도 불필요). */
+	async setMeal(sessionId: number, joining: boolean) {
+		const prev = findMine(sessionId)?.meal_joining ?? true;
+		if (prev === joining) return { ok: true };
+		patchMine(sessionId, { meal_joining: joining }); // 낙관적
+		const res = await setMealJoining(sessionId, joining);
+		if (!res.ok) patchMine(sessionId, { meal_joining: prev }); // 롤백
+		return res;
+	},
+
+	/** 내가 데려온 게스트의 식사 참여 — 게스트는 계정이 없어 초대 회원이 대신 고른다(서버가 소유권 검사). */
+	async setGuestMeal(
+		sessionId: number,
+		guestMemberId: string,
+		joining: boolean,
+	) {
+		const prev = findRow(sessionId, guestMemberId)?.meal_joining ?? true;
+		if (prev === joining) return { ok: true };
+		patchRow(sessionId, guestMemberId, { meal_joining: joining }); // 낙관적
+		const res = await setMealJoining(sessionId, joining, guestMemberId);
+		if (!res.ok) patchRow(sessionId, guestMemberId, { meal_joining: prev }); // 롤백
 		return res;
 	},
 

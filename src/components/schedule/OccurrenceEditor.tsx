@@ -65,6 +65,8 @@ export default function OccurrenceEditor({
 		setIsRegular,
 		noticeMd,
 		setNoticeMd,
+		mealEnabled,
+		setMealEnabled,
 		busy,
 		error,
 		handleCreate,
@@ -231,6 +233,32 @@ export default function OccurrenceEditor({
 								ariaLabel="정모"
 							/>
 						</div>
+
+						{/* 정모 식사(회식) 참여 체크 — 정모일 때만. 회식 없는 정모도 있어 별도 토글. */}
+						{isRegular && (
+							<div className="flex items-center justify-between">
+								<div className="flex flex-col gap-0.5">
+									<span
+										className={labelCls}
+										style={{ ...labelStyle, marginBottom: 0 }}
+									>
+										식사 참여 체크
+									</span>
+									<span
+										className="text-faint"
+										style={{ fontSize: 11.5 }}
+									>
+										켜면 참석자가 회식 참여 여부를 고를 수 있어요 (기본 참여)
+									</span>
+								</div>
+								<Switch
+									checked={mealEnabled}
+									onChange={setMealEnabled}
+									disabled={busy}
+									ariaLabel="식사 참여 체크"
+								/>
+							</div>
+						)}
 
 						{isRegular && (
 							<div>

@@ -17,6 +17,7 @@ function att(
 		carpool_role: "none",
 		carpool_seats: null,
 		late_minutes: 0,
+		meal_joining: true,
 		requested_at: "",
 		confirmed_at: null,
 		cancelled_at: null,

@@ -37,6 +37,9 @@ export default function SessionParticipantsModal({
 	// 정원 초과(프리패스=만석일 때 들어온 운영진)만 별도 "운영진" 섹션으로. 정원 안 운영진은 확정에 그대로 포함.
 	const { base: confirmedBase, freepassOps } = splitConfirmedByCapacity(attendances, s.capacity);
 	const guestCap = guestCapForSession(s.scheduled_at);
+	// 정모 식사 체크 회차 — 헤더 집계 + 행 표식(불참자만). 카드(ScheduleCard)와 같은 기준으로 센다.
+	const mealOn = s.is_regular && s.meal_enabled;
+	const mealJoin = [...confirmed, ...latePool].filter((a) => a.meal_joining).length;
 
 	// 운영진만 임의 참석자 제거 가능(본인 행은 제외 — 본인은 카드의 '참여 취소' 사용).
 	const isAdmin = useAuthStore((st) => st.isAdmin);
@@ -92,6 +95,7 @@ export default function SessionParticipantsModal({
 					{freepassOps.length > 0 ? ` (운영진 ${freepassOps.length}명)` : ""}
 					{waiting.length > 0 ? ` · 대기 ${waiting.length}` : ""}
 					{latePool.length > 0 ? ` · 늦참 ${latePool.length}` : ""}
+					{mealOn ? ` · 🍚 식사 ${mealJoin}명` : ""}
 				</div>
 			</div>
 
@@ -111,6 +115,7 @@ export default function SessionParticipantsModal({
 										row={a}
 										memberId={memberId}
 										carpoolEnabled={s.carpool_enabled}
+										mealOn={mealOn}
 										scheduledAt={s.scheduled_at}
 										canRemove={isAdmin}
 										onRemove={setPendingRemove}
@@ -131,6 +136,7 @@ export default function SessionParticipantsModal({
 											row={a}
 											memberId={memberId}
 											carpoolEnabled={s.carpool_enabled}
+											mealOn={mealOn}
 											scheduledAt={s.scheduled_at}
 											canRemove={isAdmin}
 											onRemove={setPendingRemove}
@@ -152,6 +158,7 @@ export default function SessionParticipantsModal({
 											row={a}
 											memberId={memberId}
 											carpoolEnabled={s.carpool_enabled}
+											mealOn={mealOn}
 											scheduledAt={s.scheduled_at}
 											waitInfo={waitDisplay(attendances, a, guestCap)}
 											canRemove={isAdmin}
@@ -174,6 +181,7 @@ export default function SessionParticipantsModal({
 											row={a}
 											memberId={memberId}
 											carpoolEnabled={s.carpool_enabled}
+											mealOn={mealOn}
 											scheduledAt={s.scheduled_at}
 											isPool
 											canRemove={isAdmin}
@@ -270,6 +278,7 @@ function ParticipantRow({
 	row: a,
 	memberId,
 	carpoolEnabled,
+	mealOn,
 	scheduledAt,
 	waitInfo,
 	isPool = false,
@@ -279,6 +288,8 @@ function ParticipantRow({
 	row: AttendanceRow;
 	memberId: string | null;
 	carpoolEnabled: boolean;
+	/** 정모 식사 체크 회차 — 불참자에게만 '식사 안 함' 표식을 붙인다(기본이 참여라 불참이 정보). */
+	mealOn: boolean;
 	scheduledAt: string | null;
 	/** 대기 행이면 표시 상태(순번 또는 게스트 정원 대기). 확정/늦참 행은 undefined. */
 	waitInfo?: WaitDisplay;
@@ -350,11 +361,15 @@ function ParticipantRow({
 				</Pill>
 			)}
 
-			{/* 우측: 늦참 도착시각 + (대기순번 또는 카풀 의향) */}
+			{/* 우측: 식사 불참 + 늦참 도착시각 + (대기순번 또는 카풀 의향).
+			    식사 표식은 카풀/대기 삼항과 배타가 아니라 독립 — 대기자에게도 함께 보인다. */}
 			<span
 				className="ml-auto flex-shrink-0 flex items-center gap-1.5"
 				style={{ fontSize: 12, fontWeight: 700 }}
 			>
+				{mealOn && !a.meal_joining && (
+					<span className="text-faint">🍽️ 식사 안 함</span>
+				)}
 				{lateArrival &&
 					(isPool ? (
 						<span style={{ color: "var(--late-pool)" }}>🌙 {lateArrival}~</span>

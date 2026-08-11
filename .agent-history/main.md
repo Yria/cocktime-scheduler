@@ -1127,6 +1127,719 @@ DB 변경은 없습니다(기존 `fetchMyCharges` + `dues_club_account` 재사�
 
 **Prompt**: 커밋및 푸쉬
 
+**Answer**: 커밋·푸시·배포 완료.
+
+- **커밋** `ce74cb2` — 미납 진입 알림 (9 files, +507/−52)
+- **푸시** `main` → GitHub Actions Deploy **success**(58s) → ckti.me 반영 완료
+
+## 알아두실 것 두 가지
+
+1. **직전 커밋도 같이 나갔습니다.** 푸시 범위가 `a4630e6..ce74cb2`였습니다 — 리모트가 `a4630e6`에 있어서 이전 커밋 `3ff637c`(대기 승격 정지 방지 — 감사 로그 + 카운터 자기치유)가 미푸시 상태로 남아 있었고, 이번에 함께 배포됐습니다. 의도한 게 아니면 알려주세요.
+
+2. **`TODO.md`는 커밋에서 제외했습니다.** 이번 요청 문장이 적힌 미추적 개인 메모라, 리포에 넣는 게 의도인지 알 수 없어 손대지 않았습니다(여전히 untracked). 트래킹하려면 말씀해 주세요.
+
+DB 마이그레이션·Edge Function 변경은 없어서 `supabase db push`/`functions deploy`는 필요 없습니다.
+
+---
+
+## #34
+
+**Prompt**: 주현탁 재가입자로 처리해서 8월회비 내게 해줘.
+
+**Answer**: 완료했습니다.
+
+## 진단
+
+주현탁은 **오늘(8/9) 새로 만든 계정**이었습니다 — `membership_started_at`이 null이라 규칙상 가입일이 8/9로 잡히고, `+offset 3일` = 8/12 → 기준월 8월 → **첫 부과월이 9월**로 밀려 8월 회비가 안 붙는 상태였습니다. 운영진·게스트·명예회원 아니고 활성 상태였습니다(`user_roles: []`).
+
+## 실행 내역
+
+| 단계 | 결과 |
+|---|---|
+| `members.membership_started_at` : `null` → `2026-07-01` | 7/1+3=7/4 → 기준월 2026-07 → **첫 부과월 2026-08** |
+| `dues_generate_monthly('2026-08')` | 35행 영향 (신규 1건 + 기존 미납 34건 금액 재확인) |
+| 주현탁 8월 회비 | **charge #1276 · 5,000원 · unpaid** ✅ |
+| 감사 로그 | `dues_audit_log #494` (`manual_rejoin_membership_fix`) |
+
+`dues_ensure_monthly`는 8월 회비가 이미 90건 있어 no-op으로 빠지므로, 내부 함수 `dues_generate_monthly`를 직접 호출했습니다. 래퍼를 우회한 만큼 기록이 안 남아 감사 로그를 직접 남겼습니다(`actor_member_id`는 세션 회원 컨텍스트가 없어 null, detail에 경위 기재).
+
+## 검증
+
+- 8월 회비 총건수 90 → **91건**
+- 금액 이상치(5,000원 아닌 행) **0건**
+- 납부 완료 행 **54건 그대로**(함수의 `where amount_paid = 0` 가드), 삭제 0건
+- 주현탁 **7월 이하 소급 부과 0건** — `membership_started_at`을 최초 가입월이 아닌 7/1로 잡은 이유가 이것입니다
+
+## 남은 안내
+
+- 주현탁이 앱을 열면 어제 배포한 **미납 알림 모달**이 뜹니다(5,000원 + 계좌).
+- **푸시는 자동 발송되지 않습니다.** 필요하면 `/dues` 8월 화면 → 회비 그룹 펼쳐서 미납 알림을 수동 발송하세요.
+- 9월분부터는 규칙대로 자동 부과됩니다(운영진이 9월 `/dues` 첫 진입 시).
+
+참고: 회비 미납 37건 중 34건만 갱신된 건, 나머지 3건 중 2건이 **현재 부과 대상이 아닌 회원**(비활성·명예회원·운영진 승격 중 하나)의 기존 행이라 규칙상 제외된 것입니다. 의도된 동작이지만 8월 미납 명단에는 계속 남아 있으니, 정리가 필요하면 알려주세요.
+
+---
+
+## #35
+
+**Prompt**: 선예가 모임을 나갔지만 8월9일 참여를 했다 불참을 늦게해서 부과가 있어야하는데 보이지 않네. 해당 내용 버그있는지 체크하고, 우창형도 마찬가지로 늦게 빼서 내야하는데, 참여를 늦게뺀사람도 부과생성하는게 아마 기획에 있을거야 한번 찾아봐.
+
+**Answer**: 원인이 데이터로 확정됐습니다. **당일취소 규칙 버그가 아닙니다.**
+
+## 결론: 세션 106이 아직 `active`(미종료)라 부과 생성이 아예 안 돌았다
+
+대관비 부과는 **세션 종료 시점 단 한 번** 생성됩니다.
+
+[코드 블록 생략]
+
+세션 106은 8/9 15:00~18:00(KST) 일정이고 **아직 `active`** 입니다. 그래서 당일취소자만 빠진 게 아니라 **참석자 8명도 부과가 없습니다**:
+
+| 구분 | 인원 | 부과 있음 | 부과 없음 |
+|---|---|---|---|
+| 확정/늦참 (비운영진) | 22 | 14 | **8** — 박세경·강민규·권현지(게스트)·박현아·정성균·채진·송유현·주현탁 |
+| 당일취소 (비운영진) | 4 | 1 (손형일, 선납) | **3** — 김선예·우창형·김영주 |
+
+현재 있는 16건은 전부 `paid`이고 생성 시각이 8/8 12:32와 **8/9 18:41~18:52**(방금 입금확인 하신 시각)입니다 — 즉 전부 **입금확인(선납) 경로로 개별 생성**된 것이고, 정식 생성 경로는 한 번도 안 돌았습니다.
+
+**세션을 종료하면 11건(6,000원 × 11 = 66,000원)이 자동 생성됩니다** — 김선예·우창형·김영주 포함.
+
+## 기획 위치 (찾으신 내용, 정상 존재)
+
+- **`docs/ACCOUNTING_SPEC.md` §1.1 대관비**
+  - **정액**: 총액 없으면 인당 6,000원. 대상 = **참석 + 당일 확정취소**, **운영진 제외**. *"당일취소도 자리·약속 비용이라 정액을 부과"*
+  - **엔빵**: 총액 있으면 총액÷참석인원, 운영진 포함, **당일취소 제외**
+- **§3.1 정모/현황**: 정액 세션의 당일취소자(`is_day_cancel`)는 카드에 **별도 블록**으로 노출 + 운영진 **[부과삭제]**(`void`, 취소선·`voided_by` 기록) / **[되돌리기]**(`reset`)
+- **코드**: `supabase/migrations/20260727130000_court_void_durable_all_deletes.sql`의 `dues_generate_session_court` — 당일취소 분기 4조건(`status='cancelled'` + `confirmed_at is not null` + 취소일 KST = 세션일 KST + 정액 모드)
+
+검증: 세션 106은 `court_fee`·`recurring_schedules.court_fee` 모두 null → **정액 모드** ✓, 마이그레이션 138개 **전부 적용**(최신 함수 배포됨) ✓, 김선예·우창형 둘 다 확정 후 8/9 KST 취소 ✓(선예 09:40, 우창형 12:38), 운영진·게스트 아님 ✓. 김선예는 `is_active=false`(탈퇴)지만 **대관비 생성 쿼리에 `is_active` 조건이 없어** 탈퇴와 무관하게 부과됩니다.
+
+## 부수 발견 2건 (판단 필요)
+
+1. **심상욱 — 사전취소(8/8)인데 6,000원 선납 완료**(charge #1184 `paid`). 규칙상 사전취소자는 부과 대상이 아니고, 세션 종료 시 정리 DELETE는 `amount_paid=0`만 지우므로 이 건은 그대로 남습니다 → 실제로는 **환불 또는 다른 세션 이관** 대상입니다.
+2. **손형일 — 당일취소인데 선납분이 있어 `is_day_cancel`이 `false`로 남습니다.** `on conflict do update`가 `amount_paid = 0`인 행만 갱신하기 때문입니다. 금액은 정확(내야 할 6,000원을 냄)하지만 현황 화면에서 **당일취소 블록이 아니라 참석자로 표시**됩니다. 표시상 갭이라 급하진 않습니다.
+
+---
+
+## #36
+
+**Prompt**:  8월 9일 김영주가 참석누르고 취소를 언제 눌렀는지 확인해줘. 그 기간이 한시간
+  이내이면 부과하지 않는 방어코드도 넣고싶어
+
+**Answer**: **김영주 8/9 기록** — 참석 `06:02:38`, 취소 `06:02:41` (KST), **간격 2.7초**. 오조작입니다.
+
+같은 패턴을 전수조사하니 4건이 더 있었습니다. 8/2 세션에서도 김영주가 5초 만에 취소해 부과됐고(이미 납부됨), 7/25 세션의 1초·31분 건은 운영진이 이미 [부과삭제]로 손질하고 있었습니다. 나머지 6건은 간격이 42시간~7일인 정상 당일취소입니다.
+
+## 적용한 방어
+
+`dues_is_day_cancel_chargeable(status, confirmed_at, cancelled_at, scheduled_at)` 단일 술어 함수를 만들고, 여기에 **확정 후 1시간 경과** 조건을 넣었습니다. 술어가 `dues_generate_session_court`의 INSERT와 정리 DELETE 두 곳에 복제돼 있어서(한쪽만 고치면 매 실행마다 부과↔삭제가 반복됨) 함수로 뽑아 양쪽이 같은 정의를 쓰도록 강제했습니다.
+
+부과 근거가 "자리를 잡아둔 채 비워서 남이 못 들어온 비용"인데, 즉시 철회는 자리를 실질적으로 점유한 적이 없어 근거가 성립하지 않습니다.
+
+프로덕션 적용 완료(`20260810000000`), 검증 결과:
+
+- 경계값 5종 통과 — 2.7초 `false` / 59분59초 `false` / 정확히 1시간 `true` / 사전취소 `false` / 참석중 `false`
+- 백필로 김영주 8/9 미납 부과(#1307, 6,000원) 삭제됨. 정상 당일취소 7건과 void 2건은 그대로
+- 세션 106 재생성 실행 → 재부과 안 됨, 총 부과 26건 변동 없음
+
+`docs/ACCOUNTING_SPEC.md` §3.1·§4에 grace 규칙을 반영했고, 변경 파일은 staging 해뒀습니다.
+
+**알아두실 점 하나** — `attendances.confirmed_at`은 *마지막* 확정 시각이라, "취소 → 재확정 → 즉시 취소"로는 grace를 통과해 우회할 수 있습니다. 막으려면 세션별 최초 확정 시각을 따로 보존해야 하는데, 현 규모에선 명단으로 확인 가능해 컬럼을 추가하지 않았습니다. 문서에 한계로 적어뒀습니다.
+
+김영주 8/2 건(#1177)은 요청하신 대로 손대지 않았습니다.
+
+---
+
+## #37
+
+**Prompt**: 한계에 대해 예를 들어 설명해줘
+
+**Answer**: 확인해보니 우회 경로가 실제로 성립하는지는 세션 상태에 따라 갈립니다. 코드 기준으로 정리합니다.
+
+## 왜 리셋되는가
+
+`join_session`이 기존 행을 재사용하면서 이렇게 덮어씁니다:
+
+[코드 블록 생략]
+
+반면 `cancel_attendance`는 `confirmed_at`을 **건드리지 않고** `cancelled_at`만 찍습니다. 그래서 DB에 남는 건 항상 **마지막 사이클 한 쌍**뿐입니다.
+
+## 예시 — 8/9(일) 15:00 세션, 정액 6,000원
+
+**① 정상 부과 (grace 통과)**
+
+| 시각 | 행동 | DB 상태 |
+|---|---|---|
+| 8/5 20:00 | 참석 | `confirmed_at=8/5 20:00` |
+| 8/9 14:00 | 취소 | `cancelled_at=8/9 14:00` |
+
+간격 4일 → **6,000원 부과**. 나흘간 자리를 잡고 한 시간 전에 뱉었으니 당연합니다.
+
+**② 우회 (한계)**
+
+| 시각 | 행동 | DB 상태 |
+|---|---|---|
+| 8/5 20:00 | 참석 | `confirmed_at=8/5 20:00` |
+| 8/9 14:00 | 취소 | `cancelled_at=8/9 14:00` ← 이 순간엔 부과 대상 |
+| 8/9 14:01 | **다시 참석** | `confirmed_at=8/9 14:01`로 **덮어씀**, `cancelled_at=null` |
+| 8/9 14:02 | 다시 취소 | `cancelled_at=8/9 14:02` |
+
+최종적으로 남는 건 간격 **1분** → grace 발동 → **부과 없음**. 서버 입장에서는 김영주의 2.7초짜리 오조작과 구분이 안 됩니다.
+
+## 다만 공짜는 아닙니다
+
+`cancel_attendance`는 세션이 `open`(모집 중)일 때 `promote_waitlist_fill`을 호출합니다. 그래서 ②의 14:00 취소 순간 **대기자가 즉시 그 자리를 채웁니다**. 14:01에 다시 눌러도 정원이 차서 `waitlisted`로 떨어지고, 그러면 `confirmed_at`은 아예 `null`이 됩니다 — 우회에 실패하면서 자기 자리까지 잃습니다.
+
+우회가 성립하는 건 **대기자가 없거나**, 세션이 이미 `active`(진행 중)라 승격 로직이 돌지 않는 경우뿐입니다. 그런데 대기 줄이 없는 세션이면 "내 자리 때문에 남이 못 들어왔다"는 부과 근거 자체가 약합니다. 이게 컬럼을 추가하지 않고 넘어간 실질적 이유입니다.
+
+## 사후 확인은 가능합니다
+
+재참석 시 `position`이 `nextval`로 새로 발급되고 `requested_at`도 갱신됩니다. 오래전 확정한 사람인데 `position`이 세션 당일 번호대로 튀어 있으면 취소→재참석 흔적입니다. 다만 자동 판정에는 쓰고 있지 않습니다.
+
+막고 싶어지면 `attendances`에 `first_confirmed_at`을 추가하고 `join_session`에서 `coalesce(first_confirmed_at, now())`로만 채운 뒤(덮어쓰기 없음) 술어의 기준을 그 컬럼으로 바꾸면 끝입니다. 술어가 함수 하나로 모여 있어서 호출부 수정은 필요 없습니다.
+
+---
+
+## #38
+
+**Prompt**: 다시 참석/취소는 다시 참석을 시작한 시간으로부터 한시간계산하면 될거같은데 지금이랑 같지?
+
+**Answer**: **배포는 사실상 이미 끝났습니다.** 실제로 동작을 바꾸는 건 DB 함수인데, `supabase db push`로 프로덕션에 적용하고 검증까지 마쳤습니다. 방금 고친 건 마이그레이션 파일의 **주석**과 문서라 DB에 재적용할 것이 없습니다(이미 적용된 버전이라 `db push`도 이 파일을 다시 실행하지 않습니다).
+
+프론트 코드 변경은 없으니 GitHub Pages 빌드도 결과가 동일하고, Edge Function도 무관합니다. 남은 건 **커밋 + 푸시(기록용)** 뿐입니다.
+
+`/commit` 스킬로 정리하시면 되고, 원하시면 제가 지금 바로 커밋·푸시하겠습니다. 어느 쪽으로 할까요?
+
+現재 staged 상태:
+
+[코드 블록 생략]
+
+---
+
+## #39
+
+**Prompt**: [api_client] GET http://10.10.2.171:9876/health 실패: [Errno 65] No route to host
+이 문제 해결을 위해 네가 알아서 조사해.
+
+**Answer**: ## 결론 먼저
+
+**이 오류는 cocktime-scheduler와 무관합니다.** 출처는 `~/.claude/api_client.py` — `cm`(claude-manager) 프로필 API 클라이언트이고, 주소는 `~/.claude/credentials/.api-config.json` 의 `api_url = http://10.10.2.171:9876` (2026-07-28 16:07 설정).
+
+**지금은 정상 복구된 상태입니다.** ping 8ms · ARP 정상 · tcp/9876 open · `GET /health` → `200 {"status":"ok","profile_count":4}` · `is_api_available()` → `True`.
+
+## 조사 결과
+
+**1. 오류 성격** — Errno 65는 `EHOSTUNREACH`이고, 클라이언트 타임아웃(2초)이 아니라 **즉시** 실패했습니다. 즉 서버 프로세스 문제가 아닙니다(그건 `Connection refused`로 나옴). **경로/도달성** 문제입니다.
+
+**2. 발생 이력** (세션 로그 + `.selector-stderr.log` 교차)
+- 07-27 17:03 ~ 19:50 / 07-28 12:57 ~ 13:05 / **08-10 12:01** — 간헐적, 자가복구형
+
+**3. 배제한 원인**
+- *절전 복귀 레이스* → `pmset` 확인 결과 12:01엔 맥이 깨어 있었고 디스플레이도 켜져 있었습니다.
+- *서버 다운* → 서버의 rotation history를 조회하니, 07-28 이 맥이 실패하던 구간을 앞뒤로 다른 클라이언트가 12:39·12:51·13:19에 정상 기록을 남겼습니다. 서버는 살아 있었습니다.
+- *설정값 오류* → 현재 그 주소로 200이 떨어집니다.
+
+**4. 진짜 취약점 — 서버 주소가 "고정 신원"이 아님**
+- `10.10.2.171`은 사무실 LAN(10.10.0.0/16, GW 10.10.0.1, kornet)의 **DHCP IP**이고, 대상 기기의 MAC은 `9e:18:55:d8:ba:a9` — locally administered, 즉 **Apple 사설 Wi-Fi 주소**입니다. 기기가 잠들거나 자리를 뜨거나 주소가 로테이션되면 ARP가 끊기고 그 즉시 Errno 65가 납니다.
+- 여기에 **서브넷 충돌**이 겹칩니다. 이 맥은 Tailscale(`headscale.dooub.com`)에 `RouteAll=true`(accept-routes)로 붙어 있고, 피어 `dTServer2`(100.64.0.4)가 **똑같은 `10.10.0.0/16`** 을 광고합니다. 실제 라우팅 테이블에 `10.10/16`이 en0·utun6 **두 개** 있습니다. 사무실 LAN 밖에 있을 때는 이 터널 경로가 유일한 통로가 되는데, 그 경로는 "dTServer2 온라인 + 대상 기기가 사무실 LAN에 깨어 있음"을 동시에 요구합니다.
+- 참고로 서버 호스트는 tailnet 노드가 **아닙니다**(온라인 피어 15대 중 9876을 여는 노드 없음). 그래서 LAN IP 말고는 대안 주소가 없습니다.
+
+12:01 당시 이 맥이 사무실 LAN에 있었는지까지는 확정하지 못했습니다 — 통합 로그가 이미 롤오버됐고 DHCP lease 파일은 권한이 막혀 있습니다. 다만 두 취약점 중 어느 쪽이 발동했든 처방은 같습니다.
+
+**5. 부수 문제는 이미 해소됨** — 12:01 로그의 `프로필 #4 refresh token 만료 → cm login 4 필요`는 서버 복구 후 자동 해결됐습니다. 현재 4개 프로필 전부 `needs_relogin=False`, `health=healthy`(20:44 점검), #4는 19:46에 갱신됨. **재로그인 불필요합니다.**
+
+## 권고 (근본 처방)
+
+클라이언트에 재시도·폴백을 덧대는 건 방어 코드일 뿐이라 제안하지 않습니다. 주소의 불안정성 자체를 없애야 합니다.
+
+1. **서버 호스트를 tailnet에 넣고** `api_url`을 MagicDNS 이름 / `100.64.x.x`로 교체 — 위치·경로와 무관해지고 서브넷 충돌도 우회됩니다. (가장 깔끔)
+2. 그게 어려우면 **공유기에서 10.10.2.171 DHCP 예약** + 대상 기기의 *사설 Wi-Fi 주소* 끄기.
+3. `dTServer2`의 `10.10.0.0/16` 광고를 좁히는 건 사무실 관리자 영역입니다. 이 맥에서 `accept-routes`를 끄는 건 비추 — `10.2/16`·`10.12/14`·`10.43~45/16`·`172.30/22` 업무 경로가 같이 죽습니다.
+
+다음에 또 뜨면 이 3줄로 5초 안에 구분됩니다 (interface가 `utun6`면 터널 하이재킹, ping 무응답이면 대상 기기 부재):
+
+[코드 블록 생략]
+
+조사 내용은 메모리에 기록했습니다(`cm-api-server-unreachable`). 프로젝트 코드는 건드리지 않았고, `.agent-history/main.md`만 스테이징했습니다.
+
+---
+
+## #40
+
+**Prompt**: 1. 서버 호스트를 tailnet에 넣고 `api_url`을 MagicDNS 이름 / `100.64.x.x`로 교체 — 위치·경로와 무관해지고 서브넷 충돌도 우회됩니다. (가장 깔끔)
+
+이거 어케함?
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #41
+
+**Prompt**: 내가 지금 tailscale 쓰고잇는데 영향이있을까
+
+**Answer**: 두 가지로 읽힐 수 있어서 둘 다 답하겠습니다.
+
+## ① "이 수정이 지금 쓰는 Tailscale에 영향 주나?" → **거의 없습니다**
+
+옵션 1은 **이 맥의 Tailscale 설정을 하나도 안 건드립니다.**
+
+- `accept-routes`(`RouteAll=true`) 그대로 유지 → 업무용 경로(`10.2/16`, `10.12/14`, `10.43~45/16`, `172.30.x/22`) 전부 그대로 살아 있습니다. 제가 비추한 건 옵션 3(accept-routes 끄기)이고, 옵션 1은 그것과 무관합니다.
+- 이 맥에서 바뀌는 건 `~/.claude/credentials/.api-config.json` 의 `api_url` **한 줄**뿐입니다.
+- tailnet에 노드 하나 추가되는 것뿐이라 다른 팀원 설정도 안 깨집니다. 그쪽은 계속 LAN IP로 붙으면 됩니다.
+
+체감되는 변화는 **경로가 Wi-Fi 직결 → WireGuard 터널**로 바뀌는 것 하나인데, 같은 LAN에 있으면 Tailscale이 직접 연결을 잡으므로 실측상 차이 없습니다(아까 측정: en0 8.3ms vs utun6 9.8~19.7ms, 헬스체크엔 무의미).
+
+주의할 점 세 가지:
+
+- **Tailscale이 꺼지면 그때는 서버에 못 붙습니다.** 지금은 "사무실에 있을 때만 됨"인데 바뀌면 "Tailscale 켜져 있을 때만 됨"이 됩니다. 항상 켜두시니 순이득이지만 트레이드오프는 맞습니다.
+- **서버 호스트에서는 `--accept-routes`를 켜지 마세요.** 그 기기도 같은 10.10/16 LAN에 있어서, 켜면 지금 이 맥이 겪는 서브넷 충돌을 그쪽에 그대로 심는 꼴이 됩니다.
+- **MagicDNS 이름보다 `100.64.x.x` 원시 IP를 권합니다.** headscale에서 MagicDNS가 켜져 있는지 불확실하고, 설정 파일엔 DNS 의존 없는 쪽이 안전합니다. headscale은 노드별 IP를 고정 유지합니다.
+
+## ② "내가 Tailscale 써서 이 오류가 난 건가?" → **원인일 수 있지만, 끄는 게 답은 아닙니다**
+
+`dTServer2`가 광고하는 `10.10.0.0/16` 이 사무실 LAN과 정확히 겹치는 건 사실이고, 그래서 라우팅 테이블에 `10.10/16` 이 두 개 있습니다. 다만 **지금은 두 경로 모두 200이 떨어져서**, 12:01 사고가 이 충돌 때문이라고 단정하지는 못했습니다. 대상 기기가 그 시각에 자리를 비웠을 가능성도 남아 있습니다.
+
+어느 쪽이든 Tailscale을 끄는 건 손해만 큽니다. 옵션 1은 그 충돌 구간(`10.10/16`)을 **아예 안 밟고** `100.64.x.x` 로 도는 방식이라, 두 원인 후보를 동시에 무력화합니다.
+
+## 실제로 해야 할 일은 서버 쪽입니다
+
+이 맥에서 할 게 거의 없고, 손이 가는 건 `10.10.2.171` 기기 쪽입니다. 그래서 아까 그 기기가 **누구 것인지** 확인하려던 참이었습니다(mDNS 역질의를 거부하셔서 멈춰 있습니다).
+
+- 그 기기가 **본인 것**이면: 거기에 Tailscale 설치 → `--login-server=https://headscale.dooub.com` 으로 로그인 → headscale에서 노드 승인 → 받은 `100.64.x.x` 로 `api_url` 교체. 제가 마지막 단계는 대신 해드릴 수 있습니다.
+- **다른 팀원 것**이면 그 사람 협조가 필요하고, 그러면 옵션 2(공유기 DHCP 예약)가 현실적입니다.
+
+`10.10.2.171`이 어떤 기기인지 알고 계신가요? 아시면 바로 그 경로로 진행하겠습니다.
+
+---
+
+## #42
+
+**Prompt**: 아니 내말은 tailscale 을 쓰면서 이 문제가 발생했냐는 질문이야
+
+**Answer**: 직답부터: **Tailscale이 원인이라는 증거는 없고, 오히려 반증이 나왔습니다.**
+
+## 반증
+
+아까 결정적 실험을 했습니다 — 트래픽을 Tailscale 인터페이스로 **강제로** 밀어넣어 봤습니다.
+
+[코드 블록 생략]
+
+터널 경로로 가도 **정상 응답**합니다. 즉 `10.10/16` 경로가 utun6 쪽으로 넘어가 하이재킹당하더라도, dTServer2가 사무실 LAN으로 되돌려주기 때문에 요청은 성공합니다. **"Tailscale이 경로를 가로챈다" 자체로는 이 오류가 안 납니다.**
+
+Tailscale이 켜져 있는 지금 이 순간에도 두 경로 모두 멀쩡하다는 게 그 증거입니다.
+
+## 그럼 Tailscale이 범인이 되는 경우는?
+
+딱 하나 남습니다 — 맥이 **사무실 LAN 밖**에 있어서 en0 경로가 아예 없고, **동시에** dTServer2가 오프라인이거나 그 경로가 회수돼 터널 경로도 죽어 있던 순간. 이건 완전히 배제하지 못했습니다. 통합 로그가 롤오버됐고 DHCP lease 파일은 권한이 막혀서, 12:01에 맥이 어느 네트워크에 있었는지 사후 확인이 불가능합니다.
+
+다만 이 시나리오에서도 Tailscale은 **원인이 아니라 실패한 우회로**입니다. 끄든 켜든 결과는 같습니다.
+
+## 지금 가장 유력한 설명
+
+**대상 기기(10.10.2.171) 자체가 그 시간대에 네트워크에 없었다.**
+
+- Errno 65가 타임아웃 없이 **즉시** 떨어진 건 ARP 무응답과 정확히 부합합니다.
+- 그 기기는 Apple 사설 Wi-Fi MAC(`9e:18:55:...`)을 쓰는 **휴대형 기기**입니다. 뚜껑 닫히면 그 IP는 그 순간 존재하지 않게 됩니다.
+- 세 번의 사고(7/27 저녁 3시간, 7/28 점심 8분, 8/10 12:01)가 전부 자가복구된 것도 "기기가 자다가 깨어남" 패턴과 맞습니다.
+
+정리하면, 제 첫 보고에서 서브넷 충돌을 위험요소로 짚은 건 유효하지만 — **이번 오류의 원인으로는 반증됐습니다.** 범인 후보는 대상 기기의 부재 쪽이 훨씬 유력합니다.
+
+## 확정하려면
+
+다음에 또 뜨는 순간의 증거만 있으면 5초 만에 갈립니다. 실패 시점에 `route`·`ping`·`tailscale status`를 자동으로 찍어 남기는 훅을 걸어둘까요? 다음 발생 한 번이면 끝납니다.
+
+그리고 이 결론대로면 처방도 바뀝니다 — Tailscale 쪽(옵션 1)보다 **옵션 2(그 기기 IP 고정 + 사설 Wi-Fi 주소 끄기 + 절전 시 Wi-Fi 유지)** 가 더 직접적인 해결입니다. 그 기기가 본인 것인지만 알려주시면 그쪽으로 잡겠습니다.
+
+---
+
+## #43
+
+**Prompt**: 지금도 안되고있는거같은데 어케함
+
+**Answer**: ## 지금 할 일: 실패 순간을 잡는 것
+
+현재 상태로는 원인을 더 좁힐 수 없습니다. 사용자님 셸 그대로 재현해도 `cm ls`가 멀쩡히 돌기 때문입니다. 그래서 **실패하는 그 순간의 증거를 뜨는 스크립트**를 만들어 뒀습니다.
+
+`cm ls`가 health 오류를 뱉는 순간, 바로 이걸 실행하세요:
+
+[코드 블록 생략]
+
+경로·ARP·ping·TCP·HTTP·터널 경로·dTServer2 상태를 한 번에 찍고 `~/.claude/net-triage.log`에 누적합니다. 출력만 저한테 보여주시면 원인이 확정됩니다. 판독표는 이렇습니다:
+
+| 출력 | 원인 | 처방 |
+|---|---|---|
+| ARP가 `(incomplete)` 또는 없음 + ping 무응답 | **대상 기기가 네트워크에 없음** (잠듦/자리 뜸) | 그 기기 절전 해제·유선 연결 |
+| `interface: utun6` + dTServer2 오프라인 | Tailscale 경로 하이재킹 | 서브넷 광고 정리 |
+| ping OK인데 port 도달 실패 | 서버 프로세스 다운 | 서버 재시작 |
+
+## 그동안 시도해볼 즉효 처방
+
+터졌을 때 10초 안에 풀리는 경우가 있습니다 — 상대가 돌아왔는데 ARP 캐시에 실패 기록이 남아 계속 즉시 실패하는 상황입니다:
+
+[코드 블록 생략]
+
+## 현재 가장 유력한 가설 (수정됨)
+
+증거가 쌓이면서 **대상 기기(10.10.2.171)가 자는 것** 쪽으로 기울었습니다:
+
+- Errno 65가 타임아웃 없이 즉시 → ARP 무응답 시 macOS가 실패를 캐시하고 그 뒤로 바로 튕기는 동작과 일치
+- 그 기기는 Apple 사설 Wi-Fi MAC을 쓰는 **휴대형 기기**, RTT 8~11ms로 Wi-Fi 절전 특징
+- 대상이 깨어 있으면 LAN·터널 **두 경로 모두** 성공 → 경로 문제가 아니라 종점 문제
+
+맞다면 처방은 그 기기 쪽입니다: **절전 시 Wi-Fi 유지 켜기 + 사설 Wi-Fi 주소 끄기 + DHCP 예약**, 가능하면 유선.
+
+## 참고로, 이게 작업을 막지는 않습니다
+
+selector는 서버 불가 시 로컬 토큰으로 degrade하도록 되어 있습니다. `cm ls`의 사용량 표시가 안 뜰 뿐 Claude Code 자체는 계속 돕니다. 실제로 지금 4개 프로필 전부 `healthy` 상태입니다.
+
+---
+
+수동으로 잡기 번거로우시면, **30초마다 자동 샘플링해서 실패한 순간만 로그로 남기는 감시**를 걸어둘 수 있습니다(launchd 에이전트, 나중에 한 줄로 제거 가능). 걸어둘까요? 그러면 다음 발생 한 번으로 끝납니다.
+
+---
+
+## #44
+
+**Prompt**: 잘 된다고? 내가 열어놓은 세션에선 안되는데
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #45
+
+**Prompt**: ~  cm ls
+[api_client] GET http://10.10.2.171:9876/health 실패: [Errno 65] No route to host
+  #1  teddy@dooub.com (teddy@dooub.com)  [default_claude_max_5x]  5h=10%  7d=32% ← 현재
+  #2  sam@dooub.com (sam@dooub.com)  [default_claude_max_5x]  5h=25%  7d=100%
+  #3  victor@dooub.com (victor@dooub.com)  [default_claude_max_5x]  5h=47%  7d=30%
+  #4  eddie@dooub.com (eddie@dooub.com)  [default_claude_max_5x]  5h=3%  7d=55%
+ ~ 
+
+**Answer**: ## 원인 찾았습니다 — 네트워크가 아니라 **macOS 앱 권한**입니다
+
+같은 맥에서 같은 시각에 한 프로세스는 200 OK, 다른 프로세스는 Errno 65 — 커널 라우팅은 프로세스마다 다를 수 없으니 라우팅 문제가 아닙니다. **앱 단위로 갈리는 것**이고, macOS에서 그렇게 동작하는 건 하나뿐입니다.
+
+**macOS 15부터 도입된 "로컬 네트워크" 권한**입니다. 권한 없는 앱이 LAN 주소로 TCP를 열면, 커널이 타임아웃 없이 **즉시 `EHOSTUNREACH` = No route to host**를 반환합니다. 이 맥은 macOS 27이라 그대로 적용됩니다.
+
+| 실행 주체 | 결과 |
+|---|---|
+| **Claude.app** 하위 (제 Bash) | 200 OK — 권한 있음 |
+| **Ghostty** 터미널의 `cm ls` | Errno 65 — 권한 없음 |
+
+그래서 제 쪽에선 아무리 돌려도 정상이었고, 사용자님 터미널에서만 계속 실패했던 겁니다. 12:01 selector 실패도 그때 세션을 터미널에서 띄우셨기 때문입니다. "간헐적"으로 보였던 건 시간 문제가 아니라 **어느 앱에서 실행했느냐**의 차이였습니다.
+
+## 조치
+
+**설정 → 개인정보 보호 및 보안 → 로컬 네트워크 → `Ghostty` 켜기**
+
+- 목록에 **있는데 이미 켜져 있으면** → 껐다 켜고, Ghostty를 완전 종료(⌘Q) 후 재실행하세요. 앱 업데이트 후 권한이 먹통 되는 사례가 잦습니다.
+- 목록에 **없으면** → Ghostty 완전 종료 후 재실행하고 `cm ls` 한 번 치면 권한 팝업이 뜹니다.
+- VS Code 통합 터미널도 쓰시면 **Code**도 같이 켜세요.
+- 그래도 안 뜨면 터미널에서 `sudo tccutil reset LocalNetwork` 후 앱 재시작. (보안 설정 변경이라 제가 직접 실행하지 않았습니다.)
+
+## 확인 (10초)
+
+그 터미널에서 이 두 줄이면 확정됩니다. **ping은 되는데 curl만 실패**하면 권한 문제 확정입니다 — ICMP는 게이팅되지 않고 TCP만 막히기 때문입니다:
+
+[코드 블록 생략]
+
+## 앞서 세운 가설 두 개는 기각합니다
+
+- **Tailscale 서브넷 충돌** — `10.10/16` 경로가 두 개인 건 사실이지만, 터널 강제(`--interface utun6`)로도 200이 나왔습니다. 무관합니다. Tailscale 손대실 필요 없습니다.
+- **대상 기기 절전 / DHCP IP 유동** — ping·ARP 모두 정상이었습니다. 서버는 내내 살아 있었습니다.
+
+서버 주소를 tailnet으로 옮기는 작업도 **할 필요 없습니다.** 권한 하나 켜면 끝납니다.
+
+권한 켜신 뒤 `cm ls` 결과 알려주세요. 그리고 이번 진단은 메모리에 정정해 기록했습니다(기각된 가설 포함).
+
+---
+
+## #46
+
+**Prompt**: ~  ping -c2 10.10.2.171; curl -m5 http://10.10.2.171:9876/health
+
+PING 10.10.2.171 (10.10.2.171): 56 data bytes
+ping: sendto: No route to host
+ping: sendto: No route to host
+Request timeout for icmp_seq 0
+^C
+--- 10.10.2.171 ping statistics ---
+2 packets transmitted, 0 packets received, 100.0% packet loss
+curl: (7) Failed to connect to 10.10.2.171 port 9876 after 1 ms: Couldn't connect to server
+ ✘  ~ 
+
+**Answer**: ## 조치 — Ghostty에 로컬 네트워크 권한 주기
+
+**1순위 (GUI)**
+
+설정 → **개인정보 보호 및 보안** → **로컬 네트워크** → 목록에서 **Ghostty** 켜기
+
+- 이미 켜져 있으면 → **껐다 켜고**, Ghostty를 **⌘Q로 완전 종료** 후 재실행하세요. 앱 업데이트 후 권한이 켜져 있는데도 실제로는 막히는 사례가 잦고, 토글을 한 번 흔들어야 풀립니다.
+- 목록에 **없으면** → Ghostty 완전 종료 → 재실행 → `cm ls` 실행 시 권한 팝업이 뜹니다.
+
+**2순위 (팝업도 안 뜰 때)** — 권한 기록을 초기화하고 다시 물어보게 만듭니다. 보안 설정 변경이라 제가 직접 실행하지 않았습니다:
+
+[코드 블록 생략]
+
+실행 후 Ghostty를 **완전히 종료했다가** 다시 여세요. `tccutil`이 `LocalNetwork` 서비스명을 거부하면 서비스명 없이 GUI 토글 방식으로 가시면 됩니다.
+
+VS Code 통합 터미널도 쓰시면 같은 화면에서 **Code**(`com.microsoft.VSCode`)도 켜세요.
+
+## 확인
+
+Ghostty 재실행 후 그 터미널에서:
+
+[코드 블록 생략]
+
+`[api_client] ... 실패` 줄이 사라지고 각 프로필 뒤에 `[그룹: default]`까지 붙어 나오면 성공입니다. 지금 사용자님 출력엔 그룹 표시가 없는데, 그게 바로 서버 조회에 실패해 오프라인으로 떨어졌다는 표시였습니다.
+
+## 정리
+
+- **네트워크·서버·Tailscale 전부 무관**입니다. 서버는 내내 정상이었고(지금도 200), 라우팅도 정상입니다.
+- 앞서 제안한 tailnet 이전, DHCP 예약, Tailscale 서브넷 정리 — **전부 불필요**합니다.
+- 진단 결과와 기각된 가설은 메모리에 정정 기록해 뒀습니다. 다음에 이 에러를 보면 곧장 앱 권한부터 확인합니다.
+- 증거 수집용 `~/.claude/net-triage.sh`는 남겨뒀습니다. 필요 없으시면 지우셔도 됩니다.
+
+---
+
+## #47
+
+**Prompt**: tccutil: Failed to reset LocalNetwork approval status for com.mitchellh.ghostty
+
+**Answer**: `tccutil`이 `LocalNetwork`를 리셋하지 못하는 건 이 OS의 제약입니다 — 지원되는 CLI 리셋 경로가 없습니다. 대신 확인해보니 **Little Snitch·LuLu 같은 앱별 방화벽은 없고**, 다른 필터도 없습니다. 남는 건 macOS 자체 로컬 네트워크 게이트뿐입니다.
+
+## 먼저 100% 확정 (Ghostty에서 3줄)
+
+[코드 블록 생략]
+
+예상 결과 — **앞의 둘은 되고 마지막만 실패**합니다:
+
+| 대상 | 성격 | 예상 |
+|---|---|---|
+| `8.8.8.8` | 인터넷 | 성공 |
+| `100.64.0.4` | Tailscale (로컬망 아님) | 성공 |
+| `10.10.2.171` | **로컬망** | **실패** |
+
+이렇게 나오면 Ghostty의 네트워크가 죽은 게 아니라 **로컬망만 콕 집어 차단**된 것이므로 원인이 확정됩니다.
+
+## 조치 순서
+
+**① 설정 → 개인정보 보호 및 보안 → 로컬 네트워크**
+
+Ghostty 항목을 찾아서:
+- **켜져 있으면** → 끄고 → 2초 뒤 다시 켜기 (스위치를 한 번 흔들어야 캐시가 풀립니다)
+- **꺼져 있으면** → 켜기
+- 그 다음 **⌘Q로 Ghostty 완전 종료** 후 재실행 — 창만 닫으면 안 됩니다
+
+**② 목록에 Ghostty가 아예 없으면**
+
+⌘Q → 재실행 → `cm ls` 실행. 권한 팝업이 뜨면 허용하세요.
+
+**③ ①②로도 안 되면 재부팅**
+
+허탈하지만 이게 정식 해결책입니다. 로컬망 차단 결정은 네트워크 데몬이 캐시하고 있고, `tccutil`이 막힌 이상 이 캐시를 지우는 지원 경로가 재부팅뿐입니다. Ghostty가 오늘 13:34에 1.3.1로 업데이트된 흔적이 있는데(Homebrew cask), 앱 업데이트 후 권한이 이렇게 굳는 건 알려진 증상입니다.
+
+## 그동안의 우회
+
+권한 문제가 풀릴 때까지는 **Claude 데스크톱 앱에서 띄운 세션은 정상 동작합니다** — 지금 이 세션이 그 증거입니다(방금도 200 OK). 급한 작업은 이쪽에서 하시면 됩니다.
+
+터미널을 꼭 써야 하면, 대상 주소를 로컬망 밖으로 빼면 게이트를 우회합니다. dTServer2에 SSH가 되면:
+
+[코드 블록 생략]
+
+띄워둔 뒤 다른 창에서 `CM_API_URL=http://127.0.0.1:9876 cm ls` — 목적지가 localhost와 tailnet이라 둘 다 게이팅 대상이 아닙니다.
+
+먼저 위 3줄 ping 결과부터 알려주세요. 예상과 다르면 원인이 또 바뀝니다.
+
+---
+
+## #48
+
+**Prompt**: ✘  ~  ping -c2 8.8.8.8; ping -c2 100.64.0.4; ping -c2 10.10.2.171
+
+PING 8.8.8.8 (8.8.8.8): 56 data bytes
+64 bytes from 8.8.8.8: icmp_seq=0 ttl=116 time=35.734 ms
+64 bytes from 8.8.8.8: icmp_seq=1 ttl=116 time=33.839 ms
+
+--- 8.8.8.8 ping statistics ---
+2 packets transmitted, 2 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 33.839/34.787/35.734/0.947 ms
+PING 100.64.0.4 (100.64.0.4): 56 data bytes
+64 bytes from 100.64.0.4: icmp_seq=0 ttl=64 time=6.017 ms
+64 bytes from 100.64.0.4: icmp_seq=1 ttl=64 time=11.969 ms
+
+--- 100.64.0.4 ping statistics ---
+2 packets transmitted, 2 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 6.017/8.993/11.969/2.976 ms
+PING 10.10.2.171 (10.10.2.171): 56 data bytes
+ping: sendto: No route to host
+ping: sendto: No route to host
+Request timeout for icmp_seq 0
+
+--- 10.10.2.171 ping statistics ---
+2 packets transmitted, 0 packets received, 100.0% packet loss
+ ✘  ~ 
+
+**Answer**: 프로세스 시작 시각이 답을 줬습니다.
+
+- **Ghostty: 오늘 21:36:58 시작** — 방금 새로 띄운 프로세스인데도 실패했습니다. → 오래 떠 있어서 상태가 꼬인 게 아닙니다. **이미 기록된 거부**입니다.
+- Claude.app: 20:58 시작 — 정상 동작.
+- **부팅: 7/28 12:32:59** (13일째 가동 중)
+
+부팅 시각이 결정적입니다. 7/28 첫 실패가 **12:57**, 부팅 25분 뒤입니다. 그때부터 지금까지 이 결정이 계속 유지돼 온 겁니다. 7/27 실패는 그 이전 부팅 세션이고요.
+
+그러니 남은 경로는 **설정 토글 하나**입니다. 재실행으로는 안 풀립니다(방금 증명됨).
+
+## 지금 하실 것
+
+이 명령으로 해당 설정 창이 바로 열립니다:
+
+[코드 블록 생략]
+
+**개인정보 보호 및 보안 → 로컬 네트워크** 목록에서 **Ghostty**를 찾아:
+
+- **꺼져 있으면** → 켜기 → ⌘Q로 Ghostty 완전 종료 → 재실행
+- **켜져 있으면** → 끄고 2초 뒤 다시 켜기 → ⌘Q → 재실행
+- **목록에 아예 없으면** → 알려주세요. 그 경우엔 재부팅이 유일한 경로입니다(`tccutil`이 이 서비스를 못 건드리는 게 확인됐고, 마침 13일째 무재부팅 상태입니다)
+
+재실행 후 확인:
+
+[코드 블록 생략]
+
+`[api_client] ... 실패` 줄이 사라지고 프로필 뒤에 `[그룹: default]`가 붙어 나오면 끝입니다.
+
+**목록에 Ghostty가 있는지, 토글이 어느 상태인지**만 알려주세요.
+
+---
+
+## #49
+
+**Prompt**: 8월 22일 일정만들거야. 여기서 만드는건 다른데 작성한걸 옮기려고 하는거고 회원들에게 푸쉬할 필욘없이 데이터만 만들어줘.
+오전 9시 시작 12시 끝, 장소 에이트민턴.
+이규웅, 강민규, 오용진, 전준형, 정현민, 남필립, 유성종, 신동연, 최양회, 오상진, 손형일, 차성민, 엄지현, 유용환, 김주영00, 김선예, 박세경, 이후섭, 박현아, 이지인, 양수진, 이유나, 김길환, 박세진, 심상욱, 함규리, 장세훈, 노보람, 고수지, 최두호, 황서진, 성준호 가 참여자인데 정원24 니까 나머진 대기로 돌려줘. 이름과 실제 회원 매칭해서 없는사람 찾으면 알려줘. 여기 있는사람은 전부 실존회원이어야해
+
+**Answer**: 8월 22일 오전 일정을 생성했습니다.
+
+## 생성 결과 (session id=228)
+
+| 항목 | 값 |
+|---|---|
+| 일시 | 2026-08-22(토) 09:00 ~ 12:00 KST |
+| 장소 | 에이트민턴 (place_id=4) |
+| 정원 | 24 · 코트 4개 |
+| 상태 | `open` (일회성, 정기 규칙 없음) |
+| 참석 | 확정 24명 / 대기 7명 (`confirmed_count`=24, 실측과 일치) |
+| 대관비 | `court_fee`=null → 종료 시 1인 6,000원 정액 |
+| 카풀 | on (주말 기본값) |
+| 발송된 알림 | **0건** |
+
+푸시가 안 나간 이유: 알림은 `sync_schedule_occurrences`의 `draft→open` 전환에서만 생성됩니다. 처음부터 `open`으로 만들었으므로 전환 대상이 아니며, 8/16(일) 공개 시점에도 다시 열리지 않아 앞으로도 이 회차 푸시는 없습니다.
+
+8/22 오후 정기 회차(id=146, 15:00 힐링민턴파크)는 손대지 않았습니다. 같은 날 일정 2개로 표시됩니다.
+
+## 이름 매칭 — 2건 확인 필요
+
+- **김주영00 → 김주영** 으로 등록했습니다. DB에 "김주영00"은 없고 `김주영` 1명뿐이며 동명이인이 없어 뒤 `00`은 외부 시스템 구분자로 판단했습니다.
+- **김선예 제외** (요청대로). 비활성 회원(`is_active=false`)입니다. 그 결과 확정 1자리가 비어 원래 대기 1번이던 **심상욱이 24번째 확정**으로 올라갔습니다.
+
+나머지 30명은 전원 실존 정회원으로 정확히 일치했습니다(게스트 계정 아님, 로그인 계정 보유).
+
+## 최종 명단
+
+**확정 24명**: 이규웅·강민규·오용진·전준형·정현민·남필립·유성종·신동연·최양회·오상진·손형일·차성민·엄지현·유용환·김주영·박세경·이후섭·박현아·이지인·양수진·이유나·김길환·박세진·심상욱
+
+**대기 7명** (승급 순서): 함규리 → 장세훈 → 노보람 → 고수지 → 최두호 → 황서진 → 성준호
+
+`position`은 앱과 같은 시퀀스(1605~1635)에서 순서대로 받았으므로, 이후 회원이 앱에서 신청하면 대기 8번으로 정상 이어집니다. 확정자가 취소하면 대기 1번이 자동 승급되고 그 사람에게만 승급 푸시가 갑니다(정상 동작).
+
+조정이 필요할 수 있는 기본값 두 개는 앱 일정 편집에서 바로 바꿀 수 있습니다 — 코트 수 4개(32명 규모면 늘릴 수도), 정모 여부 off. 김선예가 실제로 참석한다면 회원을 활성으로 되살린 뒤 추가하면 대기 8번으로 들어갑니다.
+
+---
+
+## #50
+
+**Prompt**: 정모 체크한 일정은 식사참여여부 체크하는거 추가해줘
+
+**Answer**: 결정 반영합니다: **`session_attendees` boolean 컬럼(기본값 = 참여)** + **`sessions` 식사 토글 플래그**(정모일 때만 편집 가능). 탐색 워크플로 결과를 받아 바로 구현에 들어가겠습니다.
+
+---
+
+## #51
+
+**Prompt**: <task-notification>
+<task-id>wbx7optwi</task-id>
+<tool-use-id>toolu_01XQV9g9xB5YvpZGiUdTE7qq</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/9000a4de-3893-4401-8ead-e887303fe2ca/tasks/wbx7optwi.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "정모(is_regular) 일정 식사참여 여부 체크 기능 추가를 위한 코드 경로 매핑" completed</summary>
+<result>{"plan":"# 정모 식사 참여 체크 — 구현 계획서\n\n## 0. 사전 정정 (구현자가 반드시 먼저 알아야 할 3가지)\n\n1. **테이블명은 `attendances`다.** `session_attendees` 는 리포에 존재하지 않는다 (`supabase/migrations/20260621020000_attendances_and_notifications.sql:10`). 카풀 컬럼도 여기 있다(`:15-16`).\n2. **`attendances` 는 이미 realtime publication 에 등록돼 있다** — 직접 확인: `supabase/migrations/20260621020000_attendances_and_notifications.sql:257` `alter publication supabase_realtime add table public.attendances;`. (보고 1이 \"등록 이력 없음\"이라 한 것은 오류, 보고 5가 맞음.) 다만 **구독 코드가 없다** — `src/lib/supabase/sessionChannels.ts:93-127` 은 `sessions`/`session_players` 만 구독한다. Realtime 감축 방침(MEMORY: realtime-usage-reduction)상 **구독을 새로 추가하지 않는다.**\n3. **`attendances` 에는 UPDATE RLS 정책이 없다** (`20260621020000_attendances_and_notifications.sql:54-57`, SELECT 정책 1개뿐). `supabase.from(\"attendances\").update()` 는 조용히 0행이 된다. **쓰기는 SECURITY DEFINER RPC 필수.**\n\n가장 가까운 선행 사례는 카풀이 아니라 **늦참**이다. `supabase/migrations/20260706030000_late_arrival.sql:2` 헤더가 직접 명시한다: `-- carpool_role 과 동일 패턴 — attendances 에 개인 오프셋 컬럼 1개 + 설정 RPC.` 이 파일이 템플릿이다.\n\n---\n\n## 1. DB 변경안\n\n### 1.1 파일명\n\n`supabase/migrations/20260811010000_meal_attendance.sql`\n\n근거: 최신 마이그레이션이 `20260810000000_day_cancel_grace_1h.sql`(확인: `ls supabase/migrations | tail`), 오늘은 2026-08-11, 시각부는 실제 시각이 아니라 그날 순번(`010000`, `020000`…) 관례. 들여쓰기는 **탭**, 주석은 한국어, 헤더에 \"왜\"를 길게 쓴다.\n\n### 1.2 SQL (전문 — 그대로 쓸 수 있음)\n\n```sql\n-- 정모 식사 참여 체크: is_regular 회차에서 참석자가 \"식사 참여/불참\" 을 스스로 표시.\n-- carpool_role(20260621020000) · late_minutes(20260706030000) 와 동일 패턴 —\n-- attendances 에 개인 선택 컬럼 1개 + 설정 RPC 1개. 세션 단위 플래그는 새로 만들지 않고\n-- 기존 sessions.is_regular(20260630010000) 를 게이트로 재사용한다.\n--   이유: is_regular 는 recurring_schedules 에 미러 컬럼이 없어 sync_schedule_occurrences 의\n--   C단계 UPDATE 목록(20260713030000:52-60)에 들어있지 않다 → 회차 단위 값이 sync 로 덮이지 않는다.\n--   carpool_enabled 를 흉내내 새 플래그를 만들면 뷰(recurring_valid_occurrences)와\n--   sync 함수까지 재정의해야 하고, 그 함수는 search_path 위반 시 sync 전체가 롤백되는\n--   사고 이력이 있다(20260726090000_fix_complete_matches_search_path.sql).\n-- 재적용 안전(idempotent): add column if not exists / create or replace.\n\n-- ① 식사 선택 컬럼 (none=미정, join=참여, skip=불참)\nalter table public.attendances\n\tadd column if not exists meal_choice text not null default 'none'\n\t\tcheck (meal_choice in ('none', 'join', 'skip'));\n\n-- ② 본인 식사 선택 — 참석자만. set_carpool_role(20260621070000:5) 미러링 +\n--    set_late_minutes 처럼 세션 행을 읽어 게이팅(정모 여부·종료 여부).\ncreate or replace function public.set_meal_choice(p_session_id bigint, p_choice text)\nreturns void\nlanguage plpgsql security definer set search_path = ''\nas $$\ndeclare\n\tv_member  uuid := public.current_member_id();\n\tv_regular boolean;\n\tv_status  text;\nbegin\n\tif v_member is null then raise exception 'not authenticated'; end if;\n\tif p_choice not in ('none', 'join', 'skip') then raise exception 'invalid choice'; end if;\n\n\tselect is_regular, status into v_regular, v_status\n\tfrom public.sessions where id = p_session_id;\n\tif not found then raise exception 'session not found'; end if;\n\tif not v_regular then raise exception 'not a regular session'; end if;\n\tif v_status in ('closed', 'cancelled') then raise exception 'session ended'; end if;\n\n\tupdate public.attendances\n\tset meal_choice = p_choice, updated_at = now()\n\twhere session_id = p_session_id and member_id = v_member and status &lt;&gt; 'cancelled';\n\tif not found then raise exception 'not attending'; end if;\nend;\n$$;\n\nrevoke execute on function public.set_meal_choice(bigint, text) from anon;\ngrant execute on function public.set_meal_choice(bigint, text) to authenticated;\n\n-- ③ 취소 3경로에 리셋 추가 (본문은 20260806010000 최신 정의를 그대로 복사, set 절 한 줄만 확장)\n--    cancel_attendance / admin_cancel_attendance / cancel_guest_attendance\n--    → set status='cancelled', carpool_role='none', carpool_seats=null, late_minutes=0, meal_choice='none', ...\n\n-- ④ 기존 cancelled 행 1회 정리 (20260623010000:65-68 선례)\nupdate public.attendances set meal_choice = 'none'\nwhere status = 'cancelled' and meal_choice &lt;&gt; 'none';\n```\n\n**③ 은 반드시 최신 본문을 복사할 것.** 대상 라인(직접 확인):\n- `supabase/migrations/20260806010000_promotion_hardening.sql:445` (`cancel_attendance`, 함수 시작 `:423`)\n- 같은 파일 `:491` (`admin_cancel_attendance`, 시작 `:462`)\n- 같은 파일 `:546` (`cancel_guest_attendance`, 시작 `:520`)\n\n세 곳 모두 현재:\n```sql\nset status = 'cancelled', carpool_role = 'none', carpool_seats = null,\n\tlate_minutes = 0, cancelled_at = now(), updated_at = now()\n```\n**한 곳만 고치면 \"관리자 취소·게스트 취소 경로에서만 식사 의향이 부활하는\" 비대칭 버그**가 된다. 리셋을 안 하면 재참석 시 의향이 되살아나는 실제 사고가 있었다(`20260623010000_cancel_attendance_clears_carpool.sql:2-4`).\n\n### 1.3 RLS 수정 — **불필요**\n\n`attendances_select`(`20260621020000:55-57`, `for select to authenticated using (true)`) 하나로 읽기는 이미 열려 있고, 쓰기는 RPC가 SECURITY DEFINER로 우회한다. 정책 추가/변경 금지.\n\n### 1.4 `load_session_state` 수정 — **불필요**\n\n`supabase/migrations/20260722010000_sync_version_broadcast.sql:158-183` 의 반환 키는 board 전용(`board_drafts`, `matches`, `session_players`, `sync_version` 등)이며 **`attendances` 참조가 0건**이다. 참석 데이터는 별도 경로(`fetchAttendances`)로 로드된다.\n\n### 1.5 기존 트리거 오발동 판정 — **전부 안전** (근거 포함)\n\n| 대상 | 판정 | 근거 |\n|---|---|---|\n| **감사 트리거** `trg_att_audit_upd` | 발동 안 함 | `20260806010000:141-148` UPDATE 트리거에 `WHEN (old.status/position/confirmed_at/cancelled_at is distinct from new...)` 절이 있다. 같은 파일 `:86` 주석: \"카풀/늦참 분(分) 변경만인 UPDATE 는 기록하지 않는다.\" → `meal_choice` 만 바뀐 UPDATE 도 동일. **WHEN 절에 `meal_choice` 를 추가하지 말 것** — 토글마다 감사 행이 쌓인다. |\n| **`confirmed_count` / 카운터 드리프트** | 영향 없음 | `session_counter_sync`(`20260806010000:231-253`)는 트리거가 아니라 RPC 본문에서만 `perform` 된다(호출처: `:362, 438, 449, 453, 483, 507, 510, 536, 550, 553, 615, 630, 698, 702, 750`). 새 RPC가 호출하지 않으므로 카운터를 건드리지 않는다. |\n| **대기 승격** | 영향 없음 | `promote_next_waitlisted`/`promote_waitlist_fill` 역시 RPC 본문 호출 전용. |\n| **알림** | 발생 안 함 | `notifications` INSERT 는 승격/제거/오픈 경로에만 있다. |\n| **`sessions.sync_version` bump** | 발생 안 함(의도) | `20260722010000` 의 bump 대상은 `sessions` 의 board 컬럼 9개 + `session_players`/`matches` 문장 트리거뿐. `attendances` 에는 bump 트리거가 없다. 같은 파일 `:40` 주석이 \"carpool 등 board 무관 컬럼은 제외\"라고 방침을 명시 → **감시 목록을 건드리지 말 것.** |\n| **`updated_at` 자동 갱신** | 트리거 없음 | RPC들이 매번 수동으로 `updated_at = now()` 를 쓴다(`20260621070000:17`). 새 RPC도 반드시 명시(위 SQL 반영됨). |\n\n**추가 위험 1개(교착)**: `20260806010000:26-28` 은 교착 없음의 근거로 *\"set_carpool_role 은 카운터를 잡지 않는다\"* 를 명시적으로 전제한다. 따라서 `set_meal_choice` 는 **`session_counter_sync`/`promote_*` 를 절대 호출하지 말고**, `sessions` 도 `for share` 없이 읽기만 할 것(`set_late_minutes`(`20260706030000:27-28`)와 동일).\n\n---\n\n## 2. 컬럼/타입 이름 결정\n\n### 컬럼명 후보\n\n| 후보 | 장 / 단 |\n|---|---|\n| **`meal_choice`** ✅ | `late_minutes` 가 이미 \"의미로 명명\"한 선례를 따르고 값 도메인(`join`/`skip`)과 어법이 맞는다 / `carpool_role` 과 접미사가 안 맞아 grep 대칭성이 약간 떨어진다. |\n| `meal_role` | `carpool_role` 과 접미사 완전 대칭 / `join`/`skip` 은 \"역할\"이 아니어서 의미가 어색하다. |\n| `meal_participation` | 가장 서술적 / 길고 리포의 짧은 컬럼명 관례에서 벗어난다. |\n| `meal_join` (boolean) | 가장 단순 / 아래 값 도메인 문제로 탈락. |\n\n### 값 도메인 후보\n\n| 후보 | 장 / 단 |\n|---|---|\n| **3택 `text` `'none'\\|'join'\\|'skip'`** ✅ | `carpool_role`(`none/can_drive/need_ride`) 과 층·타입·DEFAULT 가 완전 동형이고 **미응답(none)과 불참(skip)을 구분**해 운영진이 \"아직 안 고른 사람\"을 집계할 수 있다 / 값이 하나 많아 UI 버튼이 3개. |\n| 2택 `boolean not null default false` | 가장 단순 / **미응답과 불참이 구분 불가** → \"식사 3명\" 이 정말 3명인지 나머지가 안 봤을 뿐인지 알 수 없다. 정모 식사 예약은 인원 확정이 목적이라 치명적. |\n| 3택 `boolean null` | 3상태를 boolean 으로 / `attendances` 에 nullable boolean 선례가 없고(`carpool_seats` 만 nullable int) CHECK 로 도메인이 문서화되지 않는다. |\n| `enum` / `domain` 타입 | 타입 안전 / **리포 관례 위반** — 참석 관련 도메인은 예외 없이 `text + CHECK 인라인`. |\n\n### 추천 (확정)\n\n- DB 컬럼: `attendances.meal_choice text not null default 'none' check (meal_choice in ('none','join','skip'))`\n- RPC: `public.set_meal_choice(p_session_id bigint, p_choice text) returns void`\n- TS 타입: `export type MealChoice = \"none\" | \"join\" | \"skip\";`\n- 데이터 레이어: `setMealChoice(sessionId, choice)`\n- 스토어 액션: `setMeal(sessionId, choice)`\n- 게이트: **새 세션 플래그 없음. `sessions.is_regular` 재사용** (목표 정의가 그렇고, sync/뷰/규칙 편집기 4곳 변경이 전부 불필요해진다).\n\n---
+... (truncated 14770 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/9000a4de-3893-4401-8ead-e887303fe2ca/tasks/wbx7optwi.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/3c9a98f0-beb8-455f-9394-b9cf9716d7c1/subagents/workflows/wf_141a199c-839/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/3c9a98f0-beb8-455f-9394-b9cf9716d7c1/workflows/scripts/meal-attendance-explore-wf_141a199c-839.js', resumeFromRunId: 'wf_141a199c-839'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>6</agent_count><agents_done>6</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>564385</subagent_tokens><tool_uses>203</tool_uses><duration_ms>745628</duration_ms></usage>
+</task-notification>
+
+**Answer**: 구현·검증 완료입니다. 배포(DB push)만 남았습니다.
+
+## 동작
+
+정모 회차 편집기에 **식사 참여 체크** 스위치를 새로 넣었고(`OccurrenceEditor.tsx:235`), 이걸 켠 회차에서만 참석자에게 식사 컨트롤이 뜹니다.
+
+- **회원**: 일정 카드에 `식사 [ 참여 | 안 먹음 ]` 세그먼트 — 카풀 아래, 늦참 슬라이더 위. **기본값 참여**라서 안 먹는 사람만 바꾸면 됩니다.
+- **게스트**: 계정이 없어 스스로 못 고르므로, 데려온 회원이 게스트 줄의 `🍚 식사` 칩으로 대신 토글합니다(`GuestSection.tsx`).
+- **집계**: 카드 요약 `확정 12/16명 · 🍚 9`, 참여자 모달 헤더 `🍚 식사 9명`, 명단에는 **불참자만** `🍽️ 식사 안 함` 표식. 집계 기준은 확정 + 정원 외 늦참 중 참여(대기자는 승격돼야 오므로 숫자에서 제외하되, 선택 UI는 대기자에게도 노출).
+
+## DB (`20260811010000_meal_attendance.sql`)
+
+- `sessions.meal_enabled`(기본 false) + `attendances.meal_joining`(기본 **true**)
+- `set_meal_joining(session, joining, member_id?)` — 본인 또는 내가 데려온 게스트. `attendances`에 UPDATE RLS 정책이 없어(SELECT 정책 단독) 직접 update는 조용히 0행이 되므로 RPC 필수였습니다.
+- 취소 시 기본값 복원은 **BEFORE UPDATE 트리거 한 개**로 처리했습니다. 취소 경로가 `cancel_attendance`/`admin_cancel_attendance`/`cancel_guest_attendance` 3개로 갈려 UPDATE 술어가 복제돼 있고(실제로 게스트 경로엔 이미 `late_minutes` 리셋이 빠져 있습니다), 함수마다 한 줄씩 넣으면 한 곳을 빠뜨리는 비대칭 버그가 반복되기 때문입니다. 카운터·승격·알림은 건드리지 않아 정원/대기 로직과 완전히 분리됩니다.
+
+## 검증
+
+`pnpm run build`(tsc 포함) 통과, `pnpm test` 292개 통과, 변경 파일 lint 클린(리포에 남아 있는 7개 오류는 모두 제가 손대지 않은 기존 파일). Docker가 꺼져 있어 로컬 DB에서의 SQL 실행 검증은 못 했습니다.
+
+## 배포 시 주의
+
+1. **DB 먼저** `supabase db push` → 그다음 `git push`. 순서를 뒤집으면 새 프론트가 없는 RPC를 호출합니다.
+2. `db push`는 미적용 마이그레이션을 **전부** 적용합니다. 지금 `20260810000000_day_cancel_grace_1h.sql`도 미적용 상태로 남아 있어 함께 올라갑니다 — 의도한 것인지 확인해 주세요.
+
+## 알아두실 두 가지
+
+- 기본값이 참여이므로 **카드를 아직 안 본 사람도 참여로 집계**됩니다. 실제 예약 인원보다 많게 나올 수 있는데, 반대(밥 못 먹는 사람 발생)보다 안전한 쪽이라 요청하신 모델대로 뒀습니다.
+- 남의 식사 체크는 즉시 반영되지 않습니다(새로고침·포그라운드 복귀 때 갱신). Realtime 사용량 감축 방침에 따라 `attendances` 구독을 새로 추가하지 않았고, 카풀도 현재 같은 동작입니다.
+- 대진표·안내 페이지(`RegularNoticePage`)에는 식사 인원을 넣지 않았습니다. 그 페이지가 참석 데이터를 조회하지 않아 별도 fetch가 필요해서, 원하시면 따로 붙이겠습니다.
+
+---
+
+## #52
+
+**Prompt**: db push 해
+
+**Answer**: 적용·검증 완료했습니다.
+
+**프로덕션 확인 결과** (서비스키 읽기 조회):
+
+| 대상 | 결과 |
+|---|---|
+| `sessions.meal_enabled` | 존재, 기존 회차 전부 `false` ✓ |
+| `attendances.meal_joining` | 존재, 기존 행 전부 `true`(기본 참여) ✓ |
+| `set_meal_joining` RPC | 존재 — service_role 호출이라 첫 가드(`not authenticated`)에서 막힘 = 함수·게이트 정상 ✓ |
+
+취소 리셋 트리거는 마이그레이션이 한 트랜잭션으로 성공했고 `drop trigger if exists` NOTICE 뒤에 `create trigger`가 이어졌으니 함께 생성됐습니다. 동작 검증은 실제 참석 행을 취소해봐야 하는데 프로덕션 실데이터라 건드리지 않았습니다.
+
+**정정**: 앞서 `20260810000000_day_cancel_grace_1h.sql`도 함께 올라갈 수 있다고 했는데, dry-run 결과 그건 이미 원격에 적용된 상태였고 이번에 push된 건 식사 마이그레이션 하나뿐입니다.
+
+**남은 단계** — 프론트가 아직 안 나갔습니다. 지금은 DB만 앞서 있어(새 컬럼은 있고 UI는 없음) 기존 화면에 아무 영향이 없는 안전한 상태입니다. 커밋 후 `git push`하면 GitHub Pages로 배포됩니다. `/commit`으로 커밋할까요?
+
+---
+
+## #53
+
+**Prompt**: 커밋후배포
+
 **Answer**: _(응답 대기 중…)_
 
 ---

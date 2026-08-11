@@ -51,6 +51,13 @@ export default function OccurrenceInfoView({
 					label="정모"
 					value={occurrence.is_regular ? "지정됨" : "아니오"}
 				/>
+				{/* 식사 체크는 정모 회차에서만 의미가 있어 정모일 때만 노출 */}
+				{occurrence.is_regular && (
+					<InfoRow
+						label="식사 체크"
+						value={occurrence.meal_enabled ? "사용" : "사용 안 함"}
+					/>
+				)}
 			</dl>
 			<p
 				className="text-faint"
