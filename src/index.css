@@ -871,6 +871,10 @@ h4,
 	background: transparent;
 	color: var(--tone-muted);
 	cursor: pointer;
+	/* 라벨은 절대 두 줄이 되지 않게. 한글은 글자 단위로 줄바꿈되므로, 세그먼트가 좁아지면
+	   ("안 먹" / "음") 처럼 접혀 그 줄만 높이가 2배가 된다(다른 ctl-row 와 높이 어긋남).
+	   nowrap 이면 min-content 가 텍스트 전체 폭이 되어 필요한 만큼 폭을 확보한다. */
+	white-space: nowrap;
 }
 .ctl-seg button:disabled {
 	cursor: not-allowed;
