@@ -496,17 +496,14 @@ export default function ScheduleCard({
 
 			{/* 식사(회식) 참여 (참석자) — 정모 + 식사 체크 회차에서만. 카풀과 같은 세그먼트 컨트롤.
 			    기본이 '참여'라 미선택 상태가 따로 없다(안 먹는 사람만 '안 먹음'으로 바꾼다). */}
-			{/* 한 줄에 [식사 선택] + [가게] — 같은 회식 정보라 줄을 나누지 않는다.
-			    선택은 참석자만, 가게는 참석 여부와 무관하게 노출(어디서 먹는지 알아야 참여를 정한다).
-			    가게가 함께 있으면 세그먼트를 자연폭으로 줄여(기본은 flex:1 풀폭) 가게가 들어갈 자리를 준다. */}
+			{/* 한 줄에 [참여 | 안 먹음 | 가게] — 카풀 세그먼트와 같은 트랙 안에 넣어 그 3등분 격자에
+			    그대로 맞춘다(같은 폭·높이·라운드). 선택은 참석자만, 가게는 참석 여부와 무관하게 노출
+			    (어디서 먹는지 알아야 참여를 정한다) — 미참석자는 트랙 없이 알약으로만 보여준다. */}
 			{mealOn && (attending || s.meal_place) && (
 				<div className="ctl-row">
 					<span className="ctl-label">식사</span>
-					{attending && (
-						<div
-							className="ctl-seg"
-							style={s.meal_place ? { flex: "0 0 auto" } : undefined}
-						>
+					{attending ? (
+						<div className="ctl-seg">
 							{([true, false] as const).map((v) => {
 								const active = (mine?.meal_joining ?? true) === v;
 								return (
@@ -516,28 +513,29 @@ export default function ScheduleCard({
 										onClick={() => onSetMeal(v)}
 										disabled={busy}
 										className={active ? "on" : ""}
-										style={{
-											...(s.meal_place ? { padding: "6px 11px" } : null),
-											...(active
+										style={
+											active
 												? { background: v ? "#2c7a57" : "#94a3b8" }
-												: null),
-										}}
+												: undefined
+										}
 									>
 										{v ? "참여" : "안 먹음"}
 									</button>
 								);
 							})}
-						</div>
-					)}
-					{s.meal_place && (
-						<span className="ml-auto min-w-0 flex">
 							<MealPlaceLink
 								name={s.meal_place}
 								lat={s.meal_place_lat}
 								lng={s.meal_place_lng}
-								compact
+								variant="segment"
 							/>
-						</span>
+						</div>
+					) : (
+						<MealPlaceLink
+							name={s.meal_place}
+							lat={s.meal_place_lat}
+							lng={s.meal_place_lng}
+						/>
 					)}
 				</div>
 			)}
