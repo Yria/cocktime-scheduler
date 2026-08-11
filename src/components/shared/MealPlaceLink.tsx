@@ -34,41 +34,52 @@ export default function MealPlaceLink({
 		return (
 			<span
 				className="text-muted truncate min-w-0"
-				style={card ? { flex: 1, fontSize: 12.5 } : { fontSize: 13 }}
+				style={
+					card
+						? { flex: 1, fontSize: 12.5, textAlign: "right" }
+						: { fontSize: 13 }
+				}
 			>
 				🍚 {label}
 			</span>
 		);
 	}
 	return (
-		<a
-			href={target.webUrl}
-			target="_blank"
-			rel="noopener noreferrer"
-			onClick={(e) => {
-				e.stopPropagation();
-				e.preventDefault();
-				openPlaceMap(target);
-			}}
-			aria-label={`${label} 지도 열기`}
-			className={`text-muted inline-flex items-center gap-1 min-w-0 rounded-full bg-black/[0.05] dark:bg-white/[0.08] active:opacity-70 transition-opacity ${
-				card ? "justify-center" : "w-fit"
-			}`}
-			style={
+		// 래퍼가 3등분 격자의 남은 한 칸을 차지하고(flex:1), 알약은 그 칸 안에서 내용 폭으로 우측 정렬.
+		// 폭을 알약에 직접 주면 배경이 칸 전체로 늘어나 버려 최초 디자인과 달라진다.
+		<div
+			className={
 				card
-					? // 세그먼트 트랙 밖의 알약(모양·여백은 최초 디자인 그대로). flex:1 로 3등분 격자의
-						// 한 칸 폭만 차지하고, 이름이 칸보다 길면 … 으로 자른다.
-						{ flex: 1, fontSize: 12, fontWeight: 500, padding: "3px 10px" }
-					: { fontSize: 13, fontWeight: 500, padding: "4px 12px" }
+					? "flex items-center justify-end min-w-0"
+					: "flex items-center"
 			}
+			style={card ? { flex: 1 } : undefined}
 		>
-			{/* min-w-0 필수 — flex 자식의 기본 min-width:auto 는 nowrap 텍스트의 min-content(전체 폭)
+			<a
+				href={target.webUrl}
+				target="_blank"
+				rel="noopener noreferrer"
+				onClick={(e) => {
+					e.stopPropagation();
+					e.preventDefault();
+					openPlaceMap(target);
+				}}
+				aria-label={`${label} 지도 열기`}
+				className="text-muted inline-flex items-center gap-1 min-w-0 w-fit rounded-full bg-black/[0.05] dark:bg-white/[0.08] active:opacity-70 transition-opacity"
+				style={
+					card
+						? { fontSize: 12, fontWeight: 500, padding: "3px 10px" }
+						: { fontSize: 13, fontWeight: 500, padding: "4px 12px" }
+				}
+			>
+				{/* min-w-0 필수 — flex 자식의 기본 min-width:auto 는 nowrap 텍스트의 min-content(전체 폭)
 			    이하로 줄지 않아, 이게 없으면 truncate 의 … 대신 그냥 칸을 넘쳐 흐른다. */}
-			<span className="truncate min-w-0">🍚 {label}</span>
-			<ChevronRight
-				size={card ? 12 : 13}
-				style={{ opacity: 0.65, flexShrink: 0 }}
-			/>
-		</a>
+				<span className="truncate min-w-0">🍚 {label}</span>
+				<ChevronRight
+					size={card ? 12 : 13}
+					style={{ opacity: 0.65, flexShrink: 0 }}
+				/>
+			</a>
+		</div>
 	);
 }
