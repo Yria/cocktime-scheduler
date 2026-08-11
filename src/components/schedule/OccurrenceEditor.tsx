@@ -67,6 +67,10 @@ export default function OccurrenceEditor({
 		setNoticeMd,
 		mealEnabled,
 		setMealEnabled,
+		mealPlace,
+		setMealPlace,
+		mealPlaceUrl,
+		setMealPlaceUrl,
 		busy,
 		error,
 		handleCreate,
@@ -260,6 +264,48 @@ export default function OccurrenceEditor({
 							</div>
 						)}
 
+						{/* 회식 가게 — 식사 체크를 켤 때만. 이름만 넣어도 회원 카드에서 지도가 열린다(이름 검색). */}
+						{isRegular && mealEnabled && (
+							<div className="flex flex-col gap-2">
+								<div>
+									<label className={labelCls} style={labelStyle}>
+										회식 가게
+									</label>
+									<input
+										type="text"
+										value={mealPlace}
+										onChange={(e) => setMealPlace(e.target.value)}
+										disabled={busy}
+										placeholder="예) 산들애 곱창 상무점"
+										className={inputCls}
+										style={inputStyle}
+									/>
+								</div>
+								<div>
+									<label className={labelCls} style={labelStyle}>
+										가게 지도 링크 (선택)
+									</label>
+									<input
+										type="url"
+										inputMode="url"
+										value={mealPlaceUrl}
+										onChange={(e) => setMealPlaceUrl(e.target.value)}
+										disabled={busy}
+										placeholder="카카오/네이버 지도 공유 링크"
+										className={inputCls}
+										style={inputStyle}
+									/>
+									<p
+										className="text-faint"
+										style={{ fontSize: 11.5, marginTop: 4 }}
+									>
+										비워두면 가게 이름으로 지도를 검색해요. 정확한 위치를 보여주려면
+										지도 앱에서 '공유'한 링크를 붙여넣으세요.
+									</p>
+								</div>
+							</div>
+						)}
+
 						{isRegular && (
 							<div>
 								<label className={labelCls} style={labelStyle}>
@@ -292,7 +338,8 @@ export default function OccurrenceEditor({
 									style={{ fontSize: 11.5, marginTop: 4 }}
 								>
 									제목(##), 표(| … |), 굵게(**…**) 등 마크다운으로 매번 직접
-									작성합니다. 비워두면 회원에겐 “준비 중”으로 보여요.
+									작성합니다. 비워두면 회원 카드에 “대진표 · 안내 보기” 버튼이
+									아예 뜨지 않아요.
 								</p>
 							</div>
 						)}

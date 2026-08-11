@@ -67,6 +67,12 @@ export function useOccurrenceForm(
 	const [mealEnabled, setMealEnabled] = useState<boolean>(
 		() => occurrence?.meal_enabled ?? false,
 	);
+	const [mealPlace, setMealPlace] = useState<string>(
+		() => occurrence?.meal_place ?? "",
+	);
+	const [mealPlaceUrl, setMealPlaceUrl] = useState<string>(
+		() => occurrence?.meal_place_url ?? "",
+	);
 
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -124,6 +130,8 @@ export function useOccurrenceForm(
 				noticeMd: noticeMd.trim() ? noticeMd : null,
 				// 정모가 아니면 식사 체크도 끈 상태로 저장(정모 off 회차에 유령 게이트가 남지 않게)
 				mealEnabled: isRegular && mealEnabled,
+				mealPlace: mealPlace.trim() ? mealPlace.trim() : null,
+				mealPlaceUrl: mealPlaceUrl.trim() ? mealPlaceUrl.trim() : null,
 			});
 		});
 	}
@@ -143,6 +151,8 @@ export function useOccurrenceForm(
 				isRegular,
 				noticeMd: noticeMd.trim() ? noticeMd : null,
 				mealEnabled: isRegular && mealEnabled,
+				mealPlace: mealPlace.trim() ? mealPlace.trim() : null,
+				mealPlaceUrl: mealPlaceUrl.trim() ? mealPlaceUrl.trim() : null,
 			});
 		});
 	}
@@ -193,6 +203,10 @@ export function useOccurrenceForm(
 		setNoticeMd,
 		mealEnabled,
 		setMealEnabled,
+		mealPlace,
+		setMealPlace,
+		mealPlaceUrl,
+		setMealPlaceUrl,
 		busy,
 		error,
 		handleCreate,

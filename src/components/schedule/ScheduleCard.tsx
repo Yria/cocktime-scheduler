@@ -12,6 +12,7 @@ import { waitDisplay, guestCapForSession, splitConfirmedByCapacity } from "../..
 import { openPlaceMap, type PlaceMapTarget } from "../../lib/kakaoMap";
 import GuestSection from "./GuestSection";
 import LateArrivalSlider from "./LateArrivalSlider";
+import MealPlaceLink from "../shared/MealPlaceLink";
 import PlayerAvatar from "../shared/PlayerAvatar";
 import CarpoolAnnounceBuilder from "./carpool/CarpoolAnnounceBuilder";
 import SessionParticipantsModal from "./SessionParticipantsModal";
@@ -126,6 +127,8 @@ export default function ScheduleCard({
 	const attending = mine != null && mine.status !== "cancelled";
 	// 정모 식사 체크 노출 — 정모 + 회차 토글이 둘 다 켜져 있을 때(서버 RPC 게이트와 동일 조건).
 	const mealOn = s.is_regular && s.meal_enabled;
+	// 대진표 본문이 실제로 있는지 — 없으면 '대진표 보기' 버튼을 띄우지 않는다.
+	const hasNotice = Boolean(s.notice_md?.trim());
 	// 식사 인원 = 실제로 오는 사람(확정 + 정원 외 늦참) 중 참여. 대기자는 승격돼야 오므로 제외.
 	const mealJoin = [...confirmed, ...latePool].filter(
 		(a) => a.meal_joining,
@@ -268,8 +271,9 @@ export default function ScheduleCard({
 				</div>
 			</div>
 
-			{/* 정모: 대진표·안내 진입 */}
-			{s.is_regular && onOpenNotice && (
+			{/* 정모: 대진표·안내 진입 — 본문(notice_md)이 실제로 작성된 회차에만.
+			    빈 채로 버튼을 띄우면 눌러도 "준비 중" 만 나와 헛걸음이 된다. */}
+			{s.is_regular && onOpenNotice && hasNotice && (
 				<button
 					type="button"
 					onClick={onOpenNotice}
@@ -512,6 +516,15 @@ export default function ScheduleCard({
 							);
 						})}
 					</div>
+				</div>
+			)}
+
+			{/* 회식 가게 — 참석 여부와 무관하게 노출(어디서 먹는지 알아야 참여를 정할 수 있다).
+			    탭하면 모임 장소와 같은 경로로 지도(모바일=네이티브 앱)가 열린다. */}
+			{mealOn && s.meal_place && (
+				<div className="ctl-row">
+					<span className="ctl-label">가게</span>
+					<MealPlaceLink name={s.meal_place} url={s.meal_place_url} compact />
 				</div>
 			)}
 

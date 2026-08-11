@@ -10,6 +10,7 @@ import { useAuthStore } from "../../store/authStore";
 import { useScheduleStore } from "../../store/scheduleStore";
 import AppScreen from "../common/AppScreen";
 import EmptyState from "../shared/EmptyState";
+import MealPlaceLink from "../shared/MealPlaceLink";
 
 /**
  * 회원용 정모 안내·대진표 페이지. 일정(정모)에서 '들어가면' 보이는 화면.
@@ -87,6 +88,13 @@ export default function RegularNoticePage() {
 					>
 						{placeName ?? "장소 미정"}
 					</span>
+					{/* 회식 가게 — 식사 체크 회차에만. 탭하면 지도(모바일=네이티브 앱)가 열린다. */}
+					{session?.meal_enabled && session.meal_place && (
+						<MealPlaceLink
+							name={session.meal_place}
+							url={session.meal_place_url}
+						/>
+					)}
 				</div>
 
 				{/* 본문 */}

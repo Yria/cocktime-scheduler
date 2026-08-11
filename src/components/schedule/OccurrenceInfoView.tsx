@@ -58,6 +58,12 @@ export default function OccurrenceInfoView({
 						value={occurrence.meal_enabled ? "사용" : "사용 안 함"}
 					/>
 				)}
+				{occurrence.is_regular && occurrence.meal_enabled && (
+					<InfoRow
+						label="회식 가게"
+						value={occurrence.meal_place ?? "미지정"}
+					/>
+				)}
 			</dl>
 			<p
 				className="text-faint"
