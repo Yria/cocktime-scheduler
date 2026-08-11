@@ -496,40 +496,49 @@ export default function ScheduleCard({
 
 			{/* 식사(회식) 참여 (참석자) — 정모 + 식사 체크 회차에서만. 카풀과 같은 세그먼트 컨트롤.
 			    기본이 '참여'라 미선택 상태가 따로 없다(안 먹는 사람만 '안 먹음'으로 바꾼다). */}
-			{attending && mealOn && (
+			{/* 한 줄에 [식사 선택] + [가게] — 같은 회식 정보라 줄을 나누지 않는다.
+			    선택은 참석자만, 가게는 참석 여부와 무관하게 노출(어디서 먹는지 알아야 참여를 정한다).
+			    가게가 함께 있으면 세그먼트를 자연폭으로 줄여(기본은 flex:1 풀폭) 가게가 들어갈 자리를 준다. */}
+			{mealOn && (attending || s.meal_place) && (
 				<div className="ctl-row">
 					<span className="ctl-label">식사</span>
-					<div className="ctl-seg">
-						{([true, false] as const).map((v) => {
-							const active = (mine?.meal_joining ?? true) === v;
-							return (
-								<button
-									key={String(v)}
-									type="button"
-									onClick={() => onSetMeal(v)}
-									disabled={busy}
-									className={active ? "on" : ""}
-									style={active ? { background: v ? "#2c7a57" : "#94a3b8" } : undefined}
-								>
-									{v ? "참여" : "안 먹음"}
-								</button>
-							);
-						})}
-					</div>
-				</div>
-			)}
-
-			{/* 회식 가게 — 참석 여부와 무관하게 노출(어디서 먹는지 알아야 참여를 정할 수 있다).
-			    탭하면 모임 장소와 같은 경로로 지도(모바일=네이티브 앱)가 열린다. */}
-			{mealOn && s.meal_place && (
-				<div className="ctl-row">
-					<span className="ctl-label">가게</span>
-					<MealPlaceLink
-						name={s.meal_place}
-						lat={s.meal_place_lat}
-						lng={s.meal_place_lng}
-						compact
-					/>
+					{attending && (
+						<div
+							className="ctl-seg"
+							style={s.meal_place ? { flex: "0 0 auto" } : undefined}
+						>
+							{([true, false] as const).map((v) => {
+								const active = (mine?.meal_joining ?? true) === v;
+								return (
+									<button
+										key={String(v)}
+										type="button"
+										onClick={() => onSetMeal(v)}
+										disabled={busy}
+										className={active ? "on" : ""}
+										style={{
+											...(s.meal_place ? { padding: "6px 11px" } : null),
+											...(active
+												? { background: v ? "#2c7a57" : "#94a3b8" }
+												: null),
+										}}
+									>
+										{v ? "참여" : "안 먹음"}
+									</button>
+								);
+							})}
+						</div>
+					)}
+					{s.meal_place && (
+						<span className="ml-auto min-w-0 flex">
+							<MealPlaceLink
+								name={s.meal_place}
+								lat={s.meal_place_lat}
+								lng={s.meal_place_lng}
+								compact
+							/>
+						</span>
+					)}
 				</div>
 			)}
 
