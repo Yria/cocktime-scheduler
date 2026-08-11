@@ -4,21 +4,27 @@ import { buildPlaceMapTarget, openPlaceMap } from "../../lib/kakaoMap";
 interface Props {
 	/** 회식 가게 이름(sessions.meal_place). 빈 값이면 아무것도 렌더하지 않는다. */
 	name: string | null;
-	/** 저장된 지도 공유 링크(sessions.meal_place_url). 없으면 이름으로 지도 검색. */
-	url: string | null;
+	/** 카카오 검색으로 고른 좌표(sessions.meal_place_lat/lng). 없으면 이름으로 지도 검색. */
+	lat: number | null;
+	lng: number | null;
 	/** true=일정 카드용 작은 pill, false=안내 페이지 본문용 인라인 텍스트. */
 	compact?: boolean;
 }
 
 /**
  * 회식 가게 표시 + 지도 열기. 모임 장소(ScheduleCard 상단)와 같은 경로를 쓴다 —
- * 저장된 링크가 있으면 그 링크, 없으면 가게 이름으로 카카오맵 검색.
+ * 좌표가 있으면 그 지점 핀, 없으면 가게 이름으로 카카오맵 검색.
  * 모바일은 네이티브 앱 우선(openPlaceMap), 미설치면 웹으로 폴백.
  */
-export default function MealPlaceLink({ name, url, compact = false }: Props) {
+export default function MealPlaceLink({
+	name,
+	lat,
+	lng,
+	compact = false,
+}: Props) {
 	const label = name?.trim();
 	if (!label) return null;
-	const target = buildPlaceMapTarget({ name: label, map_url: url });
+	const target = buildPlaceMapTarget({ name: label, lat, lng });
 	// 이름이 있으면 검색 URL 이 항상 생기지만, 타입상 null 가능이라 링크 없는 경우도 처리.
 	if (!target) {
 		return (

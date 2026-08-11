@@ -145,7 +145,8 @@ export interface OccurrencePatch {
 	noticeMd?: string | null; // 정모 안내/대진표 본문(마크다운)
 	mealEnabled?: boolean; // 정모 식사(회식) 참여 체크 노출 — 정모일 때만 의미
 	mealPlace?: string | null; // 회식 가게 이름(null=미지정)
-	mealPlaceUrl?: string | null; // 회식 가게 지도 링크(null=없음, 이름 검색으로 폴백)
+	mealPlaceLat?: number | null; // 가게 좌표(카카오 검색 선택 시). null=좌표 없음 → 이름 검색 폴백
+	mealPlaceLng?: number | null;
 }
 
 /** 한 회차만 개별 수정(장소/시간/인원/카풀/정모). is_overridden=true 로 sync 덮어쓰기 방지. */
@@ -164,7 +165,8 @@ export async function updateOccurrence(
 	if (patch.noticeMd !== undefined) row.notice_md = patch.noticeMd;
 	if (patch.mealEnabled != null) row.meal_enabled = patch.mealEnabled;
 	if (patch.mealPlace !== undefined) row.meal_place = patch.mealPlace;
-	if (patch.mealPlaceUrl !== undefined) row.meal_place_url = patch.mealPlaceUrl;
+	if (patch.mealPlaceLat !== undefined) row.meal_place_lat = patch.mealPlaceLat;
+	if (patch.mealPlaceLng !== undefined) row.meal_place_lng = patch.mealPlaceLng;
 	const { data, error } = await supabase
 		.from("sessions")
 		.update(row)
@@ -265,7 +267,8 @@ export interface OneOffInput {
 	noticeMd?: string | null; // 정모 안내/대진표 본문(마크다운)
 	mealEnabled?: boolean; // 정모 식사(회식) 참여 체크 노출 — 정모일 때만 의미
 	mealPlace?: string | null; // 회식 가게 이름
-	mealPlaceUrl?: string | null; // 회식 가게 지도 링크
+	mealPlaceLat?: number | null; // 가게 좌표(카카오 검색 선택 시)
+	mealPlaceLng?: number | null;
 }
 
 /**
@@ -296,7 +299,8 @@ export async function createOneOffOccurrence(
 			notice_md: input.noticeMd ?? null,
 			meal_enabled: input.mealEnabled ?? false,
 			meal_place: input.mealPlace ?? null,
-			meal_place_url: input.mealPlaceUrl ?? null,
+			meal_place_lat: input.mealPlaceLat ?? null,
+			meal_place_lng: input.mealPlaceLng ?? null,
 			created_by: createdBy,
 		})
 		.select()

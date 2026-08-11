@@ -59,10 +59,13 @@ export interface SessionRow {
 	/** 정모 식사(회식) 참여 체크 노출 on/off. 정모라도 회식 없는 회차가 있어 별도 토글.
 	 *  is_regular && meal_enabled 일 때만 참석자에게 식사 컨트롤이 뜬다. 마이그레이션 20260811010000 */
 	meal_enabled: boolean;
-	/** 회식 가게 이름(또는 "가게명 주소"). 이것만 있어도 지도 열기 가능(이름 검색). 마이그레이션 20260811020000 */
+	/** 회식 가게 이름. 카카오 장소 검색으로 채우거나 직접 입력. 이름만 있어도 지도 열기 가능(이름 검색).
+	 *  마이그레이션 20260811020000 */
 	meal_place: string | null;
-	/** 회식 가게 지도 공유 링크(카카오/네이버). places.map_url 과 같은 역할 — 있으면 검색 대신 이 링크. */
-	meal_place_url: string | null;
+	/** 회식 가게 좌표(카카오 검색 선택 시). 있으면 이름 검색 대신 정확한 핀으로 지도를 연다.
+	 *  마이그레이션 20260811030000 (meal_place_url 수동 입력을 대체) */
+	meal_place_lat: number | null;
+	meal_place_lng: number | null;
 }
 
 /**

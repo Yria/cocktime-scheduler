@@ -13,6 +13,7 @@ import {
 	labelStyle,
 	selectStyle,
 } from "../common/fieldStyles";
+import KakaoLocationSearch from "../common/KakaoLocationSearch";
 import ModalSheet from "../common/ModalSheet";
 import { Switch } from "../common/Switch";
 import OccurrenceInfoView from "./OccurrenceInfoView";
@@ -68,9 +69,9 @@ export default function OccurrenceEditor({
 		mealEnabled,
 		setMealEnabled,
 		mealPlace,
-		setMealPlace,
-		mealPlaceUrl,
-		setMealPlaceUrl,
+		changeMealPlaceText,
+		pickMealPlace,
+		mealCoords,
 		busy,
 		error,
 		handleCreate,
@@ -264,45 +265,31 @@ export default function OccurrenceEditor({
 							</div>
 						)}
 
-						{/* 회식 가게 — 식사 체크를 켤 때만. 이름만 넣어도 회원 카드에서 지도가 열린다(이름 검색). */}
+						{/* 회식 가게 — 식사 체크를 켤 때만. 장소 등록·거주지 입력과 같은 카카오 검색 컴포넌트.
+						    결과를 고르면 이름+좌표가 저장돼 회원 카드에서 정확한 핀으로 지도가 열린다.
+						    검색으로 못 찾거나 지도 키가 없으면 타이핑한 이름만 저장(이름 검색으로 폴백). */}
 						{isRegular && mealEnabled && (
-							<div className="flex flex-col gap-2">
-								<div>
-									<label className={labelCls} style={labelStyle}>
-										회식 가게
-									</label>
-									<input
-										type="text"
-										value={mealPlace}
-										onChange={(e) => setMealPlace(e.target.value)}
-										disabled={busy}
-										placeholder="예) 산들애 곱창 상무점"
-										className={inputCls}
-										style={inputStyle}
-									/>
-								</div>
-								<div>
-									<label className={labelCls} style={labelStyle}>
-										가게 지도 링크 (선택)
-									</label>
-									<input
-										type="url"
-										inputMode="url"
-										value={mealPlaceUrl}
-										onChange={(e) => setMealPlaceUrl(e.target.value)}
-										disabled={busy}
-										placeholder="카카오/네이버 지도 공유 링크"
-										className={inputCls}
-										style={inputStyle}
-									/>
-									<p
-										className="text-faint"
-										style={{ fontSize: 11.5, marginTop: 4 }}
-									>
-										비워두면 가게 이름으로 지도를 검색해요. 정확한 위치를 보여주려면
-										지도 앱에서 '공유'한 링크를 붙여넣으세요.
-									</p>
-								</div>
+							<div>
+								<label className={labelCls} style={labelStyle}>
+									회식 가게
+								</label>
+								<KakaoLocationSearch
+									value={mealPlace}
+									onChangeText={changeMealPlaceText}
+									onPick={(loc) =>
+										pickMealPlace(loc.placeName, loc.lat, loc.lng)
+									}
+									placeholder="가게 이름으로 검색 (예: 산들애 곱창)"
+									heightPx={170}
+								/>
+								<p
+									className="text-faint"
+									style={{ fontSize: 11.5, marginTop: 6, lineHeight: 1.5 }}
+								>
+									{mealCoords
+										? "✓ 위치 지정됨 — 회원이 가게를 탭하면 지도에 핀으로 열려요."
+										: "검색 결과를 고르면 위치가 저장돼요. 그냥 이름만 적어도 되고, 그때는 이름으로 지도를 검색해요."}
+								</p>
 							</div>
 						)}
 

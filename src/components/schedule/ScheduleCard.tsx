@@ -524,7 +524,12 @@ export default function ScheduleCard({
 			{mealOn && s.meal_place && (
 				<div className="ctl-row">
 					<span className="ctl-label">가게</span>
-					<MealPlaceLink name={s.meal_place} url={s.meal_place_url} compact />
+					<MealPlaceLink
+						name={s.meal_place}
+						lat={s.meal_place_lat}
+						lng={s.meal_place_lng}
+						compact
+					/>
 				</div>
 			)}
 

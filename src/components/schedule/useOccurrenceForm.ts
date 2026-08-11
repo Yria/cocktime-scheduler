@@ -70,9 +70,26 @@ export function useOccurrenceForm(
 	const [mealPlace, setMealPlace] = useState<string>(
 		() => occurrence?.meal_place ?? "",
 	);
-	const [mealPlaceUrl, setMealPlaceUrl] = useState<string>(
-		() => occurrence?.meal_place_url ?? "",
+	// 카카오 검색으로 고른 좌표. 직접 타이핑으로 이름을 바꾸면 좌표가 그 이름과 어긋나므로 버린다
+	// (좌표 없이 저장되면 지도는 이름 검색으로 폴백 — 엉뚱한 핀보다 낫다).
+	const [mealCoords, setMealCoords] = useState<{
+		lat: number;
+		lng: number;
+	} | null>(() =>
+		occurrence?.meal_place_lat != null && occurrence?.meal_place_lng != null
+			? { lat: occurrence.meal_place_lat, lng: occurrence.meal_place_lng }
+			: null,
 	);
+	/** 가게명 직접 입력 — 검색 결과와 달라지므로 좌표를 해제. */
+	function changeMealPlaceText(v: string) {
+		setMealPlace(v);
+		setMealCoords(null);
+	}
+	/** 카카오 검색 결과 선택 — 가게명 + 좌표를 함께 확정. */
+	function pickMealPlace(name: string, lat: number, lng: number) {
+		setMealPlace(name);
+		setMealCoords({ lat, lng });
+	}
 
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -131,7 +148,9 @@ export function useOccurrenceForm(
 				// 정모가 아니면 식사 체크도 끈 상태로 저장(정모 off 회차에 유령 게이트가 남지 않게)
 				mealEnabled: isRegular && mealEnabled,
 				mealPlace: mealPlace.trim() ? mealPlace.trim() : null,
-				mealPlaceUrl: mealPlaceUrl.trim() ? mealPlaceUrl.trim() : null,
+				// 가게명을 지우면 좌표도 함께 비운다(고아 좌표 방지)
+				mealPlaceLat: mealPlace.trim() ? (mealCoords?.lat ?? null) : null,
+				mealPlaceLng: mealPlace.trim() ? (mealCoords?.lng ?? null) : null,
 			});
 		});
 	}
@@ -152,7 +171,9 @@ export function useOccurrenceForm(
 				noticeMd: noticeMd.trim() ? noticeMd : null,
 				mealEnabled: isRegular && mealEnabled,
 				mealPlace: mealPlace.trim() ? mealPlace.trim() : null,
-				mealPlaceUrl: mealPlaceUrl.trim() ? mealPlaceUrl.trim() : null,
+				// 가게명을 지우면 좌표도 함께 비운다(고아 좌표 방지)
+				mealPlaceLat: mealPlace.trim() ? (mealCoords?.lat ?? null) : null,
+				mealPlaceLng: mealPlace.trim() ? (mealCoords?.lng ?? null) : null,
 			});
 		});
 	}
@@ -204,9 +225,9 @@ export function useOccurrenceForm(
 		mealEnabled,
 		setMealEnabled,
 		mealPlace,
-		setMealPlace,
-		mealPlaceUrl,
-		setMealPlaceUrl,
+		changeMealPlaceText,
+		pickMealPlace,
+		mealCoords,
 		busy,
 		error,
 		handleCreate,

@@ -92,7 +92,8 @@ export default function RegularNoticePage() {
 					{session?.meal_enabled && session.meal_place && (
 						<MealPlaceLink
 							name={session.meal_place}
-							url={session.meal_place_url}
+							lat={session.meal_place_lat}
+							lng={session.meal_place_lng}
 						/>
 					)}
 				</div>
