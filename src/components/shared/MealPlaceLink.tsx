@@ -33,7 +33,7 @@ export default function MealPlaceLink({
 	if (!target) {
 		return (
 			<span
-				className="text-muted truncate"
+				className="text-muted truncate min-w-0"
 				style={card ? { flex: 1, fontSize: 12.5 } : { fontSize: 13 }}
 			>
 				🍚 {label}
@@ -56,13 +56,15 @@ export default function MealPlaceLink({
 			}`}
 			style={
 				card
-					? // 세그먼트 트랙 밖의 알약. flex:1 로 3등분 격자의 한 칸 폭을 차지하고,
-						// 세로 padding 은 세그먼트 버튼(6px)과 같게 맞춰 줄 높이가 흔들리지 않게 한다.
-						{ flex: 1, fontSize: 12, fontWeight: 500, padding: "6px 10px" }
+					? // 세그먼트 트랙 밖의 알약(모양·여백은 최초 디자인 그대로). flex:1 로 3등분 격자의
+						// 한 칸 폭만 차지하고, 이름이 칸보다 길면 … 으로 자른다.
+						{ flex: 1, fontSize: 12, fontWeight: 500, padding: "3px 10px" }
 					: { fontSize: 13, fontWeight: 500, padding: "4px 12px" }
 			}
 		>
-			<span className="truncate">🍚 {label}</span>
+			{/* min-w-0 필수 — flex 자식의 기본 min-width:auto 는 nowrap 텍스트의 min-content(전체 폭)
+			    이하로 줄지 않아, 이게 없으면 truncate 의 … 대신 그냥 칸을 넘쳐 흐른다. */}
+			<span className="truncate min-w-0">🍚 {label}</span>
 			<ChevronRight
 				size={card ? 12 : 13}
 				style={{ opacity: 0.65, flexShrink: 0 }}
