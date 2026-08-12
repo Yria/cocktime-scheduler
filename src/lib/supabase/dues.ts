@@ -139,9 +139,9 @@ async function callRpc(fn: string, args: Record<string, unknown>): Promise<RpcRe
 	return { ok: true, data };
 }
 
-/** 선택 미납 알림: 특정 회원들에게 커스텀 문구로 발송(회비/세션별 대관비 그룹 발송). 중복방지 없음. */
-export const duesNotifySelected = (memberIds: string[], msg: string) =>
-	callRpc("dues_notify_selected", { p_member_ids: memberIds, p_msg: msg });
+// 미납 푸시 발송(`dues_notify_selected`) 클라 래퍼는 폐기했다(2026-08) — 미납자가 앱을 열면
+// UnpaidDuesAlert(§3.5)가 낼 금액·계좌를 먼저 보여줘 운영진이 골라 보내는 경로가 중복이었다.
+// RPC 자체는 DB에 남아 있으므로(마이그레이션 미변경) 필요하면 래퍼만 되살리면 된다.
 
 /** 은행 거래 대사 취소: 배분 되돌리고 미처리로. */
 export const duesCancelMatch = (txId: number) =>
@@ -701,8 +701,24 @@ interface RawSessionFee {
 	court_count: number | null;
 	court_fee: number | null;
 	places: { name: string | null; charges_court_fee: boolean } | null;
-	attendances: { member_id: string; status: string }[] | null;
+	recurring_schedules: { court_fee: number | null } | null;
+	attendances: RawAttendance[] | null;
 }
+interface RawAttendance {
+	member_id: string;
+	status: string;
+	confirmed_at: string | null;
+	cancelled_at: string | null;
+}
+
+/** 세션 참석 1행 — 정산 대조(부과 대상 재현)에 필요한 최소 필드. */
+export interface SessionAttendanceRow {
+	memberId: string;
+	status: string; // confirmed | late_pool | waitlisted | cancelled
+	confirmedAt: string | null; // 마지막으로 자리를 잡은 시각(grace 기준, 대기는 null)
+	cancelledAt: string | null;
+}
+
 export interface SessionFeeRow {
 	id: number;
 	title: string | null;
@@ -711,12 +727,22 @@ export interface SessionFeeRow {
 	hours: number | null;
 	placeName: string | null;
 	courtFee: number | null; // 실제 입력 지출(= 엔빵 총액)
+	ruleCourtFee: number | null; // 반복 규칙 기본 총액 — 엔빵 총액 fallback(coalesce(세션,규칙), §1.1)
 	attendeeIds: string[]; // 확정 참가자(confirmed/late_pool) member_id — 정산함 신규 세션 칩 참석 필터용
+	attendances: SessionAttendanceRow[]; // 전체 참석행(취소 포함) — 정산 대조의 '부과 대상' 재현용
 }
 
 /** 확정 참가자(confirmed/late_pool) member_id — 대관비 부과·칩 노출의 참석 기준(§1.1). */
-const confirmedAttendeeIds = (attendances: { member_id: string; status: string }[] | null): string[] =>
+const confirmedAttendeeIds = (attendances: RawAttendance[] | null): string[] =>
 	(attendances ?? []).filter((a) => a.status === "confirmed" || a.status === "late_pool").map((a) => a.member_id);
+
+const mapAttendances = (attendances: RawAttendance[] | null): SessionAttendanceRow[] =>
+	(attendances ?? []).map((a) => ({
+		memberId: a.member_id,
+		status: a.status,
+		confirmedAt: a.confirmed_at,
+		cancelledAt: a.cancelled_at,
+	}));
 
 /** 정산함 선납용: 참가 예정(open) 대관 세션 + 확정 참가자 목록. SessionFeeRow + attendeeIds. */
 export interface UpcomingSessionRow extends SessionFeeRow {
@@ -732,7 +758,7 @@ async function queryCourtSessions(start: string, end: string): Promise<SessionFe
 	// matches!inner 로 경기 없는 세션(무산)을 원천 제외 → 정산함·회계·현황 모든 세션 목록이 일괄로 열린 경기만.
 	const { data, error } = await supabase
 		.from("sessions")
-		.select("id, title, scheduled_at, ends_at, court_count, court_fee, places!inner(name, charges_court_fee), matches!inner(id), attendances(member_id, status)")
+		.select("id, title, scheduled_at, ends_at, court_count, court_fee, places!inner(name, charges_court_fee), recurring_schedules(court_fee), matches!inner(id), attendances(member_id, status, confirmed_at, cancelled_at)")
 		.gte("scheduled_at", start)
 		.lt("scheduled_at", end)
 		.in("status", ["active", "closed"])
@@ -755,7 +781,9 @@ async function queryCourtSessions(start: string, end: string): Promise<SessionFe
 			hours,
 			placeName: s.places?.name ?? null,
 			courtFee: s.court_fee,
+			ruleCourtFee: s.recurring_schedules?.court_fee ?? null,
 			attendeeIds: confirmedAttendeeIds(s.attendances),
+			attendances: mapAttendances(s.attendances),
 		};
 	});
 }
@@ -781,7 +809,7 @@ export function fetchLedgerSessions(ym: string): Promise<SessionFeeRow[]> {
 export async function fetchUpcomingParticipating(): Promise<UpcomingSessionRow[]> {
 	const { data, error } = await supabase
 		.from("sessions")
-		.select("id, title, scheduled_at, ends_at, court_count, court_fee, places!inner(name, charges_court_fee), attendances(member_id, status), dues_charges(member_id, kind)")
+		.select("id, title, scheduled_at, ends_at, court_count, court_fee, places!inner(name, charges_court_fee), recurring_schedules(court_fee), attendances(member_id, status, confirmed_at, cancelled_at), dues_charges(member_id, kind)")
 		.eq("status", "open")
 		.eq("places.charges_court_fee", true) // 대관장소만(monthSessions 와 동일 게이트)
 		.order("scheduled_at", { ascending: true });
@@ -802,7 +830,9 @@ export async function fetchUpcomingParticipating(): Promise<UpcomingSessionRow[]
 			hours,
 			placeName: s.places?.name ?? null,
 			courtFee: s.court_fee,
+			ruleCourtFee: s.recurring_schedules?.court_fee ?? null,
 			attendeeIds: confirmedAttendeeIds(s.attendances),
+			attendances: mapAttendances(s.attendances),
 			chargedMemberIds: (s.dues_charges ?? [])
 				.filter((c) => c.kind === "court_fee")
 				.map((c) => c.member_id),
