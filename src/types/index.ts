@@ -19,6 +19,8 @@ export interface Player {
 	name: string;
 	gender: Gender;
 	skills: PlayerSkills;
+	/** 출생년도 — 이름 뒤 년생 표기(동명이인 구분)에만 쓴다. 세션 게스트·미입력 회원은 null. */
+	birthYear?: number | null;
 }
 
 /** 세션 내 참여 선수 (DB session_players 행) */

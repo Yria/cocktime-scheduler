@@ -13,6 +13,8 @@ export interface CarpoolMember {
 	is_guest: boolean;
 	/** 거주 동(예: "강남구 역삼동"). 지도/그룹핑 키. 없으면 '위치 미상'. */
 	residence: string | null;
+	/** 이름 뒤 년생 표기용(동명이인 구분). 게스트·미입력은 null. */
+	birthYear: number | null;
 	role: "can_drive" | "need_ride";
 	/** 운전자 제공 좌석(참고 표시용, 강제 아님). */
 	seats: number | null;
@@ -28,7 +30,7 @@ export async function fetchCarpoolRoster(
 	const { data, error } = await supabase
 		.from("attendances")
 		.select(
-			"member_id, carpool_role, carpool_seats, member:member_id(name, is_guest, gender, residence)",
+			"member_id, carpool_role, carpool_seats, member:member_id(name, is_guest, gender, residence, birth_year)",
 		)
 		.eq("session_id", sessionId)
 		.eq("status", "confirmed")
@@ -47,6 +49,7 @@ export async function fetchCarpoolRoster(
 			is_guest: boolean | null;
 			gender: Gender | null;
 			residence: string | null;
+			birth_year: number | null;
 		} | null;
 	};
 	return ((data ?? []) as unknown as RosterRow[]).map((r) => ({
@@ -55,6 +58,7 @@ export async function fetchCarpoolRoster(
 		gender: r.member?.gender ?? null,
 		is_guest: r.member?.is_guest ?? false,
 		residence: r.member?.residence ?? null,
+		birthYear: r.member?.birth_year ?? null,
 		role: r.carpool_role,
 		seats: r.carpool_seats ?? null,
 	}));

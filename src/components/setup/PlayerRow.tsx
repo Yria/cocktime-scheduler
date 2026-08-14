@@ -1,6 +1,7 @@
 import { Check } from "lucide-react";
 import type { Player } from "../../types";
 import GenderDot from "../shared/GenderDot";
+import BirthYearTag from "../shared/BirthYearTag";
 
 interface PlayerRowProps {
 	player: Player;
@@ -68,17 +69,28 @@ export function PlayerRow({
 					)}
 				</span>
 				<GenderDot gender={player.gender} size={9} />
+				{/* 이름은 잘리더라도 년생은 남도록 한 묶음으로(baseline 정렬) */}
 				<span
-					className="text-strong"
 					style={{
-						fontSize: 14,
-						fontWeight: 500,
-						overflow: "hidden",
-						textOverflow: "ellipsis",
-						whiteSpace: "nowrap",
+						display: "flex",
+						alignItems: "baseline",
+						gap: 3,
+						minWidth: 0,
 					}}
 				>
-					{player.name}
+					<span
+						className="text-strong"
+						style={{
+							fontSize: 14,
+							fontWeight: 500,
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+							whiteSpace: "nowrap",
+						}}
+					>
+						{player.name}
+					</span>
+					<BirthYearTag birthYear={player.birthYear} size={11.5} gap={0} />
 				</span>
 				{isGuest && (
 					<span

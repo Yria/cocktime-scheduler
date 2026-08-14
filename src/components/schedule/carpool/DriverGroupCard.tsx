@@ -1,4 +1,5 @@
 import PlayerAvatar from "../../shared/PlayerAvatar";
+import BirthYearTag from "../../shared/BirthYearTag";
 import type { CarpoolMember } from "../../../lib/supabase/carpool";
 
 // 운전자 1명 + 그 차에 배정된 동승자 칩. 선택된 동승자가 있으면 '여기 태우기' 노출.
@@ -41,6 +42,7 @@ export default function DriverGroupCard({
 						style={{ fontSize: 14, fontWeight: 800 }}
 					>
 						🚗 {driver.name}
+						<BirthYearTag birthYear={driver.birthYear} size={11.5} />
 					</div>
 					<div
 						className="text-faint"
@@ -87,6 +89,7 @@ export default function DriverGroupCard({
 							}}
 						>
 							{r.name}
+							<BirthYearTag birthYear={r.birthYear} size={10.5} gap={0} />
 							<span style={{ color: "#98a0ab", fontWeight: 800, fontSize: 13 }}>
 								×
 							</span>

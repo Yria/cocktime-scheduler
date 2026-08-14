@@ -1,6 +1,7 @@
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { nameWithBirthYear } from "../../lib/birthYear";
 import { DEFAULT_GRADE, DEFAULT_SKILLS } from "../../lib/constants";
 import { skillScoreOf } from "../../lib/teamSelection";
 import type { GradeAnchor } from "../shared/GradeInput";
@@ -162,8 +163,8 @@ export default function MemberAdminPage() {
 		setConfirmState({
 			title: m.isAdmin ? "운영진 해제" : "운영진 승급",
 			message: m.isAdmin
-				? `'${m.name}'님을 운영진에서 해제할까요?`
-				: `'${m.name}'님을 운영진으로 승급할까요?`,
+				? `'${nameWithBirthYear(m.name, m.birthYear)}'님을 운영진에서 해제할까요?`
+				: `'${nameWithBirthYear(m.name, m.birthYear)}'님을 운영진으로 승급할까요?`,
 			run: () => doToggleAdmin(m),
 		});
 	};
@@ -188,12 +189,12 @@ export default function MemberAdminPage() {
 			title: m.isActive ? "회원 비활성화" : "회원 활성화",
 			message: m.isActive ? (
 				<>
-					{`'${m.name}'님을 비활성화할까요?`}
+					{`'${nameWithBirthYear(m.name, m.birthYear)}'님을 비활성화할까요?`}
 					<br />
 					세션 명단과 회비 자동부과에서 제외됩니다. (회원 정보는 보존)
 				</>
 			) : (
-				`'${m.name}'님을 다시 활성화할까요?`
+				`'${nameWithBirthYear(m.name, m.birthYear)}'님을 다시 활성화할까요?`
 			),
 			run: () => doToggleActive(m),
 		});
@@ -356,7 +357,7 @@ export default function MemberAdminPage() {
 			recentActiveIds && recentActiveIds.size
 				? sameGender.filter((m) => recentActiveIds.has(m.id))
 				: sameGender;
-		return pool.map((m) => ({ id: m.id, name: m.name, grade: skillScoreOf(m.skills), gender: g }));
+		return pool.map((m) => ({ id: m.id, name: m.name, grade: skillScoreOf(m.skills), gender: g, birthYear: m.birthYear }));
 	}, [members, editingMember, recentActiveIds]);
 
 	if (!ready || !memberLoaded) return null;

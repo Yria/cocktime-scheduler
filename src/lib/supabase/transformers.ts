@@ -8,8 +8,14 @@ import type {
 	SessionSnapshot,
 } from "./types";
 
-/** 로그 표시용 선수(이름/성별/스킬). */
-export type LogPlayer = { name: string; gender: Gender; skills?: PlayerSkills };
+/** 로그 표시용 선수(이름/성별/스킬/년생). */
+export type LogPlayer = {
+	name: string;
+	gender: Gender;
+	skills?: PlayerSkills;
+	/** 이름 뒤 년생 표기용. 스냅샷에는 없는 값이라 항상 현재 선수 맵(회원 링크)에서 온다. */
+	birthYear?: number | null;
+};
 
 /**
  * 매치 row를 로그용 팀 배열로 변환(순수). "그 시점 스냅샷"(player_snapshot)을 우선 사용하고,
@@ -23,9 +29,13 @@ export function matchLogTeams(
 	const snap = m.player_snapshot;
 	const at = (i: number, fallbackId: string): LogPlayer => {
 		const s = snap?.[i];
-		if (s) return { name: s.name, gender: s.gender, skills: s.skills };
 		const p = playerMap.get(fallbackId);
-		return p ? { name: p.name, gender: p.gender, skills: p.skills } : { name: "?", gender: "M" };
+		// 년생은 스냅샷에 없는 값 — 이름이 스냅샷에서 와도 년생만은 현재 선수 맵에서 채운다.
+		// 선수가 삭제되면 년생 없이 이름만 남는다(로그 자체는 스냅샷으로 보존).
+		if (s) return { name: s.name, gender: s.gender, skills: s.skills, birthYear: p?.birthYear ?? null };
+		return p
+			? { name: p.name, gender: p.gender, skills: p.skills, birthYear: p.birthYear ?? null }
+			: { name: "?", gender: "M" };
 	};
 	return {
 		teamA: [at(0, m.team_a_p1), at(1, m.team_a_p2)],

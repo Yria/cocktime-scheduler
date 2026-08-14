@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { geocodeDongs } from "../../../lib/carpool/geocodeResidence";
 import { hasKakaoKey, loadKakaoMaps } from "../../../lib/kakaoMap";
 import type { CarpoolMember } from "../../../lib/supabase/carpool";
+import { birthYearShort } from "../../../lib/birthYear";
 
 // 운영자 보조 지도 — 운전자/탑승필요자를 거주 동 중심점으로 표시(같은 동은 한 점에 모임).
 // 미배정 동승자를 선택하면 지도가 커지고, 동승자는 선택한 사람만 남으며 운전자 마커를 누르면
@@ -54,6 +55,14 @@ function makePin(m: CarpoolMember, opts: PinOpts): HTMLElement {
 		opts.highlighted ? "#0a5cb0" : "#0f1724"
 	};background:rgba(255,255,255,.9);padding:1px 5px;border-radius:6px;white-space:nowrap;`;
 	label.appendChild(document.createTextNode(m.name));
+	// 이름 뒤 년생 두 자리(동명이인 구분) — 마커 라벨이라 회색 작은 글씨로 덧붙인다.
+	const short = birthYearShort(m.birthYear);
+	if (short) {
+		const year = document.createElement("span");
+		year.textContent = short;
+		year.style.cssText = "font-weight:600;color:#8a93a0;margin-left:-1px;";
+		label.appendChild(year);
+	}
 
 	if (isDriver) {
 		const cnt = opts.count ?? 0;

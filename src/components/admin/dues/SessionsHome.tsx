@@ -5,6 +5,7 @@ import { duesActions, useDuesStore } from "../../../store/duesStore";
 import { toast } from "../../../store/toastStore";
 import ConfirmDialog from "../../common/ConfirmDialog";
 import EmptyState from "../../shared/EmptyState";
+import BirthYearTag from "../../shared/BirthYearTag";
 import { remaining, sessionLabel, won, ymLabel } from "./duesText";
 import SessionSettleSheet from "./SessionSettleSheet";
 import { type SessionSettle, buildSessionSettle } from "./sessionSettle";
@@ -13,6 +14,8 @@ import { type SessionSettle, buildSessionSettle } from "./sessionSettle";
 interface FeeUnpaidRow {
 	chargeId: number;
 	name: string;
+	/** 이름 뒤 년생 표기용(동명이인 구분). */
+	birthYear: number | null;
 	remain: number;
 }
 interface SessionCard {
@@ -72,14 +75,14 @@ export default function SessionsHome({ ym }: { ym: string }) {
 			if (!c) continue;
 			if (c.deferredTo != null) paid++; // 이월 = 해결로 취급
 			else if (c.status === "paid" || c.status === "overpaid") paid++;
-			else if (c.status === "unpaid" || c.status === "partial") unpaid.push({ chargeId: c.id, name: m.name, remain: remaining(c.amountDue, c.amountPaid) });
+			else if (c.status === "unpaid" || c.status === "partial") unpaid.push({ chargeId: c.id, name: m.name, birthYear: m.birthYear, remain: remaining(c.amountDue, c.amountPaid) });
 			// waived·void 는 paid·unpaid 어디에도 넣지 않음 → 아래 total(분모)에서도 자연히 제외됨.
 		}
 		unpaid.sort((a, b) => a.name.localeCompare(b.name));
 		// 다른 달에서 이월돼 온 회비(이번 달 미정산 대상)
 		const carried = monthly
 			.filter((c) => c.deferredTo === ym)
-			.map((c) => ({ chargeId: c.id, name: memberById.get(c.memberId)?.name ?? "회원", settled: c.status === "waived", fromYm: c.periodYm }))
+			.map((c) => ({ chargeId: c.id, name: memberById.get(c.memberId)?.name ?? "회원", birthYear: memberById.get(c.memberId)?.birthYear ?? null, settled: c.status === "waived", fromYm: c.periodYm }))
 			.sort((a, b) => a.name.localeCompare(b.name));
 		return { paid, total: paid + unpaid.length, unpaid, carried };
 	}, [monthly, roster, ym, memberById]);
@@ -212,7 +215,7 @@ export default function SessionsHome({ ym }: { ym: string }) {
 					<div className="flex flex-col gap-1.5">
 						{fee.carried.map((c) => (
 							<div key={c.chargeId} className="flex items-center gap-2" style={{ fontSize: 13 }}>
-								<span className="text-strong" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{c.name}<span className="text-faint" style={{ fontSize: 11, fontWeight: 500, marginLeft: 5 }}>{c.fromYm} 회비</span></span>
+								<span className="text-strong" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{c.name}<BirthYearTag birthYear={c.birthYear} size={11} /><span className="text-faint" style={{ fontSize: 11, fontWeight: 500, marginLeft: 5 }}>{c.fromYm} 회비</span></span>
 								{c.settled ? (
 									<>
 										<span className="text-[#1c8a3b]" style={{ fontSize: 12, fontWeight: 700 }}>정산됨</span>
@@ -393,7 +396,7 @@ function FeeGroup({ title, subtitle, meter, unpaid, open, onToggle, busy, onDefe
 							<p className="text-faint" style={{ fontSize: 11, marginBottom: 2 }}>이월 = 다음 달로 미룸</p>
 							{unpaid.map((r) => (
 								<div key={r.chargeId} className="flex items-center gap-2" style={{ fontSize: 13, padding: "2px 0" }}>
-									<span className="text-strong" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{r.name}</span>
+									<span className="text-strong" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{r.name}<BirthYearTag birthYear={r.birthYear} size={11} /></span>
 									<span className="text-[#d1362c]" style={{ fontWeight: 700, flexShrink: 0 }}>{won(r.remain)}</span>
 									<button
 										type="button"

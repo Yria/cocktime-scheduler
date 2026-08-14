@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import type { AdminMemberRow } from "../../lib/supabase/adminMembers";
 import { skillScoreOf } from "../../lib/teamSelection";
 import PlayerAvatar from "../shared/PlayerAvatar";
+import BirthYearTag from "../shared/BirthYearTag";
 import { Highlight } from "./Highlight";
 import { genderText } from "./memberAdminText";
 
@@ -115,6 +116,7 @@ export function MemberRow({
 					>
 						<Highlight text={member.name} kw={query} />
 					</span>
+					<BirthYearTag birthYear={member.birthYear} size={12} />
 					{isMe && (
 						<span
 							className="text-faint"
@@ -167,14 +169,13 @@ export function MemberRow({
 						textOverflow: "ellipsis",
 					}}
 				>
-					{!g && member.birthYear == null && !member.residence ? (
+					{/* 년생은 이름 옆으로 올렸다(다른 화면과 같은 두 자리 표기) — 여기서는 중복이라 뺀다. */}
+					{!g && !member.residence ? (
 						"정보 없음"
 					) : (
 						<>
 							{g && <Highlight text={g} kw={query} />}
-							{g && (member.birthYear != null || member.residence) && " · "}
-							{member.birthYear != null && `${member.birthYear}년생`}
-							{member.birthYear != null && member.residence && " · "}
+							{g && member.residence && " · "}
 							{member.residence && (
 								<Highlight text={member.residence} kw={query} />
 							)}

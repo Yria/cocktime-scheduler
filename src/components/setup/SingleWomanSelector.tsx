@@ -1,4 +1,5 @@
 import type { Player } from "../../types";
+import BirthYearTag from "../shared/BirthYearTag";
 
 interface Props {
 	selectedFemales: Player[];
@@ -83,6 +84,7 @@ export function SingleWomanSelector({
 								}}
 							/>
 							{p.name}
+							<BirthYearTag birthYear={p.birthYear} size={11} />
 						</button>
 					);
 				})}

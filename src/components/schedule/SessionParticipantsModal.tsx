@@ -10,6 +10,8 @@ import ModalSheet from "../common/ModalSheet";
 import ConfirmDialog from "../common/ConfirmDialog";
 import EmptyState from "../shared/EmptyState";
 import PlayerAvatar from "../shared/PlayerAvatar";
+import BirthYearTag from "../shared/BirthYearTag";
+import { nameWithBirthYear } from "../../lib/birthYear";
 
 interface Props {
 	session: SessionRow;
@@ -305,7 +307,10 @@ function ParticipantRow({
 	// 운영진 여부 — nested user_roles 에 role='admin' 행이 있으면 운영진(게스트는 role 없음 → 자동 제외).
 	const isAdmin = (a.member?.user_roles ?? []).some((r) => r.role === "admin");
 	// 게스트를 데려온(신청한) 회원 이름 — 배지에 함께 노출. 신청자 회원이 삭제되면 null → "게스트"만.
-	const inviterName = a.inviter?.name ?? null;
+	// 배지 안 문구라 회색 분리 대신 한 문자열로 년생을 붙인다("홍길동 85님 게스트").
+	const inviterName = a.inviter
+		? nameWithBirthYear(a.inviter.name, a.inviter.birth_year)
+		: null;
 
 	const isWaiting = waitInfo != null;
 	// 늦참 도착시각 — 대기자가 아니고 오프셋>0·시작시각 有 일 때. "⏰ 오후 8:00~"(정원 외는 🌙 바이올렛)
@@ -336,6 +341,7 @@ function ParticipantRow({
 				style={{ fontSize: 13.5, fontWeight: 600 }}
 			>
 				{name}
+				<BirthYearTag birthYear={a.member?.birth_year} size={11.5} />
 				{isMe && (
 					<span
 						className="text-faint ml-1"

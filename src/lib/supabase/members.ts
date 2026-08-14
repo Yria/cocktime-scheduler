@@ -11,6 +11,7 @@ interface RawMember {
 	name: string;
 	gender: Gender | null;
 	skills: PlayerSkills | null;
+	birth_year: number | null;
 }
 
 /**
@@ -20,7 +21,7 @@ interface RawMember {
 export async function fetchMembers(): Promise<Player[]> {
 	const { data, error } = await supabase
 		.from("members")
-		.select("id, name, gender, skills")
+		.select("id, name, gender, skills, birth_year")
 		.eq("is_guest", false)
 		.eq("is_active", true)
 		.order("name", { ascending: true });
@@ -35,6 +36,7 @@ export async function fetchMembers(): Promise<Player[]> {
 			name: m.name,
 			gender: m.gender,
 			skills: normalizeSkills(m.skills),
+			birthYear: m.birth_year,
 		}));
 }
 

@@ -153,11 +153,13 @@ export interface AttendanceRow {
 		name: string;
 		is_guest: boolean;
 		gender: Gender | null;
+		/** 이름 뒤 년생 표기용(동명이인 구분). 미입력 회원·게스트는 null. */
+		birth_year?: number | null;
 		/** 운영진 뱃지용 nested user_roles. role='admin' 행이 있으면 운영진(RLS: admin 행은 전 회원 공개). */
 		user_roles?: { role: string }[] | null;
 	} | null;
 	/** fetchAttendances의 invited_by(신청자) 회원 임베드. 게스트 행에만 존재, 본인 참석은 null. */
-	inviter?: { name: string } | null;
+	inviter?: { name: string; birth_year?: number | null } | null;
 }
 
 export interface NotificationRow {

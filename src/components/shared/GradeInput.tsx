@@ -4,6 +4,7 @@ import { magnetGenderRing } from "../../lib/magnetStyle";
 import { fetchMembers, fetchRecentActiveMemberIds } from "../../lib/supabase/members";
 import type { Gender } from "../../types";
 import PlayerAvatar from "./PlayerAvatar";
+import BirthYearTag from "./BirthYearTag";
 
 /** 비교 추정에 쓰는 표본 한 명(동성 기준). */
 export interface GradeAnchor {
@@ -12,6 +13,8 @@ export interface GradeAnchor {
 	name: string;
 	grade: number;
 	gender: Gender;
+	/** 이름 뒤 년생 표기용(동명이인 구분). 세션 선수 표본 등 년생을 모르는 곳은 생략. */
+	birthYear?: number | null;
 }
 
 interface GradeInputProps {
@@ -181,7 +184,7 @@ function ComparisonEstimator({
 					? members.filter((m) => recentIds.has(m.id))
 					: members;
 				setLoaded(
-					pool.map((m) => ({ id: m.id, name: m.name, grade: m.skills.grade, gender: m.gender })),
+					pool.map((m) => ({ id: m.id, name: m.name, grade: m.skills.grade, gender: m.gender, birthYear: m.birthYear })),
 				);
 				setLoading(false);
 			},
@@ -422,6 +425,7 @@ function ComparisonEstimator({
 					</div>
 					<span className="text-[13px] font-bold text-strong mt-2 max-w-full truncate px-1">
 						{current.name}
+						<BirthYearTag birthYear={current.birthYear} size={11} />
 					</span>
 					<span className="text-[11px] text-faint mt-0.5">{oppGenderLabel}</span>
 				</div>
@@ -429,7 +433,9 @@ function ComparisonEstimator({
 
 			{/* 질문 — 주어=편집 대상, 원본과 동일 의미 */}
 			<p className="text-sm text-strong text-center mb-3">
-				<span className="font-bold">{current.name}</span>님과 비교하면 실력이 어떤가요?
+				<span className="font-bold">{current.name}</span>
+				<BirthYearTag birthYear={current.birthYear} size={11} />
+				님과 비교하면 실력이 어떤가요?
 			</p>
 
 			{/* 답변 — 위=더 잘함 / 아래=더 못함 방향감 */}

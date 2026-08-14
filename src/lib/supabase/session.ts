@@ -217,15 +217,44 @@ export async function fetchAllSessions(): Promise<SessionRow[]> {
 	return (data ?? []) as SessionRow[];
 }
 
+/** 매치 로그 요약의 참가자 1명(세션 스냅샷 기준 + 회원 년생). */
+export interface SessionParticipant {
+	/** session_players.id — 동명이인이 있어 이름은 목록 key 로 쓸 수 없다. */
+	id: string;
+	name: string;
+	gender: Gender;
+	game_count: number;
+	skills: PlayerSkills;
+	/** 이름 뒤 년생 표기용. 게스트·미입력 회원은 null. */
+	birthYear: number | null;
+}
+
 export async function fetchSessionPlayers(
 	sessionId: number,
-): Promise<{ name: string; gender: Gender; game_count: number; skills: PlayerSkills }[]> {
+): Promise<SessionParticipant[]> {
+	// 년생은 session_players 스냅샷에 없어 회원 링크로 임베드(게스트는 member_id null → 년생 없음).
 	const { data } = await supabase
 		.from("session_players")
-		.select("name, gender, game_count, skills")
+		.select("id, name, gender, game_count, skills, member:member_id(birth_year)")
 		.eq("session_id", sessionId)
 		.order("name", { ascending: true });
-	return (data ?? []) as { name: string; gender: Gender; game_count: number; skills: PlayerSkills }[];
+	// member 임베드(to-one)는 supabase 타입 추론이 약해 unknown 경유 캐스팅.
+	const rows = (data ?? []) as unknown as {
+		id: string;
+		name: string;
+		gender: Gender;
+		game_count: number;
+		skills: PlayerSkills;
+		member: { birth_year: number | null } | null;
+	}[];
+	return rows.map((r) => ({
+		id: r.id,
+		name: r.name,
+		gender: r.gender,
+		game_count: r.game_count,
+		skills: r.skills,
+		birthYear: r.member?.birth_year ?? null,
+	}));
 }
 
 // ── 충돌 감지용 서버 상태 조회 ──────────────────────────

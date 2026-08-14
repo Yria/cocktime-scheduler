@@ -3,6 +3,8 @@ import { duesSetHonorary, fetchHonoraryReasons } from "../../../lib/supabase/due
 import type { AdminMemberRow } from "../../../lib/supabase/adminMembers";
 import { duesActions, useDuesStore } from "../../../store/duesStore";
 import ConfirmDialog from "../../common/ConfirmDialog";
+import BirthYearTag from "../../shared/BirthYearTag";
+import { nameWithBirthYear } from "../../../lib/birthYear";
 import { inputCls, inputStyle, labelCls, labelStyle } from "../../common/fieldStyles";
 import { nameMatches } from "./matching";
 
@@ -129,6 +131,7 @@ export default function HonoraryMembersSection() {
 							<div style={{ flex: 1, minWidth: 0 }}>
 								<div className="text-strong truncate" style={{ fontSize: 14, fontWeight: 600 }}>
 									{m.name}
+									<BirthYearTag birthYear={m.birthYear} size={11.5} />
 								</div>
 								{reasons[m.id] && (
 									<div className="text-muted truncate" style={{ fontSize: 12.5, marginTop: 2 }}>
@@ -231,7 +234,7 @@ export default function HonoraryMembersSection() {
 			{confirmRemove && (
 				<ConfirmDialog
 					title="명예회원 해제"
-					message={`${confirmRemove.name} 님을 명예회원에서 해제할까요? 다음 회비부터 다시 부과돼요(이번 달은 자동 재생성되지 않아요).`}
+					message={`${nameWithBirthYear(confirmRemove.name, confirmRemove.birthYear)} 님을 명예회원에서 해제할까요? 다음 회비부터 다시 부과돼요(이번 달은 자동 재생성되지 않아요).`}
 					confirmLabel="해제"
 					tone="danger"
 					maxWidth="xs"

@@ -5,9 +5,9 @@ import {
 	fetchMatchLogs,
 	fetchSessionPlayers,
 	type MatchLogEntry,
+	type SessionParticipant,
 } from "../lib/supabase/api";
 import type { SessionRow } from "../lib/supabase/types";
-import type { Gender, PlayerSkills } from "../types";
 import AppHeader from "./common/AppHeader";
 import LogList from "./log/LogList";
 import MatchSummary from "./log/MatchSummary";
@@ -19,9 +19,7 @@ export default function LogPage() {
 	const [sessions, setSessions] = useState<SessionRow[]>([]);
 	const [selectedId, setSelectedId] = useState<number | null>(null);
 	const [logs, setLogs] = useState<MatchLogEntry[]>([]);
-	const [participants, setParticipants] = useState<
-		{ name: string; gender: Gender; game_count: number; skills: PlayerSkills }[]
-	>([]);
+	const [participants, setParticipants] = useState<SessionParticipant[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [logLoading, setLogLoading] = useState(false);
 

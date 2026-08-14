@@ -1,4 +1,5 @@
 import type { CarpoolMember } from "../../../lib/supabase/carpool";
+import BirthYearTag from "../../shared/BirthYearTag";
 
 // 미배정 동승자(탑승필요) 풀 — 동(洞)별로 묶고, 거주지 없는 사람은 '위치 미상' 그룹으로.
 // 칩 탭 = 선택 토글(2탭 편성: 선택 후 운전자 카드의 '여기 태우기').
@@ -102,6 +103,7 @@ export default function RiderPool({ riders, selected, onToggle }: Props) {
 										</span>
 									)}
 									{r.name}
+									<BirthYearTag birthYear={r.birthYear} size={10.5} gap={0} />
 								</button>
 							);
 						})}

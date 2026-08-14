@@ -2,6 +2,7 @@ import { isGuestId } from "../../lib/player";
 import type { Gender, Player, PlayerSkills } from "../../types";
 import ModalSheet from "../common/ModalSheet";
 import { PlayerAttributesForm } from "./PlayerAttributesForm";
+import BirthYearTag from "../shared/BirthYearTag";
 
 interface EditModalProps {
 	player: Player;
@@ -34,7 +35,10 @@ export function EditModal({
 			onClose={onClose}
 			title={
 				<span className="flex items-center gap-2">
-					{player.name}
+					<span className="inline-flex items-baseline">
+						{player.name}
+						<BirthYearTag birthYear={player.birthYear} size={12} />
+					</span>
 					{isGuest && (
 						<span
 							className="text-xs font-semibold rounded px-1.5 py-0.5"

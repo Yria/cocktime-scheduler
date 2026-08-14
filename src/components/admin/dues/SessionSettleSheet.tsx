@@ -1,5 +1,7 @@
 import { type CSSProperties, type ReactNode, useState } from "react";
 import ModalSheet from "../../common/ModalSheet";
+import BirthYearTag from "../../shared/BirthYearTag";
+import { nameWithBirthYear } from "../../../lib/birthYear";
 import { sessionLabel, statusChipClass, statusLabel, won } from "./duesText";
 import { EXEMPT_LABEL, EXTRA_LABEL, type SessionSettle } from "./sessionSettle";
 import type { SessionFeeRow } from "../../../lib/supabase/dues";
@@ -151,6 +153,7 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 											style={{ fontWeight: alert ? 700 : 600, flexShrink: 0, opacity: dim ? 0.55 : 1, textDecoration: c && !c.live ? "line-through" : undefined }}
 										>
 											{r.name}
+											<BirthYearTag birthYear={r.birthYear} size={11} />
 										</span>
 										<span className="flex min-w-0 flex-wrap items-center" style={{ gap: 4, flex: 1 }}>
 											{c?.isDayCancel && <Tag tone="warn">당일취소</Tag>}
@@ -182,7 +185,7 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 											<button type="button" onClick={() => onReset(c.chargeId)} disabled={busy} className="text-[#0b84ff]" style={actionBtn("rgba(11,132,255,0.1)")}>되돌리기</button>
 										)}
 										{c?.isDayCancel && c.live && c.amountPaid === 0 && (
-											<button type="button" onClick={() => onVoidRequest(c.chargeId, c.name)} disabled={busy} className="text-[#d1362c]" style={actionBtn("rgba(209,54,44,0.1)")}>부과삭제</button>
+											<button type="button" onClick={() => onVoidRequest(c.chargeId, nameWithBirthYear(c.name, r.birthYear))} disabled={busy} className="text-[#d1362c]" style={actionBtn("rgba(209,54,44,0.1)")}>부과삭제</button>
 										)}
 									</div>
 								);

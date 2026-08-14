@@ -123,7 +123,7 @@ export async function fetchAttendances(
 	const { data, error } = await supabase
 		.from("attendances")
 		.select(
-			"*, member:member_id(name, is_guest, gender, user_roles(role)), inviter:invited_by(name)",
+			"*, member:member_id(name, is_guest, gender, birth_year, user_roles(role)), inviter:invited_by(name, birth_year)",
 		)
 		.in("session_id", sessionIds)
 		.neq("status", "cancelled")

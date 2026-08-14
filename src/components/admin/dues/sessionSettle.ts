@@ -1,3 +1,4 @@
+import { nameWithBirthYear } from "../../../lib/birthYear";
 import type { AdminMemberRow } from "../../../lib/supabase/adminMembers";
 import type { ChargeStatus, CourtChargeRow, SessionAttendanceRow, SessionFeeRow } from "../../../lib/supabase/dues";
 import { remaining } from "./duesText";
@@ -108,6 +109,8 @@ export type RosterKind =
 export interface SettleRosterRow {
 	key: string;
 	name: string;
+	/** 이름 뒤 년생 표기용(동명이인 구분). 미입력 회원·조회 실패는 null. */
+	birthYear: number | null;
 	kind: RosterKind;
 	charge: SettleChargeRow | null; // null = 부과 없는 사람
 	reason: NonTargetReason | null; // 우측 사유(missing 은 null — 문구가 모드에 따라 갈림)
@@ -193,6 +196,7 @@ export function buildSessionSettle(
 	txns: { direction: "in" | "out"; amount: number }[],
 ): SessionSettle {
 	const nameOf = (id: string) => memberById.get(id)?.name ?? "(회원)";
+	const birthYearOf = (id: string) => memberById.get(id)?.birthYear ?? null;
 	const isAdminOf = (id: string) => memberById.get(id)?.isAdmin ?? false;
 
 	// ── 모드·인당 금액(서버와 동일 계산) ──────────────────────────────
@@ -262,8 +266,9 @@ export function buildSessionSettle(
 				remain: remaining(c.amountDue, c.amountPaid),
 				status: c.status,
 				isDayCancel: c.isDayCancel,
-				payerName: proxy ? nameOf(proxy) : null,
-				voidedByName: c.voidedBy ? nameOf(c.voidedBy) : null,
+				// 대납자·부과삭제자는 좁은 태그 안 문구 — 회색 분리 대신 한 문자열로 년생을 붙인다.
+				payerName: proxy ? nameWithBirthYear(nameOf(proxy), birthYearOf(proxy)) : null,
+				voidedByName: c.voidedBy ? nameWithBirthYear(nameOf(c.voidedBy), birthYearOf(c.voidedBy)) : null,
 				isAdmin: isAdminOf(c.memberId),
 				live: c.status !== "void" && c.status !== "waived",
 				extraReason: targets.has(c.memberId) ? null : (nonTarget.get(c.memberId) ?? "noAttendance"),
@@ -297,16 +302,17 @@ export function buildSessionSettle(
 	// 한 사람이 두 줄로 나오지 않는 이유: missing ⊂ targets, exempt ⊂ nonTarget−charged, 부과는
 	// (member, session) 유니크 → 세 소스가 서로 겹치지 않는다.
 	const roster: SettleRosterRow[] = [
-		...missing.map((m): SettleRosterRow => ({ key: `m${m.memberId}`, name: m.name, kind: "missing", charge: null, reason: null, isAdmin: m.isAdmin })),
+		...missing.map((m): SettleRosterRow => ({ key: `m${m.memberId}`, name: m.name, birthYear: birthYearOf(m.memberId), kind: "missing", charge: null, reason: null, isAdmin: m.isAdmin })),
 		...charged.map((c): SettleRosterRow => ({
 			key: `c${c.chargeId}`,
 			name: c.name,
+			birthYear: birthYearOf(c.memberId),
 			kind: c.extraReason == null ? "charged" : c.extraReason === "noAttendance" ? "orphan" : c.live ? "stale" : "charged",
 			charge: c,
 			reason: c.extraReason,
 			isAdmin: c.isAdmin,
 		})),
-		...exemptSorted.map((e): SettleRosterRow => ({ key: `e${e.memberId}`, name: e.name, kind: "exempt", charge: null, reason: e.reason, isAdmin: e.isAdmin })),
+		...exemptSorted.map((e): SettleRosterRow => ({ key: `e${e.memberId}`, name: e.name, birthYear: birthYearOf(e.memberId), kind: "exempt", charge: null, reason: e.reason, isAdmin: e.isAdmin })),
 	].sort((a, b) => a.name.localeCompare(b.name, "ko") || KIND_RANK[a.kind] - KIND_RANK[b.kind]);
 
 	// 명단 분할: 확인필요 / 부과없음 / 무효 / 미납 / 완납 — 다섯 칸이 서로 겹치지 않는다.

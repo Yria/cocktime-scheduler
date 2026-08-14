@@ -3,6 +3,8 @@ import { type CSSProperties, useMemo, useState } from "react";
 import type { AdminMemberRow } from "../../../lib/supabase/adminMembers";
 import type { BankTxnRow, SessionFeeRow, TxnCategory, UnpaidCharge, UpcomingSessionRow } from "../../../lib/supabase/dues";
 import ConfirmDialog from "../../common/ConfirmDialog";
+import BirthYearTag from "../../shared/BirthYearTag";
+import { birthYearShort } from "../../../lib/birthYear";
 import { inputCls, inputStyle } from "../../common/fieldStyles";
 import { genderText } from "../memberAdminText";
 import { fmtMD, remaining, sessionLabel, won, ymOfIso } from "./duesText";
@@ -46,6 +48,8 @@ interface ChipItem {
 interface Person {
 	id: string;
 	name: string;
+	/** 이름 뒤 년생 표기용(동명이인 구분). */
+	birthYear: number | null;
 	isPayer: boolean;
 	items: ChipItem[]; // 표시 순서: 기존미납 → (납부자)신규회비 → 신규세션 → 참가예정
 }
@@ -114,7 +118,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 				if (!s.attendeeIds.includes(mid) || s.chargedMemberIds.includes(mid) || monthSessionIds.has(s.id)) continue;
 				items.push({ key: `session:${mid}:${s.id}`, label: `${sessionLabel(s)} 대관비(예정)`, amount: courtFee, role: "court", autoDefault: true, poolRank: 2, poolDate: s.scheduledAt ?? "", sessionId: s.id, member: mid });
 			}
-			return { id: mid, name: m?.name ?? "회원", isPayer: mid === selectedId, items };
+			return { id: mid, name: m?.name ?? "회원", birthYear: m?.birthYear ?? null, isPayer: mid === selectedId, items };
 		});
 	}, [selectedId, extraIds, unpaidByMember, memberById, monthSessions, monthlyChargedIds, courtChargedByMember, upcomingSessions, monthSessionIds, depositYm, monthlyFee, courtFee]);
 
@@ -254,7 +258,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 							style={{ fontSize: 13, fontWeight: 700, padding: "5px 11px", borderRadius: 999, cursor: "pointer", border: on ? "1.5px solid #0b84ff" : "1.5px solid transparent", background: on ? "rgba(11,132,255,0.12)" : "rgba(120,120,128,0.1)" }}
 						>
 							{m.name}
-							<span className="text-faint" style={{ fontWeight: 500, marginLeft: 4 }}>{gm?.isGuest ? "게스트" : `${genderText(m.gender)}${m.birthYear ? String(m.birthYear % 100).padStart(2, "0") : ""}`}</span>
+							<span className="text-faint" style={{ fontWeight: 500, marginLeft: 4 }}>{gm?.isGuest ? "게스트" : `${genderText(m.gender)}${birthYearShort(m.birthYear) ?? ""}`}</span>
 						</button>
 					);
 				})}
@@ -264,7 +268,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 					return (
 						<span key={`x-${eid}`} className="flex items-center text-strong" style={{ fontSize: 13, fontWeight: 700, padding: "5px 5px 5px 11px", borderRadius: 999, border: "1.5px solid rgba(52,199,89,0.55)", background: "rgba(52,199,89,0.14)" }}>
 							{em?.name ?? "회원"}
-							<span className="text-faint" style={{ fontWeight: 500, margin: "0 5px 0 4px" }}>{em?.isGuest ? "게스트" : `${genderText(em?.gender ?? null)}${em?.birthYear ? String(em.birthYear % 100).padStart(2, "0") : ""}`}</span>
+							<span className="text-faint" style={{ fontWeight: 500, margin: "0 5px 0 4px" }}>{em?.isGuest ? "게스트" : `${genderText(em?.gender ?? null)}${birthYearShort(em?.birthYear) ?? ""}`}</span>
 							<button type="button" onClick={() => removeExtra(eid)} aria-label={`${em?.name ?? "회원"} 제거`} className="text-faint flex items-center justify-center" style={{ width: 17, height: 17, borderRadius: 999, background: "rgba(120,120,128,0.22)", cursor: "pointer", fontSize: 12, lineHeight: 1 }}>×</button>
 						</span>
 					);
@@ -288,7 +292,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 					) : (
 						searchResults.map((m) => (
 							<button key={m.id} type="button" onClick={() => pickResult(m.id)} className="text-muted" style={{ fontSize: 13, padding: "5px 11px", borderRadius: 999, border: "none", background: "rgba(120,120,128,0.1)", cursor: "pointer" }}>
-								{m.name} <span className="text-faint">{m.isGuest ? "게스트" : `${genderText(m.gender)}${m.birthYear ? ` ${m.birthYear}` : ""}`}</span>
+								{m.name} <span className="text-faint">{m.isGuest ? "게스트" : `${genderText(m.gender)}${birthYearShort(m.birthYear) ?? ""}`}</span>
 							</button>
 						))
 					)}
@@ -301,7 +305,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 					{people.map((p) => (
 						<div key={p.id} className="flex flex-col gap-1">
 							{/* 이름 헤더 — 대납 대상이 있을 때만(칩 그룹 구분). 제거 ×는 위 납부자 행의 버블에 있음 */}
-							{people.length > 1 && <span className="text-muted" style={groupLabel}>{p.name}</span>}
+							{people.length > 1 && <span className="text-muted" style={groupLabel}>{p.name}<BirthYearTag birthYear={p.birthYear} size={10.5} /></span>}
 							<div className="flex flex-wrap gap-1.5">
 								{p.items.map((it) => <ToggleChip key={it.key} label={it.label} on={selected.has(it.key)} onClick={() => toggle(it.key)} />)}
 								{p.items.length === 0 && <span className="text-faint" style={{ fontSize: 12 }}>{p.isPayer ? "낼 항목 없음(완납/부과 없음)" : "미납 없음"}</span>}

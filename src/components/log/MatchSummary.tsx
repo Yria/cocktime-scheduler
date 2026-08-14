@@ -1,17 +1,9 @@
-import type { MatchLogEntry } from "../../lib/supabase/api";
-import type { Gender, PlayerSkills } from "../../types";
+import type { MatchLogEntry, SessionParticipant } from "../../lib/supabase/api";
 import PlayerBadge from "../shared/PlayerBadge";
-
-interface Participant {
-	name: string;
-	gender: Gender;
-	game_count: number;
-	skills: PlayerSkills;
-}
 
 interface MatchSummaryProps {
 	logs: MatchLogEntry[];
-	participants: Participant[];
+	participants: SessionParticipant[];
 }
 
 export default function MatchSummary({
@@ -56,9 +48,10 @@ export default function MatchSummary({
 					<div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
 						{participants.map((p) => (
 							<PlayerBadge
-								key={p.name}
+								key={p.id}
 								name={p.name}
 								gender={p.gender}
+								birthYear={p.birthYear}
 								count={p.game_count}
 							/>
 						))}

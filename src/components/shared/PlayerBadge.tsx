@@ -1,8 +1,11 @@
 import type { Gender } from "../../types";
+import { birthYearShort } from "../../lib/birthYear";
 
 interface PlayerBadgeProps {
 	name: string;
 	gender: Gender | string;
+	/** 이름 뒤 년생 두 자리(동명이인 구분). 미지정·미입력이면 이름만 표시. */
+	birthYear?: number | null;
 	size?: "sm" | "md";
 	skillScore?: number; // 실력 등급 1 ~ 10
 	isUnavailable?: boolean; // 경기중/대기열 등 현재 배정 불가
@@ -23,6 +26,7 @@ const PLAYING_STYLE = `
 export default function PlayerBadge({
 	name,
 	gender,
+	birthYear,
 	size = "md",
 	skillScore,
 	isUnavailable = false,
@@ -64,6 +68,19 @@ export default function PlayerBadge({
 			>
 				<span style={{ position: "relative", zIndex: 1 }}>
 					{name}
+					{/* 년생 두 자리(동명이인 구분) — 배지 안이라 회색 대신 같은 계열 색의 옅은 톤 */}
+					{birthYearShort(birthYear) && (
+						<span
+							style={{
+								marginLeft: 3,
+								fontSize: fontSize - 2,
+								fontWeight: 500,
+								opacity: 0.6,
+							}}
+						>
+							{birthYearShort(birthYear)}
+						</span>
+					)}
 				</span>
 				{count != null && (
 					<span

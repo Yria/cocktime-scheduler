@@ -1,3 +1,4 @@
+import { nameWithBirthYear } from "../../lib/birthYear";
 import { diffSessionSettings } from "../../lib/session/conflict";
 import type { ServerSessionSettings } from "../../lib/supabase";
 import type { Player } from "../../types";
@@ -28,6 +29,11 @@ export function SessionConflictDialog({
 		...allPlayers.map((p) => [p.id, p.name] as const),
 		...serverSettings.playerNames.map((p) => [p.playerId, p.name] as const),
 	]);
+	// 년생은 회원 명단에만 있다(서버 세션 선수 스냅샷엔 없음) — 이름 출처와 무관하게 여기서 붙인다.
+	// 칩과 자리맞춤 플레이스홀더가 같은 문자열을 써야 해서 회색 분리 대신 한 문자열로 만든다.
+	const birthYearById = new Map(allPlayers.map((p) => [p.id, p.birthYear ?? null]));
+	const displayName = (id: string) =>
+		nameWithBirthYear(playerNameMap.get(id) || id, birthYearById.get(id));
 
 	const {
 		courtChanged: courtCountDiff,
@@ -48,12 +54,8 @@ export function SessionConflictDialog({
 	const localSet = new Set(localPlayerIds);
 	const serverSet = new Set(serverSettings.playerIds);
 
-	const serverSingleNames = serverSettings.singleWomanIds.map(
-		(id) => playerNameMap.get(id) || id,
-	);
-	const localSingleNames = localSingleWomanIds.map(
-		(id) => playerNameMap.get(id) || id,
-	);
+	const serverSingleNames = serverSettings.singleWomanIds.map(displayName);
+	const localSingleNames = localSingleWomanIds.map(displayName);
 
 	// 통합 참가자 목록 (가나다순)
 	const allIds = [...new Set([...localPlayerIds, ...serverSettings.playerIds])];
@@ -138,7 +140,7 @@ export function SessionConflictDialog({
 								<div className="flex flex-wrap gap-1">
 									{allIds.map((id) => {
 										const onServer = serverSet.has(id);
-										const name = playerNameMap.get(id) || id;
+										const name = displayName(id);
 										if (onServer) {
 											return (
 												<span
@@ -199,7 +201,7 @@ export function SessionConflictDialog({
 								<div className="flex flex-wrap gap-1">
 									{allIds.map((id) => {
 										const onLocal = localSet.has(id);
-										const name = playerNameMap.get(id) || id;
+										const name = displayName(id);
 										if (onLocal) {
 											return (
 												<span
