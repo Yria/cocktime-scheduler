@@ -168,7 +168,7 @@ export const adminScheduleActions = {
 	async addOneOff(input: OneOffInput, createdBy: string | null) {
 		const row = await createOneOffOccurrence(input, createdBy);
 		if (row) {
-			await syncOccurrences(); // draft → 공개 창(~다음 일요일) 이내면 open 승격(open 시 전 회원 'session_open' 알림)
+			await syncOccurrences(); // 일회성은 공개 창과 무관하게 draft → open 즉시 승격(전 회원 'session_open' 알림)
 			await reloadOccurrences();
 		}
 		return row;
@@ -190,7 +190,8 @@ export const adminScheduleActions = {
 
 	/**
 	 * 취소된 회차 되살리기(취소 취소). tombstone(cancelled)을 draft 로 되돌린 뒤 sync 를 돌려
-	 * 공개 창 안이면 즉시 open 승격(+'session_open' 알림) — addOneOff 와 동일 패턴.
+	 * 노출 판정을 맡긴다(일회성은 즉시, 규칙 회차는 공개 창 안이면 open 승격 +'session_open' 알림)
+	 * — addOneOff 와 동일 패턴.
 	 * (본문 reopenOccurrence 는 lib import; 객체 메서드명은 스코프 바인딩이 아니라 재귀 아님)
 	 */
 	async reopenOccurrence(occ: SessionRow) {

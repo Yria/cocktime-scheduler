@@ -272,9 +272,10 @@ export interface OneOffInput {
 }
 
 /**
- * 규칙 없는 일회성 회차 추가(달력에서 직접). draft 로 만들고 노출(일요일 18:00 일괄 open) 판정은
+ * 규칙 없는 일회성 회차 추가(달력에서 직접). draft 로 만들고 노출(draft→open) 판정은
  * sync_schedule_occurrences 의 E 단계에 단일 위임 — 클라/서버 노출 기준 불일치 방지.
- * (호출부 adminScheduleActions.addOneOff 가 직후 sync 를 돌려 즉시 반영)
+ * 일회성(recurring_schedule_id=null)은 E 단계가 공개 상한(일요일 18:00 일괄 공개)을 건너뛰고
+ * 즉시 open 시키므로, 호출부 adminScheduleActions.addOneOff 의 직후 sync 로 등록 즉시 노출된다.
  */
 export async function createOneOffOccurrence(
 	input: OneOffInput,

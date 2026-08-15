@@ -802,7 +802,9 @@ export function fetchLedgerSessions(ym: string): Promise<SessionFeeRow[]> {
 
 /**
  * 정산함 선납용: '참가 가능(open) 상태의 대관 세션' + 확정 참가자 목록.
- * now 기준(선택 월 무관) — open 은 sync 가 이미 공개창(~7일)으로만 부여하므로 별도 날짜창 불필요.
+ * now 기준(선택 월 무관) — open 회차는 종료 시 A단계가 closed 로 내리므로 과거는 섞이지 않는다.
+ * (규칙 회차는 공개창(~7일)이라 가까운 미래뿐이지만, 수동 추가한 일회성은 먼 미래도 즉시 open —
+ *  본인이 확정 참가한 대관 세션이면 선납 대상으로 보여주는 게 맞아 날짜 상한을 따로 두지 않는다.)
  * queryCourtSessions 와 달리 matches!inner 를 쓰지 않는다(미래 세션엔 경기기록이 없음 — 그게 핵심 차이).
  * status·waitlisted 필터는 임베드 결과를 JS 에서(부모 세션을 걸러내지 않도록) — confirmed/late_pool 만 참가자로 인정.
  */
