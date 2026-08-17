@@ -10,12 +10,14 @@ import { remaining } from "./duesText";
 //   당일취소자에게도 정액이 부과되므로 부과 건수 > 참석 인원이 되고(운영진은 반대로 빠지고),
 //   그래서 머릿수 곱셈이 통장과 안 맞는다 — 그 차이를 항목으로 분해해 보여주는 것이 이 모듈이다.
 //
-// **불변식: 부과 대상 판정은 서버 `dues_generate_session_court`(20260810000000)의 미러다.**
+// **불변식: 부과 대상 판정은 서버 `dues_generate_session_court`(20260817040000)의 미러다.**
 //   여기서 갈리면 화면이 "부과 누락"을 오탐/누락한다. 서버 규칙을 바꾸면 이 파일과
 //   sessionSettle.test.ts 를 반드시 함께 고친다(ACCOUNTING_SPEC §4 대관비 룰).
-//     · 엔빵(총액 coalesce(세션,규칙) > 0): 대상 = confirmed/late_pool 전원(운영진·게스트 포함),
-//       당일취소 제외. 인당 = 총액 ÷ 참석수 (10원 버림, 정수나눗셈 2회).
-//     · 정액(총액 없음): 대상 = confirmed/late_pool + 부과대상 당일취소, 운영진 제외. 인당 = 6,000.
+//     · 대상(두 모드 공통) = confirmed/late_pool + 부과대상 당일취소.
+//       엔빵은 운영진·게스트 포함, 정액은 운영진 제외.
+//     · 엔빵 인당 = 총액 ÷ 분모(=대상 수) **10원 절상**, 그 값이 정액 이상 ~ 정액+200원 미만이면
+//       정액으로 스냅(한방향 — 정액보다 싸게 나오면 계산값 그대로).
+//     · 정액 인당 = 기본액(6,000).
 //     · 당일취소 술어 = dues_is_day_cancel_chargeable (세션 당일 취소 + 확정 후 1시간 경과).
 // ============================================================
 
@@ -33,8 +35,19 @@ export function isAttending(status: string): boolean {
 	return status === "confirmed" || status === "late_pool";
 }
 
+/** 엔빵 스냅 폭 — 인당이 정액 이상 이 폭 미만이면 정액으로 통일한다(서버와 같은 값). */
+const FLAT_SNAP_BAND = 200;
+
 /**
- * `dues_is_day_cancel_chargeable` 미러 — 정액 모드의 당일취소 부과 대상인가.
+ * 엔빵 인당 금액을 정액 근처에서 정액으로 스냅. 서버의 ③ 규칙 미러 — **한방향**이다.
+ * 정액보다 싸게 나온 금액은 올리지 않는다(회원이 계산값보다 더 내는 일은 없다).
+ */
+function snapToFlat(perHead: number, flatFee: number): number {
+	return perHead >= flatFee && perHead < flatFee + FLAT_SNAP_BAND ? flatFee : perHead;
+}
+
+/**
+ * `dues_is_day_cancel_chargeable` 미러 — 당일취소 부과 대상인가(두 모드 공통).
  * ①취소 ②확정 이력 있음 ③취소일(KST)=세션일(KST) ④확정→취소 1시간 이상.
  */
 export function isDayCancelChargeable(a: SessionAttendanceRow, scheduledAt: string | null): boolean {
@@ -52,7 +65,7 @@ function isGraceWithdrawn(a: SessionAttendanceRow, scheduledAt: string | null): 
 
 /**
  * 부과 대상이 아닌 이유. 두 곳에서 쓴다.
- *  · 부과가 **없는** 사람 → 정상 면제인지(adminFlat·grace·splitDayCancel) 조용히 설명.
+ *  · 부과가 **없는** 사람 → 정상 면제인지(adminFlat·grace) 조용히 설명.
  *  · 부과가 **있는** 사람 → 규칙과 어긋난 잔재이므로 사유와 함께 '확인 필요'로 세운다.
  *    자동정리(self-heal DELETE)는 `amount_paid = 0` 게이트라 **이미 낸 건은 못 지운다** —
  *    그래서 사전취소·grace 철회인데 완납된 행이 살아남아 "받은 돈이 참석×정액보다 많은" 원인이 된다.
@@ -60,13 +73,12 @@ function isGraceWithdrawn(a: SessionAttendanceRow, scheduledAt: string | null): 
 export type NonTargetReason =
 	| "adminFlat" // 정액 세션의 운영진 — 대관비를 걷지 않음
 	| "grace" // 확정 후 1시간 내 철회(오조작)
-	| "splitDayCancel" // 엔빵 세션의 당일취소 — 코트를 쓴 사람끼리 나누므로 제외
 	| "preCancel" // 세션 전에 취소(자리를 비워 남이 들어갈 수 있었음)
 	| "waitlisted" // 대기 — 자리를 잡은 적 없음
 	| "noAttendance"; // 참석 기록 자체가 없음
 
 /** '정상 면제'로 조용히 보여줄 사유(나머지는 부과가 있을 때만 확인 대상으로 뜬다). */
-const CALM_REASONS = new Set<NonTargetReason>(["adminFlat", "grace", "splitDayCancel"]);
+const CALM_REASONS = new Set<NonTargetReason>(["adminFlat", "grace"]);
 
 export interface SettleChargeRow {
 	chargeId: number;
@@ -123,20 +135,19 @@ const KIND_RANK: Record<RosterKind, number> = { missing: 0, stale: 1, charged: 2
 export interface SessionSettle {
 	mode: "split" | "flat"; // 엔빵 | 정액
 	total: number | null; // 엔빵 총액(coalesce(세션,규칙))
-	perHead: number; // 인당 부과액 — 엔빵=총액÷참석(10원 버림), 정액=기본액
+	perHead: number; // 인당 부과액 — 엔빵=총액÷대상수(10원 절상 + 정액 근처 스냅), 정액=기본액
 	/** 실제 부과된 금액의 종류 — 1개면 `N건 × 단가` 곱셈이 성립(섞여 있으면 곱셈 표기를 숨긴다). */
 	dueAmounts: number[];
 
 	// ── 항등식 ①: 머릿수 → 부과 대상 ──────────────────────────────
 	//   attendCount − adminAttendCount + targetDayCancelCount = targetCount   (정액)
-	//   attendCount                                          = targetCount   (엔빵)
-	attendCount: number; // 확정 참석(confirmed/late_pool) — 엔빵 분모
+	//   attendCount                    + targetDayCancelCount = targetCount   (엔빵)
+	attendCount: number; // 확정 참석(confirmed/late_pool)
 	adminAttendCount: number; // 그중 운영진(정액은 면제되어 대상에서 빠짐)
-	targetDayCancelCount: number; // 부과 대상이 된 당일취소 수(정액만, 운영진 제외 후)
+	targetDayCancelCount: number; // 부과 대상이 된 당일취소 수(두 모드 공통. 정액은 운영진 제외 후)
 	targetCount: number; // 현 규칙의 부과 대상 인원
 	// 항등식엔 안 들어가는 설명용 머릿수 — 부과 행 유무와 무관하게 '규칙상 이렇게 갈렸다'를 센다.
 	graceCount: number; // 당일 취소지만 확정 후 1시간 내 철회라 부과 대상이 아닌 수
-	splitDayCancelCount: number; // 엔빵에서 미부과된 당일취소 수
 
 	// ── 항등식 ②: 부과 대상 → 유효 부과 건수 ──────────────────────
 	//   targetCount − missing − deadOnTargetCount + liveExtraCount = activeCount
@@ -203,9 +214,19 @@ export function buildSessionSettle(
 	const total = session.courtFee ?? session.ruleCourtFee;
 	const split = total != null && total > 0;
 	const attend = session.attendances.filter((a) => isAttending(a.status));
-	const head = attend.length;
-	// 서버: ((v_total / v_head) / 10) * 10 — 정수나눗셈 2회(양수라 floor 와 동일).
-	const perHead = split && head > 0 ? Math.floor(Math.floor((total as number) / head) / 10) * 10 : split ? 0 : flatFee;
+	// 엔빵 분모 = 부과 대상 수 = 실제 참석 + 부과대상 당일취소. 서버 v_head 와 같은 술어여야 한다
+	// (분모 ≠ 부과대상이면 인당×인원이 총액과 어긋난다).
+	const splitHead =
+		attend.length +
+		session.attendances.filter(
+			(a) => !isAttending(a.status) && isDayCancelChargeable(a, session.scheduledAt),
+		).length;
+	// 서버: ceil(v_total::numeric / v_head / 10)::int * 10 → 정액 근처면 정액으로 스냅(한방향).
+	const perHead = split
+		? splitHead > 0
+			? snapToFlat(Math.ceil((total as number) / splitHead / 10) * 10, flatFee)
+			: 0
+		: flatFee;
 
 	// ── 부과 대상 집합 재현 ─────────────────────────────────────────
 	// 대상이 아닌 참석행은 사유를 남긴다: 부과가 없으면 '정상 면제' 설명으로, 부과가 있으면 '확인 필요'로.
@@ -216,9 +237,17 @@ export function buildSessionSettle(
 		const dayCancel = isDayCancelChargeable(a, session.scheduledAt);
 		const admin = isAdminOf(a.memberId);
 		if (split) {
-			// 엔빵: 실제 참석만(운영진·게스트 포함). 당일취소는 코트를 안 썼으므로 제외.
-			if (isAttending(a.status)) targets.add(a.memberId);
-			else nonTarget.set(a.memberId, dayCancel ? "splitDayCancel" : a.status === "cancelled" ? "preCancel" : "waitlisted");
+			// 엔빵: 실제 참석 + 부과대상 당일취소(운영진·게스트 포함).
+			// 당일취소를 빼면 코트를 비운 사람이 한 푼도 안 내고 나온 사람들이 더 나눠 갖는 역진이 된다.
+			if (isAttending(a.status) || dayCancel) {
+				targets.add(a.memberId);
+				if (dayCancel) targetDayCancelCount++;
+			} else {
+				nonTarget.set(
+					a.memberId,
+					isGraceWithdrawn(a, session.scheduledAt) ? "grace" : a.status === "cancelled" ? "preCancel" : "waitlisted",
+				);
+			}
 			continue;
 		}
 		// 정액: 운영진 제외. 참석 + 당일취소(grace 초과).
@@ -331,12 +360,11 @@ export function buildSessionSettle(
 		total: split ? (total as number) : null,
 		perHead,
 		dueAmounts: [...new Set(live.map((c) => c.amountDue))].sort((a, b) => a - b),
-		attendCount: head,
+		attendCount: attend.length,
 		adminAttendCount: attend.filter((a) => isAdminOf(a.memberId)).length,
 		targetDayCancelCount,
 		targetCount: targets.size,
 		graceCount: reasonCount("grace"),
-		splitDayCancelCount: reasonCount("splitDayCancel"),
 		missing,
 		deadOnTargetCount: charged.filter((c) => !c.live && c.extraReason == null).length,
 		liveExtraCount: charged.filter((c) => c.live && c.extraReason != null).length,
@@ -365,7 +393,6 @@ export function buildSessionSettle(
 export const EXEMPT_LABEL: Record<NonTargetReason, string> = {
 	adminFlat: "운영진 · 대관비 면제",
 	grace: "확정 후 1시간 내 철회 · 미부과",
-	splitDayCancel: "당일취소 · 엔빵은 미부과",
 	preCancel: "사전취소",
 	waitlisted: "대기",
 	noAttendance: "참석 기록 없음",
@@ -375,7 +402,6 @@ export const EXEMPT_LABEL: Record<NonTargetReason, string> = {
 export const EXTRA_LABEL: Record<NonTargetReason, string> = {
 	adminFlat: "운영진인데 부과됨",
 	grace: "1시간 내 철회인데 부과됨",
-	splitDayCancel: "엔빵 당일취소인데 부과됨",
 	preCancel: "사전취소인데 부과됨",
 	waitlisted: "대기인데 부과됨",
 	noAttendance: "참석 기록 없는데 부과됨",

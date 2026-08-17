@@ -201,14 +201,20 @@ describe("buildSessionSettle — 정액(6,000) 세션", () => {
 describe("buildSessionSettle — 엔빵 세션", () => {
 	const members = dict(member("A"), member("B"), member("C"), member("운영진A", { isAdmin: true }));
 
-	it("총액÷참석 10원 버림 + 운영진 포함 + 당일취소 제외", () => {
+	it("총액÷대상수 10원 절상 + 운영진 포함 + 당일취소도 분모·부과 포함", () => {
 		const s = session(
 			[att("A", "confirmed"), att("B", "confirmed"), att("운영진A", "confirmed"), dayCancel("C")],
 			{ courtFee: 100000 },
 		);
+		// 분모 = 참석 3 + 당일취소 1 = 4 → 100000/4 = 25000 (절상해도 25000)
 		const settle = buildSessionSettle(
 			s,
-			[charge(1, "A", { amountDue: 33330 }), charge(2, "B", { amountDue: 33330 }), charge(3, "운영진A", { amountDue: 33330 })],
+			[
+				charge(1, "A", { amountDue: 25000 }),
+				charge(2, "B", { amountDue: 25000 }),
+				charge(3, "운영진A", { amountDue: 25000 }),
+				charge(4, "C", { amountDue: 25000, isDayCancel: true }),
+			],
 			members,
 			6000,
 			[],
@@ -216,10 +222,37 @@ describe("buildSessionSettle — 엔빵 세션", () => {
 		expect(settle.mode).toBe("split");
 		expect(settle.total).toBe(100000);
 		expect(settle.attendCount).toBe(3);
-		expect(settle.perHead).toBe(33330); // floor(100000/3)=33333 → floor(33333/10)*10
-		expect(settle.missing).toEqual([]); // 운영진도 엔빵 대상 — 부과가 있어야 정상
-		expect(settle.exempt.map((e) => [e.name, e.reason])).toEqual([["C", "splitDayCancel"]]);
-		expect(settle.dueSum).toBe(99990);
+		expect(settle.targetDayCancelCount).toBe(1); // C — 엔빵에서도 부과 대상
+		expect(settle.targetCount).toBe(4);
+		expect(settle.perHead).toBe(25000);
+		expect(settle.missing).toEqual([]); // 운영진·당일취소 모두 엔빵 대상 — 부과가 있어야 정상
+		expect(settle.exempt).toEqual([]); // 엔빵 당일취소 면제는 더 이상 없다
+		expect(settle.dueSum).toBe(100000); // 인당 × 분모 = 총액과 정확히 일치
+	});
+
+	it("10원 절상: 나누어떨어지지 않으면 올린다(총액보다 조금 더 걷힌다)", () => {
+		const s = session([att("A", "confirmed"), att("B", "confirmed"), att("C", "confirmed")], { courtFee: 100000 });
+		const settle = buildSessionSettle(s, [], members, 6000, []);
+		expect(settle.perHead).toBe(33340); // 100000/3 = 33333.3 → 절상 33340 (종전 버림은 33330)
+	});
+
+	it("정액 근처 스냅: 정액 이상 +200원 미만은 정액으로, 정액보다 싸면 계산값 그대로", () => {
+		// 117,000 ÷ 19 = 6157.9 → 절상 6160 → 정액(6000)+200 미만이라 6000 으로 스냅
+		const many = Array.from({ length: 19 }, (_, i) => att(`P${i}`, "confirmed"));
+		const snapped = buildSessionSettle(session(many, { courtFee: 117000 }), [], dict(), 6000, []);
+		expect(snapped.perHead).toBe(6000);
+		// 6,300 은 스냅 구간(6000~6199) 밖 → 그대로
+		const outside = buildSessionSettle(
+			session(Array.from({ length: 10 }, (_, i) => att(`Q${i}`, "confirmed")), { courtFee: 63000 }),
+			[], dict(), 6000, [],
+		);
+		expect(outside.perHead).toBe(6300);
+		// 정액보다 싸게 나오면 올리지 않는다(한방향)
+		const cheap = buildSessionSettle(
+			session(Array.from({ length: 10 }, (_, i) => att(`R${i}`, "confirmed")), { courtFee: 58500 }),
+			[], dict(), 6000, [],
+		);
+		expect(cheap.perHead).toBe(5850);
 	});
 
 	it("반복 규칙의 기본 총액을 물려받은 회차도 엔빵으로 판정한다(세션 총액 null)", () => {
@@ -258,12 +291,12 @@ describe("buildSessionSettle — 엔빵 세션", () => {
 
 // 시트는 두 항등식을 그대로 화면에 쓴다. 닫히지 않으면 "숫자가 안 맞는다"는 원래 문제로 되돌아가므로
 // 어떤 조합에서도 닫히는지 검사한다.
-//   ① 정액: 참석 − 운영진 + 당일취소 = 부과 대상    /  엔빵: 참석 = 부과 대상
+//   ① 정액: 참석 − 운영진 + 당일취소 = 부과 대상  /  엔빵: 참석 + 당일취소 = 부과 대상
 //   ② 부과 대상 − 누락 − 부과삭제 + 대상아닌부과 = 실제 부과 건수
 function expectIdentities(settle: ReturnType<typeof buildSessionSettle>) {
 	const bridge =
 		settle.mode === "split"
-			? settle.attendCount
+			? settle.attendCount + settle.targetDayCancelCount
 			: settle.attendCount - settle.adminAttendCount + settle.targetDayCancelCount;
 	expect(bridge).toBe(settle.targetCount);
 	expect(settle.targetCount - settle.missing.length - settle.deadOnTargetCount + settle.liveExtraCount).toBe(settle.activeCount);
@@ -320,10 +353,12 @@ describe("buildSessionSettle — 항등식이 닫힌다", () => {
 	});
 
 	it("엔빵 · 당일취소 + 누락이 섞여도 닫힌다", () => {
+		// 분모 = 참석 3 + 당일취소 1 = 4 → 99,000 ÷ 4 = 24,750. 당일취소 C 도 부과 대상이므로 누락에 잡힌다.
 		const s = session([att("A", "confirmed"), att("B", "confirmed"), att("운영진A", "confirmed"), dayCancel("C")], { courtFee: 99000 });
-		const settle = buildSessionSettle(s, [charge(1, "A", { amountDue: 33000 })], members, 6000, []);
-		expect(settle.targetCount).toBe(3);
-		expect(settle.missing.map((m) => m.name)).toEqual(["B", "운영진A"]);
+		const settle = buildSessionSettle(s, [charge(1, "A", { amountDue: 24750 })], members, 6000, []);
+		expect(settle.perHead).toBe(24750);
+		expect(settle.targetCount).toBe(4);
+		expect(settle.missing.map((m) => m.name)).toEqual(["B", "C", "운영진A"]);
 		expectIdentities(settle);
 	});
 

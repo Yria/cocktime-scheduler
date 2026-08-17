@@ -51,15 +51,12 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 			<div className="flex flex-col gap-4 px-5 pb-6">
 				{/* ── ① 머릿수 → 부과 건수 : '참석 × 단가'가 안 맞는 이유를 항등식으로 닫는다 ── */}
 				<Section title="인원 대조" hint="참석 머릿수가 부과 건수로 바뀌는 과정">
-					<Row label="참석 확정" value={`${s.attendCount}명`} sub={split ? "운영진 포함 · 엔빵 분모" : undefined} />
+					<Row label="참석 확정" value={`${s.attendCount}명`} sub={split ? "운영진 포함" : undefined} />
 					{!split && s.adminAttendCount > 0 && (
 						<Row label="− 운영진" value={`${s.adminAttendCount}명`} tone="muted" sub="대관비를 걷지 않음" />
 					)}
-					{!split && s.targetDayCancelCount > 0 && (
-						<Row label="+ 당일취소" value={`${s.targetDayCancelCount}명`} tone="warn" sub="자리·약속 비용이라 정액 부과" />
-					)}
-					{split && s.splitDayCancelCount > 0 && (
-						<Row label="당일취소" value={`${s.splitDayCancelCount}명`} tone="muted" sub="코트를 쓰지 않아 엔빵 미부과" />
+					{s.targetDayCancelCount > 0 && (
+						<Row label="+ 당일취소" value={`${s.targetDayCancelCount}명`} tone="warn" />
 					)}
 					{s.graceCount > 0 && (
 						<Row label="확정 후 1시간 내 철회" value={`${s.graceCount}명`} tone="muted" sub="오조작으로 보고 미부과" />
@@ -68,7 +65,11 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 					<Row
 						label="부과 대상"
 						value={`${s.targetCount}명`}
-						sub={split && s.total != null && s.attendCount > 0 ? `${s.total.toLocaleString("ko-KR")} ÷ ${s.attendCount}명 = 인당 ${won(s.perHead)} · 10원 버림` : undefined}
+						sub={
+							split && s.total != null && s.targetCount > 0
+								? `${s.total.toLocaleString("ko-KR")} ÷ ${s.targetCount}명 = 인당 ${won(s.perHead)}`
+								: undefined
+						}
 						strong
 					/>
 					{s.missing.length > 0 && <Row label="− 부과 누락" value={`${s.missing.length}명`} tone="out" indent />}
@@ -131,7 +132,7 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 							{s.roster.length === 0 && <p className="text-faint" style={{ fontSize: 12.5 }}>아직 부과가 없어요. 세션이 종료되면 자동 생성돼요.</p>}
 							{hasDayCancel && (
 								<p className="text-faint" style={{ fontSize: 11, lineHeight: 1.45, marginBottom: 2 }}>
-									당일취소는 자리값이라 정액이 기본 부과돼요. 카풀 불발 등 사정이 있으면 [부과삭제]로 뺄 수 있어요(취소선·되돌리기).
+									당일취소는 자리값이라 기본 부과돼요. 카풀 불발 등 사정이 있으면 [부과삭제]로 뺄 수 있어요(취소선·되돌리기).
 								</p>
 							)}
 							{s.roster.map((r) => {
@@ -140,9 +141,10 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 								const dim = c ? !c.live : r.kind === "exempt"; // 무효 부과·정상 면제는 흐리게
 								// 우측 사유 — 누락은 모드에 따라 문구가 갈리고, 나머지는 라벨 테이블에서.
 								// 같은 사유라도 부과가 있으면 "…인데 부과됨"(EXTRA), 없으면 "…미부과"(EXEMPT).
+								// 부과 대상은 두 모드 다 '참석 + 당일취소' 라 누락 문구도 하나다.
 								const reasonText =
 									r.kind === "missing"
-										? split ? "참석했는데 부과 없음" : "참석·당일취소인데 부과 없음"
+										? "참석·당일취소인데 부과 없음"
 										: r.reason
 											? c ? EXTRA_LABEL[r.reason] : EXEMPT_LABEL[r.reason]
 											: null;
