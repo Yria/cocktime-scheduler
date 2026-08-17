@@ -10,11 +10,12 @@ import { remaining } from "./duesText";
 //   당일취소자에게도 정액이 부과되므로 부과 건수 > 참석 인원이 되고(운영진은 반대로 빠지고),
 //   그래서 머릿수 곱셈이 통장과 안 맞는다 — 그 차이를 항목으로 분해해 보여주는 것이 이 모듈이다.
 //
-// **불변식: 부과 대상 판정은 서버 `dues_generate_session_court`(20260817040000)의 미러다.**
+// **불변식: 부과 대상 판정은 서버 `dues_generate_session_court`+`dues_court_targets`(20260818000000)의 미러다.**
 //   여기서 갈리면 화면이 "부과 누락"을 오탐/누락한다. 서버 규칙을 바꾸면 이 파일과
 //   sessionSettle.test.ts 를 반드시 함께 고친다(ACCOUNTING_SPEC §4 대관비 룰).
-//     · 대상(두 모드 공통) = confirmed/late_pool + 부과대상 당일취소.
+//     · 대상(두 모드 공통) = (confirmed/late_pool + 부과대상 당일취소) **∪ 보드 수동 추가분**.
 //       엔빵은 운영진·게스트 포함, 정액은 운영진 제외.
+//       합집합이다 — 보드에서 뺀 사람은 명단 기준으로 계속 부과하고, 보드에 추가한 사람만 더한다.
 //     · 엔빵 인당 = 총액 ÷ 분모(=대상 수) **10원 절상**, 그 값이 정액 이상 ~ 정액+200원 미만이면
 //       정액으로 스냅(한방향 — 정액보다 싸게 나오면 계산값 그대로).
 //     · 정액 인당 = 기본액(6,000).
@@ -140,11 +141,13 @@ export interface SessionSettle {
 	dueAmounts: number[];
 
 	// ── 항등식 ①: 머릿수 → 부과 대상 ──────────────────────────────
-	//   attendCount − adminAttendCount + targetDayCancelCount = targetCount   (정액)
-	//   attendCount                    + targetDayCancelCount = targetCount   (엔빵)
+	//   attendCount − adminAttendCount + targetDayCancelCount + boardAddedCount = targetCount  (정액)
+	//   attendCount                    + targetDayCancelCount + boardAddedCount = targetCount  (엔빵)
 	attendCount: number; // 확정 참석(confirmed/late_pool)
 	adminAttendCount: number; // 그중 운영진(정액은 면제되어 대상에서 빠짐)
 	targetDayCancelCount: number; // 부과 대상이 된 당일취소 수(두 모드 공통. 정액은 운영진 제외 후)
+	/** 명단 기준으론 대상이 아닌데 보드에 올라가(현장 추가) 부과 대상이 된 인원. */
+	boardAddedCount: number;
 	targetCount: number; // 현 규칙의 부과 대상 인원
 	// 항등식엔 안 들어가는 설명용 머릿수 — 부과 행 유무와 무관하게 '규칙상 이렇게 갈렸다'를 센다.
 	graceCount: number; // 당일 취소지만 확정 후 1시간 내 철회라 부과 대상이 아닌 수
@@ -214,34 +217,29 @@ export function buildSessionSettle(
 	const total = session.courtFee ?? session.ruleCourtFee;
 	const split = total != null && total > 0;
 	const attend = session.attendances.filter((a) => isAttending(a.status));
-	// 엔빵 분모 = 부과 대상 수 = 실제 참석 + 부과대상 당일취소. 서버 v_head 와 같은 술어여야 한다
-	// (분모 ≠ 부과대상이면 인당×인원이 총액과 어긋난다).
-	const splitHead =
-		attend.length +
-		session.attendances.filter(
-			(a) => !isAttending(a.status) && isDayCancelChargeable(a, session.scheduledAt),
-		).length;
-	// 서버: ceil(v_total::numeric / v_head / 10)::int * 10 → 정액 근처면 정액으로 스냅(한방향).
-	const perHead = split
-		? splitHead > 0
-			? snapToFlat(Math.ceil((total as number) / splitHead / 10) * 10, flatFee)
-			: 0
-		: flatFee;
+	/** 보드에 올라간 회원 = 현장에서 실제로 뛴 사람. 명단 기준 대상에 **합집합**으로 더한다. */
+	const boardIds = new Set(session.boardMemberIds);
 
 	// ── 부과 대상 집합 재현 ─────────────────────────────────────────
 	// 대상이 아닌 참석행은 사유를 남긴다: 부과가 없으면 '정상 면제' 설명으로, 부과가 있으면 '확인 필요'로.
 	const targets = new Set<string>();
 	const nonTarget = new Map<string, NonTargetReason>();
 	let targetDayCancelCount = 0;
+	let boardAddedCount = 0; // 명단 기준으론 대상이 아닌데 보드에 있어 대상이 된 인원
 	for (const a of session.attendances) {
-		const dayCancel = isDayCancelChargeable(a, session.scheduledAt);
+		const onBoard = boardIds.has(a.memberId);
+		// 당일취소로 잡혔더라도 보드에 올라가 실제로 뛰었으면 참여자다 → 당일취소로 세지 않는다(서버와 동일).
+		const dayCancel = isDayCancelChargeable(a, session.scheduledAt) && !onBoard;
 		const admin = isAdminOf(a.memberId);
 		if (split) {
-			// 엔빵: 실제 참석 + 부과대상 당일취소(운영진·게스트 포함).
+			// 엔빵: 실제 참석 + 부과대상 당일취소 + 보드 추가분(운영진·게스트 포함).
 			// 당일취소를 빼면 코트를 비운 사람이 한 푼도 안 내고 나온 사람들이 더 나눠 갖는 역진이 된다.
 			if (isAttending(a.status) || dayCancel) {
 				targets.add(a.memberId);
 				if (dayCancel) targetDayCancelCount++;
+			} else if (onBoard) {
+				targets.add(a.memberId);
+				boardAddedCount++;
 			} else {
 				nonTarget.set(
 					a.memberId,
@@ -253,7 +251,7 @@ export function buildSessionSettle(
 		// 정액: 운영진 제외. 참석 + 당일취소(grace 초과).
 		// **자리를 잡았는지 먼저 본다.** 운영진 판정을 앞세우면 사전취소·대기한 운영진까지
 		// '운영진 · 대관비 면제'로 명단에 올라와, 오지도 않은 사람이 면제로 보인다.
-		if (!isAttending(a.status) && !dayCancel) {
+		if (!isAttending(a.status) && !dayCancel && !onBoard) {
 			nonTarget.set(
 				a.memberId,
 				isGraceWithdrawn(a, session.scheduledAt) ? "grace" : a.status === "cancelled" ? "preCancel" : "waitlisted",
@@ -266,7 +264,30 @@ export function buildSessionSettle(
 		}
 		targets.add(a.memberId);
 		if (dayCancel) targetDayCancelCount++;
+		else if (!isAttending(a.status)) boardAddedCount++; // 명단은 대기·취소인데 보드에 넣어 뛴 사람
 	}
+	// 참석행이 아예 없는데 보드에만 있는 회원(현장에서 직접 추가) — 위 루프가 못 보는 경로.
+	for (const id of boardIds) {
+		if (targets.has(id) || nonTarget.has(id)) continue;
+		if (!split && isAdminOf(id)) {
+			nonTarget.set(id, "adminFlat"); // 정액은 운영진 면제
+			continue;
+		}
+		targets.add(id);
+		boardAddedCount++;
+	}
+
+	// ── 인당 금액 ───────────────────────────────────────────────────
+	// 엔빵 분모 = 부과 대상 수. 서버는 v_head 를 `dues_court_targets` 로 세므로 여기서도 targets 를 쓴다
+	// (분모 ≠ 부과대상이면 인당×인원이 총액과 어긋난다).
+	// 서버: ceil(v_total::numeric / v_head / 10)::int * 10 → 정액 근처면 정액으로 스냅(한방향).
+	const splitHead = targets.size;
+	const perHead = split
+		? splitHead > 0
+			? snapToFlat(Math.ceil((total as number) / splitHead / 10) * 10, flatFee)
+			: 0
+		: flatFee;
+
 	// 사유별 머릿수 — 부과 유무와 무관하게 '규칙상 이렇게 갈렸다'를 세는 값(인원 대조 설명줄용).
 	const reasonCount = (reason: NonTargetReason) => [...nonTarget.values()].filter((r) => r === reason).length;
 
@@ -363,6 +384,7 @@ export function buildSessionSettle(
 		attendCount: attend.length,
 		adminAttendCount: attend.filter((a) => isAdminOf(a.memberId)).length,
 		targetDayCancelCount,
+		boardAddedCount,
 		targetCount: targets.size,
 		graceCount: reasonCount("grace"),
 		missing,

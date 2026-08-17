@@ -58,6 +58,9 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 					{s.targetDayCancelCount > 0 && (
 						<Row label="+ 당일취소" value={`${s.targetDayCancelCount}명`} tone="warn" />
 					)}
+					{s.boardAddedCount > 0 && (
+						<Row label="+ 보드 추가" value={`${s.boardAddedCount}명`} tone="warn" sub="명단에 없지만 현장에서 넣어 뛴 사람" />
+					)}
 					{s.graceCount > 0 && (
 						<Row label="확정 후 1시간 내 철회" value={`${s.graceCount}명`} tone="muted" sub="오조작으로 보고 미부과" />
 					)}

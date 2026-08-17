@@ -3,7 +3,7 @@ import type { AdminMemberRow } from "../../../lib/supabase/adminMembers";
 import type { CourtChargeRow, SessionAttendanceRow, SessionFeeRow } from "../../../lib/supabase/dues";
 import { buildSessionSettle, isDayCancelChargeable } from "./sessionSettle";
 
-// 서버 `dues_generate_session_court`(20260810000000) 미러 검증.
+// 서버 `dues_generate_session_court` + `dues_court_targets`(20260818000000) 미러 검증.
 // 이 테스트가 깨지면 화면의 '부과 누락' 판정이 서버와 갈렸다는 뜻이다.
 
 const SCHEDULED = "2026-08-12T10:00:00Z"; // KST 8/12 19:00
@@ -52,6 +52,7 @@ const session = (attendances: SessionAttendanceRow[], over: Partial<SessionFeeRo
 	ruleCourtFee: null,
 	attendeeIds: attendances.filter((a) => a.status === "confirmed" || a.status === "late_pool").map((a) => a.memberId),
 	attendances,
+	boardMemberIds: [], // 기본은 보드 추가분 없음. 필요한 테스트만 over 로 넘긴다.
 	...over,
 });
 
@@ -255,6 +256,61 @@ describe("buildSessionSettle — 엔빵 세션", () => {
 		expect(cheap.perHead).toBe(5850);
 	});
 
+	// 실제 사고(세션 237, 손형일): 정원 만석이라 대기였는데 현장에서 보드에 넣어 9경기를 뛰었다.
+	// 명단만 보면 부과 대상이 아니어서 코트를 쓴 사람이 한 푼도 안 냈다.
+	it("보드에 수동 추가된 대기자도 부과 대상·분모에 들어간다", () => {
+		const s = session(
+			[att("A", "confirmed"), att("B", "confirmed"), att("C", "waitlisted")],
+			{ courtFee: 90000, boardMemberIds: ["A", "B", "C"] },
+		);
+		const settle = buildSessionSettle(s, [], members, 6000, []);
+		expect(settle.attendCount).toBe(2); // 명단상 확정은 2명
+		expect(settle.boardAddedCount).toBe(1); // C 는 보드로 들어옴
+		expect(settle.targetCount).toBe(3);
+		expect(settle.perHead).toBe(30000); // 90,000 ÷ 3 — 분모에도 들어간다
+		expect(settle.missing.map((m) => m.name)).toEqual(["A", "B", "C"]);
+		expect(settle.exempt).toEqual([]); // 대기 사유로 면제되지 않는다
+	});
+
+	it("보드에서 뺀 확정자는 그대로 부과 대상이다(교집합이 아니라 합집합)", () => {
+		const s = session(
+			[att("A", "confirmed"), att("B", "confirmed")],
+			{ courtFee: 90000, boardMemberIds: ["A"] }, // B 는 보드에 없다
+		);
+		const settle = buildSessionSettle(s, [], members, 6000, []);
+		expect(settle.targetCount).toBe(2);
+		expect(settle.boardAddedCount).toBe(0);
+		expect(settle.perHead).toBe(45000);
+	});
+
+	it("참석행이 아예 없는데 보드에만 있는 회원도 대상이다(현장 직접 추가)", () => {
+		const s = session([att("A", "confirmed")], { courtFee: 90000, boardMemberIds: ["A", "C"] });
+		const settle = buildSessionSettle(s, [], members, 6000, []);
+		expect(settle.boardAddedCount).toBe(1);
+		expect(settle.targetCount).toBe(2);
+		expect(settle.missing.map((m) => m.name)).toEqual(["A", "C"]);
+	});
+
+	it("당일취소인데 보드에 올라가 실제로 뛰었으면 당일취소로 세지 않는다", () => {
+		const s = session([att("A", "confirmed"), dayCancel("C")], { courtFee: 90000, boardMemberIds: ["A", "C"] });
+		const settle = buildSessionSettle(s, [], members, 6000, []);
+		expect(settle.targetDayCancelCount).toBe(0); // 참여자로 본다 — 당일취소 딱지를 붙이지 않는다
+		expect(settle.boardAddedCount).toBe(1); // 대신 '보드 추가분'으로 계상된다(이중 계상 없음)
+		expect(settle.targetCount).toBe(2); // 항등식: 참석 1 + 당일취소 0 + 보드추가 1 = 2
+	});
+
+	it("정액 세션의 보드 추가분도 대상이다(운영진은 여전히 면제)", () => {
+		const s = session(
+			[att("A", "confirmed"), att("C", "waitlisted"), att("운영진A", "waitlisted")],
+			{ boardMemberIds: ["A", "C", "운영진A"] },
+		);
+		const settle = buildSessionSettle(s, [], members, 6000, []);
+		expect(settle.mode).toBe("flat");
+		expect(settle.boardAddedCount).toBe(1); // C 만(운영진A 는 면제)
+		expect(settle.targetCount).toBe(2);
+		expect(settle.exempt.map((e) => [e.name, e.reason])).toEqual([["운영진A", "adminFlat"]]);
+	});
+
 	it("반복 규칙의 기본 총액을 물려받은 회차도 엔빵으로 판정한다(세션 총액 null)", () => {
 		const s = session([att("A", "confirmed"), att("B", "confirmed")], { courtFee: null, ruleCourtFee: 90000 });
 		const settle = buildSessionSettle(s, [], members, 6000, []);
@@ -291,13 +347,13 @@ describe("buildSessionSettle — 엔빵 세션", () => {
 
 // 시트는 두 항등식을 그대로 화면에 쓴다. 닫히지 않으면 "숫자가 안 맞는다"는 원래 문제로 되돌아가므로
 // 어떤 조합에서도 닫히는지 검사한다.
-//   ① 정액: 참석 − 운영진 + 당일취소 = 부과 대상  /  엔빵: 참석 + 당일취소 = 부과 대상
+//   ① 정액: 참석 − 운영진 + 당일취소 + 보드추가 = 부과 대상  /  엔빵: 참석 + 당일취소 + 보드추가 = 부과 대상
 //   ② 부과 대상 − 누락 − 부과삭제 + 대상아닌부과 = 실제 부과 건수
 function expectIdentities(settle: ReturnType<typeof buildSessionSettle>) {
 	const bridge =
-		settle.mode === "split"
-			? settle.attendCount + settle.targetDayCancelCount
-			: settle.attendCount - settle.adminAttendCount + settle.targetDayCancelCount;
+		(settle.mode === "split" ? settle.attendCount : settle.attendCount - settle.adminAttendCount) +
+		settle.targetDayCancelCount +
+		settle.boardAddedCount;
 	expect(bridge).toBe(settle.targetCount);
 	expect(settle.targetCount - settle.missing.length - settle.deadOnTargetCount + settle.liveExtraCount).toBe(settle.activeCount);
 }

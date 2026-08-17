@@ -703,6 +703,7 @@ interface RawSessionFee {
 	places: { name: string | null; charges_court_fee: boolean } | null;
 	recurring_schedules: { court_fee: number | null } | null;
 	attendances: RawAttendance[] | null;
+	session_players: { member_id: string | null }[] | null;
 }
 interface RawAttendance {
 	member_id: string;
@@ -730,11 +731,21 @@ export interface SessionFeeRow {
 	ruleCourtFee: number | null; // 반복 규칙 기본 총액 — 엔빵 총액 fallback(coalesce(세션,규칙), §1.1)
 	attendeeIds: string[]; // 확정 참가자(confirmed/late_pool) member_id — 정산함 신규 세션 칩 참석 필터용
 	attendances: SessionAttendanceRow[]; // 전체 참석행(취소 포함) — 정산 대조의 '부과 대상' 재현용
+	/**
+	 * 보드에 올라간 회원 id(session_players). 부과 대상은 **참석 명단 ∪ 보드 추가분**이라
+	 * (서버 `dues_court_targets`) 명단에 없는 참여자를 재현하려면 이게 필요하다.
+	 * 세션 셋업 게스트(member_id=null)는 부과 주체가 없어 빠진다.
+	 */
+	boardMemberIds: string[];
 }
 
 /** 확정 참가자(confirmed/late_pool) member_id — 대관비 부과·칩 노출의 참석 기준(§1.1). */
 const confirmedAttendeeIds = (attendances: RawAttendance[] | null): string[] =>
 	(attendances ?? []).filter((a) => a.status === "confirmed" || a.status === "late_pool").map((a) => a.member_id);
+
+/** 보드 편입 회원 id — 수동 추가된 참여자를 부과 대상에 넣기 위한 근거(§1.1). */
+const mapBoardMemberIds = (players: { member_id: string | null }[] | null): string[] =>
+	[...new Set((players ?? []).map((p) => p.member_id).filter((id): id is string => id != null))];
 
 const mapAttendances = (attendances: RawAttendance[] | null): SessionAttendanceRow[] =>
 	(attendances ?? []).map((a) => ({
@@ -758,7 +769,7 @@ async function queryCourtSessions(start: string, end: string): Promise<SessionFe
 	// matches!inner 로 경기 없는 세션(무산)을 원천 제외 → 정산함·회계·현황 모든 세션 목록이 일괄로 열린 경기만.
 	const { data, error } = await supabase
 		.from("sessions")
-		.select("id, title, scheduled_at, ends_at, court_count, court_fee, places!inner(name, charges_court_fee), recurring_schedules(court_fee), matches!inner(id), attendances(member_id, status, confirmed_at, cancelled_at)")
+		.select("id, title, scheduled_at, ends_at, court_count, court_fee, places!inner(name, charges_court_fee), recurring_schedules(court_fee), matches!inner(id), attendances(member_id, status, confirmed_at, cancelled_at), session_players(member_id)")
 		.gte("scheduled_at", start)
 		.lt("scheduled_at", end)
 		.in("status", ["active", "closed"])
@@ -784,6 +795,7 @@ async function queryCourtSessions(start: string, end: string): Promise<SessionFe
 			ruleCourtFee: s.recurring_schedules?.court_fee ?? null,
 			attendeeIds: confirmedAttendeeIds(s.attendances),
 			attendances: mapAttendances(s.attendances),
+			boardMemberIds: mapBoardMemberIds(s.session_players),
 		};
 	});
 }
@@ -835,6 +847,7 @@ export async function fetchUpcomingParticipating(): Promise<UpcomingSessionRow[]
 			ruleCourtFee: s.recurring_schedules?.court_fee ?? null,
 			attendeeIds: confirmedAttendeeIds(s.attendances),
 			attendances: mapAttendances(s.attendances),
+			boardMemberIds: [], // 예정(open) 세션은 아직 보드가 없다 — 조회하지 않는다
 			chargedMemberIds: (s.dues_charges ?? [])
 				.filter((c) => c.kind === "court_fee")
 				.map((c) => c.member_id),

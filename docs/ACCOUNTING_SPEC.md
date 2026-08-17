@@ -21,11 +21,17 @@
 ### 1.1 금액
 - **회비(monthly_fee)**: 5,000원/월. 회원(활성·비운영진·비게스트·비명예회원) 대상, 월 단위(`period_ym`). **명예회원**(`members.is_honorary`)은 회비 면제(§4).
 - **대관비(court_fee)**: 세션 단위(`session_id`). 두 모드로 갈린다(2026-07). **부과 대상이 모드마다 다르다**:
-  - **엔빵**: 세션에 대관 **총액**이 있으면 `총액 ÷ 부과 대상 수`(**10원 절상**). 대상 = **실제 참석(confirmed/late_pool) + 부과대상 당일취소**, **운영진 포함**. (평일: 총액 입력 → 엔빵.)
+  - **엔빵**: 세션에 대관 **총액**이 있으면 `총액 ÷ 부과 대상 수`(**10원 절상**). 대상 = **실제 참석(confirmed/late_pool) + 부과대상 당일취소 ∪ 보드 수동 추가분**, **운영진 포함**. (평일: 총액 입력 → 엔빵.)
     - **정액 근처 스냅**: 1인당이 `정액 기본값 이상 ~ +200원 미만`이면 정액 기본값(6,000)으로 내린다. 예) 117,000 ÷ 19 = 6,157.9 → 절상 6,160 → **6,000**. 정액과 사실상 같은 금액에 잔돈을 걷는 실무 비용이 차액보다 크다는 판단. **한방향** — 정액보다 싸게 나오면 계산값 그대로 받는다(회원이 계산값보다 더 내는 일은 없다). 기준점이 `dues_settings.court_fee_default` 이므로 정액을 조정하면 이 구간도 함께 움직인다.
     - **당일취소를 엔빵에 포함하는 이유**(2026-08-17 변경): 부과 근거가 "자리를 잡아둔 채 비워서 남이 못 들어온 비용"이라 총액을 나누는 엔빵에서도 똑같이 성립한다. 빼면 코트를 비운 사람이 한 푼도 안 내고 나온 사람들이 그만큼 더 나눠 갖는 역진이 된다. grace 1시간(§4) 규칙은 그대로 — 확정 직후 철회는 여전히 미부과.
     - 절상·스냅 결과 부과 합계는 실지출과 어긋날 수 있다(스냅은 보통 부족, 절상은 최대 `(인원−1)×10원` 초과). 차액은 통장이 흡수한다.
-  - **정액**: 총액이 없으면 **인당 6,000원**(`dues_settings.court_fee_default`). 대상 = **참석 + 당일 확정취소**, **운영진 제외**. (토·일: 총액 미입력 → 정액. 당일취소도 자리·약속 비용이라 정액을 부과.)
+  - **부과 대상 = 참석 명단 ∪ 보드 수동 추가분** (2026-08-18 추가, 두 모드 공통). 단일 소스 = 서버 `dues_court_targets(session_id, split)`.
+    - **왜**: 세션 237(8/17)에서 손형일이 정원 18 만석에 대기(waitlisted)였는데 현장에서 보드에 넣어 **9경기를 뛰었다**. 대상 판정이 `attendances` 만 봐서 실제로 코트를 쓴 사람이 한 푼도 안 냈다.
+    - **합집합이다(교집합 아님)**: 보드에 **추가**한 회원(`session_players` 에 있으나 명단 기준 대상 아님)은 대상에 **더한다**. 보드에서 **뺀** 회원(명단은 확정인데 보드에 없음)은 **그대로 부과한다** — 자리를 잡았던 건 사실이고, 현장에서 보드에서 빼는 일(휴식·조기귀가 정리)은 부과와 무관하다.
+    - `session_players.member_id` 가 null 인 세션 셋업 게스트는 부과 주체가 없어 제외한다.
+    - 당일취소로 잡힌 사람이 보드에도 있으면 **참여자로 본다**(당일취소 딱지 없음, `boardAddedCount` 로 계상).
+    - 대상 술어가 분모(v_head)·INSERT·정리 DELETE 세 곳에 복제돼 갈리던 문제를 이 함수로 단일화했다.
+  - **정액**: 총액이 없으면 **인당 6,000원**(`dues_settings.court_fee_default`). 대상 = **참석 + 당일 확정취소 ∪ 보드 수동 추가분**, **운영진 제외**. (토·일: 총액 미입력 → 정액. 당일취소도 자리·약속 비용이라 정액을 부과.)
   - 엔빵 총액 = `coalesce(sessions.court_fee, recurring_schedules.court_fee)` — 반복 규칙에 넣은 **기본 총액**(일정 생성 시)을 회차가 물려받고, 회차에서 실제 총액을 넣으면 그게 우선. 부과 시점(세션 종료 트리거)에 규칙을 조인해 읽음.
 - `places.charges_court_fee`(boolean) = **대관장소 여부(대관비 부과 대상 게이트)**. false면 그 장소 세션엔 대관비 미부과. (구 `court_fee_per_hour` 를 대체 — 컬럼·전환창 브리지는 drop 완료 20260718010000.)
 
@@ -72,10 +78,10 @@
 
 **왜**: 카드는 '부과된 건'만 다뤄서 ①부과 명단 전체 ②참석했는데 부과가 없는 사람 ③받은 돈·지출 총합을 한 화면에서 대조할 수 없었다. 특히 **당일취소자에게도 정액이 부과**되므로 `참석 인원 × 6,000`이 통장과 어긋나는데 화면이 그 차이를 설명하지 않아 운영진이 매번 손으로 다시 셌다(실측: 8/9 #106 참석 23명 → 낼 돈 156,000원, 곱셈값 138,000과 +18,000 차이).
 
-**단일 소스** = `components/admin/dues/sessionSettle.ts`(`buildSessionSettle`). **부과 대상 판정은 `dues_generate_session_court`의 클라이언트 미러**다(엔빵/정액 분기 · `dues_is_day_cancel_chargeable` 술어 · 10원 절상 · 정액 근처 스냅). **서버 규칙을 바꾸면 이 파일과 `sessionSettle.test.ts`를 반드시 함께 고친다** — 갈리면 화면이 '부과 누락'을 오탐/누락한다. 이 미러 때문에 세션 쿼리(`queryCourtSessions`)가 `recurring_schedules(court_fee)`(엔빵 총액 fallback)와 `attendances(status, confirmed_at, cancelled_at)`를 함께 읽는다.
+**단일 소스** = `components/admin/dues/sessionSettle.ts`(`buildSessionSettle`). **부과 대상 판정은 `dues_generate_session_court`+`dues_court_targets`의 클라이언트 미러**다(엔빵/정액 분기 · `dues_is_day_cancel_chargeable` 술어 · 보드 합집합 · 10원 절상 · 정액 근처 스냅). 그래서 세션 쿼리가 `session_players(member_id)` 도 함께 읽는다(`SessionFeeRow.boardMemberIds`). **서버 규칙을 바꾸면 이 파일과 `sessionSettle.test.ts`를 반드시 함께 고친다** — 갈리면 화면이 '부과 누락'을 오탐/누락한다. 이 미러 때문에 세션 쿼리(`queryCourtSessions`)가 `recurring_schedules(court_fee)`(엔빵 총액 fallback)와 `attendances(status, confirmed_at, cancelled_at)`를 함께 읽는다.
 
 **화면이 쓰는 두 항등식**(닫히지 않으면 "숫자가 안 맞는다"는 원래 문제로 되돌아가므로 테스트로 강제):
-1. 정액 `참석 − 운영진 + 당일취소 = 부과 대상` / 엔빵 `참석 + 당일취소 = 부과 대상`
+1. 정액 `참석 − 운영진 + 당일취소 + 보드추가 = 부과 대상` / 엔빵 `참석 + 당일취소 + 보드추가 = 부과 대상`
 2. `부과 대상 − 누락 − 부과삭제 + 대상아닌부과 = 실제 부과 건수`
 
 **구성**: ①인원 대조(위 항등식) ②금액 대조(낼 돈 → 받은 돈·미납·부과삭제 / 비회원 입금 / 코트 지출 → 현재 순액·전원완납시 순액. **발생 기준** — 회계 §3.3의 월 통장 현금주의와 다르다) ③**전체 명단**(접힘 토글).
@@ -154,9 +160,15 @@
 
 규칙 단일 소스(빌딩블록): `dues_generate_monthly(ym)`(회비) · `dues_generate_session_court(sid)`(세션 대관비). 트리거·ensure·수동배치가 모두 이 둘을 재사용.
 - **회비 룰**: `is_active AND not is_guest AND not is_honorary AND not 운영진`, 가입월(`membership_started_at ?? created_at` + `offset_days`) 다음 달부터 `amount_due=회비액`.
+  - **정지(탈퇴) 시 미납 회비 자동 면제** (2026-08-18): `members.is_active` 가 true→false 로 바뀌면 트리거 `trg_members_waive_dues_on_deactivate` 가 그 회원의 **미납(`status='unpaid'` AND `amount_paid=0`) 회비를 `waived` 로** 돌린다.
+    - **왜**: 회비 생성 룰이 `is_active` 를 보므로 새 부과는 안 생기지만, 월진입 ensure 가 이미 돈 뒤에 정지하면 그 달 건이 남아 미납 현황에 영구히 쌓였다(실측 2026-08-18 정리분 11건 55,000원 — 전원 정지된 달에 참석 이력 없음).
+    - 납부·부분납은 건드리지 않고(받은 돈은 받은 돈), **대관비도 건드리지 않는다**(실제로 코트를 쓴 대가라 탈퇴와 무관).
+    - 삭제가 아니라 `waived` 라 행이 남아 "왜 안 걷었나"가 감사(`dues_audit_log.waive_dues_on_deactivate`)로 추적된다. 명예회원 지정이 delete 인 것과 다른 이유: 그쪽은 '애초에 낼 의무 없음', 이쪽은 '중도 이탈로 걷지 않기로 함'.
+    - **재활성화는 면제를 되살리지 않는다.** 필요하면 그 달만 `dues_set_charge_status(id,'reset')`.
+    - 트리거로 둔 이유: 정지 경로가 클라이언트의 members 직접 UPDATE(`setMemberActive`)라 RPC 게이트가 없다 — 어느 경로로 정지해도 함께 돌아야 한다.
   - **명예회원**(`members.is_honorary`, 회비 관리 설정에서 지정): 회비 면제. 지정/해제는 `dues_set_honorary(member,honorary,reason)`(is_admin). 플래그는 `members.is_honorary`(공개), 사유는 `member_honorary`(관리자 전용) 분리 저장. 회비엔 court 같은 자동 self-heal DELETE가 없으므로, **지정 시 이미 생성된 미납(`status=unpaid`) 회비를 이 RPC가 period_ym 무관 전월 정리**한다(납부·부분납·수동 waived/void는 보존, 현금주의 원장 무영향). **해제 시 삭제분은 복구되지 않는다**: 이후 '아직 부과가 없는 새 달'만 월진입 ensure가 자동 부과하고, 이미 부과가 있는 현월·과거월은 no-op이라 그 달만 `generate_dues_charges(ym)` 수동 배치로 재생성해야 한다.
 - **대관비 룰**: 대관장소(`charges_court_fee`) + `status in (active,closed)` + **경기기록 있음**(무산 제외) 세션에 부과. **금액·대상 모두 총액 유무로 갈림**(§1.1):
-  - **엔빵**(총액 `coalesce(세션,규칙) > 0`): `amount_due = ceil(총액 ÷ 대상수 ÷ 10) × 10`, 그 값이 `[정액, 정액+200)` 이면 정액으로 스냅. 대상 = **confirmed/late_pool + 부과대상 당일취소**, **운영진 포함**. 분모(v_head)도 **동일 집합**(분모 ≠ 대상이면 인당×인원이 총액과 어긋난다).
+  - **엔빵**(총액 `coalesce(세션,규칙) > 0`): `amount_due = ceil(총액 ÷ 대상수 ÷ 10) × 10`, 그 값이 `[정액, 정액+200)` 이면 정액으로 스냅. 대상 = `dues_court_targets(id, true)` = **confirmed/late_pool + 부과대상 당일취소 ∪ 보드 추가분**, **운영진 포함**. 분모(v_head)도 **같은 함수**에서 세므로 인당×인원이 총액과 어긋나지 않는다.
   - **정액**(총액 없음): `amount_due = 6,000`. 대상 = **confirmed/late_pool + 당일 확정취소(grace 초과분)**, **운영진 제외**(현행).
   - 게스트는 `payer_hint=invited_by`. `amount_paid>0` 보존(선납). `dues_set_session_fee`(실제 총액 입력)는 저장 후 대관비를 재생성해 엔빵을 즉시 반영.
   - **당일취소 판정(단일 술어)**: `dues_is_day_cancel_chargeable(status, confirmed_at, cancelled_at, scheduled_at)` — ① `status='cancelled'` ② `confirmed_at` 있음 ③ 취소일(KST) = 세션일(KST) ④ **`cancelled_at − confirmed_at ≥ 1시간`**. INSERT와 정리 DELETE가 **같은 함수**를 호출한다(술어가 갈리면 무한 재부과/재삭제, 20260810000000).
