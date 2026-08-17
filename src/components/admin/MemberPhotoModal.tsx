@@ -1,7 +1,7 @@
 import { useState } from "react";
 import ModalSheet from "../common/ModalSheet";
 import PlayerAvatar from "../shared/PlayerAvatar";
-import { getPlayerPhotoUrl } from "../../lib/playerPhoto";
+import { usePlayerPhotoUrl } from "../../lib/playerPhoto";
 import type { AdminMemberRow } from "../../lib/supabase/adminMembers";
 
 interface Props {
@@ -16,8 +16,9 @@ interface Props {
  */
 export function MemberPhotoModal({ member, onClose }: Props) {
 	const [failed, setFailed] = useState(false);
-	// 게스트는 사진 미등록이라 원격 사진을 쓰지 않고 이니셜 아바타로 폴백한다.
-	const showPhoto = !member.isGuest && !failed;
+	const photoUrl = usePlayerPhotoUrl(member.id);
+	// 게스트·사진 미등록(photoUrl 빈 문자열)은 원격 사진을 쓰지 않고 이니셜 아바타로 폴백한다.
+	const showPhoto = !member.isGuest && !failed && photoUrl !== "";
 	return (
 		<ModalSheet position="center" onClose={onClose} closeOnEscape>
 			<div
@@ -33,7 +34,7 @@ export function MemberPhotoModal({ member, onClose }: Props) {
 			>
 				{showPhoto ? (
 					<img
-						src={getPlayerPhotoUrl(member.id)}
+						src={photoUrl}
 						alt={member.name}
 						onError={() => setFailed(true)}
 						draggable={false}

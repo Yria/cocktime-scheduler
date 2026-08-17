@@ -65,7 +65,7 @@ export const adminScheduleActions = {
 			loading: true,
 			range: { from: fromISO, to: toISO },
 		});
-		await syncOccurrences();
+		await syncOccurrences({ force: true });
 		const [rules, places, occurrences] = await Promise.all([
 			fetchRecurringRules(),
 			fetchPlaces(),
@@ -95,7 +95,7 @@ export const adminScheduleActions = {
 	async addRule(input: RecurringRuleInput, createdBy: string | null) {
 		const row = await createRecurringRule(input, createdBy);
 		if (!row) return null;
-		await syncOccurrences();
+		await syncOccurrences({ force: true });
 		await Promise.all([reloadRules(), reloadOccurrences()]);
 		// 회원 알림은 sync 의 E단계(draft→open)에서 'session_open' 으로 일원화됨.
 		return row;
@@ -107,7 +107,7 @@ export const adminScheduleActions = {
 	) {
 		const row = await updateRecurringRule(id, patch);
 		if (!row) return null;
-		await syncOccurrences();
+		await syncOccurrences({ force: true });
 		await Promise.all([reloadRules(), reloadOccurrences()]);
 		return row;
 	},
@@ -168,7 +168,7 @@ export const adminScheduleActions = {
 	async addOneOff(input: OneOffInput, createdBy: string | null) {
 		const row = await createOneOffOccurrence(input, createdBy);
 		if (row) {
-			await syncOccurrences(); // 일회성은 공개 창과 무관하게 draft → open 즉시 승격(전 회원 'session_open' 알림)
+			await syncOccurrences({ force: true }); // 일회성은 공개 창과 무관하게 draft → open 즉시 승격(전 회원 'session_open' 알림)
 			await reloadOccurrences();
 		}
 		return row;
@@ -197,7 +197,7 @@ export const adminScheduleActions = {
 	async reopenOccurrence(occ: SessionRow) {
 		const row = await reopenOccurrence(occ.id);
 		if (row) {
-			await syncOccurrences();
+			await syncOccurrences({ force: true });
 			await reloadOccurrences();
 		}
 		return row;

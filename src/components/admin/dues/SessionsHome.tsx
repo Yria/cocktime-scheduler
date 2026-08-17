@@ -57,25 +57,25 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	const [busy, setBusy] = useState(false);
 
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
-	// 회비 부과 대상(진행률 분모) = 활성·비운영진·비게스트·비명예회원 — dues_generate_monthly 룰과 일치.
-	const roster = useMemo(
-		() => members.filter((m) => m.isActive && !m.isAdmin && !m.isGuest && !m.isHonorary),
-		[members],
-	);
 
 	// 회비 진행 — 원 월(period_ym=ym) 기준. 이월된(deferred_to set) 건은 '낸 것처럼' 해결로 카운트.
-	// 진행률 분모 = 이번 달 '실제 부과된' 회비 수(paid+unpaid)만. roster에 있어도 이번 달 부과가 없는
-	// 신규 유예 회원이나, waived(면제)·void(취소) 건은 애초에 낼 회비가 아니므로 분모에서 제외한다.
+	// 분모·분자 모두 **이번 달 실제 부과 행**에서만 나온다. 회원 명단을 훑고 부과를 찾아 붙이는 게 아니다.
+	//   종전에는 활성·비운영진·비게스트·비명예 회원만 훑었고, 그래서 회원을 비활성화하는 순간
+	//   그 사람의 그 달 회비가 납부분까지 통째로 화면에서 사라졌다(부과 행은 DB에 그대로인데 미납이
+	//   집계에서 빠져 "다 걷힌" 것처럼 보였다). 중도 탈퇴자도 그 달 회비는 내야 하므로 명단이 아니라
+	//   부과가 기준이어야 맞다.
+	//   부과 자격 판정은 이미 서버(dues_generate_monthly: 활성·비게스트·비명예·비운영진)가 했으므로
+	//   여기서 다시 거를 이유도 없다. 부과가 없는 신규 유예 회원과 waived·void 건이 분모에서 빠지는
+	//   성질은 그대로다 — 애초에 부과 행이 없거나 아래 분기에서 어느 쪽에도 담기지 않는다.
 	const fee = useMemo(() => {
-		const own = new Map(monthly.filter((c) => c.periodYm === ym).map((c) => [c.memberId, c]));
 		let paid = 0;
 		const unpaid: FeeUnpaidRow[] = [];
-		for (const m of roster) {
-			const c = own.get(m.id);
-			if (!c) continue;
+		for (const c of monthly) {
+			if (c.periodYm !== ym) continue;
+			const m = memberById.get(c.memberId);
 			if (c.deferredTo != null) paid++; // 이월 = 해결로 취급
 			else if (c.status === "paid" || c.status === "overpaid") paid++;
-			else if (c.status === "unpaid" || c.status === "partial") unpaid.push({ chargeId: c.id, name: m.name, birthYear: m.birthYear, remain: remaining(c.amountDue, c.amountPaid) });
+			else if (c.status === "unpaid" || c.status === "partial") unpaid.push({ chargeId: c.id, name: m?.name ?? "회원", birthYear: m?.birthYear ?? null, remain: remaining(c.amountDue, c.amountPaid) });
 			// waived·void 는 paid·unpaid 어디에도 넣지 않음 → 아래 total(분모)에서도 자연히 제외됨.
 		}
 		unpaid.sort((a, b) => a.name.localeCompare(b.name));
@@ -85,7 +85,7 @@ export default function SessionsHome({ ym }: { ym: string }) {
 			.map((c) => ({ chargeId: c.id, name: memberById.get(c.memberId)?.name ?? "회원", birthYear: memberById.get(c.memberId)?.birthYear ?? null, settled: c.status === "waived", fromYm: c.periodYm }))
 			.sort((a, b) => a.name.localeCompare(b.name));
 		return { paid, total: paid + unpaid.length, unpaid, carried };
-	}, [monthly, roster, ym, memberById]);
+	}, [monthly, ym, memberById]);
 
 	// 세션별 정산 상태
 	const sessionCards = useMemo<SessionCard[]>(() => {

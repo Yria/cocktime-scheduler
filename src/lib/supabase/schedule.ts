@@ -9,10 +9,36 @@ import type {
 	SessionWithPlace,
 } from "./types";
 
-/** 반복 규칙 → 회차 동기화(생성/갱신/정리 + 노출: 규칙 회차는 일요일 18:00 KST 일괄, 일회성은 즉시). 멱등 RPC. 앱 로드 시 호출(+pg_cron 일 18:00). */
-export async function syncOccurrences(): Promise<void> {
+/** 최근 동기화 시각(에포크 ms). 탭을 새로 열어도 유지되도록 localStorage 에 둔다. */
+const SYNC_LS_KEY = "cocktime:lastOccurrenceSync";
+/** 읽기 경로에서의 최소 호출 간격. 노출(reveal)은 시간 기준이라 이 정도 지연은 무해하다. */
+const SYNC_MIN_INTERVAL_MS = 10 * 60_000;
+
+/**
+ * 반복 규칙 → 회차 동기화(생성/갱신/정리 + 노출: 규칙 회차는 일요일 18:00 KST 일괄, 일회성은 즉시).
+ * 멱등 RPC. pg_cron(일 18:00) + 앱 로드 시 호출.
+ *
+ * 읽기 경로(일정 목록 로드)에서는 10분 스로틀을 건다. 전 회원이 일정 화면을 열 때마다 무조건
+ * 부르고 있어 쓰기 RPC 가 하루 1,560회 실행됐다(실측 2026-08-16~17). 회차 생성/취소처럼
+ * 결과를 즉시 봐야 하는 운영진 경로는 force:true 로 스로틀을 건너뛴다.
+ */
+export async function syncOccurrences(
+	opts: { force?: boolean } = {},
+): Promise<void> {
+	if (!opts.force) {
+		const last = Number(localStorage.getItem(SYNC_LS_KEY) ?? 0);
+		if (Number.isFinite(last) && Date.now() - last < SYNC_MIN_INTERVAL_MS) return;
+	}
 	const { error } = await supabase.rpc("sync_schedule_occurrences");
-	if (error) console.error("syncOccurrences:", error);
+	if (error) {
+		console.error("syncOccurrences:", error);
+		return; // 실패는 기록하지 않는다 — 다음 로드에서 곧바로 재시도
+	}
+	try {
+		localStorage.setItem(SYNC_LS_KEY, String(Date.now()));
+	} catch {
+		/* 저장 실패(프라이빗 모드)는 무시 — 스로틀만 못 걸릴 뿐 동작은 같다 */
+	}
 }
 
 /** 회차 단건 조회(정모 안내 페이지 직접 진입/새로고침 대비). 없으면 null. */
@@ -119,7 +145,7 @@ export async function fetchAttendances(
 	// member 임베드 — 게스트 이름/게스트여부/성별(아바타 색) 표시용. attendances→members FK가 둘(member_id, invited_by)이라
 	// FK 컬럼(member_id)으로 명시 disambiguate해야 한다(없으면 PGRST201로 전체 조회가 실패).
 	// inviter:invited_by(name) — 게스트를 데려온(신청한) 회원 이름. 본인 참석 행은 invited_by=null → inviter=null.
-	// user_roles(role) — 운영진 뱃지용. RLS(user_roles_select_admin_public)로 admin 행은 전 회원 공개.
+	// user_roles(role) — 운영진 뱃지용. RLS(user_roles_select)로 admin 행은 전 회원 공개.
 	const { data, error } = await supabase
 		.from("attendances")
 		.select(

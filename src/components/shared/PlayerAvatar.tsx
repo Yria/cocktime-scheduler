@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Gender } from "../../types";
-import { getPlayerPhotoUrl } from "../../lib/playerPhoto";
+import { usePlayerPhotoUrl } from "../../lib/playerPhoto";
 import { getNameInitial } from "../../lib/player";
 import { magnetGenderRing, magnetGenderBg, magnetGenderInk } from "../../lib/magnetStyle";
 
@@ -50,12 +50,12 @@ export default function PlayerAvatar({
 	const [imgFailed, setImgFailed] = useState(false);
 	// photoId 가 바뀌면(다른 사람 아바타로 재사용) 이전 실패 상태를 리셋해 새 사진을 재시도.
 	useEffect(() => setImgFailed(false), [photoId]);
-	const url = photoId ? getPlayerPhotoUrl(photoId) : "";
+	// url 이 빈 문자열인 경우: photoId 가 없거나(게스트·회원 링크 없음), 사진 인덱스가
+	// "이 회원은 사진 없음"이라고 알려준 경우. 어느 쪽이든 원격 요청 없이 즉시 이니셜.
+	const url = usePlayerPhotoUrl(photoId);
 	const g = gender ?? "M";
 	// 로컬 프리뷰는 onError fallback 대상이 아님 — imgFailed 는 원격 URL 전용.
-	// photoId 가 없으면(게스트·사진 미등록·회원 링크 없음) 원격 URL 시도 없이 즉시 이니셜/fallback.
-	const showInitial =
-		previewSrc == null && (!photoId || imgFailed);
+	const showInitial = previewSrc == null && (!url || imgFailed);
 
 	return (
 		<div

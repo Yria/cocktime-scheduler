@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { authActions, authDisplayName, useAuthStore } from "../store/authStore";
-import { bumpPlayerPhotoVersion } from "../lib/playerPhoto";
 import {
 	processImageToSquareJpeg,
 	uploadPlayerPhoto,
@@ -127,7 +126,8 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 		setBusy(true);
 		const finalName = fullName;
 		// 사진은 회원 id(members.id) 키로 업로드 — 이름을 바꿔도 사진이 유지되고 동명이인과 섞이지 않는다.
-		// signup 성공 시 updateProfile이 store를 바꿔 컴포넌트를 언마운트하므로, 업로드/버전 bump는 그 전에 끝낸다.
+		// signup 성공 시 updateProfile이 store를 바꿔 컴포넌트를 언마운트하므로, 업로드는 그 전에 끝낸다.
+		// (사진 인덱스·?v= 갱신은 uploadPlayerPhoto 가 photo_updated_at 을 찍으면서 함께 처리한다.)
 		if (photoBlob) {
 			if (!myMemberId) {
 				setError("회원 정보를 불러오는 중이에요. 잠시 후 다시 시도해 주세요.");
@@ -140,7 +140,6 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 				setBusy(false);
 				return;
 			}
-			bumpPlayerPhotoVersion(myMemberId);
 		}
 		const ok = await authActions.updateProfile({
 			name: finalName,

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { Group, Circle, Arc, Image as KonvaImage, Rect, Text } from "react-konva";
 import useImage from "use-image";
 import Konva from "konva";
@@ -8,7 +8,7 @@ import { usePlayerMagnetGestures } from "../../hooks/usePlayerMagnetGestures";
 import { usePlayerMagnetDrag } from "../../hooks/usePlayerMagnetDrag";
 import { MagnetBadge } from "./MagnetBadge";
 import { skillScore as computeSkillScore } from "../../lib/teamSelection";
-import { getPlayerPhotoUrl } from "../../lib/playerPhoto";
+import { usePlayerPhotoUrl } from "../../lib/playerPhoto";
 import { getNameInitial } from "../../lib/player";
 import { absToStage } from "../../lib/board/konvaEvents";
 import { magnetGenderInk, magnetSkillAngle, MAGNET_SKILL_ARC_RATIO, MAGNET_GENDER_RING_W } from "../../lib/magnetStyle";
@@ -113,7 +113,8 @@ const PlayerMagnet = memo(function PlayerMagnet({
 		node.to({ x: rx, y: ry, duration: 0.22, easing: Konva.Easings.EaseInOut });
 	}, [rx, ry]);
 
-	const photoUrl = useMemo(() => (player?.memberId ? getPlayerPhotoUrl(player.memberId) : ""), [player]);
+	// 사진 인덱스에 없는 회원(= 사진 미등록)은 빈 문자열 → useImage 가 요청하지 않는다.
+	const photoUrl = usePlayerPhotoUrl(player?.memberId);
 	const [image, imgStatus] = useImage(photoUrl, "anonymous");
 	const hasPhoto = imgStatus === "loaded" && image !== undefined;
 

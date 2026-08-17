@@ -13,6 +13,7 @@ import RegularNoticePage from "./components/schedule/RegularNoticePage";
 import SchedulePage from "./components/schedule/SchedulePage";
 import { useDarkMode } from "./hooks/useDarkMode";
 import { usePageVisibility } from "./hooks/usePageVisibility";
+import { refreshPlayerPhotoIndex } from "./lib/playerPhoto";
 import { supabase } from "./lib/supabase";
 import {
 	notificationContext,
@@ -72,6 +73,13 @@ export default function App() {
 
 	// 앱내 실시간 알림 (Phase 8): 자동승급·공지 → 종모양 목록 + 토스트
 	const memberId = useAuthStore((s) => s.memberId);
+
+	// 사진 인덱스(누가 사진을 갖고 있나)를 로그인 후 1회 받아둔다. 이게 없으면 사진 없는 회원마다
+	// Storage 404 를 매 렌더 재요청한다(무료 플랜 호출 한도를 태우던 원인).
+	useEffect(() => {
+		if (!memberId) return;
+		void refreshPlayerPhotoIndex();
+	}, [memberId]);
 	useEffect(() => {
 		if (!memberId) {
 			notificationActions.clear();

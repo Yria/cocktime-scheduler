@@ -38,21 +38,34 @@ export const useAuthStore = create<AuthState>(() => ({
 
 let initialized = false;
 
+// 회원 조회를 이미 끝냈거나 진행 중인 auth user id. onAuthStateChange 는 구독 즉시 INITIAL_SESSION 을
+// 쏘고, 그 뒤로도 TOKEN_REFRESHED(시간당)·다른 탭 BroadcastChannel·재포커스마다 다시 발화한다.
+// 그때마다 loadMember 를 돌리면 upsert+select+is_admin 세 번이 통째로 반복된다 —
+// 실측(2026-08-16~17) POST members 1,487 / GET members 2,409 / rpc is_admin 1,798회. 회원은 149명뿐이다.
+let memberLoadFor: string | null = null;
+// members 행 보장(멱등 upsert)을 이미 끝낸 auth user id. 브라우저 수명 동안 1회면 충분하다.
+let memberEnsuredFor: string | null = null;
+
 /** 로그인 사용자의 members 행을 보장하고 member_id·운영진 여부를 store에 채운다. */
 async function loadMember(user: User) {
-	// 본인 member 행 보장 (RLS members_self_insert). 이미 있으면 무시.
-	await supabase
-		.from("members")
-		.upsert(
-			{ auth_user_id: user.id, name: authDisplayName(user) },
-			{ onConflict: "auth_user_id", ignoreDuplicates: true },
-		);
+	// 본인 member 행 보장 (RLS members_insert). 이미 있으면 무시.
+	if (memberEnsuredFor !== user.id) {
+		await supabase
+			.from("members")
+			.upsert(
+				{ auth_user_id: user.id, name: authDisplayName(user) },
+				{ onConflict: "auth_user_id", ignoreDuplicates: true },
+			);
+		memberEnsuredFor = user.id;
+	}
 	const { data: member } = await supabase
 		.from("members")
 		.select("id, name, gender, birth_year, residence")
 		.eq("auth_user_id", user.id)
 		.maybeSingle();
 	const { data: admin } = await supabase.rpc("is_admin");
+	// 행이 안 보이면(upsert 실패·RLS·최초 가입 레이스) 다음 이벤트에서 보장부터 다시 시도한다.
+	if (!member) memberEnsuredFor = null;
 	useAuthStore.setState({
 		memberLoaded: true,
 		memberId: (member?.id as string | undefined) ?? null,
@@ -71,13 +84,22 @@ function applySession(session: Session | null) {
 		ready: true,
 	});
 	if (session?.user) {
-		// onAuthStateChange 콜백 내에서 supabase를 직접 await하면 데드락 위험 → 디퍼.
 		const u = session.user;
+		// 같은 사용자로 이벤트가 또 와도(토큰 갱신·다른 탭·재포커스) 회원 조회는 다시 하지 않는다.
+		if (memberLoadFor === u.id) return;
+		memberLoadFor = u.id;
+		// onAuthStateChange 콜백 내에서 supabase를 직접 await하면 데드락 위험 → 디퍼.
 		setTimeout(() => {
-			void loadMember(u);
+			void loadMember(u).catch((e) => {
+				// 실패한 사용자는 잠가두지 않는다 — 다음 auth 이벤트에서 다시 시도해야 memberLoaded 가 풀린다.
+				console.error("loadMember:", e);
+				if (memberLoadFor === u.id) memberLoadFor = null;
+			});
 		}, 0);
 	} else {
 		// 비로그인: 로드할 회원정보가 없으므로 즉시 settled 처리.
+		memberLoadFor = null;
+		memberEnsuredFor = null;
 		useAuthStore.setState({ memberId: null, isAdmin: false, memberLoaded: true });
 	}
 }
@@ -88,10 +110,9 @@ export const authActions = {
 		if (initialized) return;
 		initialized = true;
 
-		supabase.auth.getSession().then(({ data }) => {
-			applySession(data.session);
-		});
-
+		// onAuthStateChange 는 구독 즉시 INITIAL_SESSION(복원된 세션)을 발화한다 —
+		// 별도 getSession() 은 같은 세션을 한 번 더 흘려보내 loadMember 를 2중 실행할 뿐이다.
+		// (실측 로그에 1ms 간격 POST members 쌍으로 남아 있었다.)
 		supabase.auth.onAuthStateChange((_event, session) => {
 			applySession(session);
 		});

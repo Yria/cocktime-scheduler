@@ -92,7 +92,7 @@ export async function revokeAdmin(memberId: string): Promise<RpcResult> {
 // 꼬이게 해 UI·서버 양쪽에서 차단. 탈퇴는 setMemberActive(false)로, 재가입은 재활성화로 처리.
 
 /**
- * 회원 활성/비활성 토글 — members.is_active 직접 UPDATE(members_admin_write RLS).
+ * 회원 활성/비활성 토글 — members.is_active 직접 UPDATE(members_update RLS).
  * is_active=false 면 세션 셋업 명단(fetchMembers)·회비 월정액 자동부과(dues_generate_monthly)·
  * 실력 비교 앵커에서 제외된다. 회원관리 목록(fetchMembersForAdmin)에는 계속 노출돼 재활성화할 수 있다.
  *
@@ -119,7 +119,7 @@ export async function setMemberActive(
 	return true;
 }
 
-/** 회원 실력 편집(members.skills 직접 UPDATE — members_admin_write RLS). */
+/** 회원 실력 편집(members.skills 직접 UPDATE — members_update RLS). */
 export async function updateMemberSkills(
 	memberId: string,
 	skills: PlayerSkills,

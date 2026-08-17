@@ -877,7 +877,7 @@ export async function fetchSessionTxns(
 	}));
 }
 
-/** 장소 대관장소 여부(대관비 부과 대상) 설정. members_admin_write 격 RLS(places). */
+/** 장소 대관장소 여부(대관비 부과 대상) 설정. places_admin_update 격 RLS(places). */
 export async function updatePlaceFee(
 	placeId: number,
 	chargesCourtFee: boolean,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Gender } from "../../types";
-import { getPlayerPhotoUrl } from "../../lib/playerPhoto";
+import { usePlayerPhotoUrl } from "../../lib/playerPhoto";
 import { getNameInitial } from "../../lib/player";
 import {
 	MAGNET_SKILL_ARC_RATIO,
@@ -49,8 +49,9 @@ export default function PlayerCard({
 	const [imgFailed, setImgFailed] = useState(false);
 	// photoId 가 바뀌면 이전 실패 상태 리셋(다른 선수로 재사용 시 새 사진 재시도).
 	useEffect(() => setImgFailed(false), [photoId]);
-	const url = photoId ? getPlayerPhotoUrl(photoId) : "";
-	const showInitial = !photoId || imgFailed;
+	// 사진 없는 회원은 url 이 빈 문자열 — 원격 요청 없이 곧바로 이니셜.
+	const url = usePlayerPhotoUrl(photoId);
+	const showInitial = !url || imgFailed;
 	const s = PLAYER_CARD_SIZES[size];
 
 	const ringColor = magnetGenderRing(gender);

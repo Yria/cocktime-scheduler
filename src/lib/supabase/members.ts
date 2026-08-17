@@ -4,7 +4,7 @@ import { skillScoreOf } from "../teamSelection";
 import { supabase } from "./client";
 
 // 회원(members) 기반 선수 명단·프로필 데이터 레이어. 구 Google Sheets 로스터를 대체.
-// members RLS: 로그인 사용자는 전원 조회(members_select), 쓰기는 본인/운영진(members_self_update·members_admin_write).
+// members RLS: 로그인 사용자는 전원 조회(members_select), 쓰기는 본인/운영진(members_update 한 정책이 둘 다 담당).
 
 interface RawMember {
 	id: string;
