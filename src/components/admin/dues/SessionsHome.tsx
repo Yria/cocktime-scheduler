@@ -6,16 +6,32 @@ import { toast } from "../../../store/toastStore";
 import ConfirmDialog from "../../common/ConfirmDialog";
 import EmptyState from "../../shared/EmptyState";
 import BirthYearTag from "../../shared/BirthYearTag";
+import { nameWithBirthYear } from "../../../lib/birthYear";
 import { remaining, sessionLabel, won, ymLabel } from "./duesText";
 import SessionSettleSheet from "./SessionSettleSheet";
 import { type SessionSettle, buildSessionSettle } from "./sessionSettle";
 
-/** 회비 미납 1행 — 열람 + [이월]. (대관비 미납은 세션별 [정산 대조] 시트가 담당) */
+/** 회비 미납 1행 — 열람 + [이월]·[면제]. (대관비 미납은 세션별 [정산 대조] 시트가 담당) */
 interface FeeUnpaidRow {
 	chargeId: number;
+	/**
+	 * 이미 배분된 금액. >0(부분납)이면 [면제]를 감춘다 — waived 로 둔 뒤 그 입금을 대사취소하면
+	 * `dues_alloc_sync` 가 amount_paid 를 0 으로 되돌리면서도 status 는 waived 를 유지해서
+	 * (`status not in ('waived','void')` 가드), 잔액 전액이 미납 명단·진행률·본인 화면 어디에도
+	 * 안 뜨고 조용히 사라진다. 부분납 건은 대사취소로 먼저 원상복구한 뒤 면제해야 한다.
+	 */
+	amountPaid: number;
 	name: string;
 	/** 이름 뒤 년생 표기용(동명이인 구분). */
 	birthYear: number | null;
+	remain: number;
+}
+/** 면제된 회비 1행 — 열람 + [되돌리기]. */
+interface FeeWaivedRow {
+	chargeId: number;
+	name: string;
+	birthYear: number | null;
+	/** 걷지 않기로 한 금액. waived 는 납부 기록을 만들지 않으므로 미납이던 잔액을 그대로 보여준다. */
 	remain: number;
 }
 interface SessionCard {
@@ -52,6 +68,8 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	const courtFeeDefault = useDuesStore((s) => s.courtFee); // 정액 기본액 — 대조의 인당 금액
 
 	const [feeOpen, setFeeOpen] = useState(false); // 회비 미납 명단 펼침
+	const [feeWaivedOpen, setFeeWaivedOpen] = useState(false); // 회비 면제 명단 펼침(미납과 별도 — 둘을 나란히 놓고 비교하는 일이 있다)
+	const [waiveReq, setWaiveReq] = useState<{ chargeId: number; name: string; remain: number } | null>(null); // 회비 면제 확인
 	const [voidReq, setVoidReq] = useState<{ chargeId: number; name: string; label: string } | null>(null); // 당일취소 부과삭제 확인
 	const [settleId, setSettleId] = useState<number | null>(null); // 정산 대조 시트를 연 세션
 	const [busy, setBusy] = useState(false);
@@ -70,21 +88,30 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	const fee = useMemo(() => {
 		let paid = 0;
 		const unpaid: FeeUnpaidRow[] = [];
+		// 면제 목록 — 진행률(분모·분자) 밖이라 면제한 건은 다른 화면에 흔적이 남지 않는다. 되돌릴 진입점이
+		// 있어야 실수로 면제한 회비가 묻히지 않으므로 같은 순회에서 같이 모은다(집계 규칙은 그대로).
+		// 이월 분기가 먼저라 "이월 후 수동 정산(= 같은 waived)" 건은 여기 안 들어온다 — 그건 아래 carried 담당.
+		const waived: FeeWaivedRow[] = [];
 		for (const c of monthly) {
 			if (c.periodYm !== ym) continue;
 			const m = memberById.get(c.memberId);
 			if (c.deferredTo != null) paid++; // 이월 = 해결로 취급
 			else if (c.status === "paid" || c.status === "overpaid") paid++;
-			else if (c.status === "unpaid" || c.status === "partial") unpaid.push({ chargeId: c.id, name: m?.name ?? "회원", birthYear: m?.birthYear ?? null, remain: remaining(c.amountDue, c.amountPaid) });
-			// waived·void 는 paid·unpaid 어디에도 넣지 않음 → 아래 total(분모)에서도 자연히 제외됨.
+			else if (c.status === "unpaid" || c.status === "partial") unpaid.push({ chargeId: c.id, amountPaid: c.amountPaid, name: m?.name ?? "회원", birthYear: m?.birthYear ?? null, remain: remaining(c.amountDue, c.amountPaid) });
+			else if (c.status === "waived") waived.push({ chargeId: c.id, name: m?.name ?? "회원", birthYear: m?.birthYear ?? null, remain: remaining(c.amountDue, c.amountPaid) });
+			// waived·void 는 paid·unpaid 어디에도 넣지 않음 → 아래 total(분모)에서도 자연히 제외됨(waived 목록은 표시 전용).
 		}
 		unpaid.sort((a, b) => a.name.localeCompare(b.name));
-		// 다른 달에서 이월돼 온 회비(이번 달 미정산 대상)
+		waived.sort((a, b) => a.name.localeCompare(b.name));
+		// 다른 달에서 이월돼 온 회비(이번 달 미정산 대상).
+		// settled(=waived)는 [정산]으로 미납만 해제한 상태(금액 기록 없음)다. 면제도 같은 waived 라 DB만 보면
+		// 둘을 가를 수 없다 — 구분 컬럼을 새로 두는 건 회계 모델 변경이라 범위 밖. 그래서 도달 경로가 다른
+		// 목록별로 라벨을 나눈다: 여기는 '정산(면제)', 회비 카드의 면제 목록은 '면제'.
 		const carried = monthly
 			.filter((c) => c.deferredTo === ym)
 			.map((c) => ({ chargeId: c.id, name: memberById.get(c.memberId)?.name ?? "회원", birthYear: memberById.get(c.memberId)?.birthYear ?? null, settled: c.status === "waived", fromYm: c.periodYm }))
 			.sort((a, b) => a.name.localeCompare(b.name));
-		return { paid, total: paid + unpaid.length, unpaid, carried };
+		return { paid, total: paid + unpaid.length, unpaid, waived, carried };
 	}, [monthly, ym, memberById]);
 
 	// 세션별 정산 상태
@@ -196,16 +223,23 @@ export default function SessionsHome({ ym }: { ym: string }) {
 				)}
 			</button>
 
-			{/* 회비 진행 — 미납 명단은 열람 + [이월]만(발송 없음) */}
+			{/* 회비 진행 — 미납 명단은 열람 + [이월]·[면제]만(발송 없음). 면제한 건은 같은 카드에서 되돌린다.
+			    회원 비활성화 시 미납을 자동 면제하던 트리거를 폐기(2026-08)했으므로, 안 걷기로 한 회비는
+			    운영진이 여기서 손으로 면제한다 — 돈을 지우는 판단은 사람이 한다. */}
 			<FeeGroup
 				title={`${ymLabel(ym)} 회비`}
 				subtitle={`납부 ${fee.paid}/${fee.total}`}
 				meter={fee.total > 0 ? fee.paid / fee.total : 1}
 				unpaid={fee.unpaid}
+				waived={fee.waived}
 				open={feeOpen}
 				onToggle={() => setFeeOpen((v) => !v)}
+				waivedOpen={feeWaivedOpen}
+				onToggleWaived={() => setFeeWaivedOpen((v) => !v)}
 				busy={busy}
 				onDefer={(chargeId) => runCharge(() => duesDeferCharge(chargeId), "이월 실패")}
+				onWaiveRequest={(r) => setWaiveReq({ chargeId: r.chargeId, name: nameWithBirthYear(r.name, r.birthYear), remain: r.remain })}
+				onUnwaive={(chargeId) => runCharge(() => duesSetChargeStatus(chargeId, "reset"), "되돌리기 실패")}
 			/>
 
 			{/* 이월돼 온 회비(다른 달 → 이번 달 미정산) */}
@@ -218,7 +252,10 @@ export default function SessionsHome({ ym }: { ym: string }) {
 								<span className="text-strong" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{c.name}<BirthYearTag birthYear={c.birthYear} size={11} /><span className="text-faint" style={{ fontSize: 11, fontWeight: 500, marginLeft: 5 }}>{c.fromYm} 회비</span></span>
 								{c.settled ? (
 									<>
-										<span className="text-[#1c8a3b]" style={{ fontSize: 12, fontWeight: 700 }}>정산됨</span>
+										{/* [정산]은 status='waived' 만 세우고 금액을 기록하지 않는다 — 현금으로 받은 건과 안 걷기로 한 건이
+										    DB에서 같다. 초록 '정산됨'(입금 있었던 것처럼)도 '면제'(안 받은 것처럼)도 단정이라, 중립색으로
+										    사실만 적는다. */}
+										<span className="text-[#64748b]" style={{ fontSize: 12, fontWeight: 700 }}>정산 · 금액 미기록</span>
 										<button type="button" onClick={() => runCharge(() => duesUndeferCharge(c.chargeId), "취소 실패")} disabled={busy} className="text-faint" style={{ fontSize: 11.5, background: "none", cursor: "pointer" }}>이월 취소</button>
 									</>
 								) : (
@@ -335,6 +372,24 @@ export default function SessionsHome({ ym }: { ym: string }) {
 					}}
 				/>
 			)}
+
+			{/* 회비 면제 확인 — 부과삭제와 같은 패턴(확인은 부모, 실행은 runCharge).
+			    tone 은 danger 가 아니다: 되돌리기가 있고 행이 사라지지도 않는다(면제 목록으로 옮겨간다). */}
+			{waiveReq && (
+				<ConfirmDialog
+					title="회비 면제"
+					message={`${waiveReq.name}님의 ${ymLabel(ym)} 회비 미납 ${won(waiveReq.remain)}을 면제할까요? 면제하면 이 달 미납에서 빠지고, 걷지 않기로 한 기록이 남아요(되돌리기 가능).`}
+					confirmLabel="면제"
+					maxWidth="xs"
+					onCancel={() => setWaiveReq(null)}
+					onDismiss={() => setWaiveReq(null)}
+					onConfirm={() => {
+						const r = waiveReq;
+						setWaiveReq(null);
+						void runCharge(() => duesSetChargeStatus(r.chargeId, "waived"), "면제 실패");
+					}}
+				/>
+			)}
 		</div>
 	);
 }
@@ -361,16 +416,24 @@ function Meter({ ratio, done }: { ratio: number; done: boolean }) {
 	);
 }
 
-// 회비 카드: 진행 막대 + (미납 있으면) 미납 명단 펼침. 명단은 열람 + [이월]만 — 푸시 발송은 폐기(§3.5 진입 모달이 대체).
-function FeeGroup({ title, subtitle, meter, unpaid, open, onToggle, busy, onDefer }: {
+// 회비 카드: 진행 막대 + (있으면) 미납 명단 펼침 · 면제 명단 펼침.
+// 명단은 열람 + [이월]·[면제]만 — 푸시 발송은 폐기(§3.5 진입 모달이 대체).
+// 면제 목록을 같은 카드에 둔 이유: 면제는 진행률 밖으로 빠져 어느 화면에도 안 남는다. 되돌릴 자리가
+// 없으면 실수로 면제한 회비가 영구히 묻히므로, 미납과 나란히 접힘으로 상주시킨다.
+function FeeGroup({ title, subtitle, meter, unpaid, waived, open, onToggle, waivedOpen, onToggleWaived, busy, onDefer, onWaiveRequest, onUnwaive }: {
 	title: string;
 	subtitle: string;
 	meter: number;
 	unpaid: FeeUnpaidRow[];
+	waived: FeeWaivedRow[];
 	open: boolean;
 	onToggle: () => void;
+	waivedOpen: boolean;
+	onToggleWaived: () => void;
 	busy: boolean;
 	onDefer: (chargeId: number) => void; // 다음 달로 이월
+	onWaiveRequest: (row: FeeUnpaidRow) => void; // 면제 — 확인 다이얼로그는 부모가 띄운다(부과삭제와 같은 패턴)
+	onUnwaive: (chargeId: number) => void; // 면제 되돌리기(reset — 납부액 기준으로 상태 재산정)
 }) {
 	return (
 		<div className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px" }}>
@@ -379,40 +442,78 @@ function FeeGroup({ title, subtitle, meter, unpaid, open, onToggle, busy, onDefe
 				<span className="text-muted" style={{ fontSize: 12 }}>{subtitle}</span>
 			</div>
 			<Meter ratio={meter} done={unpaid.length === 0} />
-			{unpaid.length > 0 && (
-				<div style={{ marginTop: 8 }}>
-					<button
-						type="button"
-						onClick={onToggle}
-						aria-expanded={open}
-						className="flex items-center rounded-[8px]"
-						style={{ gap: 5, fontSize: 12, fontWeight: 700, color: "#c2670a", padding: "5px 11px", border: "none", background: "rgba(194,103,10,0.14)", cursor: "pointer" }}
-					>
-						미납 {unpaid.length}명
-						<span style={{ opacity: 0.7, fontWeight: 800 }}>{open ? "\u25b2" : "\u25bc"}</span>
-					</button>
-					{open && (
-						<div className="flex flex-col" style={{ gap: 2, marginTop: 8, background: "rgba(120,120,128,0.06)", borderRadius: 10, padding: "9px 10px" }}>
-							<p className="text-faint" style={{ fontSize: 11, marginBottom: 2 }}>이월 = 다음 달로 미룸</p>
-							{unpaid.map((r) => (
-								<div key={r.chargeId} className="flex items-center gap-2" style={{ fontSize: 13, padding: "2px 0" }}>
-									<span className="text-strong" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{r.name}<BirthYearTag birthYear={r.birthYear} size={11} /></span>
-									<span className="text-[#d1362c]" style={{ fontWeight: 700, flexShrink: 0 }}>{won(r.remain)}</span>
-									<button
-										type="button"
-										onClick={() => onDefer(r.chargeId)}
-										disabled={busy}
-										className="text-[#0b84ff]"
-										style={{ fontSize: 11.5, fontWeight: 700, background: "rgba(11,132,255,0.1)", border: "none", borderRadius: 7, padding: "3px 8px", cursor: "pointer", flexShrink: 0 }}
-									>
-										이월
-									</button>
-								</div>
-							))}
-						</div>
+			{/* 토글 두 개를 한 줄에 — 같은 시각 언어(칩 + 삼각형)를 쓰고 색으로만 갈린다:
+			    미납=주황(할 일), 면제=중립 슬레이트(끝난 일 · statusChipClass('waived') 와 같은 색). */}
+			{(unpaid.length > 0 || waived.length > 0) && (
+				<div className="flex flex-wrap items-center" style={{ gap: 6, marginTop: 8 }}>
+					{unpaid.length > 0 && (
+						<button
+							type="button"
+							onClick={onToggle}
+							aria-expanded={open}
+							className="flex items-center rounded-[8px]"
+							style={{ gap: 5, fontSize: 12, fontWeight: 700, color: "#c2670a", padding: "5px 11px", border: "none", background: "rgba(194,103,10,0.14)", cursor: "pointer" }}
+						>
+							미납 {unpaid.length}명
+							<span style={{ opacity: 0.7, fontWeight: 800 }}>{open ? "\u25b2" : "\u25bc"}</span>
+						</button>
 					)}
+					{waived.length > 0 && (
+						<button
+							type="button"
+							onClick={onToggleWaived}
+							aria-expanded={waivedOpen}
+							className="flex items-center rounded-[8px]"
+							style={{ gap: 5, fontSize: 12, fontWeight: 700, color: "#64748b", padding: "5px 11px", border: "none", background: "rgba(100,116,139,0.16)", cursor: "pointer" }}
+						>
+							면제 {waived.length}명
+							<span style={{ opacity: 0.7, fontWeight: 800 }}>{waivedOpen ? "\u25b2" : "\u25bc"}</span>
+						</button>
+					)}
+				</div>
+			)}
+			{unpaid.length > 0 && open && (
+				<div className="flex flex-col" style={{ gap: 2, marginTop: 8, background: "rgba(120,120,128,0.06)", borderRadius: 10, padding: "9px 10px" }}>
+					<p className="text-faint" style={{ fontSize: 11, marginBottom: 2 }}>이월 = 다음 달로 미룸 · 면제 = 걷지 않기로 함(되돌리기 가능)</p>
+					{unpaid.map((r) => (
+						<div key={r.chargeId} className="flex items-center gap-2" style={{ fontSize: 13, padding: "2px 0" }}>
+							<span className="text-strong" style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{r.name}<BirthYearTag birthYear={r.birthYear} size={11} /></span>
+							<span className="text-[#d1362c]" style={{ fontWeight: 700, flexShrink: 0 }}>{won(r.remain)}</span>
+							<button type="button" onClick={() => onDefer(r.chargeId)} disabled={busy} className="text-[#0b84ff]" style={feeActionBtn("rgba(11,132,255,0.1)")}>이월</button>
+							{/* 부분납 행에는 [면제]를 붙이지 않는다(FeeUnpaidRow.amountPaid 주석 참조 — 대사취소 시 잔액이 조용히 사라진다). */}
+							{r.amountPaid === 0 && (
+								<button type="button" onClick={() => onWaiveRequest(r)} disabled={busy} className="text-[#64748b]" style={feeActionBtn("rgba(100,116,139,0.16)")}>면제</button>
+							)}
+						</div>
+					))}
+				</div>
+			)}
+			{waived.length > 0 && waivedOpen && (
+				<div className="flex flex-col" style={{ gap: 2, marginTop: 8, background: "rgba(120,120,128,0.06)", borderRadius: 10, padding: "9px 10px" }}>
+					<p className="text-faint" style={{ fontSize: 11, marginBottom: 2 }}>걷지 않기로 한 회비예요. 진행률(납부 n/n)에서 빠져 있어요.</p>
+					{waived.map((r) => (
+						<div key={r.chargeId} className="flex items-center gap-2" style={{ fontSize: 13, padding: "2px 0" }}>
+							{/* 취소선 = 더 안 걷는다. 대조 시트의 부과삭제 행과 같은 언어를 쓴다. */}
+							<span className="text-muted" style={{ fontWeight: 600, flex: 1, minWidth: 0, textDecoration: "line-through" }}>{r.name}<BirthYearTag birthYear={r.birthYear} size={11} /></span>
+							<span className="text-faint" style={{ fontWeight: 700, flexShrink: 0, textDecoration: "line-through" }}>{won(r.remain)}</span>
+							<button type="button" onClick={() => onUnwaive(r.chargeId)} disabled={busy} className="text-[#64748b]" style={feeActionBtn("rgba(100,116,139,0.16)")}>되돌리기</button>
+						</div>
+					))}
 				</div>
 			)}
 		</div>
 	);
 }
+
+/** 명단 행 끝 조작 버튼(이월·면제·되돌리기) 공용 스타일. SessionSettleSheet 의 actionBtn 과 같은 값 —
+    두 화면의 행 조작 버튼이 같아 보여야 하는데, 공용 모듈로 뽑을 만큼 커지진 않아 값만 맞춰 둔다. */
+const feeActionBtn = (bg: string): CSSProperties => ({
+	fontSize: 11.5,
+	fontWeight: 700,
+	background: bg,
+	border: "none",
+	borderRadius: 7,
+	padding: "3px 8px",
+	cursor: "pointer",
+	flexShrink: 0,
+});

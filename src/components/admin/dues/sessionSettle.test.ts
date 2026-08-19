@@ -22,6 +22,7 @@ const member = (id: string, over: Partial<AdminMemberRow> = {}): AdminMemberRow 
 	isAdmin: false,
 	isGuest: false,
 	isHonorary: false,
+	createdAt: SCHEDULED,
 	...over,
 });
 

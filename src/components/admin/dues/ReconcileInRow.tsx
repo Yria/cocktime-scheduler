@@ -9,7 +9,7 @@ import { inputCls, inputStyle } from "../../common/fieldStyles";
 import { genderText } from "../memberAdminText";
 import { fmtMD, remaining, sessionLabel, won, ymOfIso } from "./duesText";
 import { ToggleChip } from "./duesUi";
-import { type MemberLite, nameMatches, suggestMembers } from "./matching";
+import { type MemberLite, nameMatches, sanitizeCandidatePool, suggestMembers } from "./matching";
 import { matchExactSubset } from "./reconcileMatch";
 
 interface Props {
@@ -59,7 +59,20 @@ interface Person {
 export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessions, monthlyChargedIds, courtChargedByMember, upcomingSessions, categories, monthlyFee, courtFee, refunded, busy, onConfirm, onConfirmCourtExternal, onCategorize }: Props) {
 	const effectiveAmount = tx.amount - refunded; // 부분 환불 반영: 정산 대상 금액
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
-	const candidates = useMemo(() => suggestMembers(tx.counterpartyName, members), [tx.counterpartyName, members]);
+	// 후보 위생에서 접히면 안 되는 행 — 미납이 남은 사람 + 예정(open) 세션 참석 확정자.
+	//   접어서 화면에서 사라지면 그 사람에게 입금을 붙일 길이 없어진다. 참석 확정자를 넣는 이유:
+	//   **선납**은 세션이 끝나기 전이라 부과가 아직 없어 '미납'으로 잡히지 않는다. 그런데 게스트 선납이야말로
+	//   후보 목록에서 게스트를 골라야 하는 순간이고(동명 회원이 있으면 위생 규칙이 게스트를 접는다),
+	//   접힌 채로 두면 기본 납부자가 동명 회원으로 잡혀 금액이 같을 때 한 탭 오배분이 성립한다.
+	//   (선택된 납부자·대납 대상은 아래에서 따로 unshift/제외 처리하므로 여기 넣지 않는다.)
+	const protectedIds = useMemo(() => {
+		const s = new Set<string>();
+		for (const [mid, list] of Object.entries(unpaidByMember)) if (list.length > 0) s.add(mid);
+		for (const sess of upcomingSessions) for (const mid of sess.attendeeIds) s.add(mid);
+		return s;
+	}, [unpaidByMember, upcomingSessions]);
+	// 자동 후보: 동명 게스트 중복행이 상위 4칸을 먹어 실제 회원을 밀어내던 문제 → 위생 규칙 통과 목록으로 제안.
+	const candidates = useMemo(() => suggestMembers(tx.counterpartyName, members, { protectedIds }), [tx.counterpartyName, members, protectedIds]);
 	const [selectedId, setSelectedId] = useState<string | null>(candidates[0]?.id ?? null);
 	const [extraIds, setExtraIds] = useState<string[]>([]); // 이 입금으로 함께 내주는 다른 사람(회원·게스트)
 	const [searchOpen, setSearchOpen] = useState(false); // 사람 검색(납부자 없으면 납부자 지정, 있으면 대납 추가)
@@ -191,8 +204,13 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		else { setCatSel(id); setOverride(new Set()); }
 	};
 
+	// 검색은 접기 규칙을 완화한다: 사용자가 이름을 직접 지목한 상황이라, 동명 실제 회원이 있다고 게스트를 통째로
+	//   지우면 "게스트 대관비 입금"을 찾을 길이 사라진다(김선예·김지훈·우창형처럼 회원과 이름이 겹치는 게스트가 실제로 있다).
+	//   반대로 동명 게스트 3~4행을 다 싣는 건 도움이 안 된다 — 라벨이 전부 "게스트"로 같아 고를 근거가 없고 6칸을 먹는다.
+	//   → 게스트 대표 1행 접기는 검색에서도 유지, 회원과의 공존만 허용.
+	const searchPool = useMemo(() => sanitizeCandidatePool(members, { protectedIds, keepGuestsWithNamesakeMember: true }), [members, protectedIds]);
 	const q = query.trim();
-	const searchResults = q ? members.filter((m) => nameMatches(m.name, q) && m.id !== selectedId && !extraIds.includes(m.id)).slice(0, 6) : [];
+	const searchResults = q ? searchPool.filter((m) => nameMatches(m.name, q) && m.id !== selectedId && !extraIds.includes(m.id)).slice(0, 6) : [];
 	const chipMembers = useMemo(() => {
 		const arr: MemberLite[] = [...candidates];
 		if (selectedMember && !arr.some((c) => c.id === selectedMember.id)) arr.unshift(selectedMember);

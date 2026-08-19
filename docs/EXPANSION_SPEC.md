@@ -119,11 +119,21 @@ create table public.members (
   avatar_url    text,
   phone         text,
   is_guest      boolean not null default false,
-  is_active     boolean not null default true,
+  is_active     boolean not null default true,          -- 탈퇴(소프트). 의미는 아래 '비활성' 절 참조
   sheet_player_id text unique,                         -- Sheets player-N 매핑 키(폐지 후 deprecated)
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
+
+-- 회원 '비활성'(is_active=false) = 탈퇴(소프트 딜리트). 하드삭제는 전면 금지 —
+--   dues_charges·dues_allocations·attendances 가 ON DELETE CASCADE 라 회원 행을 지우면
+--   부과·배분이 함께 사라지고 이미 매칭한 입금이 미분류로 되돌아간다(실측 사고: 회원 1명 삭제로
+--   2026-07 입금 2건이 붙을 부과 없이 남았다). 그래서 `delete_member` 는 항상 예외(20260721000000),
+--   본인 탈퇴 `delete_my_account` 도 소프트로 전환하고 RLS members_delete 도 회수(20260819010000).
+--   비활성이 실제로 바꾸는 것: 세션 셋업 후보 명단(fetchMembers)·실력 비교 앵커·명예회원 후보에서 제외.
+--   비활성이 바꾸지 않는 것: 로그인·조회·참석 신청·정원 점유·푸시 수신·대관비 부과,
+--   그리고 **월 회비 부과**(2026-08-19부터 비활성도 부과 — docs/ACCOUNTING_SPEC.md §4).
+--   회원관리 목록에는 계속 노출된다(배지 + '비활성 N명 숨기기' 필터) → 재활성화 가능.
 
 -- ② user_roles : 권한 소스 오브 트루스
 create table public.user_roles (
@@ -257,6 +267,11 @@ alter table public.sessions
 - **정원 외 늦참 풀(`late_pool`)** — 마이그레이션 `20260708010000`: 늦참 슬라이더로 도착시각을 **경기 후반 2/3 지점 이후**(예: 18:00~21:00 세션이면 20:00="8시")로 넘기면, 정원 큐와 분리된 **독립 접수**로 전환한다. `late_pool` 은 `confirmed_count` 에 미포함(정원 무관) — 현실에서 "늦게 와서 자리 나면 참여, 없으면 대기"를 시스템화한 것. 현장 판정(자리/대기)은 보드 대기 로테이션이 담당하고, RSVP 단계는 정원 분리 + 표기까지만 책임진다(`start_session_from_schedule` 은 여전히 `confirmed` 만 편입). `set_late_minutes(bigint,int)` 가 경계를 원자 처리: **확정→풀** 전환 시 정원 1칸 반납 + 대기 1순위 자동 승급(`promoted`), **풀→복귀** 시 여유 있으면 `confirmed` 없으면 `waitlisted`(큐 뒤 재진입). 경계는 절대시각이 아니라 `v_start + (v_end - v_start)*2/3`(종료시각 필수). 초대자가 `late_pool` 이면 그 게스트도 `late_pool` 상속. 정원 재조정(`set_session_capacity`)은 `late_pool` 을 건드리지 않는다(정원 독립). 클라 8시 경계 크로싱은 확인 다이얼로그로 게이팅하고 UI 는 앰버→바이올렛으로 구분(`late_minutes` 반환 `{status, promoted}`).
 - **게스트 확정 상한 = 세션당 2명** — 마이그레이션 `20260712010000`: 정원(`capacity`)과 별개로, `status='confirmed'` 인 게스트(`invited_by` 有)는 세션당 **최대 2명**. 3번째부터는 정원이 남아도 `waitlisted` 로 접수되고, **확정 게스트가 빠질 때(취소/제거/강등)만** 승급 대상이 된다(회원은 이 상한과 무관 — 기존 정원 규칙 그대로). 승급 로직은 단일 헬퍼 `promote_next_waitlisted(session_id)` 로 모아 상한 규칙이 한 곳에 살게 했고(`cancel_attendance`·`cancel_guest_attendance`·`admin_cancel_attendance`·`set_late_minutes` 가 공유; `set_session_capacity` 는 배치라 인라인 반영), 헬퍼는 알림을 넣지 않는다(호출자가 상황별 알림 INSERT). 대기 1순위 선택식은 `status='waitlisted' AND (invited_by IS NULL OR <확정 게스트 수> < 2) ORDER BY position ASC`. **확정 게스트 수는 `session_counters` FOR UPDATE 락 안에서만 읽으므로 `count(*)` 로 판정**한다(§5.1 `count(*)` 금지의 예외 — 정원 총량이 아니라 락 안의 하위상한이라 경쟁 없음; 6개 전이 지점 카운터 배선 드리프트 회피). 도입 시 기존 위반(확정 게스트 >2)인 open 세션을 함께 정리(먼저 신청한 2명 유지, 나머지 대기 강등 후 빈 정원은 대기 회원으로 재승급, **알림 없음**).
 - **동명 회원 게스트 차단** — 마이그레이션 `20260712010000`: `add_guest_attendance` 는 활성 회원(`is_guest=false AND is_active`)과 **이름이 같은 게스트 신청을 거부**한다(`name_is_member` 예외 → 클라 "이미 같은 이름의 회원이 있어요…"). 게스트가 실제 회원과 구분되지 않아 "회원처럼" 참여하는 혼동을 서버에서 근본 차단(회원 본인은 직접 참석 신청). 이름 비교는 `btrim(lower(...))`.
+- **게스트 members 행 재사용** — 마이그레이션 `20260819030000`: 같은 게스트가 다시 오면 **기존 행에 붙인다**(이름 `btrim(lower(...))` + 성별 일치, 여러 행이면 `created_at desc` 최신 1행, `is_guest AND auth_user_id is null` 인 행만). 종전에는 신청마다 members 를 무조건 insert 해 프로덕션에 게스트 47행(실인원 30명, 잉여 17행)이 쌓였고, 그 잉여가 새는 화면이 **정산함 납부자 후보·검색**이었다(회원관리는 `is_guest=false` 로 걸러 게스트를 안 보여줘 운영진이 손댈 방법도 없었다).
+  - **성별까지 같아야 재사용**한다 — 이름만으로 합치면 동명이인 게스트가 한 사람으로 뭉쳐 과거 참석·회계가 남의 것으로 붙는다. 오합치는 회계 CASCADE 때문에 분리보다 훨씬 비싸므로 애매하면 새 행을 만든다.
+  - `skills` 는 덮지 않는다(과거 편성의 근거). 저장된 skills 에 `grade` 가 아예 없을 때만 이번 입력으로 채운다.
+  - **같은 세션 중복 차단**: 그 게스트 행이 이미 그 세션에 있으면 `guest_already_joined` 예외(클라 "이미 이 일정에 신청된 게스트예요…"). `attendances` PK `(session_id, member_id)` 라 어차피 충돌하지만 raw 23505 는 안내가 안 된다. 실측 사고(session 103 김지훈×2, 114 공태호×2)를 이 게이트가 막는다. 취소했던 게스트를 다시 초대하면 그 참석 행을 되살리고 `invited_by` 를 재초대자로 갱신한다(소유권 검사가 `invited_by` 기준이라 필수).
+  - **기존 47행 병합(백필)은 하지 않았다** — 같은 세션에 잔재 두 행이 함께 있는 사례가 있어 PK 충돌이고, `dues_charges`/`dues_allocations` 귀속이 바뀌어 공개회계 수치가 움직인다. 이 마이그레이션의 목적은 증가를 멈추는 것.
 - **편집 권한**: 회차 개별 수정/취소/일회성 추가는 `sessions` anon_all 정책 하 클라이언트 직접 쓰기(운영진 UI 게이트). 규칙 CRUD 는 `recurring_schedules` RLS(select authenticated / write `is_admin()`).
 - UI: 회원=노출 회차 목록(Home), 운영진=`/schedule` 달력+규칙 패널(요일·주차 규칙 등록 → 달력 자동 생성 → 회차별 예외 편집).
 
@@ -295,7 +310,7 @@ alter table public.sessions
 | `admin_cancel_attendance` | `(p_session_id bigint, p_member_id uuid) → void` | 운영진 | 운영진이 참여목록에서 임의 참석자(회원/게스트) 제거. cancel_attendance 패턴 + is_admin() 게이팅. confirmed였고 open이면 대기 1순위 자동 승급. 제거 당사자에게 `removed` 알림(누가 제거했는지 by_name 포함, 게스트면 초대회원에 guest_name). 수신자가 운영진 본인이면 생략 |
 | `promote_waitlist` | `(p_session_id bigint) → int` | 운영진 | 정원 상향 후 여유만큼 대기자 일괄 승급 + 각자 알림. 승급 수 반환. ⚠️ 미배선(dead) — 실제 승급/강등은 `set_session_capacity` 가 담당 |
 | `set_session_capacity` | `(p_session_id bigint, p_capacity int) → jsonb{promoted,demoted}` | 운영진 | 정원 UPDATE+재조정 원자 RPC. open 세션만 재조정: 정원↑/무제한→대기자 승격(position ASC, **게스트는 확정 2명 미만일 때만**), 정원↓→초과 confirmed 강등(position DESC, position 보존). 알림 대상 `coalesce(invited_by, member_id)`(게스트면 payload.guest_name). 승격 `promoted`/강등 `demoted`. 잠금 sessions→session_counters→attendances. open 이 아닌 세션도 **카운터는 실제값으로 정합**(20260806010000 — 종료 세션 드리프트 잔존 방지) |
-| `add_guest_attendance` | `(p_session_id bigint, p_name text, p_gender text, p_skills jsonb) → attendances` | 로그인 회원(참석 중) | 게스트(계정 없는 member) 신청. 본인 참석(confirmed/waitlisted/late_pool) 필수. **동명 활성 회원 차단(`name_is_member`)**. 정원 여유 + **확정 게스트 2명 미만**이면 confirmed, 아니면 waitlisted(초대자 late_pool이면 게스트도 late_pool). §4.3 게스트 확정 상한 |
+| `add_guest_attendance` | `(p_session_id bigint, p_name text, p_gender text, p_skills jsonb) → attendances` | 로그인 회원(참석 중) | 게스트(계정 없는 member) 신청. 본인 참석(confirmed/waitlisted/late_pool) 필수. **동명 활성 회원 차단(`name_is_member`)**. **이름+성별이 같은 기존 게스트 행 재사용**, 같은 세션 중복은 `guest_already_joined`(2026-08-19, §4.3). 정원 여유 + **확정 게스트 2명 미만**이면 confirmed, 아니면 waitlisted(초대자 late_pool이면 게스트도 late_pool). §4.3 게스트 확정 상한 |
 | `cancel_guest_attendance` | `(p_session_id bigint, p_guest_member_id uuid) → void` | 로그인 회원(초대자) | 본인이 데려온 게스트 취소(멱등). confirmed였으면 카운터 감소 + open이면 대기 1순위 승급(상한 인식). 승급 알림 `coalesce(invited_by, member_id)` |
 | `promote_next_waitlisted` | `(p_session_id bigint) → attendances` | 내부(SECURITY DEFINER RPC 전용) | 대기 1순위 승급 헬퍼. 게스트는 확정 2명 미만일 때만 대상. 락은 스스로 확보(`session_counter_sync`), 정원 판정은 **실제 confirmed 행 수** 기준, confirmed_count 를 실제값+1 로 세팅, **알림 없음**(호출자 책임). 대상 없으면 NULL 로우. `FOR UPDATE`(SKIP LOCKED 아님 — 후보가 잠겨 조용히 0명이 되는 것을 막는다). 마이그레이션 20260806010000 |
 | `promote_waitlist_fill` | `(p_session_id bigint) → int` | 내부 | **빈자리 수만큼** 반복 승격 + 각자 `promoted` 알림. 승격 인원 반환. 취소/늦참풀진입 계열 RPC가 open 세션에서 호출한다(이벤트당 1명만 채우던 규칙 때문에 한 번 생긴 빈자리가 영구히 남던 문제를 제거). 마이그레이션 20260806010000 |

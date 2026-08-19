@@ -7,6 +7,7 @@ import { skillScoreOf } from "../../lib/teamSelection";
 import type { GradeAnchor } from "../shared/GradeInput";
 import {
 	type AdminMemberRow,
+	fetchGuestCount,
 	fetchMembersForAdmin,
 	grantAdmin,
 	revokeAdmin,
@@ -96,6 +97,12 @@ export default function MemberAdminPage() {
 	const [query, setQuery] = useState("");
 	// 비활성 회원 숨김(기본 false=전원 표시). 목록이 커지면 활성만 보도록 토글.
 	const [hideInactive, setHideInactive] = useState(false);
+	// 게스트 보기(기본 false=회원만 — 기존 화면 그대로). 게스트도 members 행이지만 방문마다 새 행이 생겨
+	// 평소 목록을 오염시키므로, 켤 때만 fetchMembersForAdmin(true) 로 함께 불러온다.
+	// 목록에 섞어 배지로 구분한다(별도 섹션 없음 — 정렬·검색이 회원과 같은 로직을 그대로 타야 한다).
+	const [showGuests, setShowGuests] = useState(false);
+	// 게스트 행 수 — 칩 라벨용. 목록을 안 불러온 상태(기본값)에서도 개수를 보여줘야 해 별도 카운트.
+	const [guestCount, setGuestCount] = useState(0);
 	const [showGroupSettings, setShowGroupSettings] = useState(false);
 	// 확인 다이얼로그(승급/해제/삭제). null=닫힘.
 	const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
@@ -110,15 +117,32 @@ export default function MemberAdminPage() {
 	}, [ready, memberLoaded, isAdmin, navigate]);
 
 	// 초기 loading=true. effect 내 동기 setState 회피를 위해 await 이후에만 갱신.
+	// showGuests 가 바뀌면 reload 정체성이 바뀌어 아래 effect 가 다시 돌며 재조회한다(칩 토글 = 재조회).
+	// 세대 가드: 게스트 칩을 ON→OFF 로 연타하면 응답이 역전돼 "칩은 꺼졌는데 게스트가 남은" 목록이
+	// 붙을 수 있다(다시 토글해야 복구). 마지막으로 시작한 재조회의 응답만 반영한다.
+	const reloadSeq = useRef(0);
 	const reload = useCallback(async () => {
-		const rows = await fetchMembersForAdmin();
+		const seq = ++reloadSeq.current;
+		const rows = await fetchMembersForAdmin(showGuests);
+		if (seq !== reloadSeq.current) return;
 		setMembers(rows);
 		setLoading(false);
-	}, []);
+	}, [showGuests]);
 
 	useEffect(() => {
-		void reload(); // 마운트 시 1회 로드(setState 는 await 이후라 cascade 없음)
+		void reload(); // 마운트 시 1회 + 게스트 보기 토글 시(setState 는 await 이후라 cascade 없음)
 	}, [reload]);
+
+	// 게스트 행 수 로드(칩 라벨). 비활성 게스트도 포함한 총 개수라 토글/비활성 처리로 변하지 않아 1회면 충분.
+	useEffect(() => {
+		let alive = true;
+		void fetchGuestCount().then((n) => {
+			if (alive) setGuestCount(n);
+		});
+		return () => {
+			alive = false;
+		};
+	}, []);
 
 	// 최근 3달 참석 회원 id 로드(실력 편집 비교군 한정용).
 	useEffect(() => {
@@ -185,16 +209,43 @@ export default function MemberAdminPage() {
 	);
 
 	const requestToggleActive = (m: AdminMemberRow) => {
+		const who = `'${nameWithBirthYear(m.name, m.birthYear)}'님`;
+		// 게스트는 세션 명단(fetchMembers 가 is_guest=false 로 이미 제외)도, 회비 부과 대상도 아니다 —
+		// 회원용 "세션 명단·회비 부과에서 제외" 문구는 게스트에겐 거짓이라 분기한다.
+		// "정산함 납부자 후보에서 내려갑니다"도 쓰지 않았다: 정산함 후보 위생(matching.sanitizeCandidatePool)은
+		// 비활성 행을 빼지 않고 순서만 뒤로 미는 규칙이라, 지금 그렇게 적으면 지키지 못하는 약속이 된다.
+		// 오늘 참인 효과는 '이 목록에서 비활성으로 접힌다'뿐 → 그것만 적는다.
+		// 되살아남 안내는 add_guest_attendance 재사용 규칙(20260819030000_guest_row_reuse) 근거 —
+		// 같은 이름·성별 게스트가 다시 오면 그 행을 is_active=true 로 되살려 붙인다.
+		if (m.isGuest) {
+			setConfirmState({
+				title: m.isActive ? "게스트 접어두기" : "게스트 다시 보이기",
+				message: m.isActive ? (
+					<>
+						{`${who}(게스트)을 접어둘까요?`}
+						<br />
+						이 목록에서 '비활성'으로 표시돼 [비활성 숨기기]로 접힙니다. 게스트는
+						회비 부과가 없어 정산 금액은 그대로예요. (참석·정산 기록도 보존)
+						<br />
+						같은 이름·성별로 다시 신청되면 이 행이 자동으로 되살아납니다.
+					</>
+				) : (
+					`${who}(게스트)을 다시 활성으로 표시할까요?`
+				),
+				run: () => doToggleActive(m),
+			});
+			return;
+		}
 		setConfirmState({
 			title: m.isActive ? "회원 비활성화" : "회원 활성화",
 			message: m.isActive ? (
 				<>
-					{`'${nameWithBirthYear(m.name, m.birthYear)}'님을 비활성화할까요?`}
+					{`${who}을 비활성화할까요?`}
 					<br />
 					세션 명단과 회비 자동부과에서 제외됩니다. (회원 정보는 보존)
 				</>
 			) : (
-				`'${nameWithBirthYear(m.name, m.birthYear)}'님을 다시 활성화할까요?`
+				`${who}을 다시 활성화할까요?`
 			),
 			run: () => doToggleActive(m),
 		});
@@ -223,7 +274,7 @@ export default function MemberAdminPage() {
 	// 하드삭제는 dues_charges/allocations/attendances 를 CASCADE 로 날려 정산을 꼬이게 하므로
 	// UI·서버 RPC 양쪽에서 차단(재가입은 재활성화로 옛 created_at 보존 → 당월 회비 자동 부과).
 
-	// 비활성 회원 수(필터 칩 노출/라벨용).
+	// 비활성 수(필터 칩 노출/라벨용). 게스트 보기를 켜면 접어둔 게스트도 포함 — 현재 목록 기준이라 맞다.
 	const inactiveCount = useMemo(
 		() => members.filter((m) => !m.isActive).length,
 		[members],
@@ -352,7 +403,9 @@ export default function MemberAdminPage() {
 	const skillAnchors = useMemo<GradeAnchor[]>(() => {
 		if (!editingMember?.gender) return [];
 		const g = editingMember.gender;
-		const sameGender = members.filter((m) => m.gender === g);
+		// 게스트 보기를 켜면 members 에 게스트가 섞인다 — 게스트 등급은 초대자가 눈대중으로 넣은 값이라
+		// 비교 앵커로 부적합하고, 방문마다 새 행이 생겨 앵커 목록을 부풀린다 → 앵커에서는 항상 제외.
+		const sameGender = members.filter((m) => m.gender === g && !m.isGuest);
 		const pool =
 			recentActiveIds && recentActiveIds.size
 				? sameGender.filter((m) => recentActiveIds.has(m.id))
@@ -376,8 +429,10 @@ export default function MemberAdminPage() {
 							className="text-faint"
 							style={{ fontSize: 14, fontWeight: 700 }}
 						>
+							{/* 게스트 보기가 켜져 있으면 이 숫자는 회원 수가 아니다(게스트 포함) → '+게스트'를 붙여 오독을 막는다. */}
 							{filtered.length}
 							{q ? `/${members.length}` : ""}
+							{showGuests && <span style={{ fontSize: 11, fontWeight: 600, marginLeft: 3 }}>+게스트</span>}
 						</span>
 					)
 				}
@@ -460,21 +515,34 @@ export default function MemberAdminPage() {
 					</div>
 				)}
 
-				{/* 비활성 숨김 토글 — 비활성 회원이 있을 때만 노출 */}
-				{!loading && inactiveCount > 0 && (
+				{/* 필터 칩 — 게스트 보기 / 비활성 숨김. 해당 대상이 있을 때만 각각 노출.
+				    비활성 칩은 기존 자리(맨 오른쪽)를 지키고 게스트 칩을 왼쪽에 붙인다. */}
+				{!loading && (guestCount > 0 || inactiveCount > 0) && (
 					<div
 						style={{
 							display: "flex",
 							justifyContent: "flex-end",
+							gap: 6,
 							marginTop: 8,
 							flexShrink: 0,
 						}}
 					>
-						<FilterChip
-							label={`비활성 ${inactiveCount}명 숨기기`}
-							active={hideInactive}
-							onClick={() => setHideInactive((v) => !v)}
-						/>
+						{guestCount > 0 && (
+							<FilterChip
+								label={`게스트 ${guestCount}명 보기`}
+								active={showGuests}
+								// 앱 공통 게스트 색(참가자 목록 pill·행 배지와 동일 계열)
+								activeColor="#b4762b"
+								onClick={() => setShowGuests((v) => !v)}
+							/>
+						)}
+						{inactiveCount > 0 && (
+							<FilterChip
+								label={`비활성 ${inactiveCount}명 숨기기`}
+								active={hideInactive}
+								onClick={() => setHideInactive((v) => !v)}
+							/>
+						)}
 					</div>
 				)}
 

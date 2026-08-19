@@ -50,6 +50,14 @@ function guestErrorMsg(e?: string): string {
 	if (e?.includes("name_is_member"))
 		return "이미 같은 이름의 회원이 있어요. 회원 본인이 직접 참석 신청하도록 안내해 주세요";
 	if (e?.includes("must join first")) return "먼저 본인 참석 신청을 해주세요";
+	// 같은 게스트를 두 번 넣으려는 경우 — 게스트 행을 재사용하게 되면서(20260819030000)
+	// 같은 세션 동명 중복이 서버에서 막힌다. 누가 이미 넣었을 수 있어 명단을 보라고 안내한다.
+	if (e?.includes("guest_already_joined"))
+		return "이미 이 일정에 신청한 게스트예요. 참석 명단을 확인해 주세요";
+	// 같은 이름·성별 게스트를 다른 회원이 먼저 신청한 경우. 그 행은 초대자만 취소할 수 있어
+	// 진짜 동명이인이면 여기서 막히므로, 이름을 구분해 달라고 길을 알려준다.
+	if (e?.includes("guest_taken_by_other"))
+		return "다른 회원이 같은 이름의 게스트를 이미 신청했어요. 동명이인이면 이름을 구분해서 신청해 주세요";
 	if (e?.includes("session ended")) return "이미 종료된 일정입니다";
 	if (e?.includes("not open yet")) return "아직 신청 기간이 아닙니다";
 	if (e?.includes("not open")) return "모집 중이 아닙니다";
