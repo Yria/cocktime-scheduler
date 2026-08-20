@@ -224,8 +224,9 @@ export default function SessionsHome({ ym }: { ym: string }) {
 			</button>
 
 			{/* 회비 진행 — 미납 명단은 열람 + [이월]·[면제]만(발송 없음). 면제한 건은 같은 카드에서 되돌린다.
-			    회원 비활성화 시 미납을 자동 면제하던 트리거를 폐기(2026-08)했으므로, 안 걷기로 한 회비는
-			    운영진이 여기서 손으로 면제한다 — 돈을 지우는 판단은 사람이 한다. */}
+			    [면제 N명] 목록은 **정지 시 자동 면제(trg_members_waive_dues_on_deactivate)를 감시하는 창**이기도
+			    하다 — 자동으로 처리된 건이 여기 보이고 여기서 되돌려진다. 그 목록이 없던 동안 자동 면제분이
+			    화면 어디에도 안 남아 묻혔던 게 문제였다. */}
 			<FeeGroup
 				title={`${ymLabel(ym)} 회비`}
 				subtitle={`납부 ${fee.paid}/${fee.total}`}
