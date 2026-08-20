@@ -19,7 +19,7 @@
 ## 1. 도메인 모델
 
 ### 1.1 금액
-- **회비(monthly_fee)**: 5,000원/월. 회원(비운영진·비게스트·비명예회원) 대상, 월 단위(`period_ym`). **비활성 회원도 부과 대상**이다(2026-08-19, §4). **명예회원**(`members.is_honorary`)은 회비 면제(§4).
+- **회비(monthly_fee)**: 5,000원/월. 회원(활성·비운영진·비게스트·비명예회원) 대상, 월 단위(`period_ym`). 자동 생성은 활성 회원만이지만 **이미 생긴 부과는 비활성이 돼도 그대로 남는다**(§4). **명예회원**(`members.is_honorary`)은 회비 면제(§4).
 - **대관비(court_fee)**: 세션 단위(`session_id`). 두 모드로 갈린다(2026-07). **부과 대상이 모드마다 다르다**:
   - **엔빵**: 세션에 대관 **총액**이 있으면 `총액 ÷ 부과 대상 수`(**10원 절상**). 대상 = **실제 참석(confirmed/late_pool) + 부과대상 당일취소 ∪ 보드 수동 추가분**, **운영진 포함**. (평일: 총액 입력 → 엔빵.)
     - **정액 근처 스냅**: 1인당이 `정액 기본값 이상 ~ +200원 미만`이면 정액 기본값(6,000)으로 내린다. 예) 117,000 ÷ 19 = 6,157.9 → 절상 6,160 → **6,000**. 정액과 사실상 같은 금액에 잔돈을 걷는 실무 비용이 차액보다 크다는 판단. **한방향** — 정액보다 싸게 나오면 계산값 그대로 받는다(회원이 계산값보다 더 내는 일은 없다). 기준점이 `dues_settings.court_fee_default` 이므로 정액을 조정하면 이 구간도 함께 움직인다.
@@ -160,15 +160,18 @@
 - **수동 배치**: `generate_dues_charges(ym)`(is_admin) — 과거 달 보정 등 fallback.
 
 규칙 단일 소스(빌딩블록): `dues_generate_monthly(ym)`(회비) · `dues_generate_session_court(sid)`(세션 대관비). 트리거·ensure·수동배치가 모두 이 둘을 재사용.
-- **회비 룰**: `not is_guest AND not is_honorary AND not 운영진`, 가입월(`membership_started_at ?? created_at` + `offset_days`) 다음 달부터 `amount_due=회비액`.
-  - **비활성(탈퇴) 회원도 부과 대상이다** (2026-08-19, `20260819000000_dues_charge_inactive_members.sql`): 룰에서 `is_active` 조건을 뺐다. §3.1 의 "명단이 아니라 부과가 기준"과 같은 방향 — 중도 이탈자도 그 달 회비는 낼 돈으로 남아야 정산이 맞는다. 걷지 않을 사람은 운영진이 **회비 현황 → 미납 명단 → [면제]** 로 처리한다(감사 로그 남음, [되돌리기] 가능).
+- **회비 룰**: `is_active AND not is_guest AND not is_honorary AND not 운영진`, 가입월(`membership_started_at ?? created_at` + `offset_days`) 다음 달부터 `amount_due=회비액`.
+  - **생성 제외와 사후 삭제는 다른 문제다** (2026-08-20, `20260820000000_dues_skip_inactive_members.sql`). 이 구분이 이 절의 핵심이다.
+    - **자동 생성은 활성 회원만**: 나간 사람에게 매달 새 회비가 붙으면 영구 미납이 쌓인다. (2026-08-19 에 이 조건을 뺐다가 하루 뒤 되돌렸다 — 민원의 실제 원인이 생성 룰이 아니었다.)
+    - **이미 생긴 부과는 비활성이 돼도 지우지 않는다**: 그 달에 나온 회비는 낼 돈으로 남는다. 걷지 않기로 하는 판단은 사람이 **회비 현황 → 미납 명단 → [면제]** 로 한다(감사 로그, [되돌리기] 가능).
+    - **돈이 들어오면 붙일 자리는 만든다**: 입금 확인(`dues_confirm_reconcile`)은 명단 자격을 보지 않고 납부자 앞으로 부과를 생성한다 — 의도된 예외다. 비활성 회원이 뒤늦게 회비를 내는 경우 정산할 길이 여기뿐이다.
   - **폐지: 정지 시 미납 회비 자동 면제** (2026-08-18 도입 → 2026-08-19 철회). `trg_members_waive_dues_on_deactivate` 와 함수를 삭제했다.
     - **왜 철회**: 전제("정지된 달에 참석 이력 없음")가 실측에서 거짓이었다 — 홍예린은 2026-07-20 세션 158 에 confirmed 로 참석해 실제로 뛰었는데 백필이 그 2026-07 회비를 `waived` 로 돌려 **7월 정산이 "다 걷힌" 것처럼 풀렸다**. 회원 상태 변경이 돈 행을 자동으로 지우는 경로는 두지 않는다.
     - 백필로 면제됐던 11건은 감사 로그(`waive_dues_on_deactivate_backfill`)의 items 로 특정해 원복했다(`unwaive_dues_on_deactivate_revert`).
     - 대체 수단이 트리거였던 이유는 **회비 행에 [이월] 말고 아무 액션이 없어서** 운영진이 SQL 로 손질하고 있었기 때문이다. 그래서 이번에 회비 미납 행 [면제] + 면제 목록 [되돌리기] 를 화면에 넣었다(§3.1).
     - 부작용(의도됨): 다음 월진입부터 비활성 회원에게도 회비가 생긴다. 무한 미납이 실제 문제가 되면 그때 `membership_ended_at`(종료월) 을 도입해 종료월까지만 부과하도록 좁힌다 — 지금은 컬럼을 늘리지 않는다.
   - **탈퇴는 소프트(하드삭제 전면 금지)** (2026-08-19, `20260819010000_member_soft_delete_only.sql`): `delete_my_account` 가 회원 행을 지우지 않고 `is_active=false` + `auth_user_id/개인정보/푸시구독` 정리로 바뀌었고, RLS `members_delete` 정책과 authenticated 의 DELETE 권한도 회수했다.
-    - **왜**: 하드삭제는 `dues_charges`·`dues_allocations`·`attendances` CASCADE 로 **부과·배분을 함께 지우고** `bank_transactions.paid_by` 를 SET NULL 해 **이미 매칭한 입금을 미분류로 되돌린다**. 실측 사고 — 회원 1명(이한비)의 행이 사라져 2026-07 입금 2건(회비 5,000 + 대관비 6,000)이 붙을 부과 없이 정산함에 남았다. 복구는 `20260819020000_restore_deleted_member_july_charges.sql`(옛 uuid 로 회원 행 복구 + 보드 이력 재연결 + 2026-07 부과 2건 재생성, 금액 재계산 없음).
+    - **왜**: 하드삭제는 `dues_charges`·`dues_allocations`·`attendances` CASCADE 로 **부과·배분을 함께 지우고** `bank_transactions.paid_by` 를 SET NULL 해 **이미 매칭한 입금을 미분류로 되돌린다**. 실측 사고 — 회원 1명(이한비)의 2026-07 회비는 `confirm_match`(감사 로그 2026-07-13), 대관비는 `confirm_reconcile`(2026-07-26)로 **이미 정산 완료**였는데 회원 행 삭제로 부과·배분이 사라져 입금 2건이 미분류로 되돌아갔다. 복구는 `20260819020000_restore_deleted_member_july_charges.sql`(옛 uuid 로 회원 행 복구 + 보드 이력 재연결 + 2026-07 부과 2건 재생성, 금액 재계산 없음).
     - 이름은 지우지 않는다 — 통장 적요와 대조할 유일한 키다.
   - **명예회원**(`members.is_honorary`, 회비 관리 설정에서 지정): 회비 면제. 지정/해제는 `dues_set_honorary(member,honorary,reason)`(is_admin). 플래그는 `members.is_honorary`(공개), 사유는 `member_honorary`(관리자 전용) 분리 저장. 회비엔 court 같은 자동 self-heal DELETE가 없으므로, **지정 시 이미 생성된 미납(`status=unpaid`) 회비를 이 RPC가 period_ym 무관 전월 정리**한다(납부·부분납·수동 waived/void는 보존, 현금주의 원장 무영향). **해제 시 삭제분은 복구되지 않는다**: 이후 '아직 부과가 없는 새 달'만 월진입 ensure가 자동 부과하고, 이미 부과가 있는 현월·과거월은 no-op이라 그 달만 `generate_dues_charges(ym)` 수동 배치로 재생성해야 한다.
 - **대관비 룰**: 대관장소(`charges_court_fee`) + `status in (active,closed)` + **경기기록 있음**(무산 제외) 세션에 부과. **금액·대상 모두 총액 유무로 갈림**(§1.1):

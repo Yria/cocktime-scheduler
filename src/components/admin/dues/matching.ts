@@ -76,7 +76,8 @@ export interface MemberCandidate extends MemberLite {
 // 그래서 손대는 곳은 "후보 집합"뿐 — 적요 파싱·점수 계산(매칭 로직)은 그대로 둔다.
 // 거부한 대안:
 //   · 게스트 전면 제외 — 게스트 대관비 입금 매칭이 이 화면의 존재 이유(fetchMembersForAdmin(true))다.
-//   · 비활성 회원 제외 — 오늘 정책은 "부과가 살아 있어야 한다". 그래서 빼지 않고 동명 그룹 안에서만 뒤로 보낸다.
+//   · 비활성 회원 제외 — 비활성이 되면 새 부과만 안 생기고 **이미 생긴 부과는 남는다**. 그 부과에 입금을
+//     붙일 사람이 후보에서 사라지면 배분할 길이 없다. 그래서 빼지 않고 동명 그룹 안에서만 뒤로 보낸다.
 //   · 데이터 자체 정리(삭제·머지) — dues_charges·dues_allocations·attendances 가 ON DELETE CASCADE 라 회계가 유실된다.
 
 export interface CandidatePoolOptions {
