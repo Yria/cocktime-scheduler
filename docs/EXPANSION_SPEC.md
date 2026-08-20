@@ -132,9 +132,10 @@ create table public.members (
 --   본인 탈퇴 `delete_my_account` 도 소프트로 전환하고 RLS members_delete 도 회수(20260819010000).
 --   비활성이 실제로 바꾸는 것: 세션 셋업 후보 명단(fetchMembers)·실력 비교 앵커·명예회원 후보에서 제외.
 --   비활성이 바꾸지 않는 것: 로그인·조회·참석 신청·정원 점유·푸시 수신·대관비 부과.
---   회비는 새 부과가 안 생기고 **그 시점 미납분도 자동 면제**된다(트리거 trg_members_waive_dues_on_deactivate).
---   납부·부분납·대관비·이월 중인 건은 건드리지 않고, 회비 현황 [면제 N명] → [되돌리기] 로 사람이 되돌린다
---   (docs/ACCOUNTING_SPEC.md §4).
+--   회비는 새 부과가 안 생기고 **그 시점 미납분은 미부과로 삭제**된다(트리거
+--   trg_members_uncharge_dues_on_deactivate — 면제가 아니라 부과 자체가 없어지는 것. 감사 로그
+--   dues_audit_log.uncharge_dues_on_deactivate 가 유일한 흔적). 납부·부분납·대관비·이월 중인 건은
+--   건드리지 않는다 (docs/ACCOUNTING_SPEC.md §4).
 --   회원관리 목록에는 계속 노출된다(배지 + '비활성 N명 숨기기' 필터) → 재활성화 가능.
 
 -- ② user_roles : 권한 소스 오브 트루스

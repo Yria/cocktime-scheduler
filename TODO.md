@@ -17,10 +17,11 @@
    게스트만 막는다(`ReconcileInRow.tsx:109`). 명예회원·운영진에게 "N월 회비" 칩이 뜨고 확정하면
    부과가 생긴다 → 회비 룰이 두 갈래. 실제 발생 건 조회 후 게이트 추가할지 결정.
 
-3. **비활성 회원 회비 면제 트리거 감시** — 2026-08-20 복원(잔재 11건도 같은 규칙으로 정리 완료).
-   자동으로 처리된 건은 회비 현황 **[면제 N명]** 접힘에 보이고 거기서 [되돌리기] 된다. 이 목록이
-   비어 있지 않은데 이유를 모르는 건이 보이면 `dues_audit_log.waive_dues_on_deactivate`(charge id·ym
-   기록됨)를 보면 된다. 오면제가 잦으면 그때 '정지 사유' 입력을 붙일지 검토.
+3. **정지 시 회비 미부과(부과 삭제) 감시** — 2026-08-20 확정. 트리거
+   `trg_members_uncharge_dues_on_deactivate` 가 미납 회비 행을 지우고, 흔적은
+   `dues_audit_log.uncharge_dues_on_deactivate`(charge id·ym·금액) 하나뿐이다. 화면 진입점은 없다
+   (부과가 없는 것이므로 보여줄 것도 없음). 잘못 정지한 뒤 되살려야 하면 그 로그의 items 로
+   재생성해야 한다 — 그 일이 실제로 반복되면 복구 RPC 를 만들 것.
 
 4. **의도적으로 남긴 Supabase 워닝** — 더 줄이려면 설계를 바꿔야 하는 것들.
    - `authenticated_security_definer_function_executable` 49건: 클라이언트가 실제로 부르는 RPC 라
