@@ -269,6 +269,60 @@ describe("recommendTeammates", () => {
 		expect(sw.score - lw.score).toBeCloseTo(25 * RECOMMEND_WEIGHTS.W_WAIT, 0);
 	});
 
+	it("경기중 후보는 대기 항이 0 — 코트에 서 있는 시간은 기다린 시간이 아니다(2026-08)", () => {
+		// waitSince가 assign_match에서 리셋되지 않아, 경기중 선수는 경기 내내 대기 보너스가 쌓였다.
+		// 그만큼 W_PLAYING(30)이 상쇄돼 실효 페널티가 경기 길이에 따라 변동했다.
+		const confirmed = [player("c1", "M")];
+		const playing = player("playing", "M");
+		const waiting = player("waiting", "M");
+		playing.waitSince = new Date(Date.now() - 20 * 60000).toISOString(); // 20분째 경기중
+		waiting.waitSince = new Date(Date.now() - 20 * 60000).toISOString(); // 20분째 대기
+		const ranked = recommendTeammates(
+			confirmed,
+			[playing, waiting],
+			ctx({ playingIds: new Set(["playing"]) }),
+		);
+		const get = (id: string) => ranked.find((r) => r.player.id === id)!;
+		expect(get("playing").breakdown!.wait).toBe(0);
+		expect(get("waiting").breakdown!.wait).toBeCloseTo(-20 * RECOMMEND_WEIGHTS.W_WAIT, 0);
+		// 실효 ghost 페널티가 W_PLAYING 그대로 고정된다(대기 조건이 같을 때).
+		expect(get("playing").score - get("waiting").score).toBeCloseTo(
+			RECOMMEND_WEIGHTS.W_PLAYING + 20 * RECOMMEND_WEIGHTS.W_WAIT,
+			0,
+		);
+	});
+
+	it("경기중 가드는 confirmed 0명 경로(판수+대기만 반영)에서도 작동한다", () => {
+		const playing = player("playing", "M");
+		const waiting = player("waiting", "M");
+		playing.waitSince = new Date(Date.now() - 30 * 60000).toISOString();
+		waiting.waitSince = new Date(Date.now() - 10 * 60000).toISOString();
+		const ranked = recommendTeammates(
+			[],
+			[playing, waiting],
+			ctx({ playingIds: new Set(["playing"]) }),
+		);
+		const get = (id: string) => ranked.find((r) => r.player.id === id)!;
+		expect(get("playing").breakdown!.wait).toBe(0);
+		// 대기 30분인 경기중 후보가 대기 10분인 대기 후보를 앞지르지 않는다.
+		expect(ranked[0].player.id).toBe("waiting");
+	});
+
+	it("경기중 가드는 W_PLAYING을 끈 재계산 경로(다이얼로그)에서도 유지된다", () => {
+		// useTeammateRecommendations는 '경기중도 섞어 보기' 모드에서 W_PLAYING:0으로 재계산한다.
+		// 대기 항 보정은 페널티가 아니라 사실 보정이므로 그 경로에서도 살아 있어야 한다.
+		const confirmed = [player("c1", "M")];
+		const playing = player("playing", "M");
+		playing.waitSince = new Date(Date.now() - 15 * 60000).toISOString();
+		const ranked = recommendTeammates(
+			confirmed,
+			[playing],
+			ctx({ playingIds: new Set(["playing"]) }),
+			{ ...RECOMMEND_WEIGHTS, W_PLAYING: 0 },
+		);
+		expect(ranked[0].breakdown!.wait).toBe(0);
+	});
+
 	it("큰 밴드 확장은 경기수를 넘어선다 — 제곱 벌점의 목적(2026-07-29)", () => {
 		// 구 선형(3.0k)에서는 5등급 확장이 15점(1.5판)이라 2판 차이에 밀려 '많이 벌어진 팀'이 그대로
 		// 편성됐다. 남녀 등급 분포가 어긋난 로스터의 혼복(2남2녀 강제)에서 스프레드가 커진 원인.

@@ -20,6 +20,21 @@ export interface RankContext {
 	 * 후보 합류로 과거 그룹과 2명(약)·3명(중)·4명(재결성, 강) 겹치는 만큼 단계적으로 벌점한다.
 	 */
 	groupHistory: GroupHistory;
+	/**
+	 * 현재 코트에서 경기중인 session_player.id — 대기 항(W_WAIT)을 끄는 데만 쓴다(2026-08).
+	 *
+	 * wait_since는 `complete_match`에서만 갱신되고 `assign_match`는 손대지 않는다. 그래서 경기중인
+	 * 선수는 코트에 서 있는 내내 "기다린 시간"이 계속 쌓여, 대기 우선 보너스를 부당하게 받는다.
+	 * 실측(프로덕션 23세션 편성시점 후보): 경기중 후보의 대기 중앙값 12.7분 vs 대기 후보 3.5분 —
+	 * 격차 +9.3점이 경기중 페널티(W_PLAYING 30)를 그만큼 상쇄해, 진행 중 판이 gameCount에 아직
+	 * 안 잡히는 −10과 합쳐 실효 페널티가 약 11(≈W_GROUP2)까지 내려간다. 게다가 경기가 길수록
+	 * 더 싸지는(분당 1점) 변동값이다.
+	 * 여기서 대기 항을 0으로 두면 실효 페널티가 20으로 **고정**된다 — DB 수정 없이 고칠 수 있어
+	 * `assign_match`에서 wait_since를 리셋하는 마이그레이션은 불필요하다(그 값은 playing인 동안에만
+	 * 읽히고 완료 시 덮어써지므로, 이 가드가 있으면 점수에 도달하지 못한다).
+	 * 미지정이면 가드 없음(구 동작) — 순수 함수 단위 테스트 편의.
+	 */
+	playingIds?: ReadonlySet<string>;
 }
 
 /** 점수 항목별 기여도(가중치까지 곱한 실제 가산값). 디버그 표시용. 합 = score. */
@@ -127,6 +142,22 @@ export function skillScore(player: SessionPlayer): number {
 // 점수 계산
 // ─────────────────────────────────────────────
 
+/**
+ * 대기 분(分) — 경기중인 후보는 0. (근거는 RankContext.playingIds 주석)
+ * 코트에 서 있는 시간은 "기다린 시간"이 아니다.
+ */
+function waitMinutesOf(candidate: SessionPlayer, context: RankContext): number {
+	if (context.playingIds?.has(candidate.id)) return 0;
+	if (!candidate.waitSince) return 0;
+	return (Date.now() - new Date(candidate.waitSince).getTime()) / 60000;
+}
+
+/** 대기 항 비용 — 오래 기다릴수록 낮은 점수(음수). 대기 0은 −0이 아닌 0으로 정규화(디버그 표시용). */
+function waitCostOf(candidate: SessionPlayer, context: RankContext, weights: Weights): number {
+	const waitMinutes = waitMinutesOf(candidate, context);
+	return waitMinutes > 0 ? -waitMinutes * weights.W_WAIT : 0;
+}
+
 function computeScore(
 	candidate: SessionPlayer,
 	confirmed: SessionPlayer[],
@@ -140,15 +171,12 @@ function computeScore(
 
 	// confirmed가 0명이면 판수 + 대기시간만 반영
 	if (confirmed.length === 0) {
-		const waitMinutes = candidate.waitSince
-			? (Date.now() - new Date(candidate.waitSince).getTime()) / 60000
-			: 0;
 		const breakdown: ScoreBreakdown = {
 			skill: 0,
 			group: 0,
 			game: gameCost,
 			mixed: candidate.mixedCount * weights.W_MIXED,
-			wait: -waitMinutes * weights.W_WAIT, // 오래 기다릴수록 점수 낮아져야 하므로 음수
+			wait: waitCostOf(candidate, context, weights), // 오래 기다릴수록 점수 낮아져야 하므로 음수
 		};
 		return { score: breakdown.game + breakdown.mixed + breakdown.wait, breakdown };
 	}
@@ -192,17 +220,13 @@ function computeScore(
 	const groupCost =
 		regroup2 * weights.W_GROUP2 + regroup3 * weights.W_GROUP3 + regroup4 * weights.W_GROUP4;
 
-	// 대기 시간: 오래 기다릴수록 우선 (분 단위, 음수로 점수 감소)
-	const waitMinutes = candidate.waitSince
-		? (Date.now() - new Date(candidate.waitSince).getTime()) / 60000
-		: 0;
-
+	// 대기 시간: 오래 기다릴수록 우선 (분 단위, 음수로 점수 감소). 경기중 후보는 0.
 	const breakdown: ScoreBreakdown = {
 		skill: skillDiff * weights.W_SKILL,
 		group: groupCost,
 		game: gameCost,
 		mixed: candidate.mixedCount * weights.W_MIXED,
-		wait: -waitMinutes * weights.W_WAIT,
+		wait: waitCostOf(candidate, context, weights),
 	};
 	return {
 		score: breakdown.skill + breakdown.group + breakdown.game + breakdown.mixed + breakdown.wait,
