@@ -133,14 +133,19 @@ export const authActions = {
 		await supabase.auth.signOut();
 	},
 
-	/** 회원 탈퇴: 회원 데이터 + 인증 사용자 삭제 후 로컬 세션 정리(되돌릴 수 없음). */
-	async deleteAccount() {
-		const { error } = await supabase.rpc("delete_my_account");
+	/**
+	 * 회원 탈퇴(=본인 요청 비활성). 계정을 지우지 않는다 — `is_active=false` + 미종료 세션 참석 취소 +
+	 * 푸시 구독 삭제까지만 하고 회원 행·개인정보·부과 이력은 남긴다(`deactivate_my_account`).
+	 * 운영진 [비활성] 과 같은 처리라, 돌아오면 [재활성화] 로 복구된다 — 계정을 지우면 재가입 때
+	 * members 행이 하나 더 생겨 회비 이력이 끊긴다(구 `delete_my_account` 는 봉인, 20260821020000).
+	 */
+	async deactivateAccount() {
+		const { error } = await supabase.rpc("deactivate_my_account");
 		if (error) {
-			console.error("deleteAccount:", error);
+			console.error("deactivateAccount:", error);
 			return false;
 		}
-		// 서버에서 사용자 삭제됨 → 로컬 세션 정리(onAuthStateChange가 로그인 화면으로 복귀)
+		// 계정은 남아 있지만 본인은 나간 상태 → 로컬 세션 정리(onAuthStateChange가 로그인 화면으로 복귀)
 		await supabase.auth.signOut();
 		return true;
 	},

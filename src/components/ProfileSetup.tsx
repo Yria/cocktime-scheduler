@@ -156,17 +156,18 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 		}
 	};
 
-	const handleDelete = async () => {
+	// 탈퇴 = 본인 요청 비활성(계정 삭제 아님). 문구도 실제 동작대로 — "지워진다"고 적으면 거짓이 된다.
+	const handleDeactivate = async () => {
 		if (busy) return;
 		if (
 			!confirm(
-				"정말 탈퇴하시겠어요?\n계정과 회원 정보가 삭제되며 되돌릴 수 없습니다.",
+				"정말 탈퇴하시겠어요?\n신청한 일정에서 빠지고 알림이 끊깁니다.\n기록은 남아 있어, 다시 나오실 땐 운영진에게 말씀하시면 복구됩니다.",
 			)
 		)
 			return;
 		setBusy(true);
 		setError(null);
-		const ok = await authActions.deleteAccount();
+		const ok = await authActions.deactivateAccount();
 		// 성공 시 로그아웃 → 로그인 화면으로(컴포넌트 언마운트). 실패만 처리.
 		if (!ok) {
 			setError("탈퇴 처리에 실패했어요. 다시 시도해 주세요.");
@@ -374,7 +375,7 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 					{mode === "edit" && (
 						<button
 							type="button"
-							onClick={handleDelete}
+							onClick={handleDeactivate}
 							disabled={busy}
 							style={{
 								width: "100%",

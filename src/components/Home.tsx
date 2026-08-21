@@ -31,6 +31,9 @@ function joinErrorMsg(e?: string): string {
 	if (e?.includes("session ended")) return "이미 종료된 일정입니다";
 	if (e?.includes("not open")) return "모집 중이 아닙니다";
 	if (e?.includes("not authenticated")) return "로그인이 필요합니다";
+	// 탈퇴(본인 비활성)·운영진 정지 상태 — 재활성화 전엔 신청할 수 없다(join_session 게이트).
+	if (e?.includes("member inactive"))
+		return "탈퇴 상태예요. 운영진에게 복구를 요청해 주세요";
 	return "신청에 실패했습니다";
 }
 
