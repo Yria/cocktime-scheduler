@@ -4824,6 +4824,84 @@ wire 실측으로 확인: `192×192`, `6,113 B`, `cache-control: public, max-age
 
 **Prompt**: 커밋하고 전부배포
 
+**Answer**: 전부 배포 완료했습니다.
+
+## 커밋 2건 (main, 푸시됨)
+
+- `29466d1` 사진 egress −83%: 업로드 192px·캐시 1년 + 기존 69장 백필
+- `2501da0` members.is_active 변경을 운영진·서버 경로로 제한
+
+성격이 다른 작업이라 하나로 묶지 않고 나눴습니다. 워킹트리 클린.
+
+## 배포 3경로
+
+| 경로 | 상태 |
+|---|---|
+| **프론트 (GitHub Actions)** | ✅ `completed success` 58s — `ckti.me` 200, 새 번들 `index-DSsJkMpe.js` |
+| **DB 마이그레이션** | ✅ `20260821010000` 적용 — **미적용 잔여 0건** |
+| **Edge Function** | 변경 없음 — 이번 커밋들이 `supabase/functions/`를 건드리지 않았고, 마지막 함수 변경(`cc33999`)은 이미 배포된 것이라 재배포 불필요 |
+
+## 검증
+
+- 프로덕션 트리거 확인: `trg_members_guard_is_active`, `security_definer: false`(= SECURITY INVOKER — 마이그레이션 주석이 경고한 대로 definer면 `current_user` 판별이 죽습니다), `search_path=""`
+- 적용 전 `begin; … rollback;`으로 실증했습니다: DDL 유효, 서버 경로가 `is_active` 토글 통과, 트리거가 `stamp` 트리거보다 앞 순서
+- `db push`가 딱 그 1개만 적용하는 것을 사전에 확인했습니다(메모리의 "미적용 전부 적용" 경고 대응)
+- 적용 시 나온 `NOTICE: trigger ... does not exist, skipping`은 `drop trigger if exists`의 정상 출력입니다
+
+## 남은 상태
+
+사진 백필은 이 커밋 전에 이미 프로덕션에 적용돼 있었습니다 — live 69장 366,657 B, 전부 `max-age=31536000`, 원본 31장은 `_originals/`에 백업(`--restore`로 원복).
+
+열어둔 것은 그대로입니다: 무료 플랜 복귀 전 **Realtime 한도 점검**(미측정), IndexedDB 캐시(선택), 사진 모달 화질이 신경쓰이면 `--restore` → `--target 256 --apply`.
+
+---
+
+## #144
+
+**Prompt**: go on
+
+**Answer**: 답을 정리하면 — **네, 막았습니다.** 그리고 그 과정에서 별개 버그 하나가 드러났습니다.
+
+## 가드 (이미 프로덕션 적용됨)
+
+`trg_members_guard_is_active` — BEFORE UPDATE 트리거. **판별자는 `current_user`** 입니다(프로덕션 실측):
+
+| 경로 | `current_user` | 결과 |
+|---|---|---|
+| 회원이 PostgREST로 직접 PATCH | `authenticated` | `is_admin()` 아니면 **42501 거부** |
+| 운영진 UI `setMemberActive` | `authenticated` + is_admin | 통과 |
+| 본인 탈퇴 `delete_my_account` (secdef) | `postgres` | 통과 |
+| 게스트 행 재사용 `add_guest_attendance` (secdef) | `postgres` | 통과 |
+| 서비스키·마이그레이션 | `service_role`/`postgres` | 통과 |
+
+RLS로는 불가능합니다 — `WITH CHECK`는 OLD를 못 봐서 "값을 바꾸지 마라"를 표현할 수 없고, `is_active`를 강제하면 비활성 회원이 자기 프로필도 못 고칩니다. 컬럼 권한도 안 됩니다(테이블 UPDATE 권한이 있으면 컬럼 REVOKE는 무효, 통째로 회수하면 운영진 UI까지 끊김). **이 트리거 함수는 SECURITY INVOKER여야 합니다** — DEFINER로 바꾸면 `current_user`가 항상 `postgres`가 되어 게이트가 무력화됩니다(주석·문서에 박아뒀습니다).
+
+7개 케이스 전부 프로덕션 롤백 트랜잭션에서 실증했습니다(T1 거부, T2 프로필 저장 통과, T3 secdef 통과, T4·T5 운영진 통과+스탬프, T6 마이그레이션 롤 통과, E 공존).
+
+## 그 과정에서 발견 — 회원 탈퇴가 8/19부터 죽어 있습니다
+
+`20260819010000`이 `ops_audit`에 `kind='member_self_soft_delete'`를 직접 INSERT하면서 CHECK 제약(`attendance|counter|session`)을 확장하지 않았습니다. `23514` → **트랜잭션 전체 롤백** → 회원은 "탈퇴 처리에 실패했어요"만 봅니다. 데이터 손상은 없고(전부-또는-전무) 기능만 죽었습니다. 지문: `ops_audit`에 member 계열 행 0건.
+
+**두 달 가까이 안 보인 이유**가 핵심입니다 — 다른 감사 호출부는 전부 `ops_audit_write()`를 거치고 그 함수는 `exception when others then null`로 **모든 실패를 삼킵니다**. 그 래퍼를 안 쓴 유일한 곳이 `delete_my_account`였고, 그래서 유일하게 죽었습니다.
+
+수정안을 작성해 검증까지 마쳤습니다(**아직 `supabase/migrations/`에 넣지 않았습니다** — 이유는 아래):
+- ① CHECK에 도메인 값 `'member'` 추가, 행위는 `detail.action='self_soft_delete'`로
+- ② 그 INSERT를 자체 예외 블록으로 감싸 **감사 로그 실패가 탈퇴를 죽이지 못하게** (근본 원인은 kind 오타가 아니라 구조입니다)
+
+첫 시안은 `ops_audit_write`를 그대로 쓰는 것이었는데, 드라이런에서 `actor`가 `v_member` → `null`로 떨어지는 걸 확인해(탈퇴가 그 직전에 `auth_user_id`를 끊습니다) 직접 INSERT + 자체 예외로 바꿨습니다. 검증: 탈퇴 성공·`actor` 보존·기존 3종 kind 정상·`'bogus'` 여전히 거부·**CHECK에서 `'member'`를 다시 빼도 탈퇴는 성공**(fail-safe 실증).
+
+## 두 가지 확인 부탁드립니다
+
+**1. 이 리포에 다른 세션이 동시에 작업 중입니다.** 커밋 `29466d1`(사진 egress 192px 백필)을 만든 세션이 `git add -A` + `supabase db push`를 돌리면서, 제가 아직 검증 중이던 가드 마이그레이션 파일까지 함께 커밋(`2501da0`)하고 프로덕션에 적용했습니다. 결과물 자체는 검증을 통과했으니 문제는 없지만, 미검증 파일이 그렇게 나갈 수 있는 상태입니다. 그래서 `ops_audit` 수정안은 스크래치패드에 두고 있습니다.
+
+**2. `ops_audit` 수정을 배포할까요?** 하라고 하시면 마이그레이션 디렉토리로 옮겨 `db push` + 커밋·푸시하겠습니다. 문서(`ACCOUNTING_SPEC.md` §4·§13)는 이미 갱신해뒀습니다 — 틀렸던 "운영진만 가능" 서술을 정정하고, 막은 경로와 남은 잔여 위험(본인 탈퇴는 여전히 그 달 미납을 지움)을 적었습니다.
+
+---
+
+## #145
+
+**Prompt**: 탈퇴기능대신 비활성기능 사용하는거라 안고쳐도 될듯?
+
 **Answer**: _(응답 대기 중…)_
 
 ---
