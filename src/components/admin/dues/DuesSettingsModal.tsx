@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import {
 	type DuesSettings,
 	type PlaceFeeRow,
@@ -17,7 +17,10 @@ interface Props {
 	onClose: () => void;
 }
 
-// 회비 설정(관리자): 회비/대관비 기본액·offset·클럽 계좌 + 장소별 대관비. 한 번에 저장.
+// 입력칸 아래 한 줄 설명(라벨이 짧아진 대신 규칙은 여기서 풀어 쓴다).
+const hintStyle: CSSProperties = { fontSize: 12, marginTop: 5, lineHeight: 1.35 };
+
+// 회비 설정(관리자): 회비/대관비 기본액·offset·합류 컷오프일·클럽 계좌 + 장소별 대관비. 한 번에 저장.
 export default function DuesSettingsModal({ onClose }: Props) {
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
@@ -26,6 +29,7 @@ export default function DuesSettingsModal({ onClose }: Props) {
 	const [monthlyFee, setMonthlyFee] = useState("5000");
 	const [courtFeeDefault, setCourtFeeDefault] = useState("6000");
 	const [offsetDays, setOffsetDays] = useState("3");
+	const [joinCutoffDay, setJoinCutoffDay] = useState("21");
 	const [bankName, setBankName] = useState("");
 	const [bankAccount, setBankAccount] = useState("");
 	const [accountHolder, setAccountHolder] = useState("");
@@ -43,6 +47,7 @@ export default function DuesSettingsModal({ onClose }: Props) {
 				setMonthlyFee(String(s.monthlyFee));
 				setCourtFeeDefault(String(s.courtFeeDefault));
 				setOffsetDays(String(s.offsetDays));
+				setJoinCutoffDay(String(s.joinCutoffDay));
 				setBankName(s.bankName ?? "");
 				setBankAccount(s.bankAccount ?? "");
 				setAccountHolder(s.accountHolder ?? "");
@@ -63,6 +68,7 @@ export default function DuesSettingsModal({ onClose }: Props) {
 		const mf = Number(monthlyFee);
 		const cf = Number(courtFeeDefault);
 		const od = Number(offsetDays);
+		const jc = Number(joinCutoffDay);
 		if (!Number.isInteger(mf) || mf < 0 || !Number.isInteger(cf) || cf < 0) {
 			setError("금액은 0 이상 정수여야 해요.");
 			return;
@@ -71,12 +77,17 @@ export default function DuesSettingsModal({ onClose }: Props) {
 			setError("오프셋 일수는 0~15 사이여야 해요.");
 			return;
 		}
+		if (!Number.isInteger(jc) || jc < 1 || jc > 31) {
+			setError("합류 컷오프일은 1~31 사이여야 해요.");
+			return;
+		}
 		setError(null);
 		setSaving(true);
 		const patch: Partial<DuesSettings> = {
 			monthlyFee: mf,
 			courtFeeDefault: cf,
 			offsetDays: od,
+			joinCutoffDay: jc,
 			bankName: bankName.trim() || null,
 			bankAccount: bankAccount.trim() || null,
 			accountHolder: accountHolder.trim() || null,
@@ -132,18 +143,39 @@ export default function DuesSettingsModal({ onClose }: Props) {
 							</div>
 						</div>
 
-						<div>
-							<label className={labelCls} style={labelStyle}>
-								가입 오프셋 (일) — 가입일+N일이 든 달의 다음 달부터 회비 부과
-							</label>
-							<input
-								type="number"
-								inputMode="numeric"
-								value={offsetDays}
-								onChange={(e) => setOffsetDays(e.target.value)}
-								className={inputCls}
-								style={{ ...inputStyle, maxWidth: 120 }}
-							/>
+						<div className="flex gap-3">
+							<div style={{ flex: 1 }}>
+								<label className={labelCls} style={labelStyle}>
+									가입 오프셋 (일)
+								</label>
+								<input
+									type="number"
+									inputMode="numeric"
+									value={offsetDays}
+									onChange={(e) => setOffsetDays(e.target.value)}
+									className={inputCls}
+									style={inputStyle}
+								/>
+								<p className="text-faint" style={hintStyle}>
+									가입일+N일이 든 달의 다음 달부터 부과
+								</p>
+							</div>
+							<div style={{ flex: 1 }}>
+								<label className={labelCls} style={labelStyle}>
+									합류 컷오프 (일)
+								</label>
+								<input
+									type="number"
+									inputMode="numeric"
+									value={joinCutoffDay}
+									onChange={(e) => setJoinCutoffDay(e.target.value)}
+									className={inputCls}
+									style={inputStyle}
+								/>
+								<p className="text-faint" style={hintStyle}>
+									이 날짜 이후 가입·재가입이면 그 달 회비 미부과
+								</p>
+							</div>
 						</div>
 
 						{/* 클럽 계좌(민감 · 관리자만) */}

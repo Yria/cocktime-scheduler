@@ -15,6 +15,8 @@ export interface DuesSettings {
 	monthlyFee: number;
 	courtFeeDefault: number;
 	offsetDays: number;
+	/** 합류 컷오프일(1~31). 실제 합류일이 그 달 이 날짜 이후면 그 달 회비는 미부과 — dues_generate_monthly 하한. */
+	joinCutoffDay: number;
 	bankName: string | null;
 	bankAccount: string | null;
 	accountHolder: string | null;
@@ -89,7 +91,7 @@ function ymRangeKst(ym: string): { start: string; end: string } {
 export async function fetchDuesSettings(): Promise<DuesSettings | null> {
 	const { data, error } = await supabase
 		.from("dues_settings")
-		.select("monthly_fee, court_fee_default, offset_days, bank_name, bank_account, account_holder")
+		.select("monthly_fee, court_fee_default, offset_days, join_cutoff_day, bank_name, bank_account, account_holder")
 		.eq("id", 1)
 		.maybeSingle();
 	if (error) {
@@ -101,6 +103,7 @@ export async function fetchDuesSettings(): Promise<DuesSettings | null> {
 		monthlyFee: data.monthly_fee,
 		courtFeeDefault: data.court_fee_default,
 		offsetDays: data.offset_days,
+		joinCutoffDay: data.join_cutoff_day,
 		bankName: data.bank_name,
 		bankAccount: data.bank_account,
 		accountHolder: data.account_holder,
@@ -114,6 +117,7 @@ export async function updateDuesSettings(
 	if (patch.monthlyFee !== undefined) row.monthly_fee = patch.monthlyFee;
 	if (patch.courtFeeDefault !== undefined) row.court_fee_default = patch.courtFeeDefault;
 	if (patch.offsetDays !== undefined) row.offset_days = patch.offsetDays;
+	if (patch.joinCutoffDay !== undefined) row.join_cutoff_day = patch.joinCutoffDay;
 	if (patch.bankName !== undefined) row.bank_name = patch.bankName;
 	if (patch.bankAccount !== undefined) row.bank_account = patch.bankAccount;
 	if (patch.accountHolder !== undefined) row.account_holder = patch.accountHolder;

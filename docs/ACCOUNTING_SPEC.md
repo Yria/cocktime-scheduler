@@ -49,9 +49,9 @@
 - **`dues_allocations`** — 입금↔부과 배분(**가역 레코드**: 취소/재매칭 안전). `bank_tx_id`, `charge_id`(nullable), `member_id`(납부 주체), `amount`, `kind`. 트리거가 charge.amount_paid·status와 bank_tx.status를 유지. **waived/void엔 배분 금지(가드).**
 - **`bank_transactions`** — 은행 거래. `direction(in|out)`, `amount`(양수), `balance_after`, `status(unmatched|proposed|partial|matched)`, `category_id`(수지 분류), `session_id`(대관 지출·비회원 대관 수입 귀속), `refund_of_tx_id`(환불 연결), **`paid_by`(비부과 카테고리 납부의 납부 회원 — 내 납부 이력용)**, `dedup_key`(멱등).
 - **`txn_categories`** — 수지 분류(콕공구·이자·정모·기타 등). 관리자 추가/삭제. (코트대관은 카테고리가 아니라 `session_id`.)
-- **`dues_settings`** — 싱글톤: 회비액·대관비 기본액·`offset_days`·클럽 계좌(`bank_name`/`bank_account`/`account_holder`).
+- **`dues_settings`** — 싱글톤: 회비액·대관비 기본액·`offset_days`·**`join_cutoff_day`**(합류 컷오프일, 기본 21 — §4 회비 룰)·클럽 계좌(`bank_name`/`bank_account`/`account_holder`).
 - **`raw_bank_emails`** — 수신 원문 보관(재파싱·감사). **`dues_audit_log`** — append-only 감사 로그.
-- 재사용: `members`(+`membership_started_at`=가입일 보정, +`is_honorary`=명예회원 회비 면제 플래그), `sessions`/`attendances`/`places`, `notifications`→푸시.
+- 재사용: `members`(+`membership_started_at`=가입일 보정, +**`rejoined_at`**=마지막 재활성화 시각(트리거 스탬프, §4 합류월 하한), +`is_honorary`=명예회원 회비 면제 플래그), `sessions`/`attendances`/`places`, `notifications`→푸시.
 - **`member_honorary`** — 명예회원 지정 사유(관리자 메모). `member_id`(PK)·`reason`. members RLS(로그인 전원 조회)와 분리해 **is_admin만 조회**(사유 비공개). 쓰기는 `dues_set_honorary` RPC만.
 
 ---
@@ -160,7 +160,16 @@
 - **수동 배치**: `generate_dues_charges(ym)`(is_admin) — 과거 달 보정 등 fallback.
 
 규칙 단일 소스(빌딩블록): `dues_generate_monthly(ym)`(회비) · `dues_generate_session_court(sid)`(세션 대관비). 트리거·ensure·수동배치가 모두 이 둘을 재사용.
-- **회비 룰**: `is_active AND not is_guest AND not is_honorary AND not 운영진`, 가입월(`membership_started_at ?? created_at` + `offset_days`) 다음 달부터 `amount_due=회비액`.
+- **회비 룰**: `is_active AND not is_guest AND not is_honorary AND not 운영진`, 가입월(`membership_started_at ?? created_at` + `offset_days`) 다음 달부터 `amount_due=회비액`. **단 합류월은 하한이 걸린다**(바로 아래).
+  - **합류월 하한 — 컷오프일 이후 합류면 그 달은 미부과** (2026-08-21, `20260821000000`).
+    - **실제 합류일 = max(계정 생성일, 마지막 재활성화일)@KST**. 이게 `dues_settings.join_cutoff_day`(기본 21) 이상인 달은 그 달 회비를 만들지 않는다.
+    - **왜 별도 규칙인가**: 위 시작월 식은 "언제부터 회원으로 칠까"만 본다. `membership_started_at` 은 운영진의 **판단**(소급 보정)이고 `created_at`/`rejoined_at` 은 **사실**이라 소스가 다르다. 사실 쪽을 안 보면 두 경로에서 월말 합류자가 그 달 회비를 다 낸다 — ① **재활성화 재가입**(탈퇴=비활성이라 `created_at` 이 옛날 그대로 → 재활성화 즉시 당월 부과), ② **가입월 소급 보정**(기존회원이 계정을 새로 만들어 `membership_started_at` 을 과거로 내리면 계정 생성이 월말이어도 당월이 부과 대상). 실측: 전창우·김영주(7/21 생성)·박병훈(7/27 생성)은 6월 보정 뒤 7월 회비가 붙었다.
+    - **하한이라 부과가 늘지 않는다.** 시작월 식은 그대로 두고 AND 로 얹기만 한다. 신규 가입자는 어차피 가입월이 통째로 유예라 하한이 물릴 자리가 없다 → 부과 변화 0건. 달라지는 건 위 ①·② 의 **합류월 딱 한 달**이다.
+    - `membership_started_at` 을 일부러 보지 않으므로, 가입월을 과거로 보정해도 **합류월은 여전히 면제**된다. 반대로 합류 **이전** 달은 이 규칙이 막지 않는다(범위를 합류월 한 달로 좁혔다) — 소급 보정 시엔 합류 전 달을 청구하지 않도록 `membership_started_at` 을 그만큼만 내려 잡는다.
+    - **재활성화 스탬프**: `members.is_active` 가 false→true 로 바뀌면 BEFORE 트리거 `trg_members_stamp_rejoined_on_activate` 가 `rejoined_at = now()` 를 찍는다. 정지 트리거와 같은 이유로 테이블에 붙였다(재활성화 경로가 클라이언트 직접 UPDATE `setMemberActive` 라 RPC 게이트가 없다).
+    - **이미 생긴 부과는 지우지 않는다**(20260820000000 §2 와 같은 원칙). 위 3명의 7월분도 그대로 남는다 — 되돌리려면 사람이 [면제]로 판단한다.
+    - **알려진 틈 (좁히지 못했다)**: 같은 달 안에서 비활성→재활성을 컷오프 이후에 하면 그 달 회비가 사라진다 — 정지 트리거가 미납분을 지우고 재활성 스탬프가 재생성을 막는다. **운영진 전용 조작이 아니다**: `members_update` RLS 가 `is_admin() OR auth_user_id = auth.uid()` 이고 `authenticated` 롤에 members UPDATE 권한이 있어 로그인한 회원이면 누구나 PostgREST PATCH 두 번으로 자기 `is_active` 를 토글할 수 있다(앱 UI 엔 없는 경로 — 본인 탈퇴는 `delete_my_account` 가 `auth_user_id` 까지 끊어 재로그인이 불가능하다). 회비를 지우는 구멍 자체는 20260820020000 이 낸 것이고 이번 변경이 더하는 건 **그 달 재생성 복구가 막힌다**는 점뿐이다. **복구**: `members.rejoined_at` 을 NULL 로 되돌리고 그 달 재생성, 또는 감사 로그 `uncharge_dues_on_deactivate` 의 금액으로 `dues_charges` 를 직접 INSERT. **근본 차단**(회원의 self `is_active` 토글 금지)은 본인 탈퇴·게스트 행 재사용 경로와 함께 봐야 해 미착수 — §13 참고.
+    - **컷오프는 설정값**: 회비 설정 모달의 [합류 컷오프 (일)]. 1~31, 기본 21.
   - **비활성(정지) = 부과 대상 아님. 면제가 아니라 미부과다** (2026-08-20, `20260820000000` + `20260820020000`).
     - **생성**: 활성 회원만. 나간 사람에게 매달 새 회비가 붙으면 영구 미납이 쌓인다.
     - **잔재**: `members.is_active` 가 true→false 로 바뀌면 트리거 `trg_members_uncharge_dues_on_deactivate` 가 그 회원의 **미납(`status='unpaid'` AND `amount_paid=0` AND `deferred_to is null`) 회비 행을 삭제**한다. 생성만 막고 잔재를 남기면 규칙이 반만 적용돼 미납 현황에 영구히 쌓인다(운영진이 매번 손으로 지우던 것).
@@ -256,7 +265,7 @@
 - **부과**: `dues_ensure_monthly`(월진입 회비), `generate_dues_charges`(수동 배치 fallback), 빌딩블록 `dues_generate_monthly`·`dues_generate_session_court`(내부), 트리거 `trg_session_court_on_close`(세션 종료 대관). **명예회원**: `dues_set_honorary`(지정/해제 + 미납 회비 정리). ~~**알림**: `dues_notify_selected`~~ — DB에만 잔존, 클라 호출 없음(§3.1·§9).
 - **카테고리**: `dues_add_category`/`dues_delete_category`.
 - **회원 노출**: `dues_my_payments`, `dues_public_ledger`, `dues_club_account`.
-- **트리거/내부**: `dues_alloc_guard`·`dues_alloc_sync`(dues_allocations 트리거), `dues_sync_bank_tx`(status 동기 헬퍼).
+- **트리거/내부**: `dues_alloc_guard`·`dues_alloc_sync`(dues_allocations 트리거), `dues_sync_bank_tx`(status 동기 헬퍼), `members_uncharge_dues_on_deactivate`(정지 시 미납 회비 삭제, §4)·`members_stamp_rejoined_on_activate`(재활성화 시 `rejoined_at` 스탬프, §4) — 둘 다 members 테이블 트리거.
 
 ---
 
@@ -265,6 +274,9 @@
 **미구현(계획엔 있었으나 안 만듦)**
 - **다은행 파서 어댑터 레지스트리 / LLM 폴백 / 골든 테스트**(§7) — 현재 토스 단일 파서.
 - **`dues_policies`(금액 정책 이력)** — 미생성. 금액은 `dues_settings` 단일값 + charge 스냅샷.
+
+**열린 구멍(회비에 직접 영향, 미착수)**
+- **회원이 자기 `is_active` 를 직접 토글할 수 있다** → 자기 그 달 미납 회비를 지울 수 있다. `members_update` RLS 가 `is_admin() OR auth_user_id = auth.uid()` 이고 `authenticated` 롤에 members UPDATE 테이블 권한이 있어, PostgREST PATCH 두 번(false→true)이면 성립한다. 앱 UI 엔 그 버튼이 없고(본인 탈퇴는 `delete_my_account` 가 `auth_user_id` 까지 끊어 재로그인 불가) 감사 로그 `uncharge_dues_on_deactivate` 에 actor 가 본인으로 남지만, **탐지형이지 차단형이 아니다**. 노출 창은 매달 컷오프(21일) 이후 ~11일, 피해는 1인 5,000원/월. 막으려면 `members.is_active` 변경을 운영진으로 제한해야 하는데(BEFORE 트리거에서 `current_user='authenticated' AND NOT is_admin()` 거부 등), **본인 탈퇴(`delete_my_account`)·게스트 행 재사용(`20260819030000`) 두 SECURITY DEFINER 경로를 함께 통과시켜야** 해서 별도 작업으로 남긴다. §4 '알려진 틈' 과 같은 뿌리.
 
 **죽은 자산** — 모두 정리됨(2026-07-15): `dues_match_queue`(행 0), `member_name_aliases`(휴면 33행, `dues_cancel_match`에서 참조 제거 후 drop) 삭제 완료.
 

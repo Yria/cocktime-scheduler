@@ -4187,6 +4187,433 @@ DB 마이그레이션·Edge Function 변경 없으니 배포는 `git push`(GitHu
 
 **Prompt**: 커밋하고 배포해
 
+**Answer**: 배포 완료했습니다.
+
+**커밋** `5e7d490` — `자동편성: 경기중 후보의 대기 항 차단 — 실효 ghost 페널티 고정` (5 files, +586/−18)
+
+**배포** GitHub Actions `Deploy` 성공 → https://ckti.me 반영됨 ([run](https://github.com/Yria/cocktime-scheduler/actions/runs/32383911986))
+
+DB 마이그레이션·Edge Function 변경이 없어서 `supabase db push`나 `functions deploy`는 필요 없습니다. 프론트만 나갔습니다.
+
+히스토리는 훅이 `.agent-history/main.md`에 `#124`로 기록 중이라 이번 커밋에는 자리표시자 상태로 들어갔습니다(다음 커밋에 채워진 본문이 따라옵니다).
+
+## 다음 세션에 볼 것
+
+배포 직후 첫 세션부터 방향이 보입니다:
+
+| 지표 | 현행 baseline | 성공 기준 |
+|---|---|---|
+| 코트 유휴 p90 | 7.33분 | ≤ 6.0분 |
+| 유휴 5분 초과 비율 | 14.3% | ≤ 11% |
+| 타코트 30초 내 재투입 | 1.37% | ≤ 0.6% |
+| b2b | 감사 기준 널 대비 +5.1%p | **+9%p 넘으면 롤백 신호** |
+
+재투입 지표를 볼 때 **같은 코트 잔류(78건)는 반드시 빼고** 세야 합니다 — 그건 "그 코트가 마침 비었다"이지 ghost가 아니라서, 안 빼면 baseline이 6.45%로 잡혀 개선이 안 보입니다. 세션 끝나면 제가 스크래치패드 스크립트로 계산해 드릴 수 있습니다.
+
+롤백은 `git revert 5e7d490` + push로 분 단위입니다.
+
+남은 두 건은 아직 안 건드렸습니다 — **동점 무작위화**(첫 픽의 22%가 정확 동점, 그중 81%가 직전 동반 4인이라 같은 사람이 항상 이기는 문제)와 **배정 순번 눈금**(W_LAP 8, 컬럼 1개 + RPC 수정). 이번 변경 효과를 1~2세션 확인한 뒤에 하시는 게 원인 귀속이 깨끗합니다.
+
+---
+
+## #125
+
+**Prompt**: <task-notification>
+<task-type>artifact-watch-lifecycle</task-type>
+<summary>Stopped watching Artifact: "만나는 사람만 만나는가" (could not reconnect)</summary>
+<event>Watch on https://claude.ai/code/artifact/e7cb7601-8081-41de-8b29-49336746549d ended — no such artifact for this account (it was deleted, or it has not been shared with the user). This session will no longer hear when it is republished; watch it again if you still need that.</event>
+</task-notification>
+
+**Answer**: 두 번째 아티팩트(`e7cb7601…`)도 게시 직후 같은 이유로 감시가 끊겼습니다. 두 번 연속 같은 패턴이라 계정 쪽에서 아티팩트가 유지되지 않는 것으로 보입니다 — 링크가 열리지 않을 수 있습니다.
+
+원본은 `scratchpad/meeting-balance-audit.html`에 그대로 있으니, 링크가 안 열리면 파일을 프로젝트 안(예: `docs/`)으로 옮겨 두거나 감사 내용을 마크다운으로 `docs/MATCH_LOG_ANALYSIS.md`에 §4d로 붙여드리는 편이 확실합니다. 어느 쪽으로 할까요?
+
+커밋·배포는 정상 완료된 상태라 이 건과는 무관합니다.
+
+---
+
+## #126
+
+**Prompt**: Cached egress (Bandwidth): 8.78 GB of 5.5 GB 이거땜에 슈파베이스 결제했는데 뭐가 문제일까
+
 **Answer**: _(응답 대기 중…)_
+
+---
+
+## #127
+
+**Prompt**: Cached egress (Bandwidth): 8.78 GB of 5.5 GBCached egress (Bandwidth): 8.78 GB of 5.5 GB 이거땸에 슈파베이스 결제햤는데 뭐가문제일까
+
+**Answer**: 조사를 백그라운드로 6개 렌즈 병렬 실행했습니다. 진행 중에 지금까지 확인된 것만 먼저 정리하면:
+
+**측정된 사실**
+- Storage 버킷은 `player-photos` 하나뿐 — 객체 216개, **총 4.5 MB**, 평균 21 kB
+- 즉 8.78 GB는 그 버킷 전체를 **약 1,970번** 다시 내보낸 양
+
+**가장 유력한 용의자 (검증 중)**
+- `src/lib/playerPhotoUpload.ts:89` — 업로드 시 `cacheControl: "600"`, 즉 **max-age 10분**. 이미 `?v={photo_updated_at}` 캐시버스팅이 있어서 캐시를 1년 immutable로 잡아도 안전한데, 10분마다 브라우저·CDN이 사진 전량을 다시 받아갑니다. 명단 화면 한 번 열 때 수십 장 × 21 kB가 10분 주기로 반복되면 수 GB는 쉽게 쌓입니다.
+
+지금 돌고 있는 조사에서 확인하는 것:
+1. edge 로그 24시간치로 **경로별 실제 바이트 랭킹** (Storage vs REST vs Realtime 비중)
+2. 화면별 동시 `<img>` 개수 정량화 + 같은 사진이 서로 다른 URL로 중복 요청되는지
+3. 실제 응답 헤더 실측 (`cf-cache-status`, ETag 304 동작, 쿼리스트링이 CDN 캐시키에 포함되는지)
+4. 트래픽 주체 — 사람 사용량으로 8.78 GB가 산식이 맞는지, 아니면 폭주 루프인지
+5. 처방별 절감량 (immutable 캐시 / WebP·해상도 축소 / 서비스워커 캐시 / Storage 우회)
+
+각 발견은 별도 에이전트가 **반증을 시도**해서 살아남은 것만 보고합니다. 완료되면 수치 근거가 붙은 진단서를 드리겠습니다.
+
+---
+
+## #128
+
+**Prompt**: <task-notification>
+<task-id>wsrkyi47k</task-id>
+<tool-use-id>toolu_01SfWgeZXRSKpsQE3aem5jKM</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/0ebf05b6-201a-43b2-88f5-f7ca1b802293/tasks/wsrkyi47k.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Supabase Cached egress 8.78GB 초과 원인 규명 (프로덕션 로그 + 코드 감사 + 검증)" completed</summary>
+<result>{"report":"# Supabase Cached egress 8.78 GB 진단서\n\n## 1. 결론\n\n**확실한 것**: 8.78 GB는 사실상 전부 `player-photos` 버킷의 아바타 사진이다. 최근 24시간(진단용 curl 제외) 실측으로 사진 객체가 **9,595건의 전체본문 200 응답 = 331.4 MB/일**을 냈고, 30일 환산 **9.94 GB**로 대시보드 수치와 같은 자릿수다. 그리고 이 사진 응답은 `cf_cache_status: HIT`인데 REST·Auth·Realtime은 **전량 DYNAMIC**(CDN 캐시 대상 자체가 아님)이므로, \"Cached egress\"라는 지표에 들어올 수 있는 것은 구조적으로 사진뿐이다. 그 안에서도 **20 kB 이상 객체 24개가 316.2 MB/일 = 95.4%**를 만든다. 원인은 두 개가 곱해진 것이다 — ① 28~96 px로 그리는 아바타를 512×512 / q0.85(평균 64 kB, 최대 152 kB)로 저장하고, ② 최대 소비자인 iOS가 본문을 보관하지 않아(200 5,975건 vs 304 936건 = 86.5%가 전체본문) 매번 그 바이트를 다시 받는다.\n\n**추정인 것**: 월 환산은 전부 이 하루(평일)의 ×30 외삽이다(무료 플랜 로그 보존 1일). 청구주기 시작일을 확인할 수 없어(`/v1/projects/{ref}/usage`·`/v1/organizations/{slug}/usage` 모두 404) 8.78 GB가 며칠 누적인지 모른다 — 달력월(8/1~8/21, 20.5일)로 보면 사진이 77%, 가입기념일 기준 26.5일 누적으로 보면 100%다. REST 바이트는 로그로 측정 불가(chunked+gzip)해서 실제 URL 재생 실측(약 19.4 MB/일)에 요청수를 곱한 추정이며, 이건 Cached egress가 아니라 별도 쿼터다. Realtime WebSocket 페이로드는 어떤 로그에도 바이트가 남지 않아 **측정 불가**다(단 DYNAMIC이므로 이 청구서와 무관).\n\n---\n\n## 2. egress 수지 표\n\n기준: 최근 24h edge_logs, `user_agent not like 'curl%'`(진단 자기오염 제거).\n\n| 원천 | 실측 요청/일 | 바이트/일 | GB/30일 | Cached egress 기여 | 근거 |\n|---|---|---|---|---|---|\n| **player-photos 객체 200 (CDN HIT)** | 9,595 | **331.4 MB** | **9.94** | 100% | `sum(content_length)` = 331,382,742 B |\n| ├ ≥20 kB 객체 24개 | 5,043 | 316.2 MB | 9.49 | 95.4% | content_length 밴드 분해 |\n| └ &lt;20 kB 객체 23개 | 4,552 | 15.2 MB | 0.46 | 4.6% | 같은 쿼리 |\n| player-photos 304 | 6,011 | 0 B | 0 | 0 | 본문 없음 |\n| player-photos 400 | 7 | 616 B | ~0 | ~0 | 존재하지 않는 키 |\n| `/rest/v1/*` | 17,296 (200) + 651 (204) + 518 (201) | ~19.4 MB *(추정)* | 0.58 *(추정)* | **0** — 전량 DYNAMIC | content_length 없음(chunked+gzip). 서비스키로 실제 URL 재생한 gzip 실측 기반 |\n| `/auth/v1/*` | 468 | 243 B | ~0 | 0 | 실측 |\n| `/realtime/v1/websocket` | 790 (101 업그레이드) | **측정 불가** | 미상 | 0 (DYNAMIC) | WS 프레임 바이트가 edge_logs·realtime_logs 어디에도 없음 |\n| Edge Functions | 0 | 0 | 0 | 0 | 24h 내 호출 0건 |\n| `/storage/v1/render/*` | 0 (실사용자) | 0 | 0 | 0 | `grep -rn \"render/image\" src/` = 0건. 앱은 이 경로를 쓰지 않음 |\n| **Cached egress 합계** | | **331.4 MB** | **9.94** | | |\n\n**8.78 GB와의 대조**\n\n- 청구주기 = 달력월 가정(8/1~8/21 = 20.5일): 필요 속도 0.428 GB/일 vs 사진 실측 0.331 GB/일 → 사진 **77.4%**, **미설명 0.097 GB/일 (누적 약 2.0 GB)**.\n- 청구주기 = 가입기념일 가정: 8.78 ÷ 0.331 = **26.5일** → 주기 시작이 7/26 전후라면 사진 단독으로 **100%** 설명.\n- **미설명분의 후보는 다른 서비스가 아니다.** REST/Auth/Realtime은 전량 `cf_cache_status=DYNAMIC`이라 이 지표에 들어올 수 없다. 남는 설명은 (a) 청구주기 시작일이 8/1이 아니다, (b) 월초 트래픽이 이 하루보다 높았다 — 둘 다 로그 보존 1일 때문에 **검증 불가**.\n\n---\n\n## 3. 근본 원인 (기여도 순)\n\n### 원인 1 — 업로드 인코딩이 표시 크기의 수십 배 (바이트의 95.4%)\n\n`src/lib/playerPhotoUpload.ts:19-20`\n```\nexport async function processImageToSquareJpeg(file: File, size = 512, quality = 0.85)\n```\n유일한 호출부 `src/components/ProfileSetup.tsx:72`가 `processImageToSquareJpeg(file)` — 인자를 넘기지 않으므로 **항상 512×512 / q0.85**가 적용된다.\n\n수치 근거:\n- 앱 업로드분 65개: 합 4,165,246 B, **평균 64,081 B, 최대 155,192 B**\n- 실제 서빙되는 live 집합 69개 중 ≥20 kB **30개가 2,049,838 B = live 바이트의 93.7%** (평균 68,328 B)\n- 트래픽 기준: ≥20 kB **24개 객체가 5,043회 전체본문 200 = 316.2 MB/일 = 사진 egress의 95.4%**\n- 표시 크기: `PlayerAvatar` 기본 32 px, 호출부 28/34/44/88/96, 보드 자석 `src/lib/board/constants.ts:2` `MAGNET_SIZE = 64`. 512 px가 필요한 자리는 `src/components/admin/MemberPhotoModal.tsx:36-46`(전체폭 `&lt;img&gt;`, 약 348 CSS px) 단 하나이며 이건 운영진 전용 저트래픽 경로다.\n- 대조군(같은 앱·같은 24시간): 레거시 128 px/q60 산출물 23개는 4,552회 요청에 15.2 MB뿐. **요청 수는 거의 같은데 바이트가 21배 차이** — 크기가 원인이라는 통제된 증거다.\n\n### 원인 2 — 최대 소비자가 본문을 보관하지 않는다 (승수)\n\n실측 상태코드 분해(24h, 사진 객체):\n\n| 클라이언트 | 200 (전체본문) | 304 (0 B) | 전체본문 비율 |\n|---|---|---|---|\n| iPhone | **5,975** | 936 | **86.5%** |\n| Android | 3,417 | 4,598 | 42.6% |\n\nAndroid는 캐시가 정상 동작해 대부분 0바이트 304를 받는다. iOS는 거의 매번 전체본문을 받는다 — 엔티티가 남아 있지 않다는 뜻이고, 그래서 원인 1의 바이트가 그대로 반복 곱해진다. 백스톱도 없다: `public/sw.js:14`의 fetch 핸들러는 `event.request.mode === \"navigate\"`만 가로채고 이미지는 통과시키며, 파일 첫 줄이 스스로 \"웹푸시 전용 (오프라인 캐싱 없음)\"이라 명시한다(`caches.*` 사용 0건).\n\n### 원인 3 — 캐시 헤더가 10분 (3순위, 바이트 기여는 작다)\n\n`src/lib/playerPhotoUpload.ts:73` `cacheControl: \"600\"`. `src/lib/playerPhoto.ts:88-94` `buildUrl()`이 이미 `?v={photo_updated_at}`로 content-addressed URL을 만드는데도 TTL이 10분이다.\n\n**단, 이걸 1년으로 올려도 바이트는 거의 안 준다.** 오늘 실측 GET 헤더는 정상적으로 `public, max-age=600`을 반환하고 있고(§5 함정 1 참조), 그 상태에서 Android는 이미 4,598건을 0바이트 304로 처리하고 있다. 즉 TTL 연장으로 사라지는 것은 **0바이트짜리 304 왕복**이지 바이트가 아니다. 그리고 iOS는 만료 여부와 무관하게 본문을 잃는다.\n\n부수적으로 레거시 경로가 만든 `no-cache` 151개(합 503,913 B, 평균 3,337 B)는 매 표시마다 왕복을 강제하지만 **바이트 기여는 4.6%**이고, 그 중 110개는 md5 파일명이라 현재 앱이 요청조차 하지 않는다.\n\n### 원인 4 — 구조적 곱셈 (병리 아님)\n\n47개 객체가 9,595회 전체본문으로 나갔다 = **객체당 204회/일**. 158개 IP(모바일 IP 로테이션이라 기기 수 아님). 시간대 곡선이 저녁 피크의 사람 활동 형태이고 크롤러 UA는 0건이므로 루프·봇·모니터링이 아니다. \"명단 전원의 사진을 한 화면에 그리는 화면 × 하루 여러 번 열람\"이라는 정상 사용의 곱셈이며, 따라서 손댈 레버는 요청 수가 아니라 **응답당 바이트**다.\n\n---\n\n## 4. 처방\n\n### 즉시 조치 (둘 중 하나 — 이것만으로 한도 아래로 내려간다)\n\n**A. `render/image` 변환 경로로 표시 크기만 받기** — 마이그레이션 불필요\n\n`src/lib/playerPhoto.ts:93`의 base URL을 `/storage/v1/object/public/...` → `/storage/v1/render/image/public/...?width=128&amp;height=128&amp;resize=cover&amp;quality=70`으로 바꾼다. 관리자 모달만 큰 width로 별도 요청.\n\n오늘 실측(원본 148,926 B, 최대 객체):\n\n| width | JPEG | WebP(Accept 자동협상) |\n|---|---|---|\n| 96 | 2,415 B | **1,766 B** |\n| 128 | 3,575 B | **2,772 B** |\n| 192 | 6,688 B | 5,754 B |\n| 256 | 13,416 B | 13,396 B |\n\n- **예상 절감: 331 MB/일 → 약 33 MB/일 = 월 9.94 GB → 약 1.0 GB (-90%)**\n- 난이도: **하** (코드 한 줄, 기존 216개 객체 그대로)\n- 리스크: **Image Transformations는 통상 유료 기능이다.** 이 프로젝트에서 `selected_addons: []`인데도 200이 떨어지고 `features.imageTransformation.enabled: true`인 것까지만 확인했다 — 무료 플랜에서 어떻게 미터링/과금되는지는 **확인 불가**. 적용 후 대시보드의 Image transformations 사용량을 반드시 확인할 것. 부수 리스크: 이미 128 px인 작은 41개는 변환하면 오히려 커진다(실측 5,014 → 5,242 B), 크기 임계로 분기하거나 +3 MB/일을 감수.\n\n**B. 업로드 기본값 축소 + 기존 30개 백필** — 과금 불확실성 없음\n\n`src/lib/playerPhotoUpload.ts:19-20`을 `size = 256`(또는 384) / `quality = 0.8`로 낮추고, **동시에** 서비스키 스크립트로 live 대용량 30개를 재인코딩해 `upsert` 재업로드 + `photo_updated_at` 갱신.\n\n- 실측 재인코딩 배율: live 대용량 31개를 256/q80 JPEG로 → 2,058,580 → 709,577 B (×0.345). **월 9.94 → 약 3.9 GB.** 256 WebP면 약 2.3 GB.\n- 난이도: **중** (브라우저 canvas 파이프라인을 못 쓰므로 별도 스크립트, 512 JPEG를 소스로 하니 세대 손실 1회)\n- 리스크: **코드만 고치고 백필을 빼먹으면 절감 0**(기존 객체가 바이트의 95.4%). `size=256`은 `MemberPhotoModal`(전체폭 약 348 CSS px)에서 눈에 보이게 흐려진다 — 그 화면 화질을 지키려면 384, 또는 A와 병행.\n\n### 단기\n\n**C. `cacheControl: \"600\"` → `\"31536000\"`** — `src/lib/playerPhotoUpload.ts:73`\n- 예상 절감: **바이트 0.03~0.17 GB/월** (제거되는 것은 0바이트인 304 왕복 4,598건/일). 실질 이득은 **요청 수** 감소(무료 플랜 호출 폭주 완화).\n- 난이도 중(기존 65개 재업로드 백필 필요 — 소급 적용 안 됨), **리스크 상**.\n- `immutable`을 붙이려면 선행 수정 2개 필수: (i) `playerPhotoUpload.ts:86-88`의 `stampError` 시 `return true` — 파일은 올라갔는데 `photo_updated_at`이 안 찍히면 `?v=`가 그대로여서 옛 사진이 1년 고착된다(현재 600초는 10분 만에 자가치유). (ii) `playerPhoto.ts:92-94`가 인덱스 미수신 시 내보내는 `?v=` 없는 맨 URL도 1년 고착 대상이 된다.\n\n**D. `public/sw.js`에 사진 cache-first 추가** — iOS 본문 미보관을 우회하는 유일한 수단\n- A를 먼저 적용하면 남는 총량이 월 1 GB뿐이라 우선순위 낮음. A 없이 단독 적용 시 상한은 iOS 몫(사진 바이트의 약 60%).\n- 함정 4개: (i) `getInstallState()`(`src/lib/push/platform.ts:53-61`)가 standalone만 `supported`로 판정 → **설치형 PWA에만 SW가 등록된다**, (ii) KakaoTalk 인앱 웹뷰(사진 바이트의 약 1/3)는 대상 밖, (iii) `&lt;img&gt;`가 `crossOrigin` 없이 로드되어 응답이 opaque → `cache.put()`이 조용히 실패한다. SW 안에서 `mode:'cors'`로 재요청해야 하고 그건 `access-control-allow-origin: *`가 확인돼 성립한다, (iv) `?v=` 없는 맨 URL은 cache-first에서 제외.\n\n### 구조 개선\n\n**E. 업로드 시 파생본 2개 저장** (`{id}_s.webp` 아바타용 + 원본) → render 과금 의존 제거. `contentType: \"image/jpeg\"` 하드코딩(`playerPhotoUpload.ts:69`)과 `.jpg` 파일명(`playerPhoto.ts:16-18`)도 함께 손봐야 함. **백필을 URL 전환보다 반드시 먼저** — 부분 백필은 404 반복 폭주를 재현한다(과거 사고 이력).\n\n**F. 고아 객체 147개(2,480,805 B) 정리** — 24h 로그에서 요청 0건. **egress 절감 0, 스토리지 용량만.** 우선순위 최하.\n\n**G. REST 페이로드(추정 0.58 GB/월) 다이어트** — `sessions`/`attendances`의 `select(\"*\")` 좁히기. **Cached egress와 무관한 별도 쿼터**이므로 이번 과금과 분리해서 다룰 것.\n\n---\n\n## 5. 함정\n\n1. **`curl -I`(HEAD)로 진단하면 오판한다.** 오늘 같은 객체에 대해 GET은 `public, max-age=600` + `cf-cache-status: HIT`, HEAD는 `no-cache` + `MISS`를 반환했다. HEAD만 보면 \"헤더 설정이 이미 무력하다\"는 잘못된 결론
+... (truncated 3126 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/0ebf05b6-201a-43b2-88f5-f7ca1b802293/tasks/wsrkyi47k.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/0ebf05b6-201a-43b2-88f5-f7ca1b802293/subagents/workflows/wf_5057dabf-4fd/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/0ebf05b6-201a-43b2-88f5-f7ca1b802293/workflows/scripts/supabase-egress-forensics-wf_5057dabf-4fd.js', resumeFromRunId: 'wf_5057dabf-4fd'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<failures>[verify:fix-plan] failed: API Error: Connection lost mid-response. The response above may be incomplete.</failures>
+<usage><agent_count>31</agent_count><agents_done>30</agents_done><agents_error>1</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>2521586</subagent_tokens><tool_uses>1137</tool_uses><duration_ms>5705467</duration_ms></usage>
+</task-notification>
+
+**Answer**: # 진단 결과: 아바타 사진이 전부입니다
+
+먼저 제 초기 추측 하나를 정정합니다. `cacheControl: "600"`을 주범으로 지목했는데, **바이트 기준으로는 아닙니다.** 실측으로 반증됐습니다.
+
+## 무엇이 나갔나 (24h edge 로그 실측, 진단용 curl 제외)
+
+| 원천 | 요청/일 | 바이트/일 | 30일 환산 | Cached egress 기여 |
+|---|---|---|---|---|
+| **player-photos 200 (전체본문)** | 9,595 | **331.4 MB** | **9.94 GB** | **100%** |
+| ├ 20 kB↑ 객체 **24개** | 5,043 | 316.2 MB | 9.49 GB | 95.4% |
+| └ 20 kB↓ 객체 23개 | 4,552 | 15.2 MB | 0.46 GB | 4.6% |
+| player-photos 304 | 6,011 | 0 B | 0 | 0 |
+| `/rest/v1/*` | 18,465 | ~19.4 MB (추정) | 0.58 GB | **0** — 전량 DYNAMIC |
+| Realtime / Auth / Functions | 790 / 468 / 0 | — | — | **0** — DYNAMIC |
+
+**REST·Realtime·Auth는 전량 `cf_cache_status=DYNAMIC`** 이라 "Cached egress"라는 지표에 구조적으로 들어올 수 없습니다. 이 계량기는 사실상 Storage 전용입니다. 그리고 사진 응답은 99.7%가 HIT인데 **Supabase는 HIT도 과금**합니다 — 캐시 히트율은 이미 정상이고 개선 여지가 없습니다.
+
+9.94 GB ≈ 8.78 GB, 자릿수가 맞습니다.
+
+## 근본 원인 — 요청 수가 아니라 **응답당 바이트**
+
+**1. 28~96 px로 그리는 아바타를 512×512 / q0.85로 저장 (바이트의 95.4%)**
+
+`src/lib/playerPhotoUpload.ts:19` 기본값이 `size = 512, quality = 0.85`인데, 유일한 호출부 `src/components/ProfileSetup.tsx:72`가 인자를 안 넘기므로 항상 그 값이 적용됩니다. 앱 업로드분 65개 **평균 64 kB, 최대 155 kB**. 그런데 실제 표시 크기는 `PlayerAvatar` 기본 32 px, 호출부 28/34/44/88/96, 보드 자석 64 px. 512 px이 필요한 자리는 `MemberPhotoModal`(약 348 px) 하나뿐이고 운영진 전용입니다.
+
+통제된 증거: 같은 24시간, 레거시 128 px 객체 23개는 요청 수가 거의 같은데(4,552 vs 5,043) **바이트는 1/21**입니다.
+
+**2. iOS가 본문을 보관하지 않는다 (승수)**
+
+| | 200 (전체본문) | 304 (0 B) | 전체본문 비율 |
+|---|---|---|---|
+| iPhone | **5,975** | 936 | **86.5%** |
+| Android | 3,417 | 4,598 | 42.6% |
+
+Android는 캐시가 정상 작동해 대부분 0바이트 304를 받습니다. iOS는 만료와 무관하게 거의 매번 본문을 다시 받아갑니다. `public/sw.js`는 `caches.*` 사용이 0건이라 백스톱도 없습니다.
+
+**3. `cacheControl: "600"` — 3순위, 바이트 기여는 거의 없음**
+
+1년으로 올려서 사라지는 것은 **이미 0바이트인 304 왕복**입니다(절감 상한 0.03~0.17 GB/월). iOS는 만료와 무관하게 본문을 잃습니다. 실질 이득은 대역폭이 아니라 **요청 수** 감소입니다.
+
+## 처방 — 둘 중 하나로 한도 아래로 내려갑니다
+
+**A. `render/image` 변환 경로 (권장, 마이그레이션 불필요)**
+
+`src/lib/playerPhoto.ts:93`의 base URL 한 줄:
+`/storage/v1/object/public/...` → `/storage/v1/render/image/public/...?width=128&quality=70`
+
+실측(원본 148,926 B): width 128 → JPEG 3,575 B / **WebP 2,772 B** (Accept 자동협상). 96 px면 1,766 B.
+→ **월 9.94 GB → 약 1.0 GB (-90%)**, 난이도 하.
+
+리스크: Image Transformations가 통상 유료 기능입니다. `selected_addons: []`인데도 200이 떨어지고 `features.imageTransformation.enabled: true`인 것까지만 확인했습니다 — 무료 플랜 과금 방식은 확인 불가. **적용 직후 대시보드의 Image transformations 사용량을 확인**하고, B를 백업안으로 남겨두세요. 이미 128 px인 41개는 변환하면 오히려 커지니(5,014 → 5,242 B) 크기로 분기해야 합니다.
+
+**B. 업로드 기본값 축소 + 기존 30개 백필 (과금 불확실성 없음)**
+
+`playerPhotoUpload.ts:19`를 `size = 256`(모달 화질 지키려면 384) / `quality = 0.8`로 낮추고, **동시에** 서비스키 스크립트로 live 대용량 30개를 재인코딩해 upsert. 실측 배율 ×0.345 → **월 약 3.9 GB** (256 WebP면 2.3). 코드만 고치고 백필을 빼면 절감 0입니다 — 기존 객체가 바이트의 95.4%니까요.
+
+## 반드시 알아야 할 함정 3개
+
+1. **`curl -I`(HEAD)는 거짓말합니다.** 같은 객체가 GET은 `max-age=600` + HIT, HEAD는 `no-cache` + MISS를 반환합니다. 브라우저 이미지 로드는 GET이므로 GET이 진실입니다.
+2. **`?v=` 범프로 CDN을 우회할 수 없습니다.** Smart CDN이 캐시 키에서 쿼리스트링을 제거합니다 — 한 번도 쓰지 않은 `?probe=난수`가 첫 요청부터 HIT였습니다. 백필은 반드시 **실제 upsert 재업로드**여야 합니다.
+3. **`cacheControl`은 업로드 시점에 객체 메타데이터로 굳습니다.** 코드 수정은 신규 업로드에만 적용됩니다(한 버킷에 `max-age=600` 65개 + `no-cache` 151개 공존이 증거). `render/image` 응답도 원본 헤더를 계승하니 A는 바이트만 고치고 10분 만료는 남깁니다.
+
+부수적으로, `immutable`을 붙이려면 `uploadPlayerPhoto`의 `stampError → return true`(도장 실패를 삼킴)를 먼저 고쳐야 합니다. 안 그러면 옛 사진이 1년 고착됩니다 — 지금의 600초가 그걸 10분 만에 자가치유하고 있습니다.
+
+## 여기 시간 쓰지 마세요 (반증됨)
+
+봇·크롤러(158 IP 전부 한국 모바일 ISP, 크롤러 UA 0건) · REST/Realtime/Functions · `no-cache` 151개(바이트 4.6%, 그중 110개는 앱이 요청조차 안 함) · `?v=` 없는 맨 URL 이중페치(0.115%) · Konva CORS 이중 다운로드(실브라우저 검증 결과 요청 1건) · SW 캐시(코드 자체가 없음) · 고아 객체 147개 삭제(요청 0건 → 절감 0) · CDN 히트율.
+
+**측정 한계**: 무료 플랜 로그 보존이 1일이라 월 수치는 평일 하루 ×30 외삽입니다. 청구주기 시작일은 usage API가 404여서 확인 불가 — 달력월(8/1~) 기준이면 사진이 77%, 주기 시작이 7/26 전후면 100%입니다. 미설명분의 후보는 다른 서비스가 아니라 "주기 시작일" 또는 "월초 트래픽이 더 높았다" 둘 중 하나입니다.
+
+전문은 `scratchpad/egress-report.md`에 저장했습니다. A를 적용해볼까요?
+
+---
+
+## #129
+
+**Prompt**: 요지는 이미지 용량을 줄이면 해결되는데, api 로 줄이면 그거 요금을 내야하니까 도찐개찐이란거지?
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #130
+
+**Prompt**: 요지는 이미지 용량을 줄이면 해결되는데, api 로 줄이면 그거 요금을 내야하니까 도찐개찐이란거지?
+
+**Answer**: 아니요, 도찐개찐 아닙니다. 두 가지가 뒤집힙니다.
+
+## 1. 지금 이미 Pro로 결제된 상태라 변환은 **공짜**입니다
+
+방금 확인했습니다 — 조직 플랜이 `"plan": "pro"`입니다. 그리고 Supabase 가격표:
+
+| 항목 | Free | **Pro (현재)** |
+|---|---|---|
+| Cached egress | 5 GB | **250 GB** 포함, 초과 $0.03/GB |
+| Image Transformations | **사용 불가** | **origin image 100개 무료 포함**, 이후 $5/1,000개 |
+| Storage | 1 GB | 100 GB |
+
+실제 서빙되는 원본 이미지는 **69개**(사진 있는 회원 69명 / 전체 154명, 합 2.1 MB)입니다. 무료 포함분 100개 안입니다 → **변환 요금 $0**.
+
+그리고 애초에 Pro는 egress가 250 GB 포함이라 월 9.94 GB는 **4%**입니다. 대역폭 초과 자체가 이미 사라졌습니다. 결제해서 문제가 해결된 상태고, 변환 API를 켜도 추가 요금은 0원입니다.
+
+## 2. 요금이 나가는 경로는 "서버 변환" 하나뿐입니다 — 클라이언트 변환은 원래 무료
+
+여기가 핵심인데, 이미지 축소는 두 곳에서 할 수 있습니다:
+
+- **서버 변환** (`render/image`): 요청마다 Supabase가 변환. 무료 플랜에선 아예 못 쓰고, Pro에선 100개까지 무료.
+- **클라이언트 변환** (업로드 시 1회): `processImageToSquareJpeg`에서 브라우저 canvas로 리사이즈. **이미 구현돼 있고 영원히 무료**입니다.
+
+`playerPhotoUpload.ts:19`의 `size = 512`를 `256`으로 바꾸는 것 — 이게 요금과 아무 관계 없는 무료 처방입니다. 제가 A를 먼저 권한 건 성능이나 비용 때문이 아니라, **기존 파일 30개를 재업로드하는 수고를 안 해도 되기 때문**이었습니다. 그 수고도 로컬 스크립트로 한 번 돌리면 끝이고, 역시 무료입니다.
+
+## 그래서 실제 판단은 "요금" 문제가 아니라 "무료 플랜으로 돌아갈 거냐"입니다
+
+**Pro 유지할 거면** → 아무것도 안 해도 됩니다. 250 GB 중 9.94 GB. 굳이 손대는 이유는 요금이 아니라 로딩 속도(64 kB 아바타 → 3 kB)입니다.
+
+**무료 플랜(5 GB)으로 내려갈 거면** → 서버 변환은 선택지에서 빠집니다(무료 플랜 미지원). 클라이언트 변환 + 백필만 남고, 이게 유일하게 무료 플랜에서 통하는 길입니다:
+
+| 처방 | 월 egress | 5 GB 한도 |
+|---|---|---|
+| 현재 (512px JPEG) | 9.94 GB | 초과 |
+| 256px JPEG q0.8 | 약 3.9 GB | 통과 (여유 적음) |
+| **256px WebP** | 약 2.3 GB | 통과 (여유 충분) |
+
+WebP로 가려면 `.jpg` 파일명(`playerPhoto.ts:16-18`)과 `contentType: "image/jpeg"` 하드코딩(`playerPhotoUpload.ts:69`)도 같이 손봐야 합니다.
+
+어느 쪽으로 가실지 알려주시면 그대로 구현하겠습니다. Pro 유지라면 손대지 않는 것도 정당한 선택입니다.
+
+---
+
+## #131
+
+**Prompt**: ㄴㄴ 프로결제 해제하고싶은데 이거 API 요청할때만 하는거지, 캐싱을바꾸는거아니잖아
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #132
+
+**Prompt**: 아니다 방향을 바꿔서 프로필 이미지를 로컬스토리지에 캐싱할수있나?
+
+**Answer**: 완료했습니다. 배포는 아직 안 했습니다(아래 확인 필요).
+
+## 한 일
+
+**마이그레이션** `supabase/migrations/20260821000000_dues_join_cutoff_day.sql`
+- `dues_settings.join_cutoff_day` (기본 21, 1~31)
+- `members.rejoined_at` + BEFORE 트리거 `trg_members_stamp_rejoined_on_activate` — `is_active` false→true 시 시각 스탬프
+- `dues_generate_monthly` 에 **합류월 하한** 한 줄 추가:
+  `실제 합류일 = max(계정 생성일, 마지막 재활성화일)@KST` 이 컷오프 이상이면 **그 달만** 미부과
+- 조민서 님 `membership_started_at = 2026-07-01`
+
+**프론트** — 회비 설정 모달에 [합류 컷오프 (일)] 입력칸(1~31 검증), `dues.ts` 매핑. **문서** — `ACCOUNTING_SPEC.md` §1.4·§4·§12·§13.
+
+## 검증 (프로덕션 `begin;…rollback;` 드라이런)
+
+| | 옛 룰 | 새 룰 |
+|---|---|---|
+| 2026-09 대상 | 84명 | **84명** (변화 없음) |
+| 2026-08 대상 | 79명 | 77명 (조민서 + 테스트 재활성화 1명) |
+
+조민서 님 최종: 7월 가입 → 시작월 8월 → 컷오프가 8월을 걷어냄 → **첫 부과 2026-09**. 신규 가입자 부과 변화 0건. 테스트 345개·타입체크·빌드 통과.
+
+## 두 가지 보고할 것
+
+**1. 박병훈 님 2026-07 회비 5,000원(미납)** — 7/27 계정 생성인데 6월 보정을 받아 7월이 붙은 건입니다. 새 룰이었으면 미부과였습니다. 이미 생긴 부과는 지우지 않는 게 원칙이라 **그대로 뒀습니다**. 소급 적용하시려면 [면제] 처리하시면 됩니다. (같은 케이스인 전창우·김영주 님은 이미 납부 완료라 손대지 않는 게 맞습니다.)
+
+**2. 제가 처음 쓴 근거가 틀려서 고쳤습니다** — 검증에서 잡혔습니다. "같은 달에 비활성→재활성 하면 그 달 회비가 사라지는 건 운영진만 가능"이라고 적었는데, 사실이 아닙니다. `members_update` RLS 가 `is_admin() OR auth_user_id = auth.uid()` 라서 **로그인한 회원이면 누구나 API 로 자기 `is_active` 를 두 번 토글해 자기 미납 회비를 지울 수 있습니다**(앱 UI엔 없는 경로). 회비를 지우는 구멍 자체는 8/20 변경이 낸 것이고 이번 건이 더한 건 "그 달 재생성 복구가 막힌다"는 점입니다. 문구를 사실대로 고치고 복구 절차와 함께 §13 열린 구멍으로 남겼습니다. **차단은 안 했습니다** — 본인 탈퇴·게스트 행 재사용 두 경로를 같이 통과시켜야 해서 별도 판단이 필요합니다. 원하시면 바로 막겠습니다.
+
+## 배포
+
+아직 프로덕션에 반영되지 않았습니다. 진행할까요?
+- `supabase db push` — 미적용 마이그레이션은 이것 하나뿐인 걸 확인했습니다 (159/159 적용됨)
+- `git push` — 프론트(설정 UI)
+
+---
+
+## #133
+
+**Prompt**: 조민서라고 새로 가입했는데 기존회원이라 회원가입월을 6월로 바꾸고, 근데 21일부터 재가입한 유저는 당월 회비 부과 없게하려고 하는데 기능추가해줘
+
+**Answer**: 조사를 4개 렌즈로 병렬 실행했습니다. 결론이 나오기 전에 지금 확실한 것만:
+
+**되긴 됩니다. 다만 localStorage는 세 후보 중 가장 나쁜 그릇입니다.**
+
+- 사진 69장 = **2,137 kB**. localStorage는 문자열만 담으니 base64로 넣어야 하고 **약 +33% → 2.85 MB**. 한도가 보통 origin당 5 MB이고 이미 `cocktime:photoIndex`가 쓰고 있어서, 회원이 늘면 그대로 벽에 부딪힙니다.
+- 게다가 localStorage는 **동기 API**입니다. 부팅마다 2.85 MB를 `JSON.parse` 하면 메인스레드가 그만큼 멈춥니다.
+- `Cache Storage`나 IndexedDB는 **Blob을 그대로** 저장해서 팽창이 0이고, 비동기이며 할당량이 훨씬 큽니다.
+
+**그리고 이 방향 자체는 옳습니다** — 이유가 두 가지입니다:
+1. iOS가 HTTP 캐시 본문을 버리는 것(전체본문 86.5%)을 우회하는 **유일한** 수단입니다. `max-age`를 1년으로 올려도 iOS에는 안 통했습니다.
+2. 플랜과 무관하게 공짜입니다. 서버 변환 API처럼 과금 조건을 따질 필요가 없습니다.
+3. 화질을 안 깎습니다. 256px 축소와 **배타적이지 않아서** 둘 다 하면 곱해집니다.
+
+지금 확인 중인 것:
+- localStorage / Cache Storage / IndexedDB **6축 비교** + iOS 7일 삭제 정책과 **KakaoTalk 인앱 웹뷰**(사진 트래픽의 1/3)에서 각각 살아남는지
+- 실제 활성 기기 수를 삼각측량해서 **정상상태 절감량**(무료 플랜 5 GB 복귀 가능한지)
+- 통합 지점 전수 — 특히 **Konva 경로**(`PlayerMagnet`)가 `use-image`로 URL만 받는데 Blob을 먹일 수 있는지, 가상화 리스트에서 `objectURL` 누수 관리
+- SW 가로채기 대신 **앱 레이어 캐시**가 나은 이유(현재 SW는 설치형 PWA에만 등록돼서 카톡 웹뷰·비설치 iOS를 못 덮습니다)
+
+완료되면 파일 단위 구현 계획까지 붙여 드리겠습니다.
+
+---
+
+## #134
+
+**Prompt**: <task-notification>
+<task-id>wgu33afuj</task-id>
+<tool-use-id>toolu_014D8DLzyCoDyvAbXQCBJhi3</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/8b55a3a9-e5dc-4187-b457-3fb3e11107c7/tasks/wgu33afuj.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "프로필 사진 클라이언트 영속 캐싱 설계 — 저장매체 비교·절감량 실측·통합지점 전수·구현안" completed</summary>
+<result>{"report":"조사 완료. 아래가 최종 산출물이다.\n\n---\n\n# 프로필 이미지 로컬 캐싱 — 최종 판정\n\n&gt; 측정 창: 2026-08-21 기준 24h edge_logs(`user_agent not like 'curl%'`), Management API SQL, Storage 실요청.\n&gt; 조직 plan = **pro** (실측: `GET /v1/organizations/ezzrmfcvshyqcoxqcegf` → `\"plan\":\"pro\"`).\n&gt; ⚠️ 브리핑의 \"8.78GB / 5.5GB 초과\"는 Pro 포함 egress(문서상 250GB)와 불일치 — 대시보드 수치 재확인 필요. **측정 불가**. 아래 계산은 보수적으로 **5 GB 기준**으로 판정한다.\n\n## 0. 기준선 재측정\n\n| 항목 | 값 |\n|---|---|\n| 사진 200 응답 | 11,177건 / **381,185,245 B = 381.2 MB/일 → 11.44 GB/30일** |\n| 4xx | **5건(전부 400)**, 404 = 0건 → 과거 404 루프는 현재 잠잠 |\n| live 객체 | 69개 / 2,188,354 B / avg 31,715 / max 148,926 |\n| 회원 | 154명, 사진 보유 **69명** |\n| 기기-객체 dedupe(하루) | 3,927 pair / 180 IP / **137,235,335 B = 137.2 MB/일** → 기기당 21.8객체·762 kB |\n\n플랫폼별 (200 : 304, 전체본문율, 200 바이트):\n\n| 플랫폼 | 200 | 304 | 전체본문 | 바이트/일 | 비중 |\n|---|---|---|---|---|---|\n| **iOS 브라우저(비카톡)** | 6,726 | 68 | **99.0%** | 231.5 MB | **60.7%** |\n| **KakaoTalk Android** | 3,467 | 148 | **95.9%** | 118.4 MB | **31.1%** |\n| other/데스크톱 | 800 | 580 | 58.0% | 25.1 MB | 6.6% |\n| Android 브라우저 | 127 | 4,947 | 2.5% | 4.5 MB | 1.2% |\n| KakaoTalk iOS | 57 | 1,039 | 5.2% | 1.7 MB | 0.5% |\n\n→ 두 통(iOS 탭 + 카톡 Android)이 **91.8%**. 카톡 iOS·Android 브라우저는 이미 304로 정상 작동 중이며 처방 대상이 아니다.\n\n---\n\n## 1. 직답 — localStorage 로 되나\n\n**된다. 단 \"512px 원본을 담는 1차 저장소\"로는 안 된다. 그리고 안 되는 방식은 조용하지 않고, 사진이 아니라 로그인이 먼저 죽는다.**\n\n**(a) 오늘은 들어간다 (실측)**\n- Chrome 상한 실측 **5,242,880자**(UTF-16 코드유닛 단위, ASCII/한글 과금 동일 — ratio 1.000)\n- WebKit(iOS Safari·모든 WKWebView): `LocalStorageManager.cpp:40` `5 * MB` + `WTFString.h:121 sizeInBytes()` = ASCII 1B/char → base64는 8bit → **5,242,880 ASCII자**. (소스 근거, iOS 실기기 측정 불가)\n- 69장 512px = base64 2,917,892자, JSON 래핑 2,922,378자 = **쿼터의 55.7%**. 실브라우저에서 **69/69 저장 성공**.\n\n**(b) 벽은 123장이고, 154명은 2.7배 초과**\n- fleet 평균 31,715 B 기준 한계선 **123장** = 사진 보급률 79.9%\n- 앱 업로드 품질(512px q0.85, 30장 avg 68,328 B) 기준 오늘부터 **+26장**에서 QuotaExceededError\n- 154명 전원 512px = **14,039,410자 = 쿼터의 268%** → 하드 실패\n\n**(c) 진짜 탈락 사유 — 벽에 닿는 순간 죽는 건 사진이 아니다 (실증)**\n\n쿼터 만충 상태에서 측정한 결과:\n1. `cocktime:photoIndex`(154명이면 ~8.2 kB) write → **QuotaExceededError**\n2. `sb-sfxbrheavypjsjgbzjom-auth-token`(2,963자) write → **QuotaExceededError**\n\n그리고 `src/lib/playerPhoto.ts:44-50` `writeCache()`는 이 예외를 **빈 catch로 삼킨다**:\n```\n} catch {\n    /* 저장 실패는 무시(프라이빗 모드·용량 초과) */\n}\n```\n사슬: 인덱스 미저장 → 다음 콜드부트 `readCache()` = null → `buildUrl()`(:88-95)의 `if (index &amp;&amp; v == null) return \"\"` 가드가 건너뛰어짐 → **154명 전원에게 URL 발급 → 사진 없는 85명이 페이지 열 때마다 404**. 같은 파일 주석 `:20-29`이 기록한 **24시간 5,359건** 사고의 정확한 재현 경로다. 게다가 auth 토큰 write 실패는 `_saveSession`에 try/catch가 없어 **세션 유실**로 이어진다.\n즉 사진 blob이 인덱스·인증토큰과 5 MiB 오리진 예산을 다투는 구조 자체가 결격 사유다. IDB/Cache Storage는 별도 6 GB급 풀이라 이 굶김이 **구조적으로 불가능**하다.\n\n**(d) 그런데 담을 바이트가 8.9배 작아지면 localStorage도 성립한다 (신규 실측)**\n\nPro 플랜이라 Storage 변환 엔드포인트가 살아 있다. 69장 전량 변환 실측:\n\n| 대상 | 154명 전원 base64 | 쿼터 점유 |\n|---|---|---|\n| 512px 원본 | 14,039,410자 | **267.8% 실패** |\n| render w=192 (avg 5,155 B) | 1,058,591자 | 20.2% |\n| render w=128 (avg 3,796 B) | 779,525자 | **14.9% (6.7배 여유)** |\n\n**결론:** 사용자가 지목한 localStorage는 *매체로서 틀린 게 아니라 담으려던 바이트가 틀렸다*. 다만 썸네일로 줄여도 IDB가 여전히 우월하다(base64 33.3% 세금 0, 인증토큰과 예산 무경합, 비동기). **localStorage는 지금 하는 일(`cocktime:photoIndex`, 154명 ~8 kB)을 계속 맡고, 사진 바이트는 IDB로.**\n\n---\n\n## 2. 매체 비교표 (6축)\n\n| 축 | localStorage | Cache Storage | **IndexedDB** |\n|---|---|---|---|\n| **용량** | 실측 5,242,880자. 512px 69장=55.7%, 123장이 벽, 154명 268% 초과 | 실측 quota 5.37~10.24 GB (프로필별) | 동일 풀 5.37~10.24 GB = LS의 **1,000배 이상** |\n| **팽창** | base64 **+33.34%**(2,188,354 B → 2,917,892자) | Blob 원본 그대로 **0%** (SHA-256 왕복 일치) | Blob/ArrayBuffer **0%** (왕복 2,188,354 B 정확) |\n| **동기성** | 동기. cold first-touch 3.9 ms + getItem 0.2 + parse 1.2 = **5.3 ms**(데스크톱) — 성능은 탈락 사유가 아님 | 비동기. 69 put 45.7~51 ms / match 35.7~49 ms | 비동기. 69 put **1.9~18 ms** / getAll **0.5~13 ms** ← 최속 |\n| **iOS 생존성** | ITP 7일 삭제 대상 | **동일 대상** | **동일 대상** (webkit.org/blog/10218: \"Indexed DB, LocalStorage, … Service Worker registrations and cache\" 한 문장) |\n| **카톡 웹뷰** | 영속 실증(REST 5,114건 401=0, `/auth/v1/callback` 0건 → 재OAuth 없이 세션 복원) | iOS WKWebView는 3매체가 단일 WKWebsiteDataStore 공유 → 동일. Android WebView는 Chromium 기본 on **(추정)** | 동일 |\n| **인증토큰 경합** | **치명. 같은 5 MiB 통** — 만충 시 photoIndex·auth 토큰 write 실패 실증 | 없음 | 없음 |\n| **SW 필요** | 불필요 | **불필요**(실측: `swRegs=0`에서 open/put/match 성공) | 불필요 |\n| **함정** | 조용한 QuotaExceededError → 404 루프 회귀 | opaque(no-cors) 응답 패딩: 실데이터 2.19 MB가 `usageDetails.caches` 11.17 MB로 계상. 반드시 `mode:'cors'` | objectURL 수명 관리 |\n\n**1순위 = IndexedDB.** 근거:\n1. 모든 성능 축에서 Cache Storage와 동률 이상(write 1.9 vs 45.7 ms, read-all 0.5 vs 35.7 ms)\n2. opaque 패딩 함정 자체가 없음\n3. `{v, mime, buf, bytes, lastUsedAt}` 레코드에 `photo_updated_at` 스탬프를 바이트와 같은 행에 넣어 **기존 `?v=` 무효화 규약을 그대로 캐시 무효화 규약으로** 쓸 수 있음\n4. localStorage 5 MiB 예산에서 사진을 완전히 빼내 §1(c) 사슬을 구조적으로 차단\n\n**2순위 = Cache Storage** (SW 없이 동작 확인). 유일한 실익이었던 \"URL 그대로 두고 앱 무수정 투명 캐싱\"은 **도달 불가** — SW가 `src/store/pushStore.ts:33` `if (installState !== \"supported\") return;` + `src/lib/push/platform.ts:53-61`(standalone만 supported)로 설치형 PWA에만 등록되는데, 낭비 바이트의 91.8%가 SW 없는 iOS 탭·카톡 Android에서 나온다. 실측: ckti.me에서 `swRegs=0, controller=null`.\n\n**탈락 = localStorage (1차 저장소로서). 유지 = photoIndex 담당.**\n\n---\n\n## 3. 절감량\n\n### 3-1. 신규 실측: 서버 변환 엔드포인트 (`/render/image/public/...`)\n\nPro 플랜에서 **실제로 동작함**. 69장 전량 실측 + 24h 요청수로 재가중:\n\n| 변형 | 객체합 (69장) | 객체비 | **요청가중 비율** | **30일 GB** |\n|---|---|---|---|---|\n| 원본 (현행) | 2,188,354 B | 1.000 | 1.000 | **11.44** |\n| render w=128 jpg q75 | 261,951 B | 0.120 | 0.1116 | **1.28** |\n| render w=192 jpg q75 | 355,728 B | 0.163 | 0.1606 | **1.84** |\n| render w=256 jpg q75 | 481,585 B | 0.220 | 0.2270 | **2.60** |\n| render w=128 + Accept:webp | 203,178 B | 0.093 | 0.0863 | **0.99** |\n| min(원본, w=128) — 역증가 가드 | 246,776 B | 0.113 | 0.1065 | **1.22** |\n\n응답 헤더 실측: `content-type: image/jpeg`, `cache-control: public, max-age=600`, `access-control-allow-origin: *`, `cf-cache-status: HIT`, `etag` 존재. 지연: **콜드 577 ms(변형별 1회) / 웜 55~61 ms** (원본은 66~88 ms).\n\n**중요 — 레거시 38장은 축소하면 커진다(실측):** 128×128 레거시 38장 129,774 B → w=128 재인코딩 143,760 B = **+10.8% 역증가**. 앱 업로드 30장은 2,049,838 → 117,002 B = **5.7%**로 폭락. 따라서 `min(target, natural)` 가드 필수.\n\n**과금(문서 근거, Context7 → supabase/supabase):** Pro 플랜 Image Transformations 쿼터 = **origin image 100개/월**, 초과분 $5/1,000. origin image는 변형 개수와 무관하게 이미지당 1회 계수, 매 청구 주기 리셋. **오늘 69장 → 무료.** 사진 보유가 100명을 넘으면 1패키지 = **$5/월**(1,000장까지). 실사용량 API는 노출되지 않아 **실측 불가**.\n\n### 3-2. 클라이언트 캐시 단독 3안\n\n파라미터(실측): 콜드필 = **762 kB/파티션**(기기-일 dedupe 137.2 MB ÷ 180 IP), 무효화 = 0.20건/일 × 143 주간활성 파티션 × 31,715 B = **0.91 MB/일**(사진 변경률은 전 세션 실측: 7/20 일괄 62건 이후 32일간 유기적 7건).\n\n| 시나리오 | 콜드 파티션/일 | MB/일 | **30일 GB** | 5 GB 대비 |\n|---|---|---|---|---|\n| 낙관 | 2.0 | 2.43 | **0.073** | 68배 여유 |\n| 중립 | 5.0 | 4.72 | **0.142** | 35배 |\n| 비관 (143개가 7일마다 전멸) | 20.4 | 16.45 | **0.494** | 10배 |\n| **최악 하한** (캐시가 하루만 산다 = 매일 전 기기 콜드) | 180 | 137.2 | **4.12** | **여유 18%** |\n\n최악 하한 4.12 GB는 IP 180개 기준 상한이며(실기기는 73~120으로 추정), **그것조차 5 GB를 통과한다.** 다만 여유 18%로 회원 증가(69→154명, 2.2배)를 흡수하지 못한다.\n\n### 3-3. 단독 vs 조합 비교표 (30일 GB)\n\n| 처방 | 낙관 | 중립 | 비관 | 최악 하한 | 커버리지 | 5 GB |\n|---|---|---|---|---|---|---|\n| **현행** | 11.44 | 11.44 | 11.44 | 11.44 | — | ❌ 229% |\n| 클라 캐시(IDB) 단독 | 0.073 | 0.142 | 0.494 | **4.12** | 저장소 영속 기기만 | ⚠️ 통과, 최악 여유 18% |\n| **render w=192 단독** | **1.84** | **1.84** | **1.84** | **1.84** | **100% (서버측)** | ✅ 여유 63% |\n| render w=128 단독 | 1.28 | 1.28 | 1.28 | 1.28 | 100% | ✅ 여유 74% |\n| render w=128 webp 단독 | 0.99 | 0.99 | 0.99 | 0.99 | 100% | ✅ 여유 80% |\n| **캐시 + render w=192** | **0.012** | **0.023** | **0.079** | **0.66** | 100% | ✅ 여유 87~99.8% |\n| 캐시 + render w=128 | 0.008 | 0.016 | 0.055 | 0.46 | 100% | ✅ |\n| 업로드 256px 축소(클라 q0.85) 단독 | 4.69 | 4.69 | 4.69 | 4.69 | 100% | ⚠️ 여유 6% |\n| 업로드 320px 축소(클라 q0.85) 단독 | 6.20 | 6.20 | 6.20 | 6.20 | 100% | ❌ |\n\n**\"256px 축소\"의 함정:** 같은 256px인데 서버 render q75는 요청가중 0.227(2.60 GB), 클라 재인코딩
+... (truncated 11658 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/8b55a3a9-e5dc-4187-b457-3fb3e11107c7/tasks/wgu33afuj.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/0ebf05b6-201a-43b2-88f5-f7ca1b802293/subagents/workflows/wf_7ccc487c-c7d/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/0ebf05b6-201a-43b2-88f5-f7ca1b802293/workflows/scripts/photo-client-cache-design-wf_7ccc487c-c7d.js', resumeFromRunId: 'wf_7ccc487c-c7d'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>13</agent_count><agents_done>13</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>1182143</subagent_tokens><tool_uses>497</tool_uses><duration_ms>2830758</duration_ms></usage>
+</task-notification>
+
+**Answer**: 조사 끝났습니다. 답은 **"된다, 그런데 그 그릇에 담으면 안 된다"** — 그리고 뜻밖에 **캐싱이 1순위가 아니라는** 결론이 나왔습니다.
+
+## 1. 직답 — localStorage에 들어가나
+
+**오늘은 들어갑니다.** 실브라우저에서 69/69 저장 성공했습니다.
+
+- localStorage 상한 실측: **5,242,880자** (WebKit도 소스상 동일 — `LocalStorageManager.cpp:40` `5 * MB`)
+- 69장 base64 + JSON 래핑 = **2,922,378자 = 쿼터의 55.7%**
+
+**그런데 벽이 123장입니다.** 사진 보급률 79.9%(현재 69/154 = 44.8%)에서 `QuotaExceededError`. 앱 업로드 품질(512px q0.85, 평균 68 kB) 기준으로는 **오늘부터 +26장**이면 터집니다. 154명 전원은 **쿼터의 268%**.
+
+**그리고 진짜 탈락 사유는 용량이 아닙니다.** 앞서 제가 "동기 파싱이 메인스레드를 막는다"고 했는데 그건 **반증됐습니다** — 콜드 5.3 ms로 충분히 쌉니다. 실제 문제는 이겁니다. 쿼터 만충 상태에서 실측한 결과:
+
+1. `cocktime:photoIndex` write → **QuotaExceededError**
+2. `sb-...-auth-token` write → **QuotaExceededError**
+
+그리고 `src/lib/playerPhoto.ts:44-50`의 `writeCache()`가 이 예외를 **빈 catch로 삼킵니다**:
+[코드 블록 생략]
+
+사슬: 인덱스 미저장 → 다음 콜드부트 `readCache()` = null → `buildUrl()`의 `if (index && v == null) return ""` 가드가 건너뛰어짐 → **154명 전원에게 URL 발급 → 사진 없는 85명이 페이지 열 때마다 404**. 같은 파일 주석 `:20-29`에 기록된 **24시간 5,359건** 사고의 정확한 재현 경로입니다. 게다가 auth 토큰 write 실패는 `_saveSession`에 try/catch가 없어 **세션 유실**로 이어집니다.
+
+**사진 바이트가 인증토큰과 5 MiB 오리진 예산을 다투는 구조 자체가 결격**입니다. IndexedDB는 별도 풀(실측 5.37~10.24 GB)이라 이 굶김이 구조적으로 불가능합니다.
+
+## 2. 매체 비교
+
+| 축 | localStorage | Cache Storage | **IndexedDB** |
+|---|---|---|---|
+| 용량 | 5,242,880자 — 123장이 벽 | 5.37~10.24 GB | 동일 = **LS의 1,000배** |
+| 팽창 | base64 **+33.3%** | Blob 그대로 0% | **0%** |
+| 69장 write / read-all | 5.3 ms (동기) | 45.7 / 35.7 ms | **1.9 / 0.5 ms** ← 최속 |
+| iOS ITP 7일 | 대상 | 대상 | 대상 (셋 다 동일) |
+| 인증토큰 경합 | **치명** | 없음 | 없음 |
+| SW 필요 | 불필요 | 불필요(실측) | 불필요 |
+| 함정 | 조용한 quota 실패 → 404 회귀 | opaque 패딩(2.19 MB가 11.17 MB로 계상) | objectURL 수명 |
+
+**1순위 IndexedDB.** Cache Storage는 SW 없이도 되지만, 그러면 `<img src>`가 자동으로 캐시를 타지 않아 `match→blob→objectURL`을 손으로 만들어야 합니다 = IDB와 구현 난이도가 같아지고 성능만 열위입니다. localStorage는 **지금 하는 일(`photoIndex`, ~8 kB)만 계속** 맡기면 됩니다.
+
+## 3. 반전 — 캐싱보다 서버 변환이 먼저입니다
+
+새 기준선 실측: **381.2 MB/일 = 11.44 GB/30일**. 플랫폼별 분해가 결정적이었습니다:
+
+| 플랫폼 | 전체본문율 | 바이트/일 | 비중 |
+|---|---|---|---|
+| **iOS 브라우저(비카톡)** | **99.0%** | 231.5 MB | **60.7%** |
+| **KakaoTalk Android** | **95.9%** | 118.4 MB | **31.1%** |
+| Android 브라우저 | 2.5% | 4.5 MB | 1.2% |
+| KakaoTalk iOS | 5.2% | 1.7 MB | 0.5% |
+
+**낭비의 91.8%가 iOS 탭 + 카톡 Android**입니다. 그런데 바로 이 두 통이 저장소 영속성을 보장할 수 없는 곳입니다 — iOS ITP 7일 삭제, 카톡 WKWebView 영속성 미검증. 즉 **캐시가 가장 필요한 곳에서 캐시가 가장 불확실합니다.**
+
+반면 서버 변환은 기기에 아무것도 요구하지 않습니다. Pro 플랜에서 실제로 동작하는 걸 확인하고 69장 전량 실측했습니다:
+
+| 처방 | 30일 GB | 커버리지 | 5 GB |
+|---|---|---|---|
+| 현행 | **11.44** | — | ❌ 229% |
+| IDB 캐시 단독 | 0.07~0.49 (최악 하한 **4.12**) | 영속 기기만 | ⚠️ 최악 여유 18% |
+| **render w=192 q75** | **1.84** | **100%** | ✅ 여유 63% |
+| render w=128 q75 | 1.28 | 100% | ✅ |
+| **캐시 + w=192** | **0.012~0.079** (최악 0.66) | 100% | ✅ |
+| 업로드 256px 축소(클라) | 4.69 | 100% | ⚠️ 여유 6% |
+
+한 줄 판정: **w=192 변환만으로 −84%, 코드 한 줄, 기기 의존 0.** 그리고 변환하면 캐시에 담길 바이트도 8.9배 작아져서 154명 전원이 IDB에 **794 kB**로 들어가고 — localStorage조차 20.2%로 성립하게 됩니다. 순서가 뒤집히는 게 아니라 **변환이 캐싱을 쉽게 만듭니다.**
+
+## 4. 그런데 지금 당장 타는 돈은 없습니다
+
+조직 플랜이 `pro`이고 Pro는 egress **250 GB 포함**입니다. 11.44 GB = **4.6%**. 대시보드에 보이는 "5.5 GB 한도"는 업그레이드 이전 스냅샷일 가능성이 큽니다 — 한 번 다시 봐주세요. 변환도 origin image 100개까지 무료 포함이라 69장은 $0입니다(100명 넘으면 $5/월).
+
+## 5. 구현할 때의 함정 (실측)
+
+- **objectURL을 마운트마다 만들면 8.8배 퇴행합니다.** 같은 사진 30마운트: 고정 objectURL 재사용 25.4 ms vs 매번 새로 생성 **224.3 ms**. 브라우저 디코드 캐시가 URL 문자열에 걸려 있어 매번 전체 재디코드가 납니다. → `(memberId, v)`당 1개를 모듈 스코프 Map에 만들고 앱 수명 동안 유지.
+- **언마운트 revoke는 넣으면 버그입니다.** 같은 사진이 보드(`PlayerMagnet:117`) + 그 위 모달(`RecommendTeammateDialog:151`, `MatchEditModal:37`)에 동시에 붙습니다. 한쪽 언마운트가 다른 쪽을 깨고, 그 `onError`가 `PlayerAvatar:51`의 `useEffect(..., [photoId])`(url 미포함) 때문에 `imgFailed`를 **영구 래치** → 가상화 리스트에서 조용히 사진이 사라집니다.
+- **Konva는 변경 불필요** (taint 매트릭스 실측): `blob:` + `crossOrigin="anonymous"` → **tainted false**. `PlayerMagnet:118`을 그대로 두면 ghost 그레이스케일 필터가 살고, 오히려 ACAO 헤더 의존이 사라져 CORS 회귀에 강해집니다.
+- **레거시 38장은 축소하면 커집니다**(129,774 → 143,760 B, +10.8%). `min(target, natural)` 가드 필수.
+- **`photo_updated_at` 일괄 갱신 금지.** 7/20처럼 62건을 한꺼번에 바꾸면 콜드필 × 활성 파티션 = 수백 MB 일회성 폭발.
+
+## 6. 별건 — 조사 중 발견한 실제 버그
+
+`src/components/board/RecommendTeammateDialog.tsx:151,166`이 `photoId={p.id}`를 넘깁니다. `p`는 `SessionPlayer`이고 `id`는 **`session_players.id`**, 사진 키는 **`members.id`**여야 합니다(`src/types/index.ts:28-29`). 다른 보드 호출부는 전부 `memberId`를 씁니다(`MatchEditModal:37`, `PlayerPickerList:315`). 결과: 추천 대화상자의 현재 팀 사진이 안 나옵니다(첫 부팅 시엔 404). 캐싱과 무관하게 고칠 값입니다.
+
+---
+
+전문은 `scratchpad/photo-cache-design.md`에 있습니다.
+
+**권고**: ① `RecommendTeammateDialog` 버그 수정 → ② `buildUrl`을 `render/image?width=192&quality=75`로 (한 줄, −84%) → ③ 그 다음에 IndexedDB 캐시를 얹기. 어디까지 진행할까요?
+
+---
+
+## #135
+
+**Prompt**: pro 요금제 끄면 이미지 사이즈 변경을 못하잖아.
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #136
+
+**Prompt**: 전부 배포해
+
+**Answer**: 맞습니다 — 제 ②단계는 Pro 전용이라 무효입니다. 다시 계산 중입니다.
+
+**무료 플랜에서 남는 수단은 하나뿐입니다: 요청할 때 줄이는 대신 저장할 때 줄이기.** 서버가 매 요청마다 변환해주는 걸 못 쓰니, 객체 자체를 작게 다시 저장(at-rest 백필)해야 합니다. 효과는 같고 — 오히려 요청 시 변환 지연도 없고 과금 절벽도 없습니다. 대가는 코드 한 줄이 아니라 **기존 30장 재업로드 + 업로드 경로 수정**이라는 실제 공수입니다.
+
+지금 확인 중인 것:
+
+1. **재인코딩 실측** — live 69장을 실제로 내려받아 160~320px × JPEG/WebP q70~80으로 재인코딩하고, **24시간 객체별 요청수로 가중**해서 실제 월 GB를 계산합니다(단순 객체합은 실제 egress와 다릅니다). 앞선 서버 변환 실측으로 보면 192px WebP가 1.4 GB 근방일 것으로 **추정**되는데, 이걸 로컬 인코더로 확증합니다.
+
+2. **egress 말고 다른 한도** — 이게 더 중요할 수 있습니다. 무료 플랜은 Realtime 메시지 한도가 따로 있고, 이 프로젝트는 **과거에 Realtime 초과 이력**이 있습니다(감축 미완 항목 4개 남아 있음). 사진만 고쳐놓고 Realtime에 걸리면 헛수고니, DB 크기·MAU·Edge Function·프로젝트 일시정지 조건까지 전 계량기를 현재 사용량과 대조합니다.
+
+3. **백필 무중단 순서** — 두 개가 까다롭습니다. `photo_updated_at`을 69장 일괄 갱신하면 `?v=`가 다 바뀌어 전 클라이언트가 한 번 더 받는 **일회성 스파이크**가 생깁니다(활성 파티션 143 × 762 kB 규모). 그리고 WebP로 가면 `.jpg` 확장자 규약이 깨지는데, 부분 전환 상태에서 404가 나는 창이 생기면 과거 5,359건 사고가 재현됩니다.
+
+4. **성장 여력과 손익** — 무료 5 GB로 버틸 수 있는 최대 회원 수, 그리고 정직한 비교: **Pro $25/월 유지(코드 한 줄) vs 무료 복귀(공수 N시간)**. 지금 69장은 변환 무료 포함분(100개) 안이라 Pro를 유지하면 실제로 한 줄로 끝나긴 합니다. 어느 쪽이 나은지는 수치로 제시하겠습니다.
+
+완료되면 순서 있는 체크리스트로 드리겠습니다.
 
 ---
