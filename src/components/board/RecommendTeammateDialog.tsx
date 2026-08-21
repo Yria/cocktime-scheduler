@@ -148,7 +148,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 								topTap(p.id, { kind: "member", id: p.id });
 							}}
 						>
-							<PlayerCard name={p.name} gender={p.gender} photoId={p.id} skillScore={skillScore(p)} size="sm" />
+							<PlayerCard name={p.name} gender={p.gender} photoId={p.memberId ?? undefined} skillScore={skillScore(p)} size="sm" />
 						</div>
 					))}
 					{selectedPlayers.map((p) => (
@@ -163,7 +163,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 								topTap(p.id, { kind: "selected", id: p.id });
 							}}
 						>
-							<PlayerCard name={p.name} gender={p.gender} photoId={p.id} skillScore={skillScore(p)} size="sm" selected />
+							<PlayerCard name={p.name} gender={p.gender} photoId={p.memberId ?? undefined} skillScore={skillScore(p)} size="sm" selected />
 						</div>
 					))}
 					{Array.from({ length: emptyCount }).map((_, i) => (

@@ -4592,7 +4592,30 @@ To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude
 
 **Prompt**: pro 요금제 끄면 이미지 사이즈 변경을 못하잖아.
 
-**Answer**: _(응답 대기 중…)_
+**Answer**: 배포 완료했습니다.
+
+## DB (프로덕션)
+`supabase db push` → `20260821000000_dues_join_cutoff_day.sql` 적용, 반영 확인:
+
+| 확인 항목 | 값 |
+|---|---|
+| `dues_settings.join_cutoff_day` | **21** |
+| 조민서 님 `membership_started_at` | **2026-07-01** (첫 부과 2026-09) |
+| `members` 트리거 | `trg_members_stamp_rejoined_on_activate` 등록됨 |
+| 감사 로그 | `membership_started_at_fix` 1건 기록 |
+
+## 프론트
+커밋 `42e921c` → push → GitHub Pages **Deploy 성공**. 회비 설정 모달에 [합류 컷오프 (일)] 입력칸이 올라갔습니다.
+
+## 지금부터 동작
+- 21일 이후 **재활성화 재가입** → 그 달 회비 미부과, 다음 달부터 정상 부과
+- 21일 이후 **새 계정 + 가입월 소급 보정** → 그 달 미부과 (조민서 님이 이 케이스)
+- 신규 가입자·기존 회원 부과는 그대로 (드라이런에서 9월 대상 84→84 확인)
+- 컷오프는 회비 설정에서 언제든 조정 가능 (1~31)
+
+## 남겨둔 두 가지
+1. **박병훈 님 2026-07 회비 5,000원 미납** — 7/27 계정 생성이라 새 룰이었으면 미부과였을 건입니다. 이미 생긴 부과는 지우지 않는 원칙대로 뒀으니, 소급해주시려면 회비 현황에서 [면제] 처리하시면 됩니다.
+2. **회원이 자기 `is_active`를 API로 토글해 자기 미납 회비를 지울 수 있는 구멍** — 앱 UI엔 없는 경로지만 차단은 안 돼 있습니다. `ACCOUNTING_SPEC.md` §13에 원인·영향·차단 방법을 적어뒀습니다. 막으려면 본인 탈퇴(`delete_my_account`)와 게스트 행 재사용 경로를 같이 통과시켜야 해서 별도 작업으로 남겼습니다 — 진행하시겠다면 말씀해 주세요.
 
 ---
 
@@ -4615,5 +4638,192 @@ To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude
 4. **성장 여력과 손익** — 무료 5 GB로 버틸 수 있는 최대 회원 수, 그리고 정직한 비교: **Pro $25/월 유지(코드 한 줄) vs 무료 복귀(공수 N시간)**. 지금 69장은 변환 무료 포함분(100개) 안이라 Pro를 유지하면 실제로 한 줄로 끝나긴 합니다. 어느 쪽이 나은지는 수치로 제시하겠습니다.
 
 완료되면 순서 있는 체크리스트로 드리겠습니다.
+
+---
+
+## #137
+
+**Prompt**: 해당 API 를 운영진만 호출하게 가드할수 없나?
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #138
+
+**Prompt**: <task-notification>
+<task-id>wrivii3mv</task-id>
+<tool-use-id>toolu_01JjJs9rb1BHm2BxVz4wWR86</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/8b55a3a9-e5dc-4187-b457-3fb3e11107c7/tasks/wrivii3mv.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "무료 플랜 복귀 가능성 판정 — at-rest 재인코딩 실측·전체 쿼터 대조·백필 설계·최종 수지" completed</summary>
+<result>{"report":null,"survivedCount":0,"killedCount":0}</result>
+<diagnostics>Per-agent results: /Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/0ebf05b6-201a-43b2-88f5-f7ca1b802293/subagents/workflows/wf_dc4abe3d-50e/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/0ebf05b6-201a-43b2-88f5-f7ca1b802293/workflows/scripts/free-plan-return-plan-wf_dc4abe3d-50e.js', resumeFromRunId: 'wf_dc4abe3d-50e'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<failures>[find:free-quotas] failed: You've hit your session limit · resets 6pm (Asia/Seoul)
+[find:reencode] failed: You've hit your session limit · resets 6pm (Asia/Seoul)
+[find:backfill] failed: You've hit your session limit · resets 6pm (Asia/Seoul)
+[find:combined-budget] failed: You've hit your session limit · resets 6pm (Asia/Seoul)
+[synthesize] failed: You've hit your session limit · resets 6pm (Asia/Seoul)</failures>
+<usage><agent_count>5</agent_count><agents_done>0</agents_done><agents_error>5</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>366194</subagent_tokens><tool_uses>135</tool_uses><duration_ms>634849</duration_ms></usage>
+</task-notification>
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #139
+
+**Prompt**: go on
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #140
+
+**Prompt**: 일반 브라유저와 카톡브라유저를 사용하는 사욜자의 접근을 차단하고 앱설치로 강제로 유도하면 내가 원하는 캐싱이 가능할까?
+
+**Answer**: 로그 엔드포인트가 지금 간헐적으로 실패해서 플랫폼 분해는 앞선 측정창(검증 완료분) 수치를 씁니다. 재인코딩 실측은 방금 직접 끝냈습니다.
+
+## 결론부터: 차단으로 "가능해지는" 건 없습니다
+
+IndexedDB와 Cache Storage는 **일반 브라우저와 카톡 웹뷰에서도 그대로 동작합니다.** 설치가 바꾸는 것은 캐싱의 *가용성*이 아니라 *영속성 확률*뿐입니다. 즉 원하시는 캐싱은 차단 없이 지금 바로 구현 가능하고, 차단은 그걸 가능하게 만들어주지 않습니다.
+
+## 그리고 차단 대상이 반대로 짚혔습니다
+
+| 플랫폼 | 200 | 304 | 전체본문율 | MB/일 | 비중 |
+|---|---|---|---|---|---|
+| iOS 브라우저(비카톡) | 6,726 | 68 | **99.0%** | 231.5 | **60.7%** |
+| **카톡 Android** | 3,467 | 148 | **95.9%** | 118.4 | **31.1%** |
+| other/데스크톱 | 800 | 580 | 58.0% | 25.1 | 6.6% |
+| **Android 브라우저** | 127 | **4,947** | **2.5%** | 4.5 | **1.2%** |
+| **카톡 iOS** | 57 | **1,039** | **5.2%** | 1.7 | **0.5%** |
+
+**일반 Android 브라우저는 이미 모범생입니다** — 304가 4,947건, 하루 4.5 MB. 카톡 iOS도 1.7 MB. 이 둘을 막으면 **낭비의 1.7%를 위해 사용자를 차단**하는 셈입니다.
+
+그리고 정작 문제인 **카톡 Android는 차단해도 설치로 갈 길이 없습니다.** 카톡 인앱 웹뷰에서는 홈화면 추가가 불가능합니다. 차단하면 사용자가 "외부 브라우저로 열기 → 공유 → 홈화면에 추가"를 손으로 해야 합니다. 그런데 이 클럽은 카톡방 링크로 유입되는 구조입니다(사진 바이트의 31%). **주 유입 경로를 막는 것**입니다.
+
+## iOS 설치형이 7일 삭제를 피하는 건 맞지만, 보장은 아닙니다
+
+- Apple의 7일 script-writable storage 삭제는 **Safari에만** 적용되고, 홈화면 웹앱은 별도 사용일 카운터를 가집니다 — 설치가 유리한 건 사실입니다.
+- 그런데 홈화면 PWA도 자주 안 쓰면 IndexedDB가 지워진다는 보고가 계속 있고, PWA 저장 한도가 ~50 MB 수준이라는 관측도 있습니다. `navigator.storage.persist()`는 iOS에서 신뢰할 수 없습니다.
+- 즉 "설치 강제 = 캐시 영속 보장"이 아니라 **"확률이 올라간다"**입니다. 주 1~2회 방문 클럽이면 7일 경계에 계속 걸칩니다.
+
+## 결정적으로, 그 대가를 치를 이유가 사라졌습니다
+
+방금 실측을 끝냈습니다. 요청된 객체 **138개 전량을 내려받아 재인코딩**하고 **24시간 객체별 요청수로 가중**한 결과입니다(단순 객체합이 아니라 실제 egress):
+
+기준선 **11.79 GB/30일**. 원본 해상도는 두 종류뿐 — 128×128 76장, 512×512 62장.
+
+| 크기 | JPEG q75 | WebP q75 |
+|---|---|---|
+| 160 | 1.48 GB | 1.08 GB |
+| **192** | **1.80 GB** | 1.31 GB |
+| 256 | 2.56 GB | 1.86 GB |
+| 320 | 3.47 GB | 2.49 GB |
+
+**전 조합이 무료 5 GB를 통과합니다.** 320px JPEG q80(3.86 GB)조차 통과합니다. Pro 변환 없이, 로컬 Pillow로 백필만 하면 됩니다.
+
+그리고 **JPEG 경로를 쓰면 `.jpg` 확장자가 유지**되므로 파일명·`contentType` 변경이 없고, 부분 전환 중 404 창도 생기지 않습니다(과거 5,359건 사고 경로 회피). WebP가 25% 더 좋지만 여유가 이미 64%라 굳이 규약을 깰 이유가 없습니다.
+
+**192px JPEG q75 백필: 11.79 → 1.80 GB (−85%). 사용자 차단 0명, Pro 불필요, 코드 규약 변경 없음.**
+
+## 캐싱을 원하시면 — 차단 없이 그냥 하시면 됩니다
+
+IndexedDB 캐시는 일반 브라우저·카톡 웹뷰에서도 동작하고, 안 되는 기기에선 네트워크로 폴백합니다. 축소와 곱해져 0.02~0.5 GB급이 됩니다. 차단은 여기에 아무것도 더하지 않습니다.
+
+설치를 **유도**할 정당한 이유는 따로 있습니다 — 웹푸시가 standalone에서만 되니까요(`platform.ts:53-61`). 하지만 그건 유도할 이유고, **차단할 이유는 아닙니다.** egress 레버로서는 차단이 가장 비싸고 가장 효과 없는 선택입니다.
+
+---
+
+192px JPEG q75 백필 스크립트를 작성할까요? 기존 62장(512px)만 대상이고, 128px 76장은 `min(target, natural)` 가드로 원본 유지입니다. `photo_updated_at` 일괄 갱신 여부(일회성 스파이크 대 옛 캐시 잔존)는 실측해서 결정하겠습니다.
+
+**출처:** [Apple Developer Forums — Safari iOS PWA Data Persistence Beyond 7 Days](https://developer.apple.com/forums/thread/710157) · [PWA iOS Limitations and Safari Support](https://www.magicbell.com/blog/pwa-ios-limitations-safari-support-complete-guide) · [Navigating Safari/iOS PWA Limitations](https://vinova.sg/navigating-safari-ios-pwa-limitations/) · [Apple cops flak for deleting local browser storage after 7 days](https://www.itnews.com.au/news/apple-cops-flak-for-deleting-local-browser-storage-after-7-days-539833)
+
+---
+
+## #141
+
+**Prompt**: 해줘 그리고 자주 바뀌는 이미지가 아니라 캐싱도 오래 들고가고싶어
+
+**Answer**: 완료했습니다. 요청 두 가지 다 반영됐습니다 — **축소**와 **긴 캐싱**.
+
+## 프로덕션 적용 결과 (검증 완료)
+
+| | 이전 | 이후 |
+|---|---|---|
+| live 객체 69개 총합 | 2,188,354 B | **366,657 B** (−83.2%) |
+| 객체 평균 | 31,715 B | **5,314 B** |
+| `cache-control` | `no-cache` 38개 + `max-age=600` 31개 | **`public, max-age=31536000`** 69개 전부 |
+| 요청가중 월 egress | 11.79 GB | **1.96 GB** |
+
+wire 실측으로 확인: `192×192`, `6,113 B`, `cache-control: public, max-age=31536000`.
+
+축소 31장 / 헤더만 교정 38장 / 객체없음 0 / 디코드실패 0. 원본 31장(2,010 kB)은 `_originals/`에 백업했고 `--restore`로 원복됩니다.
+
+## 코드 변경
+
+`src/lib/playerPhotoUpload.ts`
+- `size 512 → 192`, `quality 0.85 → 0.8` — 앞으로 올라오는 사진도 같은 규약
+- `cacheControl "600" → "31536000"`
+- **`stampError`가 `return true` → `false`** — 이게 1년 캐시의 전제조건입니다. 파일은 올라갔는데 `photo_updated_at`이 안 찍히면 `?v=`가 그대로여서 1년간 옛 사진에 갇힙니다. 600초일 때는 10분 만에 자가치유했지만 이제는 안 됩니다. `upsert`라 재시도가 멱등이고 `ProfileSetup:138`이 이미 false를 받아 안내·중단합니다.
+
+`src/components/board/RecommendTeammateDialog.tsx:151,166` — 별건 버그. `photoId={p.id}`(session_players.id)를 `p.memberId ?? undefined`로. 추천 대화상자에서 현재 팀 사진이 안 나오던 원인입니다.
+
+`scripts/backfill_photo_sizes.py` (신규) — dry-run 기본, `--apply` / `--restore` / `--target` / `--quality`. **멱등**이라 다시 돌려도 이미 192px인 것은 헤더만 재확인합니다.
+
+타입체크 통과, 테스트 345/345 통과. 스테이징까지 해뒀습니다(커밋은 안 함).
+
+## 백필 중 새로 밝혀낸 것 세 가지
+
+1. **재업로드는 Smart CDN이 자동 무효화합니다.** `max-age=31536000` 상태에서 upsert한 직후 `MISS` → 새 바이트가 나왔습니다. 그래서 `photo_updated_at`을 **건드리지 않았습니다** — 범프하면 `?v=`가 바뀌어 전 클라이언트가 한 번 더 받는 스파이크만 생깁니다. 브라우저에 남은 옛 사본은 현재 헤더(`max-age=600`/`no-cache`)라 10분 안에 만료돼 새 작은 파일로 재검증됩니다.
+
+2. **없는 객체에 Storage가 HTTP 400 + 본문 `"code":"NoSuchKey"`를 돌려줍니다** (404가 아님). 상태코드만 보면 진짜 오류와 구분이 안 돼서, 첫 dry-run이 여기서 터졌습니다.
+
+3. **storage RLS 정책이 `bucket_id`만 검사하고 `owner`에 의존하지 않습니다.** 서비스키 재업로드가 향후 사용자 업로드를 깨뜨리지 않는다는 확인이었습니다(기존 216개 중 177개가 이미 owner null).
+
+## 알아두실 것
+
+- **회원관리 사진 모달**(`MemberPhotoModal`)은 전체화면급으로 표시하는데 이제 192px 원본이라 부드러워 보입니다. 운영진 전용·저트래픽이라 192로 갔습니다. 신경쓰이면 `--target 256`으로 다시 돌리면 됩니다(2.56 GB, 여전히 무료 한도의 절반). 다만 **원본은 `_originals/`에만 있고 live 객체는 이미 192px**이므로, 256으로 올리려면 `--restore` 후 `--target 256 --apply` 순서로 하셔야 합니다.
+- **지금 Pro 플랜입니다**(250 GB 포함). 1.96 GB면 무료 5 GB 기준으로도 여유 61%라 언제든 내려가실 수 있습니다. 다만 내려가기 전에 **Realtime 메시지 한도**를 확인하셔야 합니다 — 과거 초과 이력이 있고 감축 미완 항목이 남아 있어서, 사진만 고쳐놓고 거기 걸릴 수 있습니다. 이건 아직 측정 못 했습니다.
+- 남은 고아 객체 147개는 요청 0건이라 egress 0입니다. 방치해도 무해합니다.
+
+다음으로 무료 플랜 다른 한도(특히 Realtime)를 점검할까요, 아니면 IndexedDB 캐시를 얹을까요?
+
+---
+
+## #142
+
+**Prompt**: 일단 여기까지
+
+**Answer**: 네, 여기까지 하겠습니다.
+
+**적용 완료 (프로덕션)**
+- 사진 69장 백필 — 2,188,354 → 366,657 B, 전부 `max-age=31536000`. 월 egress 11.79 → 1.96 GB
+- 원본 31장은 `_originals/`에 백업, `--restore`로 원복 가능
+
+**스테이징만 됨 (커밋 안 함)**
+- `src/lib/playerPhotoUpload.ts` — 192px/q0.8, 캐시 1년, `stampError` → false
+- `src/components/board/RecommendTeammateDialog.tsx` — `photoId` 버그
+- `scripts/backfill_photo_sizes.py` — 신규
+
+커밋은 `/commit`으로 하시면 됩니다. `supabase/migrations/20260821010000_guard_member_is_active.sql`은 제 작업이 아니라 손대지 않고 그대로 뒀습니다.
+
+**열어둔 것**
+- 무료 플랜 복귀 전 Realtime 메시지 한도 점검 (미측정 — 여기 걸릴 수 있습니다)
+- IndexedDB 캐시 (선택, 이미 한도 아래라 급하지 않음)
+- 회원관리 사진 모달이 부드러워 보이면 `--restore` → `--target 256 --apply`
+
+조사 전문은 `scratchpad/`의 `egress-report.md`·`photo-cache-design.md`에, 결론과 CDN 함정 5개는 메모리에 남겼습니다.
+
+---
+
+## #143
+
+**Prompt**: 커밋하고 전부배포
+
+**Answer**: _(응답 대기 중…)_
 
 ---

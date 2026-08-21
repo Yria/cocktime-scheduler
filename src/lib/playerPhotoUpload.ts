@@ -16,8 +16,8 @@ import {
  */
 export async function processImageToSquareJpeg(
 	file: File,
-	size = 512,
-	quality = 0.85,
+	size = 192,
+	quality = 0.8,
 ): Promise<Blob> {
 	const url = URL.createObjectURL(file);
 	try {
@@ -68,9 +68,12 @@ export async function uploadPlayerPhoto(
 		.upload(playerPhotoFilename(memberId), blob, {
 			contentType: "image/jpeg",
 			upsert: true,
-			// ?v= 가 바뀌면 즉시 새 사진을 받으므로 캐시는 길게 잡아도 되지만,
-			// 인덱스 갱신 전(부팅 직후)을 대비해 10분으로 둔다.
-			cacheControl: "600",
+			// 사진 URL 은 ?v={photo_updated_at} 로 버전이 붙으므로(playerPhoto.ts buildUrl)
+			// 새 사진은 새 URL 이 되고, 옛 URL 을 오래 캐시해도 옛 사진이 보일 일이 없다.
+			// 종전 600초는 10분마다 전 회원 사진을 재다운로드시켜 대역폭 초과의 직접 원인이었다.
+			// 이 값을 길게 두는 전제조건이 아래 stampError 처리다 — 도장이 실패하면 ?v= 가
+			// 그대로여서 1년간 옛 사진에 갇히므로, 실패는 반드시 업로드 실패로 보고해야 한다.
+			cacheControl: "31536000",
 		});
 	if (error) {
 		console.error("uploadPlayerPhoto:", error);
@@ -81,11 +84,13 @@ export async function uploadPlayerPhoto(
 		.from("members")
 		.update({ photo_updated_at: at.toISOString() })
 		.eq("id", memberId);
-	// 도장만 실패한 경우: 파일은 올라갔으니 업로드 자체는 성공으로 본다. 다만 인덱스에는 남기지
-	// 않는다 — 그래야 다음 부팅의 refreshPlayerPhotoIndex 와 어긋나 사진이 깜빡이지 않는다.
+	// 도장 실패는 업로드 실패로 보고한다. 파일은 올라갔지만 photo_updated_at 이 안 찍히면
+	// ?v= 가 그대로여서 cacheControl 1년 동안 옛 사진에 갇힌다(종전 600초는 10분 만에
+	// 자가치유했다). upsert 라 재시도가 멱등이므로 호출부가 사용자에게 재시도를 안내하는 편이
+	// 안전하다 — ProfileSetup 이 false 를 받으면 안내 후 중단한다.
 	if (stampError) {
 		console.error("uploadPlayerPhoto(photo_updated_at):", stampError);
-		return true;
+		return false;
 	}
 	markPlayerPhotoUploaded(memberId, at.getTime());
 	return true;
