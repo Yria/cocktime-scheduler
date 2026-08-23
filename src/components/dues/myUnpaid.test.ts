@@ -17,8 +17,12 @@ const base: MyChargeRow = {
 	sessionTitle: null,
 	scheduledAt: null,
 	isProxy: false,
+	label: null,
 };
 const fee = (o: Partial<MyChargeRow> = {}): MyChargeRow => ({ ...base, ...o });
+/** 수동 부과(회식·공동구매) — 묶음 축이 batch_key 라 월/세션이 없고 이름을 행이 들고 있다. */
+const manual = (o: Partial<MyChargeRow> = {}): MyChargeRow =>
+	fee({ kind: "manual", amountDue: 26000, periodYm: null, label: "8/22 정모 회식", ...o });
 const court = (o: Partial<MyChargeRow> = {}): MyChargeRow =>
 	fee({
 		kind: "court_fee",
@@ -74,6 +78,17 @@ describe("selectUnpaid — 회원 관점 미납", () => {
 	it("게스트 대납분(isProxy)도 낼 사람은 나 → 포함", () => {
 		expect(selectUnpaid([court({ id: 41, isProxy: true })], "2026-08")).toHaveLength(1);
 	});
+
+	it("수동 부과(회식·공동구매)도 월 무관 전부 — 회비처럼 이월 판정에 걸리지 않는다", () => {
+		const rows = [manual({ id: 51 }), manual({ id: 52, label: "8월 콕 공구" })];
+		expect(selectUnpaid(rows, "2026-08").map((c) => c.id)).toEqual([51, 52]);
+		// 기준 월을 과거로 내려도 그대로 뜬다(발생일 기준이 아니라 '아직 안 낸 돈'이라서).
+		expect(selectUnpaid(rows, "2026-07")).toHaveLength(2);
+	});
+
+	it("수동 부과도 완납·면제는 빠진다", () => {
+		expect(selectUnpaid([manual({ status: "paid" }), manual({ status: "waived" })], "2026-08")).toEqual([]);
+	});
 });
 
 describe("unpaidSum — 남은 금액만", () => {
@@ -103,5 +118,11 @@ describe("chargeLabel", () => {
 	it("세션 날짜가 없으면 제목, 그것도 없으면 '세션'", () => {
 		expect(chargeLabel(court({ scheduledAt: null, sessionTitle: "번개" }))).toBe("번개 대관비");
 		expect(chargeLabel(court({ scheduledAt: null, sessionTitle: null }))).toBe("세션 대관비");
+	});
+
+	it("수동 부과는 만들 때 붙인 이름을 그대로 쓴다(대관비 문구로 새지 않는다)", () => {
+		expect(chargeLabel(manual())).toBe("8/22 정모 회식");
+		expect(chargeLabel(manual({ isProxy: true }))).toBe("8/22 정모 회식 (게스트 대납)");
+		expect(chargeLabel(manual({ label: null }))).toBe("기타 부과");
 	});
 });

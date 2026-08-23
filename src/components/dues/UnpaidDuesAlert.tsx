@@ -54,9 +54,18 @@ export default function UnpaidDuesAlert() {
 	if (!profileComplete || dismissed || onMyDues || total <= 0) return null;
 
 	// 제목은 실제 미납 종류에 맞춘다(대관비만 미납인 경우가 흔함).
+	// 수동 부과(회식·공동구매 등)는 종류가 제각각이라 이름을 제목에 넣지 않고 '내역'으로 뭉갠다 —
+	// 정확한 이름은 바로 아래 항목별 목록에 그대로 뜬다.
 	const hasFee = unpaid.some((c) => c.kind === "monthly_fee");
 	const hasCourt = unpaid.some((c) => c.kind === "court_fee");
-	const what = hasFee && hasCourt ? "회비·대관비" : hasCourt ? "대관비" : "회비";
+	const hasManual = unpaid.some((c) => c.kind === "manual");
+	const what = hasManual
+		? "내역"
+		: hasFee && hasCourt
+			? "회비·대관비"
+			: hasCourt
+				? "대관비"
+				: "회비";
 
 	const close = () => duesActions.dismissUnpaidAlert();
 

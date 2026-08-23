@@ -30,7 +30,17 @@ import {
 	fetchTxAllocations,
 	fetchUnpaidByMember,
 	fetchUpcomingParticipating,
+	ymRangeKst,
 } from "../lib/supabase/dues";
+import {
+	type ChargeSourceSession,
+	type ManualBatch,
+	fetchChargeSourceSessions,
+	fetchManualBatches,
+} from "../lib/supabase/manualCharges";
+import { fetchLastParticipationByMember } from "../lib/supabase/members";
+import { isoToDateKST } from "../lib/schedule/calendar";
+import { shiftYm } from "../components/admin/dues/duesText";
 
 // 회비 데이터 스토어(scheduleStore/authStore 관례: uncurried create + 별도 actions 객체).
 // setState 를 컴포넌트 밖(스토어)에서 하여 effect 내 동기 setState 규칙(React Compiler)을 피한다.
@@ -66,6 +76,17 @@ interface DuesState {
 	myLedgerYm: string | null; // myLedger가 담고 있는 월
 	myLedgerLoading: boolean;
 
+	// ── 수동 부과 탭(지연 로드) ─────────────────────────────────────
+	// 정모·정산함·회계는 이 데이터를 쓰지 않는다 → loadMonth 를 무겁게 하지 않고 탭 진입 때만 조회한다.
+	manualLoadedYm: string | null;
+	manualLoading: boolean;
+	/** 최근 6개월 배치(그 달 목록 + 필터의 '지난 명단' 재료를 한 쿼리로). */
+	manualBatches: ManualBatch[];
+	/** 그 달 열린 회차 + 참석행(식사 체크 포함) — 대상 후보의 재료. */
+	chargeSessions: ChargeSourceSession[];
+	/** 회원별 마지막 참석일(KST 'YYYY-MM-DD'). null=아직 안 불러옴. */
+	lastAttendedOn: Map<string, string> | null;
+
 	// ── 미납 진입 알림(UnpaidDuesAlert) ─────────────────────────────
 	// 앱 진입 시 1회 조회하는 독립 스냅샷. /my-dues 의 myCharges/account 와 분리해
 	// 두 화면의 로드 라이프사이클이 서로를 덮지 않게 한다.
@@ -83,6 +104,11 @@ export const useDuesStore = create<DuesState>(() => ({
 	court: [],
 	bankTxns: [],
 	monthSessions: [],
+	manualLoadedYm: null,
+	manualLoading: false,
+	manualBatches: [],
+	chargeSessions: [],
+	lastAttendedOn: null,
 	ledgerSessions: [],
 	upcomingSessions: [],
 	sessionTxns: [],
@@ -159,6 +185,38 @@ export const duesActions = {
 			loadedYm: ym,
 			monthLoading: false,
 		});
+	},
+
+	/**
+	 * 수동 부과 탭 데이터(지연). 배치는 6개월 창으로 한 번에 받아 그 달 목록과 '지난 명단' 필터가
+	 * 같은 배열을 쓴다. 회원 명단은 loadMonth 가 이미 채워두므로 여기서 다시 받지 않는다.
+	 */
+	async loadManual(ym: string, force = false) {
+		const s = useDuesStore.getState();
+		if (!force && s.manualLoadedYm === ym && !s.manualLoading) return; // 캐시 히트
+		useDuesStore.setState({ manualLoading: true });
+		const { start, end } = ymRangeKst(ym);
+		const [batches, sessions, lastIso] = await Promise.all([
+			fetchManualBatches(`${shiftYm(ym, -5)}-01`, `${shiftYm(ym, 1)}-01`),
+			fetchChargeSourceSessions(start, end),
+			fetchLastParticipationByMember(100),
+		]);
+		// 필터는 KST 날짜 문자열끼리 비교하므로(시간대 함정 회피) 여기서 한 번 변환해 둔다.
+		const lastAttendedOn = new Map<string, string>();
+		for (const [id, iso] of lastIso) lastAttendedOn.set(id, isoToDateKST(iso));
+		useDuesStore.setState({
+			manualBatches: batches,
+			chargeSessions: sessions,
+			lastAttendedOn,
+			manualLoadedYm: ym,
+			manualLoading: false,
+		});
+	},
+
+	/** 배치 생성·삭제 후 목록만 갱신(로딩 플래그 없이 — 목록이 깜빡이지 않게). */
+	async refreshManual(ym: string) {
+		const batches = await fetchManualBatches(`${shiftYm(ym, -5)}-01`, `${shiftYm(ym, 1)}-01`);
+		useDuesStore.setState({ manualBatches: batches });
 	},
 
 	/**

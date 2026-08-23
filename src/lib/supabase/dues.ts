@@ -47,9 +47,15 @@ export interface CourtChargeRow {
 }
 
 /** 내 회비 화면용 통합 charge(회비 or 대관비). */
+/**
+ * 부과 종류. 묶음 축이 kind 마다 다르다 — monthly_fee=period_ym / court_fee=session_id /
+ * manual=batch_key(+label, charged_on). 20260823010000.
+ */
+export type ChargeKind = "monthly_fee" | "court_fee" | "manual";
+
 export interface MyChargeRow {
 	id: number;
-	kind: "monthly_fee" | "court_fee";
+	kind: ChargeKind;
 	periodYm: string | null;
 	deferredTo: string | null; // 이월 대상 월(set이면 그 달이 실효 월 — 부과 월 대신)
 	sessionId: number | null;
@@ -59,6 +65,8 @@ export interface MyChargeRow {
 	amountPaid: number;
 	status: ChargeStatus;
 	isProxy: boolean; // payer_hint=me 인데 member_id≠me → 게스트 대납분
+	/** kind='manual' 의 표시 이름("8/22 정모 회식"). 다른 kind 는 null. */
+	label: string | null;
 }
 
 export interface ClubAccount {
@@ -76,7 +84,7 @@ interface RpcResult {
 
 // ── KST 월 경계(ISO with +09:00 offset) ───────────────────────────────
 /** ym='YYYY-MM' → [해당 월 1일 00:00 KST, 다음 월 1일 00:00 KST) ISO 문자열. */
-function ymRangeKst(ym: string): { start: string; end: string } {
+export function ymRangeKst(ym: string): { start: string; end: string } {
 	const [y, m] = ym.split("-").map(Number);
 	const nextY = m === 12 ? y + 1 : y;
 	const nextM = m === 12 ? 1 : m + 1;
@@ -341,6 +349,7 @@ interface RawTxAlloc {
 	dues_charges: {
 		kind: string;
 		period_ym: string | null;
+		label: string | null;
 		member_id: string;
 		session_id: number | null;
 		sessions: { scheduled_at: string | null; title: string | null } | null;
@@ -366,7 +375,7 @@ export async function fetchTxAllocations(txIds?: number[]): Promise<Record<numbe
 	let query = supabase
 		.from("dues_allocations")
 		// members 임베드는 member_id·matched_by 두 FK가 있어 모호 → 납부자(member_id) FK 명시(PGRST201 회피).
-		.select("bank_tx_id, amount, member_id, dues_charges(kind, period_ym, member_id, session_id, sessions(scheduled_at, title)), members!dues_allocations_member_id_fkey(name)")
+		.select("bank_tx_id, amount, member_id, dues_charges(kind, period_ym, label, member_id, session_id, sessions(scheduled_at, title)), members!dues_allocations_member_id_fkey(name)")
 		.not("bank_tx_id", "is", null);
 	if (txIds) query = query.in("bank_tx_id", txIds);
 	const { data, error } = await query;
@@ -385,6 +394,10 @@ export async function fetchTxAllocations(txIds?: number[]): Promise<Record<numbe
 		} else if (c.kind === "monthly_fee") {
 			label = `${c.period_ym?.slice(5) ?? ""}월 회비`;
 			key = `a-회비-${c.period_ym ?? ""}`;
+		} else if (c.kind === "manual") {
+			// 수동 부과는 이름을 행이 들고 있다(회식·공동구매 등). 세션이 없으니 대관 분기로 흘리면 안 된다.
+			label = c.label ?? "기타 부과";
+			key = `c-수동-${c.label ?? ""}`;
 		} else {
 			const d = c.sessions?.scheduled_at
 				? new Date(c.sessions.scheduled_at).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric", timeZone: "Asia/Seoul" })
@@ -411,6 +424,7 @@ interface RawUnpaid {
 	kind: string;
 	member_id: string;
 	period_ym: string | null;
+	label: string | null;
 	session_id: number | null;
 	amount_due: number;
 	amount_paid: number;
@@ -420,7 +434,7 @@ interface RawUnpaid {
 }
 export interface UnpaidCharge {
 	id: number;
-	kind: "monthly_fee" | "court_fee";
+	kind: ChargeKind;
 	sessionId: number | null;
 	periodYm: string | null; // 회비 대상 월(크로스먼스 판별·프리셀렉트용)
 	sessionDate: string | null; // 대관 세션 일시
@@ -429,9 +443,11 @@ export interface UnpaidCharge {
 	amountPaid: number;
 	isProxy: boolean;
 }
-function unpaidLabel(kind: string, periodYm: string | null, session: { title: string | null; scheduled_at: string | null; places: { name: string | null } | null } | null, proxy: boolean): string {
+function unpaidLabel(kind: string, periodYm: string | null, session: { title: string | null; scheduled_at: string | null; places: { name: string | null } | null } | null, proxy: boolean, manualLabel: string | null = null): string {
 	// 회비: 'N월 회비'로 통일(거래내역 라벨·신규회비 칩과 동일 형식). 예: 2026-07 → 7월 회비.
 	if (kind === "monthly_fee") return periodYm ? `${Number(periodYm.slice(5))}월 회비` : "회비";
+	// 수동 부과(회식·공동구매 등): 만들 때 붙인 이름을 그대로 쓴다.
+	if (kind === "manual") return `${manualLabel ?? "기타 부과"}${proxy ? " (게스트)" : ""}`;
 	// 세션 칩(sessionLabel)과 동일 형식으로 통일: "{월.일} {장소} 대관비". 장소 없으면 날짜만.
 	const d = session?.scheduled_at
 		? new Date(session.scheduled_at).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric", timeZone: "Asia/Seoul" })
@@ -444,7 +460,7 @@ function unpaidLabel(kind: string, periodYm: string | null, session: { title: st
 export async function fetchUnpaidByMember(): Promise<Record<string, UnpaidCharge[]>> {
 	const { data, error } = await supabase
 		.from("dues_charges")
-		.select("id, kind, member_id, period_ym, session_id, amount_due, amount_paid, status, payer_hint, sessions(title, scheduled_at, places(name))")
+		.select("id, kind, member_id, period_ym, label, session_id, amount_due, amount_paid, status, payer_hint, sessions(title, scheduled_at, places(name))")
 		.in("status", ["unpaid", "partial"])
 		.order("created_at", { ascending: true });
 	if (error) {
@@ -458,11 +474,11 @@ export async function fetchUnpaidByMember(): Promise<Record<string, UnpaidCharge
 			const proxy = owner !== c.member_id;
 			(map[owner] ??= []).push({
 				id: c.id,
-				kind: c.kind as "monthly_fee" | "court_fee",
+				kind: c.kind as ChargeKind,
 				sessionId: c.session_id,
 				periodYm: c.period_ym,
 				sessionDate: c.sessions?.scheduled_at ?? null,
-				label: unpaidLabel(c.kind, c.period_ym, c.sessions, proxy),
+				label: unpaidLabel(c.kind, c.period_ym, c.sessions, proxy, c.label),
 				amountDue: c.amount_due,
 				amountPaid: c.amount_paid,
 				isProxy: proxy,
@@ -594,6 +610,7 @@ interface RawMyCharge {
 	kind: string;
 	member_id: string;
 	period_ym: string | null;
+	label: string | null;
 	deferred_to: string | null;
 	session_id: number | null;
 	amount_due: number;
@@ -608,7 +625,7 @@ export async function fetchMyCharges(meMemberId: string): Promise<MyChargeRow[]>
 	const { data, error } = await supabase
 		.from("dues_charges")
 		.select(
-			"id, kind, member_id, period_ym, deferred_to, session_id, amount_due, amount_paid, status, payer_hint, sessions(title, scheduled_at)",
+			"id, kind, member_id, period_ym, label, deferred_to, session_id, amount_due, amount_paid, status, payer_hint, sessions(title, scheduled_at)",
 		)
 		// 본인 부과 + 대납분(게스트 초대자)만. RLS가 관리자에겐 전체를 허용하므로 명시 필터 필수
 		// (없으면 관리자 계정의 /my-dues 에 전 회원 부과가 노출됨).
@@ -620,7 +637,8 @@ export async function fetchMyCharges(meMemberId: string): Promise<MyChargeRow[]>
 	}
 	return ((data ?? []) as unknown as RawMyCharge[]).map((c) => ({
 		id: c.id,
-		kind: c.kind as "monthly_fee" | "court_fee",
+		kind: c.kind as ChargeKind,
+		label: c.label,
 		periodYm: c.period_ym,
 		deferredTo: c.deferred_to,
 		sessionId: c.session_id,

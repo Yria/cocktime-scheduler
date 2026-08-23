@@ -7,19 +7,23 @@ import { duesActions } from "../../../store/duesStore";
 import AppScreen from "../../common/AppScreen";
 import DuesSettingsModal from "./DuesSettingsModal";
 import LedgerView from "./LedgerView";
+import ManualChargeHome from "./ManualChargeHome";
 import ReconcileInbox from "./ReconcileInbox";
 import SessionsHome from "./SessionsHome";
 import { currentYm, shiftYm, ymLabel } from "./duesText";
 
-type Page = "home" | "inbox" | "ledger";
+type Page = "home" | "inbox" | "ledger" | "charge";
 const NAV: [Page, string][] = [
 	["home", "현황"],
 	["inbox", "정산함"],
 	["ledger", "회계"],
+	// 회식·공동구매 등 자동 트리거가 없는 부과. 데이터는 탭 진입 때만 로드한다(loadManual).
+	["charge", "부과"],
 ];
 const YM_RE = /^\d{4}-\d{2}$/;
 
-// 회비 관리(운영진). ym·화면은 URL로: /dues/:ym(정모) · /dues/:ym/inbox(정산함) · /dues/:ym/ledger(회계).
+// 회비 관리(운영진). ym·화면은 URL로: /dues/:ym(정모) · /dues/:ym/inbox(정산함) · /dues/:ym/ledger(회계)
+// · /dues/:ym/charge(수동 부과).
 // 월 공통 데이터는 여기서 loadMonth(ym) 한 번(캐시) — 화면 전환 시 재조회 없음(ACCOUNTING_SPEC §11).
 export default function DuesAdminPage() {
 	const navigate = useNavigate();
@@ -101,6 +105,7 @@ export default function DuesAdminPage() {
 			{page === "home" && <SessionsHome ym={ym} />}
 			{page === "inbox" && <ReconcileInbox ym={ym} />}
 			{page === "ledger" && <LedgerView ym={ym} />}
+			{page === "charge" && <ManualChargeHome ym={ym} />}
 
 			{showSettings && <DuesSettingsModal onClose={() => setShowSettings(false)} />}
 		</AppScreen>

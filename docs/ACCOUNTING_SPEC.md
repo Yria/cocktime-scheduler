@@ -37,6 +37,10 @@
     - 음수도 무부과로 묶는다. 오타(-6000)를 정액으로 흘리면 6,000원 부과가 그럴싸하게 숨고, 0건 부과는 즉시 눈에 띈다.
   - 총액 = `coalesce(sessions.court_fee, recurring_schedules.court_fee)` — 반복 규칙에 넣은 **기본 총액**(일정 생성 시)을 회차가 물려받고, 회차에서 실제 총액을 넣으면 그게 우선. 부과 시점(세션 종료 트리거)에 규칙을 조인해 읽음. **NULL=미입력(정액) / 0 이하=무부과 / 0 초과=엔빵.**
   - ⚠ **종료된 회차의 총액을 나중에 고쳐도 부과는 재계산되지 않는다.** 회차 에디터는 `sessions` 를 직접 PATCH 하고 `dues_set_session_fee` RPC 를 타지 않으며, 재계산 트리거는 `after update of status ... when new.status='closed'` 뿐이다(2026-08-23 확인, 미해결).
+- **수동 부과(manual)**: 회식비·공동구매처럼 **자동 트리거가 없는** 부과. 묶음 = `batch_key`(`'{type}:{scope}'`, 예 `meal:228`·`cock:2026-08`), 표시 이름 = `label`, 월 귀속 = `charged_on`. 운영진이 [부과] 탭에서 대상·금액을 정해 만든다(§3.6).
+  - **왜 자동이 아닌가**: 회비는 회원 룰, 대관비는 참석 명단으로 대상을 **다시 계산할 수 있어서** 묶음(월·세션)만 알면 재실행이 멱등이다. 회식은 대상이 운영진이 손으로 고른 명단이라 파생 불가능하고(식사 체크는 기본 후보일 뿐), 금액도 나중에 정해진다.
+  - **금액**: 총액 엔빵(총액 ÷ 대상, **절상 단위 선택** 10/100/1,000원) 또는 인당 직접. 대관비 엔빵과 **별개 산식**이다 — 정액 근처 스냅이 없고 절상 단위를 고른다(`lib/dues/splitAmount`). 총액과 부과합의 차액은 화면이 항상 표시한다.
+  - 게스트는 대관비와 같은 모델(`payer_hint` = 가장 최근에 데려온 회원이 대납).
 - `places.charges_court_fee`(boolean) = **대관장소 여부(대관비 부과 대상 게이트)**. false면 그 장소 세션엔 대관비 미부과. (구 `court_fee_per_hour` 를 대체 — 컬럼·전환창 브리지는 drop 완료 20260718010000.)
 
 ### 1.2 세션이 "열렸다"의 정의
@@ -49,7 +53,8 @@
 - 이월은 상태(status)를 바꾸지 않는다(그대로 unpaid/partial). 정모/현황·내 회비 모두 "이월 나간 건 제외, 이월 들어온 건 포함"으로 판정.
 
 ### 1.4 핵심 테이블
-- **`dues_charges`** — 부과. `kind(monthly_fee|court_fee)`, `member_id`, `period_ym` XOR `session_id`, `amount_due`, `amount_paid`(트리거 캐시), `status(unpaid|partial|paid|overpaid|waived|void)`, `payer_hint`(게스트 대납자), `deferred_to`, **`is_day_cancel`**(정액 당일 확정취소로 부과된 court_fee 표식 — 현황 별도 노출·부과삭제 대상), **`voided_by`/`voided_at`**(부과삭제=void 한 운영진·시각, 감사·표시). 유니크: (member,period_ym) / (member,session_id).
+- **`dues_charges`** — 부과. `kind(monthly_fee|court_fee|manual)`, `member_id`, `period_ym` XOR `session_id` XOR **`batch_key`**(수동 부과 묶음 + `label`·`charged_on`, `dues_charge_manual_shape` 로 모양 강제), `amount_due`, `amount_paid`(트리거 캐시), `status(unpaid|partial|paid|overpaid|waived|void)`, `payer_hint`(게스트 대납자), `deferred_to`, **`is_day_cancel`**(정액 당일 확정취소로 부과된 court_fee 표식 — 현황 별도 노출·부과삭제 대상), **`voided_by`/`voided_at`**(부과삭제=void 한 운영진·시각, 감사·표시). 유니크: (member,period_ym) / (member,session_id) / (member,batch_key).
+  - **묶음 축을 늘릴 때 기존 유니크를 건드리지 않는다**(2026-08-23 결정): `(member,session_id)` 에 `kind` 를 끼우는 대안은 그 `on conflict` 절을 쓰는 라이브 함수 4개(`dues_generate_session_court`·`dues_confirm_reconcile`·`dues_confirm_compose`·`dues_confirm_new_court`)를 전부 재작성해야 한다. 새 축(`batch_key`)을 더하면 기존 경로는 0줄 변경이다.
 - **`dues_allocations`** — 입금↔부과 배분(**가역 레코드**: 취소/재매칭 안전). `bank_tx_id`, `charge_id`(nullable), `member_id`(납부 주체), `amount`, `kind`. 트리거가 charge.amount_paid·status와 bank_tx.status를 유지. **waived/void엔 배분 금지(가드).**
 - **`bank_transactions`** — 은행 거래. `direction(in|out)`, `amount`(양수), `balance_after`, `status(unmatched|proposed|partial|matched)`, `category_id`(수지 분류), `session_id`(대관 지출·비회원 대관 수입 귀속), `refund_of_tx_id`(환불 연결), **`paid_by`(비부과 카테고리 납부의 납부 회원 — 내 납부 이력용)**, `dedup_key`(멱등).
 - **`txn_categories`** — 수지 분류(콕공구·이자·정모·기타 등). 관리자 추가/삭제. (코트대관은 카테고리가 아니라 `session_id`.)
@@ -62,7 +67,7 @@
 
 ## 2. 라우팅
 
-- **운영진**: `/dues/:ym`(정모·메인) · `/dues/:ym/inbox`(정산함) · `/dues/:ym/ledger`(회계). ym·화면 각각 독립 URL. 뒤로가기=홈. 월 공통 데이터는 셸에서 `loadMonth(ym)` 한 번(캐시, §11).
+- **운영진**: `/dues/:ym`(정모·메인) · `/dues/:ym/inbox`(정산함) · `/dues/:ym/ledger`(회계) · `/dues/:ym/charge`(수동 부과, §3.6 — 데이터는 탭 진입 때만 `loadManual(ym)`). ym·화면 각각 독립 URL. 뒤로가기=홈. 월 공통 데이터는 셸에서 `loadMonth(ym)` 한 번(캐시, §11).
 - **회원**: `/my-dues`(내 회비) · `/my-dues/ledger`(클럽 회계). 상단 탭으로 분리.
 
 ---
@@ -155,6 +160,19 @@
 
 ---
 
+### 3.6 수동 부과 (`/dues/:ym/charge`)
+- 목적: 회식비·공동구매처럼 **일정과 무관하게, 금액이 나중에 정해지는** 부과를 운영진이 직접 만든다.
+- 목록 = 그 달 배치(`charged_on` 기준). 배치를 탭하면 명단·금액을 고쳐 저장(같은 `batch_key` upsert)하거나 삭제.
+- **대상 고르기는 필터 레지스트리**(`lib/dues/chargeFilters`)가 단일 소스다. 화면(`ChargeFilterBar`)은 배열을 렌더링만 하고 개별 필터 id 를 모른다 → **필터 추가 = 레지스트리에 정의 하나**.
+  - `source`(하나 고름): 🍽 식사 체크 · 참석 · 실제로 뛴 사람(참석 ∪ 보드) · 최근 30일 참석 · 전체 회원 · 지난 명단 재사용
+  - `refine`(여러 개): 비활성/게스트/운영진/명예회원 제외 · 성별만 · 지난 명단 제외(중복 부과 방지)
+  - 필터가 보는 값은 `FilterContext` 한 곳으로만 들어온다(순수함수 — `chargeFilters.test.ts` 가 전 조합을 검사).
+  - **손 편집(added/removed)은 필터 결과에 병합하지 않는다.** 필터를 바꿔도 "식사 체크 안 했는데 온 사람"같은 현장 예외가 살아남아야 하기 때문. 최종 = 필터 결과 ∪ added − removed.
+- 만든 부과는 회비·대관비와 같은 테이블이라 회원 [내 회비]·미납 진입 알림·정산함 입금 매칭에 **자동으로** 합류한다(라벨은 `dues_charges.label`).
+- **공개 회계는 수정하지 않았다**: `dues_public_ledger` 는 회비/대관비만 명시 조인하고 나머지 입금은 카테고리 또는 미분류로 흘러가므로 "항목 순액 합 = 남은 돈" 불변식이 유지된다. 수동 부과에 배분된 입금은 그 거래에 카테고리를 지정하면 그 항목으로 잡힌다(콕 공동구매를 지금 처리하는 방식과 동일).
+
+---
+
 ## 4. 부과 생성 (charge generation)
 
 부과는 **발생 시점 이벤트**에서 자동 생성된다(전부 멱등 — 중복·유실 없음, 단일 규칙 재사용). 부과 생성은 **은행 내역 가져오기와 분리**돼 있다(통장 적재와 무관).
@@ -162,6 +180,7 @@
 - **대관비**: **세션 종료(closed)** 시 트리거 `trg_session_court_on_close` → 그 세션 대관비(참석·당일취소 확정 후라 정확).
 - **즉석**: 입금 확인 시 `dues_confirm_reconcile`가 낸 사람의 부과를 필요 시 신규 생성·배분. 아직 안 열린 `open` 세션 선납도 여기(세션 id만 넘기면 자격 게이팅 없이 생성). self-heal DELETE·종료 트리거 UPSERT 모두 `amount_paid=0` 게이트라 선납(배분됨)은 보존·무손상.
 - **수동 배치**: `generate_dues_charges(ym)`(is_admin) — 과거 달 보정 등 fallback.
+- **수동 부과**: 자동 생성이 **없다**. 운영진이 [부과] 탭에서 `dues_upsert_manual_batch(batch_key, label, charged_on, amount, member_ids)` 로 만든다(같은 키 재호출 = 갱신, 멱등). 명단에서 빠진 사람의 **미납만** 삭제하고 납부분·void 는 보존 — 대관비 생성기와 같은 규칙. 삭제는 `dues_delete_manual_batch`(운영진의 명시적 조작이라 void 도 함께 지우지만 납부분은 남긴다).
 
 규칙 단일 소스(빌딩블록): `dues_generate_monthly(ym)`(회비) · `dues_generate_session_court(sid)`(세션 대관비). 트리거·ensure·수동배치가 모두 이 둘을 재사용.
 - **회비 룰**: `is_active AND not is_guest AND not is_honorary AND not 운영진`, 가입월(`membership_started_at ?? created_at` + `offset_days`) 다음 달부터 `amount_due=회비액`. **단 합류월은 하한이 걸린다**(바로 아래).
@@ -273,6 +292,7 @@
 - **이월**: `dues_defer_charge`/`dues_undefer_charge`/`dues_settle_deferred`.
 - **부과 조정**: `dues_set_charge_status`(`void`=부과삭제·취소선 + `voided_by/at` 기록 / `reset`=되돌리기·재산정 / `waived`=면제).
 - **부과**: `dues_ensure_monthly`(월진입 회비), `generate_dues_charges`(수동 배치 fallback), 빌딩블록 `dues_generate_monthly`·`dues_generate_session_court`(내부), 트리거 `trg_session_court_on_close`(세션 종료 대관). **명예회원**: `dues_set_honorary`(지정/해제 + 미납 회비 정리). ~~**알림**: `dues_notify_selected`~~ — DB에만 잔존, 클라 호출 없음(§3.1·§9).
+- **수동 부과**: `dues_upsert_manual_batch`(생성·갱신, 멱등) / `dues_delete_manual_batch`(미납 삭제, 납부분 보존). 둘 다 `is_admin` 게이트 + `dues_audit_log` 기록.
 - **카테고리**: `dues_add_category`/`dues_delete_category`.
 - **회원 노출**: `dues_my_payments`, `dues_public_ledger`, `dues_club_account`.
 - **트리거/내부**: `dues_alloc_guard`·`dues_alloc_sync`(dues_allocations 트리거), `dues_sync_bank_tx`(status 동기 헬퍼), `members_uncharge_dues_on_deactivate`(정지 시 미납 회비 삭제, §4)·`members_stamp_rejoined_on_activate`(재활성화 시 `rejoined_at` 스탬프, §4) — 둘 다 members 테이블 트리거.
