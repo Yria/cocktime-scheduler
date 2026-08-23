@@ -6,7 +6,11 @@ import { toast } from "../../../store/toastStore";
 import ConfirmDialog from "../../common/ConfirmDialog";
 import EmptyState from "../../shared/EmptyState";
 import BirthYearTag from "../../shared/BirthYearTag";
+import ManualBatchCard from "./ManualBatchCard";
+import { Meter, MoreLink } from "./duesCardBits";
+import { CARD_CLASS, cardBox, mark, pill } from "./duesCardStyles";
 import { remaining, sessionLabel, won, ymLabel } from "./duesText";
+import { buildManualCards } from "./manualCards";
 import PendingDraftsSheet from "./PendingDraftsSheet";
 import SessionSettleSheet from "./SessionSettleSheet";
 import { type SessionSettle, buildSessionSettle } from "./sessionSettle";
@@ -54,8 +58,10 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	// 발행 대기 초안 — 규칙이 이상하다고 판단해 회원에게 보내지 않고 세워둔 부과(§ 부과 재설계).
 	const pendingDrafts = useDuesStore((s) => s.pendingDrafts);
 	// 수동 부과(회식·공동구매) — 회비·대관비는 이 화면에 있는데 이것만 [부과] 탭에 갇혀 있었다.
-	// 그 달 것만 요약으로 세운다(상세·수정은 [부과] 탭).
+	// 그 달 것을 **다른 부과와 같은 카드**로 세운다(ManualBatchCard — [부과] 탭과 같은 컴포넌트).
+	// 명단·수정은 [부과] 탭의 시트가 맡는다(그 배치를 열고 들어간다).
 	const manualBatches = useDuesStore((s) => s.manualBatches);
+	const batchRows = useDuesStore((s) => s.batches); // 묶음 행 — 통장 출금이 붙는 축(수동 부과의 '지출 연결' 판정)
 
 	const [feeOpen, setFeeOpen] = useState(false); // 회비 미납 명단 펼침
 	const [voidReq, setVoidReq] = useState<{ chargeId: number; name: string; label: string } | null>(null); // 당일취소 부과삭제 확인
@@ -65,9 +71,10 @@ export default function SessionsHome({ ym }: { ym: string }) {
 
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
 
-	const manualThisMonth = useMemo(
-		() => manualBatches.filter((b) => b.chargedOn.slice(0, 7) === ym),
-		[manualBatches, ym],
+	// 수동 부과 카드 — 계산은 [부과] 탭과 공유(manualCards.buildManualCards).
+	const manualCards = useMemo(
+		() => buildManualCards(manualBatches, batchRows, bankTxns, ym),
+		[manualBatches, batchRows, bankTxns, ym],
 	);
 
 	// 회비 진행 — 원 월(period_ym=ym) 기준. 이월된(deferred_to set) 건은 '낸 것처럼' 해결로 카운트.
@@ -212,39 +219,6 @@ export default function SessionsHome({ ym }: { ym: string }) {
 				</button>
 			)}
 
-			{/* 수동 부과 요약 — 그 달 회식·공동구매 등. 탭하면 [부과] 탭으로. */}
-			{manualThisMonth.length > 0 && (
-				<div className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px" }}>
-					<button
-						type="button"
-						onClick={() => navigate(`/dues/${ym}/charge`)}
-						className="flex items-center gap-2 w-full"
-						style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
-					>
-						<b className="text-strong" style={{ fontSize: 13.5, flex: 1 }}>수동 부과 {manualThisMonth.length}건</b>
-						<span className="text-faint" style={{ fontSize: 12 }}>›</span>
-					</button>
-					<div className="flex flex-col gap-1" style={{ marginTop: 7 }}>
-						{manualThisMonth.map((b) => {
-							const done = b.unpaidCount === 0;
-							return (
-								<div key={b.batchKey} className="flex items-center gap-2" style={{ fontSize: 12.5 }}>
-									<span className="text-strong truncate" style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{b.label}</span>
-									<span className="text-faint" style={{ fontSize: 11.5, flexShrink: 0 }}>
-										{b.head}명 · 수납 {won(b.receivedSum)}/{won(b.dueSum)}
-									</span>
-									{done ? (
-										<span className="text-[#1c8a3b]" style={{ fontSize: 11.5, fontWeight: 700, flexShrink: 0 }}>마감 ✓</span>
-									) : (
-										<span style={{ fontSize: 11.5, fontWeight: 700, color: "#d1362c", flexShrink: 0 }}>미납 {b.unpaidCount}</span>
-									)}
-								</div>
-							);
-						})}
-					</div>
-				</div>
-			)}
-
 			{/* 정산함 진입 */}
 			<button
 				type="button"
@@ -278,7 +252,7 @@ export default function SessionsHome({ ym }: { ym: string }) {
 
 			{/* 이월돼 온 회비(다른 달 → 이번 달 미정산) */}
 			{fee.carried.length > 0 && (
-				<div className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px" }}>
+				<div className={CARD_CLASS} style={cardBox()}>
 					<b className="text-strong" style={{ fontSize: 13, display: "block", marginBottom: 6 }}>이월된 회비 <span className="text-faint" style={{ fontSize: 11, fontWeight: 600 }}>· 지난달에서 미룬 것</span></b>
 					<div className="flex flex-col gap-1.5">
 						{fee.carried.map((c) => (
@@ -304,10 +278,21 @@ export default function SessionsHome({ ym }: { ym: string }) {
 				</div>
 			)}
 
+			{/* 수동 부과 — 회식·공동구매 등. 회비·대관비 카드와 **같은 언어**로 그린다(제목+배지 → 판정
+			    두 줄 → 진행 막대). 상세·수정은 [부과] 탭의 시트가 맡는다(그 배치를 열고 들어간다). */}
+			{manualCards.map((c) => (
+				<ManualBatchCard
+					key={c.batch.batchKey}
+					card={c}
+					actionLabel="명단·수정"
+					onAction={() => navigate(`/dues/${ym}/charge?open=${encodeURIComponent(c.batch.batchKey)}`)}
+				/>
+			))}
+
 			{/* 예정(선납) 세션 — 아직 안 열렸는데 대관비 선납된 것. 진행률 대신 '몇 명 선납'.
 			    open이 아니면(취소·무산인데 선납만 묶임) '확인 필요'로 — 환불 대상임을 알림. */}
 			{upcomingCards.map((c) => (
-				<div key={`up${c.id}`} className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px" }}>
+				<div key={`up${c.id}`} className={CARD_CLASS} style={cardBox()}>
 					<div className="flex items-center gap-2">
 						<b className="text-strong" style={{ fontSize: 13.5, flex: 1, minWidth: 0 }}>{c.label}</b>
 						<span style={pill(c.upcoming ? "info" : "warn")}>{c.upcoming ? "예정" : "확인 필요"}</span>
@@ -328,7 +313,7 @@ export default function SessionsHome({ ym }: { ym: string }) {
 					const done = c.status === "settled";
 					const flagged = c.settle.flaggedCount; // 시트 헤더 ⚠확인과 같은 단일 소스
 					return (
-						<div key={c.id} className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px", opacity: done ? 0.85 : 1 }}>
+						<div key={c.id} className={CARD_CLASS} style={cardBox(done)}>
 							<div className="flex items-center gap-2">
 								<b className="text-strong" style={{ fontSize: 13.5, flex: 1, minWidth: 0 }}>{c.label}</b>
 								{/* 참석↔부과 불일치(누락 + 살아 있는 규칙 위반 부과)는 마감 판정(지출연결+미납0)에
@@ -353,18 +338,7 @@ export default function SessionsHome({ ym }: { ym: string }) {
 											<span className="text-muted" style={{ fontSize: 11.5 }}>{c.paidCount}/{c.totalCount}{c.outstanding > 0 ? ` · 미납 ${c.outstanding}` : ""}</span>
 										)}
 										<span style={{ flex: 1 }} />
-										{/* '›' 만으로 버튼임이 읽히므로 배경·강조색 없이 옆 글자와 같은 톤으로 둔다. */}
-										<button
-											type="button"
-											onClick={() => setSettleId(c.id)}
-											className="text-muted flex items-center"
-											style={{ gap: 3, fontSize: 11.5, background: "none", border: "none", padding: "2px 0 2px 8px", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}
-										>
-											정산 대조
-											{/* '›' 는 글리프가 x-height 기준이라 한글과 나란히 두면 아래로 처진다.
-											    lineHeight:1 로 자기 박스를 만들어 flex items-center 로 세로 가운데. */}
-											<span aria-hidden style={{ fontSize: 14, lineHeight: 1, fontWeight: 600, display: "block" }}>›</span>
-										</button>
+										<MoreLink label="정산 대조" onClick={() => setSettleId(c.id)} />
 									</div>
 									{c.totalCount > 0 && <Meter ratio={c.paidCount / c.totalCount} done={c.outstanding === 0} />}
 								</div>
@@ -412,28 +386,6 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	);
 }
 
-function pill(kind: "ok" | "warn" | "info" | "bad"): CSSProperties {
-	const map = {
-		ok: { background: "rgba(52,199,89,0.16)", color: "#1c8a3b" },
-		warn: { background: "rgba(255,149,0,0.16)", color: "#c2670a" },
-		info: { background: "rgba(11,132,255,0.14)", color: "#0b84ff" },
-		bad: { background: "rgba(209,54,44,0.14)", color: "#d1362c" },
-	}[kind];
-	return { fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 999, ...map };
-}
-function mark(ok: boolean): CSSProperties {
-	return { width: 14, height: 14, borderRadius: 999, display: "grid", placeItems: "center", fontSize: 9, fontWeight: 900, color: "#fff", background: ok ? "#1c8a3b" : "#d1362c", flexShrink: 0 };
-}
-
-// 진행 막대(회비·코트 수납 공용).
-function Meter({ ratio, done }: { ratio: number; done: boolean }) {
-	return (
-		<div style={{ height: 7, borderRadius: 999, background: "rgba(120,120,128,0.16)", overflow: "hidden" }}>
-			<i style={{ display: "block", height: "100%", width: `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%`, background: done ? "#1c8a3b" : "#0b84ff", transition: "width 0.2s" }} />
-		</div>
-	);
-}
-
 // 회비 카드: 진행 막대 + (미납 있으면) 미납 명단 펼침. 명단은 열람 + [이월]만 — 푸시 발송은 폐기(§3.5 진입 모달이 대체).
 function FeeGroup({ title, subtitle, meter, unpaid, open, onToggle, busy, onDefer }: {
 	title: string;
@@ -446,7 +398,7 @@ function FeeGroup({ title, subtitle, meter, unpaid, open, onToggle, busy, onDefe
 	onDefer: (chargeId: number) => void; // 다음 달로 이월
 }) {
 	return (
-		<div className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px" }}>
+		<div className={CARD_CLASS} style={cardBox()}>
 			<div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
 				<b className="text-strong" style={{ fontSize: 13.5, flex: 1, minWidth: 0 }}>{title}</b>
 				<span className="text-muted" style={{ fontSize: 12 }}>{subtitle}</span>
