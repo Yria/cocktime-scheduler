@@ -53,6 +53,11 @@
 - 이월은 상태(status)를 바꾸지 않는다(그대로 unpaid/partial). 정모/현황·내 회비 모두 "이월 나간 건 제외, 이월 들어온 건 포함"으로 판정.
 
 ### 1.4 핵심 테이블
+- **`dues_batches`** — **묶음(영수증)**(2026-08-23, expand). "모든 돈은 묶음에 속한다. 묶음은 세 가지 — 월(회비)·세션(대관)·배치(그 외)." `kind(monthly|court|manual)`, `key`(유니크, `'monthly:2026-08'`·`'court:228'`·`'manual:meal:228'` — **발행 대기 초안의 `draft_group` 과 같은 이름공간**), `label`, `occurred_on`(월 귀속), `session_id`/`period_ym`(그 종류의 조인 축).
+  - **`dues_charges.batch_id` 는 NOT NULL** — 모든 부과는 묶음에 속한다. **BEFORE INSERT 트리거**(`dues_charge_attach_batch`)가 기존 3축에서 묶음 정체를 유도해 자동으로 채우므로, 부과를 만드는 코드(생성기 2개·`dues_confirm_reconcile`·`dues_issue_drafts`·`dues_upsert_manual_batch`)는 이 컬럼을 **몰라도 된다**. 그래서 이번 단계에서 호출부 수정이 0이다.
+  - 수동 부과 이름을 바꾸면 묶음 라벨도 따라간다(`trg_charge_sync_batch_label`).
+  - **expand 단계다**: `period_ym`/`session_id`/`batch_key` 3축을 **그대로 두고** 공존시킨다 → 읽기 경로 무영향(동작 변화 0). contract(읽기 전환 → 3축 제거)는 후속.
+  - 백필 실측(2026-08-23): 부과 372건 = 월 152 + 세션 203 + 배치 17 → 묶음 15개(월 3·세션 11·배치 1), 미연결 0. 엣지 0건(`scheduled_at` null 세션·고아 `session_id`·라벨 누락 모두 없음).
 - **`dues_charge_drafts`** — **발행 대기 초안**(2026-08-23). 규칙이 만든 파생값이라 언제든 재계산·폐기 가능하고 **회원에게 보이지 않는다**(RLS 운영진 전용). 묶음 키 `draft_group`(`'court:228'`), 대기 사유 `hold_reason`·근거 `hold_detail`. 발행되면 `dues_charges` 로 옮겨지고 여기서 사라진다. §4.0
 - **`dues_charges`** — 부과. **행이 있으면 발행된 사실**(§4.0). `kind(monthly_fee|court_fee|manual)`, `member_id`, `period_ym` XOR `session_id` XOR **`batch_key`**(수동 부과 묶음 + `label`·`charged_on`, `dues_charge_manual_shape` 로 모양 강제), `amount_due`, `amount_paid`(트리거 캐시), `status(unpaid|partial|paid|overpaid|waived|void)`, `payer_hint`(게스트 대납자), `deferred_to`, **`is_day_cancel`**(정액 당일 확정취소로 부과된 court_fee 표식 — 현황 별도 노출·부과삭제 대상), **`voided_by`/`voided_at`**(부과삭제=void 한 운영진·시각, 감사·표시). 유니크: (member,period_ym) / (member,session_id) / (member,batch_key).
   - **묶음 축을 늘릴 때 기존 유니크를 건드리지 않는다**(2026-08-23 결정): `(member,session_id)` 에 `kind` 를 끼우는 대안은 그 `on conflict` 절을 쓰는 라이브 함수 4개(`dues_generate_session_court`·`dues_confirm_reconcile`·`dues_confirm_compose`·`dues_confirm_new_court`)를 전부 재작성해야 한다. 새 축(`batch_key`)을 더하면 기존 경로는 0줄 변경이다.
