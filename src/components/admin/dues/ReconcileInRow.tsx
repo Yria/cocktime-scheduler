@@ -40,7 +40,11 @@ interface ChipItem {
 	key: string; // 선택 키(고유): charge:{id} | monthly | session:{member}:{sid}
 	label: string;
 	amount: number; // 합계·디폴트 금액매칭용(기존=잔액, 신규=정액)
-	role: "monthly" | "court" | "other"; // 디폴트 매칭용(회비/대관 구분)
+	/**
+	 * 금액 자동매칭에서의 취급 구분. `monthly` 만 특별하다(납부자 개인 귀속 + 입금월만 후보).
+	 * `court`·`other`(수동 부과)는 **동등하게** 후보 풀에 든다 — 부과는 종류와 무관하게 "낼 돈"이다.
+	 */
+	role: "monthly" | "court" | "other";
 	autoDefault: boolean; // 디폴트 자동선택 후보(기존 미납 + 참가확정 예정 — 신규 월세션은 제외)
 	poolRank: number; // 대관 디폴트 정렬(작을수록 우선): 이번달 기존0 · 다른달 기존1 · 예정2
 	poolDate: string; // 동순위 2차 정렬(세션일)
@@ -93,13 +97,36 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	const depositYm = ymOfIso(tx.occurredAt) ?? "";
 	const selectedMember = selectedId ? memberById.get(selectedId) : undefined;
 
+	/**
+	 * 대관 세션 후보 — **한 소스로 합친다**. 종전엔 monthSessions·upcomingSessions 두 배열을 각각
+	 * 순회하며 서로를 조건으로 배제했는데(`monthSessionIds.has`), 한쪽이 stale 하면 같은 회차가
+	 * 두 칩("8. 23. 에이트민턴 대관비" + "…(예정)")으로 뜬다. 실제로 그랬다 — 회차가 open→closed 로
+	 * 넘어간 뒤 upcoming 스냅샷이 남아 있던 창에서.
+	 * 여기서 id 로 한 번 합쳐 두면 **한 회차 = 한 항목**이 구조적으로 보장된다.
+	 */
+	const sessionCandidates = useMemo(() => {
+		const seen = new Set<number>();
+		const list: { s: SessionFeeRow; upcoming: boolean; chargedIds: string[] }[] = [];
+		for (const s of monthSessions) {
+			if (seen.has(s.id)) continue;
+			seen.add(s.id);
+			list.push({ s, upcoming: false, chargedIds: [] });
+		}
+		for (const s of upcomingSessions) {
+			if (seen.has(s.id)) continue;
+			seen.add(s.id);
+			list.push({ s, upcoming: true, chargedIds: s.chargedMemberIds });
+		}
+		return list;
+	}, [monthSessions, upcomingSessions]);
+
 	const monthSessionIds = useMemo(() => new Set(monthSessions.map((s) => s.id)), [monthSessions]);
 
 	// 단일 소스: 납부자 + 대납 대상 각각의 '낼 항목(칩)'을 한 로직으로 만들어, 표시·디폴트·합계·확정이 전부 이걸 공유.
 	//  - 기존 미납(unpaidByMember, 사람 간 중복 제거) → 배분
 	//  - (납부자·비게스트·이번달 미부과) 신규 회비 → 생성
-	//  - 신규 세션(이번 달 열린·참석 확정·미부과) → 생성 (표시만, 디폴트 자동선택 제외)
-	//  - 참가 예정(open·본인 참가확정·미부과) → 생성 (디폴트 자동선택 후보)
+	//  - 세션 후보(sessionCandidates: 열린 회차 ∪ 참가 예정, id 로 합쳐 중복 없음) 중 **부과가 없는** 것
+	//    → 신규 생성 칩. 부과가 있으면 위 '기존 미납'으로만 뜨므로 한 회차가 두 번 뜨지 않는다.
 	const people = useMemo<Person[]>(() => {
 		if (!selectedId) return [];
 		const seen = new Set<number>(); // 미납 charge 중복(게스트분이 두 사람에게 잡히는 것) 제거 — 먼저 나온 사람에게.
@@ -132,22 +159,27 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 			}
 			// 칩 금액은 **그 회차의 인당 금액**이다(정액 하드코딩 금지 — 엔빵 회차에 6,000을 제안하면
 			// 확정 시 재발행해 둔 금액이 덮인다. 세션 147 사고). null = 안 걷는 회차 → 칩을 감춘다.
-			for (const s of monthSessions) {
-				if (chargedSess.has(s.id)) continue;
-				if (!s.attendeeIds.includes(mid)) continue; // 그 회원이 참석 확정(confirmed/late_pool)인 세션만 — 미참석 세션 노출 방지
+			for (const { s, upcoming, chargedIds } of sessionCandidates) {
+				if (chargedSess.has(s.id) || chargedIds.includes(mid)) continue; // 부과 있음 → 위 미납 칩이 담당
+				if (!s.attendeeIds.includes(mid)) continue; // 참석 확정(confirmed/late_pool)인 회차만
 				const per = courtPerHead(s, courtFee);
-				if (per == null || per <= 0) continue;
-				items.push({ key: `session:${mid}:${s.id}`, label: `${sessionLabel(s)} 대관비`, amount: per, role: "court", autoDefault: false, poolRank: 8, poolDate: s.scheduledAt ?? "", sessionId: s.id, member: mid });
-			}
-			for (const s of upcomingSessions) {
-				if (!s.attendeeIds.includes(mid) || s.chargedMemberIds.includes(mid) || monthSessionIds.has(s.id)) continue;
-				const per = courtPerHead(s, courtFee);
-				if (per == null || per <= 0) continue;
-				items.push({ key: `session:${mid}:${s.id}`, label: `${sessionLabel(s)} 대관비(예정)`, amount: per, role: "court", autoDefault: true, poolRank: 2, poolDate: s.scheduledAt ?? "", sessionId: s.id, member: mid });
+				if (per == null || per <= 0) continue; // 안 걷는 회차
+				items.push({
+					key: `session:${mid}:${s.id}`,
+					label: `${sessionLabel(s)} 대관비${upcoming ? "(예정)" : ""}`,
+					amount: per,
+					role: "court",
+					// 예정(선납)은 금액 자동매칭 후보, 이미 열린 회차의 신규 부과는 수동 선택만.
+					autoDefault: upcoming,
+					poolRank: upcoming ? 2 : 8,
+					poolDate: s.scheduledAt ?? "",
+					sessionId: s.id,
+					member: mid,
+				});
 			}
 			return { id: mid, name: m?.name ?? "회원", birthYear: m?.birthYear ?? null, isPayer: mid === selectedId, items };
 		});
-	}, [selectedId, extraIds, unpaidByMember, memberById, monthSessions, monthlyChargedIds, courtChargedByMember, upcomingSessions, monthSessionIds, depositYm, monthlyFee, courtFee]);
+	}, [selectedId, extraIds, unpaidByMember, memberById, monthlyChargedIds, courtChargedByMember, sessionCandidates, monthSessionIds, depositYm, monthlyFee, courtFee]);
 
 	const itemByKey = useMemo(() => {
 		const map = new Map<string, ChipItem>();
@@ -169,11 +201,14 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		const monthly = selectedMember?.isGuest
 			? undefined
 			: payer.items.find((it) => it.role === "monthly" && it.ym === depositYm);
-		const courtPool = people
+		// 회비 외 모든 자동매칭 후보 — 대관비뿐 아니라 **수동 부과(회식·공동구매)도 포함**한다.
+		// 종전엔 `role === "court"` 로 걸러 수동 부과가 금액 자동선택에서 통째로 빠졌다(30,000원
+		// 회식비 입금이 자동으로 안 잡히던 이유). 부과는 종류와 무관하게 "낼 돈"이다.
+		const chargePool = people
 			.flatMap((p) => p.items)
-			.filter((it) => it.role === "court" && it.autoDefault)
+			.filter((it) => it.autoDefault && it.role !== "monthly")
 			.sort((a, b) => a.poolRank - b.poolRank || b.poolDate.localeCompare(a.poolDate));
-		const pool = [...(monthly ? [monthly] : []), ...courtPool];
+		const pool = [...(monthly ? [monthly] : []), ...chargePool];
 		const result = matchExactSubset(pool, effectiveAmount);
 		if (result) for (const k of result) sel.add(k);
 		return sel;
