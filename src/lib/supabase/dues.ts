@@ -96,15 +96,20 @@ export function ymRangeKst(ym: string): { start: string; end: string } {
 }
 
 /**
- * 세션 대관 총액 저장 + 미납 발행분 금액 정정(20260823020000).
- * 새 부과 모델에서 **발행된 금액을 바꿀 수 있는 유일한 경로** — 규칙(생성기)은 발행분을 건드리지 않는다.
- * 납부분(amount_paid>0)은 소급 변경하지 않고 `locked` 로 몇 건인지 돌려준다.
+ * 세션 대관 총액 변경 = **그 회차 정산 재시작**(20260823080000).
+ * 배분 삭제(→ 그 입금이 정산함으로 돌아간다) → 부과 삭제 → 새 금액으로 재발행(이상하면 발행 대기).
+ * 종전의 "미납분만 금액 정정"은 완납된 회차에서 아무 일도 못 했다(세션 147: fixed=0/locked=7).
  */
 export interface SetSessionFeeResult {
 	court_fee: number | null;
-	per_head: number | null;
-	fixed: number;
-	locked: number;
+	/** 배분이 풀린 건수 — 그만큼의 입금이 정산함으로 돌아간다. */
+	freed: number;
+	/** 지운 부과 건수. */
+	removed: number;
+	/** 새로 발행된 부과 건수. */
+	issued: number;
+	/** 발행 대기로 넘어간 건수(금액이 평소와 크게 다를 때). */
+	held: number;
 }
 export async function setSessionCourtFee(
 	sessionId: number,

@@ -59,6 +59,21 @@ async function reloadRules() {
 	useAdminScheduleStore.setState({ rules });
 }
 
+/** 재설정 결과를 한 줄로 — 무엇이 지워지고 무엇이 새로 났는지 숨기지 않는다. */
+function courtResetToast(res: {
+	freed: number;
+	removed: number;
+	issued: number;
+	held: number;
+}): string {
+	const parts: string[] = [];
+	if (res.removed > 0) parts.push(`부과 ${res.removed}건 정리`);
+	if (res.issued > 0) parts.push(`${res.issued}명에게 재발행`);
+	if (res.held > 0) parts.push(`${res.held}명은 발행 대기 (금액 확인 필요)`);
+	if (res.freed > 0) parts.push(`입금 ${res.freed}건이 정산함으로 — 다시 확인해주세요`);
+	return parts.length > 0 ? parts.join(" · ") : "총액을 저장했어요 (정리할 부과 없음)";
+}
+
 export const adminScheduleActions = {
 	/** 최초 진입: 동기화 → 규칙·장소·해당 기간 회차 로드. */
 	async init(fromISO: string, toISO: string) {
@@ -168,37 +183,26 @@ export const adminScheduleActions = {
 				});
 			}
 		}
-		// 총액 정정: 미납 발행분의 금액을 새 인당 금액으로 맞춘다(납부분은 보존, 몇 건인지 통지).
+		// 총액 변경 = 그 회차 정산 재시작(배분 해제 → 부과 삭제 → 재발행).
 		if (row && courtFeeChanged) {
 			const res = await setSessionCourtFee(sessionId, patch.courtFee ?? null);
-			if (res.fixed > 0 || res.locked > 0) {
-				const parts: string[] = [];
-				if (res.fixed > 0)
-					parts.push(`미납 ${res.fixed}명 인당 ${(res.per_head ?? 0).toLocaleString("ko-KR")}원으로 정정`);
-				if (res.locked > 0) parts.push(`이미 낸 ${res.locked}명은 그대로 (환불·추가징수로 처리)`);
-				toast(parts.join(" · "), { variant: "success" });
-			}
+			toast(courtResetToast(res), { variant: "success" });
 		}
 		if (row) await reloadOccurrences();
 		return row;
 	},
 
 	/**
-	 * 종료·진행 회차의 대관 총액 정정. 발행 모델에서 **발행된 금액을 바꿀 수 있는 유일한 경로**다
-	 * (규칙은 발행분을 건드리지 않는다 — 20260823020000). 미납 발행분만 새 인당 금액으로 맞추고
-	 * 납부분은 보존한다. 편집 폼(draft/open)이 아니라 정보 뷰에서 부르는 이유: 대관비는 세션 종료
-	 * 시점에 발행되고, "끝나고 실제 총액을 알게 됐다"가 정상 흐름이라 그때 고칠 자리가 필요하다.
+	 * 종료·진행 회차의 대관 총액 변경 = **그 회차 정산 재시작**(20260823080000).
+	 * 배분 해제(→ 그 입금이 정산함으로) → 부과 삭제 → 새 금액으로 재발행. 종전의 "미납분만 정정"은
+	 * 완납된 회차에서 아무 일도 못 했다(세션 147: 7명 완납 → fixed=0/locked=7).
+	 * 정보 뷰에서 부르는 이유: 대관비는 세션 종료 시점에 발행되고 "끝나고 실제 총액을 알게 됐다"가
+	 * 정상 흐름이라 그때 고칠 자리가 필요하다.
 	 */
 	async fixCourtFee(sessionId: number, amount: number | null) {
 		const res = await setSessionCourtFee(sessionId, amount);
 		await reloadOccurrences();
-		const parts: string[] = [];
-		if (res.fixed > 0)
-			parts.push(`미납 ${res.fixed}명 인당 ${(res.per_head ?? 0).toLocaleString("ko-KR")}원으로 정정`);
-		if (res.locked > 0) parts.push(`이미 낸 ${res.locked}명은 그대로 (환불·추가징수로 처리)`);
-		toast(parts.length > 0 ? parts.join(" · ") : "총액을 저장했어요 (정정할 미납 부과 없음)", {
-			variant: "success",
-		});
+		toast(courtResetToast(res), { variant: "success" });
 		return res;
 	},
 

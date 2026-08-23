@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { courtFeeChargeHint, parseCourtFee } from "../../lib/schedule/courtFee";
 import type { SessionRow } from "../../lib/supabase/types";
+import ConfirmDialog from "../common/ConfirmDialog";
 import { inputCls, inputStyle, labelCls, labelStyle } from "../common/fieldStyles";
 
 interface Props {
@@ -16,8 +17,8 @@ interface Props {
 	/** 대관장소 회차인가 — 총액 정정 칸 노출 조건. */
 	chargesCourtFee?: boolean;
 	/**
-	 * 대관 총액 정정. 발행된 부과의 금액을 바꿀 수 있는 유일한 경로(규칙은 발행분을 건드리지 않는다).
-	 * 미납 발행분만 새 인당 금액으로 맞추고 납부분은 보존한다.
+	 * 대관 총액 변경 = 그 회차 정산 재시작(배분 해제 → 부과 삭제 → 재발행).
+	 * 되돌리기 어려운 조작이라 확인 다이얼로그를 거친다.
 	 */
 	onFixCourtFee?: (amount: number | null) => Promise<unknown>;
 }
@@ -43,13 +44,17 @@ export default function OccurrenceInfoView({
 		occurrence.court_fee != null ? String(occurrence.court_fee) : "",
 	);
 	const [feeBusy, setFeeBusy] = useState(false);
-	const feeDirty = parseCourtFee(feeStr) !== (occurrence.court_fee ?? null);
+	const [feeConfirm, setFeeConfirm] = useState(false);
+	// 값이 안 바뀌어도 누를 수 있게 둔다. "총액은 맞는데 부과가 어긋났다"(대상이 늘었거나 정액으로
+	// 발행돼 운영진이 빠진 경우)가 실제로 있고, 그때가 바로 재계산이 필요한 순간이다.
+	// 되돌리기 어려운 조작은 확인 다이얼로그가 막는다.
 
 	async function fixFee() {
 		if (!onFixCourtFee || feeBusy) return;
 		setFeeBusy(true);
 		try {
 			await onFixCourtFee(parseCourtFee(feeStr));
+			setFeeConfirm(false);
 		} finally {
 			setFeeBusy(false);
 		}
@@ -118,18 +123,18 @@ export default function OccurrenceInfoView({
 						/>
 						<button
 							type="button"
-							onClick={fixFee}
-							disabled={feeBusy || !feeDirty}
+							onClick={() => setFeeConfirm(true)}
+							disabled={feeBusy}
 							className="btn-tint-blue rounded-[10px] px-4 py-0 text-sm bg-[rgba(11,132,255,0.12)] whitespace-nowrap disabled:opacity-35"
 						>
-							{feeBusy ? "정정 중…" : "금액 정정"}
+							{feeBusy ? "처리 중…" : "저장 · 재발행"}
 						</button>
 					</div>
 					<p className="text-faint" style={{ fontSize: 11.5, marginTop: 5, lineHeight: 1.5 }}>
 						{courtFeeChargeHint(parseCourtFee(feeStr))}
 						<br />
-						이미 발행된 부과 중 <b>미납분만</b> 새 금액으로 바뀝니다. 낸 사람은 그대로 남고
-						몇 명인지 알려드려요.
+						총액을 바꾸면 이 회차 대관비 부과를 <b>전부 지우고 새 금액으로 다시 발행</b>합니다.
+						이미 낸 입금은 배분이 풀려 <b>정산함으로 돌아가</b> 다시 확인해야 해요.
 					</p>
 				</div>
 			)}
@@ -142,6 +147,24 @@ export default function OccurrenceInfoView({
 					? "취소된 회차예요. 되살리면 규칙에 따라 다시 노출·모집됩니다."
 					: "진행 중이거나 종료된 회차는 수정할 수 없어요."}
 			</p>
+			{feeConfirm && (
+				<ConfirmDialog
+					zIndex={70}
+					title="이 회차 대관비를 다시 계산할까요?"
+					message={
+						"기존 부과를 전부 지우고 새 총액으로 다시 발행합니다. 이미 낸 입금은 배분이 풀려 정산함으로 돌아가니, 그 건들을 다시 확인해야 해요. (지우기 전 명단·납부액은 감사 기록에 남습니다.)"
+					}
+					confirmLabel="다시 계산"
+					cancelLabel="닫기"
+					tone="danger"
+					busy={feeBusy}
+					busyLabel="처리 중…"
+					onConfirm={fixFee}
+					onCancel={() => setFeeConfirm(false)}
+					onDismiss={() => setFeeConfirm(false)}
+				/>
+			)}
+
 			{cancelled && onReopen && (
 				<button
 					type="button"
