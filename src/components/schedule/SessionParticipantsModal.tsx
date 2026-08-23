@@ -19,6 +19,11 @@ interface Props {
 	/** 이 세션의 참석 행(취소 제외, position 오름차순) */
 	attendances: AttendanceRow[];
 	memberId: string | null;
+	/** 오버레이 z-index(기본 50). 다른 시트(일정 관리 달력의 회차 시트) 위에 겹쳐 띄울 때 올린다. */
+	zIndex?: number;
+	/** 운영진 제거 버튼 노출(기본 true). 지난 회차 열람처럼 읽기 전용으로 띄울 땐 false —
+	 *  종료된 회차의 참석 행은 대관비 엔빵·회비 부과의 근거라 임의로 지우면 정산이 어긋난다. */
+	allowRemove?: boolean;
 	onClose: () => void;
 }
 
@@ -31,6 +36,8 @@ export default function SessionParticipantsModal({
 	placeName,
 	attendances,
 	memberId,
+	zIndex = 50,
+	allowRemove = true,
 	onClose,
 }: Props) {
 	const confirmed = attendances.filter((a) => a.status === "confirmed");
@@ -44,7 +51,9 @@ export default function SessionParticipantsModal({
 	const mealJoin = [...confirmed, ...latePool].filter((a) => a.meal_joining).length;
 
 	// 운영진만 임의 참석자 제거 가능(본인 행은 제외 — 본인은 카드의 '참여 취소' 사용).
+	// allowRemove=false(지난 회차 열람)면 운영진에게도 감춘다.
 	const isAdmin = useAuthStore((st) => st.isAdmin);
+	const canRemove = isAdmin && allowRemove;
 	const [pendingRemove, setPendingRemove] = useState<AttendanceRow | null>(null);
 	const [removing, setRemoving] = useState(false);
 
@@ -73,7 +82,7 @@ export default function SessionParticipantsModal({
 	}
 
 	return (
-		<ModalSheet position="bottom" onClose={onClose}>
+		<ModalSheet position="bottom" zIndex={zIndex} onClose={onClose}>
 			{/* 헤더 */}
 			<div className="px-5 pt-5 pb-3">
 				<div
@@ -119,7 +128,7 @@ export default function SessionParticipantsModal({
 										carpoolEnabled={s.carpool_enabled}
 										mealOn={mealOn}
 										scheduledAt={s.scheduled_at}
-										canRemove={isAdmin}
+										canRemove={canRemove}
 										onRemove={setPendingRemove}
 									/>
 								))}
@@ -140,7 +149,7 @@ export default function SessionParticipantsModal({
 											carpoolEnabled={s.carpool_enabled}
 											mealOn={mealOn}
 											scheduledAt={s.scheduled_at}
-											canRemove={isAdmin}
+											canRemove={canRemove}
 											onRemove={setPendingRemove}
 										/>
 									))}
@@ -163,7 +172,7 @@ export default function SessionParticipantsModal({
 											mealOn={mealOn}
 											scheduledAt={s.scheduled_at}
 											waitInfo={waitDisplay(attendances, a, guestCap)}
-											canRemove={isAdmin}
+											canRemove={canRemove}
 											onRemove={setPendingRemove}
 										/>
 									))}
@@ -186,7 +195,7 @@ export default function SessionParticipantsModal({
 											mealOn={mealOn}
 											scheduledAt={s.scheduled_at}
 											isPool
-											canRemove={isAdmin}
+											canRemove={canRemove}
 											onRemove={setPendingRemove}
 										/>
 									))}
@@ -197,10 +206,10 @@ export default function SessionParticipantsModal({
 				)}
 			</div>
 
-			{/* 운영진: 제거 재확인 — 참여목록 모달(z=50) 위에 겹쳐 띄운다(z=70). */}
+			{/* 운영진: 제거 재확인 — 참여목록 모달(기본 z=50) 위에 겹쳐 띄운다(+20). */}
 			{pendingRemove && (
 				<ConfirmDialog
-					zIndex={70}
+					zIndex={zIndex + 20}
 					title={`${pendingRemove.member?.name ?? "회원"}님을 제거할까요?`}
 					message={removeMessage(pendingRemove)}
 					confirmLabel="제거"

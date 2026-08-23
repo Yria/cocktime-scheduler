@@ -13,13 +13,10 @@ import { openPlaceMap, type PlaceMapTarget } from "../../lib/kakaoMap";
 import GuestSection from "./GuestSection";
 import LateArrivalSlider from "./LateArrivalSlider";
 import MealPlaceLink from "../shared/MealPlaceLink";
-import PlayerAvatar from "../shared/PlayerAvatar";
+import ParticipantStack from "../shared/ParticipantStack";
 import CarpoolAnnounceBuilder from "./carpool/CarpoolAnnounceBuilder";
 import SessionParticipantsModal from "./SessionParticipantsModal";
 import ConfirmDialog from "../common/ConfirmDialog";
-
-/** 인라인 아바타 스택에 노출할 최대 인원(초과분은 +N 칩) */
-const STACK_MAX = 6;
 
 /**
  * 식사 세그먼트(참여·안 먹음)가 카풀 3등분 칸과 **정확히 같은 폭**이 되게 하는 flex-basis.
@@ -114,10 +111,8 @@ export default function ScheduleCard({
 	const guestCap = guestCapForSession(s.scheduled_at);
 	// 정원 초과 프리패스 운영진(만석일 때 들어온 운영진)만 별도 카운트/표기.
 	const { freepassOps } = splitConfirmedByCapacity(attendances, s.capacity);
-	// 인라인 스택 — 확정자 우선, 대기자, 정원 외 늦참 순으로 채움
+	// 인라인 스택 — 확정자 우선, 대기자, 정원 외 늦참 순으로 채움(초과분 +N 은 ParticipantStack)
 	const roster = [...confirmed, ...waiting, ...latePool];
-	const stackList = roster.slice(0, STACK_MAX);
-	const stackExtra = roster.length - stackList.length;
 	const mine = memberId
 		? attendances.find((a) => a.member_id === memberId)
 		: undefined;
@@ -417,55 +412,7 @@ export default function ScheduleCard({
 					}}
 					aria-label="참가자 목록 보기"
 				>
-					<div className="flex items-center">
-						{stackList.map((a, i) => {
-							// 대기자는 그레이스케일+감광, 정원 외 늦참은 바이올렛 링으로 확정자와 구분.
-							const isWaiting = a.status === "waitlisted";
-							const isPool = a.status === "late_pool";
-							return (
-								<div
-									key={a.member_id}
-									className={
-										isPool
-											? "rounded-full ring-2 ring-[#8b5cf6] dark:ring-[#a78bfa]"
-											: "rounded-full ring-2 ring-white dark:ring-[#1e1e23]"
-									}
-									style={{
-										position: "relative",
-										marginLeft: i === 0 ? 0 : -8,
-										zIndex: stackList.length - i,
-										filter: isWaiting ? "grayscale(1)" : undefined,
-										opacity: isWaiting ? 0.55 : 1,
-									}}
-								>
-									<PlayerAvatar
-										name={a.member?.name ?? "회원"}
-										gender={a.member?.gender ?? null}
-										photoId={
-											(a.member?.is_guest ?? a.invited_by != null)
-												? undefined
-												: (a.member_id ?? undefined)
-										}
-										size={28}
-									/>
-								</div>
-							);
-						})}
-						{stackExtra > 0 && (
-							<div
-								className="rounded-full ring-2 ring-white dark:ring-[#1e1e23] flex items-center justify-center text-muted bg-[rgba(0,0,0,0.06)] dark:bg-white/10"
-								style={{
-									width: 28,
-									height: 28,
-									marginLeft: -8,
-									fontSize: 11,
-									fontWeight: 700,
-								}}
-							>
-								+{stackExtra}
-							</div>
-						)}
-					</div>
+					<ParticipantStack roster={roster} />
 					<ChevronRight
 						size={16}
 						className="ml-auto text-[#c0c6cf] dark:text-[rgba(235,235,245,0.35)]"

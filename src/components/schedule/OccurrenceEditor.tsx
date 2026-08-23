@@ -17,6 +17,7 @@ import KakaoLocationSearch from "../common/KakaoLocationSearch";
 import ModalSheet from "../common/ModalSheet";
 import { Switch } from "../common/Switch";
 import OccurrenceInfoView from "./OccurrenceInfoView";
+import OccurrenceParticipants from "./OccurrenceParticipants";
 import PlaceLocationPicker from "./PlaceLocationPicker";
 import { statusStyle } from "./styles";
 import { useOccurrenceForm } from "./useOccurrenceForm";
@@ -141,6 +142,17 @@ export default function OccurrenceEditor({
 			}
 		>
 			<div className="px-5 pb-5">
+				{/* 참가자 요약 — 기존 회차에만. 종료된 지난 회차도 여기서 참가자·카풀/식사 신청을 본다
+				    (메인 일정 카드와 같은 참여목록 모달을 시트 위에 겹쳐 띄운다). */}
+				{occurrence && (
+					<div className="mb-4">
+						<OccurrenceParticipants
+							occurrence={occurrence}
+							placeName={placeName(occurrence.place_id)}
+						/>
+					</div>
+				)}
+
 				{/* 본문 */}
 				{occurrence && !editable ? (
 					<OccurrenceInfoView
