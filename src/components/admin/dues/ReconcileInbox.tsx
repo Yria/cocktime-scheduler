@@ -5,8 +5,9 @@ import {
 	duesConfirmCourtExternal,
 	duesConfirmReconcile,
 	duesLinkRefund,
+	createBatchForTxn,
 	ingestBankEmail,
-	setTxnCategory,
+	setTxnBatch,
 	setTxnSession,
 } from "../../../lib/supabase/dues";
 import { duesActions, useDuesStore } from "../../../store/duesStore";
@@ -34,7 +35,7 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 	const monthSessions = useDuesStore((s) => s.monthSessions);
 	const upcomingSessions = useDuesStore((s) => s.upcomingSessions);
 	const ledgerSessions = useDuesStore((s) => s.ledgerSessions);
-	const categories = useDuesStore((s) => s.categories);
+	const batches = useDuesStore((s) => s.batches);
 	const txAllocations = useDuesStore((s) => s.txAllocations);
 
 	const [ingesting, setIngesting] = useState(false);
@@ -50,7 +51,7 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 		for (const t of txns) {
 			if (t.status === "ignored") continue; // 레거시 무시 거래는 회계 거래내역에서만(정산함은 처리할 것만)
 			if (t.direction === "in") {
-				if (t.categoryId != null || t.status === "matched") continue; // 처리됨(회계로)
+				if (t.batchId != null || t.categoryId != null || t.status === "matched") continue; // 처리됨(묶음·레거시 분류·완전배분)
 				if (t.status === "partial") partial.push(t);
 				else pending.push(t);
 			} else {
@@ -69,7 +70,7 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 	const refundTargets = useMemo<RefundTarget[]>(
 		() =>
 			txns
-				.filter((t) => t.direction === "in" && t.categoryId == null && (t.status === "unmatched" || t.status === "partial" || t.status === "proposed"))
+				.filter((t) => t.direction === "in" && t.batchId == null && t.categoryId == null && (t.status === "unmatched" || t.status === "partial" || t.status === "proposed"))
 				.map((t) => ({ id: t.id, name: t.counterpartyName || "(적요 없음)", date: t.occurredAt, amount: t.amount }))
 				.sort((a, b) => b.date.localeCompare(a.date)),
 		[txns],
@@ -219,25 +220,27 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 									monthlyChargedIds={monthlyChargedIds}
 									courtChargedByMember={courtChargedByMember}
 									upcomingSessions={upcomingSessions}
-									categories={categories}
+									batches={batches}
 									monthlyFee={monthlyFee}
 									courtFee={courtFee}
 									refunded={refundedByIn.get(t.id) ?? 0}
 									busy={busyId === t.id}
 									onConfirm={(payerId, chargeIds, cym, sessions) => run(t.id, () => duesConfirmReconcile(t.id, payerId, chargeIds, cym, sessions), "처리 실패", { touchesCharges: true })}
 									onConfirmCourtExternal={(sid) => run(t.id, () => duesConfirmCourtExternal(t.id, sid), "외부인 대관비 처리 실패")}
-									onCategorize={(catId, paidBy) => run(t.id, () => setTxnCategory(t.id, catId, paidBy), "분류 실패")}
+									onSetBatch={(batchId, paidBy) => run(t.id, () => setTxnBatch(t.id, batchId, paidBy), "묶음 지정 실패")}
+									onCreateBatch={(label, paidBy) => run(t.id, () => createBatchForTxn(t.id, label, paidBy), "묶음 생성 실패")}
 								/>
 							) : (
 								<ReconcileOutRow
 									key={t.id}
 									tx={t}
-									categories={categories}
+									batches={batches}
 									ledgerSessions={ledgerSessions}
 									upcomingSessions={upcomingSessions}
 									refundTargets={refundTargets}
 									busy={busyId === t.id}
-									onCategorize={(catId) => run(t.id, () => setTxnCategory(t.id, catId), "분류 실패")}
+									onSetBatch={(batchId) => run(t.id, () => setTxnBatch(t.id, batchId, null), "묶음 지정 실패")}
+									onCreateBatch={(label) => run(t.id, () => createBatchForTxn(t.id, label, null), "묶음 생성 실패")}
 									onSetSession={(sid) => run(t.id, () => setTxnSession(t.id, sid), "세션 지정 실패")}
 									onLinkRefund={(inId) => run(t.id, () => duesLinkRefund(t.id, inId), "환불 연결 실패", { okMsg: "환불로 연결했어요" })}
 								/>

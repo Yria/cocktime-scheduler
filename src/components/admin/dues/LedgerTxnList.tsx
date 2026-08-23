@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { type BankTxnRow, duesCancelMatch, duesUnlinkRefund, setTxnCategory, setTxnSession } from "../../../lib/supabase/dues";
+import { type BankTxnRow, duesCancelMatch, duesUnlinkRefund, setTxnBatch,
+	setTxnCategory, setTxnSession } from "../../../lib/supabase/dues";
 import { duesActions, useDuesStore } from "../../../store/duesStore";
 import { toast } from "../../../store/toastStore";
 import ConfirmDialog from "../../common/ConfirmDialog";
@@ -8,7 +9,7 @@ import { fmtMD, sessionLabel, won } from "./duesText";
 
 // 거래별 처리 요약 + 취소 방식. 처리된 모든 거래는 되돌릴 수 있게.
 // 항목 개념 통일: 코트대관=session_id, 환불=refund_of_tx_id, 그 외=category_id / 회비=배분.
-type TxInfo = { note: string | null; cancel: null | "match" | "category" | "refund" | "session"; linkTo?: number };
+type TxInfo = { note: string | null; cancel: null | "match" | "category" | "batch" | "refund" | "session"; linkTo?: number };
 
 // 회계 거래 내역(러닝 잔액) — 최신순 목록 + 필터(회비·세션·환불·카테고리) + 처리 취소.
 export default function LedgerTxnList({ ym }: { ym: string }) {
@@ -39,6 +40,7 @@ export default function LedgerTxnList({ ym }: { ym: string }) {
 		if (t.direction === "in") {
 			if (txAllocations[t.id]) return { note: txAllocations[t.id].label, cancel: "match" };
 			if (t.sessionId != null) return { note: courtLabel(t), cancel: "match" }; // 비회원 대관 수입(세션 귀속·matched) — cancel_match가 세션 해제
+			if (t.batchId != null) return { note: t.batchLabel ?? "묶음", cancel: "batch" };
 			if (t.categoryId != null) return { note: t.categoryName ?? "수입 분류", cancel: "category" };
 			// 전액 환불된 오입금(matched) — 배분 없이 환불로만 해결. 원출금으로 점프(취소는 그 출금에서).
 			// 부분 환불(아직 unmatched)은 여기 안 걸리고 아래 null → '미정산'(남은 금액 배분 필요).
@@ -51,6 +53,7 @@ export default function LedgerTxnList({ ym }: { ym: string }) {
 			return { note: `환불 → ${inName || "입금"}`, cancel: "refund", linkTo: t.refundOfTxId };
 		}
 		if (t.sessionId != null) return { note: courtLabel(t), cancel: "session" }; // 코트대관 지출
+		if (t.batchId != null) return { note: t.batchLabel ?? "묶음", cancel: "batch" };
 		if (t.categoryId != null) return { note: t.categoryName ?? "지출", cancel: "category" };
 		return { note: null, cancel: null };
 	};
@@ -103,6 +106,7 @@ export default function LedgerTxnList({ ym }: { ym: string }) {
 		if (info.cancel === "match") res = await duesCancelMatch(t.id);
 		else if (info.cancel === "refund") res = await duesUnlinkRefund(t.id);
 		else if (info.cancel === "session") res = await setTxnSession(t.id, null); // 코트대관 해제
+		else if (info.cancel === "batch") res = await setTxnBatch(t.id, null);
 		else if (info.cancel === "category") res = await setTxnCategory(t.id, null);
 		else res = { ok: false, error: "취소 불가" };
 		setBusyId(null);

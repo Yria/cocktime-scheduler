@@ -1,7 +1,7 @@
 import { Plus, Search } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import type { AdminMemberRow } from "../../../lib/supabase/adminMembers";
-import type { BankTxnRow, SessionFeeRow, TxnCategory, UnpaidCharge, UpcomingSessionRow } from "../../../lib/supabase/dues";
+import type { BankTxnRow, SessionFeeRow, BatchRow, UnpaidCharge, UpcomingSessionRow } from "../../../lib/supabase/dues";
 import ConfirmDialog from "../../common/ConfirmDialog";
 import BirthYearTag from "../../shared/BirthYearTag";
 import { birthYearShort } from "../../../lib/birthYear";
@@ -20,7 +20,8 @@ interface Props {
 	monthlyChargedIds: Set<string>; // 그 달 회비 부과가 이미 있는(완납 포함) 회원 — 신규 회비 칩 중복 노출 방지
 	courtChargedByMember: Map<string, Set<number>>; // 회원별 이미 대관비 부과된(완납 포함) 세션 — 신규 세션 칩 중복 노출 방지
 	upcomingSessions: UpcomingSessionRow[]; // 참가 예정(open) 세션 — 본인 참가분만 선납 후보
-	categories: TxnCategory[];
+	/** 회계 항목 = 묶음(영수증). 종전 txn_categories 를 대체(2026-08-23). */
+	batches: BatchRow[];
 	monthlyFee: number;
 	courtFee: number;
 	refunded: number; // 이 입금에 연결된 환불 합계(실효금액 = 입금 − 환불)
@@ -28,7 +29,9 @@ interface Props {
 	/** 통합 확정: 기존 미납(chargeIds) 배분 + 신규 회비(ym, 납부자)/세션(sessions, member=대상) 생성·배분. */
 	onConfirm: (payerId: string, chargeIds: number[], ym: string, sessions: { member: string; id: number; units: number }[]) => void;
 	onConfirmCourtExternal: (sessionId: number) => void;
-	onCategorize: (categoryId: number, paidBy: string | null) => void;
+	onSetBatch: (batchId: number, paidBy: string | null) => void;
+	/** 새 묶음을 만들고 이 거래를 붙인다(공구 첫 입금 등). */
+	onCreateBatch: (label: string, paidBy: string | null) => void;
 }
 
 // 칩(선택 항목) 단일 모델 — 목록 표시·디폴트 선택·합계·확정이 모두 이 하나만 공유(로직 분산 제거).
@@ -56,7 +59,7 @@ interface Person {
 
 // 미처리 입금 1건 처리. 납부자 지정 → 그 회원의 기존 미납(본인+대납·월무관) 배분 + 신규(회비/세션) 생성을
 // 함께 골라 [확인] 1회로. 금액(§4)으로 기본 선택 제안. 비회원 대관·비회비 수입 분류도 여기서.
-export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessions, monthlyChargedIds, courtChargedByMember, upcomingSessions, categories, monthlyFee, courtFee, refunded, busy, onConfirm, onConfirmCourtExternal, onCategorize }: Props) {
+export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessions, monthlyChargedIds, courtChargedByMember, upcomingSessions, batches, monthlyFee, courtFee, refunded, busy, onConfirm, onConfirmCourtExternal, onSetBatch, onCreateBatch }: Props) {
 	const effectiveAmount = tx.amount - refunded; // 부분 환불 반영: 정산 대상 금액
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
 	// 후보 위생에서 접히면 안 되는 행 — 미납이 남은 사람 + 예정(open) 세션 참석 확정자.
@@ -79,7 +82,11 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	const [query, setQuery] = useState("");
 	const [override, setOverride] = useState<Set<string> | null>(null); // null = 디폴트(defaultKeys) 사용
 	const [extSession, setExtSession] = useState<number | null>(null); // 비회원 대관 세션
-	const [catSel, setCatSel] = useState<number | null>(null); // 비회비 수입 분류(선택 후 확인)
+	// 묶음 귀속 — **부과 선택과 함께 쓸 수 있다.** 한 입금에 성격이 둘 섞이는 건 실제로 있는 일이고
+	// (회식 부과 30,000 + 콕공구 모금 24,000 = 54,000), 묶음은 "거래액 − 배분액" 잔액만 먹으므로
+	// 이중계상이 없다. 종전 카테고리는 거래 전액을 먹어서 부과 선택과 배타여야 했다.
+	const [batchSel, setBatchSel] = useState<number | null>(null);
+	const [newLabel, setNewLabel] = useState<string | null>(null); // 새 묶음 이름 입력 중(null=닫힘)
 	const [showMismatch, setShowMismatch] = useState(false); // 선택≠입금 확인 다이얼로그
 
 	const depositYm = ymOfIso(tx.occurredAt) ?? "";
@@ -192,16 +199,15 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	};
 	// 칩 토글(기존미납·신규회비·신규/예정세션 공통). 회원 항목 선택 = 분류 해제(상호배타).
 	const toggle = (key: string) => {
-		setCatSel(null);
 		const n = new Set(selected);
 		if (n.has(key)) n.delete(key);
 		else n.add(key);
 		setOverride(n);
 	};
-	// 비회비 수입 분류(선택 후 확인). 선택 시 회원 항목 선택은 비움(상호배타).
-	const toggleCategory = (id: number) => {
-		if (catSel === id) { setCatSel(null); setOverride(null); }
-		else { setCatSel(id); setOverride(new Set()); }
+	// 묶음 토글 — 부과 선택을 비우지 않는다(잔액이 이 묶음으로 간다).
+	const toggleBatch = (id: number) => {
+		setNewLabel(null);
+		setBatchSel((v) => (v === id ? null : id));
 	};
 
 	// 검색은 접기 규칙을 완화한다: 사용자가 이름을 직접 지목한 상황이라, 동명 실제 회원이 있다고 게스트를 통째로
@@ -220,17 +226,24 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	// 비회원 대관(회원 매칭 없이 대관비 배수일 때).
 	const externalCourt = !selectedId && courtFee > 0 && effectiveAmount > 0 && effectiveAmount % courtFee === 0;
 
-	// 확인 결정: 분류(catSel) > 회원 배분(total) > 비회원 대관(extSession). 상호배타.
-	const catName = catSel != null ? categories.find((c) => c.id === catSel)?.name : null;
-	const catMode = catSel != null;
-	const memberMode = !catMode && selectedId != null && total > 0;
-	const extMode = !catMode && !selectedId && externalCourt && extSession != null;
-	const mismatch = memberMode && total !== effectiveAmount; // 선택 금액 ≠ 정산 대상(입금−환불)
-	const ready = catMode || memberMode || extMode;
+	// 확인 결정: 부과 배분(charges) + 묶음 귀속(batch) 은 **함께** 가능. 비회원 대관은 배타.
+	const newLabelReady = newLabel != null && newLabel.trim() !== "";
+	const batchMode = batchSel != null || newLabelReady;
+	const batchName = batchSel != null ? batches.find((b) => b.id === batchSel)?.label : newLabel?.trim();
+	const memberMode = selectedId != null && total > 0;
+	const extMode = !batchMode && !memberMode && !selectedId && externalCourt && extSession != null;
+	// 잔액을 묶음이 받으므로, 묶음이 선택돼 있으면 금액 불일치 경고를 띄우지 않는다.
+	const mismatch = memberMode && !batchMode && total !== effectiveAmount;
+	const ready = batchMode || memberMode || extMode;
 	const doConfirm = () => {
-		if (catMode && catSel != null) { onCategorize(catSel, selectedId); return; } // 납부자 지정 시 그 회원 이력에 귀속
 		if (extMode && extSession != null) { onConfirmCourtExternal(extSession); return; }
-		if (!memberMode || !selectedId) return;
+		// 부과 배분이 있으면 먼저 확정하고, 묶음은 부모(정산함)가 이어서 붙인다(잔액 = 거래액 − 배분액).
+		if (!memberMode) {
+			if (newLabelReady && newLabel) onCreateBatch(newLabel.trim(), selectedId);
+			else if (batchSel != null) onSetBatch(batchSel, selectedId);
+			return;
+		}
+		if (!selectedId) return;
 		// 선택 키(단일 소스) → 확정 payload로 분해: 기존 배분(chargeIds) / 신규 회비(ym) / 신규·예정 세션(sessions).
 		const chargeIds: number[] = [];
 		let ym = "";
@@ -243,6 +256,9 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 			else if (it.sessionId != null && it.member) sessions.push({ member: it.member, id: it.sessionId, units: 1 });
 		}
 		onConfirm(selectedId, chargeIds, ym, sessions);
+		// 배분 후 남은 돈을 묶음에 붙인다(순서 무관 — 묶음 수입은 항상 '거래액 − 배분액').
+		if (newLabelReady && newLabel) onCreateBatch(newLabel.trim(), selectedId);
+		else if (batchSel != null) onSetBatch(batchSel, selectedId);
 	};
 
 	const groupLabel: CSSProperties = { fontSize: 10.5, fontWeight: 800, letterSpacing: "0.02em" };
@@ -345,11 +361,25 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 				</div>
 			)}
 
-			{/* 그 외 분류(콕공구·이자 등) — 선택 후 확인(지출과 동일). 코트대관은 위 비회원 세션으로. */}
+			{/* 묶음 귀속 — 부과가 아닌 돈(공구 모금·잡수입)이나 **부과 배분의 잔액**이 여기로 간다.
+			    부과 칩과 함께 고를 수 있다(둘 다 묶음이라 우선순위를 따질 게 없다). */}
 			<div className="flex flex-wrap items-center gap-1.5" style={{ marginTop: 9 }}>
-				<span className="text-faint" style={{ fontSize: 11, fontWeight: 700, alignSelf: "center" }}>그 외</span>
-				{categories.map((cat) => <ToggleChip key={`cat${cat.id}`} label={cat.name} on={catSel === cat.id} onClick={() => toggleCategory(cat.id)} />)}
+				<span className="text-faint" style={{ fontSize: 11, fontWeight: 700, alignSelf: "center" }}>
+					{memberMode && effectiveAmount - total > 0 ? `남은 ${won(effectiveAmount - total)} →` : "묶음"}
+				</span>
+				{batches.map((b) => <ToggleChip key={`b${b.id}`} label={b.label} on={batchSel === b.id} onClick={() => toggleBatch(b.id)} />)}
+				<ToggleChip label="+ 새 묶음" on={newLabel != null} onClick={() => { setBatchSel(null); setNewLabel((v) => (v == null ? "" : null)); }} />
 			</div>
+			{newLabel != null && (
+				<input
+					type="text"
+					value={newLabel}
+					onChange={(e) => setNewLabel(e.target.value)}
+					placeholder="묶음 이름 (예: 9월 콕 공구)"
+					className={inputCls}
+					style={{ ...inputStyle, marginTop: 7, padding: "8px 11px", fontSize: 13.5 }}
+				/>
+			)}
 
 			{/* 확인 */}
 			<div style={{ marginTop: 10, paddingTop: 9, borderTop: "1px solid rgba(120,120,128,0.16)" }}>
@@ -365,7 +395,15 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 					className="rounded-[9px] py-2 text-sm disabled:opacity-35"
 					style={{ width: "100%", fontWeight: 800, color: ready ? "#fff" : undefined, background: !ready ? "rgba(120,120,128,0.14)" : mismatch ? "#d1362c" : "#1c8a3b" }}
 				>
-					{catMode ? `확인 · ${catName}${selectedMember ? ` · ${selectedMember.name} 납부` : ""}` : memberMode ? `확인 · ${won(total)}` : extMode ? `비회원 대관비 · ${won(effectiveAmount)}` : "항목 선택"}
+					{memberMode && batchMode
+						? `확인 · ${won(total)} + ${batchName}`
+						: memberMode
+							? `확인 · ${won(total)}`
+							: batchMode
+								? `확인 · ${batchName}${selectedMember ? ` · ${selectedMember.name} 납부` : ""}`
+								: extMode
+									? `비회원 대관비 · ${won(effectiveAmount)}`
+									: "항목 선택"}
 				</button>
 			</div>
 

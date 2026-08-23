@@ -53,6 +53,11 @@
 - 이월은 상태(status)를 바꾸지 않는다(그대로 unpaid/partial). 정모/현황·내 회비 모두 "이월 나간 건 제외, 이월 들어온 건 포함"으로 판정.
 
 ### 1.4 핵심 테이블
+- **`bank_transactions.batch_id`** — 이 거래가 속한 묶음. **부과 없이 묶음에 직접 귀속되는 돈**(공동구매 모금·잡수입·묶음 지출)의 축. `session_id` 가 세션에 대해 하던 역할의 일반화 → **`txn_categories` 를 대체한다**(2026-08-23).
+  - **공동구매는 부과 모델이 아니다.** 실측(콕공구 입금 44건, 2026-06~08): 수량 제각각(1타/2타로 금액 2배)·단가가 차수마다 다름(27,000→26,000→24,000)·명단 사전 미확정(6/14~8/22 흩어져 입금)·**미납 개념이 없다**(신청 안 한 사람은 안 산 사람이고, 부과를 만들면 그 사람에게 독촉이 간다). 부과(낼 돈을 정하고 걷는다)가 아니라 **모금**(들어온 걸 집계한다)이다.
+  - **묶음 수입 = 부과 배분액 + 연결 거래의 잔액**(= 거래액 − 그 거래의 배분액). "잔액"만 먹으므로 같은 돈이 두 항목에 뜰 수 없다 → 한 입금에 성격이 둘 섞여도(회식 부과 30,000 + 콕공구 모금 24,000 = 54,000) 정합하다. 종전 카테고리는 거래 **전액**을 먹어서 부과 선택과 배타여야 했고, 그게 "부과냐 분류냐" 혼동의 뿌리였다.
+  - **이관 무손실 실증**: 카테고리 태그 거래 54건 중 부과 배분이 **0건**이라 "거래액 − 배분액 = 전액" → 새 산식이 종전과 같은 값. 3개월 원장 before/after 비교로 확인했다(2026-06·07 완전 동일 / 2026-08 은 회식비 300,000이 미분류 → 항목으로 이동, 총합 불변).
+  - 차수 분할은 자동 불가(8월에 6·7월 단가로 낸 사람이 섞여 있다) → **카테고리 1개 = 묶음 1개**로 뭉쳐 이관. 앞으로 새 공구는 차수별 묶음. `category_id` 는 그대로 남기고(expand) 산식에서만 뺐다.
 - **`dues_batches`** — **묶음(영수증)**(2026-08-23, expand). "모든 돈은 묶음에 속한다. 묶음은 세 가지 — 월(회비)·세션(대관)·배치(그 외)." `kind(monthly|court|manual)`, `key`(유니크, `'monthly:2026-08'`·`'court:228'`·`'manual:meal:228'` — **발행 대기 초안의 `draft_group` 과 같은 이름공간**), `label`, `occurred_on`(월 귀속), `session_id`/`period_ym`(그 종류의 조인 축).
   - **`dues_charges.batch_id` 는 NOT NULL** — 모든 부과는 묶음에 속한다. **BEFORE INSERT 트리거**(`dues_charge_attach_batch`)가 기존 3축에서 묶음 정체를 유도해 자동으로 채우므로, 부과를 만드는 코드(생성기 2개·`dues_confirm_reconcile`·`dues_issue_drafts`·`dues_upsert_manual_batch`)는 이 컬럼을 **몰라도 된다**. 그래서 이번 단계에서 호출부 수정이 0이다.
   - 수동 부과 이름을 바꾸면 묶음 라벨도 따라간다(`trg_charge_sync_batch_label`).
@@ -130,6 +135,8 @@
 - **출금 1건**: 카테고리 분류 / 코트대관(세션 지정) / 환불 연결. 코트대관 세션 후보 = 실제 열린 세션(`ledgerSessions`, ±1개월·경기기록) + **참가 예정(open) 세션(now 기준, `(예정)` 라벨)**. 미래 대관비 선지급은 세션이 아직 `open`(경기기록 없음)이라 `ledgerSessions`엔 없으므로 `upcomingSessions`(입금 선납과 동일 소스)를 병합해 노출 — 지정은 상태 검증 없는 `dues_set_txn_session` 재사용(신규 charge 생성 없음).
 - **부분 처리**: 입금액 일부만 배분된 건은 구분 표시(남은 금액 추적).
 - **환불 연결**: 입금(IN)↔환불 출금(OUT)을 `refund_of_tx_id`로 연결(`dues_link_refund`/`unlink`). 전액/부분 환불 모두. 잔여=입금−배분−환불.
+
+> **항목 축 = 묶음**(2026-08-23). 공개 회계의 `categories` 응답 키는 하위호환으로 유지하되 내용은 묶음이다(`{name,in,out,net}` 모양 그대로라 화면 수정 없음). 정산함의 [그 외] 카테고리 칩은 **묶음 칩**으로 바뀌고, 처음 생기는 항목은 [+ 새 묶음]으로 즉석 생성한다. 입금 행에서 **부과 칩과 묶음 칩을 함께** 고를 수 있다 — 부과는 정해진 금액, 묶음은 잔액을 받는다(순서 무관).
 
 ### 3.3 회계 (`/dues/:ym/ledger`) — 월 통장 장부
 - 그 달 **수입·지출·남은 돈** + 통장 잔액.
@@ -315,7 +322,8 @@
 ## 12. 핵심 RPC (현재 live)
 
 - **확정/취소**: `dues_confirm_reconcile`(미납 배분+신규 생성 통합), `dues_confirm_court_external`(비회원 대관), `dues_cancel_match`.
-- **분류/지정**: `dues_set_txn_category`(+`p_paid_by`), `dues_set_txn_session`, `dues_link_refund`/`dues_unlink_refund`.
+- **묶음 귀속**: `dues_set_txn_batch(tx, batch, paid_by)`(붙이기/떼기) · `dues_create_batch_for_txn(tx, label, paid_by)`(새 묶음 생성 + 연결, 원자적) · `dues_create_batch(label, on)`. 정산함의 항목 칩이 이걸 쓴다.
+- **분류/지정**: ~~`dues_set_txn_category`~~ **폐지**(레거시 태그 표시·해제용으로만 남김 — 새 태그는 붙이지 않는다, 2026-08-23), `dues_set_txn_session`, `dues_link_refund`/`dues_unlink_refund`.
 - **이월**: `dues_defer_charge`/`dues_undefer_charge`/`dues_settle_deferred`.
 - **부과 조정**: `dues_set_charge_status`(`void`=부과삭제·취소선 + `voided_by/at` 기록 / `reset`=되돌리기·재산정 / `waived`=면제).
 - **부과**: `dues_ensure_monthly`(월진입 회비), `generate_dues_charges`(수동 배치 fallback), 빌딩블록 `dues_generate_monthly`·`dues_generate_session_court`(내부), 트리거 `trg_session_court_on_close`(세션 종료 대관). **명예회원**: `dues_set_honorary`(지정/해제 + 미납 회비 정리). ~~**알림**: `dues_notify_selected`~~ — DB에만 잔존, 클라 호출 없음(§3.1·§9).

@@ -121,6 +121,44 @@ export async function setSessionCourtFee(
 	return data as SetSessionFeeResult;
 }
 
+/**
+ * 부과 묶음(영수증). 회계 항목 축 — 종전 txn_categories 를 대체한다(2026-08-23).
+ * 정산함에서 "이 입금은 8월 콕공구" 처럼 거래를 붙이고, 공개회계는 묶음별로 손익을 낸다.
+ */
+export interface BatchRow {
+	id: number;
+	kind: "monthly" | "court" | "manual";
+	key: string;
+	label: string;
+	occurredOn: string | null;
+}
+
+/** 정산함 항목 칩용 — 사람이 만드는 묶음(manual)만, 최근순. */
+export async function fetchManualBatchRows(limit = 40): Promise<BatchRow[]> {
+	const { data, error } = await supabase
+		.from("dues_batches")
+		.select("id, kind, key, label, occurred_on")
+		.eq("kind", "manual")
+		.order("occurred_on", { ascending: false, nullsFirst: false })
+		.limit(limit);
+	if (error) {
+		console.error("fetchManualBatchRows:", error);
+		return [];
+	}
+	return (data ?? []).map((b) => {
+		const r = b as { id: number; kind: string; key: string; label: string; occurred_on: string | null };
+		return { id: r.id, kind: r.kind as BatchRow["kind"], key: r.key, label: r.label, occurredOn: r.occurred_on };
+	});
+}
+
+/** 거래를 묶음에 붙이기/떼기(null=해제). paidBy 를 주면 회원 납부 이력에도 남는다. */
+export const setTxnBatch = (txId: number, batchId: number | null, paidBy: string | null = null) =>
+	callRpc("dues_set_txn_batch", { p_tx_id: txId, p_batch_id: batchId, p_paid_by: paidBy });
+
+/** 새 묶음 생성 + 그 거래 연결(원자적). 정산함 [+ 새 묶음]. */
+export const createBatchForTxn = (txId: number, label: string, paidBy: string | null = null) =>
+	callRpc("dues_create_batch_for_txn", { p_tx_id: txId, p_label: label, p_paid_by: paidBy });
+
 // ── 설정(관리자) ─────────────────────────────────────────────────────
 export async function fetchDuesSettings(): Promise<DuesSettings | null> {
 	const { data, error } = await supabase
@@ -291,6 +329,8 @@ export interface BankTxnRow {
 	classifyNote: string | null;
 	categoryId: number | null;
 	categoryName: string | null;
+	batchId: number | null; // 귀속 묶음(dues_batches) — 부과 없이 묶음에 직접 붙은 돈(공구 모금·묶음 지출)
+	batchLabel: string | null;
 	sessionId: number | null; // 매칭된 세션(대관비 지출·외부인 대관비 수납이 어느 날 것인지)
 	sessionDate: string | null; // 매칭 세션 scheduled_at
 	balanceAfter: number | null; // 거래 후 통장 잔액
@@ -308,6 +348,8 @@ interface RawBankTxn {
 	classify_note: string | null;
 	category_id: number | null;
 	txn_categories: { name: string } | null;
+	batch_id: number | null;
+	dues_batches: { label: string } | null;
 	session_id: number | null;
 	sessions: { scheduled_at: string | null } | null;
 	balance_after: number | null;
@@ -318,7 +360,7 @@ export async function fetchBankTransactions(ym: string): Promise<BankTxnRow[]> {
 	const { start, end } = ymRangeKst(ym);
 	const { data, error } = await supabase
 		.from("bank_transactions")
-		.select("id, occurred_at, direction, amount, counterparty_name, memo, status, classify_note, category_id, txn_categories(name), session_id, sessions(scheduled_at), balance_after, refund_of_tx_id")
+		.select("id, occurred_at, direction, amount, counterparty_name, memo, status, classify_note, category_id, txn_categories(name), batch_id, dues_batches(label), session_id, sessions(scheduled_at), balance_after, refund_of_tx_id")
 		.gte("occurred_at", start)
 		.lt("occurred_at", end)
 		.order("occurred_at", { ascending: false });
@@ -337,6 +379,8 @@ export async function fetchBankTransactions(ym: string): Promise<BankTxnRow[]> {
 		classifyNote: t.classify_note,
 		categoryId: t.category_id,
 		categoryName: t.txn_categories?.name ?? null,
+		batchId: t.batch_id,
+		batchLabel: t.dues_batches?.label ?? null,
 		sessionId: t.session_id,
 		sessionDate: t.sessions?.scheduled_at ?? null,
 		balanceAfter: t.balance_after,
