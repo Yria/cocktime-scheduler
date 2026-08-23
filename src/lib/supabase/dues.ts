@@ -136,13 +136,15 @@ export interface BatchRow {
 	key: string;
 	label: string;
 	occurredOn: string | null;
+	/** 엔빵 원본 총액(원). 인당 직접 입력이면 null. 편집 화면이 "총액 ÷ 인원" 맥락을 복원한다. */
+	totalAmount: number | null;
 }
 
 /** 정산함 항목 칩용 — 사람이 만드는 묶음(manual)만, 최근순. */
 export async function fetchManualBatchRows(limit = 40): Promise<BatchRow[]> {
 	const { data, error } = await supabase
 		.from("dues_batches")
-		.select("id, kind, key, label, occurred_on")
+		.select("id, kind, key, label, occurred_on, total_amount")
 		.eq("kind", "manual")
 		.order("occurred_on", { ascending: false, nullsFirst: false })
 		.limit(limit);
@@ -151,8 +153,8 @@ export async function fetchManualBatchRows(limit = 40): Promise<BatchRow[]> {
 		return [];
 	}
 	return (data ?? []).map((b) => {
-		const r = b as { id: number; kind: string; key: string; label: string; occurred_on: string | null };
-		return { id: r.id, kind: r.kind as BatchRow["kind"], key: r.key, label: r.label, occurredOn: r.occurred_on };
+		const r = b as { id: number; kind: string; key: string; label: string; occurred_on: string | null; total_amount: number | null };
+		return { id: r.id, kind: r.kind as BatchRow["kind"], key: r.key, label: r.label, occurredOn: r.occurred_on, totalAmount: r.total_amount };
 	});
 }
 

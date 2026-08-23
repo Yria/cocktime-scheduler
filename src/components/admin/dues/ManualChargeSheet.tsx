@@ -14,6 +14,7 @@ import {
 	type ManualType,
 	buildBatchKey,
 	deleteManualBatch,
+	parseBatchSessionId,
 	manualTypeLabel,
 	upsertManualBatch,
 } from "../../../lib/supabase/manualCharges";
@@ -61,7 +62,11 @@ export default function ManualChargeSheet({ ym, batch, onClose, onSaved }: Props
 	);
 	// 회차는 '대상 후보의 재료'일 뿐 부과에 저장되지 않는다(요청: 일정에 엮지 않는다).
 	// 다만 새 배치의 키·이름을 만들 때 회차를 쓰면 "한 정모에 회식 하나"가 자연히 보장된다.
-	const [sessionId, setSessionId] = useState<number | null>(null);
+	// 편집 모드에서는 batch_key('meal:228')가 그 회차의 유일한 흔적이라 거기서 복원한다 —
+	// 안 하면 다시 열 때 "회차 없음"으로 보여 설정이 초기화된 것처럼 읽힌다.
+	const [sessionId, setSessionId] = useState<number | null>(() =>
+		batch ? parseBatchSessionId(batch.batchKey) : null,
+	);
 
 	// ── 대상 ───────────────────────────────────────────────────────
 	const [selection, setSelection] = useState<FilterSelection>(() =>
@@ -73,8 +78,14 @@ export default function ManualChargeSheet({ ym, batch, onClose, onSaved }: Props
 	const [search, setSearch] = useState("");
 
 	// ── 금액 ───────────────────────────────────────────────────────
-	const [mode, setMode] = useState<SplitMode>(() => (editing ? "perHead" : "total"));
-	const [totalStr, setTotalStr] = useState("");
+	// 저장된 총액이 있으면 엔빵 모드로 열어 "총액 ÷ 인원" 맥락을 되살린다(없으면 인당 직접).
+	const savedTotal = useDuesStore((s) =>
+		batch ? (s.batches.find((b) => b.key === `manual:${batch.batchKey}`)?.totalAmount ?? null) : null,
+	);
+	const [mode, setMode] = useState<SplitMode>(() =>
+		editing ? (savedTotal != null ? "total" : "perHead") : "total",
+	);
+	const [totalStr, setTotalStr] = useState(() => (savedTotal != null ? String(savedTotal) : ""));
 	const [perHeadStr, setPerHeadStr] = useState(() => (batch ? String(batch.perHead) : ""));
 	const [unit, setUnit] = useState<RoundUnit>(1000);
 
@@ -166,6 +177,8 @@ export default function ManualChargeSheet({ ym, batch, onClose, onSaved }: Props
 			chargedOn,
 			amount: split.perHead,
 			memberIds: [...selectedIds],
+			// 엔빵 모드면 원본 총액을 남긴다 — 다시 열 때 "총액 ÷ 인원" 맥락이 살아난다.
+			total: mode === "total" ? (totalStr.trim() === "" ? null : Number(totalStr)) : null,
 		});
 		setBusy(false);
 		if (!res.ok) return setError(res.error);

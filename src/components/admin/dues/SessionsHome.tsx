@@ -53,6 +53,9 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	const courtFeeDefault = useDuesStore((s) => s.courtFee); // 정액 기본액 — 대조의 인당 금액
 	// 발행 대기 초안 — 규칙이 이상하다고 판단해 회원에게 보내지 않고 세워둔 부과(§ 부과 재설계).
 	const pendingDrafts = useDuesStore((s) => s.pendingDrafts);
+	// 수동 부과(회식·공동구매) — 회비·대관비는 이 화면에 있는데 이것만 [부과] 탭에 갇혀 있었다.
+	// 그 달 것만 요약으로 세운다(상세·수정은 [부과] 탭).
+	const manualBatches = useDuesStore((s) => s.manualBatches);
 
 	const [feeOpen, setFeeOpen] = useState(false); // 회비 미납 명단 펼침
 	const [voidReq, setVoidReq] = useState<{ chargeId: number; name: string; label: string } | null>(null); // 당일취소 부과삭제 확인
@@ -61,6 +64,11 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	const [busy, setBusy] = useState(false);
 
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
+
+	const manualThisMonth = useMemo(
+		() => manualBatches.filter((b) => b.chargedOn.slice(0, 7) === ym),
+		[manualBatches, ym],
+	);
 
 	// 회비 진행 — 원 월(period_ym=ym) 기준. 이월된(deferred_to set) 건은 '낸 것처럼' 해결로 카운트.
 	// 분모·분자 모두 **이번 달 실제 부과 행**에서만 나온다. 회원 명단을 훑고 부과를 찾아 붙이는 게 아니다.
@@ -202,6 +210,39 @@ export default function SessionsHome({ ym }: { ym: string }) {
 					<span style={{ flex: 1 }} />
 					<span className="text-faint" style={{ fontSize: 12 }}>›</span>
 				</button>
+			)}
+
+			{/* 수동 부과 요약 — 그 달 회식·공동구매 등. 탭하면 [부과] 탭으로. */}
+			{manualThisMonth.length > 0 && (
+				<div className="bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]" style={{ borderRadius: 12, padding: "11px 13px" }}>
+					<button
+						type="button"
+						onClick={() => navigate(`/dues/${ym}/charge`)}
+						className="flex items-center gap-2 w-full"
+						style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
+					>
+						<b className="text-strong" style={{ fontSize: 13.5, flex: 1 }}>수동 부과 {manualThisMonth.length}건</b>
+						<span className="text-faint" style={{ fontSize: 12 }}>›</span>
+					</button>
+					<div className="flex flex-col gap-1" style={{ marginTop: 7 }}>
+						{manualThisMonth.map((b) => {
+							const done = b.unpaidCount === 0;
+							return (
+								<div key={b.batchKey} className="flex items-center gap-2" style={{ fontSize: 12.5 }}>
+									<span className="text-strong truncate" style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{b.label}</span>
+									<span className="text-faint" style={{ fontSize: 11.5, flexShrink: 0 }}>
+										{b.head}명 · 수납 {won(b.receivedSum)}/{won(b.dueSum)}
+									</span>
+									{done ? (
+										<span className="text-[#1c8a3b]" style={{ fontSize: 11.5, fontWeight: 700, flexShrink: 0 }}>마감 ✓</span>
+									) : (
+										<span style={{ fontSize: 11.5, fontWeight: 700, color: "#d1362c", flexShrink: 0 }}>미납 {b.unpaidCount}</span>
+									)}
+								</div>
+							);
+						})}
+					</div>
+				</div>
 			)}
 
 			{/* 정산함 진입 */}

@@ -163,7 +163,7 @@ export const duesActions = {
 		useDuesStore.setState({ monthLoading: true });
 		// wave 1: 서로 독립인 조회 병렬. (정적: members·sessions·categories·settings / 가변: charges·txns·unpaid)
 		// monthSessions는 ledgerSessions(±1개월 상위집합)에서 파생 — 세션 쿼리 1회로(§11).
-		const [members, monthly, court, bankTxns, ledgerSessions, categories, settings, unpaidByMember, upcomingSessions, pendingDrafts, batches] = await Promise.all([
+		const [members, monthly, court, bankTxns, ledgerSessions, categories, settings, unpaidByMember, upcomingSessions, pendingDrafts, batches, manualBatches] = await Promise.all([
 			fetchMembersForAdmin(true), // 게스트 포함 — 대관비 입금 매칭용
 			fetchMonthlyCharges(ym),
 			fetchCourtCharges(ym),
@@ -175,6 +175,8 @@ export const duesActions = {
 			fetchUpcomingParticipating(), // now 기준 참가 예정 세션(ym 무관)
 			fetchPendingDrafts(), // 발행 대기 초안(ym 무관 — 밀린 대기를 어느 달에서든 본다)
 			fetchManualBatchRows(), // 항목 칩용 묶음(최근순)
+			// 수동 부과 배치 — [부과] 탭뿐 아니라 **현황탭 요약**도 쓰므로 월 공통 로드에 둔다.
+			fetchManualBatches(`${shiftYm(ym, -5)}-01`, `${shiftYm(ym, 1)}-01`),
 		]);
 		const monthSessions = ledgerSessions.filter((x) => isInYm(x.scheduledAt, ym));
 		// wave 2: 앞 결과 id가 필요한 조회(세션 링크 거래 · 이번 달 거래 배분만 — 전역 배분 누적 회피).
@@ -198,6 +200,7 @@ export const duesActions = {
 			courtFee: settings?.courtFeeDefault ?? 6000,
 			pendingDrafts,
 			batches,
+			manualBatches,
 			loadedYm: ym,
 			monthLoading: false,
 		});
@@ -221,8 +224,8 @@ export const duesActions = {
 		if (!force && s.manualLoadedYm === ym && !s.manualLoading) return; // 캐시 히트
 		useDuesStore.setState({ manualLoading: true });
 		const { start, end } = ymRangeKst(ym);
-		const [batches, sessions, lastIso] = await Promise.all([
-			fetchManualBatches(`${shiftYm(ym, -5)}-01`, `${shiftYm(ym, 1)}-01`),
+		// manualBatches 는 loadMonth 가 이미 채웠다(현황탭과 공유) → 여기선 피커 전용 데이터만.
+		const [sessions, lastIso] = await Promise.all([
 			fetchChargeSourceSessions(start, end),
 			fetchLastParticipationByMember(100),
 		]);
@@ -230,7 +233,6 @@ export const duesActions = {
 		const lastAttendedOn = new Map<string, string>();
 		for (const [id, iso] of lastIso) lastAttendedOn.set(id, isoToDateKST(iso));
 		useDuesStore.setState({
-			manualBatches: batches,
 			chargeSessions: sessions,
 			lastAttendedOn,
 			manualLoadedYm: ym,

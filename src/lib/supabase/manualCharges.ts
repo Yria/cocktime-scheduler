@@ -21,6 +21,16 @@ export type ManualType = (typeof MANUAL_TYPES)[number]["id"];
 export const manualTypeLabel = (type: string): string =>
 	MANUAL_TYPES.find((t) => t.id === type)?.label ?? "기타";
 
+/**
+ * batch_key 의 scope 에서 회차 id 를 뽑는다(`'meal:228'` → 228).
+ * 편집 화면이 '참고 회차'를 복원하는 데 쓴다 — 회차는 부과에 저장되지 않으므로(요청: 일정에 엮지
+ * 않는다) 키가 유일한 흔적이다. 날짜 scope(`'cock:2026-08-23'`)면 null.
+ */
+export function parseBatchSessionId(batchKey: string): number | null {
+	const scope = batchKey.split(":").slice(1).join(":").split("#")[0];
+	return /^\d+$/.test(scope) ? Number(scope) : null;
+}
+
 /** batch_key 의 종류 접두. 관례를 벗어난 키(손으로 넣은 것)는 'etc' 로 본다. */
 export function parseBatchType(batchKey: string): string {
 	const type = batchKey.split(":")[0];
@@ -207,6 +217,8 @@ export interface UpsertManualBatchInput {
 	/** 인당 금액(원, > 0). */
 	amount: number;
 	memberIds: string[];
+	/** 엔빵 원본 총액(원). 인당 직접 입력이면 null — 편집 시 맥락 복원용으로 저장한다. */
+	total?: number | null;
 }
 
 export interface UpsertManualBatchResult {
@@ -225,6 +237,7 @@ export async function upsertManualBatch(
 		p_charged_on: input.chargedOn,
 		p_amount: input.amount,
 		p_member_ids: input.memberIds,
+		p_total: input.total ?? null,
 	});
 	if (error) {
 		console.error("upsertManualBatch:", error);
