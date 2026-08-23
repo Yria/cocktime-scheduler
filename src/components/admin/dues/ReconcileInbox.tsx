@@ -55,8 +55,10 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 				if (t.status === "partial") partial.push(t);
 				else pending.push(t);
 			} else {
-				// 출금 처리됨 = 환불연결 / 카테고리 분류 / 코트대관(세션 지정). 셋 다 없으면 미처리.
-				if (t.refundOfTxId != null || t.categoryId != null || t.sessionId != null) continue;
+				// 출금 처리됨 = 묶음 귀속 / 환불연결 / 코트대관(세션 지정) / 레거시 카테고리. 다 없으면 미처리.
+				// batchId 를 빼먹으면 묶음에 붙여도 계속 미처리로 남아 "눌렀는데 다시 나타난다"가 된다
+				// (2026-08-23: 701,000원 정모 지출이 그랬다 — RPC 는 매번 성공했는데 목록 판정만 틀렸다).
+				if (t.batchId != null || t.refundOfTxId != null || t.categoryId != null || t.sessionId != null) continue;
 				pending.push(t);
 			}
 		}

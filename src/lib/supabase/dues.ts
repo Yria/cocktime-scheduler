@@ -425,6 +425,7 @@ interface RawTxAlloc {
 		kind: string;
 		period_ym: string | null;
 		label: string | null;
+		batch_id: number | null;
 		member_id: string;
 		session_id: number | null;
 		sessions: { scheduled_at: string | null; title: string | null } | null;
@@ -439,6 +440,10 @@ export interface TxAllocation {
 	sessionIds: number[];
 	feeAmount: number; // 이 거래가 회비(monthly_fee) 부과에 배분한 금액 합(월 통장 기준 회계 분해용)
 	courtBySession: Record<number, number>; // 세션별 대관(court_fee) 배분 금액 합
+	/** 묶음별 부과 배분 금액 합(수동 부과). 서버 공개회계의 묶음 항목과 같은 값. */
+	batchAmounts: Record<number, number>;
+	/** 이 거래의 **전체** 배분액. 묶음 직접 수입 = 거래액 − 이 값(서버 산식과 동일). */
+	total: number;
 }
 /**
  * 거래별 처리 내역(무엇으로 배분됐는지) — 확인됨 라벨·정렬·세션 필터용.
@@ -450,7 +455,7 @@ export async function fetchTxAllocations(txIds?: number[]): Promise<Record<numbe
 	let query = supabase
 		.from("dues_allocations")
 		// members 임베드는 member_id·matched_by 두 FK가 있어 모호 → 납부자(member_id) FK 명시(PGRST201 회피).
-		.select("bank_tx_id, amount, member_id, dues_charges(kind, period_ym, label, member_id, session_id, sessions(scheduled_at, title)), members!dues_allocations_member_id_fkey(name)")
+		.select("bank_tx_id, amount, member_id, dues_charges(kind, period_ym, label, batch_id, member_id, session_id, sessions(scheduled_at, title)), members!dues_allocations_member_id_fkey(name)")
 		.not("bank_tx_id", "is", null);
 	if (txIds) query = query.in("bank_tx_id", txIds);
 	const { data, error } = await query;
@@ -458,7 +463,7 @@ export async function fetchTxAllocations(txIds?: number[]): Promise<Record<numbe
 		console.error("fetchTxAllocations:", error);
 		return {};
 	}
-	const map: Record<number, { label: string; key: string; names: Set<string>; sessionIds: Set<number>; feeAmount: number; courtBySession: Record<number, number> }> = {};
+	const map: Record<number, { label: string; key: string; names: Set<string>; sessionIds: Set<number>; feeAmount: number; courtBySession: Record<number, number>; batchAmounts: Record<number, number>; total: number }> = {};
 	for (const a of (data ?? []) as unknown as RawTxAlloc[]) {
 		const c = a.dues_charges;
 		let label: string;
@@ -480,16 +485,19 @@ export async function fetchTxAllocations(txIds?: number[]): Promise<Record<numbe
 			label = `${d} 대관비`;
 			key = `b-대관-${c.sessions?.scheduled_at ?? c.kind}`;
 		}
-		const e = map[a.bank_tx_id] ?? { label, key, names: new Set<string>(), sessionIds: new Set<number>(), feeAmount: 0, courtBySession: {} };
+		const e = map[a.bank_tx_id] ?? { label, key, names: new Set<string>(), sessionIds: new Set<number>(), feeAmount: 0, courtBySession: {}, batchAmounts: {}, total: 0 };
+		e.total += a.amount ?? 0; // 전체 배분액 — 묶음 직접 수입(거래액 − 배분액) 계산에 쓴다
 		// 여러 charge면 primary(첫) 라벨 유지, 이름·세션·금액은 누적
 		if (a.members?.name) e.names.add(a.members.name);
 		if (c?.session_id != null) e.sessionIds.add(c.session_id); // 대관비 배분 → 그 세션(입금도 세션 필터에)
 		if (c?.kind === "monthly_fee") e.feeAmount += a.amount ?? 0; // 월 통장 기준 회계: 회비 배분액
 		else if (c?.session_id != null) e.courtBySession[c.session_id] = (e.courtBySession[c.session_id] ?? 0) + (a.amount ?? 0); // 세션별 대관 배분액
+		else if (c?.kind === "manual" && c.batch_id != null)
+			e.batchAmounts[c.batch_id] = (e.batchAmounts[c.batch_id] ?? 0) + (a.amount ?? 0); // 묶음별 부과 배분액
 		map[a.bank_tx_id] = e;
 	}
 	const out: Record<number, TxAllocation> = {};
-	for (const [k, v] of Object.entries(map)) out[Number(k)] = { label: v.label, key: v.key, names: [...v.names], sessionIds: [...v.sessionIds], feeAmount: v.feeAmount, courtBySession: v.courtBySession };
+	for (const [k, v] of Object.entries(map)) out[Number(k)] = { label: v.label, key: v.key, names: [...v.names], sessionIds: [...v.sessionIds], feeAmount: v.feeAmount, courtBySession: v.courtBySession, batchAmounts: v.batchAmounts, total: v.total };
 	return out;
 }
 

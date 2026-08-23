@@ -18,17 +18,28 @@ export default function LedgerBreakdown({ ym }: { ym: string }) {
 	const ledgerSessions = useDuesStore((s) => s.ledgerSessions); // 세션 행 라벨용(±1개월 상위집합)
 	const upcomingSessions = useDuesStore((s) => s.upcomingSessions); // 예정(open) 세션 라벨 — 선납된 미개장 세션이 '세션 #N'으로 뜨지 않게
 	const categories = useDuesStore((s) => s.categories);
+	const batches = useDuesStore((s) => s.batches);
+	const batchLabel = useMemo(() => new Map(batches.map((b) => [b.id, b.label])), [batches]);
 
 	const [newCat, setNewCat] = useState("");
 	const [addingCat, setAddingCat] = useState(false);
 	const [confirmDeleteCat, setConfirmDeleteCat] = useState<TxnCategory | null>(null);
 
-	const { feeIncome, sessionRows, catRows, uncatIn, uncatOut, refundOut } = useMemo(() => {
+	const { feeIncome, sessionRows, catRows, batchRows, uncatIn, uncatOut, refundOut } = useMemo(() => {
 		let uIn = 0;
 		let uOut = 0;
 		let fee = 0;
 		let refOut = 0;
 		const catMap = new Map<number, { name: string; inSum: number; outSum: number }>();
+		// 묶음(영수증) 항목 — 서버 공개회계와 같은 축. 안 보면 묶음에 붙인 거래가 미분류로 샌다
+		// (2026-08-23: 701,000원 정모 지출이 그랬다).
+		const batchMap = new Map<number, { name: string; inSum: number; outSum: number }>();
+		const addBatch = (id: number, name: string, key: "inSum" | "outSum", amt: number) => {
+			const e = batchMap.get(id) ?? { name, inSum: 0, outSum: 0 };
+			e[key] += amt;
+			if (e.name === "?" && name !== "?") e.name = name;
+			batchMap.set(id, e);
+		};
 		const sess = new Map<number, { income: number; expense: number }>();
 		const addSess = (id: number, key: "income" | "expense", amt: number) => {
 			const e = sess.get(id) ?? { income: 0, expense: 0 };
@@ -51,25 +62,34 @@ export default function LedgerBreakdown({ ym }: { ym: string }) {
 		for (const t of txns) {
 			if (t.direction === "in") {
 				const eff = t.amount - (refundByIn.get(t.id) ?? 0); // 연결 환불만큼 상쇄(정상 전액환불이면 0)
-				if (t.sessionId != null) addSess(t.sessionId, "income", eff); // 비회원 대관 입금
-				else if (t.categoryId != null) addCat(t, "inSum", eff);
-				else if (t.status === "matched" || t.status === "partial") {
-					const a = txAllocations[t.id];
-					let allocated = 0;
-					if (a) {
-						fee += a.feeAmount;
-						allocated += a.feeAmount;
-						for (const [sid, amt] of Object.entries(a.courtBySession)) {
-							addSess(Number(sid), "income", amt);
-							allocated += amt;
-						}
+				// 부과 배분은 축(회비·세션·묶음)에 먼저 넣고, **남은 잔액**을 거래가 붙은 곳으로 보낸다.
+				// 서버 산식과 같은 문장이다: 묶음 직접 수입 = 거래액 − 그 거래 배분액.
+				const a = txAllocations[t.id];
+				let allocated = 0;
+				if (a) {
+					fee += a.feeAmount;
+					allocated += a.feeAmount;
+					for (const [sid, amt] of Object.entries(a.courtBySession)) {
+						addSess(Number(sid), "income", amt);
+						allocated += amt;
 					}
-					if (eff - allocated !== 0) uIn += eff - allocated; // 부분 배분/부분 환불 잔액 → 미분류
-				} else uIn += eff; // 미매칭(전액환불이면 0 → 안 뜸)
+					for (const [bid, amt] of Object.entries(a.batchAmounts)) {
+						addBatch(Number(bid), batchLabel.get(Number(bid)) ?? "?", "inSum", amt);
+						allocated += amt;
+					}
+				}
+				const rest = eff - allocated; // 배분되지 않은 잔액
+				if (rest !== 0) {
+					if (t.sessionId != null) addSess(t.sessionId, "income", rest); // 비회원 대관 입금
+					else if (t.batchId != null) addBatch(t.batchId, t.batchLabel ?? "?", "inSum", rest);
+					else if (t.categoryId != null) addCat(t, "inSum", rest); // 레거시 분류
+					else uIn += rest;
+				}
 			} else {
 				if (t.refundOfTxId != null) continue; // 환불 출금: 위에서 소스 입금과 상쇄(또는 잔여 refOut). 여기선 스킵
 				if (t.sessionId != null) addSess(t.sessionId, "expense", t.amount);
-				else if (t.categoryId != null) addCat(t, "outSum", t.amount);
+				else if (t.batchId != null) addBatch(t.batchId, t.batchLabel ?? "?", "outSum", t.amount);
+				else if (t.categoryId != null) addCat(t, "outSum", t.amount); // 레거시 분류
 				else uOut += t.amount;
 			}
 		}
@@ -85,8 +105,12 @@ export default function LedgerBreakdown({ ym }: { ym: string }) {
 			uncatOut: uOut,
 			refundOut: refOut,
 			catRows: [...catMap.entries()].map(([id, e]) => ({ id, name: e.name, inSum: e.inSum, outSum: e.outSum, net: e.inSum - e.outSum })),
+			batchRows: [...batchMap.entries()]
+				.map(([id, e]) => ({ id, name: e.name, inSum: e.inSum, outSum: e.outSum, net: e.inSum - e.outSum }))
+				.filter((r) => r.inSum !== 0 || r.outSum !== 0)
+				.sort((a, b) => a.name.localeCompare(b.name, "ko")),
 		};
-	}, [txns, txAllocations, ledgerSessions, upcomingSessions]);
+	}, [txns, txAllocations, ledgerSessions, upcomingSessions, batchLabel]);
 
 	const reloadFull = () => duesActions.loadMonth(ym, true); // 카테고리 추가/삭제는 전체(categories 갱신)
 	const handleAddCategory = async () => {
@@ -108,7 +132,7 @@ export default function LedgerBreakdown({ ym }: { ym: string }) {
 		else toast("카테고리 삭제 실패", { variant: "error" });
 	};
 
-	const empty = catRows.length === 0 && sessionRows.length === 0 && feeIncome === 0 && refundOut === 0 && uncatIn === 0 && uncatOut === 0;
+	const empty = catRows.length === 0 && batchRows.length === 0 && sessionRows.length === 0 && feeIncome === 0 && refundOut === 0 && uncatIn === 0 && uncatOut === 0;
 
 	return (
 		<div>
@@ -121,6 +145,11 @@ export default function LedgerBreakdown({ ym }: { ym: string }) {
 				{sessionRows.map((r) => (
 					<LedgerRow key={r.id} name={r.s ? `${sessionLabel(r.s)} 대관비` : `세션 #${r.id} 대관비`} inAmt={r.income} outAmt={r.expense} right={<NetAmount n={r.net} />} />
 				))}
+				{/* 묶음(영수증) — 회식·공동구매 등. 부과 배분 + 연결 거래 잔액이 한 줄에서 만난다. */}
+				{batchRows.map((r) => (
+					<LedgerRow key={`b${r.id}`} name={r.name} inAmt={r.inSum} outAmt={r.outSum} right={<NetAmount n={r.net} />} />
+				))}
+				{/* 레거시 분류 — 새 태그는 안 붙이지만 과거 달 숫자를 유지하려 계속 읽는다. */}
 				{catRows.map((r) => (
 					<LedgerRow key={r.id} name={r.name} inAmt={r.inSum} outAmt={r.outSum} right={<NetAmount n={r.net} />} />
 				))}
