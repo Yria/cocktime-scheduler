@@ -6600,6 +6600,98 @@ status 를 올리는 쪽만 있고 되돌리는 쪽이 없었던 것 — 어제 
 
 **Prompt**: 수동 부과 보면 현재 3만원 9명이 냈는데 12명이 냈다고 나와
 
+**Answer**: 숫자를 끝까지 추적했습니다. **카드의 12명은 DB와 정확히 일치하고, 12명 모두 실제 입금 근거가 있습니다.** "9명"과 갈리는 이유도 특정됐습니다 — 3만원이 **한 건으로** 들어온 사람이 정확히 9명입니다.
+
+## 3만원 단건 = 9명
+
+전준형·손형일·최양회·김주영·정현민·고수지·박현아·함규리·오상진 (각 30,000 1건)
+
+## 나머지 3명 — 금액이 쪼개져 있어 통장에서 "3만원" 줄로는 안 보임
+
+| 회원 | 입금 | 회식 배분 |
+|---|---|---|
+| 신동연 | 6,000 (8/22 14:37) + 24,000 (8/23 14:27, 메모 **"식사비 잔금"**) | 30,000 |
+| 황서진 | 6,000 (8/23 11:57) + 24,000 (8/23 12:08, 메모 **"식사비 잔금"**) | 30,000 |
+| 엄지현 | 54,000 1건 (8/23 12:24) | 30,000만 회식, 나머지 24,000은 콕공구 |
+
+9 + 3 = 12, 받은 돈 360,000원과도 맞습니다. 미납 5명은 강민규·남필립·박세경·이후섭·차성민.
+
+확인한 것들: ① 12행 모두 `amount_paid`가 실제 배분 합계와 일치(캐시 드리프트 없음) ② 배분 14건 전부 감사 로그에 **본인이 정산함에서 직접 처리**한 기록(자동 배분 아님) ③ 그 입금 중 환불된 건 없음 — 즉 "냈다고 나오는데 돈은 돌아간" 케이스도 없습니다.
+
+두 명의 6,000원은 8/22 대관비로 보이는 금액이지만, 뒤이은 24,000원 메모가 "식사비 잔금"이라 본인들도 회식비로 계산한 흐름입니다. 만약 그 6,000원을 회식에서 빼야 한다면 정산함에서 그 배분만 풀면 되고, 그 사람은 `일부 24,000`으로 돌아갑니다.
+
+## 화면도 고쳤습니다 (배포 완료)
+
+이걸 제가 DB를 뒤져야 알 수 있었던 게 실제 문제였습니다. **[부과] 탭 명단에 납부 딱지**를 붙였습니다:
+
+[코드 블록 생략]
+
+`냈음 30,000` / `일부 24,000` / `미납` / `부과삭제·면제`(취소선)로 사람마다 표시되니, 이제 카드의 `수납 12/17`이 누구인지 화면에서 바로 대조됩니다. 데이터는 이미 읽던 행에서 나오므로 쿼리는 늘지 않았습니다(`ManualBatch.entries`).
+
+커밋 `5a03a79`, CI 성공. 현황 카드에서 **명단·수정 ›** 누르면 바로 그 명단입니다.
+
+---
+
+## #184
+
+**Prompt**: 수동 부과도 누르면 "정산 대조" 가 나오게 하고 거기서 한번 더 누르면 수정할 수 있게 해줘.
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #185
+
+**Prompt**: 수동 부과도 누르면 "정산 대조" 가 나오게 하고 거기서 한번 더 누르면 수정할 수 있게 해줘. 그리고 막대그래프 하단의 인원설명, 부과, 받은돈은 현황에선 없어도 돼.
+
+**Answer**: 구현은 끝났고(타입체크·린트·테스트·빌드 통과) 검토 워크플로 4개 차원이 돌고 있습니다. 결과를 받아 반영한 뒤 배포하겠습니다.
+
+지금까지 만든 것:
+
+- **카드를 누르면 정산 대조 시트** — 세션 카드의 [정산 대조]와 같은 자리·같은 문법(인원 대조 → 금액 대조 → 전체 명단). 카드 전체가 버튼입니다.
+- **시트에서 [명단·금액 수정]** 한 번 더 누르면 편집 시트로. 수정을 닫으면 대조로 돌아오고, 삭제했으면 둘 다 닫힙니다.
+- **현황 카드에서 금액 줄 제거** — 날짜·인원·인당·부과·받은 돈은 대조 시트로 옮겼습니다. [부과] 탭 목록에는 그대로 둡니다.
+- 명단은 **미납 → 냈음 → 무효** 순으로 세워서 "안 낸 사람 찾기"가 먼저 걸립니다.
+- 곁가지: 세션 대조 시트와 시트 조각(Section/Row/Divider)을 공유하게 꺼냈고, `refreshManual`이 묶음 행까지 다시 읽게 고쳤습니다(총액이 `dues_batches`에 있어서 수정 후 옛 총액이 남던 문제).
+
+meal:228 기준으로 대조 시트가 보여줄 숫자: 부과 대상 17명 · 냈음 12 / 미납 5, 낼 돈 510,000 · 미납 150,000 · 받은 돈 +360,000 · 지출 −701,000 → 현재 순액 −341,000, 전원 완납 시 −191,000(= 클럽 부담).
+
+---
+
+## #186
+
+**Prompt**: 배포했어?
+
+**Answer**: 아직 배포 전입니다 — 검토에서 실제 결함이 나와 고치는 중입니다. 네 차원 검토가 34건을 올렸고 반증 단계가 돌고 있습니다. 이미 고친 것(숫자 오류 7건):
+
+- `총액 ÷ 인원 = 인당` 등식 제거 — `perHead`는 절상값이라 등식이 거짓이었고, 절상 차액(통장에 더 들어오는 돈)이 어느 줄에도 없었습니다. 이제 `엔빵 총액 → 절상 차액 → 낼 돈`으로 사슬이 닫힙니다.
+- 인원 대조가 산수로 안 닫히던 것(`부과 대상`이 이미 무효분을 뺀 수인데 그 아래 또 빼고 있었음) → `전체 부과 → −부과삭제 → 부과 대상 → 냈음/미납`.
+- `클럽 부담`과 `전원 완납 시`가 같은 숫자를 부호만 바꿔 두 줄로 말하던 것(더해서 두 배로 읽을 위험) → 한 줄로 합침. 모금이 붙은 배치에서 본전인데 "클럽이 19만원 부담"으로 나오던 계산식도 고쳤습니다.
+- `전원 완납 시 − 현재 = 미납` 불변식이 초과납에서 깨지던 것 → `net + 미납`으로 정의.
+- 면제·부과삭제된 사람이 이미 낸 돈이 '받은 돈'에는 있는데 명단에서 감춰져 있던 것.
+- 카드는 19명(무효 포함), 시트는 17명이라 한 탭 차이로 인원이 어긋나던 것.
+- 묶음 조회 상한 40건 때문에 과거 달을 열면 지출이 0으로 잡혀 **적자 배치가 흑자로 뒤집히던 것**(순액 −341,000 → +360,000).
+
+반증 결과 받아서 남은 확정 건까지 반영하고 배포하겠습니다.
+
+---
+
+## #187
+
+**Prompt**: <task-notification>
+<task-id>waa3slx21</task-id>
+<tool-use-id>toolu_01LoqiKpaGcYCBMCXGyPPHvr</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/263d6999-6288-46e1-b973-f253e6d164a6/tasks/waa3slx21.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "수동 부과 정산 대조 시트 변경분을 다각도로 검토하고 각 발견을 반증한다" completed</summary>
+<result>{"confirmed":[{"severity":"high","dimension":"numbers","title":"'총액 ÷ 인원 = 인당' 줄이 성립하지 않는 등식을 찍는다 (절상분이 시트에서 사라짐)","at":"src/components/admin/dues/ManualSettleSheet.tsx:79","why":"perHead 는 나눗셈의 몫이 아니라 절상값이다 — src/lib/dues/splitAmount.ts:60 `Math.ceil(total / head / unit) * unit` (unit 은 10/100/1000, 운영진 선택). 그 모듈 주석 자체가 \"부과합이 총액과 어긋나는 건 정상이다(절상하면 더 걷힌다). 그 차액을 숨기지 않고 diff 로 돌려주는 게 이 모듈의 요점\"이라고 못박는데, 대조 시트는 그 diff 를 아예 안 들고 있으면서 '÷ … =' 로 등식을 주장한다. 손계산: 총액 500,000 / 17명 / 1,000원 단위 → perHead = ceil(29,411.76/1000)*1000 = 30,000, dueSum = 510,000. 화면은 인원 대조에 \"500,000 ÷ 17명 = 인당 30,000원\"(실제 몫 29,411.76), 금액 대조에 \"낼 돈 510,000원 · 17건 × 30,000원\" 을 나란히 찍는다 — 두 섹션이 총액을 500,000 과 510,000 으로 다르게 말하고, 클럽에 남는 10,000원은 어느 줄에도 없다. 분모도 틀릴 수 있다: card.liveCount 는 '지금 살아 있는' 건수인데 total_amount 는 부과 시점 head 로 나눈 원본이라(2건 부과삭제 시 \"510,000 ÷ 15명 = 인당 30,000원\"), mixedAmount 면 \"500,000 ÷ 17명 = 인당 금액 섞임(최소 20,000원)\" 이라는 문장이 된다. meal:228 은 total_amount=null 이라 이 줄이 숨겨져 드러나지 않지만, '총액 엔빵' 모드로 만든 배치에서는 절상이 일어나는 거의 모든 경우에 틀린 등식이 뜬다.","effect":"총무가 통장과 맞출 때 시트가 총액을 두 값(500,000 / 510,000)으로 말하고, 실제로 통장에 남는 절상 잔돈(위 예 10,000원, 1,000원 단위·큰 인원이면 수만 원)이 대조 화면에서 사라진다. 부과삭제가 있으면 '÷ N명' 자체가 산수로 안 맞는 숫자를 보여준다.","fix":"ManualSettleSheet.tsx:77-81 의 '÷ … =' 등식을 등식이 아닌 문장으로 바꾼다 — 예: `엔빵 총액 ${won(card.total)} → ${perHeadText}`(mixedAmount 면 perHeadText 만). 그리고 '금액 대조'의 '낼 돈' 줄 바로 밑에 절상 차액을 한 줄 추가한다: `card.total != null &amp;&amp; !b.mixedAmount &amp;&amp; b.dueSum !== card.total` 일 때 `&lt;Row label=\"총액과 차액\" value={diffHint(b.dueSum - card.total)!} tone={b.dueSum &gt; card.total ? \"in\" : \"warn\"} indent sub={`엔빵 총액 ${won(card.total)}`} /&gt;` (diffHint 는 lib/dues/splitAmount 에서 import)."},{"severity":"medium","dimension":"numbers","title":"인원 대조 열이 안 맞는다 — '부과 대상'은 이미 무효분을 뺀 수인데 그 아래에 '− 부과삭제·면제'를 또 붙였다","at":"src/components/admin/dues/ManualSettleSheet.tsx:85","why":"card.liveCount = head − deadCount (manualCards.ts:56) 이므로 '부과 대상' 은 이미 차감 후 값이다. 그런데 그 밑에 `indent` 로 '− 부과삭제·면제 N건' 을 놓았고, duesSheetBits.tsx:6 이 정한 문법은 \"indent 는 바로 위 줄의 부분집합일 때만(미납 ⊂ 낼 돈)\" 이다 — 무효분은 부과 대상의 부분집합이 아니라 배타집합이다. 게다가 원본 패턴(SessionSettleSheet.tsx:74-89)은 차감 사슬을 '실제 부과 N건' 줄로 닫는데(거기선 부과 대상=targetCount 가 무효분을 포함), 이 시트는 그 닫는 줄 없이 뺄셈 줄만 베꼈다. 손계산(head 19, dead 2, 완납 12, 미납 5): 부과 대상 17명 → '− 부과삭제·면제 2건' → 냈음 12명 + 미납 5명 = 17명, 그리고 명단 헤더는 '전체 명단 19명'. 읽는 사람이 17 − 2 = 15 를 기대하는데 결론은 17 이고, 같은 시트의 명단 총계는 또 19 다. 세 숫자 중 어느 것도 서로 이어지지 않는다. (meal:228 은 deadCount=0 이라 이 줄이 숨겨져 17 = 12 + 5 로 맞는다.)","effect":"부과삭제·면제가 있는 배치에서 인원 대조 열이 산수로 닫히지 않고(17 − 2 ≠ 12 + 5), 섹션 총계(17)와 명단 총계(19)가 달라 \"누가 빠졌지\"를 다시 손으로 세게 만든다. 이 시트가 존재하는 이유(수납 12/17 이 누구냐를 닫는 것)와 반대로 작동한다.","fix":"ManualSettleSheet.tsx:76 의 '부과 대상' 값을 `card.liveCount` → `b.head`(= 명단 19명, 무효 포함)로 바꾸고, :85 의 `− 부과삭제·면제` 줄 아래에 SessionSettleSheet 와 같은 닫는 줄 `&lt;Row label=\"실제 부과\" value={`${card.liveCount}명`} strong /&gt;` 를 (deadCount&gt;0 일 때만) 추가한다 — 그러면 19 − 2 = 17 = 12 + 5 로 사슬이 닫히고 명단 총계와도 이어진다. 총액 나눗셈 sub(`card.total ÷ liveCount`)은 그대로 liveCount 를 쓰되 '실제 부과' 줄로 옮기는 것이 자연스럽다. (최소한으로만 고치려면 대안: :85 에서 `indent` 와 라벨의 `−` 를 떼고 sub 를 \"부과 대상에서 이미 빠짐\"으로 바꿔 뺄셈이 아님을 명시 — 금액 섹션 :101 과 같은 문법.)"},{"severity":"medium","dimension":"numbers","title":"'클럽 부담'과 '전원 완납 시'가 같은 사실을 부호만 바꿔 두 번 말하고, 묶음 직접 입금이 있으면 서로 어긋난다","at":"src/components/admin/dues/ManualSettleSheet.tsx:119","why":"expectedNet = dueSum + funded − expense (line 59), clubShare = max(0, expense − dueSum) (manualCards.ts:65). funded = 0 이면 clubShare = −expectedNet 로 **정확히 같은 사실**이다. meal:228 손계산: 전원 완납 시 = 510,000 − 701,000 = −191,000원, 클럽 부담 = 701,000 − 510,000 = 191,000원 — 인접한 두 줄에 −191,000 과 +191,000 이 뜨고, 둘이 같은 값이라는 안내는 없다. funded &gt; 0 이면 두 줄이 정면으로 모순된다: expense 701,000 · dueSum 510,000 · funded 191,000(모금) · 전원 완납이면 → 현재 순액 0원(본전)인데 '클럽 부담 191,000원' 이 함께 찍힌다. clubShare 가 묶음 직접 입금을 계산에서 빼먹기 때문이다(sub '지출 − 낼 돈' 은 산식으로는 맞지만 라벨이 주장하는 '클럽이 부담한 차액'은 틀림). 참고로 원본인 SessionSettleSheet 에는 클럽 부담 줄이 없어, 이 중복은 이번 변경에서 새로 생겼다.","effect":"운영진이 두 줄을 더해 클럽 손실을 382,000원(191,000 × 2)으로 오해할 수 있고, 모금(묶음 직접 입금)이 붙은 공구·회식에서는 실제로 본전인 배치를 '클럽이 19만 원 부담' 으로 보고하게 된다.","fix":"ManualSettleSheet.tsx 117~120행의 '클럽 부담' Row 를 삭제한다 — 미납이 있으면 '전원 완납 시'가, 미납이 0이면 '현재 순액'이 이미 부호까지 정확히(funded 포함) 같은 사실을 말하므로 잃는 정보가 없다. 양수 라벨을 남기고 싶다면 별도 줄을 추가하는 대신 expectedNet &lt; 0 일 때 그 줄의 라벨을 '전원 완납 시(클럽 부담)'으로 바꾸고, 함께 manualCards.ts:65 를 max(0, expense − batch.dueSum − funded) 로 고쳐 카드 금액 줄의 '클럽 부담'도 모금 묶음에서 틀리지 않게 한다."},{"severity":"medium","dimension":"numbers","title":"'전원 완납 시 − 현재 순액 = 미납' 이라는 시트 자신의 불변식이 초과납·무효분 납부에서 깨진다","at":"src/components/admin/dues/ManualSettleSheet.tsx:59","why":"line 57 주석이 \"'전원 완납 시'와의 차이가 곧 미납이다\" 라고 선언하는데, expectedNet − net = dueSum − receivedSum 이고 이를 전개하면 Σ_live(due−paid) − Σ_dead(paid) = unpaidSum − 초과납합 − 무효분납부합 이다. 즉 초과납이나 무효분 납부가 하나라도 있으면 미납 줄과 두 순액의 차이가 어긋난다. 손계산(meal:228 변형, 12명 중 1명이 50,000 납부): 받은 돈 380,000, 현재 순액 −321,000, 전원 완납 시 −191,000 → 차이 130,000인데 미납 줄은 150,000원(5명)이라고 말한다. 초과납이 미납보다 크면(예: 대납으로 1명이 200,000 입금) 전원 완납 시가 현재 순액보다 **낮게** 찍혀 \"다 걷히면 오히려 손해\"로 읽힌다. unpaidSum 은 remain=max(0,due−paid) 로 맞게 계산하고 있으므로(line 43·55) 고칠 곳은 expectedNet 하나뿐 — net + unpaidSum 이면 정의상 항상 성립한다.","effect":"대납·반올림 초과납이 섞인 회식 배치에서 '미납 150,000원' 과 두 순액의 차이가 달라, 어느 숫자가 맞는지 총무가 통장을 다시 세게 된다. 극단적으로는 완납이 손실처럼 표시된다.","fix":"expectedNet 을 `net + unpaidSum` 으로 정의한다(dueSum 기반 계산 금지) — 수동부과 쪽은 이미 /Users/sam/Projects/cocktime-scheduler/src/components/admin/dues/manualCards.ts:78 에 그렇게 들어가 있어 추가 작업 없음. 같은 문구('전원 완납 시')를 쓰는 세션 시트까지 맞추려면 /Users/sam/Projects/cocktime-scheduler/src/components/admin/dues/sessionSettle.ts:460 의 `expectedNet: dueSum + externalIn - expense` 를 `expectedNet: received + externalIn - expense + unpaidSum`(= net + unpaidSum) 로 바꾸면 된다."},{"severity":"low","dimension":"numbers","title":"카드는 head(무효 포함), 시트는 liveCount 로 인원을 말해 한 탭 차이로 두 숫자가 어긋난다","at":"src/components/admin/dues/ManualBatchCard.tsx:96","why":"[부과] 탭 카드의 금액 줄은 `{b.head}명 × 인당 {perHead}` 인데 head 는 무효 행을 포함한 전체 행 수이고, 바로 다음 줄 '부과 510,000' 은 live 합(dueSum)이다. 손계산(head 19, dead 2, perHead 30,000): 카드는 \"19명 × 인당 30,000원 / 부과 510,000\" — 곱셈이 570,000 이라 자기 줄과도 안 맞고, 눌러서 열리는 대조 시트는 같은 배치를 '부과 대상 17명 · 17건 × 30,000원' 이라고 말한다. 이번 변경으로 카드가 곧 시트의 입구가 됐으므로 두 값이 한 탭 차이로 나란히 보이게 됐다(카드 줄 자체는 기존 코드지만 showMoney 로 [부과] 탭에만 남겨진 상태).","effect":"부과삭제가 있는 배치에서 카드와 대조 시트가 인원을 19명/17명으로 다르게 말해, 어느 쪽이 부과 대상인지 판단이 갈린다.","fix":"ManualBatchCard.tsx:96 의 `{b.head}명` 을 이미 구조분해로 갖고 있는 `{liveCount}명` 으로 바꿔, 카드의 '인원 × 인당' 이 바로 아래 줄의 `부과 {dueSum}` 과 곱셈이 맞고 시트의 '부과 대상' 과도 같은 기준이 되게 한다(빠진 행은 지금처럼 헤더의 '부과삭제 {deadCount}' 배지가 계속 말해 준다)."},{"severity":"low","dimension":"numbers","title":"지출·총액 해석이 '최근 묶음 40건 + 그 달 거래' 에만 걸려, 오래된 달의 순액이 흑자처럼 뒤집힌다","at":"src/components/admin/dues/manualCards.ts:55","why":"expense·total 은 batchRows 에서 키로 찾는데 그 목록은 fetchManualBatchRows(limit = 40, occurred_on desc) 다(src/lib/supabase/dues.ts:144-151). 40건을 넘긴 뒤 과거 달을 열면 그 배치의 묶음 행이 없어 row = null → expense 0 · total null · clubShare 0 이 되고, 시트는 '지출 미연결 · 정산함에서 출금 → 묶음 지정' 을 안내한다 — 이미 연결해 둔 출금이 있는데도. 같은 결과가 회식비 결제가 다음 달로 넘어갈 때도 난다(txns 는 그 달치뿐, manualCards.ts:8-9 주석의 알려진 한계). meal:228 로 손계산하면 그 상태에서 현재 순액 = 360,000 + 0 − 0 = +360,000원 — 실제로는 701,000원이 나가 −341,000원인 배치가 36만 원 흑자로 찍힌다.","effect":"과거 달(또는 결제가 다음 달로 넘어간 배치)의 대조 시트가 지출을 0으로 보고 순액을 흑자로 표시하고, 이미 붙여 둔 출금을 다시 붙이라고 안내한다.","fix":"근본 수정: `fetchManualBatchRows` 의 `limit 40` 대신 렌더할 배치들의 키로 조회하고(`.in(\"key\", keys)` — 6개월 창의 `manualBatches` 에서 `'manual:'+batchKey` 로 생성), 지출·모금 합계는 그 달 `bankTxns` 가 아니라 그 `batch_id` 들로 월 무관하게 집계한다(`bank_transactions.batch_id in (...)` 소형 조회/RPC). 즉시 가드: 그 전까지 `row == null` 이면 `net/expectedNet/clubShare` 를 숫자로 찍지 말고 '지출 미연결 — 순액 계산 불가'로 막아, 미연결을 흑자로 오독하지 않게 한다(`batchId == null` 과 '진짜 출금 0원' 을 구분해야 하므로 `expense === 0` 만으로 판정하지 말 것)."},{"severity":"high","dimension":"react","title":"현황 탭에서 열린 편집 시트는 회차·참석 데이터가 비어 있다 (loadManual 미호출)","at":"src/components/admin/dues/ManualBatchCard.tsx:119","why":"ManualChargeSheet 는 `useDuesStore(s =&gt; s.chargeSessions)` 와 `s.lastAttendedOn` 을 읽는데, 이 두 슬라이스를 채우는 `duesActions.loadManual(ym)` 은 오직 ManualCha
+... (truncated 32370 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/263d6999-6288-46e1-b973-f253e6d164a6/tasks/waa3slx21.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/263d6999-6288-46e1-b973-f253e6d164a6/subagents/workflows/wf_9c7b65c8-61c/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/263d6999-6288-46e1-b973-f253e6d164a6/workflows/scripts/review-manual-settle-sheet-wf_9c7b65c8-61c.js', resumeFromRunId: 'wf_9c7b65c8-61c'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>38</agent_count><agents_done>38</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>2422425</subagent_tokens><tool_uses>736</tool_uses><duration_ms>1613212</duration_ms></usage>
+</task-notification>
+
 **Answer**: _(응답 대기 중…)_
 
 ---

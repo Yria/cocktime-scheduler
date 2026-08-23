@@ -6,6 +6,7 @@
 // 목록으로 묶어 보여주는 일만 한다.
 
 import { supabase } from "./client";
+import type { ChargeStatus } from "./dues";
 
 /** 수동 부과 종류 — batch_key 접두. 종류를 늘려도 스키마·RPC 는 그대로다(라벨과 접두만 추가). */
 export const MANUAL_TYPES = [
@@ -89,8 +90,7 @@ export interface ManualChargeEntry {
 	memberId: string;
 	due: number;
 	paid: number;
-	/** unpaid | partial | paid | overpaid | waived | void */
-	status: string;
+	status: ChargeStatus;
 }
 
 interface RawManualCharge {
@@ -105,13 +105,15 @@ interface RawManualCharge {
 
 /**
  * 발생일이 [fromDate, toDate) 인 수동 부과를 배치로 묶어 최근순으로 돌려준다.
+ * **실패는 `null`** — 빈 배열로 뭉개면 재조회가 실패했을 때 화면의 목록이 통째로 사라져
+ * "부과가 없어졌다"로 읽힌다(호출부가 이전 값을 지킬 수 있어야 한다).
  * @param fromDate 'YYYY-MM-DD' 포함
  * @param toDate   'YYYY-MM-DD' 제외
  */
 export async function fetchManualBatches(
 	fromDate: string,
 	toDate: string,
-): Promise<ManualBatch[]> {
+): Promise<ManualBatch[] | null> {
 	const { data, error } = await supabase
 		.from("dues_charges")
 		.select("batch_key, label, charged_on, member_id, amount_due, amount_paid, status")
@@ -121,7 +123,7 @@ export async function fetchManualBatches(
 		.order("charged_on", { ascending: false });
 	if (error) {
 		console.error("fetchManualBatches:", error);
-		return [];
+		return null;
 	}
 
 	const byKey = new Map<string, RawManualCharge[]>();
@@ -152,7 +154,8 @@ export async function fetchManualBatches(
 				memberId: r.member_id,
 				due: r.amount_due,
 				paid: r.amount_paid,
-				status: r.status,
+				// DB enum 이라 값 집합은 보장된다(dues_charges.status).
+				status: r.status as ChargeStatus,
 			})),
 		} satisfies ManualBatch;
 	});

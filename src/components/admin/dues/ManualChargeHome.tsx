@@ -25,12 +25,11 @@ export default function ManualChargeHome({ ym }: { ym: string }) {
 	const batchRows = useDuesStore((s) => s.batches);
 	const bankTxns = useDuesStore((s) => s.bankTxns);
 
-	// 열린 시트는 **URL 이 진실**이다(`?open=new` | `?open={batch_key}`).
-	// [현황] 카드의 [명단·수정]이 그 배치를 바로 열 수 있고(딥링크), 효과 안에서 setState 하지 않아도 된다.
+	// '새 부과' 시트는 **URL 이 진실**이다(`?open=new`) — 효과 안에서 setState 로 시트를 열지 않아도
+	// 되고 딥링크가 된다. 기존 배치의 대조·편집 시트는 카드(ManualBatchCard)가 직접 들고 있다.
 	const [sp, setSp] = useSearchParams();
-	const open = sp.get("open");
-	const setOpen = (key: string | null) =>
-		setSp(key ? { open: key } : {}, { replace: true });
+	const newOpen = sp.get("open") === "new";
+	const setNewOpen = (on: boolean) => setSp(on ? { open: "new" } : {}, { replace: true });
 
 	useEffect(() => {
 		void duesActions.loadManual(ym);
@@ -50,15 +49,11 @@ export default function ManualChargeHome({ ym }: { ym: string }) {
 		[mine],
 	);
 
-	// 목록에 없는 키(다른 달·지워진 배치)면 시트를 열지 않는다 — 잘못된 링크로 빈 시트가 뜨는 것보다 낫다.
-	const openCard = open && open !== "new" ? mine.find((c) => c.batch.batchKey === open) : undefined;
-	const sheetOpen = open === "new" || openCard != null;
-
 	return (
 		<div className="flex flex-col gap-3">
 			<button
 				type="button"
-				onClick={() => setOpen("new")}
+				onClick={() => setNewOpen(true)}
 				className="flex items-center gap-2 bg-[rgba(11,132,255,0.08)] border border-[rgba(11,132,255,0.2)]"
 				style={{ borderRadius: 11, padding: "11px 13px", cursor: "pointer", width: "100%", textAlign: "left" }}
 			>
@@ -90,22 +85,17 @@ export default function ManualChargeHome({ ym }: { ym: string }) {
 				</EmptyState>
 			) : (
 				mine.map((c) => (
-					<ManualBatchCard
-						key={c.batch.batchKey}
-						card={c}
-						actionLabel="명단·수정"
-						onAction={() => setOpen(c.batch.batchKey)}
-					/>
+					<ManualBatchCard key={c.batch.batchKey} card={c} ym={ym} showMoney />
 				))
 			)}
 
-			{sheetOpen && (
+			{newOpen && (
 				<ManualChargeSheet
 					ym={ym}
-					batch={openCard?.batch ?? null}
-					onClose={() => setOpen(null)}
+					batch={null}
+					onClose={() => setNewOpen(false)}
 					onSaved={() => {
-						setOpen(null);
+						setNewOpen(false);
 						void duesActions.refreshManual(ym);
 					}}
 				/>

@@ -7,7 +7,7 @@ import ConfirmDialog from "../../common/ConfirmDialog";
 import EmptyState from "../../shared/EmptyState";
 import BirthYearTag from "../../shared/BirthYearTag";
 import ManualBatchCard from "./ManualBatchCard";
-import { Meter, MoreLink } from "./duesCardBits";
+import { Meter, MoreHint } from "./duesCardBits";
 import { CARD_CLASS, cardBox, mark, pill } from "./duesCardStyles";
 import { remaining, sessionLabel, won, ymLabel } from "./duesText";
 import { buildManualCards } from "./manualCards";
@@ -59,7 +59,8 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	const pendingDrafts = useDuesStore((s) => s.pendingDrafts);
 	// 수동 부과(회식·공동구매) — 회비·대관비는 이 화면에 있는데 이것만 [부과] 탭에 갇혀 있었다.
 	// 그 달 것을 **다른 부과와 같은 카드**로 세운다(ManualBatchCard — [부과] 탭과 같은 컴포넌트).
-	// 명단·수정은 [부과] 탭의 시트가 맡는다(그 배치를 열고 들어간다).
+	// 명단·금액은 카드가 직접 든 대조 시트 → [명단·금액 수정] 편집 시트가 맡는다
+	// ([부과] 탭의 URL 딥링크는 '새 부과'(?open=new)만 남았다).
 	const manualBatches = useDuesStore((s) => s.manualBatches);
 	const batchRows = useDuesStore((s) => s.batches); // 묶음 행 — 통장 출금이 붙는 축(수동 부과의 '지출 연결' 판정)
 
@@ -279,14 +280,10 @@ export default function SessionsHome({ ym }: { ym: string }) {
 			)}
 
 			{/* 수동 부과 — 회식·공동구매 등. 회비·대관비 카드와 **같은 언어**로 그린다(제목+배지 → 판정
-			    두 줄 → 진행 막대). 상세·수정은 [부과] 탭의 시트가 맡는다(그 배치를 열고 들어간다). */}
+			    두 줄 → 진행 막대). 누르면 정산 대조 시트, 거기서 [수정]으로 편집 시트(카드가 들고 있다).
+			    금액 숫자는 카드에 두지 않는다 — 대조 시트에 있다. */}
 			{manualCards.map((c) => (
-				<ManualBatchCard
-					key={c.batch.batchKey}
-					card={c}
-					actionLabel="명단·수정"
-					onAction={() => navigate(`/dues/${ym}/charge?open=${encodeURIComponent(c.batch.batchKey)}`)}
-				/>
+				<ManualBatchCard key={c.batch.batchKey} card={c} ym={ym} />
 			))}
 
 			{/* 예정(선납) 세션 — 아직 안 열렸는데 대관비 선납된 것. 진행률 대신 '몇 명 선납'.
@@ -313,7 +310,15 @@ export default function SessionsHome({ ym }: { ym: string }) {
 					const done = c.status === "settled";
 					const flagged = c.settle.flaggedCount; // 시트 헤더 ⚠확인과 같은 단일 소스
 					return (
-						<div key={c.id} className={CARD_CLASS} style={cardBox(done)}>
+						// 카드 전체가 버튼 — 조작이 [정산 대조] 하나뿐이라 탭 영역을 카드 전체로 준다
+						// (나란히 놓인 수동 부과 카드와 같은 히트 영역. button 중첩을 피하려고 안쪽은 MoreHint).
+						<button
+							key={c.id}
+							type="button"
+							onClick={() => setSettleId(c.id)}
+							className={`${CARD_CLASS} transition active:opacity-70`}
+							style={{ ...cardBox(done), width: "100%", textAlign: "left", cursor: "pointer" }}
+						>
 							<div className="flex items-center gap-2">
 								<b className="text-strong" style={{ fontSize: 13.5, flex: 1, minWidth: 0 }}>{c.label}</b>
 								{/* 참석↔부과 불일치(누락 + 살아 있는 규칙 위반 부과)는 마감 판정(지출연결+미납0)에
@@ -338,12 +343,12 @@ export default function SessionsHome({ ym }: { ym: string }) {
 											<span className="text-muted" style={{ fontSize: 11.5 }}>{c.paidCount}/{c.totalCount}{c.outstanding > 0 ? ` · 미납 ${c.outstanding}` : ""}</span>
 										)}
 										<span style={{ flex: 1 }} />
-										<MoreLink label="정산 대조" onClick={() => setSettleId(c.id)} />
+										<MoreHint label="정산 대조" />
 									</div>
 									{c.totalCount > 0 && <Meter ratio={c.paidCount / c.totalCount} done={c.outstanding === 0} />}
 								</div>
 							</div>
-						</div>
+						</button>
 					);
 				})
 			)}

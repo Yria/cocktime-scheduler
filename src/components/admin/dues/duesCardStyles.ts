@@ -35,3 +35,15 @@ export const cardBox = (done = false): CSSProperties => ({
 /** 겉면 클래스(다크 모드 포함) — style 과 함께 쓴다. */
 export const CARD_CLASS =
 	"bg-white dark:bg-[rgba(30,30,35,0.6)] border border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.1)]";
+
+/** 명단 행 끝 조작 버튼(부과삭제·되돌리기·이월) 공용 스타일. */
+export const rowActionBtn = (bg: string): CSSProperties => ({
+	fontSize: 11.5,
+	fontWeight: 700,
+	background: bg,
+	border: "none",
+	borderRadius: 7,
+	padding: "3px 8px",
+	cursor: "pointer",
+	flexShrink: 0,
+});

@@ -1,8 +1,10 @@
-import { type CSSProperties, type ReactNode, useState } from "react";
+import { useState } from "react";
 import ModalSheet from "../../common/ModalSheet";
 import BirthYearTag from "../../shared/BirthYearTag";
 import { nameWithBirthYear } from "../../../lib/birthYear";
-import { sessionLabel, statusChipClass, statusLabel, won } from "./duesText";
+import { rowActionBtn } from "./duesCardStyles";
+import { Divider, Row, Section, Tag } from "./duesSheetBits";
+import { sessionLabel, signedWon, statusChipClass, statusLabel, won } from "./duesText";
 import { EXEMPT_LABEL, EXTRA_LABEL, type SessionSettle } from "./sessionSettle";
 import type { SessionFeeRow } from "../../../lib/supabase/dues";
 
@@ -192,10 +194,10 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 										)}
 										{/* 당일취소 부과만 조작 대상 — 살아 있으면 [부과삭제], void 면 [되돌리기]. */}
 										{c?.isDayCancel && c.status === "void" && (
-											<button type="button" onClick={() => onReset(c.chargeId)} disabled={busy} className="text-[#0b84ff]" style={actionBtn("rgba(11,132,255,0.1)")}>되돌리기</button>
+											<button type="button" onClick={() => onReset(c.chargeId)} disabled={busy} className="text-[#0b84ff]" style={rowActionBtn("rgba(11,132,255,0.1)")}>되돌리기</button>
 										)}
 										{c?.isDayCancel && c.live && c.amountPaid === 0 && (
-											<button type="button" onClick={() => onVoidRequest(c.chargeId, nameWithBirthYear(c.name, r.birthYear))} disabled={busy} className="text-[#d1362c]" style={actionBtn("rgba(209,54,44,0.1)")}>부과삭제</button>
+											<button type="button" onClick={() => onVoidRequest(c.chargeId, nameWithBirthYear(c.name, r.birthYear))} disabled={busy} className="text-[#d1362c]" style={rowActionBtn("rgba(209,54,44,0.1)")}>부과삭제</button>
 										)}
 									</div>
 								);
@@ -213,82 +215,5 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 				</div>
 			</div>
 		</ModalSheet>
-	);
-}
-
-/** 명단 행 끝 조작 버튼(부과삭제·되돌리기) 공용 스타일. */
-const actionBtn = (bg: string): CSSProperties => ({
-	fontSize: 11.5,
-	fontWeight: 700,
-	background: bg,
-	border: "none",
-	borderRadius: 7,
-	padding: "3px 8px",
-	cursor: "pointer",
-	flexShrink: 0,
-});
-
-/** +12,000원 / −12,000원 (0은 '0원'). duesText.signed 는 0을 +로 쓰므로 여기선 별도. */
-function signedWon(n: number): string {
-	if (n === 0) return "0원";
-	return `${n > 0 ? "+" : "−"}${won(Math.abs(n))}`;
-}
-
-function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
-	return (
-		<div>
-			<div className="flex items-baseline gap-1.5" style={{ marginBottom: 6 }}>
-				<b className="text-strong" style={{ fontSize: 13.5 }}>{title}</b>
-				{hint && <span className="text-faint" style={{ fontSize: 11 }}>{hint}</span>}
-			</div>
-			<div className="flex flex-col" style={{ gap: 3, background: "rgba(120,120,128,0.06)", borderRadius: 10, padding: "9px 11px" }}>
-				{children}
-			</div>
-		</div>
-	);
-}
-
-const TONE: Record<string, string> = {
-	in: "text-[#1c8a3b]",
-	out: "text-[#d1362c]",
-	warn: "text-[#c2670a]",
-	muted: "text-muted",
-};
-
-function Row({ label, value, sub, tone, strong, indent }: {
-	label: string;
-	value: string;
-	sub?: string;
-	tone?: "in" | "out" | "warn" | "muted";
-	strong?: boolean;
-	indent?: boolean;
-}) {
-	const cls = tone ? TONE[tone] : "text-strong";
-	return (
-		<div className="flex items-baseline gap-2" style={{ fontSize: 13, paddingLeft: indent ? 12 : 0 }}>
-			<span className={indent ? "text-muted" : "text-strong"} style={{ fontWeight: strong ? 700 : 500, flexShrink: 0 }}>
-				{indent ? "└ " : ""}{label}
-			</span>
-			{sub && <span className="text-faint" style={{ fontSize: 11, minWidth: 0 }}>{sub}</span>}
-			<span style={{ flex: 1 }} />
-			<span className={cls} style={{ fontWeight: strong ? 800 : 700, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{value}</span>
-		</div>
-	);
-}
-
-function Divider() {
-	return <div style={{ height: 1, background: "rgba(120,120,128,0.22)", margin: "3px 0" }} />;
-}
-
-function Tag({ tone, children }: { tone: "warn" | "info" | "muted"; children: ReactNode }) {
-	const map: Record<string, CSSProperties> = {
-		warn: { background: "rgba(255,149,0,0.16)", color: "#c2670a" },
-		info: { background: "rgba(11,132,255,0.14)", color: "#0b84ff" },
-		muted: { background: "rgba(120,120,128,0.16)", color: "#64748b" },
-	};
-	return (
-		<span style={{ fontSize: 10.5, fontWeight: 700, padding: "1px 6px", borderRadius: 6, whiteSpace: "nowrap", ...map[tone] }}>
-			{children}
-		</span>
 	);
 }

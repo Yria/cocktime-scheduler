@@ -7,6 +7,15 @@ export function won(n: number): string {
 	return `${n.toLocaleString("ko-KR")}원`;
 }
 
+/**
+ * +12,000원 / −12,000원 (0은 '0원'). 정산 대조 시트의 순액 표기 공용.
+ * `signed` 는 0을 `+0` 으로 쓰므로 그것과 따로 둔다.
+ */
+export function signedWon(n: number): string {
+	if (n === 0) return "0원";
+	return `${n > 0 ? "+" : "−"}${won(Math.abs(n))}`;
+}
+
 /** 수입/양수=초록, 지출/음수=빨강 텍스트 클래스(회계 공용). */
 export function moneyClass(positive: boolean): string {
 	return positive ? "text-[#1c8a3b]" : "text-[#d1362c]";

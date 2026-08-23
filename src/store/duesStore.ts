@@ -47,6 +47,7 @@ import {
 import { fetchLastParticipationByMember } from "../lib/supabase/members";
 import { isoToDateKST } from "../lib/schedule/calendar";
 import { shiftYm } from "../components/admin/dues/duesText";
+import { toast } from "./toastStore";
 
 // 회비 데이터 스토어(scheduleStore/authStore 관례: uncurried create + 별도 actions 객체).
 // setState 를 컴포넌트 밖(스토어)에서 하여 effect 내 동기 setState 규칙(React Compiler)을 피한다.
@@ -174,9 +175,9 @@ export const duesActions = {
 			fetchUnpaidByMember(),
 			fetchUpcomingParticipating(), // now 기준 참가 예정 세션(ym 무관)
 			fetchPendingDrafts(), // 발행 대기 초안(ym 무관 — 밀린 대기를 어느 달에서든 본다)
-			fetchManualBatchRows(), // 항목 칩용 묶음(최근순)
+			fetchManualBatchRows().then((r) => r ?? []), // 항목 칩용 묶음(최근순). 첫 로드라 실패는 빈 목록.
 			// 수동 부과 배치 — [부과] 탭뿐 아니라 **현황탭 요약**도 쓰므로 월 공통 로드에 둔다.
-			fetchManualBatches(`${shiftYm(ym, -5)}-01`, `${shiftYm(ym, 1)}-01`),
+			fetchManualBatches(`${shiftYm(ym, -5)}-01`, `${shiftYm(ym, 1)}-01`).then((r) => r ?? []),
 		]);
 		const monthSessions = ledgerSessions.filter((x) => isInYm(x.scheduledAt, ym));
 		// wave 2: 앞 결과 id가 필요한 조회(세션 링크 거래 · 이번 달 거래 배분만 — 전역 배분 누적 회피).
@@ -240,10 +241,23 @@ export const duesActions = {
 		});
 	},
 
-	/** 배치 생성·삭제 후 목록만 갱신(로딩 플래그 없이 — 목록이 깜빡이지 않게). */
+	/**
+	 * 수동 부과 저장·삭제 후 갱신(로딩 플래그 없이 — 목록이 깜빡이지 않게).
+	 * **묶음 행도 같이** 다시 읽는다: `dues_upsert_manual_batch` 가 `dues_batches.total_amount`
+	 * (엔빵 원본 총액)를 쓰므로 부과만 갱신하면 대조 시트가 옛 총액을 계속 보여준다.
+	 * 조회가 실패하면(null) **그 슬라이스는 손대지 않는다** — 빈 목록으로 덮으면 부과가 사라진
+	 * 것처럼 보인다. 빈 배열은 정상 결과다(마지막 배치를 지운 경우).
+	 */
 	async refreshManual(ym: string) {
-		const batches = await fetchManualBatches(`${shiftYm(ym, -5)}-01`, `${shiftYm(ym, 1)}-01`);
-		useDuesStore.setState({ manualBatches: batches });
+		const [manualBatches, batches] = await Promise.all([
+			fetchManualBatches(`${shiftYm(ym, -5)}-01`, `${shiftYm(ym, 1)}-01`),
+			fetchManualBatchRows(),
+		]);
+		if (manualBatches == null || batches == null) toast("부과 목록 갱신 실패 — 새로고침해 주세요", { variant: "error" });
+		useDuesStore.setState({
+			...(manualBatches != null ? { manualBatches } : {}),
+			...(batches != null ? { batches } : {}),
+		});
 	},
 
 	/**
@@ -275,7 +289,7 @@ export const duesActions = {
 		const [bankTxns, sessionTxns, batches] = await Promise.all([
 			fetchBankTransactions(ym),
 			fetchSessionTxns(useDuesStore.getState().monthSessions.map((x) => x.id)),
-			fetchManualBatchRows(), // 정산함에서 만든 새 묶음이 즉시 칩으로 뜨게
+			fetchManualBatchRows().then((r) => r ?? []), // 정산함에서 만든 새 묶음이 즉시 칩으로 뜨게
 		]);
 		const txAllocations = await fetchTxAllocations(bankTxns.map((t) => t.id));
 		useDuesStore.setState({ bankTxns, sessionTxns, txAllocations, batches });

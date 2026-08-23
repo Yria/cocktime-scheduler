@@ -140,8 +140,13 @@ export interface BatchRow {
 	totalAmount: number | null;
 }
 
-/** 정산함 항목 칩용 — 사람이 만드는 묶음(manual)만, 최근순. */
-export async function fetchManualBatchRows(limit = 40): Promise<BatchRow[]> {
+/**
+ * 사람이 만드는 묶음(manual) 행, 최근순. 정산함 항목 칩 + **수동 부과 카드·대조 시트의 지출 연결 판정**이 쓴다.
+ * 상한이 낮으면 과거 달의 배치가 목록에서 밀려 묶음을 못 찾고, 이미 붙여 둔 출금을 '미연결'로 표시하며
+ * 순액이 흑자로 뒤집힌다 → 한 달에 몇 건 수준이라 넉넉히 잡는다(2026-08-23).
+ * **실패는 `null`**(빈 배열로 뭉개면 재조회 실패가 '묶음 없음'으로 보인다).
+ */
+export async function fetchManualBatchRows(limit = 300): Promise<BatchRow[] | null> {
 	const { data, error } = await supabase
 		.from("dues_batches")
 		.select("id, kind, key, label, occurred_on, total_amount")
@@ -150,7 +155,7 @@ export async function fetchManualBatchRows(limit = 40): Promise<BatchRow[]> {
 		.limit(limit);
 	if (error) {
 		console.error("fetchManualBatchRows:", error);
-		return [];
+		return null;
 	}
 	return (data ?? []).map((b) => {
 		const r = b as { id: number; kind: string; key: string; label: string; occurred_on: string | null; total_amount: number | null };

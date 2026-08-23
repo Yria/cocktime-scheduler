@@ -34,7 +34,11 @@ interface Props {
 	/** 편집할 기존 배치. null = 새로 만들기. */
 	batch: ManualBatch | null;
 	onClose: () => void;
-	onSaved: () => void;
+	/**
+	 * 저장·삭제 후. `deleted` 면 이 배치가 사라졌다는 뜻 — 호출부가 돌아갈 화면을 바꿀 수 있게 알려준다
+	 * (대조 시트 → 수정 흐름에서 삭제하면 돌아갈 대조가 없다). 미납만 지우고 납부분이 남으면 배치는 산다.
+	 */
+	onSaved: (info?: { deleted?: boolean }) => void;
 }
 
 /**
@@ -216,7 +220,8 @@ export default function ManualChargeSheet({ ym, batch, onClose, onSaved }: Props
 				: `${res.removed}건 삭제`,
 			{ variant: "success" },
 		);
-		onSaved();
+		// 납부분이 남으면 배치는 살아 있다 — 그때는 삭제 신호를 보내지 않는다.
+		onSaved({ deleted: res.keptPaid === 0 });
 	}
 
 	// 목록: 대상은 항상 보여주고, 검색어가 있으면 대상 아닌 사람도 후보로 보여준다(손으로 추가).
@@ -570,7 +575,7 @@ function PayTag({ pay }: { pay: ManualChargeEntry }) {
 			? "부과삭제"
 			: "면제"
 		: full
-			? `냈음 ${won(pay.paid)}`
+			? `완납 ${won(pay.paid)}`
 			: pay.paid > 0
 				? `일부 ${won(pay.paid)}`
 				: "미납";
