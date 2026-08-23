@@ -7,6 +7,7 @@ import ConfirmDialog from "../../common/ConfirmDialog";
 import EmptyState from "../../shared/EmptyState";
 import BirthYearTag from "../../shared/BirthYearTag";
 import { remaining, sessionLabel, won, ymLabel } from "./duesText";
+import PendingDraftsSheet from "./PendingDraftsSheet";
 import SessionSettleSheet from "./SessionSettleSheet";
 import { type SessionSettle, buildSessionSettle } from "./sessionSettle";
 
@@ -50,10 +51,13 @@ export default function SessionsHome({ ym }: { ym: string }) {
 	const sessionTxns = useDuesStore((s) => s.sessionTxns);
 	const bankTxns = useDuesStore((s) => s.bankTxns);
 	const courtFeeDefault = useDuesStore((s) => s.courtFee); // 정액 기본액 — 대조의 인당 금액
+	// 발행 대기 초안 — 규칙이 이상하다고 판단해 회원에게 보내지 않고 세워둔 부과(§ 부과 재설계).
+	const pendingDrafts = useDuesStore((s) => s.pendingDrafts);
 
 	const [feeOpen, setFeeOpen] = useState(false); // 회비 미납 명단 펼침
 	const [voidReq, setVoidReq] = useState<{ chargeId: number; name: string; label: string } | null>(null); // 당일취소 부과삭제 확인
 	const [settleId, setSettleId] = useState<number | null>(null); // 정산 대조 시트를 연 세션
+	const [draftsOpen, setDraftsOpen] = useState(false); // 발행 대기 초안 검토 시트
 	const [busy, setBusy] = useState(false);
 
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
@@ -183,6 +187,23 @@ export default function SessionsHome({ ym }: { ym: string }) {
 
 	return (
 		<div className="flex flex-col gap-3">
+			{/* 발행 대기 — 회원에게 아직 안 보이는 부과. 밀리면 누군가 낼 돈을 모르고 지나가므로 맨 위에. */}
+			{pendingDrafts.length > 0 && (
+				<button
+					type="button"
+					onClick={() => setDraftsOpen(true)}
+					className="flex items-center gap-2 bg-[rgba(194,103,10,0.1)] border border-[rgba(194,103,10,0.28)]"
+					style={{ borderRadius: 11, padding: "11px 13px", cursor: "pointer", width: "100%", textAlign: "left" }}
+				>
+					<span style={{ fontSize: 15 }}>⚠️</span>
+					<span className="text-[#c2670a]" style={{ fontSize: 13.5, fontWeight: 700 }}>
+						발행 대기 {pendingDrafts.length}건 · 확인이 필요한 부과
+					</span>
+					<span style={{ flex: 1 }} />
+					<span className="text-faint" style={{ fontSize: 12 }}>›</span>
+				</button>
+			)}
+
 			{/* 정산함 진입 */}
 			<button
 				type="button"
@@ -311,6 +332,8 @@ export default function SessionsHome({ ym }: { ym: string }) {
 					);
 				})
 			)}
+
+			{draftsOpen && <PendingDraftsSheet ym={ym} onClose={() => setDraftsOpen(false)} />}
 
 			{/* 정산 대조 시트 — 명단 열람 + 당일취소 부과삭제/되돌리기 */}
 			{settleCard && (

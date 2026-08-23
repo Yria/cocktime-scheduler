@@ -95,6 +95,32 @@ export function ymRangeKst(ym: string): { start: string; end: string } {
 	};
 }
 
+/**
+ * 세션 대관 총액 저장 + 미납 발행분 금액 정정(20260823020000).
+ * 새 부과 모델에서 **발행된 금액을 바꿀 수 있는 유일한 경로** — 규칙(생성기)은 발행분을 건드리지 않는다.
+ * 납부분(amount_paid>0)은 소급 변경하지 않고 `locked` 로 몇 건인지 돌려준다.
+ */
+export interface SetSessionFeeResult {
+	court_fee: number | null;
+	per_head: number | null;
+	fixed: number;
+	locked: number;
+}
+export async function setSessionCourtFee(
+	sessionId: number,
+	amount: number | null,
+): Promise<SetSessionFeeResult> {
+	const { data, error } = await supabase.rpc("dues_set_session_fee", {
+		p_session_id: sessionId,
+		p_amount: amount,
+	});
+	if (error) {
+		console.error("setSessionCourtFee:", error);
+		throw new Error(error.message);
+	}
+	return data as SetSessionFeeResult;
+}
+
 // ── 설정(관리자) ─────────────────────────────────────────────────────
 export async function fetchDuesSettings(): Promise<DuesSettings | null> {
 	const { data, error } = await supabase

@@ -36,7 +36,7 @@
     - **왜 0 과 NULL 을 갈랐나**(2026-08-23): 종전엔 `v_split := total > 0` 한 줄이라 **0 과 미입력이 같은 분기**였다. 세션 228(8/22 정모)에서 운영진이 총액을 0원으로 넣었는데 정액 6,000원 × 18명 = 108,000원이 부과됐다(정액이라 운영진 6명 제외 = 확정 24−6). 전액 미납이라 배분·통장 영향은 없었고, `20260823000000` 에서 의미를 갈라 정리했다.
     - 음수도 무부과로 묶는다. 오타(-6000)를 정액으로 흘리면 6,000원 부과가 그럴싸하게 숨고, 0건 부과는 즉시 눈에 띈다.
   - 총액 = `coalesce(sessions.court_fee, recurring_schedules.court_fee)` — 반복 규칙에 넣은 **기본 총액**(일정 생성 시)을 회차가 물려받고, 회차에서 실제 총액을 넣으면 그게 우선. 부과 시점(세션 종료 트리거)에 규칙을 조인해 읽음. **NULL=미입력(정액) / 0 이하=무부과 / 0 초과=엔빵.**
-  - ⚠ **종료된 회차의 총액을 나중에 고쳐도 부과는 재계산되지 않는다.** 회차 에디터는 `sessions` 를 직접 PATCH 하고 `dues_set_session_fee` RPC 를 타지 않으며, 재계산 트리거는 `after update of status ... when new.status='closed'` 뿐이다(2026-08-23 확인, 미해결).
+  - 종료된 회차의 총액을 고치면 **미납 발행분의 금액이 정정된다**(`dues_set_session_fee`, 2026-08-23). 납부분은 소급 변경하지 않고 몇 건인지 알려준다 — 환불·추가징수의 영역이다. (그 전까지는 에디터가 `sessions` 를 직접 PATCH 해서 총액만 바뀌고 부과는 그대로 남는 갭이 있었다.)
 - **수동 부과(manual)**: 회식비·공동구매처럼 **자동 트리거가 없는** 부과. 묶음 = `batch_key`(`'{type}:{scope}'`, 예 `meal:228`·`cock:2026-08`), 표시 이름 = `label`, 월 귀속 = `charged_on`. 운영진이 [부과] 탭에서 대상·금액을 정해 만든다(§3.6).
   - **왜 자동이 아닌가**: 회비는 회원 룰, 대관비는 참석 명단으로 대상을 **다시 계산할 수 있어서** 묶음(월·세션)만 알면 재실행이 멱등이다. 회식은 대상이 운영진이 손으로 고른 명단이라 파생 불가능하고(식사 체크는 기본 후보일 뿐), 금액도 나중에 정해진다.
   - **금액**: 총액 엔빵(총액 ÷ 대상, **절상 단위 선택** 10/100/1,000원) 또는 인당 직접. 대관비 엔빵과 **별개 산식**이다 — 정액 근처 스냅이 없고 절상 단위를 고른다(`lib/dues/splitAmount`). 총액과 부과합의 차액은 화면이 항상 표시한다.
@@ -53,7 +53,8 @@
 - 이월은 상태(status)를 바꾸지 않는다(그대로 unpaid/partial). 정모/현황·내 회비 모두 "이월 나간 건 제외, 이월 들어온 건 포함"으로 판정.
 
 ### 1.4 핵심 테이블
-- **`dues_charges`** — 부과. `kind(monthly_fee|court_fee|manual)`, `member_id`, `period_ym` XOR `session_id` XOR **`batch_key`**(수동 부과 묶음 + `label`·`charged_on`, `dues_charge_manual_shape` 로 모양 강제), `amount_due`, `amount_paid`(트리거 캐시), `status(unpaid|partial|paid|overpaid|waived|void)`, `payer_hint`(게스트 대납자), `deferred_to`, **`is_day_cancel`**(정액 당일 확정취소로 부과된 court_fee 표식 — 현황 별도 노출·부과삭제 대상), **`voided_by`/`voided_at`**(부과삭제=void 한 운영진·시각, 감사·표시). 유니크: (member,period_ym) / (member,session_id) / (member,batch_key).
+- **`dues_charge_drafts`** — **발행 대기 초안**(2026-08-23). 규칙이 만든 파생값이라 언제든 재계산·폐기 가능하고 **회원에게 보이지 않는다**(RLS 운영진 전용). 묶음 키 `draft_group`(`'court:228'`), 대기 사유 `hold_reason`·근거 `hold_detail`. 발행되면 `dues_charges` 로 옮겨지고 여기서 사라진다. §4.0
+- **`dues_charges`** — 부과. **행이 있으면 발행된 사실**(§4.0). `kind(monthly_fee|court_fee|manual)`, `member_id`, `period_ym` XOR `session_id` XOR **`batch_key`**(수동 부과 묶음 + `label`·`charged_on`, `dues_charge_manual_shape` 로 모양 강제), `amount_due`, `amount_paid`(트리거 캐시), `status(unpaid|partial|paid|overpaid|waived|void)`, `payer_hint`(게스트 대납자), `deferred_to`, **`is_day_cancel`**(정액 당일 확정취소로 부과된 court_fee 표식 — 현황 별도 노출·부과삭제 대상), **`voided_by`/`voided_at`**(부과삭제=void 한 운영진·시각, 감사·표시). 유니크: (member,period_ym) / (member,session_id) / (member,batch_key).
   - **묶음 축을 늘릴 때 기존 유니크를 건드리지 않는다**(2026-08-23 결정): `(member,session_id)` 에 `kind` 를 끼우는 대안은 그 `on conflict` 절을 쓰는 라이브 함수 4개(`dues_generate_session_court`·`dues_confirm_reconcile`·`dues_confirm_compose`·`dues_confirm_new_court`)를 전부 재작성해야 한다. 새 축(`batch_key`)을 더하면 기존 경로는 0줄 변경이다.
 - **`dues_allocations`** — 입금↔부과 배분(**가역 레코드**: 취소/재매칭 안전). `bank_tx_id`, `charge_id`(nullable), `member_id`(납부 주체), `amount`, `kind`. 트리거가 charge.amount_paid·status와 bank_tx.status를 유지. **waived/void엔 배분 금지(가드).**
 - **`bank_transactions`** — 은행 거래. `direction(in|out)`, `amount`(양수), `balance_after`, `status(unmatched|proposed|partial|matched)`, `category_id`(수지 분류), `session_id`(대관 지출·비회원 대관 수입 귀속), `refund_of_tx_id`(환불 연결), **`paid_by`(비부과 카테고리 납부의 납부 회원 — 내 납부 이력용)**, `dedup_key`(멱등).
@@ -175,9 +176,27 @@
 
 ## 4. 부과 생성 (charge generation)
 
-부과는 **발생 시점 이벤트**에서 자동 생성된다(전부 멱등 — 중복·유실 없음, 단일 규칙 재사용). 부과 생성은 **은행 내역 가져오기와 분리**돼 있다(통장 적재와 무관).
+### 4.0 부과는 계산되는 값이 아니라 발행되는 문서다 (2026-08-23 재설계)
+
+**`dues_charges` 에 행이 있으면 그것은 이미 발행된 사실이다.** 규칙은 **초안을 만드는 도구**일 뿐이고, 발행된 뒤에는 규칙이 그 행을 **절대 건드리지 않는다**(금액 갱신도, 삭제도 하지 않는다). 발행 표식 컬럼이 따로 없는 이유도 이것 — `created_at` 이 곧 발행 시각이다.
+
+- **왜 바꿨나**: 종전엔 부과가 규칙의 계산 결과였다. 참석 명단·총액이 바뀌면 다시 계산되고 자동정리 DELETE 가 대상에서 빠진 행을 지웠다. 그래서 운영진이 손으로 고친 것이 다음 재실행에서 되살아나거나 사라졌고, 그걸 막으려 `status<>'void'` 가드와 `amount_paid=0` 게이트가 세 경로에 복제됐다. 가드가 얽혀 **어떤 조작이 무엇을 되살리는지 예측할 수 없는** 상태였다.
+- **발행분을 바꾸는 길은 셋뿐**: 취소(`dues_set_charge_status(id,'void')`) · 금액 정정(`dues_set_session_fee`) · 추가 발행(대기 → `dues_issue_drafts`). 전부 사람이 부르는 명시적 조작이고 감사에 남는다.
+- **삭제가 아니라 취소여야 한다.** 부과 행을 지우면 다음 재실행에서 '아직 발행 안 된 사람'으로 보여 다시 올라온다. `void` 는 행이 남아 재발행을 막는다.
+- **재실행의 새 정의**: 초안에만 있는 사람이 없으면 아무것도 하지 않는다(멱등이 "같은 결과"가 아니라 "무동작"이 됐다).
+
+**조건부 자동 발행**(운영 결정 (c)): 초안이 평소와 같으면 규칙이 바로 발행하고, 이상하면 `dues_charge_drafts` 에 **발행 대기**로 남겨 운영진이 [발행]/[폐기]를 고른다(정모/현황 상단 배너 → 검토 시트). 대기 중 초안은 **회원에게 보이지 않는다**(별 테이블 + RLS 운영진 전용).
+- `amount_out_of_range` — 인당 금액이 정액의 절반 미만 또는 2.5배 초과. 총액 오타(0 하나 더/덜)를 잡는다
+- `new_members` — 이미 발행된 묶음에 초안에만 있는 사람이 생김(세션 237 손형일처럼 뒤늦게 드러난 보드 추가분)
+- **금액 차이는 대기 사유가 아니다.** 발행된 금액은 사실이다. 실측: 세션 237 은 발행 6,000원(2026-08-18 운영 결정)인데 지금 20명으로 재계산하면 5,850원 — 이걸 대기로 올리면 변화가 없는데도 매번 확인 요청이 뜬다. 금액 어긋남은 정산 대조 시트가 이미 보여준다.
+
+**없어진 것**: `dues_generate_session_court` 의 자동정리 DELETE 3경로와 기존 행 UPSERT 갱신. 그 자리를 "발행 안 된 사람만 추가 발행"이 대신한다. 무자격 세션·사전취소 유령·엔빵↔정액 전환 고아는 이제 자동으로 지워지지 않으므로 **운영진이 정산 대조 시트에서 [부과삭제](void)로 처리**한다.
+
+---
+
+부과는 **발생 시점 이벤트**에서 초안이 만들어진다. 부과 생성은 **은행 내역 가져오기와 분리**돼 있다(통장 적재와 무관).
 - **회비**: **월 첫 진입** 시 `dues_ensure_monthly(ym)` — 운영진이 이번 달 `/dues` 열면 생성(이미 있으면 no-op).
-- **대관비**: **세션 종료(closed)** 시 트리거 `trg_session_court_on_close` → 그 세션 대관비(참석·당일취소 확정 후라 정확).
+- **대관비**: **세션 종료(closed)** 시 트리거 `trg_session_court_on_close` → 초안 계산 → 정상이면 즉시 발행, 이상하면 발행 대기(§4.0).
 - **즉석**: 입금 확인 시 `dues_confirm_reconcile`가 낸 사람의 부과를 필요 시 신규 생성·배분. 아직 안 열린 `open` 세션 선납도 여기(세션 id만 넘기면 자격 게이팅 없이 생성). self-heal DELETE·종료 트리거 UPSERT 모두 `amount_paid=0` 게이트라 선납(배분됨)은 보존·무손상.
 - **수동 배치**: `generate_dues_charges(ym)`(is_admin) — 과거 달 보정 등 fallback.
 - **수동 부과**: 자동 생성이 **없다**. 운영진이 [부과] 탭에서 `dues_upsert_manual_batch(batch_key, label, charged_on, amount, member_ids)` 로 만든다(같은 키 재호출 = 갱신, 멱등). 명단에서 빠진 사람의 **미납만** 삭제하고 납부분·void 는 보존 — 대관비 생성기와 같은 규칙. 삭제는 `dues_delete_manual_batch`(운영진의 명시적 조작이라 void 도 함께 지우지만 납부분은 남긴다).
@@ -293,6 +312,8 @@
 - **부과 조정**: `dues_set_charge_status`(`void`=부과삭제·취소선 + `voided_by/at` 기록 / `reset`=되돌리기·재산정 / `waived`=면제).
 - **부과**: `dues_ensure_monthly`(월진입 회비), `generate_dues_charges`(수동 배치 fallback), 빌딩블록 `dues_generate_monthly`·`dues_generate_session_court`(내부), 트리거 `trg_session_court_on_close`(세션 종료 대관). **명예회원**: `dues_set_honorary`(지정/해제 + 미납 회비 정리). ~~**알림**: `dues_notify_selected`~~ — DB에만 잔존, 클라 호출 없음(§3.1·§9).
 - **수동 부과**: `dues_upsert_manual_batch`(생성·갱신, 멱등) / `dues_delete_manual_batch`(미납 삭제, 납부분 보존). 둘 다 `is_admin` 게이트 + `dues_audit_log` 기록.
+- **발행 대기**: `dues_issue_drafts(group)`(초안 → 발행) / `dues_discard_drafts(group)`(폐기). §4.0
+- **금액 정정**: `dues_set_session_fee(session, amount)` — 총액 저장 + **미납 발행분 금액 정정**(납부분·void 보존, `locked` 로 통지). 새 모델에서 발행분 금액을 바꿀 수 있는 유일한 경로. 회차 에디터의 [코트 총액]이 이걸 호출한다(2026-08-23 연결 — 종전엔 `sessions` 를 직접 PATCH 해서 부과에 반영되지 않았다).
 - **카테고리**: `dues_add_category`/`dues_delete_category`.
 - **회원 노출**: `dues_my_payments`, `dues_public_ledger`, `dues_club_account`.
 - **트리거/내부**: `dues_alloc_guard`·`dues_alloc_sync`(dues_allocations 트리거), `dues_sync_bank_tx`(status 동기 헬퍼), `members_uncharge_dues_on_deactivate`(정지 시 미납 회비 삭제, §4)·`members_stamp_rejoined_on_activate`(재활성화 시 `rejoined_at` 스탬프, §4) — 둘 다 members 테이블 트리거.

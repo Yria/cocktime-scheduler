@@ -15,6 +15,7 @@ import {
 	updateRecurringRule,
 } from "../lib/supabase/recurring";
 import { toast } from "./toastStore";
+import { setSessionCourtFee } from "../lib/supabase/dues";
 import {
 	type CreatePlaceInput,
 	createPlace,
@@ -136,14 +137,20 @@ export const adminScheduleActions = {
 	// ── 회차 개별 편집 ──
 	async overrideOccurrence(sessionId: number, patch: OccurrencePatch) {
 		// 정원 실변경 여부는 UPDATE 전 값과 비교(useOccurrenceForm 은 매번 capacity 를 patch 에 담는다).
-		const prevCapacity = useAdminScheduleStore
+		const prev = useAdminScheduleStore
 			.getState()
-			.occurrences.find((o) => o.id === sessionId)?.capacity;
+			.occurrences.find((o) => o.id === sessionId);
+		const prevCapacity = prev?.capacity;
 		const capacityChanged =
 			patch.capacity !== undefined && patch.capacity !== prevCapacity;
+		// 대관 총액도 정원과 같은 모양: 값의 소유자가 전용 RPC 다. 일반 PATCH 로 넣으면 총액만 바뀌고
+		// 이미 발행된 부과 금액은 그대로 남는다(2026-08-23 이전의 실제 갭).
+		const courtFeeChanged =
+			patch.courtFee !== undefined && patch.courtFee !== (prev?.court_fee ?? null);
 		// 정원 외 필드는 일반 PATCH. 정원이 바뀌었으면 capacity 는 아래 원자 RPC 가 소유하므로 제외.
 		const patchForUpdate = { ...patch };
 		if (capacityChanged) delete patchForUpdate.capacity;
+		if (courtFeeChanged) delete patchForUpdate.courtFee;
 		const row = await updateOccurrence(sessionId, patchForUpdate);
 		// 정원이 실제로 바뀐 경우: 정원 변경 + 참석/대기 재조정 + 알림을 한 트랜잭션(원자)으로.
 		// 실패하면 setSessionCapacity 가 throw → 폼이 에러를 노출하고 부분 적용을 성공으로 위장하지 않는다.
@@ -159,6 +166,17 @@ export const adminScheduleActions = {
 				toast(`${parts.join(" · ")} — 해당 인원에 알림을 보냈어요`, {
 					variant: "success",
 				});
+			}
+		}
+		// 총액 정정: 미납 발행분의 금액을 새 인당 금액으로 맞춘다(납부분은 보존, 몇 건인지 통지).
+		if (row && courtFeeChanged) {
+			const res = await setSessionCourtFee(sessionId, patch.courtFee ?? null);
+			if (res.fixed > 0 || res.locked > 0) {
+				const parts: string[] = [];
+				if (res.fixed > 0)
+					parts.push(`미납 ${res.fixed}명 인당 ${(res.per_head ?? 0).toLocaleString("ko-KR")}원으로 정정`);
+				if (res.locked > 0) parts.push(`이미 낸 ${res.locked}명은 그대로 (환불·추가징수로 처리)`);
+				toast(parts.join(" · "), { variant: "success" });
 			}
 		}
 		if (row) await reloadOccurrences();

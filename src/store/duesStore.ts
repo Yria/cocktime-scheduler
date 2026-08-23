@@ -33,6 +33,10 @@ import {
 	ymRangeKst,
 } from "../lib/supabase/dues";
 import {
+	type PendingDraftGroup,
+	fetchPendingDrafts,
+} from "../lib/supabase/chargeDrafts";
+import {
 	type ChargeSourceSession,
 	type ManualBatch,
 	fetchChargeSourceSessions,
@@ -66,6 +70,8 @@ interface DuesState {
 	txAllocations: Record<number, TxAllocation>; // 거래별 처리내역(라벨·세션)
 	monthlyFee: number;
 	courtFee: number;
+	/** 발행 대기 부과 초안(운영진). 월과 무관 — 대기는 밀리면 안 되는 일이라 항상 전부 싣는다. */
+	pendingDrafts: PendingDraftGroup[];
 
 	// ── 내 회비(회원 본인) ──────────────────────────────────────────
 	myLoading: boolean;
@@ -104,6 +110,7 @@ export const useDuesStore = create<DuesState>(() => ({
 	court: [],
 	bankTxns: [],
 	monthSessions: [],
+	pendingDrafts: [],
 	manualLoadedYm: null,
 	manualLoading: false,
 	manualBatches: [],
@@ -151,7 +158,7 @@ export const duesActions = {
 		useDuesStore.setState({ monthLoading: true });
 		// wave 1: 서로 독립인 조회 병렬. (정적: members·sessions·categories·settings / 가변: charges·txns·unpaid)
 		// monthSessions는 ledgerSessions(±1개월 상위집합)에서 파생 — 세션 쿼리 1회로(§11).
-		const [members, monthly, court, bankTxns, ledgerSessions, categories, settings, unpaidByMember, upcomingSessions] = await Promise.all([
+		const [members, monthly, court, bankTxns, ledgerSessions, categories, settings, unpaidByMember, upcomingSessions, pendingDrafts] = await Promise.all([
 			fetchMembersForAdmin(true), // 게스트 포함 — 대관비 입금 매칭용
 			fetchMonthlyCharges(ym),
 			fetchCourtCharges(ym),
@@ -161,6 +168,7 @@ export const duesActions = {
 			fetchDuesSettings(),
 			fetchUnpaidByMember(),
 			fetchUpcomingParticipating(), // now 기준 참가 예정 세션(ym 무관)
+			fetchPendingDrafts(), // 발행 대기 초안(ym 무관 — 밀린 대기를 어느 달에서든 본다)
 		]);
 		const monthSessions = ledgerSessions.filter((x) => isInYm(x.scheduledAt, ym));
 		// wave 2: 앞 결과 id가 필요한 조회(세션 링크 거래 · 이번 달 거래 배분만 — 전역 배분 누적 회피).
@@ -182,6 +190,7 @@ export const duesActions = {
 			txAllocations,
 			monthlyFee: settings?.monthlyFee ?? 5000,
 			courtFee: settings?.courtFeeDefault ?? 6000,
+			pendingDrafts,
 			loadedYm: ym,
 			monthLoading: false,
 		});
@@ -225,18 +234,19 @@ export const duesActions = {
 	 * charge를 바꾸는 뮤테이션(입금확인·대사취소)용. tx만 바꾸는 건 refreshTxns.
 	 */
 	async refreshMonth(ym: string) {
-		const [monthly, court, bankTxns, unpaidByMember, upcomingSessions] = await Promise.all([
+		const [monthly, court, bankTxns, unpaidByMember, upcomingSessions, pendingDrafts] = await Promise.all([
 			fetchMonthlyCharges(ym),
 			fetchCourtCharges(ym),
 			fetchBankTransactions(ym),
 			fetchUnpaidByMember(),
 			fetchUpcomingParticipating(), // 선납 확정으로 chargedMemberIds 가 바뀌므로 함께 갱신(완납 세션 재노출 방지)
+			fetchPendingDrafts(), // 발행/폐기 직후 배지가 바로 사라지게
 		]);
 		const [sessionTxns, txAllocations] = await Promise.all([
 			fetchSessionTxns(useDuesStore.getState().monthSessions.map((x) => x.id)),
 			fetchTxAllocations(bankTxns.map((t) => t.id)),
 		]);
-		useDuesStore.setState({ monthly, court, bankTxns, unpaidByMember, upcomingSessions, sessionTxns, txAllocations });
+		useDuesStore.setState({ monthly, court, bankTxns, unpaidByMember, upcomingSessions, sessionTxns, txAllocations, pendingDrafts });
 	},
 
 	/**
