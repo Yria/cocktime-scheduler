@@ -76,6 +76,21 @@ export interface ManualBatch {
 	unpaidCount: number;
 	/** 부과삭제·면제된 건 수 — 있으면 목록에서 흐리게 표시한다. */
 	deadCount: number;
+	/**
+	 * 회원별 납부 상태. 집계만으론 `수납 12/17` 이 **누구인지** 알 수 없어서 함께 담는다
+	 * (2026-08-23: "9명이 냈는데 12명이라고 나온다" — 화면에서 대조할 방법이 없었다).
+	 * 조회가 이미 같은 행을 읽으므로 쿼리는 늘지 않는다.
+	 */
+	entries: ManualChargeEntry[];
+}
+
+/** 부과 한 행(= 한 사람) 의 납부 상태. */
+export interface ManualChargeEntry {
+	memberId: string;
+	due: number;
+	paid: number;
+	/** unpaid | partial | paid | overpaid | waived | void */
+	status: string;
 }
 
 interface RawManualCharge {
@@ -133,6 +148,12 @@ export async function fetchManualBatches(
 			receivedSum: rows.reduce((s, r) => s + r.amount_paid, 0),
 			unpaidCount: live.filter((r) => r.amount_paid < r.amount_due).length,
 			deadCount: rows.length - live.length,
+			entries: rows.map((r) => ({
+				memberId: r.member_id,
+				due: r.amount_due,
+				paid: r.amount_paid,
+				status: r.status,
+			})),
 		} satisfies ManualBatch;
 	});
 	// 같은 날이면 키 순으로 안정 정렬(목록이 새로고침마다 흔들리지 않게).

@@ -11,6 +11,7 @@ import { matchesQuery } from "../../../lib/playerSearch";
 import {
 	MANUAL_TYPES,
 	type ManualBatch,
+	type ManualChargeEntry,
 	type ManualType,
 	buildBatchKey,
 	deleteManualBatch,
@@ -125,6 +126,18 @@ export default function ManualChargeSheet({ ym, batch, onClose, onSaved }: Props
 
 	const selectedIds = useMemo(() => resolveSelection(selection, ctx), [selection, ctx]);
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
+	// 회원별 납부 상태 — 편집 모드의 명단에서 **누가 냈는지** 바로 대조한다.
+	// 카드의 `수납 12/17` 만으론 그 12명이 누구인지 알 수 없어서 운영진이 통장과 손으로 맞춰야 했다.
+	const payByMember = useMemo(
+		() => new Map((batch?.entries ?? []).map((e) => [e.memberId, e])),
+		[batch],
+	);
+	// 낸 사람 수 = 살아 있는 부과 중 완납. 배치가 없으면(신규) 표시하지 않는다.
+	const paidHead = batch
+		? batch.entries.filter(
+				(e) => e.status !== "void" && e.status !== "waived" && e.paid >= e.due,
+			).length
+		: 0;
 
 	const split = splitAmount({
 		mode,
@@ -307,6 +320,12 @@ export default function ManualChargeSheet({ ym, batch, onClose, onSaved }: Props
 						<div className="flex items-center justify-between gap-2 mb-1.5">
 							<span className="text-strong" style={{ fontSize: 13.5, fontWeight: 700 }}>
 								대상 {selectedIds.size}명
+								{batch && (
+									<span className="text-faint" style={{ fontSize: 11.5, fontWeight: 600 }}>
+										{" · "}낸 사람 {paidHead}
+										{batch.unpaidCount > 0 ? ` · 미납 ${batch.unpaidCount}` : ""}
+									</span>
+								)}
 							</span>
 							{(selection.added.size > 0 || selection.removed.size > 0) && (
 								<button
@@ -334,7 +353,13 @@ export default function ManualChargeSheet({ ym, batch, onClose, onSaved }: Props
 						)}
 						<div className="mt-1.5 overflow-y-auto no-sb" style={{ maxHeight: 260 }}>
 							{chosen.map((m) => (
-								<MemberRow key={m.id} m={m} on onClick={() => toggleMember(m.id)} />
+								<MemberRow
+									key={m.id}
+									m={m}
+									on
+									pay={payByMember.get(m.id)}
+									onClick={() => toggleMember(m.id)}
+								/>
 							))}
 							{candidates.length > 0 && (
 								<>
@@ -495,10 +520,13 @@ function sessionText(s: {
 function MemberRow({
 	m,
 	on,
+	pay,
 	onClick,
 }: {
 	m: { id: string; name: string; birthYear: number | null; gender: "M" | "F" | null; isGuest: boolean; isAdmin: boolean };
 	on: boolean;
+	/** 이 배치에서 이 사람의 부과·납부 상태(편집 모드에서만 있다). */
+	pay?: ManualChargeEntry;
 	onClick: () => void;
 }) {
 	return (
@@ -519,6 +547,7 @@ function MemberRow({
 				{m.isGuest && <span className="text-faint" style={{ fontSize: 11.5 }}> · 게스트</span>}
 				{m.isAdmin && <span className="text-faint" style={{ fontSize: 11.5 }}> · 운영진</span>}
 			</span>
+			{pay && <PayTag pay={pay} />}
 			<span
 				className={on ? "text-[#1c8a3b]" : "text-faint"}
 				style={{ fontSize: 15, fontWeight: 800, flexShrink: 0, width: 20, textAlign: "center" }}
@@ -526,5 +555,32 @@ function MemberRow({
 				{on ? "✓" : "+"}
 			</span>
 		</button>
+	);
+}
+
+/**
+ * 납부 딱지 — 통장과 대조할 수 있게 **금액까지** 적는다.
+ * "일부"는 실제로 있다(예: 6,000원 먼저 + 24,000원 잔금 → 그 사이엔 일부 상태).
+ */
+function PayTag({ pay }: { pay: ManualChargeEntry }) {
+	const dead = pay.status === "void" || pay.status === "waived";
+	const full = pay.paid >= pay.due;
+	const label = dead
+		? pay.status === "void"
+			? "부과삭제"
+			: "면제"
+		: full
+			? `냈음 ${won(pay.paid)}`
+			: pay.paid > 0
+				? `일부 ${won(pay.paid)}`
+				: "미납";
+	const color = dead ? undefined : full ? "#1c8a3b" : pay.paid > 0 ? "#c2670a" : "#d1362c";
+	return (
+		<span
+			className={color ? undefined : "text-faint"}
+			style={{ fontSize: 11.5, fontWeight: 700, flexShrink: 0, color, textDecoration: dead ? "line-through" : undefined }}
+		>
+			{label}
+		</span>
 	);
 }
