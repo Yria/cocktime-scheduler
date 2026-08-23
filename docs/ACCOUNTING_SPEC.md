@@ -324,7 +324,8 @@
 ## 12. 핵심 RPC (현재 live)
 
 - **확정/취소**: `dues_confirm_reconcile`(미납 배분+신규 생성 통합), `dues_confirm_court_external`(비회원 대관), `dues_cancel_match`.
-- **묶음 귀속**: `dues_set_txn_batch(tx, batch, paid_by)`(붙이기/떼기) · `dues_create_batch_for_txn(tx, label, paid_by)`(새 묶음 생성 + 연결, 원자적) · `dues_create_batch(label, on)`. 정산함의 항목 칩이 이걸 쓴다.
+- **묶음 귀속**: `dues_set_txn_batch(tx, batch, paid_by)`(붙이기/떼기 — **뗄 때 `dues_sync_bank_tx` 로 status 재동기**. 안 하면 matched 로 남아 정산함에도 안 뜨고 거래내역엔 미정산인 유령이 된다) · `dues_create_batch_for_txn(tx, label, paid_by)`(새 묶음 생성 + 연결, 원자적) · `dues_create_batch(label, on)`. 정산함의 항목 칩이 이걸 쓴다.
+- **입금 확인의 세 경로**: `dues_confirm_reconcile(tx, payer, charge_ids, ym, sessions, **batches**)` — 기존 미납 배분(`charge_ids`) · 신규 회비(`ym`) · 신규 대관비(`sessions`) · **묶음에 사람 추가(`batches`)**. 세 부과가 정산함에서 동등해졌다(2026-08-23). 금액은 각 축의 실제 값을 쓴다: 대관비=`dues_court_per_head(session)`, 수동=그 묶음의 인당 금액. **정액 하드코딩 금지** — 엔빵 5,000 부과를 정액 6,000 으로 덮은 사고가 그래서 났다.
 - **분류/지정**: ~~`dues_set_txn_category`~~ **폐지**(레거시 태그 표시·해제용으로만 남김 — 새 태그는 붙이지 않는다, 2026-08-23), `dues_set_txn_session`, `dues_link_refund`/`dues_unlink_refund`.
 - **이월**: `dues_defer_charge`/`dues_undefer_charge`/`dues_settle_deferred`.
 - **부과 조정**: `dues_set_charge_status`(`void`=부과삭제·취소선 + `voided_by/at` 기록 / `reset`=되돌리기·재산정 / `waived`=면제).

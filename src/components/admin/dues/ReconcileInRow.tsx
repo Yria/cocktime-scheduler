@@ -7,7 +7,8 @@ import BirthYearTag from "../../shared/BirthYearTag";
 import { birthYearShort } from "../../../lib/birthYear";
 import { inputCls, inputStyle } from "../../common/fieldStyles";
 import { genderText } from "../memberAdminText";
-import { fmtMD, remaining, sessionLabel, won, ymOfIso } from "./duesText";
+import type { ManualBatch } from "../../../lib/supabase/manualCharges";
+import { fmtMD, remaining, sessionLabel, shiftYm, won, ymOfIso } from "./duesText";
 import { ToggleChip } from "./duesUi";
 import { type MemberLite, nameMatches, sanitizeCandidatePool, suggestMembers } from "./matching";
 import { courtPerHead } from "./sessionSettle";
@@ -23,12 +24,20 @@ interface Props {
 	upcomingSessions: UpcomingSessionRow[]; // 참가 예정(open) 세션 — 본인 참가분만 선납 후보
 	/** 회계 항목 = 묶음(영수증). 종전 txn_categories 를 대체(2026-08-23). */
 	batches: BatchRow[];
+	/** 수동 부과 배치(그 달·직전 달) — '이 묶음에 추가' 칩의 재료. */
+	manualBatches: ManualBatch[];
 	monthlyFee: number;
 	courtFee: number;
 	refunded: number; // 이 입금에 연결된 환불 합계(실효금액 = 입금 − 환불)
 	busy: boolean;
 	/** 통합 확정: 기존 미납(chargeIds) 배분 + 신규 회비(ym, 납부자)/세션(sessions, member=대상) 생성·배분. */
-	onConfirm: (payerId: string, chargeIds: number[], ym: string, sessions: { member: string; id: number; units: number }[]) => void;
+	onConfirm: (
+		payerId: string,
+		chargeIds: number[],
+		ym: string,
+		sessions: { member: string; id: number; units: number }[],
+		batches: { batch_key: string; member: string }[],
+	) => void;
 	onConfirmCourtExternal: (sessionId: number) => void;
 	onSetBatch: (batchId: number, paidBy: string | null) => void;
 	/** 새 묶음을 만들고 이 거래를 붙인다(공구 첫 입금 등). */
@@ -49,7 +58,9 @@ interface ChipItem {
 	poolRank: number; // 대관 디폴트 정렬(작을수록 우선): 이번달 기존0 · 다른달 기존1 · 예정2
 	poolDate: string; // 동순위 2차 정렬(세션일)
 	chargeId?: number; // 기존 미납 → 배분
-	sessionId?: number; // 신규/예정 세션 → 생성
+	sessionId?: number;
+	/** 수동 부과 묶음에 이 사람을 추가하는 칩(회식 명단에서 빠진 사람이 돈을 보낸 경우). */
+	batchKey?: string; // 신규/예정 세션 → 생성
 	member?: string; // 세션 대상 회원
 	ym?: string; // 신규 회비 → 생성 월
 }
@@ -64,7 +75,7 @@ interface Person {
 
 // 미처리 입금 1건 처리. 납부자 지정 → 그 회원의 기존 미납(본인+대납·월무관) 배분 + 신규(회비/세션) 생성을
 // 함께 골라 [확인] 1회로. 금액(§4)으로 기본 선택 제안. 비회원 대관·비회비 수입 분류도 여기서.
-export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessions, monthlyChargedIds, courtChargedByMember, upcomingSessions, batches, monthlyFee, courtFee, refunded, busy, onConfirm, onConfirmCourtExternal, onSetBatch, onCreateBatch }: Props) {
+export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessions, monthlyChargedIds, courtChargedByMember, upcomingSessions, batches, manualBatches, monthlyFee, courtFee, refunded, busy, onConfirm, onConfirmCourtExternal, onSetBatch, onCreateBatch }: Props) {
 	const effectiveAmount = tx.amount - refunded; // 부분 환불 반영: 정산 대상 금액
 	const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
 	// 후보 위생에서 접히면 안 되는 행 — 미납이 남은 사람 + 예정(open) 세션 참석 확정자.
@@ -159,6 +170,25 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 			}
 			// 칩 금액은 **그 회차의 인당 금액**이다(정액 하드코딩 금지 — 엔빵 회차에 6,000을 제안하면
 			// 확정 시 재발행해 둔 금액이 덮인다. 세션 147 사고). null = 안 걷는 회차 → 칩을 감춘다.
+			// 수동 부과 묶음에 '추가' — 회비의 신규 칩, 대관비의 세션 칩에 대응하는 자리다.
+			// **자동선택하지 않는다**(autoDefault: false): 명단에 없는 사람을 금액만 맞다고 자동으로
+			// 넣으면 잘못 부과된다. 사람이 고를 때만 들어간다.
+			for (const b of manualBatches) {
+				if (b.memberIds.includes(mid) || b.perHead <= 0) continue; // 이미 있으면 미납 칩이 담당
+				const bym = b.chargedOn.slice(0, 7);
+				if (bym !== depositYm && bym !== shiftYm(depositYm, -1)) continue; // 그 달·직전 달만(늦은 납부 대비)
+				items.push({
+					key: `batch:${mid}:${b.batchKey}`,
+					label: `${b.label} ${won(b.perHead)} (추가)`,
+					amount: b.perHead,
+					role: "other",
+					autoDefault: false,
+					poolRank: 9,
+					poolDate: b.chargedOn,
+					batchKey: b.batchKey,
+					member: mid,
+				});
+			}
 			for (const { s, upcoming, chargedIds } of sessionCandidates) {
 				if (chargedSess.has(s.id) || chargedIds.includes(mid)) continue; // 부과 있음 → 위 미납 칩이 담당
 				if (!s.attendeeIds.includes(mid)) continue; // 참석 확정(confirmed/late_pool)인 회차만
@@ -179,7 +209,7 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 			}
 			return { id: mid, name: m?.name ?? "회원", birthYear: m?.birthYear ?? null, isPayer: mid === selectedId, items };
 		});
-	}, [selectedId, extraIds, unpaidByMember, memberById, monthlyChargedIds, courtChargedByMember, sessionCandidates, monthSessionIds, depositYm, monthlyFee, courtFee]);
+	}, [selectedId, extraIds, unpaidByMember, memberById, monthlyChargedIds, courtChargedByMember, sessionCandidates, monthSessionIds, manualBatches, depositYm, monthlyFee, courtFee]);
 
 	const itemByKey = useMemo(() => {
 		const map = new Map<string, ChipItem>();
@@ -290,14 +320,16 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 		const chargeIds: number[] = [];
 		let ym = "";
 		const sessions: { member: string; id: number; units: number }[] = [];
+		const batchAdds: { batch_key: string; member: string }[] = [];
 		for (const key of selected) {
 			const it = itemByKey.get(key);
 			if (!it) continue;
 			if (it.chargeId != null) chargeIds.push(it.chargeId);
 			else if (it.role === "monthly" && it.ym) ym = it.ym;
 			else if (it.sessionId != null && it.member) sessions.push({ member: it.member, id: it.sessionId, units: 1 });
+			else if (it.batchKey != null && it.member) batchAdds.push({ batch_key: it.batchKey, member: it.member });
 		}
-		onConfirm(selectedId, chargeIds, ym, sessions);
+		onConfirm(selectedId, chargeIds, ym, sessions, batchAdds);
 		// 배분 후 남은 돈을 묶음에 붙인다(순서 무관 — 묶음 수입은 항상 '거래액 − 배분액').
 		if (newLabelReady && newLabel) onCreateBatch(newLabel.trim(), selectedId);
 		else if (batchSel != null) onSetBatch(batchSel, selectedId);

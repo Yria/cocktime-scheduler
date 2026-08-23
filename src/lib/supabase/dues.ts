@@ -274,6 +274,8 @@ export const duesConfirmReconcile = (
 	chargeIds: number[],
 	ym: string,
 	sessions: { member: string; id: number; units: number }[],
+	/** 수동 부과 묶음에 사람 추가 + 배분(20260823110000). 세션 경로와 같은 모양. */
+	batches: { batch_key: string; member: string }[] = [],
 ) =>
 	callRpc("dues_confirm_reconcile", {
 		p_tx_id: txId,
@@ -281,6 +283,7 @@ export const duesConfirmReconcile = (
 		p_charge_ids: chargeIds,
 		p_ym: ym,
 		p_sessions: sessions,
+		p_batches: batches,
 	});
 
 /** 환불 연결(출금이 입금의 차액/전액을 환불) / 해제. */

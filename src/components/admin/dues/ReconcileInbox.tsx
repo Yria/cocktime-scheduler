@@ -36,6 +36,7 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 	const upcomingSessions = useDuesStore((s) => s.upcomingSessions);
 	const ledgerSessions = useDuesStore((s) => s.ledgerSessions);
 	const batches = useDuesStore((s) => s.batches);
+	const manualBatches = useDuesStore((s) => s.manualBatches);
 	const txAllocations = useDuesStore((s) => s.txAllocations);
 
 	const [ingesting, setIngesting] = useState(false);
@@ -223,11 +224,12 @@ export default function ReconcileInbox({ ym }: { ym: string }) {
 									courtChargedByMember={courtChargedByMember}
 									upcomingSessions={upcomingSessions}
 									batches={batches}
+									manualBatches={manualBatches}
 									monthlyFee={monthlyFee}
 									courtFee={courtFee}
 									refunded={refundedByIn.get(t.id) ?? 0}
 									busy={busyId === t.id}
-									onConfirm={(payerId, chargeIds, cym, sessions) => run(t.id, () => duesConfirmReconcile(t.id, payerId, chargeIds, cym, sessions), "처리 실패", { touchesCharges: true })}
+									onConfirm={(payerId, chargeIds, cym, sessions, batchAdds) => run(t.id, () => duesConfirmReconcile(t.id, payerId, chargeIds, cym, sessions, batchAdds), "처리 실패", { touchesCharges: true })}
 									onConfirmCourtExternal={(sid) => run(t.id, () => duesConfirmCourtExternal(t.id, sid), "외부인 대관비 처리 실패")}
 									onSetBatch={(batchId, paidBy) => run(t.id, () => setTxnBatch(t.id, batchId, paidBy), "묶음 지정 실패")}
 									onCreateBatch={(label, paidBy) => run(t.id, () => createBatchForTxn(t.id, label, paidBy), "묶음 생성 실패")}
