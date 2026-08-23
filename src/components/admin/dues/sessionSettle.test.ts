@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AdminMemberRow } from "../../../lib/supabase/adminMembers";
 import type { CourtChargeRow, SessionAttendanceRow, SessionFeeRow } from "../../../lib/supabase/dues";
-import { buildSessionSettle, isDayCancelChargeable } from "./sessionSettle";
+import { buildSessionSettle, courtPerHead, isDayCancelChargeable } from "./sessionSettle";
 
 // 서버 `dues_generate_session_court` + `dues_court_targets`(20260818000000) 미러 검증.
 // 이 테스트가 깨지면 화면의 '부과 누락' 판정이 서버와 갈렸다는 뜻이다.
@@ -417,6 +417,48 @@ describe("buildSessionSettle — 안 걷는 회차(총액 0 이하)", () => {
 		expect(settle.mode).toBe("flat");
 		expect(settle.perHead).toBe(6000);
 		expect(settle.missing.map((m) => m.name)).toEqual(["A"]);
+	});
+});
+
+describe("courtPerHead — 서버 dues_court_per_head 미러", () => {
+	// 정산함 '신규 세션' 칩 금액이 이 값을 쓴다. 정액을 하드코딩하면 엔빵 회차에 틀린 금액을
+	// 제안하고, 그걸 확정하면 서버가 재발행해 둔 부과를 덮는다(세션 147 사고, 20260823090000).
+	it("총액 미입력이면 정액", () => {
+		expect(courtPerHead(session([att("A", "confirmed")]), 6000)).toBe(6000);
+	});
+
+	it("총액이 있으면 엔빵 — 분모는 운영진 포함(회원 정보 불필요)", () => {
+		const s = session(
+			[att("A", "confirmed"), att("B", "confirmed"), att("운영진A", "confirmed")],
+			{ courtFee: 45000 },
+		);
+		// 45,000 ÷ 3 = 15,000 (운영진도 분모에 든다)
+		expect(courtPerHead(s, 6000)).toBe(15000);
+	});
+
+	it("실제 사고 재현: 45,000 ÷ 9명 = 5,000 (정액 6,000 이 아니다)", () => {
+		const nine = Array.from({ length: 9 }, (_, i) => att(`p${i}`, "confirmed"));
+		expect(courtPerHead(session(nine, { courtFee: 45000 }), 6000)).toBe(5000);
+	});
+
+	it("당일취소·보드 추가분도 분모에 든다(서버 대상 술어와 동일)", () => {
+		const s = session([att("A", "confirmed"), dayCancel("B")], { courtFee: 40000, boardMemberIds: ["C"] });
+		expect(courtPerHead(s, 6000)).toBe(13340); // 40,000 ÷ 3 = 13,333.3 → 10원 절상
+	});
+
+	it("총액 0 이하면 null — 안 걷는 회차라 칩을 감춘다", () => {
+		expect(courtPerHead(session([att("A", "confirmed")], { courtFee: 0 }), 6000)).toBeNull();
+		expect(courtPerHead(session([att("A", "confirmed")], { courtFee: -5000 }), 6000)).toBeNull();
+	});
+
+	it("대상 0명이면 null(나눗셈 폭주 없음)", () => {
+		expect(courtPerHead(session([], { courtFee: 45000 }), 6000)).toBeNull();
+	});
+
+	it("정액 근처 스냅도 같이 적용된다(한방향)", () => {
+		// 117,000 ÷ 19 = 6,157.9 → 절상 6,160 → 정액 +200 미만이라 6,000
+		const nineteen = Array.from({ length: 19 }, (_, i) => att(`p${i}`, "confirmed"));
+		expect(courtPerHead(session(nineteen, { courtFee: 117000 }), 6000)).toBe(6000);
 	});
 });
 

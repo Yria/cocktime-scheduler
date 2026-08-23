@@ -10,6 +10,7 @@ import { genderText } from "../memberAdminText";
 import { fmtMD, remaining, sessionLabel, won, ymOfIso } from "./duesText";
 import { ToggleChip } from "./duesUi";
 import { type MemberLite, nameMatches, sanitizeCandidatePool, suggestMembers } from "./matching";
+import { courtPerHead } from "./sessionSettle";
 import { matchExactSubset } from "./reconcileMatch";
 
 interface Props {
@@ -129,14 +130,20 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 			if (mid === selectedId && !m?.isGuest && !hasMonthly && !monthlyChargedIds.has(mid)) {
 				items.push({ key: "monthly", label: `${Number(depositYm.slice(5))}월 회비 ${won(monthlyFee)}`, amount: monthlyFee, role: "monthly", autoDefault: false, poolRank: 9, poolDate: "", ym: depositYm });
 			}
+			// 칩 금액은 **그 회차의 인당 금액**이다(정액 하드코딩 금지 — 엔빵 회차에 6,000을 제안하면
+			// 확정 시 재발행해 둔 금액이 덮인다. 세션 147 사고). null = 안 걷는 회차 → 칩을 감춘다.
 			for (const s of monthSessions) {
 				if (chargedSess.has(s.id)) continue;
 				if (!s.attendeeIds.includes(mid)) continue; // 그 회원이 참석 확정(confirmed/late_pool)인 세션만 — 미참석 세션 노출 방지
-				items.push({ key: `session:${mid}:${s.id}`, label: `${sessionLabel(s)} 대관비`, amount: courtFee, role: "court", autoDefault: false, poolRank: 8, poolDate: s.scheduledAt ?? "", sessionId: s.id, member: mid });
+				const per = courtPerHead(s, courtFee);
+				if (per == null || per <= 0) continue;
+				items.push({ key: `session:${mid}:${s.id}`, label: `${sessionLabel(s)} 대관비`, amount: per, role: "court", autoDefault: false, poolRank: 8, poolDate: s.scheduledAt ?? "", sessionId: s.id, member: mid });
 			}
 			for (const s of upcomingSessions) {
 				if (!s.attendeeIds.includes(mid) || s.chargedMemberIds.includes(mid) || monthSessionIds.has(s.id)) continue;
-				items.push({ key: `session:${mid}:${s.id}`, label: `${sessionLabel(s)} 대관비(예정)`, amount: courtFee, role: "court", autoDefault: true, poolRank: 2, poolDate: s.scheduledAt ?? "", sessionId: s.id, member: mid });
+				const per = courtPerHead(s, courtFee);
+				if (per == null || per <= 0) continue;
+				items.push({ key: `session:${mid}:${s.id}`, label: `${sessionLabel(s)} 대관비(예정)`, amount: per, role: "court", autoDefault: true, poolRank: 2, poolDate: s.scheduledAt ?? "", sessionId: s.id, member: mid });
 			}
 			return { id: mid, name: m?.name ?? "회원", birthYear: m?.birthYear ?? null, isPayer: mid === selectedId, items };
 		});

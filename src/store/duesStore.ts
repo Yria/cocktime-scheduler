@@ -204,6 +204,15 @@ export const duesActions = {
 	},
 
 	/**
+	 * 월 캐시 무효화 — 다른 화면(일정 관리의 총액 재발행 등)이 부과를 흔들었을 때 부른다.
+	 * `loadedYm` 만 지우면 다음 진입에서 loadMonth 가 실제로 다시 읽는다(즉시 조회는 하지 않아
+	 * 지금 보고 있는 화면이 깜빡이지 않는다).
+	 */
+	invalidateMonth() {
+		useDuesStore.setState({ loadedYm: null, manualLoadedYm: null });
+	},
+
+	/**
 	 * 수동 부과 탭 데이터(지연). 배치는 6개월 창으로 한 번에 받아 그 달 목록과 '지난 명단' 필터가
 	 * 같은 배열을 쓴다. 회원 명단은 loadMonth 가 이미 채워두므로 여기서 다시 받지 않는다.
 	 */

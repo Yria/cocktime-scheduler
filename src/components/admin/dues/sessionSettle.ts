@@ -195,6 +195,32 @@ export interface SessionSettle {
 }
 
 /**
+ * 그 회차 **인당 대관비** — 서버 `dues_court_per_head` 의 미러.
+ *
+ * `null` = 부과할 금액이 없다(총액 0 이하 = 안 걷는 회차, 또는 대상 0명).
+ * 정산함의 '신규 세션' 칩이 이 값을 쓴다. 종전에는 `dues_settings.court_fee_default`(정액 6,000)를
+ * 하드코딩해서, 엔빵 회차(예: 45,000 ÷ 9 = 5,000)에 6,000원을 제안하고 그걸 확정하면 서버가
+ * 재발행해 둔 5,000 부과를 6,000으로 덮었다(세션 147 사고, 20260823090000).
+ *
+ * 엔빵 분모는 **운영진 포함**이라 회원 정보(is_admin)가 필요 없다 — 참석 명단과 보드만으로 구해진다.
+ */
+export function courtPerHead(session: SessionFeeRow, flatFee: number): number | null {
+	const total = session.courtFee ?? session.ruleCourtFee;
+	if (total == null) return flatFee; // 미입력 = 정액
+	if (total <= 0) return null; // 안 걷는 회차
+	const boardIds = new Set(session.boardMemberIds);
+	const targets = new Set<string>(boardIds);
+	for (const a of session.attendances) {
+		const onBoard = boardIds.has(a.memberId);
+		// 당일취소로 잡혔더라도 보드에 올라가 실제로 뛰었으면 참여자다(서버 dues_court_targets 와 동일).
+		const dayCancel = isDayCancelChargeable(a, session.scheduledAt) && !onBoard;
+		if (isAttending(a.status) || dayCancel) targets.add(a.memberId);
+	}
+	if (targets.size === 0) return null;
+	return snapToFlat(Math.ceil(total / targets.size / 10) * 10, flatFee);
+}
+
+/**
  * 세션 1건의 정산 대조표를 만든다. 순수 함수(스토어 스냅샷만 입력) — 테스트로 서버 규칙과 대조한다.
  *
  * @param session   그 세션(참석행·엔빵 총액 fallback 포함)

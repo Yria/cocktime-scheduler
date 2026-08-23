@@ -16,6 +16,7 @@ import {
 } from "../lib/supabase/recurring";
 import { toast } from "./toastStore";
 import { setSessionCourtFee } from "../lib/supabase/dues";
+import { duesActions } from "./duesStore";
 import {
 	type CreatePlaceInput,
 	createPlace,
@@ -202,6 +203,9 @@ export const adminScheduleActions = {
 	async fixCourtFee(sessionId: number, amount: number | null) {
 		const res = await setSessionCourtFee(sessionId, amount);
 		await reloadOccurrences();
+		// 회비 관리(duesStore)는 월 단위 캐시(loadedYm)라, 무효화하지 않으면 재진입해도 **옛 부과가
+		// 그대로 보인다**(정산 대조 시트·정산함 칩까지). 부과를 흔든 조작이니 그 캐시를 버린다.
+		duesActions.invalidateMonth();
 		toast(courtResetToast(res), { variant: "success" });
 		return res;
 	},
