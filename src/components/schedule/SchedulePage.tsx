@@ -142,6 +142,13 @@ export default function SchedulePage() {
 		setOccModal(null);
 	}, []);
 
+	// 종료·진행 회차 총액 정정 — 시트를 닫지 않는다(정정 결과 토스트를 보고 이어서 확인하게).
+	const handleFixCourtFee = useCallback(
+		(sessionId: number, amount: number | null) =>
+			adminScheduleActions.fixCourtFee(sessionId, amount),
+		[],
+	);
+
 	const handleReopenOcc = useCallback(async (occurrence: SessionRow) => {
 		await adminScheduleActions.reopenOccurrence(occurrence);
 		setOccModal(null);
@@ -207,6 +214,7 @@ export default function SchedulePage() {
 					onCreateOneOff={handleCreateOneOff}
 					onDelete={handleRemoveOcc}
 					onReopen={handleReopenOcc}
+					onFixCourtFee={handleFixCourtFee}
 					onClose={() => setOccModal(null)}
 				/>
 			)}

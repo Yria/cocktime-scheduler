@@ -183,6 +183,25 @@ export const adminScheduleActions = {
 		return row;
 	},
 
+	/**
+	 * 종료·진행 회차의 대관 총액 정정. 발행 모델에서 **발행된 금액을 바꿀 수 있는 유일한 경로**다
+	 * (규칙은 발행분을 건드리지 않는다 — 20260823020000). 미납 발행분만 새 인당 금액으로 맞추고
+	 * 납부분은 보존한다. 편집 폼(draft/open)이 아니라 정보 뷰에서 부르는 이유: 대관비는 세션 종료
+	 * 시점에 발행되고, "끝나고 실제 총액을 알게 됐다"가 정상 흐름이라 그때 고칠 자리가 필요하다.
+	 */
+	async fixCourtFee(sessionId: number, amount: number | null) {
+		const res = await setSessionCourtFee(sessionId, amount);
+		await reloadOccurrences();
+		const parts: string[] = [];
+		if (res.fixed > 0)
+			parts.push(`미납 ${res.fixed}명 인당 ${(res.per_head ?? 0).toLocaleString("ko-KR")}원으로 정정`);
+		if (res.locked > 0) parts.push(`이미 낸 ${res.locked}명은 그대로 (환불·추가징수로 처리)`);
+		toast(parts.length > 0 ? parts.join(" · ") : "총액을 저장했어요 (정정할 미납 부과 없음)", {
+			variant: "success",
+		});
+		return res;
+	},
+
 	async addOneOff(input: OneOffInput, createdBy: string | null) {
 		const row = await createOneOffOccurrence(input, createdBy);
 		if (row) {
