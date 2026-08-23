@@ -32,13 +32,16 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 	const [rosterOpen, setRosterOpen] = useState(true);
 	const s = settle;
 	const split = s.mode === "split";
+	const flat = s.mode === "flat"; // 정액. mode="none"(안 걷는 회차)은 둘 다 아니다.
 	// 부과액이 한 종류일 때만 `N건 × 단가` 곱셈이 성립(선납 시점이 달라 단가가 섞인 세션은 합계만).
 	const uniform = s.dueAmounts.length === 1 ? s.dueAmounts[0] : null;
 	const hasDayCancel = s.charged.some((c) => c.isDayCancel);
 
 	const modeText = split
 		? `엔빵 · 총액 ${won(s.total ?? 0)}`
-		: `정액 ${won(s.perHead)}`;
+		: flat
+			? `정액 ${won(s.perHead)}`
+			: "안 걷는 회차 · 대관비 미부과";
 
 	return (
 		<ModalSheet
@@ -52,7 +55,7 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 				{/* ── ① 머릿수 → 부과 건수 : '참석 × 단가'가 안 맞는 이유를 항등식으로 닫는다 ── */}
 				<Section title="인원 대조" hint="참석 머릿수가 부과 건수로 바뀌는 과정">
 					<Row label="참석 확정" value={`${s.attendCount}명`} sub={split ? "운영진 포함" : undefined} />
-					{!split && s.adminAttendCount > 0 && (
+					{flat && s.adminAttendCount > 0 && (
 						<Row label="− 운영진" value={`${s.adminAttendCount}명`} tone="muted" sub="대관비를 걷지 않음" />
 					)}
 					{s.targetDayCancelCount > 0 && (
@@ -71,7 +74,9 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 						sub={
 							split && s.total != null && s.targetCount > 0
 								? `${s.total.toLocaleString("ko-KR")} ÷ ${s.targetCount}명 = 인당 ${won(s.perHead)}`
-								: undefined
+								: s.mode === "none"
+									? "총액 0원 — 이 회차는 회원에게 걷지 않아요"
+									: undefined
 						}
 						strong
 					/>

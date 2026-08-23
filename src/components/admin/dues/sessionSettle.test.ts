@@ -346,15 +346,91 @@ describe("buildSessionSettle — 엔빵 세션", () => {
 	});
 });
 
+describe("buildSessionSettle — 안 걷는 회차(총액 0 이하)", () => {
+	const members = dict(member("A"), member("B"), member("운영진A", { isAdmin: true }));
+
+	// 세션 228(2026-08-22 정모) 사고 회귀: 총액 0 을 정액으로 읽어 18명에게 6,000원이 부과됐다.
+	// 서버는 20260823000000 에서 0 이하를 무부과로 갈랐다 — 미러가 따라가지 않으면 화면이
+	// 참석자 전원을 '부과 누락'으로 오탐한다.
+	it("총액 0 이면 정액이 아니라 무부과 — 참석자를 부과 누락으로 오탐하지 않는다", () => {
+		const s = session(
+			[att("A", "confirmed"), att("B", "confirmed"), att("운영진A", "confirmed")],
+			{ courtFee: 0 },
+		);
+		const settle = buildSessionSettle(s, [], members, 6000, []);
+		expect(settle.mode).toBe("none");
+		expect(settle.perHead).toBe(0);
+		expect(settle.total).toBeNull();
+		expect(settle.targetCount).toBe(0);
+		expect(settle.missing).toEqual([]); // ← 오탐 회귀 방지의 핵심
+		expect(settle.dueSum).toBe(0);
+	});
+
+	it("참석자는 '안 걷는 회차'로 면제 명단에 뜬다(운영진도 같은 사유)", () => {
+		const s = session([att("A", "confirmed"), att("운영진A", "confirmed")], { courtFee: 0 });
+		const settle = buildSessionSettle(s, [], members, 6000, []);
+		expect(settle.exempt.map((e) => [e.name, e.reason])).toEqual([
+			["A", "noCourtFee"],
+			["운영진A", "noCourtFee"],
+		]);
+	});
+
+	it("사전취소·대기는 종전 사유를 유지한다(무부과가 다른 사유를 덮지 않는다)", () => {
+		const s = session(
+			[att("A", "confirmed"), graceCancel("B"), att("운영진A", "waitlisted")],
+			{ courtFee: 0 },
+		);
+		const settle = buildSessionSettle(s, [], members, 6000, []);
+		// grace 는 조용한 사유라 명단에 남고, 대기는 노출하지 않는다(종전 규칙 그대로).
+		// 정렬은 사유 → 이름 순(exemptSorted) 이라 grace 가 noCourtFee 보다 앞이다.
+		expect(settle.exempt.map((e) => [e.name, e.reason])).toEqual([
+			["B", "grace"],
+			["A", "noCourtFee"],
+		]);
+		expect(settle.graceCount).toBe(1);
+	});
+
+	it("무부과 회차에 남은 부과는 잔재(stale)로 세운다 — 정리 대상임을 화면이 말한다", () => {
+		const s = session([att("A", "confirmed"), att("B", "confirmed")], { courtFee: 0 });
+		const settle = buildSessionSettle(s, [charge(1, "A"), charge(2, "B")], members, 6000, []);
+		expect(settle.extra.map((c) => [c.name, c.extraReason])).toEqual([
+			["A", "noCourtFee"],
+			["B", "noCourtFee"],
+		]);
+		expect(settle.liveExtraCount).toBe(2);
+		expect(settle.roster.filter((r) => r.kind === "stale").map((r) => r.name)).toEqual(["A", "B"]);
+	});
+
+	it("음수 총액도 무부과 — 오타가 정액으로 조용히 흘러가지 않는다", () => {
+		const s = session([att("A", "confirmed")], { courtFee: -6000 });
+		expect(buildSessionSettle(s, [], members, 6000, []).mode).toBe("none");
+	});
+
+	it("규칙 총액 0 을 물려받은 회차도 무부과(세션 총액 null)", () => {
+		const s = session([att("A", "confirmed")], { courtFee: null, ruleCourtFee: 0 });
+		expect(buildSessionSettle(s, [], members, 6000, []).mode).toBe("none");
+	});
+
+	it("총액 미입력(null)은 종전 그대로 정액 — 0 과 갈린다", () => {
+		const s = session([att("A", "confirmed")], { courtFee: null, ruleCourtFee: null });
+		const settle = buildSessionSettle(s, [], members, 6000, []);
+		expect(settle.mode).toBe("flat");
+		expect(settle.perHead).toBe(6000);
+		expect(settle.missing.map((m) => m.name)).toEqual(["A"]);
+	});
+});
+
 // 시트는 두 항등식을 그대로 화면에 쓴다. 닫히지 않으면 "숫자가 안 맞는다"는 원래 문제로 되돌아가므로
 // 어떤 조합에서도 닫히는지 검사한다.
 //   ① 정액: 참석 − 운영진 + 당일취소 + 보드추가 = 부과 대상  /  엔빵: 참석 + 당일취소 + 보드추가 = 부과 대상
 //   ② 부과 대상 − 누락 − 부과삭제 + 대상아닌부과 = 실제 부과 건수
 function expectIdentities(settle: ReturnType<typeof buildSessionSettle>) {
 	const bridge =
-		(settle.mode === "split" ? settle.attendCount : settle.attendCount - settle.adminAttendCount) +
-		settle.targetDayCancelCount +
-		settle.boardAddedCount;
+		settle.mode === "none"
+			? 0 // 안 걷는 회차: 참석했든 아니든 부과 대상이 0
+			: (settle.mode === "split" ? settle.attendCount : settle.attendCount - settle.adminAttendCount) +
+				settle.targetDayCancelCount +
+				settle.boardAddedCount;
 	expect(bridge).toBe(settle.targetCount);
 	expect(settle.targetCount - settle.missing.length - settle.deadOnTargetCount + settle.liveExtraCount).toBe(settle.activeCount);
 }

@@ -76,10 +76,11 @@ export type NonTargetReason =
 	| "grace" // 확정 후 1시간 내 철회(오조작)
 	| "preCancel" // 세션 전에 취소(자리를 비워 남이 들어갈 수 있었음)
 	| "waitlisted" // 대기 — 자리를 잡은 적 없음
+	| "noCourtFee" // 총액 0 이하 = 안 걷는 회차 — 왔지만 아무도 부과 대상이 아니다
 	| "noAttendance"; // 참석 기록 자체가 없음
 
 /** '정상 면제'로 조용히 보여줄 사유(나머지는 부과가 있을 때만 확인 대상으로 뜬다). */
-const CALM_REASONS = new Set<NonTargetReason>(["adminFlat", "grace"]);
+const CALM_REASONS = new Set<NonTargetReason>(["adminFlat", "grace", "noCourtFee"]);
 
 export interface SettleChargeRow {
 	chargeId: number;
@@ -134,9 +135,9 @@ export interface SettleRosterRow {
 const KIND_RANK: Record<RosterKind, number> = { missing: 0, stale: 1, charged: 2, orphan: 3, exempt: 4 };
 
 export interface SessionSettle {
-	mode: "split" | "flat"; // 엔빵 | 정액
-	total: number | null; // 엔빵 총액(coalesce(세션,규칙))
-	perHead: number; // 인당 부과액 — 엔빵=총액÷대상수(10원 절상 + 정액 근처 스냅), 정액=기본액
+	mode: "split" | "flat" | "none"; // 엔빵 | 정액 | 안 걷는 회차(총액 0 이하)
+	total: number | null; // 엔빵 총액(coalesce(세션,규칙)). 엔빵이 아니면 null
+	perHead: number; // 인당 부과액 — 엔빵=총액÷대상수(10원 절상 + 정액 근처 스냅), 정액=기본액, 무부과=0
 	/** 실제 부과된 금액의 종류 — 1개면 `N건 × 단가` 곱셈이 성립(섞여 있으면 곱셈 표기를 숨긴다). */
 	dueAmounts: number[];
 
@@ -216,6 +217,9 @@ export function buildSessionSettle(
 	// ── 모드·인당 금액(서버와 동일 계산) ──────────────────────────────
 	const total = session.courtFee ?? session.ruleCourtFee;
 	const split = total != null && total > 0;
+	// 총액 0 이하 = "이 회차는 안 걷는다"(서버 dues_generate_session_court 의 v_total<=0 분기, 20260823000000).
+	// 미러가 이걸 모르면 정액 모드로 읽어 참석자 전원을 '부과 누락'으로 오탐한다.
+	const noCharge = total != null && total <= 0;
 	const attend = session.attendances.filter((a) => isAttending(a.status));
 	/** 보드에 올라간 회원 = 현장에서 실제로 뛴 사람. 명단 기준 대상에 **합집합**으로 더한다. */
 	const boardIds = new Set(session.boardMemberIds);
@@ -231,6 +235,20 @@ export function buildSessionSettle(
 		// 당일취소로 잡혔더라도 보드에 올라가 실제로 뛰었으면 참여자다 → 당일취소로 세지 않는다(서버와 동일).
 		const dayCancel = isDayCancelChargeable(a, session.scheduledAt) && !onBoard;
 		const admin = isAdminOf(a.memberId);
+		if (noCharge) {
+			// 아무도 부과 대상이 아니다. 자리를 잡았던 사람은 '안 걷는 회차'로, 그 외는 종전 사유 그대로.
+			nonTarget.set(
+				a.memberId,
+				isAttending(a.status) || dayCancel || onBoard
+					? "noCourtFee"
+					: isGraceWithdrawn(a, session.scheduledAt)
+						? "grace"
+						: a.status === "cancelled"
+							? "preCancel"
+							: "waitlisted",
+			);
+			continue;
+		}
 		if (split) {
 			// 엔빵: 실제 참석 + 부과대상 당일취소 + 보드 추가분(운영진·게스트 포함).
 			// 당일취소를 빼면 코트를 비운 사람이 한 푼도 안 내고 나온 사람들이 더 나눠 갖는 역진이 된다.
@@ -269,6 +287,10 @@ export function buildSessionSettle(
 	// 참석행이 아예 없는데 보드에만 있는 회원(현장에서 직접 추가) — 위 루프가 못 보는 경로.
 	for (const id of boardIds) {
 		if (targets.has(id) || nonTarget.has(id)) continue;
+		if (noCharge) {
+			nonTarget.set(id, "noCourtFee");
+			continue;
+		}
 		if (!split && isAdminOf(id)) {
 			nonTarget.set(id, "adminFlat"); // 정액은 운영진 면제
 			continue;
@@ -282,11 +304,13 @@ export function buildSessionSettle(
 	// (분모 ≠ 부과대상이면 인당×인원이 총액과 어긋난다).
 	// 서버: ceil(v_total::numeric / v_head / 10)::int * 10 → 정액 근처면 정액으로 스냅(한방향).
 	const splitHead = targets.size;
-	const perHead = split
-		? splitHead > 0
-			? snapToFlat(Math.ceil((total as number) / splitHead / 10) * 10, flatFee)
-			: 0
-		: flatFee;
+	const perHead = noCharge
+		? 0
+		: split
+			? splitHead > 0
+				? snapToFlat(Math.ceil((total as number) / splitHead / 10) * 10, flatFee)
+				: 0
+			: flatFee;
 
 	// 사유별 머릿수 — 부과 유무와 무관하게 '규칙상 이렇게 갈렸다'를 세는 값(인원 대조 설명줄용).
 	const reasonCount = (reason: NonTargetReason) => [...nonTarget.values()].filter((r) => r === reason).length;
@@ -377,7 +401,7 @@ export function buildSessionSettle(
 	}
 
 	return {
-		mode: split ? "split" : "flat",
+		mode: noCharge ? "none" : split ? "split" : "flat",
 		total: split ? (total as number) : null,
 		perHead,
 		dueAmounts: [...new Set(live.map((c) => c.amountDue))].sort((a, b) => a - b),
@@ -417,6 +441,7 @@ export const EXEMPT_LABEL: Record<NonTargetReason, string> = {
 	grace: "확정 후 1시간 내 철회 · 미부과",
 	preCancel: "사전취소",
 	waitlisted: "대기",
+	noCourtFee: "안 걷는 회차 · 미부과",
 	noAttendance: "참석 기록 없음",
 };
 
@@ -426,5 +451,6 @@ export const EXTRA_LABEL: Record<NonTargetReason, string> = {
 	grace: "1시간 내 철회인데 부과됨",
 	preCancel: "사전취소인데 부과됨",
 	waitlisted: "대기인데 부과됨",
+	noCourtFee: "안 걷는 회차인데 부과됨",
 	noAttendance: "참석 기록 없는데 부과됨",
 };
