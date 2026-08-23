@@ -4,6 +4,7 @@ import { duesActions, useDuesStore } from "../../store/duesStore";
 import EmptyState from "../shared/EmptyState";
 import { currentYm, fmtMD, remaining, won, ymLabel } from "../admin/dues/duesText";
 import AccountCopyRow from "./AccountCopyRow";
+import RefundPendingCard from "./RefundPendingCard";
 import { chargeLabel, selectUnpaid, unpaidSum } from "./myUnpaid";
 
 // 내 회비 탭: ① 회비 납부(이번 달 미납 + 계좌 전체번호·복사) ② 납부 이력(실제 낸 것만, 월별).
@@ -12,6 +13,7 @@ export default function MyDuesTab({ memberId }: { memberId: string }) {
 	const charges = useDuesStore((s) => s.myCharges);
 	const account = useDuesStore((s) => s.account);
 	const payments = useDuesStore((s) => s.myPayments);
+	const refunds = useDuesStore((s) => s.myRefunds);
 
 	useEffect(() => {
 		void duesActions.loadMine(memberId);
@@ -70,6 +72,13 @@ export default function MyDuesTab({ memberId }: { memberId: string }) {
 					<div style={{ borderTop: "1px solid rgba(11,132,255,0.18)", margin: "12px 0 10px" }} />
 					<AccountCopyRow account={account} />
 				</div>
+
+				{/* 돌려받을 돈 — 미납과 반대 방향의 돈이라 납부 카드 밖에 따로 세운다. */}
+				{refunds.length > 0 && (
+					<div style={{ marginTop: 10 }}>
+						<RefundPendingCard rows={refunds} />
+					</div>
+				)}
 			</div>
 
 			{/* ② 납부 이력 */}

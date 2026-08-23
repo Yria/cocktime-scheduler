@@ -306,6 +306,10 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 	const extMode = !batchMode && !memberMode && !selectedId && externalCourt && extSession != null;
 	// 잔액을 묶음이 받으므로, 묶음이 선택돼 있으면 금액 불일치 경고를 띄우지 않는다.
 	const mismatch = memberMode && !batchMode && total !== effectiveAmount;
+	// 선택보다 들어온 돈이 많으면 그 차액은 **환불 대상**이다(5,000원 낼 것에 6,000원 → 1,000원).
+	// 확정하면 회원의 [내 회비]·진입 알림에 "돌려받을 돈 · 계좌번호를 알려주세요"가 뜬다
+	// (dues_my_refund_pending: 배분·환불을 뺀 잔액. 묶음을 고르면 그 돈은 클럽 수입이라 안내가 안 뜬다).
+	const surplus = mismatch && effectiveAmount > total ? effectiveAmount - total : 0;
 	const ready = batchMode || memberMode || extMode;
 	const doConfirm = () => {
 		if (extMode && extSession != null) { onConfirmCourtExternal(extSession); return; }
@@ -458,8 +462,14 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 			{/* 확인 */}
 			<div style={{ marginTop: 10, paddingTop: 9, borderTop: "1px solid rgba(120,120,128,0.16)" }}>
 				{mismatch && (
-					<p className="text-[#d1362c]" style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 7 }}>
-						선택 {won(total)} · 대상 {won(effectiveAmount)} — 금액이 안 맞아요
+					<p
+						className={surplus > 0 ? "text-[#c2670a]" : "text-[#d1362c]"}
+						style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 7, lineHeight: 1.5 }}
+					>
+						선택 {won(total)} · 대상 {won(effectiveAmount)} —{" "}
+						{surplus > 0
+							? `${won(surplus)}이 남아요. 확정하면 그 회원 화면에 "돌려받을 돈 · 환불 계좌번호를 알려주세요" 안내가 떠요.`
+							: "금액이 안 맞아요"}
 					</p>
 				)}
 				<button
@@ -483,10 +493,14 @@ export default function ReconcileInRow({ tx, members, unpaidByMember, monthSessi
 
 			{showMismatch && (
 				<ConfirmDialog
-					title="금액이 안 맞아요"
-					message={`선택한 금액(${won(total)})이 정산 대상(${won(effectiveAmount)})과 달라요. 정산이 맞지 않는데 이대로 확인할까요?`}
-					confirmLabel="그래도 확인"
-					tone="danger"
+					title={surplus > 0 ? `${won(surplus)}이 남아요` : "금액이 안 맞아요"}
+					message={
+						surplus > 0
+							? `들어온 ${won(effectiveAmount)} 중 ${won(total)}만 부과에 쓰고 ${won(surplus)}이 남습니다. 확정하면 그 회원 화면에 "돌려받을 돈 ${won(surplus)} · 환불 계좌번호를 알려주세요" 안내가 떠요. 클럽 수입으로 둘 거면 취소하고 묶음을 골라주세요.`
+							: `선택한 금액(${won(total)})이 정산 대상(${won(effectiveAmount)})과 달라요. 정산이 맞지 않는데 이대로 확인할까요?`
+					}
+					confirmLabel={surplus > 0 ? "남기고 확인" : "그래도 확인"}
+					tone={surplus > 0 ? undefined : "danger"}
 					maxWidth="xs"
 					onCancel={() => setShowMismatch(false)}
 					onDismiss={() => setShowMismatch(false)}

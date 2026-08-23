@@ -10,6 +10,7 @@ import {
 	type CourtChargeRow,
 	type MonthlyChargeRow,
 	type MyChargeRow,
+	type MyRefundRow,
 	type MyPayment,
 	type PublicLedger,
 	type SessionFeeRow,
@@ -27,6 +28,7 @@ import {
 	fetchMonthlyCharges,
 	fetchMyCharges,
 	fetchMyPayments,
+	fetchMyRefundPending,
 	fetchPublicLedger,
 	fetchSessionTxns,
 	fetchTxAllocations,
@@ -82,6 +84,7 @@ interface DuesState {
 	myLoading: boolean;
 	myCharges: MyChargeRow[];
 	myPayments: MyPayment[]; // 실제 납부 이력(부과 배분 + paid_by 카테고리)
+	myRefunds: MyRefundRow[]; // 돌려받을 돈(낼 돈보다 많이 보내 남은 잔돈)
 	account: ClubAccount | null;
 	myLedger: PublicLedger | null; // 클럽 공개 회계(항목별만) — 선택 월
 	myLedgerYm: string | null; // myLedger가 담고 있는 월
@@ -104,6 +107,7 @@ interface DuesState {
 	unpaidAlertCheckedFor: string | null; // 조회를 마친 memberId(중복 조회 가드)
 	unpaidAlertCharges: MyChargeRow[]; // 본인 부과 전체(미납 판정은 화면에서 selectUnpaid)
 	unpaidAlertAccount: ClubAccount | null;
+	unpaidAlertRefunds: MyRefundRow[]; // 진입 알림도 '돌려받을 돈'을 함께 알린다(같은 1회 조회에 얹는다)
 	unpaidAlertDismissed: boolean; // 이번 앱 실행에서 닫음(영속 X → 다음에 앱을 열면 다시 뜬다)
 }
 
@@ -133,6 +137,7 @@ export const useDuesStore = create<DuesState>(() => ({
 	myLoading: true,
 	myCharges: [],
 	myPayments: [],
+	myRefunds: [],
 	account: null,
 	myLedger: null,
 	myLedgerYm: null,
@@ -140,6 +145,7 @@ export const useDuesStore = create<DuesState>(() => ({
 	unpaidAlertCheckedFor: null,
 	unpaidAlertCharges: [],
 	unpaidAlertAccount: null,
+	unpaidAlertRefunds: [],
 	unpaidAlertDismissed: false,
 }));
 
@@ -304,12 +310,13 @@ export const duesActions = {
 	/** 내 회비 탭: 본인 부과(대납 포함) + 클럽 계좌 + 실제 납부 이력. (클럽 회계는 loadMyLedger로 분리) */
 	async loadMine(memberId: string) {
 		useDuesStore.setState({ myLoading: true });
-		const [myCharges, account, myPayments] = await Promise.all([
+		const [myCharges, account, myPayments, myRefunds] = await Promise.all([
 			fetchMyCharges(memberId),
 			fetchClubAccount(),
 			fetchMyPayments(),
+			fetchMyRefundPending(),
 		]);
-		useDuesStore.setState({ myCharges, account, myPayments, myLoading: false });
+		useDuesStore.setState({ myCharges, account, myPayments, myRefunds, myLoading: false });
 	},
 
 	/**
@@ -321,13 +328,17 @@ export const duesActions = {
 		if (useDuesStore.getState().unpaidAlertCheckedFor === memberId) return;
 		// 조회 시작 시점에 마킹 — 같은 실행에서 effect 가 두 번 뛰어도 중복 요청이 안 나가게.
 		useDuesStore.setState({ unpaidAlertCheckedFor: memberId });
-		const [charges, account] = await Promise.all([
+		const [charges, account, refunds] = await Promise.all([
 			fetchMyCharges(memberId),
 			fetchClubAccount(),
+			// 돌려받을 돈도 같은 1회 조회에 얹는다 — 회원이 [내 회비]를 열지 않으면 알 길이 없고,
+			// 계좌번호를 알려주지 않으면 운영진도 못 보낸다(진입 알림이 유일한 접점).
+			fetchMyRefundPending(),
 		]);
 		useDuesStore.setState({
 			unpaidAlertCharges: charges,
 			unpaidAlertAccount: account,
+			unpaidAlertRefunds: refunds,
 		});
 	},
 
@@ -341,6 +352,7 @@ export const duesActions = {
 		useDuesStore.setState({
 			unpaidAlertCheckedFor: null,
 			unpaidAlertCharges: [],
+			unpaidAlertRefunds: [],
 			unpaidAlertAccount: null,
 			unpaidAlertDismissed: false,
 		});

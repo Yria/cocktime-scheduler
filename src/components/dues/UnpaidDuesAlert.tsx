@@ -1,4 +1,4 @@
-import { CircleAlert } from "lucide-react";
+import { CircleAlert, CircleCheck } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore";
@@ -6,12 +6,17 @@ import { duesActions, useDuesStore } from "../../store/duesStore";
 import ConfirmDialog from "../common/ConfirmDialog";
 import { remaining, won } from "../admin/dues/duesText";
 import AccountCopyRow from "./AccountCopyRow";
+import RefundPendingCard from "./RefundPendingCard";
 import { chargeLabel, selectUnpaid, unpaidSum } from "./myUnpaid";
 
 /**
- * 미납 진입 알림 — 앱을 열었을 때 미납(회비·대관비)이 있으면 납부할 내역 + 입금 계좌를 띄운다.
+ * 회비 진입 알림 — 앱을 열었을 때 **낼 돈**(미납)이나 **돌려받을 돈**(많이 보내 남은 잔돈)이 있으면 띄운다.
  *
- * - 노출 조건: 로그인 회원 · 프로필 완성(ProfileSetup 모달과 겹치지 않게) · 미납 잔액 > 0 · 이번 실행에서 안 닫음.
+ * 환불도 여기 얹는 이유: 남은 돈은 운영진의 정산함에만 보이고, 돌려주려면 회원의 계좌번호가 필요하다.
+ * 회원이 [내 회비]를 스스로 열지 않으면 서로 알 방법이 없어 잔돈이 그대로 묶인다. 조회는 미납 확인과
+ * 같은 1회 호출에 얹어 앱 진입 비용을 늘리지 않는다(checkUnpaidAlert).
+ *
+ * - 노출 조건: 로그인 회원 · 프로필 완성(ProfileSetup 모달과 겹치지 않게) · (미납 잔액 > 0 또는 돌려받을 돈 > 0) · 이번 실행에서 안 닫음.
  * - `/my-dues` 에선 띄우지 않고 "봤음" 처리한다 — 그 화면이 같은 내용(미납 내역·계좌)을 이미 전면에
  *   보여주므로 모달이 정보를 더하지 않는다. 미납 푸시(`dues_unpaid`)가 이 경로로 딥링크되는 게 대표 경로.
  * - 정산되어 미납이 0이 되면 조건이 깨져 자연히 안 뜬다(별도 해제 처리 없음 — 부과 상태가 유일한 근거).
@@ -27,6 +32,7 @@ export default function UnpaidDuesAlert() {
 	const myResidence = useAuthStore((s) => s.myResidence);
 	const charges = useDuesStore((s) => s.unpaidAlertCharges);
 	const account = useDuesStore((s) => s.unpaidAlertAccount);
+	const refunds = useDuesStore((s) => s.unpaidAlertRefunds);
 	const dismissed = useDuesStore((s) => s.unpaidAlertDismissed);
 
 	// 프로필 미완성이면 Home 이 ProfileSetup 모달을 띄우는 중 → 모달 겹침 방지(가입 직후엔 미납도 없음).
@@ -50,8 +56,9 @@ export default function UnpaidDuesAlert() {
 
 	const unpaid = useMemo(() => selectUnpaid(charges), [charges]);
 	const total = unpaidSum(unpaid);
+	const refundTotal = refunds.reduce((s, r) => s + r.left, 0);
 
-	if (!profileComplete || dismissed || onMyDues || total <= 0) return null;
+	if (!profileComplete || dismissed || onMyDues || (total <= 0 && refundTotal <= 0)) return null;
 
 	// 제목은 실제 미납 종류에 맞춘다(대관비만 미납인 경우가 흔함).
 	// 수동 부과(회식·공동구매 등)는 종류가 제각각이라 이름을 제목에 넣지 않고 '내역'으로 뭉갠다 —
@@ -69,12 +76,19 @@ export default function UnpaidDuesAlert() {
 
 	const close = () => duesActions.dismissUnpaidAlert();
 
+	// 낼 돈이 있으면 그게 주제다(환불은 아래에 덧붙는다). 돌려받을 돈만 있으면 좋은 소식이라 아이콘·색이 다르다.
+	const unpaidFirst = total > 0;
+
 	return (
 		<ConfirmDialog
 			title={
 				<span className="flex items-center gap-1.5">
-					<CircleAlert size={19} strokeWidth={2.4} className="text-[#d1362c]" />
-					미납 {what}가 있어요
+					{unpaidFirst ? (
+						<CircleAlert size={19} strokeWidth={2.4} className="text-[#d1362c]" />
+					) : (
+						<CircleCheck size={19} strokeWidth={2.4} className="text-[#1c8a3b]" />
+					)}
+					{unpaidFirst ? `미납 ${what}가 있어요` : "돌려받을 돈이 있어요"}
 				</span>
 			}
 			confirmLabel="내 회비 보기"
@@ -90,11 +104,13 @@ export default function UnpaidDuesAlert() {
 				className="text-muted"
 				style={{ fontSize: 13.5, lineHeight: 1.55, margin: "2px 0 12px" }}
 			>
-				아래 계좌로 입금해 주세요. 운영진이 통장 내역을 확인하면 이 안내는
-				사라져요.
+				{unpaidFirst
+					? "아래 계좌로 입금해 주세요. 운영진이 통장 내역을 확인하면 이 안내는 사라져요."
+					: "낼 돈보다 많이 들어와 남은 돈이 있어요. 환불받을 계좌번호를 운영진에게 알려주세요."}
 			</p>
 
 			{/* 미납 내역 — 총액 + 항목별 */}
+			{unpaidFirst && (
 			<div
 				className="bg-[rgba(255,59,48,0.07)] border border-[rgba(255,59,48,0.22)]"
 				style={{ borderRadius: 14, padding: "13px 14px", marginBottom: 10 }}
@@ -147,8 +163,17 @@ export default function UnpaidDuesAlert() {
 					))}
 				</div>
 			</div>
+			)}
 
-			{/* 입금 계좌 */}
+			{/* 돌려받을 돈 — 미납과 같은 화면에 둘 다 뜰 수 있다(낼 돈과 받을 돈은 다른 회차의 일). */}
+			{refundTotal > 0 && (
+				<div style={{ marginBottom: 10 }}>
+					<RefundPendingCard rows={refunds} />
+				</div>
+			)}
+
+			{/* 입금 계좌 — 낼 돈이 있을 때만(환불만 있으면 보낼 곳이 아니라 받을 계좌가 필요하다) */}
+			{unpaidFirst && (
 			<div
 				className="bg-[rgba(11,132,255,0.06)] border border-[rgba(11,132,255,0.22)]"
 				style={{ borderRadius: 14, padding: "13px 14px", marginBottom: 20 }}
@@ -161,6 +186,7 @@ export default function UnpaidDuesAlert() {
 				</p>
 				<AccountCopyRow account={account} />
 			</div>
+			)}
 		</ConfirmDialog>
 	);
 }

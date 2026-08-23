@@ -753,6 +753,38 @@ export interface MyPayment {
 	purpose: string; // '7월 회비 · 7.12 대관비' / '콕공구'
 }
 /** 내가 실제로 낸 돈(부과 배분 입금 + paid_by 카테고리 입금) — 미납 제외, 최신순. */
+/** 본인이 낸 입금 중 아직 안 쓰이고 안 돌려받은 잔돈 한 건. */
+export interface MyRefundRow {
+	txId: number;
+	/** 입금일 'YYYY-MM-DD' (KST). */
+	date: string;
+	/** 그때 보낸 금액. */
+	paid: number;
+	/** 부과에 쓰인 금액. */
+	used: number;
+	/** 남은 금액(= 돌려받을 돈). */
+	left: number;
+}
+
+/**
+ * 돌려받을 돈 — 낼 돈보다 많이 보내 남은 잔돈(5,000원 낼 것에 6,000원 → 1,000원).
+ * 통장 테이블은 운영진 전용이라 SECURITY DEFINER RPC 로 본인 것만 받는다(§dues_my_refund_pending).
+ */
+export async function fetchMyRefundPending(): Promise<MyRefundRow[]> {
+	const { data, error } = await supabase.rpc("dues_my_refund_pending");
+	if (error || !data) {
+		if (error) console.error("fetchMyRefundPending:", error);
+		return [];
+	}
+	return (data as { tx_id: number; date: string; paid: number; used: number; left: number }[]).map((r) => ({
+		txId: r.tx_id,
+		date: r.date,
+		paid: r.paid,
+		used: r.used,
+		left: r.left,
+	}));
+}
+
 export async function fetchMyPayments(): Promise<MyPayment[]> {
 	const { data, error } = await supabase.rpc("dues_my_payments");
 	if (error || !data) {
