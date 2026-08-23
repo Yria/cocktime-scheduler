@@ -117,6 +117,11 @@ export default function PendingDraftsSheet({
 									<Row label="부과 합계" value={won(g.total)} />
 									{d?.total != null && <Row label="대관 총액" value={won(d.total)} />}
 									{d?.flat != null && <Row label="정액 기준" value={won(d.flat)} />}
+									{/* 회비: 대상·지난달 인원이 판정 근거다(인원 급변을 눈으로 확인) */}
+									{d?.target != null && <Row label="이번 달 대상" value={`${d.target}명`} />}
+									{d?.prev_month != null && d.prev_month > 0 && (
+										<Row label="지난달 발행" value={`${d.prev_month}명`} />
+									)}
 									{d?.already_issued != null && d.already_issued > 0 && (
 										<Row label="이미 발행됨" value={`${d.already_issued}명`} />
 									)}

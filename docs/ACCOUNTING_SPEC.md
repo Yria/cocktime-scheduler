@@ -186,11 +186,14 @@
 - **재실행의 새 정의**: 초안에만 있는 사람이 없으면 아무것도 하지 않는다(멱등이 "같은 결과"가 아니라 "무동작"이 됐다).
 
 **조건부 자동 발행**(운영 결정 (c)): 초안이 평소와 같으면 규칙이 바로 발행하고, 이상하면 `dues_charge_drafts` 에 **발행 대기**로 남겨 운영진이 [발행]/[폐기]를 고른다(정모/현황 상단 배너 → 검토 시트). 대기 중 초안은 **회원에게 보이지 않는다**(별 테이블 + RLS 운영진 전용).
-- `amount_out_of_range` — 인당 금액이 정액의 절반 미만 또는 2.5배 초과. 총액 오타(0 하나 더/덜)를 잡는다
-- `new_members` — 이미 발행된 묶음에 초안에만 있는 사람이 생김(세션 237 손형일처럼 뒤늦게 드러난 보드 추가분)
+- `amount_out_of_range` — (대관비) 인당 금액이 정액의 절반 미만 또는 2.5배 초과. 총액 오타(0 하나 더/덜)를 잡는다
+- `head_count_jump` — (회비) 이번 달 대상 인원이 **지난달 발행 인원의 ±40% 밖**. 명단 사고·대량 비활성화를 올린다. 지난달 발행이 10명 미만이면 기준이 노이즈라 판정하지 않는다(실측: 2026-06 은 2명, 07 은 70명, 08 은 80명)
+- `new_members` — 이미 발행된 묶음/달에 초안에만 있는 사람이 생김(세션 237 손형일처럼 뒤늦게 드러난 보드 추가분, 회비는 명예회원 해제·가입월 소급 보정)
 - **금액 차이는 대기 사유가 아니다.** 발행된 금액은 사실이다. 실측: 세션 237 은 발행 6,000원(2026-08-18 운영 결정)인데 지금 20명으로 재계산하면 5,850원 — 이걸 대기로 올리면 변화가 없는데도 매번 확인 요청이 뜬다. 금액 어긋남은 정산 대조 시트가 이미 보여준다.
 
-**없어진 것**: `dues_generate_session_court` 의 자동정리 DELETE 3경로와 기존 행 UPSERT 갱신. 그 자리를 "발행 안 된 사람만 추가 발행"이 대신한다. 무자격 세션·사전취소 유령·엔빵↔정액 전환 고아는 이제 자동으로 지워지지 않으므로 **운영진이 정산 대조 시트에서 [부과삭제](void)로 처리**한다.
+**회비에도 같은 원칙**(2026-08-23, `20260823030000`): `dues_generate_monthly` 도 발행분을 건드리지 않는다. 종전엔 월 첫 진입마다 `do update set amount_due` 로 **이미 발행된 미납 회비의 금액을 다시 써넣었다** — 회비가 5,000원 고정이라 사고가 안 보였을 뿐, `dues_settings.monthly_fee` 를 바꾸면 **과거 달 미납까지 소급 변경**된다. 대상 술어는 `dues_monthly_targets(ym)` 단일 소스로 뽑았다(대관비의 `dues_court_targets` 와 같은 역할 — 발행 모델에서 같은 술어를 네 경로가 쓰므로 복제하면 갈린다).
+
+**없어진 것**: `dues_generate_session_court` 의 자동정리 DELETE 3경로와 기존 행 UPSERT 갱신, `dues_generate_monthly` 의 UPSERT 갱신. 그 자리를 "발행 안 된 사람만 추가 발행"이 대신한다. 무자격 세션·사전취소 유령·엔빵↔정액 전환 고아는 이제 자동으로 지워지지 않으므로 **운영진이 정산 대조 시트에서 [부과삭제](void)로 처리**한다.
 
 ---
 
@@ -201,7 +204,7 @@
 - **수동 배치**: `generate_dues_charges(ym)`(is_admin) — 과거 달 보정 등 fallback.
 - **수동 부과**: 자동 생성이 **없다**. 운영진이 [부과] 탭에서 `dues_upsert_manual_batch(batch_key, label, charged_on, amount, member_ids)` 로 만든다(같은 키 재호출 = 갱신, 멱등). 명단에서 빠진 사람의 **미납만** 삭제하고 납부분·void 는 보존 — 대관비 생성기와 같은 규칙. 삭제는 `dues_delete_manual_batch`(운영진의 명시적 조작이라 void 도 함께 지우지만 납부분은 남긴다).
 
-규칙 단일 소스(빌딩블록): `dues_generate_monthly(ym)`(회비) · `dues_generate_session_court(sid)`(세션 대관비). 트리거·ensure·수동배치가 모두 이 둘을 재사용.
+규칙 단일 소스(빌딩블록): `dues_generate_monthly(ym)`(회비, 대상 술어 = `dues_monthly_targets`) · `dues_generate_session_court(sid)`(세션 대관비, 대상 술어 = `dues_court_targets`). 트리거·ensure·수동배치가 모두 이 둘을 재사용.
 - **회비 룰**: `is_active AND not is_guest AND not is_honorary AND not 운영진`, 가입월(`membership_started_at ?? created_at` + `offset_days`) 다음 달부터 `amount_due=회비액`. **단 합류월은 하한이 걸린다**(바로 아래).
   - **합류월 하한 — 컷오프일 이후 합류면 그 달은 미부과** (2026-08-21, `20260821000000`).
     - **실제 합류일 = max(계정 생성일, 마지막 재활성화일)@KST**. 이게 `dues_settings.join_cutoff_day`(기본 21) 이상인 달은 그 달 회비를 만들지 않는다.
@@ -312,7 +315,8 @@
 - **부과 조정**: `dues_set_charge_status`(`void`=부과삭제·취소선 + `voided_by/at` 기록 / `reset`=되돌리기·재산정 / `waived`=면제).
 - **부과**: `dues_ensure_monthly`(월진입 회비), `generate_dues_charges`(수동 배치 fallback), 빌딩블록 `dues_generate_monthly`·`dues_generate_session_court`(내부), 트리거 `trg_session_court_on_close`(세션 종료 대관). **명예회원**: `dues_set_honorary`(지정/해제 + 미납 회비 정리). ~~**알림**: `dues_notify_selected`~~ — DB에만 잔존, 클라 호출 없음(§3.1·§9).
 - **수동 부과**: `dues_upsert_manual_batch`(생성·갱신, 멱등) / `dues_delete_manual_batch`(미납 삭제, 납부분 보존). 둘 다 `is_admin` 게이트 + `dues_audit_log` 기록.
-- **발행 대기**: `dues_issue_drafts(group)`(초안 → 발행) / `dues_discard_drafts(group)`(폐기). §4.0
+- **발행 대기**: `dues_issue_drafts(group)`(초안 → 발행. `label`·`charged_on` 은 `kind='manual'` 일 때만 복사 — 그 두 컬럼이 수동 부과 전용이라는 불변식 유지) / `dues_discard_drafts(group)`(폐기). §4.0
+- **대상 술어**: `dues_court_targets(session, split)` · `dues_monthly_targets(ym)` — 생성기의 모든 경로가 같은 정의를 쓰게 강제한다.
 - **금액 정정**: `dues_set_session_fee(session, amount)` — 총액 저장 + **미납 발행분 금액 정정**(납부분·void 보존, `locked` 로 통지). 새 모델에서 발행분 금액을 바꿀 수 있는 유일한 경로. 회차 에디터의 [코트 총액]이 이걸 호출한다(2026-08-23 연결 — 종전엔 `sessions` 를 직접 PATCH 해서 부과에 반영되지 않았다).
 - **카테고리**: `dues_add_category`/`dues_delete_category`.
 - **회원 노출**: `dues_my_payments`, `dues_public_ledger`, `dues_club_account`.

@@ -7,25 +7,32 @@
 import { supabase } from "./client";
 
 /** 대기 사유 — 서버 dues_generate_session_court 의 hold_reason 과 1:1. */
-export type HoldReason = "amount_out_of_range" | "new_members";
+export type HoldReason = "amount_out_of_range" | "new_members" | "head_count_jump";
 
 export const HOLD_LABEL: Record<string, string> = {
 	amount_out_of_range: "인당 금액이 평소와 크게 달라요",
 	new_members: "발행한 뒤에 대상이 된 사람이 있어요",
+	head_count_jump: "대상 인원이 지난달과 크게 달라요",
 };
 
 export const HOLD_HINT: Record<string, string> = {
 	amount_out_of_range: "총액을 잘못 입력했을 수 있어요. 금액을 확인하고 발행하세요.",
-	new_members: "이미 발행된 회차에 추가로 부과할 사람입니다. 실제로 참여했는지 확인하세요.",
+	new_members: "이미 발행된 회차·달에 추가로 부과할 사람입니다. 자격이 맞는지 확인하세요.",
+	head_count_jump: "회원 명단이 크게 바뀌었을 때 뜹니다(대량 비활성화 등). 인원을 확인하고 발행하세요.",
 };
 
 /** 대기 초안의 판정 근거 — 화면이 숫자를 그대로 보여줘 운영진이 이상함을 눈으로 확인하게 한다. */
 export interface HoldDetail {
 	per_head?: number;
 	flat?: number;
+	/** 대관비: 그 회차 대관 총액 */
 	total?: number | null;
 	head?: number;
 	already_issued?: number;
+	/** 회비: 이번 달 대상 인원(기존 발행 + 새 사람) */
+	target?: number;
+	/** 회비: 지난달 발행 인원(이상 판정 기준) */
+	prev_month?: number;
 }
 
 /** 발행 단위 하나(= draft_group). 화면의 한 카드. */
