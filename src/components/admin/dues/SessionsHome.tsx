@@ -129,6 +129,15 @@ export default function SessionsHome({ ym }: { ym: string }) {
 			arr.push(c);
 			chargesBySession.set(c.sessionId, arr);
 		}
+		// 발행 대기 초안에 있는 사람은 실제 누락이 아니다. 같은 세션 카드에서 `⚠ 확인`으로
+		// 이중 경고하지 않고 `발행 대기`로 설명하도록 세션별 member id를 대조 함수에 넘긴다.
+		const draftIdsBySession = new Map<number, Set<string>>();
+		for (const g of pendingDrafts) {
+			if (g.kind !== "court_fee" || g.sessionId == null) continue;
+			const ids = draftIdsBySession.get(g.sessionId) ?? new Set<string>();
+			for (const m of g.members) ids.add(m.memberId);
+			draftIdsBySession.set(g.sessionId, ids);
+		}
 		return monthSessions
 			.map((s): SessionCard => {
 				const charges = chargesBySession.get(s.id) ?? [];
@@ -151,13 +160,20 @@ export default function SessionsHome({ ym }: { ym: string }) {
 				const outstanding = unpaidCount + activeDayCancel;
 				const status: SessionCard["status"] = !hasSomething ? "none" : courtLinked && outstanding === 0 ? "settled" : "open";
 				// 정산 대조(부과 대상 재현) — 카드는 요약·⚠배지, 명단·조작은 시트에서.
-				const settle = buildSessionSettle(s, charges, memberById, courtFeeDefault, txnsBySession.get(s.id) ?? []);
+				const settle = buildSessionSettle(
+					s,
+					charges,
+					memberById,
+					courtFeeDefault,
+					txnsBySession.get(s.id) ?? [],
+					draftIdsBySession.get(s.id),
+				);
 				return { id: s.id, label: sessionLabel(s), scheduledAt: s.scheduledAt, courtLinked, expense, paidCount, totalCount, outstanding, status, session: s, settle };
 			})
 			// 실제로 열리지 않은 세션(부과·지출·수입 전무)은 정산 대상이 아니므로 숨김.
 			.filter((c) => c.status !== "none")
 			.sort((a, b) => (b.scheduledAt ?? "").localeCompare(a.scheduledAt ?? ""));
-	}, [monthSessions, court, sessionTxns, memberById, courtFeeDefault]);
+	}, [monthSessions, court, sessionTxns, memberById, courtFeeDefault, pendingDrafts]);
 
 	// 예정(선납) 세션: 아직 안 열린(경기기록 없어 monthSessions에 없는) 세션인데 대관비가 선납된 것.
 	// 전체 참가자 부과는 세션 종료 시 생성되므로 진행률(N/전체)은 무의미 → '몇 명 선납'으로만 표시.
@@ -309,6 +325,7 @@ export default function SessionsHome({ ym }: { ym: string }) {
 				sessionCards.map((c) => {
 					const done = c.status === "settled";
 					const flagged = c.settle.flaggedCount; // 시트 헤더 ⚠확인과 같은 단일 소스
+					const pending = c.settle.pending.length;
 					return (
 						// 카드 전체가 버튼 — 조작이 [정산 대조] 하나뿐이라 탭 영역을 카드 전체로 준다
 						// (나란히 놓인 수동 부과 카드와 같은 히트 영역. button 중첩을 피하려고 안쪽은 MoreHint).
@@ -325,6 +342,9 @@ export default function SessionsHome({ ym }: { ym: string }) {
 								    걸리지 않아 '마감 ✓'인 세션에도 숨는다 → 배지로 따로 세운다.
 								    이미 void 처리한 건·참석 기록 없는 건은 세지 않는다(늑대소년 방지). */}
 								{flagged > 0 && <span style={pill("bad")}>⚠ 확인 {flagged}</span>}
+								{pending > 0 && (
+									<span style={pill("warn")}>{c.session.status === "closed" ? "발행 대기" : "종료 후 부과"} {pending}</span>
+								)}
 								<span style={pill(done ? "ok" : "warn")}>{done ? "마감 ✓" : "정산 미완"}</span>
 							</div>
 							<div className="flex flex-col gap-2" style={{ marginTop: 8 }}>

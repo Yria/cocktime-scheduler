@@ -45,6 +45,7 @@ const graceCancel = (memberId: string): SessionAttendanceRow =>
 const session = (attendances: SessionAttendanceRow[], over: Partial<SessionFeeRow> = {}): SessionFeeRow => ({
 	id: 1,
 	title: null,
+	status: "closed",
 	scheduledAt: SCHEDULED,
 	courtCount: 2,
 	hours: 2,
@@ -155,6 +156,47 @@ describe("buildSessionSettle — 정액(6,000) 세션", () => {
 		const s = session([att("강민수", "confirmed"), att("김철수", "confirmed")]);
 		const settle = buildSessionSettle(s, [charge(1, "강민수")], members, 6000, []);
 		expect(settle.missing.map((m) => m.name)).toEqual(["김철수"]);
+		expect(settle.missing[0].targetReason).toBe("attending");
+	});
+
+	it("진행 중 미발행분은 누락이 아니라 종료 후 자동 부과 예정", () => {
+		const s = session([att("강민수", "confirmed"), dayCancel("최서연")], { status: "active" });
+		const settle = buildSessionSettle(s, [], members, 6000, []);
+		expect(settle.missing).toEqual([]);
+		expect(settle.pending.map((m) => [m.name, m.targetReason])).toEqual([
+			["강민수", "attending"],
+			["최서연", "dayCancel"],
+		]);
+		expect(settle.flaggedCount).toBe(0);
+		expect(settle.rosterCounts.pending).toBe(2);
+	});
+
+	it("closed 세션이어도 발행 대기 초안에 있으면 실제 누락과 분리한다", () => {
+		const s = session(
+			[att("강민수", "confirmed"), dayCancel("최서연"), att("김철수", "waitlisted")],
+			{ boardMemberIds: ["김철수"] },
+		);
+		const settle = buildSessionSettle(s, [], members, 6000, [], new Set(["강민수", "최서연", "김철수"]));
+		expect(settle.missing).toEqual([]);
+		expect(settle.pending.map((m) => [m.name, m.targetReason])).toEqual([
+			["강민수", "attending"],
+			["김철수", "boardAdded"],
+			["최서연", "dayCancel"],
+		]);
+		expect(settle.flaggedCount).toBe(0);
+	});
+
+	it("8/30 #165 회귀: 대상 28·기발행 16·초안 16(4건 중복)은 발행대기 12, 확인 0", () => {
+		const atts = Array.from({ length: 28 }, (_, i) => att(`p${i}`, "confirmed"));
+		const charges = Array.from({ length: 16 }, (_, i) => charge(i + 1, `p${i}`));
+		// 종료 때 생긴 초안 16명 중 p12~p15 네 명은 이후 입금 확인으로 즉석 발행된 상태.
+		const draftIds = new Set(Array.from({ length: 16 }, (_, i) => `p${i + 12}`));
+		const settle = buildSessionSettle(session(atts), charges, dict(), 6000, [], draftIds);
+		expect(settle.targetCount).toBe(28);
+		expect(settle.activeCount).toBe(16);
+		expect(settle.pending).toHaveLength(12);
+		expect(settle.missing).toEqual([]);
+		expect(settle.flaggedCount).toBe(0);
 	});
 
 	it("부과삭제(void)된 사람은 missing 이 아니다 — 의도된 면제이므로 재부과를 유도하지 않는다", () => {
@@ -465,7 +507,7 @@ describe("courtPerHead — 서버 dues_court_per_head 미러", () => {
 // 시트는 두 항등식을 그대로 화면에 쓴다. 닫히지 않으면 "숫자가 안 맞는다"는 원래 문제로 되돌아가므로
 // 어떤 조합에서도 닫히는지 검사한다.
 //   ① 정액: 참석 − 운영진 + 당일취소 + 보드추가 = 부과 대상  /  엔빵: 참석 + 당일취소 + 보드추가 = 부과 대상
-//   ② 부과 대상 − 누락 − 부과삭제 + 대상아닌부과 = 실제 부과 건수
+//   ② 부과 대상 − 누락 − 발행대기 − 부과삭제 + 대상아닌부과 = 실제 부과 건수
 function expectIdentities(settle: ReturnType<typeof buildSessionSettle>) {
 	const bridge =
 		settle.mode === "none"
@@ -474,7 +516,7 @@ function expectIdentities(settle: ReturnType<typeof buildSessionSettle>) {
 				settle.targetDayCancelCount +
 				settle.boardAddedCount;
 	expect(bridge).toBe(settle.targetCount);
-	expect(settle.targetCount - settle.missing.length - settle.deadOnTargetCount + settle.liveExtraCount).toBe(settle.activeCount);
+	expect(settle.targetCount - settle.missing.length - settle.pending.length - settle.deadOnTargetCount + settle.liveExtraCount).toBe(settle.activeCount);
 }
 
 describe("buildSessionSettle — 항등식이 닫힌다", () => {
@@ -584,8 +626,8 @@ describe("buildSessionSettle — 통합 명단(roster)", () => {
 		expect(settle.roster.map((r) => r.name).sort()).toEqual(
 			["고아", "누락", "당일취소", "미납", "완납", "운영진A", "잔재", "즉시철회"].sort(),
 		);
-		// charged(5) + missing(1) + exempt(운영진A·즉시철회 2) = 8
-		expect(settle.roster.length).toBe(settle.charged.length + settle.missing.length + settle.exempt.length);
+		// charged(5) + missing(1) + pending(0) + exempt(운영진A·즉시철회 2) = 8
+		expect(settle.roster.length).toBe(settle.charged.length + settle.missing.length + settle.pending.length + settle.exempt.length);
 	});
 
 	it("이름 가나다순으로 정렬한다(사람을 이름으로 찾는 게 명단의 용도)", () => {
@@ -619,14 +661,15 @@ describe("buildSessionSettle — 통합 명단(roster)", () => {
 	});
 
 	it("헤더 카운트는 서로 겹치지 않는다 — 합 + 확인필요 = 명단 수", () => {
-		const { paid, unpaid, dead, none } = settle.rosterCounts;
-		expect(paid + unpaid + dead + none + settle.flaggedCount).toBe(settle.roster.length);
+		const { paid, unpaid, dead, none, pending } = settle.rosterCounts;
+		expect(paid + unpaid + dead + none + pending + settle.flaggedCount).toBe(settle.roster.length);
 		// '잔재'는 완납이지만 확인필요라 완납에서 빠지고, '누락'은 부과없음에서 빠진다.
-		expect({ paid, unpaid, dead, none, flagged: settle.flaggedCount }).toEqual({
+		expect({ paid, unpaid, dead, none, pending, flagged: settle.flaggedCount }).toEqual({
 			paid: 2, // 완납 · 고아(완납이고 확인 대상 아님) — '잔재'는 flagged 로 빠짐
 			unpaid: 2, // 미납 · 당일취소(미납 상태)
 			dead: 0,
 			none: 2, // 운영진A · 즉시철회 — '누락'은 flagged 로 빠짐
+			pending: 0,
 			flagged: 2, // 누락 + 잔재
 		});
 	});
@@ -640,6 +683,7 @@ describe("buildSessionSettle — 통합 명단(roster)", () => {
 		const byName = new Map(settle.roster.map((r) => [r.name, r]));
 		expect(byName.get("누락")!.charge).toBeNull();
 		expect(byName.get("누락")!.reason).toBeNull(); // 문구가 엔빵/정액에 따라 갈려 화면에서 결정
+		expect(byName.get("누락")!.targetReason).toBe("attending");
 		expect(byName.get("운영진A")!.charge).toBeNull();
 		expect(byName.get("운영진A")!.reason).toBe("adminFlat");
 		expect(byName.get("즉시철회")!.reason).toBe("grace");

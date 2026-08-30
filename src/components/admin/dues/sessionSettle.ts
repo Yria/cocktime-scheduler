@@ -105,6 +105,13 @@ export interface SettlePersonRow {
 	isGuest: boolean;
 }
 
+/** 이 사람이 대관비 대상에 들어온 직접 근거 — 누락/발행대기 문구를 뭉뚱그리지 않기 위한 값. */
+export type TargetReason = "attending" | "dayCancel" | "boardAdded";
+
+export interface SettleTargetRow extends SettlePersonRow {
+	targetReason: TargetReason;
+}
+
 export interface SettleExemptRow extends SettlePersonRow {
 	reason: NonTargetReason;
 }
@@ -115,6 +122,7 @@ export interface SettleExemptRow extends SettlePersonRow {
  */
 export type RosterKind =
 	| "missing" // ⚠ 부과 대상인데 부과가 없음
+	| "pending" // 정상 발행 전: 진행 중 세션의 종료 후 자동발행 또는 서버 발행 대기 초안
 	| "stale" // ⚠ 살아 있는데 현 규칙 대상이 아닌 부과(잔재)
 	| "charged" // 정상 부과
 	| "orphan" // 참석 기록이 없는 부과(대조 근거 없음)
@@ -128,11 +136,12 @@ export interface SettleRosterRow {
 	kind: RosterKind;
 	charge: SettleChargeRow | null; // null = 부과 없는 사람
 	reason: NonTargetReason | null; // 우측 사유(missing 은 null — 문구가 모드에 따라 갈림)
+	targetReason: TargetReason | null; // missing/pending 이 부과 대상이 된 직접 근거
 	isAdmin: boolean;
 }
 
 /** 동명이인 tie-break 용(정렬 1순위는 이름 가나다). 확인할 것이 먼저 오게. */
-const KIND_RANK: Record<RosterKind, number> = { missing: 0, stale: 1, charged: 2, orphan: 3, exempt: 4 };
+const KIND_RANK: Record<RosterKind, number> = { missing: 0, stale: 1, pending: 2, charged: 3, orphan: 4, exempt: 5 };
 
 export interface SessionSettle {
 	mode: "split" | "flat" | "none"; // 엔빵 | 정액 | 안 걷는 회차(총액 0 이하)
@@ -154,8 +163,9 @@ export interface SessionSettle {
 	graceCount: number; // 당일 취소지만 확정 후 1시간 내 철회라 부과 대상이 아닌 수
 
 	// ── 항등식 ②: 부과 대상 → 유효 부과 건수 ──────────────────────
-	//   targetCount − missing − deadOnTargetCount + liveExtraCount = activeCount
-	missing: SettlePersonRow[]; // ⚠ 부과 대상인데 부과가 없는 사람
+	//   targetCount − missing − pending − deadOnTargetCount + liveExtraCount = activeCount
+	missing: SettleTargetRow[]; // ⚠ 부과 대상인데 부과가 없는 사람
+	pending: SettleTargetRow[]; // 아직 발행 전인 정상 상태(진행 중 자동발행 예정 또는 발행 대기 초안)
 	deadOnTargetCount: number; // 대상이지만 부과삭제·면제된 건
 	liveExtraCount: number; // 대상이 아닌데 살아 있는 부과(잔재 — 받은 돈이 늘어나는 원인)
 	activeCount: number; // 유효 부과(void·waived 제외) 건수
@@ -169,9 +179,9 @@ export interface SessionSettle {
 	 * 명단 헤더에 띄우는 상태별 머릿수. **확인 필요 행은 빼고 센다** — 한 사람이 `완납`과
 	 * `⚠확인` 양쪽에 잡히면 헤더가 분할처럼 읽히면서 합이 안 맞아 보인다(확인이 필요하다는 게
 	 * 그 사람에 대한 더 중요한 사실이므로 납부 상태 대신 그쪽으로 센다).
-	 * 불변식: `paid + unpaid + dead + none + flaggedCount = roster.length` (테스트로 강제)
+	 * 불변식: `paid + unpaid + dead + none + pending + flaggedCount = roster.length` (테스트로 강제)
 	 */
-	rosterCounts: { paid: number; unpaid: number; dead: number; none: number };
+	rosterCounts: { paid: number; unpaid: number; dead: number; none: number; pending: number };
 	exempt: SettleExemptRow[]; // 부과 없이 정상적으로 빠진 사람(사유 표기)
 	extra: SettleChargeRow[]; // 부과는 있으나 현 규칙 대상이 아닌 건 전부(charged 의 부분집합)
 	/**
@@ -235,6 +245,7 @@ export function buildSessionSettle(
 	memberById: Map<string, AdminMemberRow>,
 	flatFee: number,
 	txns: { direction: "in" | "out"; amount: number }[],
+	draftMemberIds: ReadonlySet<string> = new Set(),
 ): SessionSettle {
 	const nameOf = (id: string) => memberById.get(id)?.name ?? "(회원)";
 	const birthYearOf = (id: string) => memberById.get(id)?.birthYear ?? null;
@@ -253,6 +264,11 @@ export function buildSessionSettle(
 	// ── 부과 대상 집합 재현 ─────────────────────────────────────────
 	// 대상이 아닌 참석행은 사유를 남긴다: 부과가 없으면 '정상 면제' 설명으로, 부과가 있으면 '확인 필요'로.
 	const targets = new Set<string>();
+	const targetReasons = new Map<string, TargetReason>();
+	const addTarget = (memberId: string, reason: TargetReason) => {
+		targets.add(memberId);
+		if (!targetReasons.has(memberId)) targetReasons.set(memberId, reason);
+	};
 	const nonTarget = new Map<string, NonTargetReason>();
 	let targetDayCancelCount = 0;
 	let boardAddedCount = 0; // 명단 기준으론 대상이 아닌데 보드에 있어 대상이 된 인원
@@ -279,10 +295,10 @@ export function buildSessionSettle(
 			// 엔빵: 실제 참석 + 부과대상 당일취소 + 보드 추가분(운영진·게스트 포함).
 			// 당일취소를 빼면 코트를 비운 사람이 한 푼도 안 내고 나온 사람들이 더 나눠 갖는 역진이 된다.
 			if (isAttending(a.status) || dayCancel) {
-				targets.add(a.memberId);
+				addTarget(a.memberId, dayCancel ? "dayCancel" : "attending");
 				if (dayCancel) targetDayCancelCount++;
 			} else if (onBoard) {
-				targets.add(a.memberId);
+				addTarget(a.memberId, "boardAdded");
 				boardAddedCount++;
 			} else {
 				nonTarget.set(
@@ -306,7 +322,7 @@ export function buildSessionSettle(
 			nonTarget.set(a.memberId, "adminFlat"); // 왔지만 대관비를 걷지 않는 사람
 			continue;
 		}
-		targets.add(a.memberId);
+		addTarget(a.memberId, dayCancel ? "dayCancel" : isAttending(a.status) ? "attending" : "boardAdded");
 		if (dayCancel) targetDayCancelCount++;
 		else if (!isAttending(a.status)) boardAddedCount++; // 명단은 대기·취소인데 보드에 넣어 뛴 사람
 	}
@@ -321,7 +337,7 @@ export function buildSessionSettle(
 			nonTarget.set(id, "adminFlat"); // 정액은 운영진 면제
 			continue;
 		}
-		targets.add(id);
+		addTarget(id, "boardAdded");
 		boardAddedCount++;
 	}
 
@@ -376,14 +392,24 @@ export function buildSessionSettle(
 		})
 		.sort((a, b) => statusRank(a.status) - statusRank(b.status) || a.name.localeCompare(b.name));
 
-	// 부과 대상인데 부과 행이 아예 없는 사람 — 화면에 없던 정보(운영진이 손으로 세던 그것).
-	const missing: SettlePersonRow[] = [...targets]
+	// 부과 대상인데 부과 행이 아예 없는 사람. 진행 중 세션은 종료 후 자동발행 전이므로 정상 대기이고,
+	// closed 여도 dues_charge_drafts 에 있으면 운영진이 이미 볼 수 있는 '발행 대기'다. 둘을 실제 누락과
+	// 섞으면 세션 165처럼 발행 대기 12명이 전부 `⚠ 확인 · 부과 없음`으로 이중 경고된다.
+	const unissued: SettleTargetRow[] = [...targets]
 		.filter((id) => !chargedIds.has(id))
 		.map((id) => {
 			const m = memberById.get(id);
-			return { memberId: id, name: nameOf(id), isAdmin: m?.isAdmin ?? false, isGuest: m?.isGuest ?? false };
+			return {
+				memberId: id,
+				name: nameOf(id),
+				isAdmin: m?.isAdmin ?? false,
+				isGuest: m?.isGuest ?? false,
+				targetReason: targetReasons.get(id) ?? "attending",
+			};
 		})
 		.sort((a, b) => a.name.localeCompare(b.name));
+	const pending = unissued.filter((m) => session.status !== "closed" || draftMemberIds.has(m.memberId));
+	const missing = unissued.filter((m) => session.status === "closed" && !draftMemberIds.has(m.memberId));
 
 	// ── 금액 ────────────────────────────────────────────────────────
 	const live = charged.filter((c) => c.live); // 낼 돈
@@ -402,7 +428,8 @@ export function buildSessionSettle(
 	// 한 사람이 두 줄로 나오지 않는 이유: missing ⊂ targets, exempt ⊂ nonTarget−charged, 부과는
 	// (member, session) 유니크 → 세 소스가 서로 겹치지 않는다.
 	const roster: SettleRosterRow[] = [
-		...missing.map((m): SettleRosterRow => ({ key: `m${m.memberId}`, name: m.name, birthYear: birthYearOf(m.memberId), kind: "missing", charge: null, reason: null, isAdmin: m.isAdmin })),
+		...missing.map((m): SettleRosterRow => ({ key: `m${m.memberId}`, name: m.name, birthYear: birthYearOf(m.memberId), kind: "missing", charge: null, reason: null, targetReason: m.targetReason, isAdmin: m.isAdmin })),
+		...pending.map((m): SettleRosterRow => ({ key: `p${m.memberId}`, name: m.name, birthYear: birthYearOf(m.memberId), kind: "pending", charge: null, reason: null, targetReason: m.targetReason, isAdmin: m.isAdmin })),
 		...charged.map((c): SettleRosterRow => ({
 			key: `c${c.chargeId}`,
 			name: c.name,
@@ -410,16 +437,18 @@ export function buildSessionSettle(
 			kind: c.extraReason == null ? "charged" : c.extraReason === "noAttendance" ? "orphan" : c.live ? "stale" : "charged",
 			charge: c,
 			reason: c.extraReason,
+			targetReason: null,
 			isAdmin: c.isAdmin,
 		})),
-		...exemptSorted.map((e): SettleRosterRow => ({ key: `e${e.memberId}`, name: e.name, birthYear: birthYearOf(e.memberId), kind: "exempt", charge: null, reason: e.reason, isAdmin: e.isAdmin })),
+		...exemptSorted.map((e): SettleRosterRow => ({ key: `e${e.memberId}`, name: e.name, birthYear: birthYearOf(e.memberId), kind: "exempt", charge: null, reason: e.reason, targetReason: null, isAdmin: e.isAdmin })),
 	].sort((a, b) => a.name.localeCompare(b.name, "ko") || KIND_RANK[a.kind] - KIND_RANK[b.kind]);
 
-	// 명단 분할: 확인필요 / 부과없음 / 무효 / 미납 / 완납 — 다섯 칸이 서로 겹치지 않는다.
+	// 명단 분할: 확인필요 / 발행대기 / 부과없음 / 무효 / 미납 / 완납 — 서로 겹치지 않는다.
 	let flaggedCount = 0;
-	const rosterCounts = { paid: 0, unpaid: 0, dead: 0, none: 0 };
+	const rosterCounts = { paid: 0, unpaid: 0, dead: 0, none: 0, pending: 0 };
 	for (const r of roster) {
 		if (r.kind === "missing" || r.kind === "stale") flaggedCount++; // 납부 상태보다 우선해 센다
+		else if (r.kind === "pending") rosterCounts.pending++;
 		else if (!r.charge) rosterCounts.none++;
 		else if (!r.charge.live) rosterCounts.dead++;
 		else if (r.charge.remain > 0) rosterCounts.unpaid++;
@@ -438,6 +467,7 @@ export function buildSessionSettle(
 		targetCount: targets.size,
 		graceCount: reasonCount("grace"),
 		missing,
+		pending,
 		deadOnTargetCount: charged.filter((c) => !c.live && c.extraReason == null).length,
 		liveExtraCount: charged.filter((c) => c.live && c.extraReason != null).length,
 		activeCount: live.length,
@@ -479,4 +509,11 @@ export const EXTRA_LABEL: Record<NonTargetReason, string> = {
 	waitlisted: "대기인데 부과됨",
 	noCourtFee: "안 걷는 회차인데 부과됨",
 	noAttendance: "참석 기록 없는데 부과됨",
+};
+
+/** 부과 대상이 된 직접 근거. 누락·발행 대기 행에서 상태와 조합해 쓴다. */
+export const TARGET_LABEL: Record<TargetReason, string> = {
+	attending: "참석 확정",
+	dayCancel: "당일취소",
+	boardAdded: "보드 참가",
 };

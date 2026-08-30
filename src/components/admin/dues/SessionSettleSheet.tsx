@@ -5,7 +5,7 @@ import { nameWithBirthYear } from "../../../lib/birthYear";
 import { rowActionBtn } from "./duesCardStyles";
 import { Divider, Row, Section, Tag } from "./duesSheetBits";
 import { sessionLabel, signedWon, statusChipClass, statusLabel, won } from "./duesText";
-import { EXEMPT_LABEL, EXTRA_LABEL, type SessionSettle } from "./sessionSettle";
+import { EXEMPT_LABEL, EXTRA_LABEL, TARGET_LABEL, type SessionSettle } from "./sessionSettle";
 import type { SessionFeeRow } from "../../../lib/supabase/dues";
 
 // 세션 정산 대조 시트(열람 전용).
@@ -83,9 +83,18 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 						strong
 					/>
 					{s.missing.length > 0 && <Row label="− 부과 누락" value={`${s.missing.length}명`} tone="out" indent />}
+					{s.pending.length > 0 && (
+						<Row
+							label={session.status === "closed" ? "− 발행 대기" : "− 종료 후 자동 부과"}
+							value={`${s.pending.length}명`}
+							tone={session.status === "closed" ? "warn" : "muted"}
+							indent
+							sub={session.status === "closed" ? "초안을 확인해 발행하거나 폐기" : "세션이 끝나면 자동 생성"}
+						/>
+					)}
 					{s.deadOnTargetCount > 0 && <Row label="− 부과삭제·면제" value={`${s.deadOnTargetCount}건`} tone="muted" indent />}
 					{s.liveExtraCount > 0 && <Row label="+ 대상 아닌 부과" value={`${s.liveExtraCount}건`} tone="out" indent sub="규칙과 어긋난 잔재" />}
-					{(s.missing.length > 0 || s.deadOnTargetCount > 0 || s.liveExtraCount > 0) && (
+					{(s.missing.length > 0 || s.pending.length > 0 || s.deadOnTargetCount > 0 || s.liveExtraCount > 0) && (
 						<Row label="실제 부과" value={`${s.activeCount}건`} strong />
 					)}
 				</Section>
@@ -126,13 +135,14 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 						style={{ background: "none", border: "none", padding: "0 0 6px", cursor: "pointer", textAlign: "left" }}
 					>
 						<b className="text-strong" style={{ fontSize: 13.5, flexShrink: 0 }}>전체 명단 {s.roster.length}명</b>
-						{/* 상태별 머릿수 — 다섯 칸이 서로 겹치지 않아 합 = 명단 수(확인필요 행은 완납·미납으로
+						{/* 상태별 머릿수 — 여섯 칸이 서로 겹치지 않아 합 = 명단 수(확인필요 행은 완납·미납으로
 						    이중 계상하지 않는다). 0은 생략. 좁은 화면에선 줄바꿈. */}
 						<span className="flex flex-wrap items-center justify-end" style={{ gap: "1px 7px", flex: 1, minWidth: 0, fontSize: 11.5 }}>
 							{s.rosterCounts.paid > 0 && <span className="text-[#1c8a3b]">완납 {s.rosterCounts.paid}</span>}
 							{s.rosterCounts.unpaid > 0 && <span className="text-[#c2670a]" style={{ fontWeight: 700 }}>미납 {s.rosterCounts.unpaid}</span>}
 							{s.rosterCounts.dead > 0 && <span className="text-faint">무효 {s.rosterCounts.dead}</span>}
 							{s.rosterCounts.none > 0 && <span className="text-faint">부과없음 {s.rosterCounts.none}</span>}
+							{s.rosterCounts.pending > 0 && <span className="text-[#c2670a]" style={{ fontWeight: 700 }}>발행대기 {s.rosterCounts.pending}</span>}
 							{s.flaggedCount > 0 && <span className="text-[#d1362c]" style={{ fontWeight: 700 }}>⚠ 확인 {s.flaggedCount}</span>}
 						</span>
 						<span className="text-faint" style={{ fontSize: 10, fontWeight: 800, flexShrink: 0 }}>{rosterOpen ? "▲" : "▼"}</span>
@@ -148,13 +158,16 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 							{s.roster.map((r) => {
 								const c = r.charge;
 								const alert = r.kind === "missing" || r.kind === "stale"; // 우측 사유를 빨강으로
+								const pending = r.kind === "pending";
 								const dim = c ? !c.live : r.kind === "exempt"; // 무효 부과·정상 면제는 흐리게
-								// 우측 사유 — 누락은 모드에 따라 문구가 갈리고, 나머지는 라벨 테이블에서.
+								// 우측 사유 — 누락·발행대기는 그 사람이 대상이 된 실제 근거까지 적고, 나머지는 라벨 테이블에서.
 								// 같은 사유라도 부과가 있으면 "…인데 부과됨"(EXTRA), 없으면 "…미부과"(EXEMPT).
-								// 부과 대상은 두 모드 다 '참석 + 당일취소' 라 누락 문구도 하나다.
+								const targetLabel = r.targetReason ? TARGET_LABEL[r.targetReason] : "부과 대상";
 								const reasonText =
 									r.kind === "missing"
-										? "참석·당일취소인데 부과 없음"
+										? `${targetLabel} · 부과 미생성`
+										: r.kind === "pending"
+											? `${targetLabel} · ${session.status === "closed" ? "발행 대기" : "종료 후 자동 부과"}`
 										: r.reason
 											? c ? EXTRA_LABEL[r.reason] : EXEMPT_LABEL[r.reason]
 											: null;
@@ -175,7 +188,7 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 										</span>
 										{/* 우측: 사유 → 금액 → 상태칩. 부과 없는 사람은 사유만 놓여 자리가 비어 보이지 않는다. */}
 										{reasonText && (
-											<span className={alert ? "text-[#d1362c]" : "text-faint"} style={{ fontSize: 11, fontWeight: alert ? 700 : 500, flexShrink: 0, textAlign: "right" }}>
+											<span className={alert ? "text-[#d1362c]" : pending ? "text-[#c2670a]" : "text-faint"} style={{ fontSize: 11, fontWeight: alert || pending ? 700 : 500, flexShrink: 0, textAlign: "right" }}>
 												{reasonText}
 											</span>
 										)}
@@ -205,9 +218,10 @@ export default function SessionSettleSheet({ session, settle, settled, courtLink
 						</div>
 					)}
 					{/* 확인 대상의 다음 행동 — 명단 아래 한 줄로. */}
-					{(s.missing.length > 0 || s.staleCharges.length > 0 || s.orphanCharges.length > 0) && (
+					{(s.pending.length > 0 || s.missing.length > 0 || s.staleCharges.length > 0 || s.orphanCharges.length > 0) && (
 						<p className="text-faint" style={{ fontSize: 11.5, lineHeight: 1.5, marginTop: 6 }}>
-							{s.missing.length > 0 && "부과 누락은 세션 종료 후 참석이 바뀐 경우예요. 정산함에서 그 회원 입금을 확인할 때 이 세션 대관비를 즉석 생성할 수 있어요. "}
+							{s.pending.length > 0 && session.status === "closed" && "발행 대기는 부과 누락이 아니라 아직 회원에게 보내지 않은 초안이에요. 화면 상단에서 명단을 확인해 발행하거나 폐기해 주세요. "}
+							{s.missing.length > 0 && "부과 누락은 현재 참석 기준상 대상이지만 발행 내역과 발행 대기 초안 어디에도 없는 상태예요. 먼저 새로고침하고, 계속 남으면 정산함에서 그 회원 입금을 확인할 때 이 세션 대관비를 즉석 생성해 주세요. "}
 							{s.staleCharges.length > 0 && "이미 낸 부과는 규칙이 바뀌어도 자동 정리되지 않아요(선납 보존). 환불·다음 세션 이월은 직접 판단해 주세요. "}
 							{s.orphanCharges.length > 0 && `참석 기록 없는 부과 ${s.orphanCharges.length}건은 참석 데이터보다 부과가 먼저 있는 세션이라 대조할 수 없어요.`}
 						</p>
