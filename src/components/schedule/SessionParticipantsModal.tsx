@@ -47,18 +47,9 @@ export default function SessionParticipantsModal({
 	const split = splitConfirmedByCapacity(attendances, s.capacity, s.scheduled_at);
 	const { base: confirmedBase, over: freepassOver } = split;
 	const freepass = freepassSummary(split);
-	// 신규 표식은 **정원 외 확정 + 신규면 무조건** 붙인다 — 대기줄을 건너뛴 사실을 설명하는 표시이므로
-	// 그 상황에서 빠지면 안 된다. 운영진이면서 신규인 사람도 포함한다(요약 문구는 한 사람을 두 번 세지
-	// 않으려고 운영진/신규를 배타 분류하지만, 표식은 그 배타 분류를 따르지 않는다 — 왕관만 남으면
-	// '왜 정원 외인지'가 화면에서 사라진다). 서버가 초과 확정 신규를 세는 기준과도 같다.
-	//
-	// 반대로 확정(정원 안)·대기 행에는 붙이지 않는다: 프리패스가 없는 일정(대관비 부과)의 신규 대기자에게
-	// 붙으면 '먼저 들어갈 사람'처럼 읽히고, 클라이언트는 일정의 부과 여부를 신뢰성 있게 알 수 없다.
-	const newbieFreepassIds = new Set(
-		split.over
-			.filter((a) => isNewbieAtt(a, s.scheduled_at))
-			.map((a) => a.member_id),
-	);
+	// 신규 표식(🌱)은 ParticipantRow 가 행마다 직접 판정한다 — 섹션과 무관하게 **가입 2주 이내
+	// 회원이면 항상** 붙는다(운영자 결정 2026-09-03). 요약 문구의 사유별 인원은 한 사람을 두 번 세지
+	// 않으려고 운영진/신규를 배타 분류하지만(freepassSummary), 표식은 그 분류를 따르지 않는다.
 	const guestCap = guestCapForSession(s.scheduled_at);
 	// 정모 식사 체크 회차 — 헤더 집계 + 행 표식(불참자만). 카드(ScheduleCard)와 같은 기준으로 센다.
 	const mealOn = s.is_regular && s.meal_enabled;
@@ -163,7 +154,6 @@ export default function SessionParticipantsModal({
 											carpoolEnabled={s.carpool_enabled}
 											mealOn={mealOn}
 											scheduledAt={s.scheduled_at}
-											isNewbieFreepass={newbieFreepassIds.has(a.member_id)}
 											canRemove={canRemove}
 											onRemove={setPendingRemove}
 										/>
@@ -308,7 +298,6 @@ function ParticipantRow({
 	scheduledAt,
 	waitInfo,
 	isPool = false,
-	isNewbieFreepass = false,
 	canRemove = false,
 	onRemove,
 }: {
@@ -322,8 +311,6 @@ function ParticipantRow({
 	waitInfo?: WaitDisplay;
 	/** 정원 외 늦참(late_pool) 행 — 바이올렛 링 + 도착시각 강조. */
 	isPool?: boolean;
-	/** 신규회원 2주 프리패스로 정원 외 확정된 행 — '🌱 신규' 딱지. 정원 외 섹션에서만 true. */
-	isNewbieFreepass?: boolean;
 	/** 운영진 뷰 — 제거 버튼 노출(본인 행 제외). */
 	canRemove?: boolean;
 	onRemove?: (row: AttendanceRow) => void;
@@ -333,6 +320,9 @@ function ParticipantRow({
 	const isGuest = a.member?.is_guest ?? a.invited_by != null;
 	// 운영진 여부 — nested user_roles 에 role='admin' 행이 있으면 운영진(게스트는 role 없음 → 자동 제외).
 	const isAdmin = (a.member?.user_roles ?? []).some((r) => r.role === "admin");
+	// 가입 2주 이내(=이 회차에서 대기줄을 건너뛸 수 있는) 회원인가 — 확정·정원 외·대기·늦참 어느
+	// 섹션에서든 표식을 붙인다. 게스트·유예 지난 회원은 false(isNewbieAtt).
+	const isNewbie = isNewbieAtt(a, scheduledAt);
 
 	// 게스트를 데려온(신청한) 회원 이름 — 배지에 함께 노출. 신청자 회원이 삭제되면 null → "게스트"만.
 	// 배지 안 문구라 회색 분리 대신 한 문자열로 년생을 붙인다("홍길동 85님 게스트").
@@ -389,14 +379,14 @@ function ParticipantRow({
 					<CrownIcon size={16} />
 				</span>
 			)}
-			{/* 신규(정원 외) 표식 — 운영진 왕관과 같은 아이콘 전용 표기. 이름 뒤 배지가 길어지면
-			    긴 이름이 밀려 잘리므로, 설명은 title/aria-label 로만 준다. */}
-			{isNewbieFreepass && (
+			{/* 신규 회원 표식 — 운영진 왕관과 같은 아이콘 전용 표기. 이름 뒤 배지가 길어지면 긴 이름이
+			    밀려 잘리므로 설명은 title/aria-label 로만 준다. */}
+			{isNewbie && (
 				<span
 					className="text-[#15803d] dark:text-[#6ee7a8] inline-flex flex-shrink-0"
 					role="img"
-					aria-label="신규 회원 · 정원 외"
-					title="신규 회원 · 정원 외"
+					aria-label="신규 회원 (가입 2주 이내)"
+					title="신규 회원 · 가입 2주 이내라 만석이어도 참여"
 				>
 					<Sprout size={16} strokeWidth={2.4} aria-hidden="true" />
 				</span>
