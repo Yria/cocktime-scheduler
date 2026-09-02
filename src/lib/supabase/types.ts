@@ -157,6 +157,10 @@ export interface AttendanceRow {
 		birth_year?: number | null;
 		/** 운영진 뱃지용 nested user_roles. role='admin' 행이 있으면 운영진(RLS: admin 행은 전 회원 공개). */
 		user_roles?: { role: string }[] | null;
+		/** 가입일 보정값(date "YYYY-MM-DD"). 신규회원 2주 프리패스·회비 부과가 같은 가입일 정의를 쓴다. */
+		membership_started_at?: string | null;
+		/** 계정 생성 시각(ISO). membership_started_at 이 없을 때의 가입일 소스(KST 달력 날짜로 환산). */
+		created_at?: string | null;
 	} | null;
 	/** fetchAttendances의 invited_by(신청자) 회원 임베드. 게스트 행에만 존재, 본인 참석은 null. */
 	inviter?: { name: string; birth_year?: number | null } | null;

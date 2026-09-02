@@ -149,7 +149,8 @@ export async function fetchAttendances(
 	const { data, error } = await supabase
 		.from("attendances")
 		.select(
-			"*, member:member_id(name, is_guest, gender, birth_year, user_roles(role)), inviter:invited_by(name, birth_year)",
+			// membership_started_at·created_at = 신규회원 2주 프리패스 판정(isNewbieAtt) 소스.
+			"*, member:member_id(name, is_guest, gender, birth_year, membership_started_at, created_at, user_roles(role)), inviter:invited_by(name, birth_year)",
 		)
 		.in("session_id", sessionIds)
 		.neq("status", "cancelled")

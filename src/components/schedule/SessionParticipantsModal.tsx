@@ -2,7 +2,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import type { AttendanceRow, SessionRow } from "../../lib/supabase/types";
 import { fmtClock, fmtRange } from "../../lib/schedule/timeFmt";
-import { waitDisplay, guestCapForSession, splitConfirmedByCapacity, type WaitDisplay } from "../../lib/schedule/waitStatus";
+import { waitDisplay, guestCapForSession, splitConfirmedByCapacity, freepassSummary, type WaitDisplay } from "../../lib/schedule/waitStatus";
 import { useAuthStore } from "../../store/authStore";
 import { scheduleActions } from "../../store/scheduleStore";
 import { toast } from "../../store/toastStore";
@@ -43,8 +43,14 @@ export default function SessionParticipantsModal({
 	const confirmed = attendances.filter((a) => a.status === "confirmed");
 	const waiting = attendances.filter((a) => a.status === "waitlisted");
 	const latePool = attendances.filter((a) => a.status === "late_pool");
-	// 정원 초과(프리패스=만석일 때 들어온 운영진)만 별도 "운영진" 섹션으로. 정원 안 운영진은 확정에 그대로 포함.
-	const { base: confirmedBase, freepassOps } = splitConfirmedByCapacity(attendances, s.capacity);
+	// 정원 초과(프리패스=만석일 때 들어온 운영진·신규회원)만 별도 섹션으로. 정원 안 운영진·신규는 확정에 그대로 포함.
+	const split = splitConfirmedByCapacity(attendances, s.capacity, s.scheduled_at);
+	const { base: confirmedBase, over: freepassOver } = split;
+	const freepass = freepassSummary(split);
+	// '🌱 신규' 딱지는 정원 외 섹션에서만 붙인다 — 신규 프리패스로 들어왔다는 설명이기 때문이다.
+	// 확정·대기 행에까지 붙이면 프리패스가 없는 일정(대관비 부과)의 신규 대기자도 '먼저 들어갈 사람'
+	// 처럼 읽힌다. 클라이언트는 일정의 부과 여부를 신뢰성 있게 알 수 없으므로 아예 붙이지 않는다.
+	const newbieFreepassIds = new Set(split.freepassNewbies.map((a) => a.member_id));
 	const guestCap = guestCapForSession(s.scheduled_at);
 	// 정모 식사 체크 회차 — 헤더 집계 + 행 표식(불참자만). 카드(ScheduleCard)와 같은 기준으로 센다.
 	const mealOn = s.is_regular && s.meal_enabled;
@@ -103,7 +109,7 @@ export default function SessionParticipantsModal({
 				>
 					확정 {confirmed.length}
 					{s.capacity != null ? `/${s.capacity}` : ""}명
-					{freepassOps.length > 0 ? ` (운영진 ${freepassOps.length}명)` : ""}
+					{freepass ? ` (${freepass})` : ""}
 					{waiting.length > 0 ? ` · 대기 ${waiting.length}` : ""}
 					{latePool.length > 0 ? ` · 늦참 ${latePool.length}` : ""}
 					{mealOn ? ` · 식사 ${mealJoin}명` : ""}
@@ -135,13 +141,13 @@ export default function SessionParticipantsModal({
 							</Section>
 						)}
 
-						{freepassOps.length > 0 && (
+						{freepassOver.length > 0 && (
 							<>
 								{confirmedBase.length > 0 && (
 									<div className="mx-2 my-1.5 border-t border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.08)]" />
 								)}
-								<Section title={`운영진 ${freepassOps.length}명 · 정원 외`}>
-									{freepassOps.map((a) => (
+								<Section title={`${freepass} · 정원 외`}>
+									{freepassOver.map((a) => (
 										<ParticipantRow
 											key={a.member_id}
 											row={a}
@@ -149,6 +155,7 @@ export default function SessionParticipantsModal({
 											carpoolEnabled={s.carpool_enabled}
 											mealOn={mealOn}
 											scheduledAt={s.scheduled_at}
+											isNewbieFreepass={newbieFreepassIds.has(a.member_id)}
 											canRemove={canRemove}
 											onRemove={setPendingRemove}
 										/>
@@ -293,6 +300,7 @@ function ParticipantRow({
 	scheduledAt,
 	waitInfo,
 	isPool = false,
+	isNewbieFreepass = false,
 	canRemove = false,
 	onRemove,
 }: {
@@ -306,6 +314,8 @@ function ParticipantRow({
 	waitInfo?: WaitDisplay;
 	/** 정원 외 늦참(late_pool) 행 — 바이올렛 링 + 도착시각 강조. */
 	isPool?: boolean;
+	/** 신규회원 2주 프리패스로 정원 외 확정된 행 — '🌱 신규' 딱지. 정원 외 섹션에서만 true. */
+	isNewbieFreepass?: boolean;
 	/** 운영진 뷰 — 제거 버튼 노출(본인 행 제외). */
 	canRemove?: boolean;
 	onRemove?: (row: AttendanceRow) => void;
@@ -315,6 +325,7 @@ function ParticipantRow({
 	const isGuest = a.member?.is_guest ?? a.invited_by != null;
 	// 운영진 여부 — nested user_roles 에 role='admin' 행이 있으면 운영진(게스트는 role 없음 → 자동 제외).
 	const isAdmin = (a.member?.user_roles ?? []).some((r) => r.role === "admin");
+
 	// 게스트를 데려온(신청한) 회원 이름 — 배지에 함께 노출. 신청자 회원이 삭제되면 null → "게스트"만.
 	// 배지 안 문구라 회색 분리 대신 한 문자열로 년생을 붙인다("홍길동 85님 게스트").
 	const inviterName = a.inviter
@@ -373,6 +384,11 @@ function ParticipantRow({
 			{isGuest && (
 				<Pill className="text-[#b4762b] bg-[rgba(180,118,43,0.12)] dark:text-[#e0a860] dark:bg-[rgba(224,168,96,0.16)]">
 					🎫 {inviterName ? `${inviterName}님 게스트` : "게스트"}
+				</Pill>
+			)}
+			{isNewbieFreepass && (
+				<Pill className="text-[#15803d] bg-[rgba(21,128,61,0.12)] dark:text-[#6ee7a8] dark:bg-[rgba(110,231,168,0.16)]">
+					🌱 신규
 				</Pill>
 			)}
 

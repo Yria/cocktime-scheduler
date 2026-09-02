@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
-import { splitConfirmedByCapacity } from "../../lib/schedule/waitStatus";
+import { splitConfirmedByCapacity, freepassSummary } from "../../lib/schedule/waitStatus";
 import { fetchAttendances } from "../../lib/supabase/schedule";
 import type { AttendanceRow, SessionRow } from "../../lib/supabase/types";
 import { useAuthStore } from "../../store/authStore";
@@ -57,7 +57,10 @@ export default function OccurrenceParticipants({ occurrence: s, placeName }: Pro
 	const confirmed = rows.filter((a) => a.status === "confirmed");
 	const waiting = rows.filter((a) => a.status === "waitlisted");
 	const latePool = rows.filter((a) => a.status === "late_pool");
-	const { freepassOps } = splitConfirmedByCapacity(rows, s.capacity);
+	// 정원 초과 프리패스(운영진 · 신규회원) 요약 — 없으면 빈 문자열.
+	const freepass = freepassSummary(
+		splitConfirmedByCapacity(rows, s.capacity, s.scheduled_at),
+	);
 	// 스택 순서 = 메인 카드와 동일(확정 → 대기 → 정원 외 늦참).
 	const roster = [...confirmed, ...waiting, ...latePool];
 
@@ -80,7 +83,7 @@ export default function OccurrenceParticipants({ occurrence: s, placeName }: Pro
 
 	const countLine =
 		`확정 ${confirmed.length}${s.capacity != null ? `/${s.capacity}` : ""}명` +
-		(freepassOps.length > 0 ? ` (운영진 ${freepassOps.length}명)` : "") +
+		(freepass ? ` (${freepass})` : "") +
 		(waiting.length > 0 ? ` · 대기 ${waiting.length}` : "") +
 		(latePool.length > 0 ? ` · 늦참 ${latePool.length}` : "");
 

@@ -6726,3 +6726,266 @@ meal:228 대조 시트 숫자: 부과 대상 17명 · 완납 12 / 미납 5 → �
 **Answer**: _(응답 대기 중…)_
 
 ---
+
+## #189
+
+**Prompt**: 코드는 니가 더 잘 짜는거같은데 설명은 codex 가 더 잘하는거같아. 이걸 짬뽕시킬수있을까
+
+**Answer**: 반만 맞습니다. 소스를 직접 읽어보니 `/codex:transfer`는 **정리해주는 게 아니라 이사만 시켜주는** 커맨드입니다.
+
+`plugins/codex/scripts/codex-companion.mjs:625` `executeTransfer()`가 하는 일 전부:
+1. `~/.claude/projects/` 밑의 현재 세션 트랜스크립트(`.jsonl`)를 찾고
+2. 그걸 Codex 스레드로 import 한 뒤
+3. `threadId`와 `codex resume <thread-id>` 문자열을 돌려줌
+
+요약도 설명도 안 만듭니다. 커맨드 정의(`commands/transfer.md`)도 "출력을 그대로 보여주고 세션 ID와 resume 명령을 보존하라"가 전부예요. 즉 넘긴 다음 **터미널에서 `codex resume <id>`로 들어가서 직접 "정리해줘"라고 물어야** 정리가 나오고, 그 대화는 Claude Code 밖에서 벌어집니다.
+
+**님이 원하는 건 `/codex:rescue` 쪽입니다.**
+
+`commands/rescue.md`에 이렇게 박혀 있습니다.
+
+> The final user-visible response must be Codex's output verbatim.
+> Do not paraphrase, summarize, rewrite, or add commentary before or after it.
+
+임의의 자연어 요청을 Codex에 넘기고 **Codex가 쓴 문장을 그대로 내 세션 안에 출력**합니다. 딱 "코드는 Claude, 설명은 Codex"입니다. 세션을 떠날 필요도 없고요.
+
+정리하면 셋의 성격이 이렇습니다.
+
+| | 어디서 답이 나오나 | 정리를 자동으로? |
+|---|---|---|
+| `/codex:transfer` | Codex 터미널 (세션 이탈) | ✗ 직접 물어야 함 |
+| `/codex:rescue` | **Claude Code 안, Codex 문장 그대로** | ✗ 요청은 해야 하지만 한 줄이면 됨 |
+| `/codex:review` | Claude Code 안 | 리뷰 전용, 설명용은 아님 |
+
+한 가지 함정: `codex-rescue` 서브에이전트는 기본이 `--write`(수정 권한 있음)입니다. 설명만 받고 싶으면 "수정하지 말고 설명만" 같은 읽기 전용 의도를 명시해야 `--write`가 안 붙습니다. 그래서 매번 같은 형식으로 받고 싶으면 `/codex:rescue`를 읽기 전용 + 고정 프롬프트로 감싼 `/explain` 한 겹이 결국 필요합니다.
+
+참고로 이 플러그인엔 이미 Stop 훅(`stop-review-gate-hook.mjs`, timeout 900초)이 들어있습니다. 님 `agent_history.py` Stop 훅과 같은 슬롯이라 공존은 하지만, 나중에 `.agent-history` 자동화(B안) 붙일 때 순서 신경 써야 합니다.
+
+깔고 `/explain`까지 만들까요, 아니면 일단 플러그인만 깔아서 `/codex:rescue` 감부터 볼까요?
+
+---
+
+## #190
+
+**Prompt**: 일단 플러그인만 설치해봐
+
+**Answer**: 설치 완료했습니다. `ready: true` — 전부 통과.
+
+[코드 블록 생략]
+
+setup 검증 결과:
+
+| 항목 | 상태 |
+|---|---|
+| Node | v26.7.0 ✓ |
+| npm | 11.19.0 ✓ |
+| Codex CLI | 0.151.0, advanced runtime available ✓ |
+| 인증 | ChatGPT 로그인 활성 (sam@dooub.com) ✓ |
+| **review gate** | **`false` (꺼짐)** |
+
+**토큰 비용**: 항상 얹히는 게 ~449 tok, 커맨드 실제로 부를 때만 1k 남짓 추가. 부담 없는 수준입니다.
+
+두 가지만 짚어둡니다.
+
+**1. Stop 훅은 지금 비활성입니다.** `reviewGateEnabled: false`라, 아까 걱정한 님 `agent_history.py` Stop 훅과의 충돌은 당장은 없습니다. `/codex:setup --enable-review-gate`로 켜면 그때부터 매 턴 끝에 리뷰를 강제하는데(timeout 900초), 켜지 마시고 일단 두는 걸 권합니다.
+
+**2. 세션 재시작이 필요합니다.** 플러그인 커맨드는 지금 세션엔 아직 안 올라와 있습니다. `/reload-plugins` 치거나 세션을 새로 여세요.
+
+그다음 `/codex:rescue`로 감을 보시면 됩니다. 설명 용도로 쓸 땐 `--write`가 기본이라, 이렇게 읽기 전용 의도를 명시하는 게 안전합니다.
+
+[코드 블록 생략]
+
+`--wait`는 포그라운드 실행이고, Codex 출력이 가공 없이 그대로 화면에 뜹니다. 써보시고 문체가 마음에 들면 그때 `/explain` 래퍼를 씌우죠.
+
+---
+
+## #191
+
+**Prompt**: 내가 원하는건 claude 로 코드작성을 하고 어떻게 수정했는지에 대한 설명을 codex 가 하길 원해.
+
+**Answer**: `/explain` 완성했습니다. 네 갈래 인자 경로 전부 검증했고, 실제 Codex 호출도 두 번 돌려봤습니다.
+
+**만든 것**
+
+| 파일 | 역할 |
+|---|---|
+| `~/.claude/commands/explain.md` | 슬래시 커맨드. Codex 출력을 제가 손대지 않고 그대로 통과시키도록 지시 |
+| `~/.claude/scripts/codex-explain.sh` | diff 수집 → `codex exec` 읽기 전용 호출 → 최종 메시지만 출력 |
+
+**쓰는 법**
+
+[코드 블록 생략]
+
+제가 작업 끝내면 `/explain` 한 번 치면 됩니다. 실측 13~26초.
+
+**동작 방식**
+- `-s read-only` — Codex가 저장소를 읽어 맥락은 보강하되 파일은 못 고칩니다. `/codex:rescue`의 기본 `--write`와 달리 설명만 하고 끝납니다
+- `-o` 로 최종 메시지만 뽑아 progress·토큰 노이즈를 제거
+- reasoning effort를 `medium`으로 낮춰 잡았습니다. 님 Codex 기본값이 `xhigh`라 설명치고는 과했습니다. 더 깊게 보고 싶으면 `CODEX_EXPLAIN_EFFORT=xhigh`
+- 고정 출력 형식: `## 무엇을 바꿨나` / `## 왜 이렇게 했나` / `## 눈여겨볼 점`, 경로:줄번호 표기, diff 복붙 금지
+- 미추적 신규 파일도 본문을 붙여 보냅니다 (바이너리는 제외). diff에 안 잡혀 설명에서 통째로 빠지는 걸 막으려고요
+- 400KB 초과 시 잘라내고 잘렸다고 명시. `CODEX_EXPLAIN_MAX_BYTES`로 조정
+
+**검증 결과**
+
+| 인자 | 결과 |
+|---|---|
+| 없음 | 작업트리 (4.6KB) ✓ |
+| `d1f118f` | 커밋 (53KB) ✓ |
+| `HEAD~2..HEAD` | 범위 (88KB) ✓ |
+| 잘못된 sha | git 에러 메시지와 함께 안전 종료 ✓ |
+
+**두 가지 알려둘 점**
+
+1. **새 세션이 필요합니다.** `~/.claude/commands/`는 방금 만든 디렉터리라 지금 세션엔 `/explain`이 아직 없습니다. `/reload-plugins`로는 안 잡힐 수 있으니 세션을 새로 여세요.
+
+2. **실제 테스트 중에 Codex가 이런 걸 짚었습니다.** `.agent-history/main.md`에 님 계정 이메일과 도구 버전이 들어가 있으니, 저장소가 외부에 공개되면 확인이 필요하다고요. 제가 넣은 지적이 아니라 Codex 출력 그대로입니다. 이 저장소가 private이면 무시하셔도 됩니다.
+
+프로젝트 규칙대로 `.agent-history/main.md`는 스테이징해뒀습니다. `~/.claude/` 밑 두 파일은 저장소 밖이라 커밋 대상이 아닙니다.
+
+---
+
+## #192
+
+**Prompt**: Hi Sam,
+
+I'm Isabel from the APAC growth.I picked up your account and had a couple of observations from the setup on cocktime-scheduler I wanted to run by you.
+
+The instance is sitting with swap in near-constant use, averaging around 0.32 GB against 0.4 GB total RAM, and almost all of the disk I/O is on the OS disk while the data disk stays near idle. That pattern usually means Postgres is paging rather than working from memory. The database itself is small, about 50 MB, so it may not surface as anything you have noticed, but when teams start putting end users on a project we typically look at memory headroom first.
+
+Is cocktime-scheduler something you are still building toward right now? Happy to keep this async, and I can pull in a Solutions Architect if you want to go through the metrics properly.
+
+Consultation with Supabase Team
+
+Best,
+Isabel Yeow
+
+
+이런 내용으로 메일을 받았는데 어떻게 생각해?
+
+**Answer**: 확인 끝났습니다. 결론부터: **메일의 기술적 진단은 틀렸습니다.** 그리고 정작 실재하는 문제는 못 짚었습니다.
+
+## 검증 결과
+
+**주장 1: "Postgres가 메모리가 아니라 디스크에서 페이징 중"** → 반박됨
+
+| 지표 | 실측값 |
+|---|---|
+| 캐시 히트율 | **100.0000%** |
+| 캐시 히트 / 디스크 읽기 | 175억 회 / **2,297회** (인스턴스 생성 이후 누적) |
+| DB 크기 vs shared_buffers | 35MB vs **224MB** |
+
+디스크 읽기 2,297회는 초기 워밍업 수준입니다. DB 전체가 shared_buffers에 6배로 들어갑니다. Postgres는 페이징을 **안 하고 있습니다**.
+
+**주장 2: "디스크 I/O가 거의 OS 디스크에만, 데이터 디스크는 유휴"** → 관측은 맞지만 추론이 거꾸로입니다.
+
+데이터 디스크가 유휴인 건 **DB가 완전히 캐시됐다는 증거**입니다. Postgres가 데이터를 페이징한다면 데이터 디스크가 바빠야 합니다. Isabel은 자기 결론을 반증하는 증거를 근거로 제시했습니다.
+
+OS 디스크에 실제로 있는 것:
+- **스왑 파일** (OS 디스크에 위치)
+- 0.5GB 박스에 상주하는 **부속 서비스 커넥션 28개** — PostgREST 10, Realtime 8(connect/subscription_manager/rls/replication), postgres_exporter, pg_net, pg_cron, mgmt-api. 0.4GB를 먹는 주체는 Postgres 데이터 페이지가 아니라 이쪽입니다.
+- `pg_timezone_names`: **8,386회 호출 × 417ms**, `/usr/share/zoneinfo`를 OS 디스크에서 읽습니다. 앱 코드에 이 호출이 **없습니다** → Studio/대시보드 계열. 즉 그가 근거로 든 OS 디스크 I/O의 일부는 **Supabase 자기 대시보드**가 만든 겁니다.
+
+**주장 3: 스왑 0.32GB** — `스왑 사용량 ≠ 스왑 스래싱`입니다. 판단 지표는 상주량이 아니라 스왑 **in/out 비율**(si/so)입니다. Linux는 유휴 페이지를 선제적으로 스왑에 내려둡니다. 유휴 커넥션 28개의 콜드 페이지 0.32GB는 정상입니다.
+
+## 정작 못 짚은 실제 문제
+
+| 쿼리 | 누적 시간 | 호출 |
+|---|---|---|
+| **Realtime WAL RLS** | **907분 (15.1시간)** | 9,209,348 |
+| `pg_timezone_names` | 58분 | 8,386 |
+| `sync_schedule_occurrences()` | 32분 | 68,419 |
+
+1위가 2위의 **15배**입니다. 이게 실제 지배 워크로드이고, 기억해둔 **Realtime 메시지 쿼터 초과**와 정확히 일치합니다. `sync_schedule_occurrences` 68,419회도 알려진 "일정 sync 남발"이 여전히 살아있다는 뜻입니다.
+
+Performance Advisor는 **INFO만** (미인덱스 FK 24건, 미사용 인덱스 1건), WARN/ERROR 0건입니다.
+
+## 판단
+
+정황상 진짜 Supabase 그로스 아웃리치로 보입니다(플랜·리전·지표가 실제와 일치, 링크나 자격증명 요구 없음). 다만 **기술적 진단이 틀렸고, 결론은 하필 업셀 항목인 "RAM 증설"에 도달합니다.** 현재 무료 = Nano(기본 인스턴스, 애드온 없음)이고, 유료 최소 상향은 Micro(1GB). 캐시 히트 100%인 35MB DB에 RAM은 **가장 마지막에 살 것**입니다.
+
+실제 제약은 **Realtime 메시지 쿼터와 egress**이고, 컴퓨트를 올려도 이건 **전혀 해결되지 않습니다.** 돈만 쓰고 문제는 그대로 남습니다.
+
+권고:
+- **컴퓨트 증설 거절.** 필요하면 나중에, 그때도 이유는 RAM이 아닐 겁니다.
+- 답장한다면 두 가지만 되물으면 충분합니다 — ①스왑 상주량 말고 **si/so 비율**을 주세요 ②데이터 디스크 유휴는 페이징의 반증인데 어떻게 해석하셨나요.
+- 실질적 다음 작업은 이미 목록에 있는 **Realtime 감축 F/G/H/I**입니다.
+- 보안: 링크·첨부가 없어 피싱 위험은 낮지만, 발신 도메인이 `@supabase.com`인지 확인하시고 `service_role` 키나 DB 비밀번호는 메일로 절대 보내지 마세요. 정식 서포트는 그걸 요구하지 않습니다.
+
+한 가지 솔직하게 덧붙이면, 임시파일이 누적 107,933개 / 290GB 있습니다(work_mem 2.1MB). 조사 중엔 유의미해 보였는데, 193일로 나누면 평균 17KB/s라 "데이터 디스크 유휴"와 모순되지 않는 수준이고 `pg_stat_statements` 보존 한계 때문에 전량 귀속은 못 했습니다. 무료 플랜에서 지금 손댈 우선순위는 아닙니다.
+
+원하시면 위 근거를 담은 답장 초안을 잡아드리겠습니다 — 정중하게, 다만 지표는 그대로 제시하는 톤으로.
+
+---
+
+## #193
+
+**Prompt**: 신규 회원가입한 유저는 2주동안 대기열 무시하고 참여할 수 있게 해줘
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #194
+
+**Prompt**: 다 끝나면 신규회원은 2주간 참여누르면 대기무시하고 참여된다는 알림을 다이얼로그로 메인에 띄워줘.
+
+**Answer**: 완료했습니다. 확정 사양대로 구현하고, 조사 워크플로가 잡아낸 결함 3건까지 고쳤습니다.
+
+## 규칙 (운영자 확정 4개 + 구현 중 확정한 1개)
+
+| 항목 | 내용 |
+|---|---|
+| 방식 | 만석이어도 즉시 확정(정원 초과), 대기 안 걸림 |
+| 상한 | 정원 초과 확정 신규 **2명** (운영진 프리패스 2명과 별도 예산) |
+| 적용 | **부과 없는 일정만** (`places.charges_court_fee=false`) |
+| 기산 | **가입일 ≤ 세션 날짜(KST) ≤ 가입일+14** |
+| 부여 시점 | **본인이 [참석하기]를 누른 순간에만** ← 아래 참조 |
+
+## 부여 시점을 제한한 이유 (조사에서 나온 반례)
+
+처음엔 승격 루프에도 신규 분기를 넣었는데, 이게 앞 순번 일반 회원을 **영구히 밀어냅니다**: 만석 + 초과 확정 신규 1명 상태에서 정원 안 회원이 취소되면 → 확정이 다시 정원과 같아지고(초과 신규가 빈 base 자리로 내려앉음) → '초과 확정 신규'가 0으로 리셋 → 신규 분기 재개방 → 뒤 순번 신규가 또 들어옴. 취소가 반복되는 동안 pos 앞의 일반 회원은 절대 못 들어옵니다.
+
+그래서 `promote_next_waitlisted`에서 신규 분기를 뺐습니다. 결과적으로 **position이 여전히 유일한 승격 순서**라 대기 순번 표시(`waitDisplay`)도 손댈 필요 없이 정확합니다.
+
+## 같이 고친 결함 3건
+
+1. **`member inactive` 가드 유실 (회귀)** — 마이그레이션을 `20260806020000` 기준으로 복사했는데 `join_session`은 그 뒤 `20260821020000`에서 비활성 회원 차단이 추가돼 있었습니다. 프로덕션 정의를 직접 받아 4개 함수를 diff해 확인 후 복원.
+2. **회원이 자기 가입일을 바꿀 수 있었다** — `members_update`가 본인 행 UPDATE를 허용하고 `membership_started_at` 컬럼 권한도 열려 있어, 2주마다 가입일을 밀면 **영구 프리패스**(+ 회비 영구 면제, 이건 기존 구멍)였습니다. `trg_members_guard_join_date`로 막았습니다(UPDATE 거부 / INSERT는 값 정리 — created_at은 DEFAULT라 거부하면 정상 가입이 깨집니다).
+3. **미래 가입일 → 영구 프리패스** — 회비 면제를 `membership_started_at` 미래로 처리하는 관행이 있어 하한(`가입일 ≤`)을 넣었습니다.
+
+## 메인 안내 다이얼로그 (추가 요청)
+
+유예 중인 회원에게 메인 진입 시 **1회** 띄웁니다(회원별 localStorage 기억). "가입 후 2주 동안은 정원이 다 차 있어도 [참석하기]를 누르면 바로 참석으로 접수돼요. **9월 17일** 회차까지예요." + 조건 2줄(대관비 걷는 일정은 정원까지만 / 한 회차에 2명까지). 참석·늦참 재확인 문구에도 한 줄 덧붙였고, 조건부라 "접수될 수 있어요"로 단정하지 않았습니다.
+
+## 검증
+
+- **프로덕션 스키마 대상 `begin; … rollback;` 시뮬레이션 40/40 통과** — 유예 경계, 만석 확정/3번째 대기, 운영진 별도 예산, starvation 반례(취소 시 대기 1순위가 안 밀림), 그리디 멱등(승격/강등 0), 부과 있는 일정 대기, 권한 회수, 가입일 컬럼 잠금(UPDATE/INSERT). 반영 없음.
+- `tsc` 0, `eslint` 0, **421 테스트 통과**(신규 15케이스), `pnpm build` 성공.
+
+## 배포
+
+`git push`는 프론트만 나갑니다. DB는 `supabase db push` 필요.
+
+## 안 한 것 (기존 문제, 이번 범위 밖)
+
+- `promote_next_waitlisted`가 `is_active`를 안 봅니다 — 운영진이 정지시킨 회원의 잔여 대기 행이 일반 승격될 수 있습니다(신규 경로는 헬퍼에 `is_active`를 넣어 막았습니다).
+- 무부과 장소 정모의 **회식비 엔빵 분모**에 프리패스 초과 인원이 들어가 1인당이 내려갑니다(운영진 프리패스도 원래 그랬음). `docs/ACCOUNTING_SPEC.md` 알려진 갭에 기록해 뒀습니다.
+
+---
+
+## #195
+
+**Prompt**: 신규 2명을 신규 무제한으로 바꾸고 커밋하고 푸쉬해
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #196
+
+**Prompt**: 신규 2명을 신규 무제한으로 바꾸고 커밋하고 푸쉬해. 그리고 다이얼로그 한번만 뜨는개 아니고 대기열없는 신입상태면 부과처럼 언제든 뜨게해 부과 다이얼로그랑 겹쳐도 문제 생기지 않게 다이엏로그는 한번에 하나힉 뜨고 확인눌렀을때 다음 다이얼로그를 띄워 이거 구현은 리액트에서 자주 쓰이는 다이얼로그 패턴내에서 구현해
+
+**Answer**: _(응답 대기 중…)_
+
+---

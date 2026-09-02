@@ -8,7 +8,7 @@ import type {
 } from "../../lib/supabase/types";
 import { fmtClock, fmtRange } from "../../lib/schedule/timeFmt";
 import { isLatePoolArrival, latePoolCutoffMs } from "../../lib/schedule/latePool";
-import { waitDisplay, guestCapForSession, splitConfirmedByCapacity } from "../../lib/schedule/waitStatus";
+import { waitDisplay, guestCapForSession, splitConfirmedByCapacity, freepassSummary } from "../../lib/schedule/waitStatus";
 import { openPlaceMap, type PlaceMapTarget } from "../../lib/kakaoMap";
 import GuestSection from "./GuestSection";
 import LateArrivalSlider from "./LateArrivalSlider";
@@ -31,6 +31,13 @@ import ConfirmDialog from "../common/ConfirmDialog";
  */
 const MEAL_SEG_BASIS = "0 0 calc((100% - 8px) / 3 * 2 + 6px)";
 
+/**
+ * 신규회원 2주 유예 중인 사람에게 붙이는 사전 안내. 프리패스는 **부과 없는 일정 + 초과 2명**
+ * 조건부라 단정하지 않는다("접수될 수 있어요") — 클라이언트는 일정의 부과 여부를 신뢰성 있게
+ * 알 수 없다(비활성 장소는 목록에서 걸러져 '장소 없음'과 구분되지 않는다).
+ */
+const NEWBIE_GRACE_HINT = " 신규 회원 기간이라 만석이어도 참여로 접수될 수 있어요.";
+
 interface Props {
 	session: SessionRow;
 	placeName: string | null;
@@ -50,6 +57,8 @@ interface Props {
 	lateJoin: boolean;
 	busy: boolean;
 	onJoin: () => void;
+	/** 내가 신규회원 2주 유예 중인가 — 사전 안내 문구에 "만석이어도 참여될 수 있다"를 덧붙인다. */
+	myNewbieGrace?: boolean;
 	onCancel: () => void;
 	onStartSession: () => void;
 	onSetCarpool: (role: CarpoolRole) => void;
@@ -82,6 +91,7 @@ export default function ScheduleCard({
 	lateJoin,
 	busy,
 	onJoin,
+	myNewbieGrace = false,
 	onCancel,
 	onStartSession,
 	onSetCarpool,
@@ -109,8 +119,10 @@ export default function ScheduleCard({
 	const latePool = attendances.filter((a) => a.status === "late_pool");
 	// 게스트 확정 상한 — 주말 무제한/평일 2(서버 session_guest_cap 미러).
 	const guestCap = guestCapForSession(s.scheduled_at);
-	// 정원 초과 프리패스 운영진(만석일 때 들어온 운영진)만 별도 카운트/표기.
-	const { freepassOps } = splitConfirmedByCapacity(attendances, s.capacity);
+	// 정원 초과 프리패스(만석일 때 들어온 운영진 · 신규회원)만 별도 카운트/표기.
+	const freepass = freepassSummary(
+		splitConfirmedByCapacity(attendances, s.capacity, s.scheduled_at),
+	);
 	// 인라인 스택 — 확정자 우선, 대기자, 정원 외 늦참 순으로 채움(초과분 +N 은 ParticipantStack)
 	const roster = [...confirmed, ...waiting, ...latePool];
 	const mine = memberId
@@ -311,7 +323,7 @@ export default function ScheduleCard({
 				>
 					확정 {confirmed.length}
 					{s.capacity != null ? `/${s.capacity}` : ""}명
-					{freepassOps.length > 0 ? ` (운영진 ${freepassOps.length}명)` : ""}
+					{freepass ? ` (${freepass})` : ""}
 					{waiting.length > 0 ? ` · 대기 ${waiting.length}` : ""}
 					{latePool.length > 0 ? ` · 늦참 ${latePool.length}` : ""}
 					{mealOn ? ` · 식사 ${mealJoin}` : ""}
@@ -575,7 +587,9 @@ export default function ScheduleCard({
 					title="완전 늦참으로 참여할까요?"
 					message={`이미 예정 시간의 2/3${
 						poolCutoffClock ? `(${poolCutoffClock})` : ""
-					}가 지났어요. 자리가 있으면 바로 참여하고, 없으면 대기로 접수돼요.`}
+					}가 지났어요. 자리가 있으면 바로 참여하고, 없으면 대기로 접수돼요.${
+						myNewbieGrace ? NEWBIE_GRACE_HINT : ""
+					}`}
 					confirmLabel="참여하기"
 					cancelLabel="닫기"
 					onConfirm={() => {
@@ -594,6 +608,8 @@ export default function ScheduleCard({
 					message={`${
 						poolCutoffClock ? `${poolCutoffClock} 이후 도착이라 ` : ""
 					}정원과 별도로 접수돼요. 도착했을 때 자리가 있으면 바로 참여하고, 없으면 대기합니다. 정원 확정 인원에는 포함되지 않아요.${
+						myNewbieGrace ? NEWBIE_GRACE_HINT : ""
+					}${
 						mine?.status === "confirmed" && waiting.length > 0
 							? " 내 확정 자리는 대기 1순위에게 넘어가요."
 							: ""

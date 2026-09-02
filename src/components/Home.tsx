@@ -11,6 +11,7 @@ import {
 } from "../store/installPromptStore";
 import { scheduleActions, useScheduleStore } from "../store/scheduleStore";
 import { latePoolCutoffMs } from "../lib/schedule/latePool";
+import { isNewbieNowKST } from "../lib/schedule/waitStatus";
 import { buildPlaceMapTarget } from "../lib/kakaoMap";
 import AppScreen from "./common/AppScreen";
 import HeaderMenu from "./common/HeaderMenu";
@@ -84,6 +85,8 @@ export default function Home({ onStart }: Props) {
 	const myGender = useAuthStore((s) => s.myGender);
 	const myBirthYear = useAuthStore((s) => s.myBirthYear);
 	const myResidence = useAuthStore((s) => s.myResidence);
+	const myMembershipStartedAt = useAuthStore((s) => s.myMembershipStartedAt);
+	const myCreatedAt = useAuthStore((s) => s.myCreatedAt);
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
 	const schedules = useScheduleStore((s) => s.schedules);
 	const places = useScheduleStore((s) => s.places);
@@ -281,6 +284,10 @@ export default function Home({ onStart }: Props) {
 	const showInstallToast =
 		profileComplete && !editingProfile && shouldShowInstallPrompt(installState);
 
+	// 내가 신규회원 2주 유예 중인가 — 참석/늦참 재확인 문구에 "만석이어도 접수될 수 있다"를 덧붙인다.
+	// (진입 안내 다이얼로그 자체는 App 의 NewbieFreepassAlert 가 담당한다.)
+	const inNewbieGrace = isNewbieNowKST(myMembershipStartedAt, myCreatedAt);
+
 	// 종료된 일정 숨김: 종료 시각이 지난 open 일정은 참석 불가 + 미노출(서버 join 가드와 동일 기준).
 	// active(진행중)는 종료 시각과 무관하게 유지 — 운영 중인 세션을 목록에서 지우지 않는다.
 	const isPastSchedule = (s: (typeof schedules)[number]) =>
@@ -393,6 +400,7 @@ export default function Home({ onStart }: Props) {
 								joinable={joinableIds.has(s.id)}
 								lateJoin={lateJoinIds.has(s.id)}
 								busy={busyId === s.id}
+								myNewbieGrace={inNewbieGrace}
 								onJoin={() => handleJoin(s.id)}
 								onCancel={() => handleCancel(s.id)}
 								onStartSession={() => handleStartSession(s.id)}

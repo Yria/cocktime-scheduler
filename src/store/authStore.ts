@@ -21,6 +21,10 @@ interface AuthState {
 	myBirthYear: number | null;
 	/** 내 거주지(동 단위, 가입 후 입력) */
 	myResidence: string | null;
+	/** 내 가입일 보정값(members.membership_started_at, date "YYYY-MM-DD"). 신규 유예 판정용. */
+	myMembershipStartedAt: string | null;
+	/** 내 계정 생성 시각(ISO). membership_started_at 이 없을 때의 가입일 소스. */
+	myCreatedAt: string | null;
 }
 
 export const useAuthStore = create<AuthState>(() => ({
@@ -34,6 +38,8 @@ export const useAuthStore = create<AuthState>(() => ({
 	myGender: null,
 	myBirthYear: null,
 	myResidence: null,
+	myMembershipStartedAt: null,
+	myCreatedAt: null,
 }));
 
 let initialized = false;
@@ -60,7 +66,8 @@ async function loadMember(user: User) {
 	}
 	const { data: member } = await supabase
 		.from("members")
-		.select("id, name, gender, birth_year, residence")
+		// membership_started_at·created_at = 신규회원 2주 프리패스 안내 노출 판정(isNewbieNowKST) 소스.
+		.select("id, name, gender, birth_year, residence, membership_started_at, created_at")
 		.eq("auth_user_id", user.id)
 		.maybeSingle();
 	const { data: admin } = await supabase.rpc("is_admin");
@@ -74,6 +81,9 @@ async function loadMember(user: User) {
 		myGender: (member?.gender as "M" | "F" | null | undefined) ?? null,
 		myBirthYear: (member?.birth_year as number | null | undefined) ?? null,
 		myResidence: (member?.residence as string | null | undefined) ?? null,
+		myMembershipStartedAt:
+			(member?.membership_started_at as string | null | undefined) ?? null,
+		myCreatedAt: (member?.created_at as string | null | undefined) ?? null,
 	});
 }
 

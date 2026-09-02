@@ -3,6 +3,10 @@ import { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore";
 import { duesActions, useDuesStore } from "../../store/duesStore";
+import {
+	entryAlertActions,
+	useEntryAlertSlot,
+} from "../../store/entryAlertStore";
 import ConfirmDialog from "../common/ConfirmDialog";
 import { remaining, won } from "../admin/dues/duesText";
 import AccountCopyRow from "./AccountCopyRow";
@@ -17,6 +21,8 @@ import { chargeLabel, selectUnpaid, unpaidSum } from "./myUnpaid";
  * 같은 1회 호출에 얹어 앱 진입 비용을 늘리지 않는다(checkUnpaidAlert).
  *
  * - 노출 조건: 로그인 회원 · 프로필 완성(ProfileSetup 모달과 겹치지 않게) · (미납 잔액 > 0 또는 돌려받을 돈 > 0) · 이번 실행에서 안 닫음.
+ * - 다른 진입 알림과 **겹치지 않는다** — 진입 알림은 슬롯 하나를 나눠 쓰고(entryAlertStore) 이 알림이
+ *   우선순위 첫째다. 닫으면 다음 알림(신규회원 안내 등)이 그 자리에 뜬다.
  * - `/my-dues` 에선 띄우지 않고 "봤음" 처리한다 — 그 화면이 같은 내용(미납 내역·계좌)을 이미 전면에
  *   보여주므로 모달이 정보를 더하지 않는다. 미납 푸시(`dues_unpaid`)가 이 경로로 딥링크되는 게 대표 경로.
  * - 정산되어 미납이 0이 되면 조건이 깨져 자연히 안 뜬다(별도 해제 처리 없음 — 부과 상태가 유일한 근거).
@@ -41,8 +47,9 @@ export default function UnpaidDuesAlert() {
 
 	useEffect(() => {
 		if (!memberId) {
-			// 로그아웃/계정 전환: 이전 회원의 미납 스냅샷을 버린다.
+			// 로그아웃/계정 전환: 이전 회원의 미납 스냅샷과 진입 알림 닫힘을 버린다.
 			duesActions.resetUnpaidAlert();
+			entryAlertActions.reset();
 			return;
 		}
 		if (!profileComplete) return;
@@ -58,7 +65,12 @@ export default function UnpaidDuesAlert() {
 	const total = unpaidSum(unpaid);
 	const refundTotal = refunds.reduce((s, r) => s + r.left, 0);
 
-	if (!profileComplete || dismissed || onMyDues || (total <= 0 && refundTotal <= 0)) return null;
+	// 슬롯 요청 — 조건이 참이어도 앞선 알림이 떠 있으면 기다린다(여기선 우선순위 첫째라 바로 뜬다).
+	const show = useEntryAlertSlot(
+		"unpaidDues",
+		profileComplete && !dismissed && !onMyDues && (total > 0 || refundTotal > 0),
+	);
+	if (!show) return null;
 
 	// 제목은 실제 미납 종류에 맞춘다(대관비만 미납인 경우가 흔함).
 	// 수동 부과(회식·공동구매 등)는 종류가 제각각이라 이름을 제목에 넣지 않고 '내역'으로 뭉갠다 —
@@ -74,7 +86,10 @@ export default function UnpaidDuesAlert() {
 				? "대관비"
 				: "회비";
 
-	const close = () => duesActions.dismissUnpaidAlert();
+	const close = () => {
+		duesActions.dismissUnpaidAlert();
+		entryAlertActions.close("unpaidDues");
+	};
 
 	// 낼 돈이 있으면 그게 주제다(환불은 아래에 덧붙는다). 돌려받을 돈만 있으면 좋은 소식이라 아이콘·색이 다르다.
 	const unpaidFirst = total > 0;
