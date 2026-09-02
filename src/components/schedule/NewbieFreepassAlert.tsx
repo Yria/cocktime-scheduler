@@ -1,4 +1,3 @@
-import { Sprout } from "lucide-react";
 import { useAuthStore } from "../../store/authStore";
 import {
 	entryAlertActions,
@@ -10,6 +9,7 @@ import {
 	newbieGraceEndKST,
 } from "../../lib/schedule/waitStatus";
 import ConfirmDialog from "../common/ConfirmDialog";
+import NewMemberIcon from "../shared/NewMemberIcon";
 
 /** 유예 마지막 날 "YYYY-MM-DD" → "9월 17일". 형식이 어긋나면 원문 그대로. */
 function fmtGraceEnd(ymd: string): string {
@@ -58,11 +58,9 @@ export default function NewbieFreepassAlert() {
 		<ConfirmDialog
 			title={
 				<span className="flex items-center gap-1.5">
-					<Sprout
-						size={19}
-						strokeWidth={2.4}
-						className="text-[#15803d] dark:text-[#6ee7a8]"
-					/>
+					<span className="text-[#15803d] dark:text-[#6ee7a8] inline-flex">
+						<NewMemberIcon size={18} />
+					</span>
 					신규 회원은 2주간 대기 없이 참여
 				</span>
 			}

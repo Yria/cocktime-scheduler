@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sprout, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { AttendanceRow, SessionRow } from "../../lib/supabase/types";
 import { fmtClock, fmtRange } from "../../lib/schedule/timeFmt";
 import { waitDisplay, guestCapForSession, splitConfirmedByCapacity, freepassSummary, isNewbieAtt, type WaitDisplay } from "../../lib/schedule/waitStatus";
@@ -7,6 +7,7 @@ import { useAuthStore } from "../../store/authStore";
 import { scheduleActions } from "../../store/scheduleStore";
 import { toast } from "../../store/toastStore";
 import ModalSheet from "../common/ModalSheet";
+import NewMemberIcon from "../shared/NewMemberIcon";
 import ConfirmDialog from "../common/ConfirmDialog";
 import EmptyState from "../shared/EmptyState";
 import PlayerAvatar from "../shared/PlayerAvatar";
@@ -388,7 +389,7 @@ function ParticipantRow({
 					aria-label="신규 회원 (가입 2주 이내)"
 					title="신규 회원 · 가입 2주 이내라 만석이어도 참여"
 				>
-					<Sprout size={16} strokeWidth={2.4} aria-hidden="true" />
+					<NewMemberIcon size={16} />
 				</span>
 			)}
 			{isGuest && (
