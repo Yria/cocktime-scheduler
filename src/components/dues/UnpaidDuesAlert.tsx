@@ -8,7 +8,7 @@ import {
 	useEntryAlertSlot,
 } from "../../store/entryAlertStore";
 import ConfirmDialog from "../common/ConfirmDialog";
-import { remaining, won } from "../admin/dues/duesText";
+import { remaining, subjectJosa, won } from "../admin/dues/duesText";
 import AccountCopyRow from "./AccountCopyRow";
 import RefundPendingCard from "./RefundPendingCard";
 import { chargeLabel, selectUnpaid, unpaidSum } from "./myUnpaid";
@@ -73,18 +73,25 @@ export default function UnpaidDuesAlert() {
 	if (!show) return null;
 
 	// 제목은 실제 미납 종류에 맞춘다(대관비만 미납인 경우가 흔함).
-	// 수동 부과(회식·공동구매 등)는 종류가 제각각이라 이름을 제목에 넣지 않고 '내역'으로 뭉갠다 —
-	// 정확한 이름은 바로 아래 항목별 목록에 그대로 뜬다.
+	// 수동 부과는 **운영진이 붙인 이름을 그대로 쓴다** — '내역'으로 뭉개면 회원이 무슨 돈인지
+	// 모른다(회식비인지 공동구매인지). 그 이름이 곧 설명이라 종류 이름보다 정보가 많다.
 	const hasFee = unpaid.some((c) => c.kind === "monthly_fee");
 	const hasCourt = unpaid.some((c) => c.kind === "court_fee");
-	const hasManual = unpaid.some((c) => c.kind === "manual");
-	const what = hasManual
-		? "내역"
-		: hasFee && hasCourt
-			? "회비·대관비"
-			: hasCourt
-				? "대관비"
-				: "회비";
+	const names: string[] = [];
+	if (hasFee) names.push("회비");
+	if (hasCourt) names.push("대관비");
+	for (const c of unpaid) {
+		if (c.kind !== "manual") continue;
+		const n = c.label?.trim();
+		if (n && !names.includes(n)) names.push(n);
+	}
+	// 네 가지를 넘으면 제목이 줄바꿈되므로 둘만 적고 나머지는 개수로 뭉갠다(전체 이름은 아래 목록에 있다).
+	const what =
+		names.length === 0
+			? "부과"
+			: names.length <= 3
+				? names.join("·")
+				: `${names.slice(0, 2).join("·")} 외 ${names.length - 2}건`;
 
 	const close = () => {
 		duesActions.dismissUnpaidAlert();
@@ -103,7 +110,9 @@ export default function UnpaidDuesAlert() {
 					) : (
 						<CircleCheck size={19} strokeWidth={2.4} className="text-[#1c8a3b]" />
 					)}
-					{unpaidFirst ? `미납 ${what}가 있어요` : "돌려받을 돈이 있어요"}
+					{unpaidFirst
+						? `미납 ${what}${subjectJosa(what)} 있어요`
+						: "돌려받을 돈이 있어요"}
 				</span>
 			}
 			confirmLabel="내 회비 보기"
@@ -191,7 +200,7 @@ export default function UnpaidDuesAlert() {
 			{unpaidFirst && (
 			<div
 				className="bg-[rgba(11,132,255,0.06)] border border-[rgba(11,132,255,0.22)]"
-				style={{ borderRadius: 14, padding: "13px 14px", marginBottom: 20 }}
+				style={{ borderRadius: 14, padding: "13px 14px" }}
 			>
 				<p
 					className="text-muted"

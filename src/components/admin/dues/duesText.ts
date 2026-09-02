@@ -91,6 +91,17 @@ export function statusChipClass(s: ChargeStatus): string {
 }
 
 /** charge 잔액(미납액). */
+/**
+ * 주격 조사 — 앞 글자에 종성이 있으면 "이", 없으면 "가". 한글이 아니면 "가".
+ * 부과 이름이 데이터에서 오므로("회식", "공동구매", "회비·대관비") 조사를 고정하면 "내역가"가 나온다.
+ */
+export function subjectJosa(word: string): string {
+	const ch = word.trim().slice(-1);
+	const code = ch.charCodeAt(0);
+	if (Number.isNaN(code) || code < 0xac00 || code > 0xd7a3) return "가";
+	return (code - 0xac00) % 28 === 0 ? "가" : "이";
+}
+
 export function remaining(amountDue: number, amountPaid: number): number {
 	return Math.max(0, amountDue - amountPaid);
 }

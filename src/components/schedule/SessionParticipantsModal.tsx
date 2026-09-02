@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { Sprout, X } from "lucide-react";
 import type { AttendanceRow, SessionRow } from "../../lib/supabase/types";
 import { fmtClock, fmtRange } from "../../lib/schedule/timeFmt";
-import { waitDisplay, guestCapForSession, splitConfirmedByCapacity, freepassSummary, type WaitDisplay } from "../../lib/schedule/waitStatus";
+import { waitDisplay, guestCapForSession, splitConfirmedByCapacity, freepassSummary, isNewbieAtt, type WaitDisplay } from "../../lib/schedule/waitStatus";
 import { useAuthStore } from "../../store/authStore";
 import { scheduleActions } from "../../store/scheduleStore";
 import { toast } from "../../store/toastStore";
@@ -47,10 +47,18 @@ export default function SessionParticipantsModal({
 	const split = splitConfirmedByCapacity(attendances, s.capacity, s.scheduled_at);
 	const { base: confirmedBase, over: freepassOver } = split;
 	const freepass = freepassSummary(split);
-	// '🌱 신규' 딱지는 정원 외 섹션에서만 붙인다 — 신규 프리패스로 들어왔다는 설명이기 때문이다.
-	// 확정·대기 행에까지 붙이면 프리패스가 없는 일정(대관비 부과)의 신규 대기자도 '먼저 들어갈 사람'
-	// 처럼 읽힌다. 클라이언트는 일정의 부과 여부를 신뢰성 있게 알 수 없으므로 아예 붙이지 않는다.
-	const newbieFreepassIds = new Set(split.freepassNewbies.map((a) => a.member_id));
+	// 신규 표식은 **정원 외 확정 + 신규면 무조건** 붙인다 — 대기줄을 건너뛴 사실을 설명하는 표시이므로
+	// 그 상황에서 빠지면 안 된다. 운영진이면서 신규인 사람도 포함한다(요약 문구는 한 사람을 두 번 세지
+	// 않으려고 운영진/신규를 배타 분류하지만, 표식은 그 배타 분류를 따르지 않는다 — 왕관만 남으면
+	// '왜 정원 외인지'가 화면에서 사라진다). 서버가 초과 확정 신규를 세는 기준과도 같다.
+	//
+	// 반대로 확정(정원 안)·대기 행에는 붙이지 않는다: 프리패스가 없는 일정(대관비 부과)의 신규 대기자에게
+	// 붙으면 '먼저 들어갈 사람'처럼 읽히고, 클라이언트는 일정의 부과 여부를 신뢰성 있게 알 수 없다.
+	const newbieFreepassIds = new Set(
+		split.over
+			.filter((a) => isNewbieAtt(a, s.scheduled_at))
+			.map((a) => a.member_id),
+	);
 	const guestCap = guestCapForSession(s.scheduled_at);
 	// 정모 식사 체크 회차 — 헤더 집계 + 행 표식(불참자만). 카드(ScheduleCard)와 같은 기준으로 센다.
 	const mealOn = s.is_regular && s.meal_enabled;
@@ -381,14 +389,21 @@ function ParticipantRow({
 					<CrownIcon size={16} />
 				</span>
 			)}
+			{/* 신규(정원 외) 표식 — 운영진 왕관과 같은 아이콘 전용 표기. 이름 뒤 배지가 길어지면
+			    긴 이름이 밀려 잘리므로, 설명은 title/aria-label 로만 준다. */}
+			{isNewbieFreepass && (
+				<span
+					className="text-[#15803d] dark:text-[#6ee7a8] inline-flex flex-shrink-0"
+					role="img"
+					aria-label="신규 회원 · 정원 외"
+					title="신규 회원 · 정원 외"
+				>
+					<Sprout size={16} strokeWidth={2.4} aria-hidden="true" />
+				</span>
+			)}
 			{isGuest && (
 				<Pill className="text-[#b4762b] bg-[rgba(180,118,43,0.12)] dark:text-[#e0a860] dark:bg-[rgba(224,168,96,0.16)]">
 					🎫 {inviterName ? `${inviterName}님 게스트` : "게스트"}
-				</Pill>
-			)}
-			{isNewbieFreepass && (
-				<Pill className="text-[#15803d] bg-[rgba(21,128,61,0.12)] dark:text-[#6ee7a8] dark:bg-[rgba(110,231,168,0.16)]">
-					🌱 신규
 				</Pill>
 			)}
 

@@ -69,7 +69,9 @@ export default function ConfirmDialog({
 			<h3 className="font-bold text-gray-800 dark:text-white text-lg mb-1.5">
 				{title}
 			</h3>
-			{children}
+			{/* 커스텀 본문도 message 와 같은 간격으로 버튼 행과 떨어지게 한다 —
+			    children 만 쓰는 다이얼로그는 본문이 버튼에 붙어 있었다(간격이 message 쪽에만 있었다). */}
+			{children != null && <div className="mb-5">{children}</div>}
 			{message != null && (
 				<p className="text-sm text-gray-600 dark:text-gray-300 mb-5 leading-relaxed">
 					{message}
