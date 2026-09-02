@@ -18,6 +18,8 @@ import HeaderMenu from "./common/HeaderMenu";
 import InstallPromptToast from "./common/InstallPromptToast";
 import NotificationBell from "./common/NotificationBell";
 import ProfileSetup from "./ProfileSetup";
+// ⚠️ 임시(테스트 계정 진입) — 확인 끝나면 이 줄과 아래 <TempTestLogin /> 삭제
+import TempTestLogin from "./TempTestLogin";
 import ScheduleCard from "./schedule/ScheduleCard";
 import EmptyState from "./shared/EmptyState";
 import Spinner from "./shared/Spinner";
@@ -265,6 +267,8 @@ export default function Home({ onStart }: Props) {
 						</svg>
 						{authBusy ? "이동 중…" : "카카오로 로그인"}
 					</button>
+					{/* ⚠️ 임시(테스트 계정 진입) — 확인 끝나면 삭제 */}
+					<TempTestLogin />
 				</div>
 			</div>
 		);
