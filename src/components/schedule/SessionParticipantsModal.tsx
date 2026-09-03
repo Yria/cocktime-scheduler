@@ -45,7 +45,7 @@ export default function SessionParticipantsModal({
 	const waiting = attendances.filter((a) => a.status === "waitlisted");
 	const latePool = attendances.filter((a) => a.status === "late_pool");
 	// 정원 초과(프리패스=만석일 때 들어온 운영진·신규회원)만 별도 섹션으로. 정원 안 운영진·신규는 확정에 그대로 포함.
-	const split = splitConfirmedByCapacity(attendances, s.capacity, s.scheduled_at);
+	const split = splitConfirmedByCapacity(attendances, s.capacity);
 	const { base: confirmedBase, over: freepassOver } = split;
 	const freepass = freepassSummary(split);
 	// 신규 표식(🌱)은 ParticipantRow 가 행마다 직접 판정한다 — 섹션과 무관하게 **가입 2주 이내
@@ -107,7 +107,7 @@ export default function SessionParticipantsModal({
 					className="text-muted mt-1.5"
 					style={{ fontSize: 12.5, fontWeight: 600 }}
 				>
-					확정 {confirmed.length}
+					확정 {split.counted.length}
 					{s.capacity != null ? `/${s.capacity}` : ""}명
 					{freepass ? ` (${freepass})` : ""}
 					{waiting.length > 0 ? ` · 대기 ${waiting.length}` : ""}

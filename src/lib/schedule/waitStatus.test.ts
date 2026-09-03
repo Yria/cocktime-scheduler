@@ -28,6 +28,7 @@ function att(
 		cancelled_at: null,
 		updated_at: "",
 		invited_by,
+		capacity_exempt: false,
 	};
 }
 
@@ -108,10 +109,13 @@ function withMember(
 		createdAt?: string | null;
 		admin?: boolean;
 		isGuest?: boolean;
+		/** 정원을 소비하지 않는 확정 자리(신규 프리패스) — 서버가 행에 기록한다. */
+		exempt?: boolean;
 	} = {},
 ): AttendanceRow {
 	return {
 		...row,
+		capacity_exempt: opts.exempt ?? row.capacity_exempt,
 		member: {
 			name: row.member_id,
 			is_guest: opts.isGuest ?? false,
@@ -192,84 +196,116 @@ describe("isNewbieAtt — 세션 날짜(KST) <= 가입일 + 14일", () => {
 	});
 });
 
-describe("splitConfirmedByCapacity — 초과분을 사유별로 분류", () => {
-	const S = kstSession("2026-09-05");
-	const OLD = "2026-01-01"; // 기존 회원
-	const NEW = "2026-09-01"; // 9/5 회차 기준 신규
+describe("splitConfirmedByCapacity — 정원 외 자리는 기록(capacity_exempt)으로 가른다", () => {
+	const OLD = "2026-01-01";
+	const NEW = "2026-09-01";
 
-	it("정원 이하면 초과분이 없다", () => {
+	it("정원 이하면 정원 외가 없다", () => {
 		const rows = [
 			withMember(member("m1", "confirmed", 1), { joinedYmd: OLD }),
 			withMember(member("m2", "confirmed", 2), { joinedYmd: NEW }),
 		];
-		const r = splitConfirmedByCapacity(rows, 2, S);
+		const r = splitConfirmedByCapacity(rows, 2);
+		expect(r.counted).toHaveLength(2);
 		expect(r.base).toHaveLength(2);
 		expect(r.over).toEqual([]);
-		expect(r.freepassNewbies).toEqual([]);
 		expect(freepassSummary(r)).toBe("");
 	});
 
-	it("position 순 앞 capacity명이 base, 초과분은 운영진/신규로 갈린다", () => {
+	it("신규 정원 외 자리는 정원을 소비하지 않는다 — counted 가 정원 안에 그대로 남는다", () => {
+		// 정원 2가 기존회원으로 찬 뒤 신규가 프리패스로 들어온 상태.
 		const rows = [
 			withMember(member("m1", "confirmed", 1), { joinedYmd: OLD }),
 			withMember(member("m2", "confirmed", 2), { joinedYmd: OLD }),
-			withMember(member("op", "confirmed", 3), { joinedYmd: OLD, admin: true }),
-			withMember(member("nb", "confirmed", 4), { joinedYmd: NEW }),
+			withMember(member("nb", "confirmed", 3), { joinedYmd: NEW, exempt: true }),
 		];
-		const r = splitConfirmedByCapacity(rows, 2, S);
-		expect(r.base.map((a) => a.member_id)).toEqual(["m1", "m2"]);
-		expect(r.over.map((a) => a.member_id)).toEqual(["op", "nb"]);
-		expect(r.freepassOps.map((a) => a.member_id)).toEqual(["op"]);
+		const r = splitConfirmedByCapacity(rows, 2);
+		expect(r.counted.map((a) => a.member_id)).toEqual(["m1", "m2"]);
 		expect(r.freepassNewbies.map((a) => a.member_id)).toEqual(["nb"]);
-		expect(freepassSummary(r)).toBe("운영진 1 · 신규 1");
+		expect(r.freepassOps).toEqual([]);
+		expect(freepassSummary(r)).toBe("신규 1명");
 	});
 
-	it("운영진이면서 신규인 사람은 운영진으로만 분류한다(두 목록 배타)", () => {
-		const rows = [
-			withMember(member("m1", "confirmed", 1), { joinedYmd: OLD }),
-			withMember(member("both", "confirmed", 2), { joinedYmd: NEW, admin: true }),
-		];
-		const r = splitConfirmedByCapacity(rows, 1, S);
-		expect(r.freepassOps.map((a) => a.member_id)).toEqual(["both"]);
-		expect(r.freepassNewbies).toEqual([]);
-		expect(freepassSummary(r)).toBe("운영진 1명");
-	});
-
-	it("정원 무제한(capacity=null)이면 전원 base", () => {
-		const rows = [withMember(member("nb", "confirmed", 1), { joinedYmd: NEW })];
-		const r = splitConfirmedByCapacity(rows, null, S);
-		expect(r.base).toHaveLength(1);
-		expect(r.over).toEqual([]);
-	});
-
-	it("사유가 분류되지 않은 초과 행은 '기타 N' 으로 남는다(인원 합 보존 · '정원 외' 와 겹치지 않게)", () => {
-		const rows = [
-			withMember(member("m1", "confirmed", 1), { joinedYmd: OLD }),
-			withMember(member("m2", "confirmed", 2), { joinedYmd: OLD }),
-		];
-		const r = splitConfirmedByCapacity(rows, 1, S);
-		expect(r.over.map((a) => a.member_id)).toEqual(["m2"]);
-		// 섹션 제목이 "… · 정원 외" 로 조립되므로 여기서 '정원 외' 를 쓰면 문구가 중복된다.
-		expect(freepassSummary(r)).toBe("기타 1명");
-	});
-
-	it("운영진 초과 + 미분류가 섞이면 둘 다 적힌다", () => {
+	it("운영진 초과분은 정원을 소비하는 확정 중 capacity 뒤쪽이다", () => {
 		const rows = [
 			withMember(member("m1", "confirmed", 1), { joinedYmd: OLD }),
 			withMember(member("op", "confirmed", 2), { joinedYmd: OLD, admin: true }),
-			withMember(member("m2", "confirmed", 3), { joinedYmd: OLD }),
 		];
-		const r = splitConfirmedByCapacity(rows, 1, S);
-		expect(freepassSummary(r)).toBe("운영진 1 · 기타 1");
+		const r = splitConfirmedByCapacity(rows, 1);
+		expect(r.base.map((a) => a.member_id)).toEqual(["m1"]);
+		expect(r.freepassOps.map((a) => a.member_id)).toEqual(["op"]);
+		expect(freepassSummary(r)).toBe("운영진 1명");
 	});
 
-	it("일정 미정(scheduledAt=null)이면 신규 분류를 하지 않는다", () => {
+	it("운영진 초과 + 신규 정원 외가 섞이면 사유별로 갈리고 position 순으로 모인다", () => {
 		const rows = [
 			withMember(member("m1", "confirmed", 1), { joinedYmd: OLD }),
-			withMember(member("nb", "confirmed", 2), { joinedYmd: NEW }),
+			withMember(member("nb", "confirmed", 2), { joinedYmd: NEW, exempt: true }),
+			withMember(member("op", "confirmed", 3), { joinedYmd: OLD, admin: true }),
 		];
-		const r = splitConfirmedByCapacity(rows, 1, null);
-		expect(r.over.map((a) => a.member_id)).toEqual(["nb"]);
-		expect(r.freepassNewbies).toEqual([]);
+		const r = splitConfirmedByCapacity(rows, 1);
+		expect(r.counted.map((a) => a.member_id)).toEqual(["m1", "op"]);
+		expect(r.base.map((a) => a.member_id)).toEqual(["m1"]);
+		expect(r.freepassOps.map((a) => a.member_id)).toEqual(["op"]);
+		expect(r.freepassNewbies.map((a) => a.member_id)).toEqual(["nb"]);
+		expect(r.over.map((a) => a.member_id)).toEqual(["nb", "op"]);
+		expect(freepassSummary(r)).toBe("운영진 1 · 신규 1");
+	});
+
+	it("정원 외로 기록된 신규는 운영진이어도 신규로 분류한다(자리 성격이 기록이므로)", () => {
+		const rows = [
+			withMember(member("m1", "confirmed", 1), { joinedYmd: OLD }),
+			withMember(member("both", "confirmed", 2), {
+				joinedYmd: NEW,
+				admin: true,
+				exempt: true,
+			}),
+		];
+		const r = splitConfirmedByCapacity(rows, 1);
+		expect(r.freepassNewbies.map((a) => a.member_id)).toEqual(["both"]);
+		expect(r.freepassOps).toEqual([]);
+	});
+
+	it("정원 무제한(capacity=null)이면 운영진 초과분이라는 개념이 없다", () => {
+		const rows = [
+			withMember(member("m1", "confirmed", 1), { joinedYmd: OLD }),
+			withMember(member("nb", "confirmed", 2), { joinedYmd: NEW, exempt: true }),
+		];
+		const r = splitConfirmedByCapacity(rows, null);
+		expect(r.base.map((a) => a.member_id)).toEqual(["m1"]);
+		expect(r.freepassOps).toEqual([]);
+		expect(r.freepassNewbies.map((a) => a.member_id)).toEqual(["nb"]);
+	});
+
+	it("대기·늦참 행은 어느 목록에도 들어가지 않는다", () => {
+		const rows = [
+			withMember(member("m1", "confirmed", 1), { joinedYmd: OLD }),
+			withMember(member("w", "waitlisted", 2), { joinedYmd: NEW }),
+			withMember(member("lp", "late_pool", 3), { joinedYmd: NEW }),
+		];
+		const r = splitConfirmedByCapacity(rows, 5);
+		expect(r.counted.map((a) => a.member_id)).toEqual(["m1"]);
+		expect(r.over).toEqual([]);
+	});
+});
+
+describe("freepassSummary — 사유별 인원 문구", () => {
+	const row = (id: string) => member(id, "confirmed", 1);
+
+	it("사유가 분류되지 않은 초과 행은 '기타 N' 으로 남는다(인원 합 보존)", () => {
+		// 지금 구현에서는 도달하지 않는 방어선 — 세 번째 예외가 생겨도 인원이 사라지지 않게 한다.
+		expect(
+			freepassSummary({
+				over: [row("a"), row("b")],
+				freepassOps: [row("a")],
+				freepassNewbies: [],
+			}),
+		).toBe("운영진 1 · 기타 1");
+	});
+
+	it("초과분이 없으면 빈 문자열", () => {
+		expect(
+			freepassSummary({ over: [], freepassOps: [], freepassNewbies: [] }),
+		).toBe("");
 	});
 });

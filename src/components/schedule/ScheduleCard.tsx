@@ -119,10 +119,10 @@ export default function ScheduleCard({
 	const latePool = attendances.filter((a) => a.status === "late_pool");
 	// 게스트 확정 상한 — 주말 무제한/평일 2(서버 session_guest_cap 미러).
 	const guestCap = guestCapForSession(s.scheduled_at);
-	// 정원 초과 프리패스(만석일 때 들어온 운영진 · 신규회원)만 별도 카운트/표기.
-	const freepass = freepassSummary(
-		splitConfirmedByCapacity(attendances, s.capacity, s.scheduled_at),
-	);
+	// 정원 외 확정(만석일 때 들어온 운영진 · 신규회원)은 사유별로 따로 표기한다.
+	//   split.counted = 정원을 소비하는 확정 인원 = "확정 N/정원 M" 의 N(서버 confirmed_count 와 같다).
+	const split = splitConfirmedByCapacity(attendances, s.capacity);
+	const freepass = freepassSummary(split);
 	// 인라인 스택 — 확정자 우선, 대기자, 정원 외 늦참 순으로 채움(초과분 +N 은 ParticipantStack)
 	const roster = [...confirmed, ...waiting, ...latePool];
 	const mine = memberId
@@ -321,7 +321,7 @@ export default function ScheduleCard({
 					className="text-muted"
 					style={{ fontSize: 12.5, fontWeight: 600 }}
 				>
-					확정 {confirmed.length}
+					확정 {split.counted.length}
 					{s.capacity != null ? `/${s.capacity}` : ""}명
 					{freepass ? ` (${freepass})` : ""}
 					{waiting.length > 0 ? ` · 대기 ${waiting.length}` : ""}

@@ -57,10 +57,10 @@ export default function OccurrenceParticipants({ occurrence: s, placeName }: Pro
 	const confirmed = rows.filter((a) => a.status === "confirmed");
 	const waiting = rows.filter((a) => a.status === "waitlisted");
 	const latePool = rows.filter((a) => a.status === "late_pool");
-	// 정원 초과 프리패스(운영진 · 신규회원) 요약 — 없으면 빈 문자열.
-	const freepass = freepassSummary(
-		splitConfirmedByCapacity(rows, s.capacity, s.scheduled_at),
-	);
+	// 정원 외 확정(운영진 · 신규회원) 요약 — 없으면 빈 문자열.
+	//   split.counted = 정원을 소비하는 확정 인원("확정 N/정원 M" 의 N).
+	const split = splitConfirmedByCapacity(rows, s.capacity);
+	const freepass = freepassSummary(split);
 	// 스택 순서 = 메인 카드와 동일(확정 → 대기 → 정원 외 늦참).
 	const roster = [...confirmed, ...waiting, ...latePool];
 
@@ -82,7 +82,7 @@ export default function OccurrenceParticipants({ occurrence: s, placeName }: Pro
 	}
 
 	const countLine =
-		`확정 ${confirmed.length}${s.capacity != null ? `/${s.capacity}` : ""}명` +
+		`확정 ${split.counted.length}${s.capacity != null ? `/${s.capacity}` : ""}명` +
 		(freepass ? ` (${freepass})` : "") +
 		(waiting.length > 0 ? ` · 대기 ${waiting.length}` : "") +
 		(latePool.length > 0 ? ` · 늦참 ${latePool.length}` : "");

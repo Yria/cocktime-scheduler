@@ -142,6 +142,10 @@ export interface AttendanceRow {
 	/** 정모 식사(회식) 참여 여부. sessions.meal_enabled 회차에서만 의미. 기본 true(참여) —
 	 *  "기본 참여, 안 먹는 사람만 해제" 모델이라 미응답과 참여를 구분하지 않는다. 마이그레이션 20260811010000. */
 	meal_joining: boolean;
+	/** true = 정원을 소비하지 않는 확정 자리(정원 외). 신규회원 2주 프리패스로 들어온 자리.
+	 *  서버 session_counter_sync 가 이 행을 세지 않으므로, 정원 안 자리는 언제나 capacity 칸이 비어 있다.
+	 *  마이그레이션 20260903010000. */
+	capacity_exempt: boolean;
 	requested_at: string;
 	confirmed_at: string | null;
 	cancelled_at: string | null;

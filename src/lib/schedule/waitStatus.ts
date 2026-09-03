@@ -146,9 +146,9 @@ export function isNewbieAtt(
  * 정원 초과 확정(프리패스) 인원 요약 문구 — 사유별로 끊어 보여준다.
  * "운영진 2명" / "신규 1명" / "운영진 2 · 신규 1". 초과분이 없으면 빈 문자열.
  *
- * 사유가 분류되지 않은 초과 행이 남으면 "기타 N" 으로 덧붙여 인원 합이 항상 맞게 한다(지난 회차를
- * 열람할 때처럼 그리디 재조정이 돌지 않은 상태에서 나올 수 있다). 여기서 "정원 외"라는 말은 쓰지
- * 않는다 — 호출부가 제목에 "· 정원 외"를 덧붙이므로 "정원 외 1명 · 정원 외"로 겹친다.
+ * 사유가 분류되지 않은 초과 행이 남으면 "기타 N" 으로 덧붙여 인원 합이 항상 맞게 한다. 지금은 정원 외
+ * 경로가 둘뿐이라 도달하지 않지만, 세 번째 예외가 생겼을 때 인원이 조용히 사라지지 않게 남겨 둔다.
+ * 여기서 "정원 외"라는 말은 쓰지 않는다 — 호출부가 제목에 "· 정원 외"를 덧붙이므로 문구가 겹친다.
  */
 export function freepassSummary(split: {
 	over: AttendanceRow[];
@@ -167,47 +167,40 @@ export function freepassSummary(split: {
 }
 
 /**
- * 확정 참석을 base(정원 내)와 over(정원 초과 = 프리패스)로 나누고, 초과분을 사유별로 분류한다.
+ * 확정 참석을 정원 안(base)과 정원 외(over)로 나누고, 정원 외를 사유별로 분류한다.
  *
- * position 오름차순 앞 capacity명이 base, 그 뒤가 over — 서버 set_session_capacity 그리디의 자리 배분과
- * 같은 정의다. 정원 초과 확정이 생기는 경로는 부과 없는 일정의 프리패스 둘뿐이다:
- *   · freepassOps     — 운영진 프리패스(확정 운영진 총수 < 2)
- *   · freepassNewbies — 신규회원 2주 프리패스(인원 상한 없음)
- * 운영진이면서 신규인 사람은 서버가 운영진 예산을 먼저 쓰므로 freepassOps 로만 분류한다(두 목록은 배타).
+ * 두 프리패스의 성격이 서버에서 갈리므로 여기서도 다르게 센다(마이그레이션 20260903010000):
+ *   · freepassNewbies — 신규회원 2주 프리패스. **정원을 소비하지 않는 자리**로 행에 기록돼 있다
+ *     (`capacity_exempt`). 파생이 아니라 기록이라 취소·정원 변경에도 자리 성격이 흔들리지 않는다.
+ *   · freepassOps     — 운영진 프리패스. 종전대로 정원 카운트에 들어가므로, 정원을 소비하는 확정
+ *     (counted) 중 position 순 capacity 번째 뒤가 곧 운영진 초과분이다.
  *
- * 주의: 이 분류는 **표시용**이다 — 서버의 신규 예산 집계는 '초과 확정 행 중 신규인 사람 전부'라서
- * 운영진 예산으로 들어온 신규도 거기 포함된다. 즉 freepassNewbies.length 를 '남은 신규 자리'
- * 계산에 쓰면 안 된다(그 용도가 생기면 over.filter(isNewbieAtt) 로 따로 세야 한다).
- *
- * capacity 가 null(무제한)이거나 확정이 정원 이하면 초과분 없음(over/freepass* 모두 []).
- *
- * @param scheduledAt 세션 시각 — 신규 판정에 필요. 기본값을 두지 않는다: 빠뜨리면 신규 초과분이
- *        조용히 "기타 N" 으로 새고 타입 오류도 안 나므로, 호출부가 반드시 넘기게 강제한다.
+ * `counted` = 정원을 소비하는 확정 인원 = 서버 confirmed_count 와 같은 값. "확정 N/정원 M" 의 N.
+ * capacity 가 null(무제한)이면 정원 초과라는 개념이 없어 운영진 초과분도 없다.
  */
 export function splitConfirmedByCapacity(
 	attendances: AttendanceRow[],
 	capacity: number | null,
-	scheduledAt: string | null,
 ): {
+	counted: AttendanceRow[];
 	base: AttendanceRow[];
 	over: AttendanceRow[];
 	freepassOps: AttendanceRow[];
 	freepassNewbies: AttendanceRow[];
 } {
+	const byPos = (a: AttendanceRow, b: AttendanceRow) => a.position - b.position;
 	const confirmed = attendances
 		.filter((a) => a.status === "confirmed")
-		.sort((a, b) => a.position - b.position);
-	if (capacity == null || confirmed.length <= capacity) {
-		return { base: confirmed, over: [], freepassOps: [], freepassNewbies: [] };
-	}
-	const base = confirmed.slice(0, capacity);
-	const over = confirmed.slice(capacity);
+		.sort(byPos);
+	const freepassNewbies = confirmed.filter((a) => a.capacity_exempt);
+	const counted = confirmed.filter((a) => !a.capacity_exempt);
+	const base = capacity == null ? counted : counted.slice(0, capacity);
+	const freepassOps = capacity == null ? [] : counted.slice(capacity);
 	return {
+		counted,
 		base,
-		over,
-		freepassOps: over.filter(isOperatorAtt),
-		freepassNewbies: over.filter(
-			(a) => !isOperatorAtt(a) && isNewbieAtt(a, scheduledAt),
-		),
+		over: [...freepassOps, ...freepassNewbies].sort(byPos),
+		freepassOps,
+		freepassNewbies,
 	};
 }
