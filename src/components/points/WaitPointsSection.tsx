@@ -82,8 +82,14 @@ export default function WaitPointsSection() {
 				<span className="text-strong" style={{ fontSize: 14.5, fontWeight: 800 }}>
 					대기 포인트
 				</span>
+				{/* 여기서는 **정적** 아이콘이다 — 헤더의 VFX 배지(TicketVfx)와 달리 움직이지 않는다.
+				    문서·목록 맥락에서 명멸하는 요소는 읽기를 방해한다(참여목록 행 표식과 같은 규약). */}
 				{hasTicket && (
-					<span className="ticket-badge" aria-hidden="true">
+					<span
+						className="inline-flex flex-shrink-0"
+						style={{ color: "var(--ticket-gold)" }}
+						aria-hidden="true"
+					>
 						<TicketIcon size={17} />
 					</span>
 				)}
