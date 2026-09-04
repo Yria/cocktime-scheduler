@@ -1231,10 +1231,9 @@ h4,
 }
 
 /* ── 파티클(magic dust) ─────────────────────────────────────────
-   작은 발광 점이 티켓 주변에서 나타났다 사라진다.
-   **위치는 매번 다르다** — 한 바퀴가 끝날 때(animationiteration) React 가 좌표를 다시
-   추첨한다. opacity 가 시작·끝에서 0 이라 교체 순간이 보이지 않는다. CSS 만으로는
-   반복마다 값을 바꿀 수 없어 이 방식을 쓴다(고정 테이블은 매번 같은 자리에서 뜬다).
+   작은 발광 점이 티켓 주변에서 나타났다 사라진다. 좌표는 **고정**이다(TicketVfx 의 DUST —
+   무작위로 한 번 뽑아 박은 값). 반복마다 재추첨하는 버전을 만들어 봤지만 더 어색했고,
+   고르게 배치한 버전은 기계적으로 보여 둘 다 폐기했다(운영자 판정 2026-09-05).
    폭죽·confetti 가 되지 않도록 개수는 적게(6), 이동 거리는 짧게 유지한다. */
 .tvfx-dust {
 	position: absolute;
@@ -1251,23 +1250,32 @@ h4,
 	border-radius: 50%;
 	background: #fff;
 	box-shadow:
-		0 0 3px color-mix(in srgb, var(--ticket-gold) 90%, transparent),
-		0 0 6px color-mix(in srgb, var(--ticket-gold) 55%, transparent);
+		0 0 4px color-mix(in srgb, var(--ticket-gold) 95%, transparent),
+		0 0 9px color-mix(in srgb, var(--ticket-gold) 60%, transparent);
 	opacity: 0;
-	animation: tvfxDust var(--dur) ease-in-out var(--delay) infinite;
+	/* 주기를 6알 모두 3.3s 로 **통일**한다 — 개별로 다르게 주지 말 것. 주기가 서로 다르면
+	   시간이 지나며 위상이 어긋나 어느 순간 6알이 한꺼번에 뜨고(폭죽) 어느 순간 0알이 된다
+	   (민둥). 통일 + 주기/6 균등 시차 조합이라야 동시 표시가 영구히 2~3알로 일정하다. */
+	animation: tvfxDust 3.3s ease-in-out var(--delay) infinite;
 }
 @keyframes tvfxDust {
 	0% {
 		opacity: 0;
 		transform: translate(0, 0) scale(0.6);
 	}
-	25% {
+	14% {
 		opacity: 1;
-		transform: translate(calc(var(--dx) * 0.3), calc(var(--dy) * 0.3)) scale(1);
+		transform: translate(calc(var(--dx) * 0.35), calc(var(--dy) * 0.35)) scale(1);
 	}
-	70% {
-		opacity: 0.75;
+	38% {
+		opacity: 0.7;
 	}
+	48% {
+		opacity: 0;
+		transform: translate(var(--dx), var(--dy)) scale(0.7);
+	}
+	/* 48~100% 는 투명하게 쉰다. 이 여백이 동시 표시를 2~3알로 눌러 준다 —
+	   주기 내내 보이게 하면 6알이 늘 떠 있어 자글자글해진다. */
 	100% {
 		opacity: 0;
 		transform: translate(var(--dx), var(--dy)) scale(0.7);

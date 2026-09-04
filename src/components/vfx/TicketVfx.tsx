@@ -1,11 +1,10 @@
-import { useCallback, useState } from "react";
 import TicketIcon from "../shared/TicketIcon";
 
 /**
- * 티켓(우선참여권) 보유 표시용 VFX 무대 — Aura.
+ * 티켓(우선참여권) 보유 표시용 VFX 무대 — Aura + magic dust.
  *
  * 게임에서 Legendary/Rare 아이템이 활성화된 느낌을 목표로 한다. 티켓이 주인공이고
- * VFX(오라 + magic dust)는 그것을 강조하는 배경 역할만 한다.
+ * VFX 는 그것을 강조하는 배경 역할만 한다.
  *
  * ★ 불변식: **티켓 DOM 은 절대 움직이지 않는다.** scale·rotate·translate·bounce·
  *   shake·pulse·opacity 애니메이션을 티켓에 걸지 않는다. 움직이는 것은 티켓 뒤·주변에
@@ -15,80 +14,39 @@ import TicketIcon from "../shared/TicketIcon";
  * 구조:
  *   .tvfx (무대, overflow:hidden + 고리 마스크)
  *     ├ .tvfx-layer × 3  ← 떠도는 오라 (z-index 0)
- *     ├ .tvfx-dust       ← 파티클 (z-index 1, 선택)
+ *     ├ .tvfx-dust       ← 파티클 (z-index 1)
  *     └ .tvfx-ticket     ← 티켓 (z-index 2, 정적)
  */
 
 const AURA_LAYERS = ["tvfx-aura-1", "tvfx-aura-2", "tvfx-aura-3"] as const;
 
-/** 동시에 떠 있는 파티클 수. 늘리면 magic dust 가 아니라 confetti 가 된다. */
-const DUST_COUNT = 6;
-
-interface Dust {
-	x: string;
-	y: string;
-	d: string;
-	dx: string;
-	dy: string;
-	dur: string;
-	delay: string;
-}
-
 /**
- * 파티클 한 알을 추첨한다.
+ * 파티클 좌표 — **무작위로 한 번 뽑아 고정한 값**이다(운영자 지시: "랜덤위치를 뿌리고 그
+ * 값을 고정해서 써"). 반복마다 재추첨하는 버전을 만들어 봤지만 더 어색했다 — 같은 자리에서
+ * 규칙적으로 뜨는 것이 magic dust 로 읽히고, 매번 옮겨다니면 시선이 따라가느라 산만해진다.
+ * 고르게 배치한 버전도 기계적으로 보여 폐기했다.
  *
- * 글리프(무대 중앙)를 가리지 않게 **고리 위에** 놓는다 — 중심에서 반지름 30~46% 띠
- * 안에서 각도를 무작위로 뽑는다. 이동은 바깥 방향으로 짧게만(6~13%) — 길게 주면
- * 폭죽처럼 터져 보인다.
+ * 추첨 조건(재추첨할 일이 생기면 같은 조건을 지킬 것):
+ *   · 중심에서 반지름 28~42% — 글리프(중심 ±22%)를 덮지 않는다
+ *   · 바깥으로 5~9% 만 밀려난다 — 최대 이탈 43%로 무대(반폭 50%) 안에 머물러 잘리지 않는다
+ *   · 서로 13% 이내로 붙지 않는다 — 두 알이 한 점처럼 보이는 것만 배제(고르게 만들지는 않는다)
+ *   · 상반/하반 3:3, 한 사분면에 2개 이하 — 한쪽이 텅 비지 않게
  *
- * @param first 최초 렌더인가. 처음에는 delay 를 흩어 6알이 한꺼번에 뜨지 않게 하고,
- *              이후 재추첨에서는 delay 를 없애 바로 이어지게 한다.
+ * **delay 는 주기(3.3s)를 6등분한 값이고 고리 순서와 어긋나게 섞여 있다.** 순서대로 주면
+ * 빛이 한 방향으로 도는 로더처럼 보인다. 주기 통일 + 균등 시차 + 가시 구간 48% 조합이
+ * 동시 표시를 영구히 2~3알로 고정한다(CSS 쪽 주석 참고) — 값을 개별로 바꾸지 말 것.
  */
-function rollDust(first: boolean): Dust {
-	const angle = Math.random() * Math.PI * 2;
-	const radius = 30 + Math.random() * 16; // % (중심 기준)
-	const x = 50 + Math.cos(angle) * radius;
-	const y = 50 + Math.sin(angle) * radius;
-	const push = 6 + Math.random() * 7; // 바깥으로 밀려나는 거리 %
-	return {
-		x: `${x.toFixed(1)}%`,
-		y: `${y.toFixed(1)}%`,
-		d: `${(1.5 + Math.random() * 1.6).toFixed(1)}px`,
-		dx: `${(Math.cos(angle) * push).toFixed(1)}%`,
-		dy: `${(Math.sin(angle) * push).toFixed(1)}%`,
-		// 운영자 요청(2026-09-05): 더 빠르게. 종전 6.2~8s → 2.1~3.3s.
-		dur: `${(2.1 + Math.random() * 1.2).toFixed(2)}s`,
-		delay: first ? `${(Math.random() * 2).toFixed(2)}s` : "0s",
-	};
-}
-
-/**
- * 파티클 한 알. 한 바퀴가 끝나면 좌표를 **다시 추첨**한다 — CSS 만으로는 반복마다 값을
- * 바꿀 수 없어서 여기서 처리한다. 시작·끝 opacity 가 0 이라 교체 순간은 보이지 않는다.
- */
-function DustMote() {
-	const [dust, setDust] = useState(() => rollDust(true));
-	const reroll = useCallback(() => setDust(rollDust(false)), []);
-	return (
-		<i
-			onAnimationIteration={reroll}
-			style={
-				{
-					"--x": dust.x,
-					"--y": dust.y,
-					"--d": dust.d,
-					"--dx": dust.dx,
-					"--dy": dust.dy,
-					"--dur": dust.dur,
-					"--delay": dust.delay,
-				} as React.CSSProperties
-			}
-		/>
-	);
-}
+const DUST = [
+	{ x: "74.1%", y: "35.1%", d: "4.5px", dx: "5.9%", dy: "-3.6%", delay: "0s" },
+	{ x: "39.5%", y: "14.8%", d: "4.7px", dx: "-2.4%", dy: "-8.0%", delay: "0.55s" },
+	{ x: "79.6%", y: "21.4%", d: "3.6px", dx: "5.6%", dy: "-5.4%", delay: "1.1s" },
+	{ x: "29.2%", y: "85.5%", d: "3.8px", dx: "-4.1%", dy: "6.9%", delay: "1.65s" },
+	{ x: "86.8%", y: "53.7%", d: "4.9px", dx: "6.5%", dy: "0.7%", delay: "2.2s" },
+	{ x: "84.5%", y: "69.4%", d: "4.0px", dx: "6.7%", dy: "3.8%", delay: "2.75s" },
+] as const;
 
 interface Props {
-	/** magic dust 파티클 추가. */
+	/** magic dust 파티클 표시. */
 	particles?: boolean;
 	/** 티켓 글리프 크기(px). 메인 헤더 기준값이 23. */
 	size?: number;
@@ -116,9 +74,20 @@ export default function TicketVfx({
 
 			{particles && (
 				<span className="tvfx-dust" aria-hidden="true">
-					{Array.from({ length: DUST_COUNT }, (_, i) => (
-						// key 가 고정이라 재추첨 때 DOM 이 유지된다(교체되면 애니메이션이 리셋된다).
-						<DustMote key={i} />
+					{DUST.map((p) => (
+						<i
+							key={p.delay}
+							style={
+								{
+									"--x": p.x,
+									"--y": p.y,
+									"--d": p.d,
+									"--dx": p.dx,
+									"--dy": p.dy,
+									"--delay": p.delay,
+								} as React.CSSProperties
+							}
+						/>
 					))}
 				</span>
 			)}
