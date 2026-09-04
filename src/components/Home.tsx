@@ -21,7 +21,7 @@ import NotificationBell from "./common/NotificationBell";
 import ProfileSetup from "./ProfileSetup";
 import ScheduleCard from "./schedule/ScheduleCard";
 import EmptyState from "./shared/EmptyState";
-import TicketIcon from "./shared/TicketIcon";
+import HeaderTicketBadge from "./vfx/HeaderTicketBadge";
 import Spinner from "./shared/Spinner";
 
 interface Props {
@@ -359,15 +359,10 @@ export default function Home({ onStart }: Props) {
 			center={
 				// 우선참여권 보유 시에만 뜨는 장식 배지(탭 액션 없음 — 내역은 '내 정보'에서 본다).
 				// 헤더 가운데는 가장 비싼 자리라 "지금 쓸 수 있다"는 단 하나의 사실에만 내준다.
-				showTicketBadge ? (
-					<span
-						className="ticket-badge"
-						role="img"
-						aria-label="우선참여권 보유 중"
-					>
-						<TicketIcon size={23} />
-					</span>
-				) : undefined
+				// 티켓 자체는 정적이고 움직이는 것은 뒤의 VFX 레이어뿐이다(TicketVfx 불변식).
+				// 개발 중에는 티켓이 없어도 띄운다 — 실제 헤더 맥락에서 VFX 를 비교해 고르기 위함
+				// (탭하면 다음 조합. HeaderTicketBadge 의 DEV 분기).
+				showTicketBadge || import.meta.env.DEV ? <HeaderTicketBadge /> : undefined
 			}
 			right={
 				// 아이콘 버튼(40px·중앙정렬)은 글리프가 버튼 안쪽에 있어 거터선보다 들어온다.
