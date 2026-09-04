@@ -977,18 +977,19 @@ h4,
 /* ── 우선참여권(대기 포인트 7점) 배지 ─────────────────────────
    메인 헤더 가운데에 "지금 쓸 수 있다"는 단 하나의 사실만 알리는 장식 배지다(탭 액션 없음).
 
-   이펙트는 **전부 원형**이다. 사각 레이어를 쓰면 아이콘 밖으로 나가는 순간 헤더 배경에
-   직사각형 섬광으로 보인다(2026-09-05 실렌더에서 확인하고 폐기). 원형 + 소프트 그라디언트는
-   경계가 없어 아이콘 박스를 넘어가도 자연스럽다.
+   이펙트 = **안에서 바깥으로 뻗어나가는 방사형**. 두 겹이 같은 주기로 퍼져 나간다:
+     ::before  방사형 빛살(repeating-conic-gradient)이 중심에서 커지며 살짝 돌고 사라진다
+     ::after   그 뒤를 따라 원형 파동이 퍼지며 사라진다(소나/핑 패턴 — scale + opacity 페이드)
+     > svg     글리프 자체는 같은 호흡으로 발광한다
+   빛살에 radial 마스크를 씌워 바깥으로 갈수록 흐려지므로 원의 경계선이 생기지 않는다.
+   (사각 레이어를 쓰던 초기안은 아이콘 밖으로 나갈 때 직사각형 섬광으로 보여 폐기했다.)
 
-   3겹으로 화려함을 만든다:
-     ::before  원형 후광 — 숨쉬듯 부풀며 밝아진다(뒤)
-     svg       글리프 자체 발광 — drop-shadow 펄스
-     ::after   원을 한 바퀴 도는 광택 링 — conic-gradient 를 링으로 마스킹해 회전(앞)
+   **크기는 음수 inset 으로 잡는다 — padding % 를 쓰지 말 것.** 퍼센트 padding 은 요소 자신이
+   아니라 **컨테이닝 블록 폭** 기준으로 풀려서, 헤더의 폭 미지정 절대배치 안에서는 크기가
+   예측 불가가 된다. 절대배치 자식의 퍼센트 inset 은 배지 박스(=글리프 크기) 기준이라
+   헤더 23px · 내 정보 17px · 확대 미리보기가 모두 같은 비율로 따라온다.
 
-   크기를 픽셀로 고정하지 않는다 — padding 과 % inset 으로 잡아서 23px(헤더)·17px(내 정보)·
-   확대 미리보기까지 같은 비율로 따라온다.
-   레이아웃 속성은 건드리지 않고 transform/filter/opacity 만 움직여 52px 헤더 줄을 밀지 않는다.
+   레이아웃 속성은 건드리지 않고 transform/opacity/filter 만 움직여 52px 헤더 줄을 밀지 않는다.
    색 토큰은 :root/.dark 두 곳에 모두 둔다 — 한쪽만 두면 다크에서 라이트 값으로 굳는다
    (이 파일의 --late-pool 과 같은 규약). */
 :root {
@@ -1005,77 +1006,83 @@ h4,
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	/* 원형 이펙트가 놓일 여백. 글리프 크기에 비례해 무대가 커진다. */
-	padding: 22%;
 	color: var(--ticket-gold);
 	/* 헤더 가운데 절대 배치의 히트박스가 로고·알림벨을 먹지 않게 — 장식이므로 이벤트를 받지 않는다. */
 	pointer-events: none;
-	/* z-index:-1 인 후광이 헤더 배경 뒤로 빠지지 않도록 자체 쌓임 문맥을 만든다. */
+	/* z-index:-1 인 방사 레이어가 헤더 배경 뒤로 빠지지 않도록 자체 쌓임 문맥을 만든다. */
 	isolation: isolate;
 }
 
-/* ① 뒤에서 숨쉬는 원형 후광 */
+/* ① 중심에서 바깥으로 뻗는 방사형 빛살 */
 .ticket-badge::before {
 	content: "";
 	position: absolute;
-	inset: 0;
-	border-radius: 50%;
-	/* 가운데를 비운 **고리형** 후광. 중심까지 금색을 채우면 글리프 바로 뒤에 같은 색이 깔려
-	   23px 헤더 크기에서 티켓 실루엣이 뭉개진다(실렌더 확인 후 조정). 글리프 뒤는 비우고
-	   테두리에서만 빛나게 해서 legibility 와 '동그란 이펙트'를 동시에 얻는다. */
-	background: radial-gradient(
-		circle,
-		transparent 0%,
-		transparent 30%,
-		color-mix(in srgb, var(--ticket-gold) 46%, transparent) 52%,
-		color-mix(in srgb, var(--ticket-gold) 16%, transparent) 64%,
-		transparent 78%
-	);
-	animation: ticketHalo 2.6s ease-in-out infinite;
+	inset: -85%;
 	z-index: -1;
+	border-radius: 50%;
+	background: repeating-conic-gradient(
+		from 0deg,
+		color-mix(in srgb, var(--ticket-gold) 58%, transparent) 0deg 3.5deg,
+		transparent 3.5deg 30deg
+	);
+	/* 바깥으로 갈수록 흐려지게 — 원의 잘린 경계가 보이지 않는다. */
+	-webkit-mask: radial-gradient(
+		circle,
+		#000 6%,
+		rgba(0, 0, 0, 0.5) 32%,
+		transparent 68%
+	);
+	mask: radial-gradient(
+		circle,
+		#000 6%,
+		rgba(0, 0, 0, 0.5) 32%,
+		transparent 68%
+	);
+	animation: ticketRays 2.4s ease-out infinite;
 }
 
-/* ② 글리프 자체 발광 */
-.ticket-badge > svg {
-	animation: ticketGlow 2.6s ease-in-out infinite;
-	filter: drop-shadow(0 0 3px var(--ticket-glow));
-}
-
-/* ③ 원을 한 바퀴 도는 광택 링. conic-gradient 를 radial 마스크로 얇은 링만 남긴다. */
+/* ② 빛살을 뒤따라 퍼지는 원형 파동 */
 .ticket-badge::after {
 	content: "";
 	position: absolute;
-	inset: 4%;
+	inset: -10%;
+	z-index: -1;
 	border-radius: 50%;
-	background: conic-gradient(
-		from 0deg,
-		transparent 0deg 232deg,
-		color-mix(in srgb, var(--ticket-gold) 55%, transparent) 286deg,
-		rgba(255, 255, 255, 0.95) 330deg,
-		transparent 360deg
-	);
-	-webkit-mask: radial-gradient(
-		farthest-side,
-		transparent calc(100% - 2px),
-		#000 calc(100% - 2px)
-	);
-	mask: radial-gradient(
-		farthest-side,
-		transparent calc(100% - 2px),
-		#000 calc(100% - 2px)
-	);
-	animation: ticketOrbit 2.6s linear infinite;
+	border: 1.5px solid color-mix(in srgb, var(--ticket-gold) 72%, transparent);
+	animation: ticketRipple 2.4s ease-out infinite;
 }
 
-@keyframes ticketHalo {
-	0%,
-	100% {
-		transform: scale(0.9);
-		opacity: 0.55;
+/* ③ 글리프 자체 발광 */
+.ticket-badge > svg {
+	animation: ticketGlow 2.4s ease-in-out infinite;
+	filter: drop-shadow(0 0 3px var(--ticket-glow));
+}
+
+@keyframes ticketRays {
+	0% {
+		transform: scale(0.3) rotate(0deg);
+		opacity: 0;
 	}
-	50% {
-		transform: scale(1.12);
-		opacity: 1;
+	22% {
+		opacity: 0.95;
+	}
+	100% {
+		transform: scale(1) rotate(24deg);
+		opacity: 0;
+	}
+}
+
+@keyframes ticketRipple {
+	0% {
+		transform: scale(0.45);
+		opacity: 0;
+	}
+	18% {
+		opacity: 0.9;
+	}
+	100% {
+		transform: scale(1.9);
+		opacity: 0;
 	}
 }
 
@@ -1086,30 +1093,20 @@ h4,
 		filter: drop-shadow(0 0 2px var(--ticket-glow));
 	}
 	50% {
-		transform: scale(1.07);
-		filter: drop-shadow(0 0 7px var(--ticket-glow));
+		transform: scale(1.06);
+		filter: drop-shadow(0 0 8px var(--ticket-glow));
 	}
 }
 
-@keyframes ticketOrbit {
-	to {
-		transform: rotate(360deg);
-	}
-}
-
-/* 접근성 — 움직임 최소화를 켠 사용자에게는 정지된 금색 배지와 은은한 후광만 남긴다.
+/* 접근성 — 움직임 최소화를 켠 사용자에게는 퍼지는 레이어를 모두 끄고 정지된 금색 배지만 남긴다.
    이 저장소 최초의 reduced-motion 가드다. 새 애니메이션을 추가할 때 같은 블록에 넣을 것. */
 @media (prefers-reduced-motion: reduce) {
-	.ticket-badge::before {
-		animation: none;
-		transform: scale(1);
-		opacity: 0.8;
+	.ticket-badge::before,
+	.ticket-badge::after {
+		display: none;
 	}
 	.ticket-badge > svg {
 		animation: none;
-		filter: drop-shadow(0 0 3px var(--ticket-glow));
-	}
-	.ticket-badge::after {
-		display: none;
+		filter: drop-shadow(0 0 4px var(--ticket-glow));
 	}
 }
