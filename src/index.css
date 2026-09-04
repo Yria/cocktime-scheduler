@@ -1017,34 +1017,38 @@ h4,
 }
 
 /* 대각선으로 훑고 지나가는 광택 — 본체 위에 겹치는 레이어.
-   inset:0 으로 아이콘 박스 안에 갇혀 있어야 한다. 음수 inset 을 주면 흰 띠가 아이콘 밖으로
-   삐져나와 헤더의 로고 옆에 사각형 섬광으로 보인다(overflow:hidden 으로 자르면 svg 의
-   drop-shadow 글로우가 함께 잘리므로 클리핑이 아니라 박스 크기로 해결한다). */
+   **박스를 움직이지 않고 그라디언트만 흘린다**(background-position 애니메이션). transform 으로
+   레이어를 밀면 어떤 순간에 박스가 아이콘 밖으로 나가 헤더 배경에 회색 사선 띠가 그려진다
+   — 실제 렌더에서 로고 옆에 삐져나온 것을 확인하고 고쳤다(2026-09-05). inset 을 0 으로 줄여도
+   translateX 가 박스를 밖으로 내보내므로 해결되지 않는다. overflow:hidden 으로 자르는 방법은
+   svg 의 drop-shadow 글로우까지 함께 잘려 못 쓴다. 그래서 박스는 고정하고 배경만 움직인다. */
 .ticket-badge::after {
 	content: "";
 	position: absolute;
 	inset: 0;
 	background: linear-gradient(
 		115deg,
-		transparent 38%,
-		rgba(255, 255, 255, 0.92) 50%,
-		transparent 62%
+		rgba(255, 255, 255, 0) 42%,
+		rgba(255, 255, 255, 0.85) 50%,
+		rgba(255, 255, 255, 0) 58%
 	);
+	background-size: 300% 100%;
+	background-repeat: no-repeat;
 	mix-blend-mode: overlay;
 	animation: ticketSheen 2.6s ease-in-out infinite;
 }
 
 @keyframes ticketSheen {
 	0% {
-		transform: translateX(-130%);
+		background-position: 170% 0;
 		opacity: 0;
 	}
-	22% {
+	18% {
 		opacity: 1;
 	}
 	55%,
 	100% {
-		transform: translateX(130%);
+		background-position: -70% 0;
 		opacity: 0;
 	}
 }
