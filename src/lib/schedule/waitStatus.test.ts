@@ -29,6 +29,7 @@ function att(
 		updated_at: "",
 		invited_by,
 		capacity_exempt: false,
+		exempt_reason: null,
 	};
 }
 
@@ -109,13 +110,16 @@ function withMember(
 		createdAt?: string | null;
 		admin?: boolean;
 		isGuest?: boolean;
-		/** 정원을 소비하지 않는 확정 자리(신규 프리패스) — 서버가 행에 기록한다. */
+		/** 정원을 소비하지 않는 확정 자리(신규 프리패스·우선참여권) — 서버가 행에 기록한다. */
 		exempt?: boolean;
+		/** 정원 외 자리의 사유. 생략하면 null(20260904000000 이전 레거시 행) = 신규로 분류된다. */
+		reason?: "newbie" | "ticket";
 	} = {},
 ): AttendanceRow {
 	return {
 		...row,
 		capacity_exempt: opts.exempt ?? row.capacity_exempt,
+		exempt_reason: opts.reason ?? row.exempt_reason,
 		member: {
 			name: row.member_id,
 			is_guest: opts.isGuest ?? false,
@@ -287,25 +291,88 @@ describe("splitConfirmedByCapacity — 정원 외 자리는 기록(capacity_exem
 		expect(r.counted.map((a) => a.member_id)).toEqual(["m1"]);
 		expect(r.over).toEqual([]);
 	});
+
+	it("우선참여권 자리는 신규와 갈린다 — 사유를 안 보면 '신규'로 거짓 표기된다", () => {
+		const rows = [
+			withMember(member("m1", "confirmed", 1), { joinedYmd: OLD }),
+			withMember(member("tk", "confirmed", 2), {
+				joinedYmd: OLD,
+				exempt: true,
+				reason: "ticket",
+			}),
+		];
+		const r = splitConfirmedByCapacity(rows, 1);
+		expect(r.counted.map((a) => a.member_id)).toEqual(["m1"]);
+		expect(r.freepassTickets.map((a) => a.member_id)).toEqual(["tk"]);
+		expect(r.freepassNewbies).toEqual([]);
+		expect(freepassSummary(r)).toBe("우선참여 1명");
+	});
+
+	it("세 사유가 한 회차에 다 있으면 각각 세고 '기타'로 새지 않는다", () => {
+		const rows = [
+			withMember(member("m1", "confirmed", 1), { joinedYmd: OLD }),
+			withMember(member("nb", "confirmed", 2), {
+				joinedYmd: NEW,
+				exempt: true,
+				reason: "newbie",
+			}),
+			withMember(member("tk", "confirmed", 3), {
+				joinedYmd: OLD,
+				exempt: true,
+				reason: "ticket",
+			}),
+			withMember(member("op", "confirmed", 4), { joinedYmd: OLD, admin: true }),
+		];
+		const r = splitConfirmedByCapacity(rows, 1);
+		expect(r.over.map((a) => a.member_id)).toEqual(["nb", "tk", "op"]);
+		expect(freepassSummary(r)).toBe("운영진 1 · 신규 1 · 우선참여 1");
+	});
+
+	it("사유 없는 레거시 정원 외 행은 신규로 분류한다(도입 전에는 신규 경로뿐이었다)", () => {
+		const rows = [
+			withMember(member("m1", "confirmed", 1), { joinedYmd: OLD }),
+			withMember(member("legacy", "confirmed", 2), { joinedYmd: NEW, exempt: true }),
+		];
+		const r = splitConfirmedByCapacity(rows, 1);
+		expect(r.freepassNewbies.map((a) => a.member_id)).toEqual(["legacy"]);
+		expect(r.freepassTickets).toEqual([]);
+	});
 });
 
 describe("freepassSummary — 사유별 인원 문구", () => {
 	const row = (id: string) => member(id, "confirmed", 1);
 
 	it("사유가 분류되지 않은 초과 행은 '기타 N' 으로 남는다(인원 합 보존)", () => {
-		// 지금 구현에서는 도달하지 않는 방어선 — 세 번째 예외가 생겨도 인원이 사라지지 않게 한다.
+		// 지금 구현에서는 도달하지 않는 방어선 — 네 번째 예외가 생겨도 인원이 사라지지 않게 한다.
 		expect(
 			freepassSummary({
 				over: [row("a"), row("b")],
 				freepassOps: [row("a")],
 				freepassNewbies: [],
+				freepassTickets: [],
 			}),
 		).toBe("운영진 1 · 기타 1");
 	});
 
+	it("우선참여권 인원은 '기타'로 새지 않는다", () => {
+		expect(
+			freepassSummary({
+				over: [row("a"), row("b")],
+				freepassOps: [row("a")],
+				freepassNewbies: [],
+				freepassTickets: [row("b")],
+			}),
+		).toBe("운영진 1 · 우선참여 1");
+	});
+
 	it("초과분이 없으면 빈 문자열", () => {
 		expect(
-			freepassSummary({ over: [], freepassOps: [], freepassNewbies: [] }),
+			freepassSummary({
+				over: [],
+				freepassOps: [],
+				freepassNewbies: [],
+				freepassTickets: [],
+			}),
 		).toBe("");
 	});
 });

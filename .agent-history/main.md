@@ -7273,6 +7273,501 @@ Home.tsx에서는 다이얼로그와 localStorage 로직을 전부 걷어내고,
 
 **Prompt**: 신입우선은 기존풀과 다르게 완전 예외로 해줘 이렇개 되면 대기 1번이 불만리많아
 
+**Answer**: 바꿨습니다. 프론트는 `c90b1f7` 푸시, DB는 `20260903010000` 적용 완료 — 프로덕션 8개 항목 검증 통과(카운터 드리프트 0).
+
+## 무엇이 문제였나
+
+프리패스 자리가 **정원 풀 안에 섞여** 있었습니다. `confirmed_count`가 신규까지 세니까:
+
+[코드 블록 생략]
+
+빠진 자리가 신규의 초과분을 상쇄하는 데 쓰인 겁니다. 대기 1번에겐 "자리가 났는데 왜 내 순서가 안 오냐"가 되니 당연히 불만이 나옵니다.
+
+## 어떻게 바꿨나
+
+`attendances.capacity_exempt` 컬럼을 두고, 신규 프리패스 자리는 이 값을 `true`로 남깁니다. `session_counter_sync`가 그 행을 **세지 않으므로** `confirmed_count`의 뜻이 **"정원을 소비하는 확정 인원"** 으로 좁혀집니다. 정원 안 자리는 언제나 `capacity` 칸이 그대로 비어 있습니다.
+
+[코드 블록 생략]
+
+프리패스가 "정원 안 빈자리를 흡수하는 것"에서 **"정원 밖에 자리를 하나 더 만드는 것"** 이 됐습니다. 정원외늦참(`late_pool`)이 이미 쓰는 모델과 같습니다.
+
+## 파생 → 기록으로 바꾼 덕에 같이 해결된 것
+
+전에는 "position 순 capacity 뒤가 초과분"이라고 **계산**해서 자리 성격이 상황마다 흔들렸습니다. 이제 행에 **기록**돼 있어서:
+
+- 취소가 나도 신규가 정원 안으로 슬며시 들어오지 않습니다
+- 정원을 낮춰도 정원 외 자리는 살아남고, 정원 안 자리들끼리만 다시 줄을 섭니다 — 아까 제가 이상하다고 짚었던 **"더 늦게 신청한 신규가 남고 먼저 신청한 회원이 강등되는 순서 역전"** 이 사라졌습니다
+- 유예가 끝나도 이미 받은 자리는 재계산으로 사라지지 않습니다
+
+## 운영진 프리패스는 그대로
+
+운영진 초과 확정은 종전대로 카운터에 들어가고 `확정 운영진 총수 < 2`로 판정합니다(재론 금지 항목이라 건드리지 않았습니다). 두 예외의 성격이 갈리는 건 의도로 봤습니다 — 운영진은 정원을 함께 쓰는 구성원이고, 신규 유예는 정원과 무관한 한시적 예외입니다.
+
+다만 **운영진 프리패스에는 원래 문제가 그대로 남습니다**: 운영진 초과로 카운터가 정원을 넘은 동안엔 확정자가 취소돼도 대기가 즉시 안 올라갑니다. 같은 방식으로 정리하려면 말씀 주세요.
+
+## 화면 표기
+
+`확정 N/정원 M`의 N이 이제 **정원 쓰는 사람 수**입니다. 신규 정원 외 자리는 N을 부풀리지 않고 뒤에 `(신규 1명)`으로 따로 붙습니다 — 정원 16 회차에 신규 1명이면 `확정 16/16 (신규 1명)`, 참석 총원 17명.
+
+## 검증
+
+프로덕션 스키마 대상 rollback 트랜잭션 **17케이스** — 보고하신 시나리오(정원 안 취소 → 대기 1번 즉시 승격 + 알림 1건 + 총원 유지), 신규 자리의 `capacity_exempt=true` 유지, 정원 축소 시 동작까지 포함. 단위 테스트 427개(split 테스트를 기록 기반으로 다시 씀), `tsc`/`eslint` 0, 빌드 성공.
+
+---
+
+## #207
+
+**Prompt**: 배포했으면 오늘 일정 참여히스토리보고 디비 수정해줘
+
+**Answer**: DB 수정 완료했습니다.
+
+## 오늘 일정(9/3 18:00 성남) 히스토리에서 찾은 것
+
+감사 로그를 훑어 프리패스 초과 확정 이벤트를 전 세션에서 찾았고, **딱 한 건** 나왔습니다:
+
+[코드 블록 생략]
+
+이상민님은 **오늘(9/3) 가입한 신규 회원**이고 운영진이 아닙니다. 만석에서 신규 프리패스로 들어온 건 맞는데, 그 시점이 `capacity_exempt` 배포(약 16:00) **전**이라 자리가 **정원을 먹는 자리로 기록**됐습니다.
+
+그래서 15:34에 강하진님이 취소했을 때 그 자리가 이상민님의 초과분을 상쇄하는 데 쓰이고, 대기 7명은 아무도 못 올라갔습니다 — 말씀하신 증상이 실제로 오늘 한 번 발생했습니다.
+
+## 수정한 것
+
+| 단계 | 결과 |
+|---|---|
+| 이상민님 자리를 `capacity_exempt = true`로 | 1행 (동명이인 위험 없이 조건 특정: 172·확정·미exempt·비게스트·비운영진·신규자격) |
+| 카운터 재동기화 | 16 → **15** (정원 외 1명 제외) |
+| 승격 실행 | **1명** — 대기 1번 **엄지현**님 확정, `promoted` 알림 발송 |
+
+**최종 상태**: 정원 16 · 카운터 16 · 정원 소비 확정 16 · **정원 외 1(이상민)** · 실제 참석 **17명** · 대기 **6명**
+
+승격은 정원 빈자리 1칸만 채웠습니다 — 확정에 운영진이 3명 있어 운영진 프리패스(총수 < 2)가 닫혀 있었고, 그래서 추가 초과 확정은 발생하지 않았습니다.
+
+## 함께 점검한 것 (모두 정상)
+
+- **카운터 드리프트 0** — 열린 세션 5개 전부 `confirmed_count`가 실제 값과 일치
+- **승격 멈춤 상태 없음** — 빈자리가 있으면서 대기가 남은 세션 없음
+- **고아 행 0** — 세션 없는 카운터·회원 없는 참석 행·세션 없는 참석 행 전부 0
+- **테스트 잔재 0** — qa 계정·`[테스트]` 회원 흔적 없음
+- **소급 대상 없음** — 부과 없는 일정(172·175)의 대기자 중 신규 유예 대상은 0명. 9/6 에이트민턴에 대기 중 신규가 1명 있지만 그 장소는 대관비를 걷어 애초에 프리패스 대상이 아닙니다(정상 대기)
+
+## 남은 참고
+
+같은 일이 또 생길 수 있는 창은 **닫혔습니다** — 이제 프리패스 자리는 부여 순간부터 `capacity_exempt=true`로 기록되므로 취소가 정원 자리를 잡아먹지 않습니다. 오늘 건은 배포 시차(14:49 참여 vs 16:00 마이그레이션) 때문에 생긴 1회성이었습니다.
+
+---
+
+## #208
+
+**Prompt**: 운영진이 정원외 늦참 버튼을 눌러도 반응이 없다는 보고가 들어왔어
+
+**Answer**: 근본 원인을 아직 못 짚었습니다. 추측으로 고치지 않고, 확인된 것과 못 한 것을 나눠 보고합니다.
+
+## 확인한 것 (증거 있음)
+
+**서버 함수는 정상입니다.** 확정 상태 운영진으로 롤백 트랜잭션에서 재현했습니다 — `confirmed → late_pool` 전환, 반환 `{"status":"late_pool","promoted":1}`. 제가 오늘 재정의한 `set_late_minutes` 본문도 프로덕션에서 직접 읽어 확인했고 결함 없습니다.
+
+**클라이언트 배선도 정상입니다.** 다이얼로그 `onConfirm` 연결됨, 실패 시 `alert`로 원문 에러 노출, `applyLateTransition`은 성공·실패 무관하게 참석 목록을 재조회합니다(화면 갱신 누락 아님).
+
+**그리고 오늘 실제로 늦참이 동작한 기록이 있습니다.** 운영진 남필립님 16:58 흔적:
+
+[코드 블록 생략]
+
+## 제가 잘못 배제한 것 (정정)
+
+처음에 "상태가 안 바뀐 늦참 호출 0건"을 근거로 무반응 경로를 배제했는데, 감사 트리거가 `status·position·confirmed_at·cancelled_at` 변경만 기록합니다. **오프셋만 바뀌는 호출은 애초에 로그에 남지 않으므로** 그 근거는 무효였습니다.
+
+## 가장 그럴듯한 해석
+
+위 15초 흐름을 보면 놀란 지점은 늦참이 아니라 **그 앞**일 가능성이 큽니다. 운영진인데 만석에서 참석하기가 **대기**로 접수됐습니다 — 확정 운영진이 이미 4명이라 프리패스(총수 < 2)가 규칙대로 닫혀 있었습니다. 늦참으로 우회했지만 그건 '확정'이 아니라 '정원 외 독립 접수'라 원하는 결과가 아니었고, 그래서 되돌리고 포기한 흐름으로 읽힙니다. 그분에겐 **"늦참을 눌러도 (확정이) 안 된다"** 로 전달됐을 수 있습니다.
+
+## 별건으로 찾은 진짜 버그 (지금은 미발현)
+
+**60분 회차에서는 늦참 진입이 구조적으로 불가능합니다.**
+
+| | 계산 | 값 |
+|---|---|---|
+| 슬라이더 최대 | `floor((60−1)/30)×30` | **30분** |
+| 풀 시작 경계 | `ceil((60×2/3)/30)×30` | **60분** |
+
+슬라이더는 그려지는데 끝까지 끌어도 경계를 못 넘어 상태가 안 바뀝니다 — 정확히 "눌러도 반응 없음"입니다. 클라이언트와 서버가 같은 클램프 공식을 쓰기 때문에 양쪽 모두 그렇습니다. 현재 회차는 전부 180분이라 아직 안 밟았지만 **1시간짜리 즉석 세션을 만들면 바로 재현**됩니다(45·90·120·150·180분은 정상).
+
+## 필요한 정보
+
+같은 증상을 계속 추적하려면 이 네 가지가 필요합니다:
+
+1. 어느 회차였는지
+2. 누른 시점의 본인 상태 — 확정 / 대기 / 정원 외 늦참
+3. "반응 없음"이 구체적으로 무엇인지 — **(a)** 슬라이더를 끌어도 상태 표시가 안 바뀜 / **(b)** [늦참으로 신청] 버튼을 눌러도 다이얼로그가 안 닫힘 / **(c)** 늦참은 됐는데 확정이 안 됨
+4. 빨간 오류 알림이 떴는지
+
+(b)라면 클라이언트 쪽 `lateBusy` 고착이고, (c)라면 규칙대로 동작한 것이니 안내 문구를 고쳐야 합니다. 60분 회차 버그는 별개로 지금 고칠 수 있는데, 클램프를 양쪽에서 같이 바꿔야 하니 지시 주시면 착수하겠습니다.
+
+---
+
+## #209
+
+**Prompt**: 있다 밤에 테스트해보자
+
+**Answer**: 좋습니다. 밤에 이어서 하겠습니다.
+
+## 지금 상태 (다 배포·적용 완료)
+
+| | |
+|---|---|
+| 프론트 | `c90b1f7` 푸시, Pages 배포 완료 |
+| DB | `20260903010000` 적용 완료, 드리프트 0 |
+| 오늘 회차(172) | 정원 16 · 정원 소비 확정 16 · 정원 외 1(이상민) · 참석 17명 · 대기 6명 |
+| 테스트 계정 | 완전 삭제, 임시 로그인 UI도 제거됨 |
+
+## 밤에 확인할 것
+
+**1. 늦참 무반응 재현** — 필요한 건 네 가지입니다: 어느 회차 / 누른 시점 본인 상태(확정·대기·정원외늦참) / 무반응의 형태(슬라이더가 안 먹나, 다이얼로그 버튼이 안 먹나, 늦참은 됐는데 확정이 안 되나) / 오류 알림 유무.
+
+재현되면 `ops_audit`에서 그 순간을 바로 짚을 수 있는데, **오프셋만 바뀌는 호출은 감사에 안 남습니다**. 그러니 재현할 때 슬라이더를 **몇 분 위치로 옮겼는지**만 기억해 주시면 그것만으로 어느 분기를 탔는지 판정됩니다.
+
+**2. 60분 회차 늦참 불가** — 이건 이미 원인이 확정된 건이라 지시만 주시면 바로 고칩니다(클라이언트·서버 클램프를 함께 손대야 합니다). 밤에 1시간짜리 즉석 세션을 만들어 보시면 그대로 재현됩니다.
+
+**3. 신규 프리패스 실동작** — 오늘 이상민님 케이스로 이미 실전 검증은 됐습니다. 다만 **취소 → 대기 1번 즉시 승격**이 새 모델에서 실제로 도는 건 아직 프로덕션에서 안 봤습니다(롤백 시뮬레이션으로만 확인). 오늘 저녁 회차에서 확정자가 취소되면 그때 자동으로 검증되니, 그 시점 `ops_audit`를 보면 됩니다.
+
+## 참고로 남겨두는 것
+
+테스트 계정을 다시 만들어야 하면 **임시 로그인 UI를 되살려야 합니다**(카카오 전용이라 이메일 계정으로는 진입 경로가 없습니다). 이전 커밋 `40fe357`에 그 컴포넌트가 있으니 되돌리면 되고, 만드는 절차와 정리 스크립트도 그대로 재사용할 수 있습니다.
+
+밤에 부르시면 이어서 하겠습니다.
+
+---
+
+## #210
+
+**Prompt**: 늦참 무반응 테스트위해 임시로그인 저번처럼 만들어줘 아이디/비번은 옮겨젓기쉽게 수ㅡ운걸로
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #211
+
+**Prompt**: 혹시 supabase 에 실패로그같은거ㅠ있나 봐바
+
+**Answer**: 로그 다 확인했습니다. **실패 로그는 없습니다.**
+
+## 24시간 4xx/5xx 전수 — 5건, 전부 무관
+
+| 건수 | 응답 | 대상 |
+|---|---|---|
+| 3 | 400 | `storage/player-photos/…` — 없는 키 조회(기존 사진 이슈) |
+| 1 | 409 | `POST /rest/v1/members` — 첫 로그인 upsert 경합 |
+| 1 | 400 | `POST /auth/v1/token` — **제 테스트 계정 삭제 확인용 로그인 시도** |
+
+`set_late_minutes`는 **33건 전부 200**입니다. 서버 에러는 한 건도 없습니다.
+
+## 감사 로그로 본 실제 동작 — 정상입니다
+
+운영진 두 분의 흔적이 남아 있는데, 둘 다 **늦참 전환이 제대로 됐습니다**:
+
+[코드 블록 생략]
+
+## 제가 세웠던 가설을 데이터로 접습니다
+
+`:02 진입 → :04 복귀`가 2초라 "뒤늦은 오프셋 쓰기가 전환을 덮어썼다"고 의심했습니다. 스토어 주석도 그 경합을 경고하고 있고요. 그런데 **호출 순서를 대조하니 아닙니다** — 그 구간의 오프셋 쓰기는 `:01` 하나뿐이고 `:02`보다 **먼저** 커밋됐습니다. `:04` 시점에 큐에 대기 중인 낡은 쓰기가 없었으므로, `:04`는 **사람이 슬라이더를 경계 아래로 되돌린 것**입니다. 남필립님(16:58)도 같은 구조입니다.
+
+즉 두 흔적 다 **수동 토글**로 보이고, 시각(새벽 2시 39분·10초 동안 켜고 끄고 켜고 취소)까지 보면 테스트에 가깝습니다. 로그에서 "무반응"의 근거는 못 찾았습니다.
+
+## 대신 로그에서 나온 것 두 가지
+
+**1. 슬라이더 한 번 조작에 RPC가 2~4건씩 나갑니다.** 33건 중 상당수가 같은 초에 몰려 있습니다. 드래그 단계마다 디바운스가 재무장됐다 발사되는 구조라 그렇습니다. 동작엔 문제없지만 무료 플랜 호출량 관점에선 낭비입니다(전에 정리한 호출 폭주 건과 같은 계열).
+
+**2. `POST /rest/v1/members` 409 1건** — 첫 로그인 시 `auth_user_id` upsert 경합으로 보입니다. `ignoreDuplicates`를 쓰는데도 409가 뜬 거라 한 번쯤 들여다볼 값은 있습니다. 지금 장애는 아닙니다.
+
+## 밤 테스트 때 필요한 것
+
+로그만으로는 여기까지가 한계입니다. 재현될 때 **슬라이더를 몇 분 위치로 옮겼는지**만 알려주시면 어느 분기를 탔는지 바로 판정됩니다 — 오프셋만 바뀌는 호출은 감사 로그에 안 남아서, 그 값이 유일한 단서입니다.
+
+그리고 확정된 버그 하나는 지시만 주시면 바로 고칩니다: **60분 회차는 늦참 진입이 구조적으로 불가능**합니다(슬라이더 최대 30분 < 경계 60분). 지금 회차가 전부 180분이라 안 밟았을 뿐이고, 1시간짜리 즉석 세션을 만들면 그 자리에서 "눌러도 반응 없음"이 재현됩니다.
+
+---
+
+## #212
+
+**Prompt**: 다이얼로그에서 확인을 눌러도 넘어가지 않는문제였어
+
+**Answer**: 증상 경로를 좁혔습니다. 확인한 것과 남은 후보를 정리합니다.
+
+## 배제된 것 (전부 근거 있음)
+
+| 후보 | 결과 |
+|---|---|
+| 서버 에러 | `set_late_minutes` 33건 **전부 200**, 24시간 4xx/5xx 5건 모두 무관 |
+| 배선·타입 | `onApplyLatePool: Promise<{ok, error?}>` 정상 연결, `onConfirm={confirmLate}` 정상 |
+| 화면 갱신 | `applyLateTransition`이 성공·실패 무관 재조회 |
+| transform 클리핑 | `ModalSheet`가 `createPortal`로 `document.body`에 렌더 — 셸 밖 |
+| 탭이 안 닿음 | 컨테이너는 `pointer-events:none`이지만 시트는 `auto` |
+| **오늘 제 변경** | 이 다이얼로그는 `message` 슬롯을 쓰고, 제가 고친 건 `children` 슬롯 여백입니다. 신규 안내 문구도 운영진에겐 안 붙습니다 → **운영진 기준 오늘 이전과 바이트 동일**. 제 배포 탓이 아닙니다 |
+
+## 남은 후보 — 딱 두 갈래
+
+**(A) 요청이 돌아오지 않아 `lateBusy`가 고착**
+
+[코드 블록 생략]
+
+`try/finally`가 없어서, 이 사이에서 예외가 나거나 응답이 안 오면 버튼이 **영구 비활성**됩니다. 게다가 `enqueueLate`는 세션별 체인이라 **요청 하나가 멈추면 그 세션의 이후 늦참 호출이 전부 그 뒤에 막힙니다**(타임아웃 없음). 모바일에서 앱이 잠깐 백그라운드로 가거나 네트워크가 끊기면 발생합니다. 이 경우 요청이 서버에 도달하지 않으므로 **로그에도 안 남습니다** — 로그가 전부 200인 것과 모순되지 않습니다.
+
+**(B) `onClick`이 아예 안 걸림** — 위 배제 항목들로 가능성은 낮지만 완전히는 못 지웠습니다.
+
+## 알려주시면 바로 갈립니다
+
+**버튼이 안 먹을 때 라벨이 어땠나요?**
+
+- **"처리 중…"으로 바뀐 채 멈춰 있었다** → (A) 확정. 고칠 지점이 명확합니다.
+- **"늦참으로 신청" 그대로였다** → (B). 다른 방향으로 파야 합니다.
+
+이거 하나면 됩니다.
+
+## 지금 고칠 수 있는 것
+
+(A)로 확인되든 아니든, 저 경로엔 실제 결함이 둘 있습니다:
+
+1. `applyLate`에 `try/finally`가 없어 예외 한 번에 버튼이 영구 잠김
+2. `enqueueLate`에 타임아웃이 없어 멈춘 요청 하나가 그 세션의 늦참 기능을 페이지 수명 내내 막음
+
+둘 다 "확인 눌러도 안 넘어감"을 그대로 만들어내는 구조입니다. 다만 이게 이번 보고의 원인이라고 단정할 근거는 아직 없어서, **근본 원인 확인 전에 방어 코드부터 넣지는 않았습니다**. 라벨만 알려주시면 그에 맞춰 고치겠습니다. 급하시면 두 개만 먼저 손봐 두는 것도 가능합니다 — 어느 쪽이든 있어야 할 코드라서요.
+
+---
+
+## #213
+
+**Prompt**: 장태용이란 사람이 가입후 한번도 참여하지 못했다는데 가입날짜는 언제고 참여/대기된 횟수를 분석해
+
+**Answer**: 검증이 백그라운드에서 도는 동안, 이미 확정된 사실을 정리해 둡니다.
+
+**가입일: 2026-07-16 14:14 (KST)** — `members.created_at`. 단 `membership_started_at`은 `2026-07-01`로 회비 기준월은 7월입니다.
+
+**신청 6회 / 확정 0회 / 실제 출전 0회.** 6건 모두 대기(waitlisted)로 등록된 뒤 취소로 끝났습니다.
+
+지금 ①"확정된 적 없다"는 결론의 반증 ②세션 58의 `확정 15 / 정원 16` 모순(승격 누락 의심) ③취소 주체와 회비 상태를 병렬 검증 중입니다.
+
+---
+
+## #214
+
+**Prompt**: <task-notification>
+<task-id>w8btig3iy</task-id>
+<tool-use-id>toolu_01NRyEKZUgXxeagKT5t5QbXk</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/92b2d8a8-94b9-4c25-9f73-08e5709d07de/tasks/w8btig3iy.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "장태용 회원의 참여 0회 원인을 프로덕션 DB로 반증 검증하고 승격 누락 여부를 분석" completed</summary>
+<result>{"lanes":[{"verdict":"PARTIAL — 명제가 근거로 삼은 confirmed_at 지문은 반증되었다(코드상 3개 소거 경로 + 프로덕션 실제 오판 15건 확증). 다만 confirmed_at을 버리고 ops_audit·승격순서·알림으로 재검증해도 장태용이 확정된 적 있다는 증거는 나오지 않았고 '실제 참여 0회'는 독립 테이블 전수조사로 확증되었다. 즉 결론은 살아남았으나 세션 58·84(및 74)의 '대기로만'은 기록이 아닌 추론이다.","findings":[{"claim":"confirmed_at은 '확정된 적 있음'의 신뢰 가능한 지문이 아니다 — join_session 재신청 분기가 대기로 떨어지면 confirmed_at을 NULL로 되돌린다","evidence":"현행 정의 supabase/migrations/20260903010000_newbie_capacity_exempt.sql:119 join_session의 재신청(v_has_existing) UPDATE 절 197행 `confirmed_at = case when v_new = 'confirmed' then now() else null end` + `requested_at = now()`, `cancelled_at = null`. 동일 라인이 모든 과거 버전(20260621020000:127 ~ 20260903000000:308)에 존재해 6회 신청 전 기간에 유효","confidence":"확증"},{"claim":"confirmed_at을 NULL로 되돌리는 경로는 최소 3개 — 재신청(대기), set_late_minutes(late_pool), set_session_capacity 강등. 반면 취소 자체는 지우지 않는다","evidence":"20260903010000_newbie_capacity_exempt.sql:197(재신청), :289 `set status='late_pool', late_minutes=v_min, confirmed_at=null`, :414 set_session_capacity 강등 `confirmed_at = case when v_want='confirmed' then now() else null end`. cancel_attendance(20260806010000_promotion_hardening.sql:423)·admin_cancel_attendance(:462)는 confirmed_at을 건드리지 않음","confidence":"확증"},{"claim":"프로덕션에 장태용 행과 겉모습이 완전히 동일한(status=cancelled, confirmed_at=NULL) 그러나 실제로는 4일간 확정 상태였던 행이 15건 존재한다 — 명제의 추론 방식은 실증적으로 오판을 낸다","evidence":"ops_audit(kind=attendance) 1785행 전수 재구성 결과 '확정 이력 있음 + 이후 cancelled→waitlisted 재신청' 쌍 15건. 예: session_id=138, member_id=b1a438bc-6235-4b09-8b2f-a66b3aef1f74 — audit id 1030(08-16T09:03 →confirmed) / 1510(08-20T07:13 confirmed→cancelled) / 1515(07:55 cancelled→waitlisted) / 1526(08:42 →cancelled). 현재 attendances 행은 status=cancelled, confirmed_at=null, requested_at=2026-08-20T07:55:51(재신청으로 덮여씀), position=1916. 동형 사례 (140,8fee63d0-…), (138,f3062864-…)도 confirmed_at=null","confidence":"확증"},{"claim":"소거 경로는 드문 예외가 아니라 상시 발생한다 — 감사 존재 기간(2026-08-06~09-04) 한 달에 cancelled→waitlisted 재신청 50건, cancelled→confirmed 재신청 37건","evidence":"ops_audit count: detail-&gt;&gt;old_status=cancelled &amp; new_status=waitlisted → 50, →confirmed → 37, waitlisted→confirmed(승격) → 180, confirmed→waitlisted(강등) → 0, confirmed→late_pool → 6, kind=attendance 총 1785. 강등 경로는 실제로 쓰인 적 없고 재신청 경로가 소거의 주범","confidence":"확증"},{"claim":"그럼에도 세션 87·172는 '확정된 적 없음'이 기록으로 확정된다 — 감사 로그가 op=INSERT(생애 첫 행)이고 이벤트가 2건뿐이다","evidence":"ops_audit member_id=eq.d6e24de9-7eac-4f44-bf86-0dfcd2514eb7 총 4행: id=762 session 87 op=INSERT new_status=waitlisted counter_now=16 capacity=16 req_path=/rpc/join_session, id=770 UPDATE waitlisted→cancelled; id=3240 session 172 op=INSERT waitlisted counter_now=17 capacity=16, id=3241 UPDATE waitlisted→cancelled. op=INSERT이므로 그 전에 확정→취소 이력이 존재할 수 없다","confidence":"확증"},{"claim":"세션 83은 확정 자체가 물리적으로 불가능했다 — 그의 앞 대기 7명이 오늘까지 waitlisted로 남아 있고 신청 시점 이후 빈자리가 한 번도 생기지 않았다","evidence":"session 83 attendances 39행 전수: 그의 position=605(req 07-16T06:06:04, canc 06:06:21). 앞 순번 waitlisted 잔존 = 536,542,559,578,589,598,601(7명, 현재도 status=waitlisted). 마지막 승격은 07-15T22:00:30(position 525)로 그의 신청 50시간 전. 또한 회원 생성이 07-16T05:14:53이고 세션은 07-12T09:12부터 만석이어서 05:14~06:06 사이 즉시확정 여지도 없다","confidence":"확증"},{"claim":"세션 74도 확정 경로가 없다 — 초기 확정석 25개가 전부 타 회원 행이고, 앞에 영구 대기 3명이 있으며 대기 창(1.4초) 안에 승격이 없었다","evidence":"session 74 attendances 42행: 즉시확정(confirmed_at==requested_at) 25행 모두 타 회원, 승격 3건은 07-20T23:36:52→761, 07-21T01:52:32→766, 07-21T07:52:44→775로 전부 그의 position 834보다 낮다. 앞 순번 waitlisted 잔존 810,828,831. 그의 행은 position=834, req 07-21T07:15:07.12, canc 07:15:08.53","confidence":"확증"},{"claim":"세션 84도 승격되지 않았다 — 대기 창 안의 유일한 승격이 더 낮은 순번(1260)에게 갔고, 알림 보존창이 그 기간을 덮는데 promoted 알림이 없다","evidence":"session 84 attendances 41행: 그의 position=1298(req 08-02T09:11:09, canc 08-04T03:45:25). 창 내 승격은 08-02T23:47:47→1260(1260&lt;1298)뿐, 다음 승격 08-04T05:23:59→1275는 취소 후. promote_waitlist_fill(20260806010000_promotion_hardening.sql:307)은 승격마다 'promoted' 알림을 무조건 insert하고 trim_notifications(20260622180000)는 회원당 최근 10개+30일만 지우므로 그의 08-02~08-04 알림은 지금도 남아 있어야 한다. 그의 notifications 7행에 promoted 없음(최초 08-14T00:06 payment_confirmed)","confidence":"유력"},{"claim":"세션 58만 기록으로 닫히지 않는다 — 빈자리 4건이 모두 앞 순번에게 갔다는 정합성은 확인되지만, 신청 전 확정 에피소드가 있었다면 재신청이 흔적을 지웠을 것이고 해당 구간에 position 공백이 있다","evidence":"session 58 승격 이력: 07-21T11:09:26→768, 13:10:32→772, 13:43:23→782, 07-22T00:21:15→787(전부 그의 795 미만), 다음 빈자리 07-22T05:38:01→802는 그의 취소(07-22T04:50:30) 48분 후 → '순번 1번에서 48분 차로 놓침'과 정합. 다만 즉시확정 16행 중 652가 09:01:06에 취소되어 09:34:12(768 신청) 시점 실확정은 15인데 768이 대기로 떨어졌다 → 당시 capacity가 15였다가 07-21T11:09:26에 16으로 상향(set_session_capacity가 그 승격을 설명)되었다는 해석이 가장 자연스럽다. 어느 해석이든 651~754 구간 position 공백 677,678,727,728,729,753을 특정 인물에 귀속시킬 방법이 없어 선행 확정 에피소드를 기록으로 배제할 수는 없다","confidence":"추정"},{"claim":"'실제 참여 0회'는 confirmed_at과 무관한 독립 근거로 확증된다 — 이름/스냅샷 전수 검색까지 0건","evidence":"session_players: member_id=eq.d6e24de9-… 0행, player_id=eq.동일 uuid 0행, name=ilike.*태용* 0행. matches 2613행 대상 team_a_p1/p2·team_b_p1/p2 각각 eq.uuid → 전부 count 0, player_snapshot=cs.[{\"name\":\"장태용\"}] → count 0(동일 필터 대조군 '이규웅' 142건으로 필터 정상 동작 확인). dues_charges 2행 뿐이며 둘 다 kind=monthly_fee, session_id=null(2026-08 paid 5000, 2026-09 unpaid 5000) → 대관비·당일취소 부과 0건","confidence":"확증"},{"claim":"동명이인·게스트 중복 행·별칭 테이블은 존재하지 않는다 — 반증 각도 4는 성립하지 않는다","evidence":"members name=ilike.*태용* → 1행(d6e24de9-…, is_guest=false, is_active=true), name=ilike.*장태* → 동일 1행. member_name_aliases 테이블 자체가 없음(PGRST205: Could not find the table public.member_name_aliases)","confidence":"확증"},{"claim":"보조 지문(알림)은 7월분에 대해 쓸 수 없다 — 회원당 최근 10개+30일 트림으로 7월 기록이 소실되었고 브로드캐스트 수신자도 전 회원이 아니다","evidence":"trim_notifications 트리거 supabase/migrations/20260622180000_notifications_delete_and_trim.sql:12-40 — 새 알림 INSERT마다 해당 회원의 30일 초과분·최근 10개 초과분 삭제. notifications 전체 최초 행 2026-08-02T09:00:00, 'promoted' 총 116건 중 최초 2026-08-03T06:06:26. 2026-08-02 sessions_opened 수신자는 23명뿐(활성 정회원 97명) → 미수신이 곧 삭제 증거는 아님","confidence":"확증"}],"queries_run":["migrations 전수 grep(confirmed_at 쓰기 66곳) 후 함수별 마지막 정의 확정 — join_session/promote_next_waitlisted/set_late_minutes/set_session_capacity = supabase/migrations/20260903010000_newbie_capacity_exempt.sql, cancel_attendance/admin_cancel_attendance/promote_waitlist_fill = supabase/migrations/20260806010000_promotion_hardening.sql","ops_audit 스키마·트리거 정독(20260806010000_promotion_hardening.sql:37-148): attendances INSERT/DELETE/UPDATE(status·position·confirmed_at·cancelled_at 변화시) 행단위 감사, 최초 행 2026-08-06T13:04:03","REST GET /attendances?member_id=eq.d6e24de9-…&amp;select=* → 6행 전수(position 605/795/834/1298/1672/2559, confirmed_at 전부 null)","REST GET /ops_audit?member_id=eq.d6e24de9-… → 4행(세션 87·172, 둘 다 op=INSERT + cancel)","REST GET /ops_audit?kind=eq.attendance 전수 1785행 페이징 → (session,member)별 상태 전이 재구성, 확정후 재신청-대기 15쌍 도출","REST GET /ops_audit count 5종: cancelled→waitlisted 50, cancelled→confirmed 37, confirmed→waitlisted 0, waitlisted→confirmed 180, confirmed→late_pool 6","REST GET /attendances?session_id=eq.{58,74,83,84}&amp;select=*&amp;order=position → 34/42/39/41행 전수, 즉시확정·승격시각·잔존 대기순번 재구성","REST GET /attendances?select=position 전수 2009행 페이징 → position 시퀀스 공백 533개 산출 및 각 세션 범위별 공백 목록","REST GET /session_players?member_id / ?player_id / ?name=ilike.*태용* → 전부 0행","REST GET /matches team_a_p1|team_a_p2|team_b_p1|team_b_p2=eq.uuid count → 전부 0, ?player_snapshot=cs.[{\"name\":\"장태용\"}] → 0 (대조군 '이규웅' 142)","REST GET /members?name=ilike.*태용*|*장태* → 1행, /member_name_aliases → 테이블 없음(PGRST205)","REST GET /dues_charges?member_id=eq.… → 2행(monthly_fee, session_id 전부 null)","REST GET /notifications?recipient_member_id=eq.… → 7행(최초 08-14), type=eq.promoted count 116(최초 08-03), 08-02 sessions_opened 수신자 23명, 활성 정회원 97명"]},{"verdict":"PARTIAL — 세션 84는 \"버그/드리프트로 승격이 영구 정지\"가 확증되고(유령자리 2칸·28시간 승격 0건, 마이그레이션 20260806010000이 명시적으로 다룬 사고), 세션 58·87은 \"정상 동작\"이며 장태용이 각각 자리가 열리기 48분 전 / 확정취소 0건 상태에서 스스로 포기한 것이다. 6번 모두의 직접 원인은 \"그가 승격 시점보다 먼저 취소했다\"이고, 그 중 84번만은 시스템이 준 잘못된 신호(빈자리 2칸이 보이는데 28시간 큐 정지)가 포기를 유도한 것으로 강하게 의심된다.","findings":[{"claim":"세션 84는 승격 엔진이 실제로 얼어붙은 사고 세션이
+... (truncated 32740 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/92b2d8a8-94b9-4c25-9f73-08e5709d07de/tasks/w8btig3iy.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/24eb5551-0428-4bd3-bc3b-b78f213debfa/subagents/workflows/wf_1a3bf40b-ee1/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/24eb5551-0428-4bd3-bc3b-b78f213debfa/workflows/scripts/attendance-forensics-jangtaeyong-wf_1a3bf40b-ee1.js', resumeFromRunId: 'wf_1a3bf40b-ee1'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>4</agent_count><agents_done>4</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>507848</subagent_tokens><tool_uses>157</tool_uses><duration_ms>1648560</duration_ms></usage>
+</task-notification>
+
+**Answer**: 검증 완료했습니다. 제 최초 추론 중 하나는 반증됐고(아래 주의 참고), 결론은 독립 근거로 유지됩니다.
+
+## 장태용 (`d6e24de9-7eac-4f44-bf86-0dfcd2514eb7`)
+
+**가입: 2026-07-16 14:14 KST** (`members.created_at`) — 회비 기준월은 `membership_started_at = 2026-07-01`
+
+**신청 6회 / 확정 0회 / 대기 6회 / 취소 6회 / 실제 출전 0경기.** 09-03 이후 신청 없음, 현재 대기 중인 회차도 없음.
+
+| # | 회차 | 경기일(KST) | 정원 | 신청(KST) | 대기순번 | 취소까지 | 비고 |
+|---|---|---|---|---|---|---|---|
+| 1 | 83 | 07-16 18:00 | 16 | 07-16 **15:06** | 11번 | 17초 | 가입 51분 뒤 첫 신청. 이미 4일 전 마감 |
+| 2 | 58 | 07-22 18:00 | 16 | 07-19 20:56 | 7→**1번** | 64시간 | **자리 열리기 48분 전에 취소** |
+| 3 | 74 | 07-21 18:00 | 24 | 07-21 16:15 | 8번 | **1.4초** | 경기 1시간 45분 전 신청 |
+| 4 | 84 | 08-06 18:00 | 16 | 08-02 18:11 | 6→5번 | 42시간 | **승격 엔진 정지 사고 회차** |
+| 5 | 87 | 08-13 18:00 | 16 | 08-13 17:32 | **1번** | 70분 | 마지막 한 자리를 46초 차로 놓침 |
+| 6 | 172 | 09-03 18:00 | 16 | 09-03 15:14 | 9번 | 3.5초 | 정원 16에 확정 17(프리패스 초과) |
+
+## 왜 6번 다 대기였나 — 원인 4개
+
+**① 지각 신청(가장 큰 원인).** 경기 시작까지 리드타임 중앙값이 **2.8시간**입니다. 클럽 전체 중앙값은 **71.7시간**. 주간 일정 공개 러시에 한 번도 붙지 못했습니다 — 세션 84는 공개 후 **91초**에 16석이 마감됐고 그는 11분 뒤에 눌렀습니다. 6h 이내 신청의 대기종료율은 40.4%, 72h 이상은 12.9%입니다.
+
+**② 장소 편중.** 6회 전부 `place_id=1` 성남실내체육관(무료, `charges_court_fee=false`)이고 이 장소의 대기종료율 **27.2%**가 전 장소 최악입니다. 회원 기간 중 열린 유료장 15회차(대기종료율 2~5.6%)에는 한 번도 신청하지 않았습니다.
+
+**③ 세션 84는 시스템 결함.** 08-03 15:06 운영진 확정자 취소가 카운터를 깎지 않아 **유령 자리 2칸**이 생겨 승격 큐가 얼었습니다. 그의 42시간 대기 중 **28시간 동안 승격 0건**. 화면에는 빈자리가 보이는데 순번이 안 오는 상태였고, 결국 그 회차는 정원 16에 확정 10명으로 끝났습니다. 이 사고는 이미 `supabase/migrations/20260806010000_promotion_hardening.sql` 헤더에 사고 보고서로 기록돼 있습니다. 그가 버티기만 했으면 08-05 21:12에 확정됐을 것으로 재구성됩니다.
+
+**④ 푸시 미구독.** `push_subscriptions`에 그의 행이 0건(구독자 42명). 승격됐어도 알림을 못 받고 직접 앱을 열어야만 알 수 있었습니다.
+
+## 이례성
+
+신청 3회 이상이면서 확정 이력이 0인 회원은 **171명 중 그가 유일**합니다. 신청 6회 이상 정회원 82명의 '처음 6번' 기준으로도 확정 0은 그 혼자이고, 차하위는 2/6입니다. 민원은 근거가 있습니다.
+
+그리고 한 경기도 못 뛴 상태로 **8월 회비 5,000원을 납부**했습니다(9월분 5,000원 미납). 대관비 부과는 0건 — 다만 6회차 전부 무료 장소라 확정됐어도 부과는 없었을 겁니다.
+
+## 판정 신뢰도 주의
+
+`confirmed_at`을 "확정된 적 있음"의 지문으로 본 제 최초 추론은 **반증됐습니다**. `join_session`의 재신청 분기가 대기로 떨어질 때 `confirmed_at`을 `null`로 되돌립니다(현행 `20260903010000_newbie_capacity_exempt.sql:197`). 실측 오판율 7.1% — 감사 창 안 211쌍 중 15쌍이 실제로는 확정 이력이 있었습니다.
+
+`confirmed_at`을 버리고 재검증한 결과:
+- **확정 0회**: 세션 87·172는 `ops_audit`의 `op=INSERT`로 확증, 83은 position 시퀀스 공백 0건으로 구조적 확증, 58·74·84는 승격 이력 전수 재구성으로 **유력**(감사 로그가 08-06부터라 기록으로 닫히지 않음)
+- **실출전 0회**: `session_players`·`matches`(2,613행, `player_snapshot` 이름 검색까지) 전부 0건으로 확증
+- **취소 주체**: 87·172는 본인 확증. 나머지 4건은 감사 로그 이전이라 확증 불가하나, 운영진 강제 제거가 남기는 `removed` 알림이 전체 866행에 **0건**이고 같은 기간 '대기→취소' 176건이 100% 본인 취소여서 사실상 본인 취소입니다.
+
+## 곁가지로 나온 현행 결함 2개
+
+- **세션 172(가장 최근)**: 신규회원 프리패스 좌석이 카운터를 정원 위로 밀어올려(확정 17 / 정원 16) 확정취소 1건이 승격 없이 흡수됨 — 유력
+- **큐 건너뛰기 66건**: 대기자가 있는데 뒤에 온 사람이 즉시확정되는 사례가 클럽 전체에 66건(세션 119에 12건, 82·59에 각 10건). 단 장태용의 대기 창 안에는 0건이라 그의 케이스 원인은 아닙니다.
+
+이 두 건 파보거나, 위 분석을 운영진 공유용 페이지로 뽑을까요?
+
+---
+
+## #215
+
+**Prompt**: 오래 대기한 사람들이 참여하지 못하는 사례가 많아서 구제책을 내놓으려고 해.
+대기인 상태로 세션이 끝난 사람들에게 포인트를 줘서 7포인트를 모으면 신입우선참여처럼 우선참여할 수 있는 권한을 주는거지. 대신 이걸로 참여하는 사람은 일일 최대 2명인거고. 반대로 불참하면 포인트 1 깎고.
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #216
+
+**Prompt**: 오래 대기한 사람들이 참여하지 못하는 사례가 많아서 구제책을 내놓으려고 해.
+대기인 상태로 세션이 끝난 사람들에게 포인트를 줘서 7포인트를 모으면 신입우선참여처럼 우선참여할 수 있는 권한을 주는거지. 대신 이걸로 참여하는 사람은 일일 최대 2명인거고. 반대로 불참하면 포인트 1 깎고. 포인트 내역은 내 정보에서 볼 수 있고, 7포인트를 모으면 쓰기전까지 그 이상 모이지 않아. 티켓이 있으면 메인헤더 네비 가운데에 티켓모양의 이미지가 화려하게 반짝이는 모습으로 있으면 좋겠어.
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #217
+
+**Prompt**: 오래 대기한 사람들이 참여하지 못하는 사례가 많아서 구제책을 내놓으려고 해.
+대기인 상태로 세션이 끝난 사람들에게 포인트를 줘서 7포인트를 모으면 신입우선참여처럼 우선참여할 수 있는 권한을 주는거지. 대신 이걸로 참여하는 사람은 일일 최대 2명인거고. 반대로 불참하면 포인트 1 깎고. 포인트 내역은 내 정보에서 볼 수 있고, 7포인트를 모으면 쓰기전까지 그 이상 모이지 않아. 티켓이 있으면 메인헤더 네비 가운데에 티켓모양의 이미지가 화려하게 반짝이는 모습으로 있으면 좋겠어.
+
+**Answer**: 사양 4건 확정했습니다.
+
+| 항목 | 확정 |
+|---|---|
+| 차감 조건 | 당일 취소·노쇼만 −1 (사전 취소는 감점 없음) |
+| 티켓 자리 | 정원 외(`capacity_exempt`) — 다른 대기자 순번을 빼앗지 않음 |
+| 적용 범위 | 모든 일정 (대관비는 정상 부과) |
+| 사용 방식 | 명시적 선택 — "티켓 쓰고 확정" 버튼 |
+
+영향 범위 조사(8축 + 완결성 비평)가 백그라운드로 돌고 있습니다. 결과가 나오면 그걸 근거로 설계안을 만들어 확정 사양과 함께 올리겠습니다.
+
+---
+
+## #218
+
+**Prompt**: <task-notification>
+<task-id>w744dy539</task-id>
+<tool-use-id>toolu_01STArKcvqoTeoAsAmLfiWLd</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/92b2d8a8-94b9-4c25-9f73-08e5709d07de/tasks/w744dy539.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "대기 포인트/우선참여 티켓 기능의 영향 범위를 8개 축으로 전면 조사" completed</summary>
+<result>{"axes":[{"key":"attendance-rpc","label":"A. 참석/대기/승격 RPC","summary":"참석/대기/승격의 서버 로직은 전부 SECURITY DEFINER RPC에 모여 있고(attendances 테이블에는 SELECT 정책만 존재), 정원 판정의 단일 권위는 session_counters.confirmed_count 이며 session_counter_sync()가 매 전이마다 실제 confirmed 행 수로 덮어써 자가치유한다. 현재 정의는 join_session·promote_next_waitlisted·session_counter_sync·set_late_minutes·set_session_capacity = 20260903010000, cancel_attendance·admin_cancel_attendance·cancel_guest_attendance·promote_waitlist_fill = 20260806010000, add_guest_attendance = 20260819030000 이다. 만석 예외는 두 갈래로 이미 구현돼 있다: 운영진 프리패스(정원 카운트에 포함, '확정 운영진 총수 &lt; 2')와 신규회원 2주 프리패스(capacity_exempt=true 로 정원 카운트에서 제외). 둘 다 session_op_free(부과 없는 일정)일 때만 열리고, 부여 시점은 '본인이 누른 순간'(join_session · set_late_minutes 정시 복귀)뿐이며 승격 루프에는 절대 넣지 않는다(넣으면 정원 안 대기 1순위가 영구 정지한다는 실증 논증이 주석에 있음). 티켓 사용 자리는 신규 프리패스와 같은 성격(정원 밖에 자리를 하나 더 만드는 것)이므로 capacity_exempt 모델을 그대로 재사용하는 것이 정합적이나, capacity_exempt 는 promote_next_waitlisted 에서 무조건 false 로 덮이고 join_session/set_late_minutes 에서도 매번 덮이므로 '티켓으로 들어왔다'는 사실은 별도 컬럼으로 남겨야 한다. 취소 경로는 cancel_attendance / admin_cancel_attendance / cancel_guest_attendance / deactivate_my_account(내부에서 cancel_attendance 루프) 네 곳이고 전부 status='cancelled' + cancelled_at + promote_waitlist_fill 패턴으로 동일하다. 세션 종료 훅은 sessions 의 after update of status ... when (new.status='closed' and old.status is distinct from 'closed') 트리거 두 개가 이미 확립된 초크포인트이므로 포인트 적립도 여기에 세 번째 트리거로 붙이는 것이 맞다. 단 sessions 트리거는 search_path='' + 모든 테이블 public. 한정이 필수다(안 그러면 sync 전체가 롤백돼 회차가 '예정'에 고착된 2026-07-26 실사고가 재현된다).","files":[{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20260903010000_newbie_capacity_exempt.sql","role":"join_session·promote_next_waitlisted·session_counter_sync·set_late_minutes·set_session_capacity 의 **현재 정의 전문**이 여기 있다(마지막 마이그레이션). 티켓 사용 분기를 넣을 자리(join_session 166~190행)와 capacity_exempt 모델의 근거 주석이 모두 이 파일에 있다.","mustChange":true},{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20260903000000_newbie_freepass_capacity.sql","role":"신규 프리패스의 설계 원문. member_join_date()/session_newbie_grace() 헬퍼, '부여는 본인이 누른 순간뿐' 규칙, 승격 루프에 프리패스를 넣으면 안 되는 이유(166~181행)가 있다. 티켓 기능이 그대로 따라야 할 템플릿.","mustChange":false},{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20260806010000_promotion_hardening.sql","role":"cancel_attendance(423~457), admin_cancel_attendance(462~515), cancel_guest_attendance(520~558), promote_waitlist_fill(307~329)의 **현재 정의**. ops_audit 감사 트리거(86~147)도 여기서 정의된다. 티켓 환급을 걸 지점 전부가 이 파일에 있다.","mustChange":true},{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20260726110000_operator_freepass_capacity.sql","role":"session_op_free(session_id) 정의(32~44). '부과 없는 일정'(places.charges_court_fee=false 또는 장소 없음) 게이트의 단일 출처. 티켓 프리패스에도 이 게이트를 걸지 여부가 핵심 결정 사항.","mustChange":false},{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20260726100000_weekend_guest_cap_and_operator_capacity.sql","role":"session_guest_cap(session_id) 정의(33~43): 주말(KST 토/일)=NULL 무제한, 평일=2. 게스트 상한의 단일 출처 — 티켓 상한 '2명'을 세는 방식의 선례.","mustChange":false},{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20260712010000_guest_confirm_cap.sql","role":"게스트 확정 상한(세션당 2명)의 설계 원문. '하위 상한은 별도 카운터 없이 카운터 락 안에서 count(*) 로 판정한다'는 규약(주석 15~22행)이 티켓 '회차당 2명' 상한에 그대로 적용된다.","mustChange":false},{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20260708010000_late_pool.sql","role":"late_pool(정원외 늦참) 모델의 도입 파일. status CHECK 제약을 confirmed/waitlisted/cancelled/late_pool 4값으로 확장(20~22행). 새 status 값을 추가하려면 여기 제약을 다시 손봐야 한다.","mustChange":false},{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20260621020000_attendances_and_notifications.sql","role":"attendances 원 테이블 정의(10~25), PK (session_id,member_id), idx_att_session_status_pos, attendance_position_seq, RLS(SELECT만, 54~57), notifications 테이블(type 에 CHECK 없음 → 새 알림 타입 자유).","mustChange":true},{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20260810000000_day_cancel_grace_1h.sql","role":"당일취소 유예 1시간 규칙의 단일 술어 dues_is_day_cancel_chargeable(29~48)과 그것을 쓰는 dues_generate_session_court(54~149). 티켓 사용자가 당일 취소하면 정액 6,000원 부과 대상이 되는 경로.","mustChange":false},{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20260720010000_complete_playing_matches_on_close.sql","role":"세션 종료(closed) 트리거의 원형(103~107행 when 절). 대기자 포인트 적립을 붙일 훅 패턴.","mustChange":false},{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20260726090000_fix_complete_matches_search_path.sql","role":"sessions 종료 트리거가 search_path='' 없이 스키마 미한정으로 짜였을 때 sync 전체를 롤백시킨 실사고와 그 수정. 새 종료 트리거를 만들 때 반드시 지켜야 할 불변식의 근거.","mustChange":false},{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20260715080000_auto_charge_generation.sql","role":"trg_session_court_on_close(129~147) — 종료 시 대관비 자동 생성 트리거. search_path='' 를 지킨 올바른 종료 훅 예시(포인트 적립 트리거의 복붙 대상).","mustChange":false},{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20260815000000_oneoff_reveal_immediately.sql","role":"sync_schedule_occurrences() 의 현재 정의(20행~). A단계에서 '어제 이전 미진행 회차'를 status='closed' 로 일괄 종료한다(31~37) — 대기자 포인트 적립이 실제로 발화하는 주 경로.","mustChange":false},{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20260819030000_guest_row_reuse.sql","role":"add_guest_attendance 의 현재 정의(49~194). 게스트 상한 판정(160~172)과 카운터 락 뒤에서 count(*) 하는 순서 규약이 있다. 게스트는 티켓 대상이 아님을 확인하는 근거.","mustChange":false},{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20260821020000_self_deactivate.sql","role":"deactivate_my_account(40~) — 내부에서 미종료 세션마다 cancel_attendance 를 루프 호출(61~72). 티켓 환급을 cancel_attendance 에 걸면 탈퇴 경로도 자동 커버된다는 증거.","mustChange":false},{"path":"/Users/sam/Projects/cocktime-scheduler/src/lib/schedule/waitStatus.ts","role":"서버 규칙의 클라이언트 미러. GUEST_CONFIRM_CAP(8행), NEWBIE_GRACE_DAYS(14일), splitConfirmedByCapacity(capacity_exempt 로 정원 외를 가름), freepassSummary('운영진 N · 신규 N' 문구, '기타 N' 폴백). 티켓 자리를 화면에서 어떻게 가를지 여기를 반드시 함께 고쳐야 한다.","mustChange":true},{"path":"/Users/sam/Projects/cocktime-scheduler/src/lib/supabase/types.ts","role":"AttendanceRow 인터페이스(133~171). capacity_exempt 를 포함한 컬럼 미러. 티켓 플래그 컬럼을 추가하면 여기도 함께.","mustChange":true},{"path":"/Users/sam/Projects/cocktime-scheduler/src/lib/supabase/schedule.ts","role":"joinSession(206)/cancelAttendance(220)/adminCancelAttendance(236)/setLateMinutes(308)/addGuestAttendance(173)/cancelGuestAttendance(191) RPC 래퍼. 티켓 사용 여부를 인자로 넘기려면(p_use_ticket) 시그니처가 바뀌는 지점.","mustChange":true},{"path":"/Users/sam/Projects/cocktime-scheduler/supabase/functions/send-push/index.ts","role":"알림 type → 푸시 문구 매핑(promoted 76, demoted 90, session_open 108). 'ticket_earned' 같은 새 타입을 쓰려면 여기 case 추가 필요.","mustChange":false},{"path":"/Users/sam/Projects/cocktime-scheduler/src/components/common/HeaderMenu.tsx","role":"'내 정보' 진입점(82행) — 포인트 내역 화면이 붙을 자리. 헤더 컴포넌트라 반짝이는 티켓 아이콘 위치와도 관련.","mustChange":true}],"facts":["join_session 의 현재 정의는 supabase/migrations/20260903010000_newbie_capacity_exempt.sql:119-224 이다(이후 마이그레이션 없음). 파라미터는 p_session_id bigint 하나, 반환은 public.attendances, language plpgsql security definer set search_path = ''.","join_session 의 게이트 순서(20260903010000:137-164): ①v_member is null → 'not authenticated' ②members.is_active 아니면 'member inactive'(20260821020000에서 들어온 게이트, 재정의 시 반드시 함께 옮기라는 주석이 138~142행에 명시) ③sessions FOR SHARE 로 capacity/status/ends_at 조회, 없으면 'session not found' ④status not in ('open','active') → 'session not open' ⑤ends_at &lt;= now() → 'session ended' ⑥session_counter_sync() ⑦attendances 본인 행 FOR UPDATE, status in ('confirmed','waitlisted')면 'already joined'.","join_session 에 reveal window(노출 시각) 가드는 **없다**. 20260703040000_join_open_only.sql:1-16 이 +7d 시각 가드를 제거하고 \"status='open' 인가\"로 단일화했다. 유지된 시간 가드는 종료 가드(ends_at &lt;= now())뿐이다.","join_session 의 정원/프리패스 판정(20260903010000:166-190)은 정확히 3단 분기다. (a) v_capacity is null or v_count &lt; v_capacity → confirmed + 카운터 +1 (b) elsif session_op_free(p_session_id) → 그 안에서 다시 ①is_operator(v_member) and v_ocount &lt; 2 → confirmed + 카운
+... (truncated 161079 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/92b2d8a8-94b9-4c25-9f73-08e5709d07de/tasks/w744dy539.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/d2e4026c-31da-46cb-b79c-b09a8b86be30/subagents/workflows/wf_39aa17c1-a2d/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/d2e4026c-31da-46cb-b79c-b09a8b86be30/workflows/scripts/waitlist-points-survey-wf_39aa17c1-a2d.js', resumeFromRunId: 'wf_39aa17c1-a2d'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>9</agent_count><agents_done>9</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>1295902</subagent_tokens><tool_uses>449</tool_uses><duration_ms>949349</duration_ms></usage>
+</task-notification>
+
+**Answer**: 6축 리뷰 + 축별 적대적 재검증이 백그라운드로 돌고 있습니다. 그동안의 구현 상태를 요약하면:
+
+**서버** — `supabase/migrations/20260904000000_wait_points_ticket.sql` (신규)
+- `attendances.exempt_reason`('newbie'|'ticket'), 원장 `wait_point_ledger`(append-only) + 캐시 `wait_point_balances`
+- `join_session(p_session_id, p_use_ticket)` 재정의 — 구 1인자 함수 drop 후 재생성
+- 종료·취소 트리거 2종, 취소 헬퍼, 조회 RPC 3종, 운영진 보정 RPC, 2026-08-01 소급 백필
+
+**클라이언트** — 미러(`waitStatus.ts`) · API/스토어 신규 · 헤더 center 슬롯 + 반짝이는 티켓 배지 · 참석 카드 티켓 다이얼로그와 대기 힌트 · '내 정보' 포인트 섹션
+
+**검증 통과** — 타입체크 clean, 테스트 431개 전부 통과(신규 5개 포함), 빌드 성공, 린트는 변경 전 기준선과 동일.
+
+리뷰 결과가 나오면 확정된 지적만 반영하고 배포 순서와 함께 정리해 드리겠습니다.
+
+---
+
+## #219
+
+**Prompt**: <task-notification>
+<task-id>weqkmmq3c</task-id>
+<tool-use-id>toolu_01QogHcYxsFxCvdqSzbjrgVQ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/92b2d8a8-94b9-4c25-9f73-08e5709d07de/tasks/weqkmmq3c.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "대기 포인트/티켓 구현을 6개 축으로 리뷰하고 각 축의 지적을 적대적으로 검증" completed</summary>
+<result>{"confirmed":[],"missed":[],"all":[]}</result>
+<diagnostics>Per-agent results: /Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/d2e4026c-31da-46cb-b79c-b09a8b86be30/subagents/workflows/wf_31f39c7a-a38/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude/projects/-Users-sam-Projects-cocktime-scheduler/d2e4026c-31da-46cb-b79c-b09a8b86be30/workflows/scripts/wait-points-adversarial-review-wf_31f39c7a-a38.js', resumeFromRunId: 'wf_31f39c7a-a38'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<failures>[A. SQL 정합성] failed: You've hit your session limit · resets 6pm (Asia/Seoul)
+[F. 배포·운영 리스크] failed: You've hit your session limit · resets 6pm (Asia/Seoul)
+[D. 클라이언트 정합] failed: You've hit your session limit · resets 6pm (Asia/Seoul)
+[E. UI·접근성·스타일] failed: You've hit your session limit · resets 6pm (Asia/Seoul)
+[C. 티켓 생애주기 시나리오] failed: You've hit your session limit · resets 6pm (Asia/Seoul)
+[B. 기존 함수 재정의 회귀] failed: You've hit your session limit · resets 6pm (Asia/Seoul)</failures>
+<usage><agent_count>6</agent_count><agents_done>0</agents_done><agents_error>6</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>536041</subagent_tokens><tool_uses>122</tool_uses><duration_ms>162626</duration_ms></usage>
+</task-notification>
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #220
+
+**Prompt**: go on
+
+**Answer**: 어떤 점을 확인하고 싶으신가요?
+
+제가 방금 올린 질문에 대해 짚고 싶은 게 있으시면 말씀해 주세요. 참고로 제 쪽에서 애매하게 던진 부분이 있을 것 같아 먼저 정리해 두면:
+
+- **"전 기간 최다 5회"의 정확한 뜻** — 특정 한 명이 클럽 기록 전체에서 대기로 끝난 횟수가 최대 5번이라는 뜻입니다. 5명이 아니라 5회이고, 그 5회가 언제부터 언제까지 걸쳐 있는지는 아직 안 봤습니다(월별 분포를 보려다 권한에 막혔습니다). 그 5회가 최근 3개월에 몰린 건지 1년에 흩어진 건지에 따라 "앞으로 5번 더"가 몇 달인지가 완전히 달라집니다 — 필요하시면 그 사람의 실제 날짜를 뽑아보겠습니다.
+
+- **제 집계에서 제외한 것** — 원시 대기 행 83건 중 46건을 걸렀습니다. (a) 경기 기록(`matches`)이 없는 회차 = 실제로 안 열린 유령 회차, (b) 대기였지만 현장에서 보드에 투입돼 실제로 뛴 사람. 이 필터가 운영 현실과 맞는지는 확인이 필요합니다. 특히 (a)가 큰 비중이면 "보드를 안 쓴 회차"까지 걸러버린 것일 수 있고, 그럼 실제 대기 미참여는 제 숫자보다 많습니다.
+
+- **문턱을 바꾸는 비용** — 서버 상수 함수 2개(`wait_point_max`, `wait_ticket_cost`), CHECK 제약 2개, 클라 미러 상수 2개. 마이그레이션이 아직 배포 전이라 파일을 직접 고치면 되고 별도 이력이 남지 않습니다. 백필 날짜는 한 줄입니다.
+
+- **아직 결정을 요청하지 않은 것** — 회차당 2명 상한, 차감 −1 폭, 사전취소 환원 여부는 그대로 두었습니다. 이 중에도 다시 보고 싶은 게 있으면 함께 말씀해 주세요.
+
+---
+
+## #221
+
+**Prompt**:  이전 질문이 명확하지 않아서 다시 질문해
+
+**Answer**: 기록했습니다. 현재 상태를 정리하면:
+
+**완료** — 구현 전체가 staged 상태입니다(24개 파일). 마이그레이션 1,211줄 + 클라이언트. 확정 사양(8/1 백필·7점·회차당 2명·모든 일정·명시적 사용·내 정보 모달·헤더 장식 배지)과 코드가 일치합니다.
+
+**정적 검증 통과** — 재정의 함수 6개 기준판 대조, `search_path`/`public.` 한정 전수(21개 함수 OK·비한정 0건), clamp 24조합, grant 대조, 타입체크·테스트 431개·빌드. 자체 검증에서 잡은 버그 3건 수정(늦참 왕복으로 회차 상한이 뚫리던 것 포함).
+
+**대기 중인 것 하나** — `wpt_validate.sql` 실행. 사람 없는 시간에 하기로 하셨으니 **말씀하시면 바로 돌립니다.** 트랜잭션 동안 `attendances`가 잠기므로 정모 진행 시간대나 일정 공개 직후만 피하면 됩니다.
+
+실증이 통과하면 배포는 `supabase db push` → `supabase functions deploy send-push` → `git push` 순서입니다. 구 프론트가 새 함수의 default 인자로 그대로 동작하므로 DB를 먼저 밀어도 깨지는 창이 없습니다.
+
+한 가지만 미리 말씀드리면, 이 기능은 **효과가 천천히 나타납니다.** 최고점자가 2/7에서 시작하니 첫 티켓이 나오려면 그 사람이 앞으로 5번 더 대기로 밀려야 합니다. 알고 고르신 선택이지만, 한두 달 뒤 "아무도 못 쓰네" 소리가 나오면 문턱만 낮추는 건 상수 6곳 수정으로 끝납니다.
+
+---
+
+## #222
+
+**Prompt**: 구현끝난거?
+
+**Answer**: 네, 코드는 끝났습니다. 다만 **아직 안 한 게 3개** 있습니다.
+
+**끝난 것**
+- 서버 마이그레이션 1건(1,211줄) + 클라이언트 전체 — 23개 파일 staged
+- 타입체크 clean · 테스트 431개 통과 · 빌드 성공 · 린트는 변경 전 기준선과 동일
+- 문서 4개(EXPANSION_SPEC·ACCOUNTING_SPEC·SCHEDULE_LIST_SPEC·CLAUDE.md) 동반 갱신
+
+**안 한 것**
+1. **커밋** — staged 상태로만 있습니다. `/commit` 쓰시면 됩니다.
+2. **SQL 실증** — 마이그레이션이 한 번도 실행된 적이 없습니다. 하네스(`wpt_validate.sql`)는 준비돼 있고, 사람 없는 시간에 돌리기로 하셨습니다.
+3. **배포** — `supabase db push` → `supabase functions deploy send-push` → `git push` 순서. `join_session` 시그니처가 바뀌므로 DB가 먼저여야 합니다.
+
+말씀하시면 실증부터 돌리겠습니다. 아니면 커밋 먼저 하실래요?
+
+---
+
+## #223
+
+**Prompt**: 마이그레이션 하고 푸쉬해줘
+
 **Answer**: _(응답 대기 중…)_
 
 ---

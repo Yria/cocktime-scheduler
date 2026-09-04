@@ -8,7 +8,9 @@ import type {
 } from "../../lib/supabase/types";
 import { fmtClock, fmtRange } from "../../lib/schedule/timeFmt";
 import { isLatePoolArrival, latePoolCutoffMs } from "../../lib/schedule/latePool";
-import { waitDisplay, guestCapForSession, splitConfirmedByCapacity, freepassSummary } from "../../lib/schedule/waitStatus";
+import { waitDisplay, guestCapForSession, splitConfirmedByCapacity, freepassSummary, POINT_MAX } from "../../lib/schedule/waitStatus";
+import { fetchTicketOptions, type TicketOptions } from "../../lib/supabase/waitPoints";
+import { useWaitPointStore } from "../../store/waitPointStore";
 import { openPlaceMap, type PlaceMapTarget } from "../../lib/kakaoMap";
 import GuestSection from "./GuestSection";
 import LateArrivalSlider from "./LateArrivalSlider";
@@ -56,7 +58,8 @@ interface Props {
 	/** 예정 시간의 2/3 지점(정원 외 늦참 경계) 이후 — 입장 시 '완전 늦참' 확인 다이얼로그. */
 	lateJoin: boolean;
 	busy: boolean;
-	onJoin: () => void;
+	/** 참석 신청. useTicket=true 면 만석일 때 우선참여권(포인트 7점)으로 정원 외 자리를 산다. */
+	onJoin: (useTicket?: boolean) => void;
 	/** 내가 신규회원 2주 유예 중인가 — 사전 안내 문구에 "만석이어도 참여될 수 있다"를 덧붙인다. */
 	myNewbieGrace?: boolean;
 	onCancel: () => void;
@@ -114,6 +117,11 @@ export default function ScheduleCard({
 		null,
 	);
 	const [lateBusy, setLateBusy] = useState(false);
+	// 우선참여권 사용 확인 대기 — 서버(wait_ticket_options)가 "쓸 수 있다"고 답한 경우에만 채워진다.
+	const [ticketAsk, setTicketAsk] = useState<TicketOptions | null>(null);
+	// 티켓 사용 가능 여부를 서버에 묻는 동안(신청 버튼 왕복) — 버튼을 눌린 상태로 잡아 둔다.
+	const [ticketChecking, setTicketChecking] = useState(false);
+	const pointStatus = useWaitPointStore((st) => st.status);
 	const confirmed = attendances.filter((a) => a.status === "confirmed");
 	const waiting = attendances.filter((a) => a.status === "waitlisted");
 	const latePool = attendances.filter((a) => a.status === "late_pool");
@@ -133,10 +141,26 @@ export default function ScheduleCard({
 		mine?.status === "waitlisted" ? waitDisplay(attendances, mine, guestCap) : null;
 	const isOpen = s.status === "open";
 	const isActive = s.status === "active";
-	// 참여 버튼 탭 — 2/3 지점 이후면 '완전 늦참' 확인 다이얼로그, 아니면 바로 참여.
-	const handleJoinClick = () => {
-		if (lateJoin) setShowLateJoinConfirm(true);
-		else onJoin();
+	// 참여 버튼 탭. 우선순위가 곧 정책이다:
+	//   ① 완전 늦참(2/3 지점 이후)이 티켓보다 앞선다 — 어차피 정원 외 late_pool 로 들어가므로
+	//      포인트를 쓸 이유가 없다. 여기서 티켓을 물어보면 7점을 헛되이 쓰게 만든다.
+	//   ② 티켓이 없으면 그냥 신청.
+	//   ③ 티켓이 있으면 **서버에** 이 회차에서 쓸 수 있는지 묻고, 'ok' 일 때만 확인 다이얼로그를 띄운다.
+	//      (만석 여부·다른 사람의 티켓 사용량·프리패스 자격은 클라 스토어에 없다.)
+	const handleJoinClick = async () => {
+		if (lateJoin) {
+			setShowLateJoinConfirm(true);
+			return;
+		}
+		if (!pointStatus?.hasTicket) {
+			onJoin();
+			return;
+		}
+		setTicketChecking(true);
+		const opts = await fetchTicketOptions(s.id);
+		setTicketChecking(false);
+		if (opts?.reason === "ok") setTicketAsk(opts);
+		else onJoin();   // 쓸 수 없는 회차면 조용히 일반 신청 — 물어봐야 할 것이 없다.
 	};
 	const canDrive = attendances.filter(
 		(a) => a.carpool_role === "can_drive",
@@ -380,17 +404,18 @@ export default function ScheduleCard({
 					) : joinable ? (
 						<button
 							type="button"
-							onClick={handleJoinClick}
-							disabled={busy}
+							onClick={() => void handleJoinClick()}
+							disabled={busy || ticketChecking}
 							style={{
 								fontSize: 13,
 								fontWeight: 700,
 								color: "#fff",
-								background: busy ? "rgba(11,132,255,0.5)" : "#0b84ff",
+								background:
+									busy || ticketChecking ? "rgba(11,132,255,0.5)" : "#0b84ff",
 								border: "none",
 								borderRadius: 8,
 								padding: "7px 16px",
-								cursor: busy ? "not-allowed" : "pointer",
+								cursor: busy || ticketChecking ? "not-allowed" : "pointer",
 							}}
 						>
 							참석하기
@@ -409,6 +434,20 @@ export default function ScheduleCard({
 					</span>
 				)}
 			</div>
+
+			{/* 대기 중인 사람에게 포인트 진행도를 알린다.
+			    상한(7)에 닿으면 더 쌓이지 않는다는 사실은 대기자가 반드시 알아야 한다 —
+			    모르면 "계속 기다렸는데 왜 안 오르지"가 된다. */}
+			{mine?.status === "waitlisted" && pointStatus && (
+				<p
+					className="text-faint"
+					style={{ fontSize: 11.5, fontWeight: 600, marginTop: 6 }}
+				>
+					{pointStatus.balance >= POINT_MAX
+						? "포인트가 가득 찼어요 · 우선참여권을 먼저 써 주세요"
+						: `이 회차가 대기인 채로 마감되면 +1P (${pointStatus.balance}/${POINT_MAX})`}
+				</p>
+			)}
 
 			{/* 참가자 아바타 스택 — 탭하면 전체 목록 모달 */}
 			{roster.length > 0 && (
@@ -598,6 +637,36 @@ export default function ScheduleCard({
 					}}
 					onCancel={() => setShowLateJoinConfirm(false)}
 					onDismiss={() => setShowLateJoinConfirm(false)}
+				/>
+			)}
+
+			{/* 우선참여권 사용 재확인 — 서버가 'ok' 로 답한 경우에만 뜬다.
+			    7점이 한 번에 나가고 당일 취소 시 돌아오지 않는다는 사실을 반드시 먼저 알린다. */}
+			{ticketAsk && (
+				<ConfirmDialog
+					title="우선참여권을 쓸까요?"
+					message={`만석이지만 정원 외 자리로 바로 확정돼요. 이 회차에 남은 우선참여 자리는 ${
+						ticketAsk.sessionCap - ticketAsk.used
+					}/${ticketAsk.sessionCap} 이에요. 포인트 ${
+						ticketAsk.cost
+					}점이 모두 쓰이고, 세션 당일에 취소하거나 오지 않으면 돌려받지 못해요(그 전에 취소하면 전액 돌려드려요).`}
+					confirmLabel="우선참여권 사용"
+					// 두 버튼 모두 **행동**이다 — 사용자가 이미 [참석하기]를 눌러 참여 의사를 밝혔으므로
+					// 아래 버튼은 '취소'가 아니라 '포인트 안 쓰고 대기로 접수'다. 그래서 라벨도 행동으로 쓴다.
+					// 배경 탭·Esc(onDismiss)는 이 앱의 모든 다이얼로그와 같이 **아무 일도 하지 않는다**
+					// — 실수 탭으로 대기 신청이 생기지 않게.
+					cancelLabel="대기로 신청"
+					busy={busy}
+					busyLabel="처리 중…"
+					onConfirm={() => {
+						setTicketAsk(null);
+						onJoin(true);
+					}}
+					onCancel={() => {
+						setTicketAsk(null);
+						onJoin(false);
+					}}
+					onDismiss={() => setTicketAsk(null)}
 				/>
 			)}
 

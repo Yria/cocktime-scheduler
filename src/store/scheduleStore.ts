@@ -15,6 +15,7 @@ import {
 	syncOccurrences,
 } from "../lib/supabase/schedule";
 import { dbEndSession } from "../lib/supabase/actions";
+import { waitPointActions } from "./waitPointStore";
 import type { Gender, PlayerSkills } from "../types";
 import type {
 	AttendanceRow,
@@ -158,15 +159,32 @@ export const scheduleActions = {
 
 	reloadAttendances,
 
-	async join(sessionId: number) {
-		const res = await joinSession(sessionId);
-		if (res.ok) await reloadAttendances();
+	/** 참석 신청. useTicket=true 면 만석일 때 우선참여권(포인트 7점)을 써서 정원 외 자리로 확정한다. */
+	async join(sessionId: number, useTicket = false) {
+		// spending 은 헤더 배지를 잠시 감추는 플래그다 — 어떤 경로로 빠져나가도 반드시 되돌린다.
+		// 켠 채로 새면 티켓이 있는데도 배지가 영구히 사라져 "왜 없어졌지"가 된다.
+		if (useTicket) waitPointActions.setSpending(true);
+		let res: { ok: boolean; error?: string };
+		try {
+			res = await joinSession(sessionId, useTicket);
+		} finally {
+			if (useTicket) waitPointActions.setSpending(false);
+		}
+		if (res.ok) {
+			await reloadAttendances();
+			// 티켓을 안 썼어도 잔액이 바뀌었을 수 있다(서버가 프리패스로 처리했을 수도) — 한 번 맞춘다.
+			void waitPointActions.loadStatus();
+		}
 		return res;
 	},
 
 	async cancel(sessionId: number) {
 		const res = await cancelAttendance(sessionId);
-		if (res.ok) await reloadAttendances();
+		if (res.ok) {
+			await reloadAttendances();
+			// 당일 취소 −1 · 사전 취소 티켓 환원이 서버에서 일어난다.
+			void waitPointActions.loadStatus();
+		}
 		return res;
 	},
 

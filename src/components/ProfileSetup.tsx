@@ -13,6 +13,7 @@ import {
 	labelStyle,
 } from "./common/fieldStyles";
 import PlayerAvatar from "./shared/PlayerAvatar";
+import WaitPointsSection from "./points/WaitPointsSection";
 import { dongFromAddress } from "../lib/carpool/dong";
 
 // 프로필 입력 모달. 두 모드:
@@ -371,6 +372,10 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 								? "저장"
 								: "저장하고 시작하기"}
 					</button>
+
+					{/* 대기 포인트 — 수정 모드에서만. signup 은 닫히지 않는 필수 관문이라
+					    가입 정보와 무관한 내역을 섞지 않는다. */}
+					{mode === "edit" && <WaitPointsSection />}
 
 					{mode === "edit" && (
 						<button

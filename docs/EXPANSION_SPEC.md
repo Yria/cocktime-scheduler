@@ -86,7 +86,9 @@ $$;
 | `attendances.status` | `'confirmed'` `'waitlisted'` `'cancelled'` `'late_pool'` | 정원 큐 3종 + 정원 외 늦참 풀(`late_pool`). going/waitlist 표기 금지. `late_pool` = 후반 2/3 지점 이후 도착 신청, `confirmed_count` 미포함(§ 늦참 풀) |
 | `attendances.carpool_role` | `'none'` `'can_drive'` `'need_ride'` | 기본 `'none'` |
 | `attendances.meal_joining` | `true` `false` (boolean) | 정모 식사(회식) 참여. **기본 `true`(참여)** — "기본 참여, 안 먹는 사람만 해제" 모델이라 미응답/참여를 구분하지 않는다(3택 아님). `sessions.is_regular AND sessions.meal_enabled` 회차에서만 의미. 쓰기 `set_meal_joining(bigint,boolean,uuid)` — 본인 또는 내가 데려온 게스트. 취소 시 `true` 로 복원(BEFORE UPDATE 트리거 `trg_att_reset_meal` — 취소 경로 3개에 술어를 복제하지 않기 위해). 마이그레이션 `20260811010000` |
-| `notifications.type` | `'promoted'` `'demoted'` `'session_cancelled'` `'session_closed'` `'session_open'` `'carpool_muster'` `'schedule_added'` `'new_member'` `'removed'` `'noshow'` | 신규 타입은 여기 + `notifications.ts`/`send-push` 메시지 양쪽에 추가 |
+| `attendances.exempt_reason` | `'newbie'` `'ticket'` (NULL 허용) | 정원 외 확정 자리의 **사유**. `capacity_exempt` 와 항상 쌍(exempt=false면 NULL). `capacity_exempt` 만으로는 화면이 정원 외를 전량 '신규'로 오표기한다. 마이그레이션 `20260904000000` |
+| `notifications.type` | `'promoted'` `'demoted'` `'session_cancelled'` `'session_closed'` `'session_open'` `'carpool_muster'` `'schedule_added'` `'new_member'` `'removed'` `'noshow'` `'wait_ticket_ready'` | 신규 타입은 여기 + `notifications.ts`/`send-push` 메시지 양쪽에 추가 |
+| `wait_point_ledger.kind` | `'earn'` `'spend'` `'refund'` `'penalty'` `'adjust'` | 대기 포인트 원장(append-only). 마이그레이션 `20260904000000` |
 
 ### sessions 상태기계
 
@@ -365,6 +367,20 @@ alter table public.sessions
   - 게이트는 **장소 플래그**(`session_op_free`)다. 회차 단위로 총액을 0 이하로 둔 무부과 회차(`sessions.court_fee <= 0`, `20260823000000`)는 돈은 0원이지만 프리패스 대상이 **아니다** — 운영진 프리패스와 같은 게이트를 쓰기 위한 의도된 선택이다.
   - 헬퍼 `session_newbie_grace(session_id, member_id)`. 반영 지점: `join_session` · `promote_next_waitlisted` · `set_late_minutes`(정원외늦참 복귀) · `set_session_capacity`(그리디).
   - 승격 루프 종료성: 매 호출마다 초과 확정 신규를 다시 세므로 2명이 되는 순간 신규 분기가 닫힌다(운영진 분기는 총수 2, 정원 분기는 count=capacity 에서 멈춤).
+- **우선참여권(대기 포인트 티켓) — 세 번째 프리패스** (2026-09-04, 마이그레이션 `20260904000000`)
+  - 목적: 오래 대기했는데 계속 못 들어오는 회원의 구제책. **대기인 채로 회차가 마감되면 +1점**, **7점**을 모으면 만석 회차에 **정원 외 자리**로 확정할 수 있다. 잔액은 0~7이고 7에서 더 쌓이지 않는다(티켓은 최대 1장 = '잔액이 7인 상태').
+  - **자리 성격은 신규 프리패스와 같다**(`capacity_exempt = true` + `exempt_reason = 'ticket'`). 정원 안 빈자리를 소비하지 않으므로 **티켓 사용자가 대기 1번의 승격 기회를 빼앗지 않는다.**
+  - **게이트가 다르다 — 모든 일정에서 쓸 수 있다.** 운영진·신규가 쓰는 `session_op_free`(부과 없는 일정) 게이트를 티켓에는 걸지 않는다. 대기가 실제로 밀리는 것이 인기 있는 정규 일정이라 거기서 못 쓰면 구제책이 되지 않기 때문이다. 대관비는 참석했으니 정상 부과된다(`dues_court_targets` 는 `capacity_exempt` 를 보지 않으므로 코드 변경 없이 자동 포함).
+  - **회차당 2명** (`wait_ticket_session_cap()`). 게스트 상한과 같은 단위이며, 같은 규약으로 **카운터 락 안에서 `count(*)`** 로 판정한다. 세는 대상은 `status='confirmed' AND exempt_reason='ticket'` 인 **살아 있는 행**이라 취소하면 슬롯이 저절로 돌아온다(저장 카운터 없음 = 드리프트 없음).
+  - **명시적 사용**: `join_session(p_session_id, p_use_ticket)`. 시그니처가 넓어졌으므로 구 1인자 함수를 **`drop function` 후 재생성**했다(오버로드가 남으면 PostgREST 가 후보를 못 골라 참석 신청 전체가 죽는다). 분기 순서상 정원 여유·운영진·신규로 들어갈 수 있으면 티켓을 **소모하지 않는다**.
+  - **부여 지점은 본인이 누른 순간뿐** — `join_session`, `set_late_minutes`(정시 복귀 시 이미 지불한 자리 되찾기, **재차감 없음**). **`promote_next_waitlisted` 에는 티켓 조건이 없다(재론 금지)** — 넣으면 정원 안 대기 1순위가 티켓 보유자에게 영구 추월당해, 대기 구제가 목적인 기능이 대기 1번을 막는 역설이 된다(신규 프리패스와 같은 starvation 논증).
+  - **−1 차감**: 확정 자리를 **본인이 당일에 취소**하면 −1(하한 0). 판정선은 회계와 같은 단일 술어 `dues_is_day_cancel_chargeable`(당일 KST + 확정 후 1시간 유예)이다. **운영진 제거는 벌하지 않는다**(귀책이 불분명). 노쇼는 회차 종료 시 `confirmed` 인데 `session_players` 행이 없는 경우로 판정한다 — 시작 RPC 가 확정자 전원을 시드하므로 부재는 '운영진이 보드에서 뺐다'는 뜻이다. `matches` 가 1건도 없는 회차(열리지 않은 유령 회차)는 통째로 건너뛴다.
+  - **환원**: 사전 취소·운영진 제거·회차 취소(`cancelled`)는 7점 전액 환원. **당일 취소·노쇼는 몰수**(C10). 이중 환원은 `wait_ticket_spent`(spend 건수 > refund 건수)가 스스로 막는다.
+  - **잔액은 세지 않고 기록한다**: `wait_point_ledger` 가 append-only 권위이고 `wait_point_balances` 는 파생 캐시다(`session_counter_sync` 와 같은 자가 치유). 원장의 `delta` 는 요청량이 아니라 **clamp 후 실제 적용량**이라 잔액 = `sum(delta)` 가 항상 성립한다.
+  - **멱등은 인덱스가 만든다**: 부분 유니크 `(member_id, session_id, kind) where kind in ('earn','penalty')`. 종료 트리거는 `closed→open→closed` 재전이에서 다시 발화하고 소급 백필도 같은 경로를 타므로, 트리거 WHEN 절이 아니라 원장 제약이 재실행 면역을 준다. `spend`/`refund` 는 **일부러 제외** — 환원 뒤 같은 회차에 다시 쓰는 경로가 삼켜지면 '공짜 재사용'이 된다.
+  - 종료 훅 `trg_session_wait_points_on_close` 는 `search_path=''` + 본문 전체 예외 격리다. 포인트 실패가 `sync_schedule_occurrences` A단계를 죽이면 회차 공개가 전면 중단된다(2026-07-26 실사고).
+  - 소급 적립: **2026-08-01 이후 종료된 회차**만 대상(운영자 확정). 노쇼 차감은 소급하지 않고 알림도 보내지 않는다.
+  - 클라 미러: `src/lib/schedule/waitStatus.ts` 의 `POINT_MAX`·`TICKET_COST`·`TICKET_SESSION_CAP` 과 `splitConfirmedByCapacity.freepassTickets`. 사유를 안 보면 티켓 자리가 화면에 **'신규'로 거짓 표기**된다.
 - 알림 INSERT는 **같은 트랜잭션**에서 → 승급 롤백 시 알림도 미발생(불일치 차단).
 - `cancel_attendance`는 이미 취소/미신청이면 예외 없이 `RETURN`(멱등).
 

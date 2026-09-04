@@ -199,12 +199,20 @@ export async function cancelGuestAttendance(
 	return { ok: true };
 }
 
-/** 참석 신청. 정원 여유면 confirmed, 아니면 waitlisted (RPC가 판정). */
+/**
+ * 참석 신청. 정원 여유면 confirmed, 아니면 waitlisted (RPC가 판정).
+ *
+ * useTicket=true 는 **만석일 때만** 의미가 있다 — 정원에 여유가 있거나 신규·운영진 프리패스로
+ * 들어갈 수 있으면 서버가 티켓을 소모하지 않는다(join_session 의 분기 순서). 상한·잔액 부족은
+ * 예외로 돌아오고 트랜잭션이 통째로 롤백되므로 "차감됐는데 자리를 못 받은" 상태는 생기지 않는다.
+ */
 export async function joinSession(
 	sessionId: number,
+	useTicket = false,
 ): Promise<{ ok: boolean; error?: string }> {
 	const { error } = await supabase.rpc("join_session", {
 		p_session_id: sessionId,
+		p_use_ticket: useTicket,
 	});
 	if (error) {
 		console.error("joinSession:", error);

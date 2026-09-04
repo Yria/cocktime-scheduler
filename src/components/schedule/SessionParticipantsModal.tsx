@@ -8,6 +8,7 @@ import { scheduleActions } from "../../store/scheduleStore";
 import { toast } from "../../store/toastStore";
 import ModalSheet from "../common/ModalSheet";
 import NewMemberIcon from "../shared/NewMemberIcon";
+import TicketIcon from "../shared/TicketIcon";
 import ConfirmDialog from "../common/ConfirmDialog";
 import EmptyState from "../shared/EmptyState";
 import PlayerAvatar from "../shared/PlayerAvatar";
@@ -390,6 +391,20 @@ function ParticipantRow({
 					title="신규 회원 · 가입 2주 이내라 만석이어도 참여"
 				>
 					<NewMemberIcon size={16} />
+				</span>
+			)}
+			{/* 우선참여권으로 얻은 자리 표식 — 신규 표식과 달리 '사람'이 아니라 **그 자리의 성격**이라
+			    행의 exempt_reason 을 그대로 본다. 헤더 배지와 달리 여기서는 반짝이지 않는다
+			    (.ticket-badge 를 붙이지 않는다 — 목록에서 여러 개가 명멸하면 읽기 어렵다). */}
+			{a.exempt_reason === "ticket" && (
+				<span
+					className="inline-flex flex-shrink-0"
+					style={{ color: "var(--ticket-gold)" }}
+					role="img"
+					aria-label="우선참여권으로 참여"
+					title="우선참여권 · 대기 포인트 7점으로 정원 외 자리 참여"
+				>
+					<TicketIcon size={16} />
 				</span>
 			)}
 			{isGuest && (

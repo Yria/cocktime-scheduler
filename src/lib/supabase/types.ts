@@ -142,10 +142,14 @@ export interface AttendanceRow {
 	/** 정모 식사(회식) 참여 여부. sessions.meal_enabled 회차에서만 의미. 기본 true(참여) —
 	 *  "기본 참여, 안 먹는 사람만 해제" 모델이라 미응답과 참여를 구분하지 않는다. 마이그레이션 20260811010000. */
 	meal_joining: boolean;
-	/** true = 정원을 소비하지 않는 확정 자리(정원 외). 신규회원 2주 프리패스로 들어온 자리.
+	/** true = 정원을 소비하지 않는 확정 자리(정원 외). 신규회원 2주 프리패스 또는 우선참여권으로 들어온 자리.
 	 *  서버 session_counter_sync 가 이 행을 세지 않으므로, 정원 안 자리는 언제나 capacity 칸이 비어 있다.
 	 *  마이그레이션 20260903010000. */
 	capacity_exempt: boolean;
+	/** 정원 외 자리의 사유. 'newbie'=신규 2주 프리패스 / 'ticket'=우선참여권(대기 포인트 7점).
+	 *  capacity_exempt 와 항상 쌍(exempt=false면 null). 이 컬럼이 없으면 화면이 정원 외 확정을 전량
+	 *  '신규'로 오표기한다. 마이그레이션 20260904000000. */
+	exempt_reason: "newbie" | "ticket" | null;
 	requested_at: string;
 	confirmed_at: string | null;
 	cancelled_at: string | null;

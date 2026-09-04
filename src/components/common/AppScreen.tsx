@@ -8,6 +8,8 @@ interface Props {
 	onBack?: () => void;
 	logo?: boolean;
 	right?: React.ReactNode;
+	/** 헤더 정중앙에 겹쳐 띄우는 장식(우선참여권 배지). 탭 액션 없음 — AppHeader 주석 참조. */
+	center?: React.ReactNode;
 	/** 당겨서 새로고침 동작(기본: location.reload). 재쿼리(Promise) 시 완료까지 인디케이터 유지. */
 	onRefresh?: () => void | Promise<void>;
 	/** 콘텐츠 래퍼에 추가할 클래스(기본 패딩 외 커스텀). */
@@ -28,6 +30,7 @@ export default function AppScreen({
 	onBack,
 	logo,
 	right,
+	center,
 	onRefresh,
 	contentClassName,
 	children,
@@ -40,7 +43,13 @@ export default function AppScreen({
 			ref={rootRef}
 			className="min-h-[100dvh] bg-[#fafbff] dark:bg-[#0f172a]"
 		>
-			<AppHeader title={title} onBack={onBack} logo={logo} right={right} />
+			<AppHeader
+				title={title}
+				onBack={onBack}
+				logo={logo}
+				right={right}
+				center={center}
+			/>
 			<div className="relative">
 				{/* 당김 인디케이터 — 커스텀 당김으로 열린 네비-본문 사이 gap(height=pull)에 스피너 노출.
 				    이 제스처만 네이티브 바운스를 막으므로 sticky 네비는 제자리 고정. */}

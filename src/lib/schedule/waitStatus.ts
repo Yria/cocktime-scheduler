@@ -143,24 +143,44 @@ export function isNewbieAtt(
 }
 
 /**
+ * 대기 포인트 잔액 상한 = 우선참여권 1장의 값. 서버 wait_point_max() / wait_ticket_cost()
+ * (마이그레이션 20260904000000)와 반드시 동일하게 유지한다.
+ */
+export const POINT_MAX = 7;
+export const TICKET_COST = 7;
+
+/**
+ * 한 회차에서 우선참여권으로 확정될 수 있는 최대 인원. 서버 wait_ticket_session_cap() 와
+ * 반드시 동일하게 유지한다. 게스트 상한(GUEST_CONFIRM_CAP)과 같은 '회차당' 단위다.
+ */
+export const TICKET_SESSION_CAP = 2;
+
+/**
  * 정원 초과 확정(프리패스) 인원 요약 문구 — 사유별로 끊어 보여준다.
- * "운영진 2명" / "신규 1명" / "운영진 2 · 신규 1". 초과분이 없으면 빈 문자열.
+ * "운영진 2명" / "신규 1명" / "운영진 2 · 신규 1 · 우선참여 1". 초과분이 없으면 빈 문자열.
  *
- * 사유가 분류되지 않은 초과 행이 남으면 "기타 N" 으로 덧붙여 인원 합이 항상 맞게 한다. 지금은 정원 외
- * 경로가 둘뿐이라 도달하지 않지만, 세 번째 예외가 생겼을 때 인원이 조용히 사라지지 않게 남겨 둔다.
+ * 사유가 분류되지 않은 초과 행이 남으면 "기타 N" 으로 덧붙여 인원 합이 항상 맞게 한다. 세 경로를
+ * 모두 세고 있으므로 지금은 도달하지 않지만, 네 번째 예외가 생겼을 때 인원이 조용히 사라지지 않게
+ * 남겨 둔다.
  * 여기서 "정원 외"라는 말은 쓰지 않는다 — 호출부가 제목에 "· 정원 외"를 덧붙이므로 문구가 겹친다.
  */
 export function freepassSummary(split: {
 	over: AttendanceRow[];
 	freepassOps: AttendanceRow[];
 	freepassNewbies: AttendanceRow[];
+	freepassTickets: AttendanceRow[];
 }): string {
 	const parts: string[] = [];
 	if (split.freepassOps.length > 0) parts.push(`운영진 ${split.freepassOps.length}`);
 	if (split.freepassNewbies.length > 0)
 		parts.push(`신규 ${split.freepassNewbies.length}`);
+	if (split.freepassTickets.length > 0)
+		parts.push(`우선참여 ${split.freepassTickets.length}`);
 	const rest =
-		split.over.length - split.freepassOps.length - split.freepassNewbies.length;
+		split.over.length -
+		split.freepassOps.length -
+		split.freepassNewbies.length -
+		split.freepassTickets.length;
 	if (rest > 0) parts.push(`기타 ${rest}`);
 	if (parts.length === 0) return "";
 	return parts.length === 1 ? `${parts[0]}명` : parts.join(" · ");
@@ -169,14 +189,20 @@ export function freepassSummary(split: {
 /**
  * 확정 참석을 정원 안(base)과 정원 외(over)로 나누고, 정원 외를 사유별로 분류한다.
  *
- * 두 프리패스의 성격이 서버에서 갈리므로 여기서도 다르게 센다(마이그레이션 20260903010000):
+ * 세 프리패스의 성격이 서버에서 갈리므로 여기서도 다르게 센다(마이그레이션 20260903010000·20260904000000):
  *   · freepassNewbies — 신규회원 2주 프리패스. **정원을 소비하지 않는 자리**로 행에 기록돼 있다
- *     (`capacity_exempt`). 파생이 아니라 기록이라 취소·정원 변경에도 자리 성격이 흔들리지 않는다.
+ *     (`capacity_exempt` + `exempt_reason='newbie'`). 파생이 아니라 기록이라 취소·정원 변경에도
+ *     자리 성격이 흔들리지 않는다.
+ *   · freepassTickets — 우선참여권(대기 포인트 7점). 신규와 같은 정원 외 자리이고 사유만 다르다
+ *     (`exempt_reason='ticket'`). 사유를 안 보면 화면에 '신규'로 거짓 표기된다.
  *   · freepassOps     — 운영진 프리패스. 종전대로 정원 카운트에 들어가므로, 정원을 소비하는 확정
  *     (counted) 중 position 순 capacity 번째 뒤가 곧 운영진 초과분이다.
  *
  * `counted` = 정원을 소비하는 확정 인원 = 서버 confirmed_count 와 같은 값. "확정 N/정원 M" 의 N.
  * capacity 가 null(무제한)이면 정원 초과라는 개념이 없어 운영진 초과분도 없다.
+ *
+ * exempt_reason 이 null 인 정원 외 행(20260904000000 이전에 만들어진 레거시)은 신규로 센다 —
+ * 그 시점의 정원 외 경로가 신규 프리패스뿐이었으므로 사실과 일치한다.
  */
 export function splitConfirmedByCapacity(
 	attendances: AttendanceRow[],
@@ -187,20 +213,24 @@ export function splitConfirmedByCapacity(
 	over: AttendanceRow[];
 	freepassOps: AttendanceRow[];
 	freepassNewbies: AttendanceRow[];
+	freepassTickets: AttendanceRow[];
 } {
 	const byPos = (a: AttendanceRow, b: AttendanceRow) => a.position - b.position;
 	const confirmed = attendances
 		.filter((a) => a.status === "confirmed")
 		.sort(byPos);
-	const freepassNewbies = confirmed.filter((a) => a.capacity_exempt);
+	const exempt = confirmed.filter((a) => a.capacity_exempt);
+	const freepassTickets = exempt.filter((a) => a.exempt_reason === "ticket");
+	const freepassNewbies = exempt.filter((a) => a.exempt_reason !== "ticket");
 	const counted = confirmed.filter((a) => !a.capacity_exempt);
 	const base = capacity == null ? counted : counted.slice(0, capacity);
 	const freepassOps = capacity == null ? [] : counted.slice(capacity);
 	return {
 		counted,
 		base,
-		over: [...freepassOps, ...freepassNewbies].sort(byPos),
+		over: [...freepassOps, ...exempt].sort(byPos),
 		freepassOps,
 		freepassNewbies,
+		freepassTickets,
 	};
 }

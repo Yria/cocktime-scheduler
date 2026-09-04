@@ -10,6 +10,7 @@ import {
 	useInstallPromptStore,
 } from "../store/installPromptStore";
 import { scheduleActions, useScheduleStore } from "../store/scheduleStore";
+import { waitPointActions, useWaitPointStore } from "../store/waitPointStore";
 import { latePoolCutoffMs } from "../lib/schedule/latePool";
 import { isNewbieNowKST } from "../lib/schedule/waitStatus";
 import { buildPlaceMapTarget } from "../lib/kakaoMap";
@@ -20,6 +21,7 @@ import NotificationBell from "./common/NotificationBell";
 import ProfileSetup from "./ProfileSetup";
 import ScheduleCard from "./schedule/ScheduleCard";
 import EmptyState from "./shared/EmptyState";
+import TicketIcon from "./shared/TicketIcon";
 import Spinner from "./shared/Spinner";
 
 interface Props {
@@ -35,6 +37,11 @@ function joinErrorMsg(e?: string): string {
 	// 탈퇴(본인 비활성)·운영진 정지 상태 — 재활성화 전엔 신청할 수 없다(join_session 게이트).
 	if (e?.includes("member inactive"))
 		return "탈퇴 상태예요. 운영진에게 복구를 요청해 주세요";
+	// 우선참여권(대기 포인트) — 서버가 전액 롤백했으므로 포인트는 1점도 깎이지 않은 상태다.
+	if (e?.includes("ticket_session_cap"))
+		return "이 회차의 우선참여권 자리가 방금 찼어요. 대기로 신청해 주세요";
+	if (e?.includes("ticket_insufficient"))
+		return "포인트가 부족해요. 우선참여권은 7포인트가 필요합니다";
 	return "신청에 실패했습니다";
 }
 
@@ -82,6 +89,11 @@ export default function Home({ onStart }: Props) {
 	const authUser = useAuthStore((s) => s.user);
 	const isAdmin = useAuthStore((s) => s.isAdmin);
 	const memberId = useAuthStore((s) => s.memberId);
+	// 우선참여권 보유 여부 — 헤더 가운데 배지와 참석 카드 힌트가 함께 쓴다.
+	const pointStatus = useWaitPointStore((s) => s.status);
+	const ticketSpending = useWaitPointStore((s) => s.spending);
+	// 사용 왕복 중에는 배지를 감춘다 — 이미 쓴 티켓이 계속 반짝여 이중 사용을 유도하지 않게.
+	const showTicketBadge = Boolean(pointStatus?.hasTicket) && !ticketSpending;
 	const myGender = useAuthStore((s) => s.myGender);
 	const myBirthYear = useAuthStore((s) => s.myBirthYear);
 	const myResidence = useAuthStore((s) => s.myResidence);
@@ -111,6 +123,10 @@ export default function Home({ onStart }: Props) {
 		if (authUser) {
 			void scheduleActions.load();
 			void appActions.fetchPlayers().catch(() => {});
+			// 대기 포인트 잔액 — 헤더 배지와 참석 카드 힌트가 쓴다. 진입 1회만(폴링·구독 없음).
+			void waitPointActions.loadStatus();
+		} else {
+			waitPointActions.reset();
 		}
 	}, [authUser]);
 
@@ -123,12 +139,15 @@ export default function Home({ onStart }: Props) {
 		}
 	}, []);
 
-	const handleJoin = useCallback(async (sessionId: number) => {
-		setBusyId(sessionId);
-		const res = await scheduleActions.join(sessionId);
-		setBusyId(null);
-		if (!res.ok) alert(joinErrorMsg(res.error));
-	}, []);
+	const handleJoin = useCallback(
+		async (sessionId: number, useTicket = false) => {
+			setBusyId(sessionId);
+			const res = await scheduleActions.join(sessionId, useTicket);
+			setBusyId(null);
+			if (!res.ok) alert(joinErrorMsg(res.error));
+		},
+		[],
+	);
 
 	const handleCancel = useCallback(async (sessionId: number) => {
 		setBusyId(sessionId);
@@ -336,7 +355,20 @@ export default function Home({ onStart }: Props) {
 		<>
 		<AppScreen
 			logo
-			onRefresh={() => Promise.all([scheduleActions.load(), appActions.checkActiveSession()]).then(() => {})}
+			onRefresh={() => Promise.all([scheduleActions.load(), appActions.checkActiveSession(), waitPointActions.loadStatus()]).then(() => {})}
+			center={
+				// 우선참여권 보유 시에만 뜨는 장식 배지(탭 액션 없음 — 내역은 '내 정보'에서 본다).
+				// 헤더 가운데는 가장 비싼 자리라 "지금 쓸 수 있다"는 단 하나의 사실에만 내준다.
+				showTicketBadge ? (
+					<span
+						className="ticket-badge"
+						role="img"
+						aria-label="우선참여권 보유 중"
+					>
+						<TicketIcon size={23} />
+					</span>
+				) : undefined
+			}
 			right={
 				// 아이콘 버튼(40px·중앙정렬)은 글리프가 버튼 안쪽에 있어 거터선보다 들어온다.
 				// 음수 마진으로 마지막 아이콘(⋮)의 우측을 본문 우측 거터선에 맞춘다(좌측 로고와 대칭).
@@ -401,7 +433,7 @@ export default function Home({ onStart }: Props) {
 								lateJoin={lateJoinIds.has(s.id)}
 								busy={busyId === s.id}
 								myNewbieGrace={inNewbieGrace}
-								onJoin={() => handleJoin(s.id)}
+								onJoin={(useTicket) => handleJoin(s.id, useTicket)}
 								onCancel={() => handleCancel(s.id)}
 								onStartSession={() => handleStartSession(s.id)}
 								onSetCarpool={(role) => handleSetCarpool(s.id, role)}

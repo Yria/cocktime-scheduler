@@ -97,6 +97,9 @@ export function notificationMessage(
 				? `${sess} 정원이 조정되어 대기로 변경됐어요`
 				: "정원이 조정되어 대기자로 변경되었어요";
 		}
+		case "wait_ticket_ready":
+			// 대기 포인트가 상한(7)에 닿은 순간 1건만 — 회차별 +1 알림은 보내지 않는다.
+			return "대기 포인트가 다 모였어요! 만석인 일정에 우선참여권을 쓸 수 있어요 🎟";
 		case "session_cancelled":
 			return sess ? `${sess} 일정이 취소됐어요` : "참석 예정 일정이 취소되었어요";
 		case "session_closed":

@@ -101,6 +101,10 @@ function buildBody(
         ? `${sess} 정원이 조정되어 대기로 변경됐어요`
         : "정원이 조정되어 대기자로 변경되었어요";
     }
+    case "wait_ticket_ready":
+      // 대기 포인트가 상한(7)에 닿은 순간 1건만. 회차 정보는 붙이지 않는다 — 어느 회차에서
+      // 채워졌는지가 아니라 "이제 쓸 수 있다"가 알릴 내용이다.
+      return "대기 포인트가 다 모였어요! 만석인 일정에 우선참여권을 쓸 수 있어요 🎟";
     case "session_cancelled":
       return sess ? `${sess} 일정이 취소됐어요` : "참석 예정 일정이 취소되었어요";
     case "session_closed":
@@ -235,12 +239,16 @@ Deno.serve(async (req) => {
       title: "콕타임",
       body: buildBody(n.type, n.payload, ctx),
       // 딥링크(scope 상대경로): 회비 알림 → /my-dues, 세션 알림 → /session.
+      // 우선참여권 알림은 session_id 를 provenance 로만 달고 있다 — 보드가 아니라 홈(일정 목록)으로
+      // 보내야 바로 쓸 수 있으므로 세션 분기보다 먼저 걸러낸다.
       url:
         n.type === "payment_confirmed" || n.type === "dues_unpaid"
           ? "my-dues"
-          : n.session_id
-            ? "session"
-            : "",
+          : n.type === "wait_ticket_ready"
+            ? ""
+            : n.session_id
+              ? "session"
+              : "",
       tag: `notif-${n.id}`,
       type: n.type,
     });
