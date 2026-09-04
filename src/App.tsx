@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import SessionBoard from "./components/board/SessionBoard";
 import Toaster from "./components/common/Toaster";
@@ -10,6 +10,9 @@ import DuesAdminPage from "./components/admin/dues/DuesAdminPage";
 import MyDuesPage from "./components/dues/MyDuesPage";
 import UnpaidDuesAlert from "./components/dues/UnpaidDuesAlert";
 import NewbieFreepassAlert from "./components/schedule/NewbieFreepassAlert";
+// 개발 전용 VFX 비교 화면 — lazy 라 프로덕션 번들에 본문이 들어가지 않는다(별 청크로 분리되고
+// import.meta.env.DEV 가드 때문에 절대 요청되지 않는다).
+const VfxLabPage = lazy(() => import("./components/vfx/VfxLabPage"));
 import RegularNoticePage from "./components/schedule/RegularNoticePage";
 import SchedulePage from "./components/schedule/SchedulePage";
 import { useDarkMode } from "./hooks/useDarkMode";
@@ -198,6 +201,18 @@ export default function App() {
 				<Route path="/my-dues" element={<MyDuesPage />} />
 				<Route path="/my-dues/:page" element={<MyDuesPage />} />
 				<Route path="/logs" element={<LogPage />} />
+				{/* 개발 전용 — 티켓 VFX 비교. 프로덕션 빌드에서는 라우트가 등록되지 않는다
+				    (import.meta.env.DEV 가 false 로 접혀 지연 import 가 실행되지 않음). */}
+				{import.meta.env.DEV && (
+					<Route
+						path="/dev/vfx"
+						element={
+							<Suspense fallback={null}>
+								<VfxLabPage />
+							</Suspense>
+						}
+					/>
+				)}
 				<Route path="*" element={<Navigate to="/" replace />} />
 			</Routes>
 			{/* 진입 알림 — 앱을 열 때 알려야 할 것들. 조건이 동시에 참이어도 **한 번에 하나만** 뜨고

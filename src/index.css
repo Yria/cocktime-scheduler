@@ -1110,3 +1110,267 @@ h4,
 		filter: drop-shadow(0 0 4px var(--ticket-glow));
 	}
 }
+
+/* ══════════════════════════════════════════════════════════════
+   티켓 VFX (희귀 아이템 강조) — src/components/vfx/TicketVfx.tsx 전용
+   ──────────────────────────────────────────────────────────────
+   설계 제약(운영자 확정):
+     · **티켓 DOM 은 절대 움직이지 않는다.** scale/rotate/translate/bounce/shake/
+       pulse/opacity 애니메이션을 티켓에 걸지 않는다. 움직이는 것은 티켓 뒤·주변의
+       별도 VFX 레이어뿐이다. (.tvfx-ticket 에 animation 을 추가하지 말 것)
+     · 티켓이 주인공이고 VFX 는 배경이다. VFX 가 티켓보다 눈에 띄면 강도를 낮춘다.
+     · 중앙을 가리지 않는다 → 모든 레이어에 **가운데가 빈 고리 마스크**(--tvfx-ring)를
+       씌운다. 덕분에 글리프 뒤는 항상 비어 있고, 마스크가 바깥에서 서서히 사라져
+       무대(overflow:hidden) 의 잘린 경계가 보이지 않는다.
+     · WebGL 을 새로 들이지 않는다(프로젝트에 없음 — Konva 는 Canvas 2D).
+       전부 CSS 그라디언트 + blur + mask 로 만든다.
+     · 움직임은 느리게(8~26s). UI 애니메이션이 아니라 아이템 VFX 의 호흡이다.
+   ══════════════════════════════════════════════════════════════ */
+
+.tvfx {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	/* 무대 밖으로 새어 UI 를 물들이지 않게 하드 가드. 마스크가 이미 경계를 지우므로
+	   잘린 자국은 보이지 않는다. */
+	overflow: hidden;
+	isolation: isolate;
+	/* 고리 마스크 — 가운데(글리프 자리)를 비우고 바깥으로 서서히 사라진다. */
+	--tvfx-ring: radial-gradient(
+		circle,
+		transparent 0 30%,
+		rgba(0, 0, 0, 0.65) 42%,
+		#000 56%,
+		rgba(0, 0, 0, 0.5) 70%,
+		transparent 86%
+	);
+}
+
+/* 티켓 본체 — **정적**. 여기에 animation/transition 을 넣지 말 것. */
+.tvfx-ticket {
+	position: relative;
+	z-index: 2;
+	display: inline-flex;
+	color: var(--ticket-gold);
+	/* 정적 글로우(애니메이션 아님) — VFX 위에서 글리프가 뜨게 한다. */
+	filter: drop-shadow(0 0 2px color-mix(in srgb, var(--ticket-gold) 55%, transparent));
+}
+
+.tvfx-layer {
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	border-radius: 50%;
+	pointer-events: none;
+	-webkit-mask: var(--tvfx-ring);
+	mask: var(--tvfx-ring);
+}
+
+/* ── Variant A · Orb ────────────────────────────────────────────
+   React Bits Orb 의 시각 언어(겹친 코사인 색 흐름 = 무지갯빛 굴절, 유기적 노이즈,
+   부드러운 림 글로우)를 CSS 로 옮긴 것. 서로 반대로 도는 두 겹이 겹쳐 색이 섞이며
+   흐르는 '에너지 덩어리'를 만든다. */
+.tvfx-orb-1 {
+	background: conic-gradient(
+		from 0deg,
+		color-mix(in srgb, var(--ticket-gold) 70%, transparent),
+		color-mix(in srgb, #fb923c 55%, transparent) 70deg,
+		color-mix(in srgb, #fde68a 60%, transparent) 150deg,
+		color-mix(in srgb, var(--ticket-gold) 45%, transparent) 230deg,
+		color-mix(in srgb, #f59e0b 65%, transparent) 300deg,
+		color-mix(in srgb, var(--ticket-gold) 70%, transparent) 360deg
+	);
+	filter: blur(6px) saturate(125%);
+	animation: tvfxSpin 18s linear infinite;
+}
+.tvfx-orb-2 {
+	background:
+		radial-gradient(circle at 68% 30%, color-mix(in srgb, #fef3c7 70%, transparent), transparent 42%),
+		radial-gradient(circle at 28% 72%, color-mix(in srgb, #f97316 55%, transparent), transparent 46%);
+	filter: blur(8px);
+	opacity: 0.85;
+	animation: tvfxSpinRev 26s linear infinite;
+}
+/* 정적 림 — Orb 의 유리 같은 테두리. 움직이지 않는다. */
+.tvfx-orb-rim {
+	background: none;
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--ticket-gold) 26%, transparent),
+		inset 0 0 6px color-mix(in srgb, var(--ticket-gold) 18%, transparent);
+	-webkit-mask: radial-gradient(circle, transparent 0 52%, #000 62% 78%, transparent 92%);
+	mask: radial-gradient(circle, transparent 0 52%, #000 62% 78%, transparent 92%);
+}
+
+/* ── Variant B · Aura Blob ──────────────────────────────────────
+   티켓을 감싸는 '살아 있는' 오라. 하나의 공으로 보이지 않게 blob 셋을 각자 다른
+   주기로 떠돌게 하고, 마스크로 **외곽 glow 가 중심보다 강하게** 남긴다.
+   Epic/Legendary 톤 — 금색 코어 + 보라 기운. */
+.tvfx-aura-1 {
+	background: radial-gradient(
+		circle at 50% 50%,
+		transparent 34%,
+		color-mix(in srgb, var(--ticket-gold) 46%, transparent) 56%,
+		transparent 76%
+	);
+	filter: blur(6px);
+	animation: tvfxBreathe 9s ease-in-out infinite;
+}
+.tvfx-aura-2 {
+	background:
+		radial-gradient(circle at 30% 34%, color-mix(in srgb, #fbbf24 48%, transparent), transparent 40%),
+		radial-gradient(circle at 74% 62%, color-mix(in srgb, #a78bfa 52%, transparent), transparent 42%);
+	filter: blur(7px);
+	animation: tvfxDriftA 14s ease-in-out infinite;
+}
+.tvfx-aura-3 {
+	background:
+		radial-gradient(circle at 66% 26%, color-mix(in srgb, #fcd34d 55%, transparent), transparent 38%),
+		radial-gradient(circle at 24% 70%, color-mix(in srgb, #f472b6 34%, transparent), transparent 40%);
+	filter: blur(9px);
+	opacity: 0.8;
+	animation: tvfxDriftB 17s ease-in-out infinite;
+}
+
+/* ── Variant C · Specter Orb ────────────────────────────────────
+   마력·안개가 티켓 뒤와 좌우로 천천히 흐르는 느낌. **밝은 색만** 쓰고 blend 로
+   더하기만 해서 어두운 덩어리가 절대 생기지 않는다. 연기처럼 뿌옇지 않게 가닥이
+   보이도록 repeating-conic 으로 결을 넣고 약하게만 blur 한다. */
+.tvfx-spec-1 {
+	background: repeating-conic-gradient(
+		from 0deg,
+		color-mix(in srgb, #e0f2fe 34%, transparent) 0deg 14deg,
+		transparent 14deg 52deg
+	);
+	/* blur 를 결 간격보다 크게 줘야 '가시'가 아니라 '흐르는 안개 결'로 읽힌다.
+	   4~5px 로는 스포크가 그대로 보였다(실렌더 확인 후 조정). */
+	filter: blur(9px);
+	opacity: 0.62;
+	animation: tvfxSpin 22s linear infinite;
+}
+.tvfx-spec-2 {
+	background: repeating-conic-gradient(
+		from 18deg,
+		color-mix(in srgb, var(--ticket-gold) 40%, transparent) 0deg 12deg,
+		transparent 12deg 64deg
+	);
+	filter: blur(8px);
+	opacity: 0.68;
+	animation: tvfxSpinRev 15s linear infinite;
+}
+/* 좌우로 흐르는 옅은 안개 — 가로로 늘린 그라디언트가 천천히 왕복한다. */
+.tvfx-spec-mist {
+	background: radial-gradient(
+		ellipse 70% 34% at 50% 50%,
+		color-mix(in srgb, #f5f3ff 52%, transparent),
+		transparent 70%
+	);
+	filter: blur(6px);
+	opacity: 0.6;
+	animation: tvfxMist 13s ease-in-out infinite;
+}
+
+@keyframes tvfxSpin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+@keyframes tvfxSpinRev {
+	to {
+		transform: rotate(-360deg);
+	}
+}
+@keyframes tvfxBreathe {
+	0%,
+	100% {
+		transform: scale(0.94);
+	}
+	50% {
+		transform: scale(1.06);
+	}
+}
+@keyframes tvfxDriftA {
+	0%,
+	100% {
+		transform: translate(-4%, 2%) scale(1);
+	}
+	33% {
+		transform: translate(3%, -3%) scale(1.07);
+	}
+	66% {
+		transform: translate(2%, 4%) scale(0.96);
+	}
+}
+@keyframes tvfxDriftB {
+	0%,
+	100% {
+		transform: translate(3%, -2%) scale(1.04);
+	}
+	40% {
+		transform: translate(-3%, 3%) scale(0.95);
+	}
+	70% {
+		transform: translate(-1%, -4%) scale(1.06);
+	}
+}
+@keyframes tvfxMist {
+	0%,
+	100% {
+		transform: translateX(-14%);
+	}
+	50% {
+		transform: translateX(14%);
+	}
+}
+
+/* ── 파티클(magic dust) ─────────────────────────────────────────
+   3~8개의 작은 발광 점이 티켓 주변에서 천천히 떠다니며 나타났다 사라진다.
+   폭죽·confetti 가 되지 않도록: 개수 적게, 이동 짧게, 주기 길게, 동시 발생 금지
+   (각자 delay 가 다르다). 마스크를 쓰지 않는다 — 점이 사라지며 끝나므로 경계가 없다. */
+.tvfx-dust {
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	pointer-events: none;
+}
+.tvfx-dust > i {
+	position: absolute;
+	left: var(--x);
+	top: var(--y);
+	width: var(--d);
+	height: var(--d);
+	border-radius: 50%;
+	background: #fff;
+	box-shadow:
+		0 0 3px color-mix(in srgb, var(--ticket-gold) 90%, transparent),
+		0 0 6px color-mix(in srgb, var(--ticket-gold) 60%, transparent);
+	opacity: 0;
+	animation: tvfxDust var(--dur) ease-in-out var(--delay) infinite;
+}
+@keyframes tvfxDust {
+	0% {
+		opacity: 0;
+		transform: translate(0, 0);
+	}
+	22% {
+		opacity: 0.95;
+	}
+	55% {
+		opacity: 0.7;
+	}
+	100% {
+		opacity: 0;
+		transform: translate(var(--dx), var(--dy));
+	}
+}
+
+/* 접근성 — 움직임 최소화 시 VFX 를 정지시킨다. 티켓은 원래 정적이라 영향 없다. */
+@media (prefers-reduced-motion: reduce) {
+	.tvfx-layer,
+	.tvfx-dust > i {
+		animation: none !important;
+	}
+	.tvfx-dust > i {
+		opacity: 0.55;
+	}
+}
