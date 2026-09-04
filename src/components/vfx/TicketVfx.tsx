@@ -1,67 +1,106 @@
+import { useCallback, useState } from "react";
 import TicketIcon from "../shared/TicketIcon";
 
 /**
- * 티켓(우선참여권) 보유 표시용 VFX 무대.
+ * 티켓(우선참여권) 보유 표시용 VFX 무대 — Aura.
  *
- * 게임에서 Legendary/Rare 아이템이 활성화된 느낌을 목표로 한다 — 티켓이 주인공이고
- * VFX 는 그것을 강조하는 배경 역할만 한다.
+ * 게임에서 Legendary/Rare 아이템이 활성화된 느낌을 목표로 한다. 티켓이 주인공이고
+ * VFX(오라 + magic dust)는 그것을 강조하는 배경 역할만 한다.
  *
  * ★ 불변식: **티켓 DOM 은 절대 움직이지 않는다.** scale·rotate·translate·bounce·
  *   shake·pulse·opacity 애니메이션을 티켓에 걸지 않는다. 움직이는 것은 티켓 뒤·주변에
- *   깔리는 .tvfx-layer 와 파티클뿐이다. TicketIcon 은 `.tvfx-ticket`(정적) 안에만 놓는다.
- *   — 이 규칙을 깨면 상태 표시가 '버튼 애니메이션'으로 읽힌다(운영자 확정 기준).
+ *   깔리는 .tvfx-layer 와 .tvfx-dust 뿐이다. TicketIcon 은 `.tvfx-ticket`(정적) 안에만
+ *   놓는다 — 깨면 상태 표시가 '버튼 애니메이션'으로 읽힌다(운영자 확정 기준).
  *
  * 구조:
  *   .tvfx (무대, overflow:hidden + 고리 마스크)
- *     ├ .tvfx-layer × N   ← 움직이는 VFX (z-index 0)
- *     ├ .tvfx-dust        ← 파티클 (z-index 1, 선택)
- *     └ .tvfx-ticket      ← 티켓 (z-index 2, 정적)
- *
- * 모든 레이어가 가운데가 빈 고리 마스크(--tvfx-ring)를 공유하므로 글리프 뒤는 늘 비어
- * 있고, 마스크가 바깥에서 서서히 사라져 무대의 잘린 경계가 보이지 않는다.
- * WebGL 을 쓰지 않는다(프로젝트에 없음) — CSS 그라디언트 + blur + mask 만 쓴다.
+ *     ├ .tvfx-layer × 3  ← 떠도는 오라 (z-index 0)
+ *     ├ .tvfx-dust       ← 파티클 (z-index 1, 선택)
+ *     └ .tvfx-ticket     ← 티켓 (z-index 2, 정적)
  */
 
-export type TicketVfxVariant = "orb" | "aura" | "specter";
+const AURA_LAYERS = ["tvfx-aura-1", "tvfx-aura-2", "tvfx-aura-3"] as const;
+
+/** 동시에 떠 있는 파티클 수. 늘리면 magic dust 가 아니라 confetti 가 된다. */
+const DUST_COUNT = 6;
+
+interface Dust {
+	x: string;
+	y: string;
+	d: string;
+	dx: string;
+	dy: string;
+	dur: string;
+	delay: string;
+}
+
+/**
+ * 파티클 한 알을 추첨한다.
+ *
+ * 글리프(무대 중앙)를 가리지 않게 **고리 위에** 놓는다 — 중심에서 반지름 30~46% 띠
+ * 안에서 각도를 무작위로 뽑는다. 이동은 바깥 방향으로 짧게만(6~13%) — 길게 주면
+ * 폭죽처럼 터져 보인다.
+ *
+ * @param first 최초 렌더인가. 처음에는 delay 를 흩어 6알이 한꺼번에 뜨지 않게 하고,
+ *              이후 재추첨에서는 delay 를 없애 바로 이어지게 한다.
+ */
+function rollDust(first: boolean): Dust {
+	const angle = Math.random() * Math.PI * 2;
+	const radius = 30 + Math.random() * 16; // % (중심 기준)
+	const x = 50 + Math.cos(angle) * radius;
+	const y = 50 + Math.sin(angle) * radius;
+	const push = 6 + Math.random() * 7; // 바깥으로 밀려나는 거리 %
+	return {
+		x: `${x.toFixed(1)}%`,
+		y: `${y.toFixed(1)}%`,
+		d: `${(1.5 + Math.random() * 1.6).toFixed(1)}px`,
+		dx: `${(Math.cos(angle) * push).toFixed(1)}%`,
+		dy: `${(Math.sin(angle) * push).toFixed(1)}%`,
+		// 운영자 요청(2026-09-05): 더 빠르게. 종전 6.2~8s → 2.1~3.3s.
+		dur: `${(2.1 + Math.random() * 1.2).toFixed(2)}s`,
+		delay: first ? `${(Math.random() * 2).toFixed(2)}s` : "0s",
+	};
+}
+
+/**
+ * 파티클 한 알. 한 바퀴가 끝나면 좌표를 **다시 추첨**한다 — CSS 만으로는 반복마다 값을
+ * 바꿀 수 없어서 여기서 처리한다. 시작·끝 opacity 가 0 이라 교체 순간은 보이지 않는다.
+ */
+function DustMote() {
+	const [dust, setDust] = useState(() => rollDust(true));
+	const reroll = useCallback(() => setDust(rollDust(false)), []);
+	return (
+		<i
+			onAnimationIteration={reroll}
+			style={
+				{
+					"--x": dust.x,
+					"--y": dust.y,
+					"--d": dust.d,
+					"--dx": dust.dx,
+					"--dy": dust.dy,
+					"--dur": dust.dur,
+					"--delay": dust.delay,
+				} as React.CSSProperties
+			}
+		/>
+	);
+}
 
 interface Props {
-	variant: TicketVfxVariant;
 	/** magic dust 파티클 추가. */
 	particles?: boolean;
 	/** 티켓 글리프 크기(px). 메인 헤더 기준값이 23. */
 	size?: number;
-	/** VFX 무대 한 변(px). 헤더에서는 50~80 사이가 적정. */
+	/** VFX 무대 한 변(px). 헤더에서는 50 전후가 적정. */
 	stage?: number;
 	className?: string;
 }
 
-/**
- * 파티클 배치 — **고정 테이블**이다. Math.random 을 쓰면 리렌더마다 점이 튀어
- * '떠다니는 먼지'가 아니라 '깜빡이는 오류'로 보인다. 서로 다른 delay/duration 이
- * 무작위성을 만들고, 동시에 뜨지 않으므로 폭죽처럼 터지지 않는다.
- * 좌표는 무대 기준 % 라 stage 크기가 바뀌어도 비율이 유지된다.
- */
-const DUST = [
-	{ x: "16%", y: "26%", d: 2.5, dx: "-8%", dy: "-14%", dur: "6.5s", delay: "0s" },
-	{ x: "78%", y: "22%", d: 2, dx: "10%", dy: "-10%", dur: "7.5s", delay: "1.1s" },
-	{ x: "86%", y: "62%", d: 2.5, dx: "9%", dy: "9%", dur: "6.8s", delay: "2.4s" },
-	{ x: "50%", y: "88%", d: 2, dx: "-3%", dy: "12%", dur: "8s", delay: "3.6s" },
-	{ x: "14%", y: "68%", d: 3, dx: "-11%", dy: "8%", dur: "7.2s", delay: "4.7s" },
-	{ x: "44%", y: "10%", d: 1.5, dx: "4%", dy: "-13%", dur: "6.2s", delay: "5.5s" },
-] as const;
-
-/** 변형별 레이어 조합. 정적 림(orb-rim)도 여기서 함께 얹는다. */
-const LAYERS: Record<TicketVfxVariant, string[]> = {
-	orb: ["tvfx-orb-1", "tvfx-orb-2", "tvfx-orb-rim"],
-	aura: ["tvfx-aura-1", "tvfx-aura-2", "tvfx-aura-3"],
-	specter: ["tvfx-spec-mist", "tvfx-spec-1", "tvfx-spec-2"],
-};
-
 export default function TicketVfx({
-	variant,
-	particles = false,
+	particles = true,
 	size = 23,
-	stage = 64,
+	stage = 52,
 	className,
 }: Props) {
 	return (
@@ -71,27 +110,15 @@ export default function TicketVfx({
 			role="img"
 			aria-label="우선참여권 보유 중"
 		>
-			{LAYERS[variant].map((cls) => (
+			{AURA_LAYERS.map((cls) => (
 				<span key={cls} className={`tvfx-layer ${cls}`} aria-hidden="true" />
 			))}
 
 			{particles && (
 				<span className="tvfx-dust" aria-hidden="true">
-					{DUST.map((p) => (
-						<i
-							key={`${p.x}-${p.y}`}
-							style={
-								{
-									"--x": p.x,
-									"--y": p.y,
-									"--d": `${p.d}px`,
-									"--dx": p.dx,
-									"--dy": p.dy,
-									"--dur": p.dur,
-									"--delay": p.delay,
-								} as React.CSSProperties
-							}
-						/>
+					{Array.from({ length: DUST_COUNT }, (_, i) => (
+						// key 가 고정이라 재추첨 때 DOM 이 유지된다(교체되면 애니메이션이 리셋된다).
+						<DustMote key={i} />
 					))}
 				</span>
 			)}
