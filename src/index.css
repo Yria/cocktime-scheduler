@@ -976,9 +976,21 @@ h4,
 
 /* ── 우선참여권(대기 포인트 7점) 배지 ─────────────────────────
    메인 헤더 가운데에 "지금 쓸 수 있다"는 단 하나의 사실만 알리는 장식 배지다(탭 액션 없음).
-   레이아웃 속성은 건드리지 않고 transform/filter/opacity 만 움직여, 높이 52px 로 고정된
-   헤더 줄을 밀지 않는다. 색 토큰은 :root/.dark 두 곳에 모두 둔다 — 한쪽만 두면 다크에서
-   라이트 값으로 굳는다(이 파일의 --late-pool 과 같은 규약). */
+
+   이펙트는 **전부 원형**이다. 사각 레이어를 쓰면 아이콘 밖으로 나가는 순간 헤더 배경에
+   직사각형 섬광으로 보인다(2026-09-05 실렌더에서 확인하고 폐기). 원형 + 소프트 그라디언트는
+   경계가 없어 아이콘 박스를 넘어가도 자연스럽다.
+
+   3겹으로 화려함을 만든다:
+     ::before  원형 후광 — 숨쉬듯 부풀며 밝아진다(뒤)
+     svg       글리프 자체 발광 — drop-shadow 펄스
+     ::after   원을 한 바퀴 도는 광택 링 — conic-gradient 를 링으로 마스킹해 회전(앞)
+
+   크기를 픽셀로 고정하지 않는다 — padding 과 % inset 으로 잡아서 23px(헤더)·17px(내 정보)·
+   확대 미리보기까지 같은 비율로 따라온다.
+   레이아웃 속성은 건드리지 않고 transform/filter/opacity 만 움직여 52px 헤더 줄을 밀지 않는다.
+   색 토큰은 :root/.dark 두 곳에 모두 둔다 — 한쪽만 두면 다크에서 라이트 값으로 굳는다
+   (이 파일의 --late-pool 과 같은 규약). */
 :root {
 	--ticket-gold: #d97706;
 	--ticket-glow: rgba(217, 119, 6, 0.55);
@@ -993,15 +1005,78 @@ h4,
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	/* 원형 이펙트가 놓일 여백. 글리프 크기에 비례해 무대가 커진다. */
+	padding: 22%;
 	color: var(--ticket-gold);
 	/* 헤더 가운데 절대 배치의 히트박스가 로고·알림벨을 먹지 않게 — 장식이므로 이벤트를 받지 않는다. */
 	pointer-events: none;
+	/* z-index:-1 인 후광이 헤더 배경 뒤로 빠지지 않도록 자체 쌓임 문맥을 만든다. */
+	isolation: isolate;
 }
 
-/* 숨쉬듯 부풀며 빛나는 본체 */
+/* ① 뒤에서 숨쉬는 원형 후광 */
+.ticket-badge::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: 50%;
+	/* 가운데를 비운 **고리형** 후광. 중심까지 금색을 채우면 글리프 바로 뒤에 같은 색이 깔려
+	   23px 헤더 크기에서 티켓 실루엣이 뭉개진다(실렌더 확인 후 조정). 글리프 뒤는 비우고
+	   테두리에서만 빛나게 해서 legibility 와 '동그란 이펙트'를 동시에 얻는다. */
+	background: radial-gradient(
+		circle,
+		transparent 0%,
+		transparent 30%,
+		color-mix(in srgb, var(--ticket-gold) 46%, transparent) 52%,
+		color-mix(in srgb, var(--ticket-gold) 16%, transparent) 64%,
+		transparent 78%
+	);
+	animation: ticketHalo 2.6s ease-in-out infinite;
+	z-index: -1;
+}
+
+/* ② 글리프 자체 발광 */
 .ticket-badge > svg {
 	animation: ticketGlow 2.6s ease-in-out infinite;
 	filter: drop-shadow(0 0 3px var(--ticket-glow));
+}
+
+/* ③ 원을 한 바퀴 도는 광택 링. conic-gradient 를 radial 마스크로 얇은 링만 남긴다. */
+.ticket-badge::after {
+	content: "";
+	position: absolute;
+	inset: 4%;
+	border-radius: 50%;
+	background: conic-gradient(
+		from 0deg,
+		transparent 0deg 232deg,
+		color-mix(in srgb, var(--ticket-gold) 55%, transparent) 286deg,
+		rgba(255, 255, 255, 0.95) 330deg,
+		transparent 360deg
+	);
+	-webkit-mask: radial-gradient(
+		farthest-side,
+		transparent calc(100% - 2px),
+		#000 calc(100% - 2px)
+	);
+	mask: radial-gradient(
+		farthest-side,
+		transparent calc(100% - 2px),
+		#000 calc(100% - 2px)
+	);
+	animation: ticketOrbit 2.6s linear infinite;
+}
+
+@keyframes ticketHalo {
+	0%,
+	100% {
+		transform: scale(0.9);
+		opacity: 0.55;
+	}
+	50% {
+		transform: scale(1.12);
+		opacity: 1;
+	}
 }
 
 @keyframes ticketGlow {
@@ -1011,51 +1086,25 @@ h4,
 		filter: drop-shadow(0 0 2px var(--ticket-glow));
 	}
 	50% {
-		transform: scale(1.09);
+		transform: scale(1.07);
 		filter: drop-shadow(0 0 7px var(--ticket-glow));
 	}
 }
 
-/* 대각선으로 훑고 지나가는 광택 — 본체 위에 겹치는 레이어.
-   **박스를 움직이지 않고 그라디언트만 흘린다**(background-position 애니메이션). transform 으로
-   레이어를 밀면 어떤 순간에 박스가 아이콘 밖으로 나가 헤더 배경에 회색 사선 띠가 그려진다
-   — 실제 렌더에서 로고 옆에 삐져나온 것을 확인하고 고쳤다(2026-09-05). inset 을 0 으로 줄여도
-   translateX 가 박스를 밖으로 내보내므로 해결되지 않는다. overflow:hidden 으로 자르는 방법은
-   svg 의 drop-shadow 글로우까지 함께 잘려 못 쓴다. 그래서 박스는 고정하고 배경만 움직인다. */
-.ticket-badge::after {
-	content: "";
-	position: absolute;
-	inset: 0;
-	background: linear-gradient(
-		115deg,
-		rgba(255, 255, 255, 0) 42%,
-		rgba(255, 255, 255, 0.85) 50%,
-		rgba(255, 255, 255, 0) 58%
-	);
-	background-size: 300% 100%;
-	background-repeat: no-repeat;
-	mix-blend-mode: overlay;
-	animation: ticketSheen 2.6s ease-in-out infinite;
-}
-
-@keyframes ticketSheen {
-	0% {
-		background-position: 170% 0;
-		opacity: 0;
-	}
-	18% {
-		opacity: 1;
-	}
-	55%,
-	100% {
-		background-position: -70% 0;
-		opacity: 0;
+@keyframes ticketOrbit {
+	to {
+		transform: rotate(360deg);
 	}
 }
 
-/* 접근성 — 움직임 최소화를 켠 사용자에게는 정지된 금색 배지만 남긴다.
+/* 접근성 — 움직임 최소화를 켠 사용자에게는 정지된 금색 배지와 은은한 후광만 남긴다.
    이 저장소 최초의 reduced-motion 가드다. 새 애니메이션을 추가할 때 같은 블록에 넣을 것. */
 @media (prefers-reduced-motion: reduce) {
+	.ticket-badge::before {
+		animation: none;
+		transform: scale(1);
+		opacity: 0.8;
+	}
 	.ticket-badge > svg {
 		animation: none;
 		filter: drop-shadow(0 0 3px var(--ticket-glow));
