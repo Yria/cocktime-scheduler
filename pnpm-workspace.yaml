@@ -2,3 +2,5 @@
 # 의존성 빌드 스크립트 실행 허용 — esbuild 네이티브 바이너리 빌드(vite 의존).
 allowBuilds:
   esbuild: true
+patchedDependencies:
+  '@pixi/react@8.0.5': patches/@pixi__react@8.0.5.patch

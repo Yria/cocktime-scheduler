@@ -74,6 +74,10 @@ export interface BoardState {
 	setCourtAnchor: (courtId: number, x: number, y: number) => void;
 	/** 실제 stage 크기 등록(흩어짐 바운더리용) */
 	setStageSize: (w: number, h: number) => void;
+	/** Pixi 카메라 확정: 배율과 논리 영역을 한 번에 반영. userChanged는 controller가 검증한 제스처 중 유효 변경 여부. */
+	commitBoardView: (view: { scale: number; cssWidth: number; cssHeight: number; userChanged?: boolean }) => void;
+	/** 편집자의 카드 드래그 시작 시 자동 배치를 중단(좌표는 드롭 때 확정). */
+	markManualLayout: () => void;
 	/** 보드 줌 배율(0.5~1). 수동 줌·자동 fit 공용. */
 	scale: number;
 	/**

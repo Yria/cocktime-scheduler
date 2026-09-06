@@ -16,6 +16,8 @@ scripts/__pycache__/
 
 # Tooling artifacts
 .playwright-mcp/
+test-results/
+playwright-report/
 
 # Editor directories and files
 .vscode/*

@@ -1,0 +1,64 @@
+diff --git a/lib/helpers/unmountRoot.js b/lib/helpers/unmountRoot.js
+index 3bb4e834dbc900e3113ef19fe38d16494a4eaca0..aa3270ada3c32c6a11f0ecf3ccaf97c2a5a9fea2 100644
+--- a/lib/helpers/unmountRoot.js
++++ b/lib/helpers/unmountRoot.js
+@@ -10,8 +10,10 @@ function unmountRoot(root) {
+   const fiber = root.fiber;
+   if (fiber) {
+     reconciler.reconciler.updateContainer(null, fiber, null, () => {
+-      if (root.applicationState.app) {
++      if (root.applicationState.app?.renderer) {
+         root.applicationState.app.destroy();
++      } else if (root.applicationState.app?.stage) {
++        root.applicationState.app.stage.destroy({ children: true });
+       }
+       roots.roots.delete(root.internalState.canvas);
+     });
+diff --git a/lib/helpers/unmountRoot.mjs b/lib/helpers/unmountRoot.mjs
+index 1b37917f85178760480ec6b449230da2a3c36bb5..8acae8af3a1d5c12e186ff7d02d06fa76bd66b2f 100644
+--- a/lib/helpers/unmountRoot.mjs
++++ b/lib/helpers/unmountRoot.mjs
+@@ -8,8 +8,10 @@ function unmountRoot(root) {
+   const fiber = root.fiber;
+   if (fiber) {
+     reconciler.updateContainer(null, fiber, null, () => {
+-      if (root.applicationState.app) {
++      if (root.applicationState.app?.renderer) {
+         root.applicationState.app.destroy();
++      } else if (root.applicationState.app?.stage) {
++        root.applicationState.app.stage.destroy({ children: true });
+       }
+       roots.delete(root.internalState.canvas);
+     });
+diff --git a/lib/index.js b/lib/index.js
+index 85910335601d340a4d5a2284293615232d58a8da..63b52bb89c36c259633e07a17d152fb05d4bbd5c 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1,5 +1,7 @@
+ 'use strict';
+ 
++exports.unmountRoot = require('./helpers/unmountRoot.js').unmountRoot;
++
+ var Application = require('./components/Application.js');
+ var createRoot = require('./core/createRoot.js');
+ require('./global.js');
+diff --git a/lib/index.mjs b/lib/index.mjs
+index 3b232fba7217ada614027aee0a221b24c512213c..01f79c7fb7044f3e8141787c8cb29d1fabf53c2a 100644
+--- a/lib/index.mjs
++++ b/lib/index.mjs
+@@ -1,5 +1,6 @@
+ export { Application } from './components/Application.mjs';
+ export { createRoot } from './core/createRoot.mjs';
++export { unmountRoot } from './helpers/unmountRoot.mjs';
+ import './global.mjs';
+ export { applyProps } from './helpers/applyProps.mjs';
+ export { extend } from './helpers/extend.mjs';
+diff --git a/types/index.d.ts b/types/index.d.ts
+index 90b642a4464327c45b3590928daf3edca1e2bd99..165b3e022b58d43914c8da8fee3e4d6f81d8c51d 100644
+--- a/types/index.d.ts
++++ b/types/index.d.ts
+@@ -10,3 +10,4 @@ export { type ApplicationRef } from './typedefs/ApplicationRef';
+ export { type PixiElements } from './typedefs/PixiElements';
+ export { type PixiReactElementProps } from './typedefs/PixiReactNode';
+ export { type UnprefixedPixiElements } from './typedefs/UnprefixedPixiElements';
++export declare function unmountRoot(root: import('./typedefs/Root').Root): void;

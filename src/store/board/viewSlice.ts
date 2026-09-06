@@ -32,6 +32,8 @@ export type ViewSlice = Pick<
 	| "setTeamAnchor"
 	| "setCourtAnchor"
 	| "setStageSize"
+	| "commitBoardView"
+	| "markManualLayout"
 	| "userScale"
 	| "setScale"
 	| "setAutoScale"
@@ -124,6 +126,32 @@ export const createViewSlice: StateCreator<
 			s.stageW = w;
 			s.stageH = h;
 		});
+	},
+
+	commitBoardView: ({ scale, cssWidth, cssHeight, userChanged = false }) => {
+		if (!Number.isFinite(scale) || !Number.isFinite(cssWidth) || !Number.isFinite(cssHeight) || cssWidth <= 0 || cssHeight <= 0) return;
+		const next = clampScale(scale);
+		// controller가 제스처 전체의 유효 변경을 추적한다. 시작 배율로 돌아온 왕복도 수동 의도다.
+		const savePreference = userChanged;
+		set((s) => {
+			s.scale = next;
+			s.stageW = cssWidth / next;
+			s.stageH = cssHeight / next;
+			if (savePreference) s.userScale = next;
+		});
+		if (savePreference) {
+			try {
+				localStorage.setItem(SCALE_KEY, String(next));
+				localStorage.setItem(SCALE_LOCK_KEY, "1");
+			} catch {
+				// 카메라는 저장소 사용 가능 여부와 관계없이 반영한다.
+			}
+		}
+	},
+
+	markManualLayout: () => {
+		if (!useSessionStore.getState().isEditor || get().manualLayout) return;
+		set((s) => { s.manualLayout = true; });
 	},
 
 	// 수동 줌(±버튼·휠·핀치) — 이 기기가 원하는 배율(userScale)로 기억·영속한다. 이후 자동 fit 은 이 값을

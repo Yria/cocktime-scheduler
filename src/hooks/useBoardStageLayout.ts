@@ -4,6 +4,8 @@ import { useBoardStore, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP } from "../store/boardStor
 import { useSessionStore } from "../store/sessionStore";
 import { playingIdsFromCourts } from "../lib/board/membership";
 import { computeFitScale } from "../lib/board/arrange";
+import { flushBoardCamera } from "../lib/board/pixi/cameraBridge";
+import { clampScale } from "../store/board/zoom";
 
 // 줌(축소 전용) — 0.5~1배. 상태/클램프/영속은 boardStore(scale·setScale)로 일원화(수동 줌·자동 fit 공용).
 // arrange/drop·자석 이동범위는 보이는 논리영역(viewW×viewH=stage/scale) 기준이라 축소하면 그 범위도 비례 확대.
@@ -26,17 +28,23 @@ export function useBoardStageLayout(stageW: number, stageH: number, cw: number, 
 	// 정렬(rearrange)은 이 viewW×viewH를 기준으로 좌상단부터 하단 한계까지 채운다(아래 정렬 effect·버튼 공용).
 	// 줌 배율 — boardStore 공용 상태(수동 줌·자동 fit). viewW/viewH = stage/scale(보이는 논리 영역).
 	const scale = useBoardStore((s) => s.scale);
-	const setScale = useBoardStore((s) => s.setScale);
-	const setAutoScale = useBoardStore((s) => s.setAutoScale);
+	const setScale = useCallback((value: number | ((prev: number) => number)) => {
+		flushBoardCamera();
+		const bs = useBoardStore.getState();
+		const next = clampScale(typeof value === "function" ? value(bs.scale) : value);
+		bs.commitBoardView({ scale: next, cssWidth: stageW, cssHeight: stageH, userChanged: next !== bs.scale });
+	}, [stageW, stageH]);
 	const viewW = stageW / scale;
 	const viewH = stageH / scale;
 
 	// 보이는 논리 영역(viewW×viewH = stage/scale)을 store에 등록 — 흩어짐/드롭 클램프 범위가
 	// 줌(축소)에 따라 비율대로 커지도록(축소하면 보이는 영역이 넓어지고 자석 이동 가능 범위도 함께 넓어짐).
-	const setStageSize = useBoardStore((s) => s.setStageSize);
 	useEffect(() => {
-		if (cw > 0 && ch > 0) setStageSize(viewW, viewH);
-	}, [cw, ch, viewW, viewH, setStageSize]);
+		if (cw <= 0 || ch <= 0) return;
+		flushBoardCamera();
+		const bs = useBoardStore.getState();
+		bs.commitBoardView({ scale: bs.scale, cssWidth: stageW, cssHeight: stageH });
+	}, [cw, ch, stageW, stageH]);
 
 	const rearrangeAll = useBoardStore((s) => s.rearrangeAll);
 	// 편집자가 직접 드래그로 배치를 시작했는지 — 그 전(첫 접근 포함)까지는 뷰어와 동일하게 자동 정렬한다.
@@ -71,6 +79,7 @@ export function useBoardStageLayout(stageW: number, stageH: number, cw: number, 
 	// 카운트는 arrangeBoard와 동일 기준(그룹=경기중 코트+팀, 자유=teamId null·비경기중 — 휴식자도 보드에 남으므로 포함)으로 fresh 계산.
 	const fitAndArrange = useCallback(() => {
 		if (stageW <= 0 || stageH <= 0) return;
+		flushBoardCamera();
 		const bs = useBoardStore.getState();
 		const ss = useSessionStore.getState();
 		const playing = playingIdsFromCourts(ss.courts);
@@ -89,16 +98,18 @@ export function useBoardStageLayout(stageW: number, stageH: number, cw: number, 
 		// 그룹 밴드 아래로 밀려 화면(stage) 밖으로 나가 통째로 안 보인다(실측: y=744 > stageH=700).
 		// userScale 은 setAutoScale 이 건드리지 않으므로, 여유가 생기면 다시 그 배율로 복귀한다.
 		const target = bs.userScale != null ? Math.min(bs.userScale, fit) : fit;
-		setAutoScale(target); // store가 클램프(저장·userScale 갱신 없음 — 수동 조정과 구분)
+		bs.commitBoardView({ scale: target, cssWidth: stageW, cssHeight: stageH });
 		rearrangeAll(stageW / target, stageH / target);
-	}, [stageW, stageH, rearrangeAll, setAutoScale]);
+	}, [stageW, stageH, rearrangeAll]);
 
 	// 정렬 버튼(수동): 현재 줌은 그대로 두고 지금 보이는 화면 크기(viewW×viewH = stage/scale) 기준으로만 정렬한다.
 	// fitAndArrange처럼 줌을 '다 들어가는 최대 배율'로 바꾸지 않으므로, 축소해 둔 상태에서 정렬해도 확대되지 않는다.
 	const arrangeAtCurrentScale = useCallback(() => {
 		if (stageW <= 0 || stageH <= 0) return;
-		rearrangeAll(viewW, viewH, true); // 편집자면 manualLayout 켜서 이후 자동 fit이 축소 비율을 되돌리지 않게(정렬 결과 고정)
-	}, [stageW, stageH, viewW, viewH, rearrangeAll]);
+		flushBoardCamera();
+		const currentScale = useBoardStore.getState().scale;
+		rearrangeAll(stageW / currentScale, stageH / currentScale, true);
+	}, [stageW, stageH, rearrangeAll]);
 
 	useEffect(() => {
 		// 편집자가 직접 드래그 배치를 시작하기 전까지는 자동 정렬(뷰어는 manualLayout이 늘 false → 항상 자동).

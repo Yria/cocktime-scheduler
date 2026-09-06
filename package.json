@@ -11,12 +11,14 @@
 		"lint": "eslint .",
 		"test": "vitest run",
 		"test:watch": "vitest",
+		"test:board:browser": "playwright test",
 		"preview": "vite preview",
 		"deploy": "pnpm run build && gh-pages -d dist",
 		"photos": "scripts/.venv/bin/python -u scripts/fetch_photos.py",
 		"photos:dry": "scripts/.venv/bin/python -u scripts/fetch_photos.py --dry-run"
 	},
 	"dependencies": {
+		"@pixi/react": "8.0.5",
 		"@react-aria/overlays": "^3.32.1",
 		"@supabase/supabase-js": "^2.97.0",
 		"@tanstack/react-virtual": "^3.14.3",
@@ -24,6 +26,7 @@
 		"immer": "^11.1.4",
 		"konva": "^10.2.5",
 		"lucide-react": "^1.0.1",
+		"pixi.js": "8.20.1",
 		"react": "^19.2.0",
 		"react-dom": "^19.2.0",
 		"react-konva": "^19.2.3",
@@ -36,6 +39,7 @@
 	"devDependencies": {
 		"@biomejs/biome": "2.4.5",
 		"@eslint/js": "^9.39.1",
+		"@playwright/test": "^1.63.0",
 		"@tailwindcss/vite": "^4.2.0",
 		"@types/node": "^24.10.1",
 		"@types/react": "^19.2.7",
