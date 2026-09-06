@@ -13,7 +13,7 @@ import {
 
 /**
  * 휴식 드롭존 — 바텀 바(RestBar) 영역 위에 DOM 오버레이로 표시한다(상단 DetachZoneOverlay의 하단 대칭).
- * restable 자석을 드래그하는 동안에만(showRest) 노출. Konva 캔버스가 바텀 바 위라 자석을 바 안으로
+ * restable 자석을 드래그하는 동안에만(showRest) 노출. 보드 캔버스가 바텀 바 위라 자석을 바 안으로
  * 직접 끌 수 없으므로, 드롭 판정은 칠판 하단 경계 너머(isInRestField)가 담당하고 이 오버레이는 시각 표시만 한다.
  * 드래그 대상이 휴식자면 문구가 '복귀'로 바뀐다(같은 존이 진입·해제 토글이라 어느 쪽인지 알려줘야 한다).
  * pointerEvents:none — 입력을 가로채지 않는다. hot 여부는 store.restFieldHot.

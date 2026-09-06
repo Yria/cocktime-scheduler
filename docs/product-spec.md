@@ -13,7 +13,7 @@
 > 기존의 자동 팀 편성(auto team formation) + 매치 대기열(match queue) + pending(미도착) 상태 +
 > 수동매칭 로그(manual match logs) + 팀 후보(team candidates) 슬라이스를 **전부 제거**했다.
 > 메인 기능은 **보드(수동 드래그 + 추천)** 단일 플로우다.
-> - 라우팅: `/session` = 보드(SessionBoard, react-konva 자석 칠판). 구 `/session/board` 는 `/session` 으로 리다이렉트. 구 `/session`(SessionMain)은 삭제됨.
+> - 라우팅: `/session` = 보드(SessionBoard, PixiJS WebGL 자석 칠판). 구 `/session/board` 는 `/session` 으로 리다이렉트. 구 `/session`(SessionMain)은 삭제됨.
 > - 추천 로직(`recommendTeammates` / `rankCandidates` / `pairPlayers` / `skillScore`)은 **유지**된다.
 
 ---
@@ -32,7 +32,7 @@
 - 세션 시작 버튼 → 세션 생성 후 보드 페이지(`/session`)로 이동
 
 ### 2-3. 세션 보드 (세션 메인)
-세션 진행 중 메인 화면. **react-konva 기반 자석 칠판.**
+세션 진행 중 메인 화면. **PixiJS WebGL 기반 자석 칠판.**
 
 #### 표시 영역
 | 영역 | 내용 |

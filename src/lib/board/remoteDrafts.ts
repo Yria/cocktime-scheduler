@@ -76,7 +76,7 @@ export function reconcileMembership(
 			.filter((r) => r.teamId === team.id && magnets.has(r.playerId) && !assignedAnchor.has(r.playerId))
 			.map((r) => r.playerId);
 		// I3) 유효 인원(anchor + ghost, 중복 제외)이 2명 미만인 팀은 만들지 않는다 — 렌더 게이팅
-		//     (TeamBackground 의 wouldDissolveByPlaying)과 **같은 규칙**을 상태 변환 단계에서도 강제.
+		//     (보드 projection의 wouldDissolveByPlaying)과 **같은 규칙**을 상태 변환 단계에서도 강제.
 		//     안 맞추면 화면에서 선수가 통째로 사라진다(2026-07-31 실제 사고): 팀 박스는 게이팅으로 안 그려지는데
 		//     남은 멤버의 자석 teamId 는 그 팀을 가리켜 자유 자석 필터(teamId===null)에서도 빠진다. heal
 		//     (healPlayingAnchors)은 "경기중 anchor 가 있는 팀"만 손대므로 남은 1명이 비경기중이면 조기 반환 →

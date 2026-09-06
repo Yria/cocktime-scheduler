@@ -139,7 +139,7 @@ export const createMatchSlice: StateCreator<
 					if (team.slots && id in team.slots) delete team.slots[id]; // 슬롯 매핑도 정리
 				}
 				team.anchorMemberIds = team.anchorMemberIds.filter((id) => !playingIds.has(id));
-				// 제거 후 인원이 부족하면 팀 해체 — 렌더 게이팅(TeamBackground)과 동일한 공용 규칙으로 판정.
+				// 제거 후 인원이 부족하면 팀 해체 — 보드 projection의 렌더 게이팅과 동일한 공용 규칙으로 판정.
 				if (wouldDissolveByPlaying(team, s.reservations, playingIds)) {
 					dissolveDraft(s, teamId);
 				} else {

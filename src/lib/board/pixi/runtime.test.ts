@@ -135,6 +135,26 @@ afterEach(() => {
 });
 
 describe("BoardRuntime input and scene integration", () => {
+	it("keeps the gap between unconfirm and start inactive while both buttons remain usable", () => {
+		const { runtime, board } = setup();
+		addTeam("T", ["a", "b", "c", "d"]);
+		const drafts = new Map(board.getState().drafts);
+		drafts.set("T", { ...drafts.get("T")!, confirmedMs: 1 });
+		board.setState({ drafts });
+		const tap = (x: number) => {
+			runtime.controller.pointerDown({ id: 1, x, y: 269 });
+			runtime.controller.pointerUp({ id: 1, x, y: 269 });
+		};
+		// Card anchor is (200, 180): cancel ends at x=161, start begins at x=167.
+		tap(164);
+		expect(board.getState().startMatch).not.toHaveBeenCalled();
+		expect(board.getState().unconfirmTeam).not.toHaveBeenCalled();
+		tap(147);
+		expect(board.getState().unconfirmTeam).toHaveBeenCalledExactlyOnceWith("T");
+		tap(200);
+		expect(board.getState().startMatch).toHaveBeenCalledExactlyOnceWith("T");
+	});
+
 	it("draws on invalidation and leaves no continuous idle frame loop", () => {
 		const { app, runtime } = setup();
 		expect(app.render).toHaveBeenCalledTimes(1);

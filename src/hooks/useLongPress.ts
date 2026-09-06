@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from "react";
 const LONGPRESS_MS = 500;
 
 /**
- * DOM 롱프레스(꾹 누르기) 감지 핸들러를 만든다. PlayerMagnet(Konva)의 롱프레스와 동일한 의도지만
+ * DOM 롱프레스(꾹 누르기) 감지 핸들러를 만든다. 보드 자석의 롱프레스와 동일한 의도지만
  * 일반 HTML 요소용(목록처럼 항목이 여러 개인 경우 항목 키로 동작).
  *
  * 사용:

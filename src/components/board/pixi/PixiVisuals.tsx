@@ -3,6 +3,7 @@ import { Sprite, Texture } from "pixi.js";
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { CardAppearance, MagnetAppearance } from "../../../lib/board/pixi/types";
+import { cardControls, CARD_CTA_Y as CTA_Y } from "../../../lib/board/pixi/cardControls";
 import { createPhotoResource, TexturePool } from "../../../lib/board/pixi/texturePool";
 import type { PhotoAsset } from "../../../lib/board/pixi/texturePool";
 import { usePlayerPhotoUrl } from "../../../lib/playerPhoto";
@@ -25,9 +26,6 @@ const NAME_FONT = 11;
 const INNER_R = MAGNET_R - MAGNET_SIZE * MAGNET_SKILL_ARC_RATIO;
 const CARD_TOP = -TEAM_BOX_ABOVE;
 const CARD_BOTTOM = TEAM_BOX_BELOW;
-const CTA_Y = CARD_BOTTOM - TEAM_PAD - TEAM_CTA_H;
-const UNCONFIRM_W = 28;
-const UNCONFIRM_GAP = 6;
 
 type Paint = (context: CanvasRenderingContext2D) => void;
 interface Bounds { x: number; y: number; width: number; height: number }
@@ -176,7 +174,7 @@ function shadow(context: CanvasRenderingContext2D, color: string, blur: number, 
 	context.shadowOffsetY = offsetY * resolution;
 }
 
-/** Konva 10's non-legacy text baseline, wrapping and centered line positioning. */
+/** Shared text baseline, wrapping and centered line positioning for board textures. */
 function text(context: CanvasRenderingContext2D, value: string, x: number, y: number, width: number, size: number,
 	color: string, bold = true, height?: number, ellipsis = false) {
 	context.font = `${bold ? "bold" : "normal"} ${size}px ${FONT}`;
@@ -234,8 +232,7 @@ function bodyOpacity({ cockPending, ghost, resting }: MagnetAppearance) {
 
 function paintMagnet(context: CanvasRenderingContext2D, appearance: MagnetAppearance, photo: HTMLImageElement | null, withShadow: boolean) {
 	const { player, ghost, cockPending } = appearance;
-	// Konva applies group opacity to each primitive, not to a flattened bitmap.
-	// Bake that same composition into the body; badges remain separate and opaque.
+	// Apply opacity to each primitive before flattening; badges remain separate and opaque.
 	context.globalAlpha = bodyOpacity(appearance);
 	if (photo) {
 		context.save();
@@ -245,8 +242,7 @@ function paintMagnet(context: CanvasRenderingContext2D, appearance: MagnetAppear
 		context.drawImage(photo, -INNER_R, -INNER_R, INNER_R * 2, INNER_R * 2);
 		context.restore();
 		if (ghost) {
-			// Same channel weights as the existing Konva grayscale filter; only the
-			// photo has been painted yet, so names/rings/badges retain their colors.
+			// Only the photo has been painted yet, so names/rings/badges retain their colors.
 			const pixels = context.getImageData(0, 0, context.canvas.width, context.canvas.height);
 			for (let i = 0; i < pixels.data.length; i += 4) {
 				const gray = 0.34 * pixels.data[i] + 0.5 * pixels.data[i + 1] + 0.16 * pixels.data[i + 2];
@@ -369,10 +365,10 @@ function paintCard(context: CanvasRenderingContext2D, appearance: CardAppearance
 }
 
 function paintCardControls(context: CanvasRenderingContext2D, appearance: CardAppearance, flash: boolean) {
-	const halfW = TEAM_W / 2;
-	if (appearance.showUnconfirm) {
-		const x = -halfW + TEAM_PAD;
-		roundedRect(context, x, CTA_Y, UNCONFIRM_W, TEAM_CTA_H, 8);
+	const { main, unconfirm } = cardControls(appearance.showUnconfirm);
+	if (unconfirm) {
+		const { x, y, width, height } = unconfirm;
+		roundedRect(context, x, y, width, height, 8);
 		context.fillStyle = CTA_UNCONFIRM_COLOR;
 		context.fill();
 		context.save();
@@ -380,17 +376,15 @@ function paintCardControls(context: CanvasRenderingContext2D, appearance: CardAp
 		context.lineWidth = 2;
 		context.lineCap = "round";
 		context.beginPath();
-		context.moveTo(x + UNCONFIRM_W / 2 - 5, CTA_Y + TEAM_CTA_H / 2 - 5);
-		context.lineTo(x + UNCONFIRM_W / 2 + 5, CTA_Y + TEAM_CTA_H / 2 + 5);
-		context.moveTo(x + UNCONFIRM_W / 2 + 5, CTA_Y + TEAM_CTA_H / 2 - 5);
-		context.lineTo(x + UNCONFIRM_W / 2 - 5, CTA_Y + TEAM_CTA_H / 2 + 5);
+		context.moveTo(x + width / 2 - 5, y + height / 2 - 5);
+		context.lineTo(x + width / 2 + 5, y + height / 2 + 5);
+		context.moveTo(x + width / 2 + 5, y + height / 2 - 5);
+		context.lineTo(x + width / 2 - 5, y + height / 2 + 5);
 		context.stroke();
 		context.restore();
 	}
-	const ctaOffset = appearance.showUnconfirm ? UNCONFIRM_W + UNCONFIRM_GAP : 0;
-	const ctaX = -halfW + TEAM_PAD + ctaOffset;
-	const ctaW = TEAM_W - TEAM_PAD * 2 - ctaOffset;
-	roundedRect(context, ctaX, CTA_Y, ctaW, TEAM_CTA_H, 8);
+	const { x, y, width, height } = main;
+	roundedRect(context, x, y, width, height, 8);
 	context.fillStyle = appearance.blink && flash ? CTA_PLAY_FLASH : appearance.ctaColor;
 	context.fill();
 	if (appearance.blink && flash) {
@@ -398,7 +392,7 @@ function paintCardControls(context: CanvasRenderingContext2D, appearance: CardAp
 		context.lineWidth = 2;
 		context.stroke();
 	}
-	text(context, appearance.ctaLabel, ctaX, CTA_Y, ctaW, 13, "#FFFFFF", true, TEAM_CTA_H);
+	text(context, appearance.ctaLabel, x, y, width, 13, "#FFFFFF", true, height);
 }
 
 const CARD_BOUNDS = { x: -TEAM_W / 2 - 2, y: CARD_TOP - 2, width: TEAM_W + 4, height: CARD_BOTTOM - CARD_TOP + 4 };
@@ -431,14 +425,12 @@ export const CardControlsVisual = memo(function CardControlsVisual({ appearance,
 	const normal = useRaster(`${key}:normal`, bounds, (context) => paintCardControls(context, appearance, false));
 	const highlighted = useRaster(`${key}:${appearance.blink ? "flash" : "normal"}`, bounds,
 		(context) => paintCardControls(context, appearance, true));
-	const ctaOffset = appearance.showUnconfirm ? UNCONFIRM_W + UNCONFIRM_GAP : 0;
+	const { main } = cardControls(appearance.showUnconfirm);
 	return <>
-		{appearance.blink && flash && !dragging && <CachedSprite cacheKey={`cta-glow:${ctaOffset}`}
+		{appearance.blink && flash && !dragging && <CachedSprite cacheKey={`cta-glow:${main.x}`}
 			bounds={{ x: -TEAM_W / 2 - 22, y: CTA_Y - 30, width: TEAM_W + 44, height: TEAM_CTA_H + 60 }}
 			paint={(context) => {
-				const x = -TEAM_W / 2 + TEAM_PAD + ctaOffset;
-				const width = TEAM_W - TEAM_PAD * 2 - ctaOffset;
-				roundedRect(context, x, CTA_Y, width, TEAM_CTA_H, 8);
+				roundedRect(context, main.x, main.y, main.width, main.height, 8);
 				shadow(context, CTA_PLAY_FLASH, 14);
 				context.fillStyle = CTA_PLAY_FLASH;
 				context.fill();

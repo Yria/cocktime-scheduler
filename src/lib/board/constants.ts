@@ -72,7 +72,7 @@ export const SLOT_SNAP_R = SLOT_SIZE / 2; // 32
 export const TOOLBAR_H = 48;
 export const COURT_BAR_H = 36;
 
-// Theme colors — 보드 캔버스(konva)는 다크 고정. 헤더/푸터는 앱 글래스 토큰(var(--mat-thick) 등) 사용.
+// Theme colors — 보드 캔버스(Pixi)는 다크 고정. 헤더/푸터는 앱 글래스 토큰(var(--mat-thick) 등) 사용.
 export const BG_BOARD = "#0F172A";
 export const TEXT_SECONDARY = "#94A3B8";
 export const STROKE_DEFAULT = "#334155";

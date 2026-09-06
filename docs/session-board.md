@@ -1,5 +1,7 @@
 # 세션 보드 (딱판) 설계 문서
 
+> 2026-09-07: 렌더러는 PixiJS WebGL로 단일화했다. 현재 파일 구조·입력 처리·오류 복구는 [Pixi 구현 현황](session-board-pixi-design.md)을 따른다. 아래 본문의 일부 컴포넌트명과 이벤트 설명은 전환 이전 기록이다.
+
 ## 1. 개요
 
 `/session/board` 라우트의 **자석 칠판 메타포 수동 팀 구성 페이지**. 보드를 **세션 운영의 메인 화면**으로 사용한다 (자동매칭/후보리스트 등 다른 구현과 공존을 가정하지 않는다).
@@ -14,12 +16,12 @@
 
 | 항목 | 값 |
 |------|------|
-| Path | `/session/board` |
+| Path | `/session` (`/session/board`는 리다이렉트) |
 | 가드 | `App.tsx`의 `sessionGuarded()` — 활성 세션 없으면 `/`로 |
-| 렌더 | **react-konva** (`Stage`/`Layer`). DOM이 아닌 Canvas 2D. |
+| 렌더 | **PixiJS + @pixi/react**, WebGL canvas. |
 | 상태 | zustand `boardStore`(예비팀/예약/자석) + `sessionStore`(코트/경기, 구독만) |
 
-> 과거 문서가 언급하던 dnd-kit / tldraw는 채택되지 않았다. 실제 구현은 react-konva다.
+> 과거 문서가 언급하던 dnd-kit / tldraw는 채택되지 않았다. 기존 Konva 구현은 제거했다.
 
 ---
 

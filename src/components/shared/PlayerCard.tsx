@@ -33,7 +33,7 @@ export const PLAYER_CARD_SIZES = {
 
 /**
  * PlayerCard — 앱 전체 공통 "자석" 아바타(HTML).
- * 보드 Konva 자석(PlayerMagnet)과 동일한 디자인 토큰(magnetStyle)을 사용한다:
+ * 보드 Pixi 자석(MagnetVisual)과 동일한 디자인 토큰(magnetStyle)을 사용한다:
  * 원형 사진 + 성별색 링 + 스킬 아크 + 이름(안쪽 하단, 흰 글씨).
  */
 export default function PlayerCard({

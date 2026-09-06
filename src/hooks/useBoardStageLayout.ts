@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef } from "react";
-import type Konva from "konva";
-import { useBoardStore, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP } from "../store/boardStore";
+import { useCallback, useEffect } from "react";
+import { useBoardStore, ZOOM_MIN, ZOOM_MAX } from "../store/boardStore";
 import { useSessionStore } from "../store/sessionStore";
 import { playingIdsFromCourts } from "../lib/board/membership";
 import { computeFitScale } from "../lib/board/arrange";
@@ -27,15 +26,12 @@ export function useBoardStageLayout(stageW: number, stageH: number, cw: number, 
 	// scale 0.5~1배 축소(Stage scale). 좌상단(0,0) 고정이라 보이는 논리 영역 = stage/scale.
 	// 정렬(rearrange)은 이 viewW×viewH를 기준으로 좌상단부터 하단 한계까지 채운다(아래 정렬 effect·버튼 공용).
 	// 줌 배율 — boardStore 공용 상태(수동 줌·자동 fit). viewW/viewH = stage/scale(보이는 논리 영역).
-	const scale = useBoardStore((s) => s.scale);
 	const setScale = useCallback((value: number | ((prev: number) => number)) => {
 		flushBoardCamera();
 		const bs = useBoardStore.getState();
 		const next = clampScale(typeof value === "function" ? value(bs.scale) : value);
 		bs.commitBoardView({ scale: next, cssWidth: stageW, cssHeight: stageH, userChanged: next !== bs.scale });
 	}, [stageW, stageH]);
-	const viewW = stageW / scale;
-	const viewH = stageH / scale;
 
 	// 보이는 논리 영역(viewW×viewH = stage/scale)을 store에 등록 — 흩어짐/드롭 클램프 범위가
 	// 줌(축소)에 따라 비율대로 커지도록(축소하면 보이는 영역이 넓어지고 자석 이동 가능 범위도 함께 넓어짐).
@@ -121,28 +117,5 @@ export function useBoardStageLayout(stageW: number, stageH: number, cw: number, 
 		fitAndArrange();
 	}, [manualLayout, membershipSig, courtSig, magnetCount, stageW, stageH, fitAndArrange]);
 
-	// ── 줌 핸들러(휠/핀치) ───────────────────────────────────
-	// Stage scale로 콘텐츠를 좌상단(0,0) 기준으로 축소(중앙 정렬 안 함 → 좌상단 좌표 고정). 논리 좌표는
-	// 그대로라 정렬·드롭·휴식 판정은 기존과 동일(드래그 좌표는 PlayerMagnet의 absToStage로 복원). scale은 위에서 정의.
-	const pinchDist = useRef(0);
-	const onStageWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
-		e.evt.preventDefault();
-		setScale((s) => s + (e.evt.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP));
-	}, [setScale]);
-	const onStageTouchMove = useCallback((e: Konva.KonvaEventObject<TouchEvent>) => {
-		const t = e.evt.touches;
-		if (t.length !== 2) return; // 두 손가락 핀치만(한 손가락은 드래그)
-		e.evt.preventDefault();
-		const dist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-		if (pinchDist.current > 0) {
-			const ratio = dist / pinchDist.current;
-			setScale((s) => s * ratio);
-		}
-		pinchDist.current = dist;
-	}, [setScale]);
-	const onStageTouchEnd = useCallback(() => {
-		pinchDist.current = 0;
-	}, []);
-
-	return { scale, setScale, viewW, viewH, arrangeAtCurrentScale, onStageWheel, onStageTouchMove, onStageTouchEnd };
+	return { setScale, arrangeAtCurrentScale };
 }

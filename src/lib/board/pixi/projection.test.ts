@@ -187,7 +187,7 @@ describe("Pixi board projection", () => {
 		expect(after.entities.find((entity) => entity.key === "free:c")).toBe(before.entities.find((entity) => entity.key === "free:c"));
 	});
 
-	it("waits for a roster member's magnet token like PlayerMagnet, then displays its court slot", () => {
+	it("waits for a roster member's magnet token, then displays its court slot", () => {
 		const { bs, ss } = fixture();
 		ss.courts = [court(1, ["a", "b", "c", "d"])];
 		const token = bs.magnets.get("a")!;

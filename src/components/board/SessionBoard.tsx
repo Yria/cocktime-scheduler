@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useBoardDragHandlers } from "../../hooks/useBoardDragHandlers";
 import { useBoardStageLayout } from "../../hooks/useBoardStageLayout";
 import { useContainerSize } from "../../hooks/useContainerSize";
 import { useSessionBoardEffects } from "../../hooks/useSessionBoardEffects";
@@ -39,7 +38,7 @@ export default function SessionBoard() {
 	const stageH = ch || 600;
 
 	// 줌·자동정렬 레이아웃(스케일/뷰포트/줌 핸들러/자동 fit) — useBoardStageLayout으로 분리.
-	const { scale, setScale, viewH, arrangeAtCurrentScale, onStageWheel, onStageTouchMove, onStageTouchEnd } =
+	const { setScale, arrangeAtCurrentScale } =
 		useBoardStageLayout(stageW, stageH, cw, ch);
 	// 세션 동기화/편집권 부수효과(풀 초기화·원격 멤버십 적용·Realtime 구독·자동 점유·I2 자가치유) — useSessionBoardEffects로 분리.
 	useSessionBoardEffects();
@@ -111,10 +110,6 @@ export default function SessionBoard() {
 		prevIsEditor.current = isEditor;
 	}, [isEditor, cancelEditActions]);
 
-	// 드래그/드롭 핸들러(휴식 hot 하이라이트·휴식 토글·자유 배치·예약 드롭).
-	// 휴식 드롭존은 칠판 하단 경계 너머(논리 y ≥ viewH = 바텀 바 RestBar 영역)라 높이 인자가 없다.
-	const { onMagnetDragMove, onMagnetDragEnd, onGhostDragEnd } = useBoardDragHandlers(viewH);
-
 	// 풀스크린 셸: standalone PWA 에서 dvh/fixed 는 화면보다 짧으므로 .app-shell-h(lvh) 사용.
 	// 자식이 position:absolute 라 positioned 조상으로 relative 를 둔다.
 	return (
@@ -129,9 +124,7 @@ export default function SessionBoard() {
 			{showDetach && <DetachZoneOverlay />}
 			{showRest && <RestDropOverlay />}
 			<div ref={stageContainerRef} style={{ position: "absolute", top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top))`, left: `max(${EDGE_GUTTER}px, env(safe-area-inset-left))`, right: `max(${EDGE_GUTTER}px, env(safe-area-inset-right))`, bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px))`, touchAction: "none" }}>
-				<SessionBoardRenderer width={stageW} height={stageH} scale={scale}
-					onStageWheel={onStageWheel} onStageTouchMove={onStageTouchMove} onStageTouchEnd={onStageTouchEnd}
-					onMagnetDragMove={onMagnetDragMove} onMagnetDragEnd={onMagnetDragEnd} onGhostDragEnd={onGhostDragEnd}
+				<SessionBoardRenderer width={stageW} height={stageH}
 					onMagnetClick={onMagnetClick} onCockCheck={onCockCheck} onSlotClick={openTeamRecommend} onEditMatch={onEditMatch} />
 			</div>
 			{/* 좌하단 + 버튼 — 빈 추천 모달을 열어 새 팀을 만든다(편집자만, 정렬 버튼과 대칭·동일 크기) */}

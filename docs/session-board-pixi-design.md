@@ -1,19 +1,30 @@
 # 세션 보드 PixiJS 전환 설계
 
-작성/구현: 2026-09-06. 상태: **Pixi 기본 렌더러 적용, 실기기 성능 비교는 남음**.
+작성/구현: 2026-09-06. 갱신: 2026-09-07. 상태: **Pixi 단일 렌더러 적용, Konva 제거 완료. 실기기 성능 측정은 남음**.
 
 ## 구현 현황
 
-- `SessionBoardRenderer`가 Pixi를 기본으로 lazy load한다. `?boardRenderer=konva`로 기존 화면을 비교할 수 있으며, 초기화 실패/context loss에서는 같은 shell 안에서 Konva 한 개로 전환한다. 세션 동기화 effect는 중복 mount하지 않는다.
-- 드래그/핀치는 native Pointer Events와 `BoardRuntime`에서 처리한다. 위치는 드롭 시, 배율은 제스처 종료/레이아웃 조정 시 확정한다. 단일 frame scheduler는 정지 시 멈춘다.
-- 외형 캐시는 아래 초기안의 `generateTexture` 대신 **offscreen Canvas 2D → Texture → Pixi Sprite**로 구현했다. 기존 Konva의 글꼴·그림자·그레이스케일 합성에 맞추기 위한 선택이며, 매 프레임 화면을 그리는 백엔드는 WebGL이다. 본체 shadow 변형·사진·CTA flash를 공유 캐시에 준비한다.
-- 초기화 실패를 직접 await/catch하기 위해 `<Application>` 대신 공식 `createRoot`를 얇은 host에서 사용한다. `patches/@pixi__react@8.0.5.patch`는 기존 reconciler 해제 함수를 export하고 초기화 실패 시 stage만 안전하게 정리하도록 보완한다. 내부 렌더링 알고리즘은 변경하지 않는다. 바인딩 업그레이드 시 이 패치와 lifecycle 테스트를 함께 검토해야 한다.
-- context loss 시 자동 texture 재구축보다 호환 렌더러 전환을 우선 구현했다. 기존 위치·팀 구성 store는 유지한다.
-- 아래 절의 Phase 0~5는 설계/검증 기준이다. 기기별 FPS·입력 지연·메모리 예산 최적화 및 Konva 최종 제거까지 완료했다는 의미는 아니다.
+- `SessionBoardRenderer`는 Pixi만 lazy load한다. Konva 비교 옵션·fallback·전용 컴포넌트/훅과 `konva`, `react-konva`, `use-image` 의존성을 제거했다.
+- 초기화 실패 또는 WebGL context loss 시 입력과 렌더링을 정리하고 오류 안내와 **다시 시도** 버튼을 표시한다. 재시도는 Pixi 인스턴스를 새로 만들며, 세션 shell·동기화 effect·기존 팀 구성과 배치는 유지한다. WebGL을 지원하지 않는 환경에서는 보드를 표시할 수 없다.
+- 드래그/핀치는 native Pointer Events와 `BoardRuntime`이 담당한다. 위치는 드롭 시, 배율은 제스처 종료/레이아웃 조정 시 확정한다. `useBoardStageLayout`에는 DOM 줌 버튼과 자동 fit/정렬 정책만 남겼다. 단일 frame scheduler는 정지 시 멈춘다.
+- 버튼을 그리는 좌표와 클릭을 판정하는 좌표는 `cardControls.ts`를 공유한다. 확정 취소와 경기시작 사이의 6px 간격은 경기 명령을 실행하지 않는다.
+- 외형 캐시는 **offscreen Canvas 2D → Texture → Pixi Sprite**로 구현했다. 사진·글꼴·그림자·그레이스케일을 텍스처로 준비하고, 프레임마다 WebGL로 합성한다.
+- 초기화 실패를 직접 await/catch하기 위해 `<Application>` 대신 `createRoot`를 얇은 host에서 사용한다. `patches/@pixi__react@8.0.5.patch`는 reconciler 해제 함수를 export하고 초기화 실패 시 stage만 안전하게 정리한다. 바인딩 업그레이드 시 패치와 lifecycle 테스트를 함께 검토해야 한다.
 
-검증 명령: `pnpm test`, `pnpm build`, `pnpm test:board:browser`. 브라우저 테스트 첫 실행 전 `pnpm exec playwright install chromium`이 필요하다. `e2e/board.html`은 외부 서버에 연결하지 않는 로컬 테스트 fixture이며 production 빌드 진입점에 포함되지 않는다.
+| 현재 파일 | 책임 |
+| --- | --- |
+| `SessionBoard.tsx` / `useSessionBoardEffects.ts` | DOM 화면·모달·편집권·세션 동기화 |
+| `SessionBoardRenderer.tsx` / `pixi/PixiBoardCanvas.tsx` | 로딩·오류/재시도·Pixi 초기화와 해제 |
+| `pixi/BoardScene.tsx` | 선언적 장면 구성·런타임 노드 등록 |
+| `lib/board/pixi/projection.ts` | store snapshot을 표시 모델로 변환 |
+| `lib/board/pixi/runtime.ts` / `interactionController.ts` | 입력 연결·제스처·프리뷰·기존 store 명령 실행 |
+| `lib/board/pixi/cardControls.ts` | 버튼의 표시/클릭 공용 좌표 |
+| `pixi/PixiVisuals.tsx` / `lib/board/pixi/texturePool.ts` | 외형 텍스처 생성·공유·해제 |
+| `lib/board/pixi/frameScheduler.ts` | 필요한 프레임만 렌더링 |
 
-최종 구현 검증: 단위/통합 **506개**, Chromium 브라우저 **11개**, TypeScript/production build 통과. 변경 파일 ESLint 통과. 전체 저장소 lint에는 이번 변경 밖 파일의 기존 오류 7개가 남아 있다. 모바일 기기 자체에서의 FPS/발열/메모리 비교는 아직 측정하지 않았다.
+검증: `pnpm exec vitest run --reporter=dot` **565개**, `pnpm exec playwright test e2e/board.spec.ts e2e/board-interaction.spec.ts` **12개**, `pnpm build` 통과. WebGL 미지원 오류 안내·재시도와 실제 context loss 후 상태 유지/입력 복구를 브라우저에서 확인했다. 모바일 실기기의 FPS·발열·메모리는 아직 측정하지 않았다. `e2e/board.html`은 외부 서버에 연결하지 않는 로컬 fixture이며 production 진입점에 포함되지 않는다.
+
+> 아래 1–10절은 2026-09-06 전환 당시의 설계와 검증 기준을 보존한 기록이다. Konva fallback·A/B 비교·삭제 예정 파일에 대한 설명은 당시 계획이며, 현재 구현과 파일 위치는 위 현황이 기준이다.
 
 ## 1. 결정과 범위
 

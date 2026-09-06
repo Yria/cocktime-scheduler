@@ -72,7 +72,7 @@ export function resolveDropTarget(
 	// 콕 미제출자(매칭 대기 아님)는 드래그로 위치 이동만 — 팀 합류/페어/교체(편성)는 불가(콕 확인 후 편성).
 	if (notReadyIds.has(playerId)) return self.teamId !== null ? { kind: "detach", to: drop } : { kind: "move", to: drop };
 
-	// 휴식 선수도 위치 이동만 — 휴식 해제는 "하단 휴식존에 다시 드롭"이 유일한 경로(useBoardDragHandlers)라,
+	// 휴식 선수도 위치 이동만 — 휴식 해제는 BoardRuntime의 하단 휴식존 드롭 또는 더블탭에서 처리하므로,
 	// 팀에 끌어다 놓아 몰래 편성되는 길을 막는다(딱지 붙은 채 팀에 들어가 있는 모순 상태 방지).
 	if (restingIds.has(playerId)) return self.teamId !== null ? { kind: "detach", to: drop } : { kind: "move", to: drop };
 

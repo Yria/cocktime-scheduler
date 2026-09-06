@@ -12,7 +12,7 @@ import {
 
 /**
  * '팀에서 빼기' 드롭존 — 네비(헤더) 영역 위에 DOM 오버레이로 표시한다. 팀 소속(anchor/ghost) 자석을
- * 드래그하는 동안에만(showDetach) 노출. Konva 캔버스가 네비 아래라 자석을 네비 안으로 직접 끌 수 없으므로,
+ * 드래그하는 동안에만(showDetach) 노출. 보드 캔버스가 네비 아래라 자석을 네비 안으로 직접 끌 수 없으므로,
  * 드롭 판정은 보드 최상단 strip(isInDetachZone)이 담당하고 이 오버레이는 "위로 끌면 해제" 시각 표시만 한다.
  * pointerEvents:none — 입력을 가로채지 않는다. hot 여부는 store.detachHot(자석이 detach strip에 들어옴).
  */

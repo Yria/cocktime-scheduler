@@ -2,7 +2,7 @@
  * magnetStyle.ts
  *
  * "자석" 아바타 디자인의 단일 출처(single source of truth).
- * canvas(보드 PlayerMagnet)와 DOM(공통 PlayerCard)은 렌더링 기술이 달라
+ * canvas(보드 MagnetVisual)와 DOM(공통 PlayerCard)은 렌더링 기술이 달라
  * 같은 컴포넌트를 공유할 수 없으므로, 디자인 토큰만 이 파일 하나로 통일한다.
  *
  *  - 성별 링 색 / 사진 없을 때 배경(light) / 이니셜 잉크

@@ -55,8 +55,8 @@ export default function PixiBoardCanvas(props: PixiBoardProps) {
 			event.preventDefault();
 			runtime?.controller.cancel();
 			runtime?.scheduler.pause();
-			// Fall back with the authoritative stores intact; no stale GPU cache reuse.
-			fail(new Error("보드 WebGL context가 유실되어 호환 렌더러로 전환합니다."));
+				// The host offers a fresh renderer retry with the authoritative stores intact.
+				fail(new Error("보드 WebGL context가 유실되었습니다."));
 		};
 		canvas.addEventListener("webglcontextlost", contextLost);
 		// An array restricts autoDetectRenderer; a string would also try WebGPU/Canvas.

@@ -140,7 +140,7 @@ describe("PixiBoardCanvas host lifecycle", () => {
 		expect(harness.unmountRoot).toHaveBeenCalledExactlyOnceWith(root);
 	});
 
-	it("reports initialization rejection to the fallback owner and releases the failed root", async () => {
+	it("reports initialization rejection to the error boundary and releases the failed root", async () => {
 		const init = deferred<object>();
 		const root = { render: vi.fn(() => init.promise) };
 		harness.createRoot.mockReturnValue(root);
@@ -211,7 +211,7 @@ describe("PixiBoardCanvas host lifecycle", () => {
 		cleanup?.();
 	});
 
-	it("cancels input and pauses drawing before notifying context-loss fallback", async () => {
+	it("cancels input and pauses drawing before notifying context loss", async () => {
 		const root = { render: vi.fn().mockResolvedValue({}) };
 		const runtime = runtimeDouble();
 		harness.createRoot.mockReturnValue(root);

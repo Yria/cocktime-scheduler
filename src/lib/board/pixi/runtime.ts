@@ -3,11 +3,12 @@ import { useBoardStore } from "../../../store/boardStore";
 import { useDebugStore } from "../../../store/debugStore";
 import { useSessionStore } from "../../../store/sessionStore";
 import type { StagePoint } from "../../../types/board";
-import { EMPTY_SLOT_R, MAGNET_HIT_R, TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_CTA_H, TEAM_PAD, TEAM_W } from "../constants";
+import { EMPTY_SLOT_R, MAGNET_HIT_R, TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_W } from "../constants";
 import { computeSlotOffset, isInDetachZone, isInRestField } from "../geometry";
 import { resolveDropTarget } from "../dropResolver";
 import { cockPendingIds, playingIdsFromCourts } from "../membership";
 import { registerBoardCameraFlush } from "./cameraBridge";
+import { cardControls } from "./cardControls";
 import { createFrameScheduler } from "./frameScheduler";
 import { createBoardInteractionController, type BoardInteractionTarget } from "./interactionController";
 import { createBoardProjection } from "./projection";
@@ -236,11 +237,16 @@ export class BoardRuntime {
 			const button = (key: string, action: () => void): BoardInteractionTarget => ({ key: `${view.key}:${key}`, point: center, draggable: false, onTap: () => {
 				if (this.isValid(view.source) && useSessionStore.getState().isEditor) action();
 			} });
-			const ctaY = TEAM_BOX_BELOW - TEAM_PAD - TEAM_CTA_H;
-			if (x >= -TEAM_W / 2 + TEAM_PAD && x <= TEAM_W / 2 - TEAM_PAD && y >= ctaY && y <= ctaY + TEAM_CTA_H) {
+			const controls = cardControls(view.appearance.showUnconfirm);
+			const inControl = (rect: typeof controls.main | null) => rect !== null
+				&& x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+			if (view.source.kind === "team" && inControl(controls.unconfirm)) {
+				const id = view.source.teamId;
+				return button("unconfirm", () => useBoardStore.getState().unconfirmTeam(id));
+			}
+			if (inControl(controls.main)) {
 				if (view.source.kind === "court") { const id = view.source.courtId; return button("complete", () => { void useBoardStore.getState().completeMatch(id); }); }
 				const id = view.source.teamId;
-				if (view.appearance.showUnconfirm && x <= -TEAM_W / 2 + TEAM_PAD + 28) return button("unconfirm", () => useBoardStore.getState().unconfirmTeam(id));
 				if (view.appearance.ctaEnabled) return button("cta", () => {
 					if (view.confirmed) void useBoardStore.getState().startMatch(id);
 					else useBoardStore.getState().confirmTeam(id);

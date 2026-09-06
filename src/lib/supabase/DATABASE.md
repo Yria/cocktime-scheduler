@@ -1,7 +1,7 @@
 # 데이터베이스 사용 현황
 
 > **2026-06 리팩토링 반영**: 자동 팀 편성 / 매치 대기열 / pending / 수동매칭 로그 / 팀 후보 슬라이스 제거.
-> 메인 기능은 보드(SessionBoard, react-konva 자석 칠판). `/session` = 보드, 구 `/session/board` 는 `/session` 으로 리다이렉트.
+> 메인 기능은 보드(SessionBoard, PixiJS WebGL 자석 칠판). `/session` = 보드, 구 `/session/board` 는 `/session` 으로 리다이렉트.
 
 ## 테이블 구조
 
