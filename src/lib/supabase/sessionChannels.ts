@@ -26,6 +26,9 @@ const BROADCAST_EVENTS = [
 export interface SessionChannelHandlers {
 	/** 브로드캐스트 수신 → 도메인 반영. */
 	onBroadcast: (payload: BroadcastPayload) => void;
+	/** Party broadcasts are invalidation hints; member identities come from an authenticated RPC. */
+	onMemberPartyChange: () => void;
+	onBroadcastConnection: (connected: boolean) => void;
 	/** presence(sync/join/leave) 변경 시 현재 presenceState 전달 → 접속자 목록 재산정(편집권 election 아님). */
 	onPresenceSync: (state: PresenceState) => void;
 	/** 다른 클라이언트가 세션 종료(is_active=false). */
@@ -72,6 +75,7 @@ export function createSessionChannels(
 		const v = Number((payload as { v?: unknown })?.v);
 		if (Number.isFinite(v)) handlers.onSyncHint(v);
 	});
+	channel.on("broadcast", { event: "member_party_changed" }, () => handlers.onMemberPartyChange());
 	// presence 변경(sync/join/leave) → 보유자/접속자 재산정. join/leave도 명시 구독해 인계 지연 방지.
 	const syncPresence = () => {
 		handlers.onPresenceSync(channel.presenceState() as unknown as PresenceState);
@@ -80,6 +84,7 @@ export function createSessionChannels(
 	channel.on("presence", { event: "join" }, syncPresence);
 	channel.on("presence", { event: "leave" }, syncPresence);
 	channel.subscribe((status) => {
+		handlers.onBroadcastConnection(status === "SUBSCRIBED");
 		if (status === "SUBSCRIBED") {
 			// 입장만 track(claimAt=0, 미점유). 첫 편집/인계 시 claim이 claimAt을 올린다.
 			void channel

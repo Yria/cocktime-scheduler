@@ -545,6 +545,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const auth = useAuthStore.getState();
 		const myClientId = auth.user?.id ?? getClientId();
 		const myName = auth.myName ?? getDeviceName();
+		set({ broadcastConnected: false, memberPartyChangeVersion: 0 });
 
 		const { broadcastChannel, metaChannel } = createSessionChannels(
 			sessionId,
@@ -552,6 +553,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			myName,
 			{
 				onBroadcast: (payload) => get().applyBroadcast(payload),
+				onMemberPartyChange: () => set((s) => ({ memberPartyChangeVersion: s.memberPartyChangeVersion + 1 })),
+				onBroadcastConnection: (connected) => set({ broadcastConnected: connected }),
 				// presence는 접속자 목록 표시 전용(편집권 election 아님 — 편집권은 서버 권위 락).
 				// 자동 점유 없음 — 편집자가 되려면 편집 동작(드래그)이나 '편집 권한 가져오기' 버튼 필요.
 				onPresenceSync: (state) => {
@@ -646,6 +649,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		set({
 			_channel: null,
 			_metaChannel: null,
+			broadcastConnected: false,
+			memberPartyChangeVersion: 0,
 			_clientId: null,
 			_myName: null,
 			isEditor: false,

@@ -12,13 +12,14 @@
 > | `determineGameType` / `pairingScore` / `pairPlayers` | `src/lib/teamSelection/pairPlayers.ts` | 게임 타입 결정·2v2 페어 편성 |
 > | `recommendTeammates` / `autoFillTeammates` | `src/lib/teamSelection/recommendTeammates.ts` | 보드 빈 슬롯 추천(랭킹 + 보드 특화 가산) · 추천도순 greedy 자동편성 |
 > | `buildRecommendData` | `src/lib/board/recommendPool.ts` | 보드 추천/자동편성 공통 입력(confirmed·pool·ctx) 빌드 |
+> | `selectMemberParty` | `src/lib/board/memberParty.ts` | 버튼을 누르고 있는 가용 회원 중 4명 선발 + 2v2 페어 편성 |
 >
 > CLAUDE.md 프로젝트 규칙상 이 문서는 위 소스 변경 시 **동기화 대상**이다. 공식/가중치는 코드와 일치해야 한다.
 
 ## 개요
 
 코트에 들어갈 **4명**을 구성하고, 그 안에서 두 **페어**(2v2)로 편성하는 데 쓰이는 점수 로직.
-4명 자동 선발은 더 이상 하지 않으며, 관리자가 보드에서 멤버를 채울 때 **후보 순위 추천**과 **페어 편성**만 제공한다.
+관리자가 보드에서 멤버를 채울 때 **후보 순위 추천·자동 채움·페어 편성**을 제공한다. 운영진 전원이 경기중일 때는 버튼을 누르고 있는 회원들끼리도 같은 알고리즘으로 4명을 선발한다.
 
 ### 핵심 철학 — "4명을 뽑는다 / 2v2는 나중에 나눈다"
 
@@ -215,12 +216,12 @@ score = intraDiff × 0.5 + interDiff × 1.5
 
 ### 풀 구성 — buildRecommendData (`recommendPool.ts`)
 
-`rankCandidates`/`recommendTeammates`는 풀을 인자로 받기만 하고 구성은 호출자 책임이다. 보드의 두 진입점 — 추천 다이얼로그 훅(`useTeammateRecommendations`)과 자동편성 액션(`boardStore.autoFillTeam`) — 은 입력 구성을 공통 순수 함수 `buildRecommendData`로 일원화한다.
+`rankCandidates`/`recommendTeammates`는 풀을 인자로 받기만 하고 구성은 호출자 책임이다. 추천 다이얼로그 훅(`useTeammateRecommendations`), 자동편성 액션(`boardStore.autoFillTeam`), 회원 파티(`selectMemberParty`)는 입력 구성을 공통 순수 함수 `buildRecommendData`로 일원화한다.
 
 - `confirmed` = 팀/시드 멤버 + (다이얼로그) 진행 중 다중선택분
 - `pool` = 세션 전체 − 확정 멤버 − 휴식(`resting`) − **자석 없는 선수** − 다른 보드 팀 anchor
-  - `excludePlaying:true`면 경기중 선수도 풀에서 제외 (자동편성은 2026-07부터 미사용 — ghost 1명 허용, 8절)
-  - `excludeReserved:true`(자동편성 전용)면 **다른 팀에 ghost 예약된 선수** 제외 — 이중 예약 방지
+  - `excludePlaying:true`면 코트 기준 경기중 선수를 풀에서 제외 (회원 파티에서 사용, 운영진 자동편성은 ghost 1명 허용, 8절)
+  - `excludeReserved:true`(자동편성·회원 파티)면 **다른 팀에 ghost 예약된 선수** 제외 — 이중 예약 방지
   - 자석(`MagnetPosition`) 없는 선수는 제외 — 멤버십 commit(`attachAnchor`)이 자석을 전제로 하기 때문
 - `ctx` = `groupHistory` / `lastGameType` / `playingIds`(코트 기반)
 
@@ -311,6 +312,19 @@ autoFillTeammates(confirmed, pool, ctx, count, weights?, { maxPlaying }):
 
 > 대비 — 다이얼로그(`RecommendTeammateDialog`)의 수동 추천은 상한 없음(`excludePlaying:false` 기본). 경기중 후보도 `W_PLAYING` 페널티로 하위 노출하되 자유 선택 가능하며, 선택 시 ghost 예약이 된다.
 
+### 회원 파티 — selectMemberParty
+
+회원 파티는 별도 설정 없이 **해당 세션에 참가한 운영진이 1명 이상이며 전원 경기중**일 때 자동으로 나타나며 **읽기 모드 회원만** 사용할 수 있다. 해당 조건이 아니면 가운데 버튼과 안내를 모두 숨긴다. 현재 편집 권한을 가진 운영진은 참여할 수 없으며, 참여 중 편집 권한을 가져오면 즉시 제외한다. 운영진의 일반 자동편성과 점수 공식은 같고, 후보 범위와 완성 조건이 다르다.
+
+1. 첫 회원이 가운데 버튼을 누르면 **공유 5초 카운트다운**이 시작된다. 회원은 버튼을 계속 누르고 있는 동안만 참가하며, 손을 떼면 후보에서 빠진다.
+2. 마감 시점에 누르고 있는 `session_players.id` 집합을 `selectMemberParty(participantIds, inputs)`에 전달한다. 첫 참가자나 요청자를 시드로 확정하지 않는다.
+3. `buildRecommendData({ newTeam: true }, [], inputs, { excludePlaying: true, excludeReserved: true })`의 풀과 홀드 참가자 집합을 교차한다. 휴식·자석 없음·타 팀 anchor·ghost 예약·콕 체크가 켜진 세션의 콕 미확인 선수는 제외한다. **회원 연결이 없는 게스트(`memberId === null`)와 `status === "playing"`도 제외**하므로 코트와 상태 중 어느 쪽에라도 경기중이면 뽑히지 않는다. 같은 선수 ID는 한 번만 센다.
+4. 남은 후보가 4명 미만이면 **취소**한다. 전체 대기자나 경기중 선수로 부족한 자리를 보충하지 않는다.
+5. `autoFillTeammates([], pool, ctx, 4, undefined, { maxPlaying: 0 })`로 매 선발마다 점수를 재평가해 4명을 뽑는다. 경기수·대기시간·재결성 회피·실력·성별·게임 타입 로테이션은 기존 추천 규칙을 그대로 따른다.
+6. 정확히 4명이 선발된 경우 `pairPlayers`로 2v2 균형을 맞춰 `teamA` 2명 + `teamB` 2명의 ID 순서로 반환한다. 서버가 운영진 상태·홀드 유효성·선수 가용성·보드 충돌을 다시 검증한 뒤 **한 트랜잭션에서 매칭확정 보드 팀을 생성**한다.
+
+이 기능은 회원에게 일반 보드 편집권이나 경기시작 권한을 주지 않는다. 생성한 팀은 기존 확정 순서대로 코트를 기다리고 경기시작은 기존 운영진 권한을 따른다.
+
 ---
 
 ## 9. 공통 규칙
@@ -324,6 +338,8 @@ autoFillTeammates(confirmed, pool, ctx, count, weights?, { maxPlaying }):
 팀 편성(`board_drafts`)과 코트 배정(`matches`)은 별도 권위로 비원자적으로 동기화되므로, 동시편집 레이스(유실된 dissolve, 핸드오프/탈취, 로스터 편입)로 멤버십이 어긋날 수 있다. 두 선행조건으로 막는다.
 
 **(가) 편집은 반드시 한 명만** — `board_save_drafts`뿐 아니라 경기 RPC(`assign_match`/`complete_match`/`set_match_roster`)도 `board_assert_editor`로 서버에서 게이팅한다. 편집 락은 **sticky 소유**(`editor_client_id` 신원만; lease 만료 자동 해제·하트비트 폐기 — 마이그레이션 `20260717000000`)라 점유되면 명시적 takeover/handoff로만 이동한다. `board_assert_editor`는 호출자가 이미 편집자면 통과(sessions write 없음), 자유면 self-claim, **남이 보유하면 `'not editor'`로 거부**한다. 거부된(=편집자 아닌) 기기의 코트 변경은 `resyncFromServer`로 보기 전용에 수렴한다. (초기 게이팅은 마이그레이션 `20260624020000`, 운영진 강제는 `20260701020000`.)
+
+회원 파티는 별도 서버 검증을 거친 **4인 확정 팀 생성**만 허용하는 예외다(8절). 일반 보드 저장·경기 RPC의 편집권 검증을 해제하지 않는다.
 
 **(나) 사람 유니크성** — 아래 불변식을 **파생 단계에서 항상 강제**해 "팀에 있는데 게임중"·"A팀·B팀 동시 소속" 중복 표시를 막는다.
 - **I1 — 단일 anchor**: 한 선수는 최대 한 예비팀의 anchor. `reconcileMembership`이 payload 팀을 `(createdMs↑, id↑)` 결정적 순서로 처리해 같은 선수가 둘 이상 팀에 있으면 **먼저 만들어진 팀**만 유지(모든 클라가 동일 결과로 수렴).
@@ -344,7 +360,7 @@ autoFillTeammates(confirmed, pool, ctx, count, weights?, { maxPlaying }):
 - **미도착(pending) 선수 제외**: `pending` 상태 자체가 제거됨. 세션 시작 시 전원 `waiting`.
 - **혼복 "여자만" 실력 균형 (성별 인식 skillDiff)**: 혼복 지향 그룹에서 남자 후보 `skillDiff=0`·여자 후보만 확정 여성 평균과 균형을 보던 규칙. 2026-07 제거 — 혼복에서도 전원 실력을 본다(§2 skillDiff 참조). 같은 개편에서 skillDiff 자체도 평균 거리 → 스프레드 증가분으로 교체.
 - **쌍 단위 동반 회피 (`pairHistory`·`W_PAIR`·`Σc²`)**: 두 선수의 누적 동반 횟수를 상대별 제곱해 벌점하던 규칙과 `pair_history` 테이블 클라이언트 조회, `recordTeam`(`src/lib/pairHistory.ts`). 2026-07 제거 — 조합의 정체성을 잃는 문제로 그룹 겹침 단위(`W_GROUP2/3/4`, §2)로 대체. DB `pair_history` 테이블·서버 누적도 `20260727090000`에서 삭제 완료.
-- **자동편성 대기 선수 전용 (`excludePlaying:true`)**: 자동편성이 경기중 선수를 아예 제외하던 규칙. 2026-07 제거 — 팀당 1명까지 ghost 허용(§8).
+- **운영진 자동편성 대기 선수 전용 (`excludePlaying:true`)**: 운영진 자동편성이 경기중 선수를 아예 제외하던 규칙. 2026-07 제거 — 팀당 1명까지 ghost 허용(§8). 회원 파티는 별도 기능으로 경기중 선수를 항상 제외한다.
 - **혼복/빡겜 우선배치 강제(`force_mixed`/`force_hard_game`)**: 토글 액션·플래그 제거됨. 추천은 `W_ROTATE` 로 게임 타입을 자연 분산.
 - **"우선배치"(그룹 지정, `forcedIds`·`toggleForced`·`effectiveForcedIds`·핀 배지)**: 2026-07-29 제거. 2026-07에 밸런스 영향 경로(`forcedPairs`·`W_FORCED`·decay)를 떼어낸 뒤로는 **점수·행동 효과가 하나도 없는 순수 시각 배지**만 남아 실사용 의미가 없었다. 함께 사라진 CTA 자리(구성 중 2~3명, 또는 4명이지만 예약자가 경기중)는 회색 비활성 안내(`N명 더 필요` / `예약 대기`)로 대체 — 박스 높이·히트영역 불변식은 그대로다.
 - **selectFour / 대기열 선발 우선순위 단계**: 대기열에서 한 번에 4명을 자동 선발하던 로직 제거. 보드에서 수동 구성 + `recommendTeammates` 추천이 기본이며, **팀 단위 점진적 자동편성은 §8 `autoFillTeammates`(추천 재평가 greedy)로 재도입**되었다(과거의 bulk selectFour와 다름).

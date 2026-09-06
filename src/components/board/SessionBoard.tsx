@@ -22,6 +22,7 @@ import MatchEditModal from "./MatchEditModal";
 import ViewerLockOverlay from "./ViewerLockOverlay";
 import EditorTakenNotice from "./EditorTakenNotice";
 import DebugMatchModal from "./DebugMatchModal";
+import MemberPartyPanel from "./MemberPartyPanel";
 import { ArrangeFab, BoardSyncingBadge, NewTeamFab, ZoomControls } from "./SessionBoardChrome";
 import type { RecommendTarget } from "../../hooks/useTeammateRecommendations";
 
@@ -155,6 +156,7 @@ export default function SessionBoard() {
 				<CockCheckModal playerId={cockTarget} onClose={() => setCockTarget(null)} />
 			)}
 			<ViewerLockOverlay />
+			<MemberPartyPanel />
 			<EditorTakenNotice />
 			<DebugMatchModal />
 		</div>

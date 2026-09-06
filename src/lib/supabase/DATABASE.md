@@ -22,6 +22,15 @@
 | editor_name | TEXT? | 편집 보유자 표시명(편집 락) |
 | editor_lease_until | TIMESTAMPTZ? | 편집 락 lease 만료 시각. heartbeat(`board_claim_editor` 본인 재호출)로 연장, crash 시 자연 만료로 자동 회수 |
 
+### member_party_rounds / member_party_holds
+
+`20260907010000_member_party.sql`에서 추가. 직접 테이블 접근은 차단하고 인증된 회원의 RPC로만 접근한다.
+
+- `member_party_rounds`: 세션당 현재 라운드 UUID·마감 시각·최근 확정/취소 결과를 보관한다. 첫 누름부터 5초 모집하며 확정되지 않은 라운드는 마감 10초 후 취소한다.
+- `member_party_holds`: `(session_id, user_id, client_id)`별 누름을 3초 lease로 보관하고 보드 기기 ID(`board_client_id`)도 저장한다. 현재 편집 기기의 누름은 제외한다(읽기 모드 전용). 회원은 여러 기기에서 눌러도 1명으로 집계되며, 해제는 해당 기기에만 적용된다. 현재 라운드의 하트비트만 연장할 수 있다.
+- `20260907020000_member_party_realtime.sql`: 위 두 테이블의 변경 트리거가 `realtime.send`로 기존 `session-bc:<id>` 공개 채널에 `member_party_changed` 이벤트를 발행한다. 페이로드는 `{}`이며 회원 정보는 인증 RPC로만 조회한다. 유효한 lease 갱신은 알리지 않고, 시작·참여·해제·완료·취소를 알린다. 전송 오류는 유효한 DB 변경을 취소하지 않는다. 시간 경과만으로는 이벤트가 생기지 않으므로 lease 만료는 보정 조회로 반영한다.
+- RPC는 로그인 회원 연결, 세션 설정, 참여 운영진의 실제 경기, 대기·콕 확인·팀/예약 소속을 검증한다. 4명 미만은 취소한다. 4명 확정은 세션 행 잠금과 보드 버전 CAS로 기존 `board_drafts`에 팀 하나를 추가하고, 기존 동기화 경로로 전파한다. 운영진 편집권은 부여하지 않는다.
+
 ### session_players
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
@@ -132,6 +141,16 @@ RLS: select=authenticated 전체, insert=authenticated(보드 편집자가 콕�
 | `dbBoardClaimEditor/HandoffEditor/ReleaseEditor(...)` | sessionStore 편집 락 (획득·heartbeat/양도/해제) |
 
 > **제거됨(deprecated)**: ~~`dbSaveTeamCandidates`~~, ~~`dbSaveMatchQueue`~~ (SessionMain 삭제로 호출처 소멸).
+
+### memberParty.ts
+
+| 함수 | 호출 위치 |
+|---|---|
+| `fetchMemberPartyState(sessionId)` | `useMemberParty` — 사용 가능 여부·현재 누름·공유 마감·최근 결과 조회 |
+| `setMemberPartyHold(sessionId, clientId, holding, roundId, boardClientId)` | `useMemberParty` — 읽기 기기의 본인 참여/해제와 1초 하트비트. 새 누름만 `roundId=null` |
+| `finishMemberParty(sessionId, roundId, playerIds, boardVersion, boardClientId)` | `useMemberParty` — 현재 누름 중 기존 매칭 로직이 선택한 4명 제안, 읽기 모드·참가·버전 서버 검증 후 원자적 확정 |
+
+회원 파티는 별도 세션 설정 없이 참가 운영진이 전원 경기 중일 때 자동으로 제공된다. 서비스 적용 시 `20260907010000_member_party.sql`, `20260907020000_member_party_realtime.sql` 순서로 적용한다. 추가 채널이나 `postgres_changes` publication 등록은 필요하지 않으며 기존 Supabase Realtime Broadcast를 사용한다. 새 상태 RPC의 `realtimeEnabled: true`와 채널 연결이 확인되면 알림 기반 조회와 보정 조회(모집 3초/대기 25초)를 사용한다. 구버전 서버나 연결 장애 시 기존 조회 간격(모집 1초/대기 3초)을 유지하며, 누르는 기기의 1초 lease 갱신은 항상 필요하다.
 
 ### actions.ts
 | 함수 | 호출 위치 |

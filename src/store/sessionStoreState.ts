@@ -37,6 +37,9 @@ export interface SessionState {
 	matchStateVersion: number;
 	/** 세션 공유상태 단일 리비전 시계(Stage 2) — Broadcast 힌트(v)>로컬이면 load_session_state pull. */
 	syncVersion: number;
+	/** Local signal counter for committed member-party changes on this session's channel. */
+	memberPartyChangeVersion: number;
+	broadcastConnected: boolean;
 	/** 콕 체크 모드 on/off(세션 설정, 공유). on이면 cockChecked=false 선수는 매칭 대기 아님. */
 	cockCheckEnabled: boolean;
 	/** 클럽 전역 설정(콕 쿼터/월 지원량). 콕체크 모달의 지원 안내에 사용. 미로딩 시 null. */
@@ -136,6 +139,8 @@ export const initialState = {
 	boardDraftsVersion: 0,
 	matchStateVersion: 0,
 	syncVersion: 0,
+	memberPartyChangeVersion: 0,
+	broadcastConnected: false,
 	cockCheckEnabled: true,
 	groupSettings: null as GroupSettings | null,
 	isEditor: false,
