@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
 	AccountingCommand,
 	OperationResult,
@@ -14,10 +14,11 @@ type Prepared = {
 	request: string;
 	revision: number;
 	key: string;
-	result: OperationResult;
+	result?: OperationResult;
 };
 
-/** Selection previews are read-only. Confirmation reuses that exact payload/revision/request. */
+/** Ordinary selections are local; the atomic command validates revision and balances.
+ * Carry still previews server auto-application. Unknown commit outcomes reuse the same request. */
 export function useInlineAccounting(
 	command: AccountingCommand | null,
 	revision: number,
@@ -25,6 +26,19 @@ export function useInlineAccounting(
 	onDone: () => Promise<void>,
 ) {
 	const key = JSON.stringify(command);
+	const needsPreview = command?.action === "carry";
+	const local = useMemo<Prepared | null>(
+		() =>
+			key === "null"
+				? null
+				: {
+						payload: JSON.parse(key),
+						request: crypto.randomUUID(),
+						revision,
+						key,
+					},
+		[key, revision],
+	);
 	const [prepared, setPrepared] = useState<Prepared | null>(null);
 	const [attempt, setAttempt] = useState<Prepared | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -34,13 +48,10 @@ export function useInlineAccounting(
 		revision: number;
 		message: string;
 	} | null>(null);
-	const error =
-		failure?.key === key && failure.revision === revision
-			? failure.message
-			: "";
+	const error = failure?.key === key ? failure.message : "";
 	const running = useRef(false);
 	useEffect(() => {
-		if (attempt) return;
+		if (attempt || !needsPreview) return;
 		let disposed = false;
 		if (key === "null" || paused) return;
 		const timer = window.setTimeout(() => {
@@ -60,10 +71,14 @@ export function useInlineAccounting(
 			disposed = true;
 			window.clearTimeout(timer);
 		};
-	}, [key, revision, paused, attempt, retry]);
+	}, [key, revision, paused, attempt, retry, needsPreview]);
 	const ready =
 		attempt ??
-		(prepared?.key === key && prepared.revision === revision ? prepared : null);
+		(needsPreview
+			? prepared?.key === key && prepared.revision === revision
+				? prepared
+				: null
+			: local);
 	const confirm = async () => {
 		if (!ready || paused || running.current) return false;
 		running.current = true;
@@ -89,6 +104,10 @@ export function useInlineAccounting(
 					message:
 						"다른 처리가 반영됐어요. 바뀐 내역을 확인한 뒤 다시 확인해 주세요.",
 				});
+			} else if (typeof e === "object" && e !== null && "code" in e && e.code) {
+				// A database rejection rolls back the transaction. Let the user fix it.
+				setAttempt(null);
+				setFailure({ key, revision, message: accountingError(e) });
 			} else {
 				setFailure({
 					key,

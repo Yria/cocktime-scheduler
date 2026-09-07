@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, Search } from "lucide-react";
 import {
 	canChooseReceiptPayer,
+	suggestedReceiptPayer,
+	suggestedReceiptDue,
 	payableDues,
 	quickGroups,
 	refundLines,
@@ -52,11 +54,18 @@ export default function QuickSettlement({
 		);
 	const initialMember = ambiguousPayer
 		? ""
-		: (source?.owner_id ?? draft.memberId ?? "");
+		: (source?.owner_id ??
+			draft.memberId ??
+			suggestedReceiptPayer(data, bankId));
 	const [member, setMember] = useState(initialMember);
 	const [beneficiary, setBeneficiary] = useState("");
+	const [proxyMode, setProxyMode] = useState(false);
 	const [proxy, setProxy] = useState(false);
-	const [debts, setDebts] = useState<Record<string, string>>({});
+	const [debts, setDebts] = useState<Record<string, string>>(() =>
+		draft.type === "pay" && choosePayer && !ambiguousPayer
+			? suggestedReceiptDue(data, bankId, initialMember)
+			: {},
+	);
 	const [money, setMoney] = useState<Record<string, string>>({});
 	const [ym, setYm] = useState(shiftYm(currentYm(), 1));
 	const [changeMonth, setChangeMonth] = useState(false);
@@ -142,16 +151,24 @@ export default function QuickSettlement({
 	try {
 		if (draft.type === "pay") {
 			if (!owner) throw new Error("납부자를 선택하세요");
-			const lines = entries(debts, "due_id").map((l) => ({
-				...l,
-				position_id: source?.id,
-			}));
+			const lines = Object.entries(debts)
+				.filter(([, n]) => n !== "" && Number(n) !== 0)
+				.map(([id, value]) => ({
+					due_id: id,
+					amount: positive(value),
+					position_id: source?.id,
+				}));
 			if (!lines.length)
 				throw new Error(
 					dues.length
 						? "납부할 항목을 선택하세요"
 						: "이 회원에게 남은 미납이 없습니다",
 				);
+			for (const line of lines) {
+				const due = dues.find((d) => d.id === line.due_id);
+				if (!due || line.amount > due.remaining)
+					throw new Error("선택 금액이 부과 잔액보다 큽니다");
+			}
 			if (!source || selectedTotal > source.amount)
 				throw new Error("선택 금액이 입금 잔액보다 큽니다");
 			if (owner !== recipient && !proxy)
@@ -165,7 +182,7 @@ export default function QuickSettlement({
 				lines,
 				proxy,
 			};
-			summary = `${memberLabel(data, owner)}${owner !== recipient ? ` → ${memberLabel(data, recipient)}` : ""} · ${won(selectedTotal)} 납부 / 입금 잔액 ${won(source.amount - selectedTotal)}`;
+			summary = `${memberLabel(data, owner)}${owner !== recipient ? ` → ${memberLabel(data, recipient)} · ${won(selectedTotal)} 납부` : ""} · 입금 잔액 ${won(source.amount - selectedTotal)}`;
 		} else if (draft.type === "carry") {
 			if (!owner) throw new Error("이월할 납부자를 선택하세요");
 			const ds = entries(debts, "due_id"),
@@ -261,22 +278,43 @@ export default function QuickSettlement({
 		setMoney({});
 		setBeneficiary("");
 		setProxy(false);
+		setProxyMode(false);
 	};
+	const receiptMonth = kstMonth(tx.occurred_at);
+	const monthlyProgress = billingProgress(
+		data,
+		data.groups.filter(
+			(g) => g.kind === "monthly" && g.occurred_on.startsWith(receiptMonth),
+		),
+		receiptMonth,
+	);
 	const feeStatus = (id: string) => {
-		const month = kstMonth(tx.occurred_at);
-		const progress = billingProgress(
-			data,
-			data.groups.filter(
-				(g) => g.kind === "monthly" && g.occurred_on.startsWith(month),
-			),
-			month,
-		);
-		const rows = progress.rows.filter((r) => r.charge.member_id === id);
+		if (!tx.name?.includes("회비")) {
+			const unpaid = payableDues(data, id, receiptMonth);
+			return unpaid.length
+				? `미납 ${unpaid.length}건 · ${won(unpaid.reduce((sum, d) => sum + d.remaining, 0))}`
+				: "남은 미납 없음";
+		}
+		const rows = monthlyProgress.rows.filter((r) => r.charge.member_id === id);
 		const remaining = rows.reduce((sum, r) => sum + r.remaining, 0);
-		return `${Number(month.slice(5))}월 회비 ${!rows.length ? "부과 없음" : remaining ? `${won(remaining)} 미납` : "완납"}`;
+		return `${Number(receiptMonth.slice(5))}월 회비 ${!rows.length ? "부과 없음" : remaining ? `${won(remaining)} 미납` : "완납"}`;
 	};
 	const groupPicker = (
 		<div className="ac-quick-groups">
+			<div className="ac-search">
+				<Search size={15} aria-hidden="true" />
+				<input
+					aria-label="회계 항목 검색"
+					name="group-search"
+					autoComplete="off"
+					placeholder="항목·장소 검색…"
+					value={groupQuery}
+					onChange={(e) => {
+						setGroupQuery(e.target.value);
+						setGroupLimit(6);
+					}}
+				/>
+			</div>
 			<div className="ac-choice-chips" role="group" aria-label="회계 항목 선택">
 				{visibleGroups.map((g) => (
 					<button
@@ -301,6 +339,15 @@ export default function QuickSettlement({
 					</button>
 				)}
 			</div>
+			{groups.length > groupLimit && (
+				<button
+					type="button"
+					className="ac-link"
+					onClick={() => setGroupLimit(groupLimit + 12)}
+				>
+					항목 더 보기 ({groups.length - groupLimit})
+				</button>
+			)}
 		</div>
 	);
 	const duePicker = (
@@ -341,7 +388,7 @@ export default function QuickSettlement({
 						<span>
 							{groupName(d.charge_id)}
 							<small>
-								{d.due_ym} 납기 · {won(d.remaining)} 남음
+								{Number(d.due_ym.slice(5))}월 납기 · {won(d.remaining)} 남음
 							</small>
 						</span>
 						{!!debts[d.id] && <Check size={14} aria-hidden="true" />}
@@ -399,7 +446,12 @@ export default function QuickSettlement({
 							)}
 						</div>
 					))}
-				{draft.type === "pay" && owner && duePicker}
+				{draft.type === "pay" && owner && (
+					<div className="ac-payment-targets">
+						<span className="ac-label">납부할 항목</span>
+						{duePicker}
+					</div>
+				)}
 				{draft.type === "carry" && (
 					<>
 						<label className="ac-quick-month">
@@ -455,8 +507,7 @@ export default function QuickSettlement({
 								)}
 							</>
 						)}
-						<details className="ac-quick-more">
-							<summary>기존 납기·이월 월 변경</summary>
+						<div className="ac-quick-more">
 							<label className="ac-check">
 								<input
 									type="checkbox"
@@ -465,7 +516,7 @@ export default function QuickSettlement({
 								/>
 								기존 납기를 앞당기거나 이월 월을 변경함
 							</label>
-						</details>
+						</div>
 					</>
 				)}
 				{draft.type === "position" && (
@@ -517,34 +568,35 @@ export default function QuickSettlement({
 					/>
 				)}
 				<div className="ac-quick-options">
-					{(draft.type === "expense" ||
-						(draft.type === "position" && purpose === "club")) && (
-						<details className="ac-quick-more">
-							<summary>다른 항목 찾기</summary>
+					<label className="ac-inline-memo">
+						<span>메모</span>
+						<input
+							className="ac-input"
+							aria-label="처리 사유"
+							name="settlement-memo"
+							autoComplete="off"
+							value={memo}
+							onChange={(e) => setMemo(e.target.value)}
+							placeholder="필요한 경우 입력…"
+						/>
+					</label>
+					{draft.type === "pay" && owner && (
+						<label className="ac-proxy-toggle">
 							<input
-								className="ac-input"
-								aria-label="회계 항목 검색"
-								placeholder="항목·장소 검색"
-								value={groupQuery}
+								type="checkbox"
+								checked={proxyMode}
 								onChange={(e) => {
-									setGroupQuery(e.target.value);
-									setGroupLimit(6);
+									setProxyMode(e.target.checked);
+									setBeneficiary("");
+									setProxy(false);
+									setDebts({});
 								}}
 							/>
-							{groups.length > groupLimit && (
-								<button
-									type="button"
-									className="ac-link"
-									onClick={() => setGroupLimit(groupLimit + 12)}
-								>
-									항목 더 보기 ({groups.length - groupLimit})
-								</button>
-							)}
-						</details>
+							다른 사람의 부과에 대납
+						</label>
 					)}
-					{draft.type === "pay" && owner && (
-						<details className="ac-quick-more">
-							<summary>다른 사람의 부과에 대납</summary>
+					{draft.type === "pay" && owner && proxyMode && (
+						<div className="ac-proxy-fields">
 							<MemberPicker
 								compact
 								data={data}
@@ -566,28 +618,8 @@ export default function QuickSettlement({
 									다른 사람의 부과에 대납하는 것을 확인함
 								</label>
 							)}
-						</details>
+						</div>
 					)}
-					<details className="ac-quick-more">
-						<summary>메모 추가</summary>
-						<label className="ac-label">
-							처리 사유
-							<input
-								className="ac-input"
-								value={memo}
-								onChange={(e) => setMemo(e.target.value)}
-								placeholder="필요한 경우 입력"
-							/>
-						</label>
-					</details>
-					<button
-						type="button"
-						className="ac-link ac-muted-link ac-quick-collapse"
-						disabled={flow.locked || flow.busy}
-						onClick={() => onClose()}
-					>
-						접기
-					</button>
 				</div>
 			</fieldset>
 			<div className="ac-quick-confirm">

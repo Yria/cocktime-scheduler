@@ -23,7 +23,6 @@ export default function MemberPicker({
 }) {
 	const searchId = useId();
 	const [query, setQuery] = useState(suggestedName);
-	const [searchOpen, setSearchOpen] = useState(!suggestedName);
 	const [limit, setLimit] = useState(8);
 	const matches = matchingMembers(data, query);
 	const selected = data.members.find((m) => m.id === value);
@@ -34,25 +33,12 @@ export default function MemberPicker({
 				: matches;
 		return (
 			<div className="ac-payer-chips">
-				<div className="ac-payer-heading">
+				<div className="ac-payer-search-row">
 					<label className="ac-label" htmlFor={searchId}>
 						{label}
 					</label>
-					<button
-						type="button"
-						className="ac-link"
-						aria-label={selected ? `${label} 변경` : `${label} 검색`}
-						onClick={() => {
-							setSearchOpen(!searchOpen);
-							if (selected) onChange("");
-						}}
-					>
-						<Search size={14} aria-hidden="true" /> 이름 검색
-					</button>
-				</div>
-				{(searchOpen || !choices.length) && (
 					<div className="ac-search">
-						<Search size={14} aria-hidden="true" />
+						<Search size={15} aria-hidden="true" />
 						<input
 							id={searchId}
 							aria-label={`${label} 이름·초성 검색`}
@@ -67,7 +53,7 @@ export default function MemberPicker({
 							autoComplete="off"
 						/>
 					</div>
-				)}
+				</div>
 				<div
 					className="ac-payer-options"
 					role="group"

@@ -33,15 +33,18 @@ export default function TransactionCard({
 	const returned = data.refunds.filter((r) => r.in_tx_id === t.id);
 	const expense = data.expenses.find((e) => e.bank_tx_id === t.id);
 	const expenseGroup = data.groups.find((g) => g.id === expense?.group_id);
-	const [draft, setDraft] = useState<OperationDraft | null>(() => {
-		const pending = positions.find((p) =>
-			["unassigned", "member_pending"].includes(p.purpose),
-		);
-		if (pending) return { type: "pay", positionId: pending.id };
-		if (t.direction === "out" && !refund && !expense?.group_id)
-			return { type: "expense", outTxId: t.id };
-		return null;
-	});
+	const [selectedDraft, setDraft] = useState<OperationDraft | null>(null);
+	const [completed, setCompleted] = useState(0);
+	const pending = positions.find(
+		(p) => p.amount > 0 && ["unassigned", "member_pending"].includes(p.purpose),
+	);
+	const draft: OperationDraft | null =
+		selectedDraft ??
+		(pending
+			? { type: "pay", positionId: pending.id }
+			: t.direction === "out" && !refund && !expense?.group_id
+				? { type: "expense", outTxId: t.id }
+				: null);
 	const [saved, setSaved] = useState(false);
 	const onAction = (next: OperationDraft) => {
 		setSaved(false);
@@ -142,19 +145,6 @@ export default function TransactionCard({
 									</p>
 								)}
 							<div className="ac-actions">
-								<button
-									type="button"
-									className="ac-chip"
-									aria-pressed={
-										draft?.type === "position" && draft.positionId === p.id
-									}
-									disabled={disabled}
-									onClick={() =>
-										onAction({ type: "position", positionId: p.id })
-									}
-								>
-									용도 지정
-								</button>
 								{["unassigned", "member_pending", "carry"].includes(
 									p.purpose,
 								) && (
@@ -190,7 +180,20 @@ export default function TransactionCard({
 											이월
 										</button>
 									</>
-								)}
+								)}{" "}
+								<button
+									type="button"
+									className="ac-chip"
+									aria-pressed={
+										draft?.type === "position" && draft.positionId === p.id
+									}
+									disabled={disabled}
+									onClick={() =>
+										onAction({ type: "position", positionId: p.id })
+									}
+								>
+									용도 지정
+								</button>
 							</div>
 						</div>
 					))}
@@ -270,7 +273,7 @@ export default function TransactionCard({
 			)}
 			{draft && (
 				<QuickSettlement
-					key={JSON.stringify(draft)}
+					key={`${completed}:${JSON.stringify(draft)}`}
 					data={data}
 					draft={draft}
 					bankId={t.id}
@@ -278,6 +281,7 @@ export default function TransactionCard({
 					onPendingChange={onPendingChange}
 					onDone={onDone}
 					onClose={(success) => {
+						if (success) setCompleted((n) => n + 1);
 						setDraft(null);
 						if (success) setSaved(true);
 					}}

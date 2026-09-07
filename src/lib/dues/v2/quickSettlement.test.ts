@@ -1,0 +1,61 @@
+import { describe, expect, it } from "vitest";
+import { suggestedReceiptDue, suggestedReceiptPayer } from "./quickSettlement";
+import type { AccountingData } from "./types";
+
+const fixture = () =>
+	({
+		bank: [
+			{
+				id: 1,
+				direction: "in",
+				name: "박민준0906",
+				amount: 6500,
+				occurred_at: "2026-09-07T00:00:00Z",
+			},
+		],
+		members: [{ id: "a", name: "박민준" }],
+		groups: [{ id: "g", occurred_on: "2026-09-06" }],
+		charges: [{ id: "c", group_id: "g", member_id: "a", state: "live" }],
+		due: [{ id: "d", charge_id: "c", due_ym: "2026-09", remaining: 6500 }],
+	}) as AccountingData;
+
+describe("receipt suggestions before explicit confirmation", () => {
+	it("uses a single cleaned bank-name match and refuses namesakes or an empty description", () => {
+		const data = fixture();
+		expect(suggestedReceiptPayer(data, 1)).toBe("a");
+		data.members.push({ ...data.members[0], id: "b", active: false });
+		expect(suggestedReceiptPayer(data, 1)).toBe("");
+		data.bank[0].name = null;
+		expect(suggestedReceiptPayer(data, 1)).toBe("");
+	});
+	it("suggests only the same month, amount, owner and explicit event date, without mutation", () => {
+		const data = fixture();
+		const before = JSON.stringify(data);
+		expect(suggestedReceiptDue(data, 1, "a")).toEqual({ d: "6500" });
+		expect(suggestedReceiptDue(data, 1, "b")).toEqual({});
+		expect(JSON.stringify(data)).toBe(before);
+		data.bank[0].name = "박민준0905";
+		expect(suggestedReceiptDue(data, 1, "a")).toEqual({});
+		data.bank[0].name = "박민준0906";
+		data.due[0].due_ym = "2026-08";
+		expect(suggestedReceiptDue(data, 1, "a")).toEqual({});
+		data.due[0].due_ym = "2026-09";
+		data.due[0].remaining = 6000;
+		expect(suggestedReceiptDue(data, 1, "a")).toEqual({});
+	});
+	it("leaves equal candidate fees unselected unless the written date distinguishes them", () => {
+		const data = fixture();
+		data.groups.push({
+			...data.groups[0],
+			id: "g2",
+			occurred_on: "2026-09-05",
+		});
+		data.charges.push({ ...data.charges[0], id: "c2", group_id: "g2" });
+		data.due.push({ ...data.due[0], id: "d2", charge_id: "c2" });
+		expect(suggestedReceiptDue(data, 1, "a")).toEqual({ d: "6500" });
+		data.bank[0].name = "박민준";
+		expect(suggestedReceiptDue(data, 1, "a")).toEqual({});
+		data.charges[1].state = "cancelled";
+		expect(suggestedReceiptDue(data, 1, "a")).toEqual({ d: "6500" });
+	});
+});

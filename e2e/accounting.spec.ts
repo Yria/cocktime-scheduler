@@ -790,21 +790,13 @@ test("inline matching and payment need one confirmation and recover a lost respo
 		exact: true,
 	});
 	await expect(retry).toBeEnabled();
-	await expect(
-		card.getByRole("button", { name: "납부자 변경" }),
-	).toBeDisabled();
+	await expect(card.getByLabel("납부자 이름·초성 검색")).toBeDisabled();
 	await retry.click();
 	await expect(card.getByText("선택한 내역을 반영했습니다.")).toBeVisible();
 	const commits = calls.filter((c) => c.name === "dues_v2_command");
 	expect(commits).toHaveLength(2);
 	expect(commits[0].args).toEqual(commits[1].args);
-	expect(
-		calls.some(
-			(c) =>
-				c.name === "dues_v2_preview" &&
-				JSON.stringify(c.args) === JSON.stringify(commits[0].args),
-		),
-	).toBe(true);
+	expect(calls.filter((c) => c.name === "dues_v2_preview")).toHaveLength(0);
 	expect(
 		await scalar(
 			"select count(*)::int from dues_v2_allocations where bank_tx_id=90",
@@ -1020,7 +1012,6 @@ test("ledger restores the compact monthly list and edits saved expenses without 
 		.getByRole("button", { name: "최근 항목 1", exact: true })
 		.click();
 	// Searching must keep the selected group visible, even outside the first six choices.
-	await card.getByText("다른 항목 찾기", { exact: true }).click();
 	await card.getByLabel("회계 항목 검색").fill("회식");
 	await choices.getByRole("button", { name: "회식", exact: true }).click();
 	await expect(card.getByRole("button", { name: "변경 저장" })).toHaveCount(0);
@@ -1266,4 +1257,156 @@ test("overview retains issued facts when attendance fails and retries without wr
 			["dues_v2_command", "dues_v2_preview", "dues_v2_manage"].includes(c.name),
 		),
 	).toHaveLength(0);
+});
+
+test("a unique dated receipt fits one card and confirms with no selection RPCs and one refresh", async ({
+	page,
+}) => {
+	const member = "00000000-0000-4000-8000-000000000008";
+	await db.exec(`insert into members(id,name,birth_year) values('${member}','박민준',1995);
+		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',6500,'2026-09-07T12:00:00+09','박민준0906');`);
+	await command({
+		action: "issue",
+		kind: "manual",
+		date: "2026-09-06",
+		label: "9. 6. 에이트민턴 · 19:00–22:00",
+		lines: [{ member_id: member, amount: 6500, due_ym: "2026-09" }],
+	});
+	// The UI must not wait for another read/preview after making a selection.
+	await page.route("**/rest/v1/rpc/dues_v2_read", async (route) => {
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		await route.fallback();
+	});
+	await page.setViewportSize({ width: 390, height: 844 });
+	await navigate(page, "/dues/2026-09/inbox");
+	const card = page.getByRole("region", { name: "거래 90", exact: true });
+	await expect(
+		card.getByRole("button", { name: "박민준", exact: true }),
+	).toHaveAttribute("aria-pressed", "true");
+	const target = card.getByRole("button", { name: /^9\. 6\. 에이트민턴/ });
+	await expect(target).toHaveAttribute("aria-pressed", "true");
+	const confirm = card.getByRole("button", { name: "납부 확인", exact: true });
+	await expect(confirm).toBeEnabled();
+	await expect(card.locator("details")).toHaveCount(0);
+	await expect(
+		card.getByRole("button", { name: "접기", exact: true }),
+	).toHaveCount(0);
+	await card.getByLabel("처리 사유").fill("대관비");
+	await card.getByLabel("처리 사유").fill("9월 6일 대관비");
+	const amount = card.getByRole("spinbutton", { name: /선택 금액/ });
+	await amount.fill("6501");
+	await expect(confirm).toBeDisabled();
+	await amount.fill("6500");
+	await expect(confirm).toBeEnabled();
+	for (const [width, height] of [
+		[375, 812],
+		[390, 844],
+		[768, 1024],
+		[1440, 900],
+	]) {
+		await page.setViewportSize({ width, height });
+		for (const theme of ["light", "dark"]) {
+			await page.evaluate(
+				(dark) => document.documentElement.classList.toggle("dark", dark),
+				theme === "dark",
+			);
+			await page.evaluate(() =>
+				(document.activeElement as HTMLElement | null)?.blur(),
+			);
+			await designEvidence(page, `direct-${width}-${theme}`);
+			const box = (await confirm.boundingBox())!;
+			expect(box.y + box.height).toBeLessThan(height);
+			expect(
+				await page.evaluate(
+					() => document.documentElement.scrollWidth <= innerWidth,
+				),
+			).toBe(true);
+		}
+	}
+	expect(calls.filter((c) => c.name === "dues_v2_read")).toHaveLength(1);
+	expect(calls.filter((c) => c.name === "dues_v2_sessions")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_v2_preview")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(0);
+	await confirm.click();
+	await expect(card).toHaveCount(0);
+	// A new revision should not trigger another full read after the explicit refresh.
+	expect(calls.filter((c) => c.name === "dues_v2_read")).toHaveLength(2);
+	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(1);
+	expect(calls.filter((c) => c.name === "dues_v2_preview")).toHaveLength(0);
+	expect(
+		await scalar(
+			"select sum(amount)::int from dues_v2_allocations where bank_tx_id=90",
+		),
+	).toBe(6500);
+	writeFileSync(
+		"test-results/direct-rpc-counts.json",
+		JSON.stringify({
+			initialReads: 1,
+			selectionPreviews: 0,
+			sessionReads: 0,
+			commits: 1,
+			postCommitReads: 1,
+			readDelayMs: 300,
+		}),
+	);
+});
+
+test("a database rejection unlocks the form, and a corrected retry commits once", async ({
+	page,
+}) => {
+	await db.exec(
+		"insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',5000,'2026-09-06','김지훈')",
+	);
+	await navigate(page, "/dues/2026-09/inbox");
+	const card = page.getByRole("region", { name: "거래 90", exact: true });
+	await card
+		.getByRole("group", { name: "납부자 검색 결과" })
+		.getByRole("button", { name: /000002/ })
+		.click();
+	await card.getByRole("button", { name: /^7월 회비/ }).click();
+	await scalar(
+		"select dues_v2_manage('pause',(select revision from dues_v2_control where id=1),'fixture',$1)",
+		[crypto.randomUUID()],
+	);
+	await card.getByRole("button", { name: "납부 확인", exact: true }).click();
+	await expect(card.getByRole("alert")).toContainText("일시 중지");
+	await expect(card.getByLabel("처리 사유")).toBeEnabled();
+	expect(
+		await scalar(
+			"select count(*)::int from dues_v2_allocations where bank_tx_id=90",
+		),
+	).toBe(0);
+	await scalar(
+		"select dues_v2_manage('resume',(select revision from dues_v2_control where id=1),'fixture',$1)",
+		[crypto.randomUUID()],
+	);
+	await card.getByRole("button", { name: "내역 새로고침" }).click();
+	await card.getByLabel("처리 사유").fill("재개 후 납부 확인");
+	await card.getByRole("button", { name: "납부 확인", exact: true }).click();
+	await expect(card).toHaveCount(0);
+	expect(
+		await scalar(
+			"select count(*)::int from dues_v2_allocations where bank_tx_id=90",
+		),
+	).toBe(1);
+});
+
+test("a role change reloads account mode immediately instead of waiting for the poll interval", async ({
+	page,
+}) => {
+	await navigate(page, "/dues/2026-09/inbox");
+	await expect(
+		page.getByRole("region", { name: "거래 9", exact: true }),
+	).toBeVisible();
+	await page.evaluate(async () => {
+		const moduleUrl = "/src/store/authStore.ts";
+		const { useAuthStore } = await import(moduleUrl);
+		useAuthStore.setState({ isAdmin: false });
+	});
+	await expect
+		.poll(() => calls.filter((c) => c.name === "dues_v2_mode").length)
+		.toBe(2);
+	await expect
+		.poll(() => calls.filter((c) => c.name === "dues_v2_read").length)
+		.toBe(2);
 });

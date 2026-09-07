@@ -54,6 +54,37 @@ describe("accounting identity and rollout state", () => {
 		await loading;
 		expect(useAccountingStore.getState().mode?.revision).toBe(2);
 	});
+	it("shares an in-flight read and skips reads already satisfied by a refreshed revision", async () => {
+		useAccountingStore.setState({ mode: active });
+		const pending = deferred<AccountingData>();
+		vi.mocked(readAccounting).mockReturnValueOnce(pending.promise);
+		const first = accountingActions.ensure();
+		const second = accountingActions.ensure();
+		expect(readAccounting).toHaveBeenCalledTimes(1);
+		pending.resolve(snapshot());
+		await Promise.all([first, second]);
+		await accountingActions.ensure();
+		expect(readAccounting).toHaveBeenCalledTimes(1);
+		vi.mocked(readAccounting).mockResolvedValueOnce(
+			snapshot({ ...active, revision: 2 }),
+		);
+		await accountingActions.load(); // explicit post-commit refresh
+		await accountingActions.ensure(); // React sees revision 2
+		expect(readAccounting).toHaveBeenCalledTimes(2);
+	});
+	it("does not regress to a mode response started before a successful refresh", async () => {
+		useAccountingStore.setState({ mode: active });
+		const pending = deferred<AccountingMode>();
+		vi.mocked(accountingMode).mockReturnValueOnce(pending.promise);
+		const poll = accountingActions.mode();
+		vi.mocked(readAccounting).mockResolvedValueOnce(
+			snapshot({ ...active, revision: 2 }),
+		);
+		await accountingActions.load();
+		pending.resolve(active);
+		await poll;
+		expect(useAccountingStore.getState().mode?.revision).toBe(2);
+	});
 	it("retains the server mode on a network failure and reports the error", async () => {
 		useAccountingStore.setState({ mode: active });
 		vi.mocked(accountingMode).mockRejectedValueOnce(new Error("offline"));

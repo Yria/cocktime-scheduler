@@ -1,5 +1,42 @@
 import { kstMonth } from "./summary";
 import type { AccountingData } from "./types";
+import { matchingMembers } from "./selection";
+
+// Suggestions are never saved until the user confirms. Namesakes stay unselected.
+export function suggestedReceiptPayer(data: AccountingData, bankId: number) {
+	const tx = data.bank.find((t) => t.id === bankId);
+	if (!tx?.name?.trim()) return "";
+	const matches = matchingMembers(data, tx.name);
+	return matches.length === 1 ? matches[0].id : "";
+}
+
+export function suggestedReceiptDue(
+	data: AccountingData,
+	bankId: number,
+	owner: string,
+) {
+	const tx = data.bank.find((t) => t.id === bankId);
+	if (!tx || !owner) return {};
+	const ym = kstMonth(tx.occurred_at);
+	const candidates = payableDues(data, owner, ym).filter(
+		(d) => d.due_ym === ym && d.remaining === tx.amount,
+	);
+	// A date written in a bank description (0906) can distinguish equal court fees.
+	const date = tx.name?.match(/(?:^|\D)(0[1-9]|1[0-2])([0-2]\d|3[01])(?:\D|$)/);
+	const dated = date
+		? candidates.filter((d) => {
+				const charge = data.charges.find((c) => c.id === d.charge_id);
+				return data.groups.some(
+					(g) =>
+						g.id === charge?.group_id &&
+						g.occurred_on === `${ym.slice(0, 4)}-${date[1]}-${date[2]}`,
+				);
+			})
+		: candidates;
+	return dated.length === 1
+		? { [dated[0].id]: String(dated[0].remaining) }
+		: {};
+}
 
 // An unused receipt can be matched again as a whole. Once any of its money has
 // been paid or refunded, its original sender remains fixed (including reversals).
@@ -26,17 +63,13 @@ export function payableDues(
 	memberId: string,
 	ym: string,
 ) {
+	const charges = new Set(
+		data.charges
+			.filter((c) => c.state === "live" && c.member_id === memberId)
+			.map((c) => c.id),
+	);
 	return data.due
-		.filter(
-			(d) =>
-				d.remaining > 0 &&
-				data.charges.some(
-					(c) =>
-						c.id === d.charge_id &&
-						c.state === "live" &&
-						c.member_id === memberId,
-				),
-		)
+		.filter((d) => d.remaining > 0 && charges.has(d.charge_id))
 		.sort(
 			(a, b) =>
 				Number(b.due_ym === ym) - Number(a.due_ym === ym) ||

@@ -166,7 +166,7 @@
 	display: block;
 	height: 100%;
 	border-radius: inherit;
-	background: var(--ac-blue);
+	background: var(--ac-confirm-bg);
 }
 .ac-overview-meter.is-complete > span {
 	background: var(--ac-green);
@@ -238,7 +238,7 @@
 	width: 5px;
 	height: 5px;
 	border-radius: 50%;
-	background: var(--ac-blue);
+	background: var(--ac-confirm-bg);
 }
 .ac-overview-drafts {
 	color: var(--ac-amber);
@@ -1494,11 +1494,21 @@
 	flex-direction: column;
 	gap: 5px;
 }
-.ac-payer-heading {
-	display: flex;
+.ac-payer-search-row {
+	display: grid;
+	grid-template-columns: 48px minmax(0, 1fr);
 	align-items: center;
-	justify-content: space-between;
 	gap: 8px;
+}
+.ac-payer-search-row .ac-label {
+	margin: 0;
+}
+.ac-payer-search-row .ac-search {
+	background: var(--ac-fill);
+	border: 0;
+}
+.ac-payer-options {
+	margin-top: 4px;
 }
 .ac-payer-heading .ac-link {
 	display: inline-flex;
@@ -1548,11 +1558,18 @@
 .ac-payer-option[aria-pressed="true"] strong {
 	color: var(--ac-blue);
 }
+.ac-position > .ac-actions {
+	padding: 3px;
+	gap: 4px;
+	border-radius: var(--ac-control-radius);
+	background: var(--ac-fill);
+}
 .ac-position > .ac-actions .ac-chip {
+	flex: 1;
 	background: transparent;
 	padding: 3px 8px;
-	font-size: var(--ac-type-caption);
-	border: 1px solid var(--ac-border);
+	font-size: var(--ac-type-body);
+	border: 1px solid transparent;
 	color: var(--text-secondary);
 }
 .ac-position > .ac-actions .ac-chip[aria-pressed="true"] {
@@ -1632,4 +1649,130 @@
 		transition: none !important;
 		animation: none !important;
 	}
+}
+
+/* Settlement reads top to bottom: payer, charge, amount, confirmation. */
+.ac-transaction {
+	gap: 12px;
+}
+.ac-quick {
+	margin-top: 0;
+}
+.ac-quick-fields {
+	gap: 12px;
+}
+.ac-quick-groups {
+	display: grid;
+	gap: 8px;
+}
+.ac-payment-targets {
+	display: grid;
+	gap: 6px;
+}
+.ac-payment-targets > .ac-label {
+	margin: 0;
+}
+.ac-quick-dues {
+	gap: 6px;
+}
+.ac-quick-due {
+	align-items: stretch;
+	gap: 8px;
+}
+.ac-quick-due > button {
+	min-width: 0;
+	flex: 1;
+	justify-content: space-between;
+}
+.ac-quick-due > .ac-quick-amount {
+	flex: 0 0 96px;
+	gap: 4px;
+}
+.ac-quick-due > .ac-quick-amount input {
+	width: 76px;
+	min-width: 0;
+	padding: 8px 4px;
+	text-align: right;
+}
+.ac-quick-options {
+	display: grid;
+	gap: 4px;
+	padding: 0;
+}
+.ac-inline-memo {
+	display: grid;
+	grid-template-columns: 36px minmax(0, 1fr);
+	align-items: center;
+	gap: 8px;
+	color: var(--text-secondary);
+	font-size: var(--ac-type-caption);
+}
+.ac-inline-memo .ac-input {
+	padding: 8px 10px;
+	background: var(--ac-fill);
+	border-color: transparent;
+}
+.ac-proxy-toggle {
+	display: inline-flex;
+	align-items: center;
+	justify-self: start;
+	min-height: 44px;
+	gap: 8px;
+	font-size: var(--ac-type-caption);
+	color: var(--text-secondary);
+	cursor: pointer;
+}
+.ac-proxy-toggle input {
+	accent-color: var(--ac-blue);
+	width: 16px;
+	height: 16px;
+}
+.ac-proxy-fields {
+	display: grid;
+	gap: 8px;
+}
+.ac-quick-confirm {
+	margin-top: 8px;
+	padding-top: 12px;
+	gap: 8px;
+}
+.ac-inline-confirm {
+	min-height: 48px;
+	background: var(--ac-confirm-bg);
+}
+
+.ac-inbox-toolbar {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) 44px;
+	align-items: center;
+	gap: 8px;
+}
+.ac-inbox-toolbar h2 {
+	display: grid;
+	font-size: var(--ac-type-caption);
+	line-height: 1.4;
+	color: var(--text-secondary);
+}
+.ac-inbox-toolbar h2 strong {
+	color: var(--text-primary);
+	font-weight: 650;
+}
+.ac-import-button {
+	display: grid;
+	place-items: center;
+	border-radius: var(--ac-control-radius);
+	background: var(--ac-fill);
+	color: var(--ac-blue);
+}
+.is-inbox .ac-month {
+	margin-bottom: 8px;
+}
+.is-inbox .ac-tabs {
+	margin-bottom: 12px;
+}
+.ac-quick-dues {
+	flex-direction: column;
+}
+.ac-quick-due {
+	flex-wrap: nowrap;
 }

@@ -55,11 +55,12 @@ export default function AccountingAdmin() {
 	const [issueError, setIssueError] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [settings, setSettings] = useState(false);
-	const [sessions, setSessions] = useState<
-		Awaited<ReturnType<typeof accountingSessions>>
-	>([]);
+	const [sessions, setSessions] = useState<Awaited<
+		ReturnType<typeof accountingSessions>
+	> | null>(null);
 	const [sessionId, setSessionId] = useState("");
 	useEffect(() => {
+		if (page !== "charge" || sessions !== null) return;
 		let disposed = false;
 		void accountingSessions()
 			.then((s) => {
@@ -71,7 +72,7 @@ export default function AccountingAdmin() {
 		return () => {
 			disposed = true;
 		};
-	}, []);
+	}, [page, sessions]);
 	const go = (month: string, tab = page) =>
 		navigate(`/dues/${month}${tab === "home" ? "" : `/${tab}`}`);
 	const candidate = async (
@@ -92,7 +93,8 @@ export default function AccountingAdmin() {
 				candidate: {
 					...result.payload,
 					label: sid
-						? (sessionChoiceLabels(sessions).get(sid) ?? result.payload.label)
+						? (sessionChoiceLabels(sessions ?? []).get(sid) ??
+							result.payload.label)
 						: result.payload.label,
 				},
 			});
@@ -115,7 +117,7 @@ export default function AccountingAdmin() {
 			setBusy(false);
 		}
 	};
-	const sessionLabels = sessionChoiceLabels(sessions);
+	const sessionLabels = sessionChoiceLabels(sessions ?? []);
 	const disabled = mode.paused || busy || loading || settling;
 	const pending =
 		data?.bank
@@ -133,7 +135,7 @@ export default function AccountingAdmin() {
 	return (
 		<AppScreen
 			title="회비 관리"
-			contentClassName="accounting-screen"
+			contentClassName={`accounting-screen ${page === "inbox" ? "is-inbox" : ""}`}
 			onBack={() => navigate("/")}
 			onRefresh={refresh}
 			right={
@@ -228,29 +230,33 @@ export default function AccountingAdmin() {
 						</div>
 					) : page === "inbox" ? (
 						<div className="flex flex-col gap-3">
-							<div className="ac-section-heading">
-								<h2>
-									처리할 내역 <span className="ac-count">{pending.length}</span>
+							<div className="ac-inbox-toolbar">
+								<h2 aria-label={`처리할 내역 ${pending.length}`}>
+									<span>미정산</span>
+									<strong>{pending.length}건</strong>
 								</h2>
+								<div className="ac-search">
+									<Search size={16} aria-hidden="true" />
+									<input
+										aria-label="거래 검색"
+										name="transaction-search"
+										autoComplete="off"
+										disabled={settling}
+										placeholder="이름·거래 번호…"
+										value={search}
+										onChange={(e) => setSearch(e.target.value)}
+									/>
+								</div>
 								<button
 									type="button"
-									className="ac-link ac-import"
+									className="ac-import-button"
+									aria-label={busy ? "가져오는 중…" : "내역 가져오기"}
+									title="내역 가져오기"
 									disabled={disabled}
 									onClick={() => void ingest()}
 								>
-									<Download size={15} />
-									{busy ? "가져오는 중…" : "내역 가져오기"}
+									<Download size={18} aria-hidden="true" />
 								</button>
-							</div>
-							<div className="ac-search">
-								<Search size={17} aria-hidden="true" />
-								<input
-									aria-label="거래 검색"
-									disabled={settling}
-									placeholder="이름 또는 거래 번호로 검색"
-									value={search}
-									onChange={(e) => setSearch(e.target.value)}
-								/>
 							</div>
 							{shownPending.map((t) => (
 								<TransactionCard
@@ -326,7 +332,7 @@ export default function AccountingAdmin() {
 										onChange={(e) => setSessionId(e.target.value)}
 									>
 										<option value="">대관 회차 선택</option>
-										{sessions
+										{(sessions ?? [])
 											.filter((s) => s.court)
 											.map((s) => (
 												<option key={s.id} value={s.id}>
@@ -547,7 +553,7 @@ export default function AccountingAdmin() {
 							key={JSON.stringify(draft)}
 							draft={draft}
 							data={data}
-							sessions={sessions}
+							sessions={sessions ?? []}
 							onClose={() => setDraft(null)}
 							onDone={refresh}
 						/>
