@@ -173,7 +173,7 @@ test.afterEach(async () => {
 test("cancel and reissue previews without writing, commits once, and undoes from the UI", async ({
 	page,
 }) => {
-	await navigate(page);
+	await navigate(page, "/dues/2026-08/charge");
 	await page.getByRole("button", { name: /^회식 / }).click();
 	await page.getByRole("checkbox", { name: /000002/ }).uncheck();
 	await page.getByRole("button", { name: "선택한 1건 취소 후 발행" }).click();
@@ -198,6 +198,7 @@ test("cancel and reissue previews without writing, commits once, and undoes from
 			"select sum(amount)::int from dues_v2_positions where purpose='member_pending' and bank_tx_id=1",
 		),
 	).toBe(6000);
+	await page.getByRole("button", { name: "회계", exact: true }).click();
 	await page.getByRole("button", { name: "부과 운영·복구" }).click();
 	await page
 		.getByRole("button", { name: "직전 처리 되돌리기", exact: true })
@@ -230,7 +231,7 @@ test("one carry form moves partial debt and actual money; member sees both futur
 		purpose: "member_pending",
 	});
 	await page.setViewportSize({ width: 390, height: 844 });
-	await navigate(page);
+	await navigate(page, "/dues/2026-08/charge");
 	await page
 		.getByRole("button", { name: "미납·입금 이월", exact: true })
 		.click();
@@ -317,6 +318,7 @@ test("full rollback downloads a backup and returns to the preserved legacy facts
 }) => {
 	await command({ action: "apply" });
 	await navigate(page);
+	await page.getByRole("button", { name: "회계", exact: true }).click();
 	await page.getByRole("button", { name: "부과 운영·복구" }).click();
 	await page
 		.getByRole("button", { name: "기존 부과로 복귀", exact: true })
@@ -353,7 +355,7 @@ test("replacement retains partial carry months and requires the changed amounts 
 		target_ym: "2099-01",
 		debts: [{ due_id: d, amount: 3000 }],
 	});
-	await navigate(page, "/dues/2026-07");
+	await navigate(page, "/dues/2026-07/charge");
 	await page.getByRole("button", { name: /^7월 회비 / }).click();
 	await page.getByRole("checkbox", { name: /000001/ }).uncheck();
 	await page.getByRole("button", { name: "선택한 1건 취소 후 발행" }).click();
@@ -853,5 +855,170 @@ test("ledger restores the compact monthly list and edits saved expenses without 
 	).toHaveCount(5);
 	await expect(page.getByRole("button", { name: "거래 9 상세" })).toHaveCount(
 		0,
+	);
+});
+
+test("overview presents read-only payment progress and balances in both themes, with operations in their own tabs", async ({
+	page,
+}) => {
+	const C = "00000000-0000-4000-8000-000000000003";
+	const D = "00000000-0000-4000-8000-000000000005";
+	await db.exec(`
+		update members set birth_year=1996 where id='${A}';
+		update members set birth_year=2002 where id='${B}';
+		insert into members(id,name,is_active) values('${C}','박서연',true),('${D}','이민수',false);
+		update sessions set title='에이트민턴' where id=1;
+	`);
+	const monthly = await scalar<string>(
+		"select id from dues_v2_groups where source_key='monthly:2026-08'",
+	);
+	const court = await scalar<string>(
+		"select id from dues_v2_groups where source_key='court:1'",
+	);
+	await command({
+		action: "issue",
+		group_id: monthly,
+		lines: [B, C, D].map((member_id) => ({
+			member_id,
+			amount: 5000,
+			due_ym: "2026-08",
+		})),
+	});
+	await command({
+		action: "issue",
+		group_id: court,
+		lines: [A, C, D].map((member_id) => ({
+			member_id,
+			amount: 6000,
+			due_ym: "2026-08",
+		})),
+	});
+	const debt = await scalar<string>(
+		"select d.id from dues_v2_due d join dues_v2_charges c on c.id=d.charge_id where c.legacy_id=106",
+	);
+	const cash = await scalar<string>(
+		"select id from dues_v2_positions where bank_tx_id=2 and amount>0",
+	);
+	await command({
+		action: "carry",
+		member_id: B,
+		target_ym: "2099-01",
+		debts: [{ due_id: debt, amount: 2000 }],
+		money: [],
+	});
+	await command({
+		action: "carry",
+		member_id: A,
+		target_ym: "2099-01",
+		debts: [],
+		money: [{ position_id: cash, amount: 1000 }],
+	});
+	await page.setViewportSize({ width: 390, height: 844 });
+	await navigate(page, "/dues/2026-08");
+	const overview = page.getByRole("region", { name: "월별 납부 현황" });
+	const fee = overview.getByRole("region", { name: "8월 회비 현황" });
+	await expect(fee.getByRole("progressbar")).toHaveAttribute(
+		"aria-valuenow",
+		"25",
+	);
+	await expect(fee.getByText("1 / 4명")).toBeVisible();
+	await expect(
+		overview.getByRole("region", { name: "미납 현황" }),
+	).toContainText("36,000원");
+	await expect(
+		overview.getByRole("region", { name: "이월 현황" }),
+	).toContainText("2,000원");
+	await expect(
+		overview.getByRole("region", { name: "이월 현황" }),
+	).toContainText("1,000원");
+	await expect(page.getByRole("checkbox")).toHaveCount(0);
+	await expect(
+		page.getByRole("button", {
+			name: /취소 후 발행|이월금 적용|미납·입금 이월|부과 운영·복구/,
+		}),
+	).toHaveCount(0);
+	await expect(page.getByText("회계 변경 이력", { exact: true })).toHaveCount(
+		0,
+	);
+	for (const theme of ["light", "dark"]) {
+		await page.evaluate(
+			(dark) => document.documentElement.classList.toggle("dark", dark),
+			theme === "dark",
+		);
+		await page.screenshot({
+			path: `test-results/accounting-overview-${theme}.png`,
+			fullPage: true,
+			animations: "disabled",
+		});
+		expect(
+			await page.evaluate(
+				() => document.documentElement.scrollWidth <= window.innerWidth,
+			),
+		).toBe(true);
+	}
+	await fee.getByRole("button", { name: "납부 명단" }).click();
+	await expect(fee.getByText(/김지훈 · 1996년생/)).toBeVisible();
+	await expect(fee.getByText(/김지훈 · 2002년생/)).toBeVisible();
+	await expect(fee.getByText("이민수", { exact: true })).toBeVisible();
+	await expect(fee.getByText(/입금으로 납부/)).toBeVisible();
+	await expect(page.locator(".accounting-sheet")).toHaveCount(0);
+	await fee.getByRole("button", { name: "납부 명단" }).click();
+	await page.getByLabel("미납 회원 검색").fill("ㄱㅈㅎ");
+	const unpaid = overview.getByRole("region", { name: "미납 현황" });
+	await expect(unpaid.getByRole("button")).toHaveCount(2);
+	await unpaid.getByRole("button", { name: /2002년생/ }).click();
+	await expect(unpaid.getByText(/7월 회비/)).toBeVisible();
+	await expect(unpaid.getByText("3,000원", { exact: true })).toBeVisible();
+	await page.getByLabel("미납 회원 검색").fill("");
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await page.evaluate(() => {
+		(document.activeElement as HTMLElement | null)?.blur();
+		window.scrollTo({ top: 0, behavior: "instant" });
+	});
+	await page.screenshot({
+		path: "test-results/accounting-overview-desktop.png",
+		fullPage: true,
+		animations: "disabled",
+	});
+	expect(
+		calls.filter((c) =>
+			["dues_v2_command", "dues_v2_preview", "dues_v2_manage"].includes(c.name),
+		),
+	).toHaveLength(0);
+	await overview.getByRole("button", { name: /정산할 거래/ }).click();
+	await expect(
+		page.getByRole("heading", { name: /^처리할 내역/ }),
+	).toBeVisible();
+	await page.getByRole("button", { name: "부과", exact: true }).click();
+	await expect(
+		page.getByRole("button", { name: "미납·입금 이월", exact: true }),
+	).toBeVisible();
+	await page.getByRole("button", { name: "회계", exact: true }).click();
+	await expect(page.getByText("회계 변경 이력", { exact: true })).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "부과 운영·복구", exact: true }),
+	).toBeVisible();
+});
+
+test("overview shows an unissued month as empty and resets the roster on month changes", async ({
+	page,
+}) => {
+	await navigate(page, "/dues/2026-07");
+	await page.getByRole("button", { name: "납부 명단" }).click();
+	await page.getByRole("button", { name: "이전 달", exact: true }).click();
+	const fee = page.getByRole("region", { name: "6월 회비 현황" });
+	await expect(fee.getByText("부과 없음", { exact: true })).toBeVisible();
+	await expect(fee.getByRole("progressbar")).toHaveAttribute(
+		"aria-valuenow",
+		"0",
+	);
+	await expect(fee.getByText("모두 납부", { exact: true })).toHaveCount(0);
+	await expect(page.getByRole("region", { name: "미납 현황" })).toContainText(
+		"이 달까지 남은 미납이 없습니다.",
+	);
+	await page.getByRole("button", { name: "다음 달", exact: true }).click();
+	await expect(page.getByRole("button", { name: "납부 명단" })).toHaveAttribute(
+		"aria-expanded",
+		"false",
 	);
 });

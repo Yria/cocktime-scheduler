@@ -1,7 +1,14 @@
 import { transactionNeedsSettlement } from "../../lib/dues/v2/quickSettlement";
-import { ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
+import {
+	ChevronLeft,
+	ChevronRight,
+	Download,
+	Search,
+	Settings,
+} from "lucide-react";
 import "./accounting.css";
 import TransactionCard from "./TransactionCard";
+import AccountingOverview from "./AccountingOverview";
 import TransactionLedger from "./TransactionLedger";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -132,10 +139,11 @@ export default function AccountingAdmin() {
 			right={
 				<button
 					type="button"
-					className="text-muted text-sm"
+					className="ac-settings"
+					aria-label="회비 설정"
 					onClick={() => setSettings(true)}
 				>
-					설정
+					<Settings size={19} />
 				</button>
 			}
 		>
@@ -196,7 +204,15 @@ export default function AccountingAdmin() {
 				<p className="text-muted">회계 내역을 불러오는 중…</p>
 			) : (
 				<>
-					{page === "ledger" ? (
+					{page === "home" ? (
+						<AccountingOverview
+							key={ym}
+							data={data}
+							ym={ym}
+							sessionLabels={sessionLabels}
+							onNavigate={(tab) => go(ym, tab)}
+						/>
+					) : page === "ledger" ? (
 						<div className="flex flex-col gap-6">
 							<CashLedgerView ym={ym} revision={data.mode.revision} />
 							<TransactionLedger
@@ -257,7 +273,7 @@ export default function AccountingAdmin() {
 						</div>
 					) : (
 						<div className="flex flex-col gap-3">
-							<div className="ac-actions ac-overview-actions">
+							<div className="ac-actions ac-charge-actions">
 								<button
 									type="button"
 									className="btn-lq-primary"
@@ -371,50 +387,6 @@ export default function AccountingAdmin() {
 										</button>
 									))}
 								</div>
-							)}
-							{page === "home" && (
-								<details className="rounded-xl bg-black/5 dark:bg-white/5 p-3">
-									<summary className="text-sm font-semibold">
-										이번 달까지 남은 미납{" "}
-										{won(
-											data.due
-												.filter((d) => d.due_ym <= ym)
-												.reduce((s, d) => s + d.remaining, 0),
-										)}
-									</summary>
-									{data.members.map((m) => {
-										const ids = new Set(
-											data.charges
-												.filter(
-													(c) => c.member_id === m.id && c.state === "live",
-												)
-												.map((c) => c.id),
-										);
-										const sum = data.due
-											.filter((d) => ids.has(d.charge_id) && d.due_ym <= ym)
-											.reduce((s, d) => s + d.remaining, 0);
-										return sum > 0 ? (
-											<div
-												key={m.id}
-												className="flex justify-between gap-2 py-2 text-sm"
-											>
-												<span>
-													{memberLabel(data, m.id)} · {won(sum)}
-												</span>
-												<button
-													type="button"
-													className="text-[#0b84ff]"
-													disabled={disabled}
-													onClick={() =>
-														setDraft({ type: "carry", memberId: m.id })
-													}
-												>
-													이월
-												</button>
-											</div>
-										) : null;
-									})}
-								</details>
 							)}
 							{data.groups
 								.filter((g) => g.occurred_on.startsWith(ym))
@@ -542,28 +514,34 @@ export default function AccountingAdmin() {
 								})}
 						</div>
 					)}
-					<details className="ac-disclosure ac-history">
-						<summary className="text-sm text-muted">처리 이력</summary>
-						<div className="flex flex-col gap-2 mt-3">
-							{data.operations.map((op) => (
-								<div
-									className="text-xs border-b border-black/10 dark:border-white/10 py-2"
-									key={op.id}
-								>
-									<strong>
-										{actionLabel[op.action] ?? "발행 대기"}
-										{op.reverted_at && " · 되돌림"}
-									</strong>
-									<p>
-										{op.reason} ·{" "}
-										{new Date(op.created_at).toLocaleString("ko-KR", {
-											timeZone: "Asia/Seoul",
-										})}
-									</p>
-								</div>
-							))}
-						</div>
-					</details>
+					{page === "ledger" && (
+						<details className="ac-disclosure ac-history">
+							<summary className="text-sm text-muted">회계 변경 이력</summary>
+							<p className="ac-caption">
+								전체 기간의 최근 {data.operations.length}건 · 작업
+								종류·사유·처리 시각
+							</p>
+							<div className="flex flex-col gap-2 mt-3">
+								{data.operations.map((op) => (
+									<div
+										className="text-xs border-b border-black/10 dark:border-white/10 py-2"
+										key={op.id}
+									>
+										<strong>
+											{actionLabel[op.action] ?? "발행 대기"}
+											{op.reverted_at && " · 되돌림"}
+										</strong>
+										<p>
+											{op.reason} ·{" "}
+											{new Date(op.created_at).toLocaleString("ko-KR", {
+												timeZone: "Asia/Seoul",
+											})}
+										</p>
+									</div>
+								))}
+							</div>
+						</details>
+					)}
 					{draft && (
 						<OperationDialog
 							key={JSON.stringify(draft)}
@@ -576,10 +554,12 @@ export default function AccountingAdmin() {
 					)}
 				</>
 			)}
-			<AccountingControls
-				mode={mode}
-				operationCount={data?.active_operations ?? 0}
-			/>
+			{page === "ledger" && (
+				<AccountingControls
+					mode={mode}
+					operationCount={data?.active_operations ?? 0}
+				/>
+			)}
 			{settings && <DuesSettingsModal onClose={() => setSettings(false)} />}
 		</AppScreen>
 	);
