@@ -14,7 +14,8 @@
 		"preview": "vite preview",
 		"deploy": "pnpm run build && gh-pages -d dist",
 		"photos": "scripts/.venv/bin/python -u scripts/fetch_photos.py",
-		"photos:dry": "scripts/.venv/bin/python -u scripts/fetch_photos.py --dry-run"
+		"photos:dry": "scripts/.venv/bin/python -u scripts/fetch_photos.py --dry-run",
+		"test:accounting:browser": "playwright test e2e/accounting.spec.ts"
 	},
 	"dependencies": {
 		"@react-aria/overlays": "^3.32.1",
@@ -50,6 +51,8 @@
 		"typescript": "~5.9.3",
 		"typescript-eslint": "^8.48.0",
 		"vite": "^7.3.1",
-		"vitest": "^4.0.18"
+		"vitest": "^4.0.18",
+		"@electric-sql/pglite": "^0.5.8",
+		"@playwright/test": "^1.63.0"
 	}
 }

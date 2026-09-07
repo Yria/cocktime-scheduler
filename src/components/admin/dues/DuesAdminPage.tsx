@@ -1,6 +1,6 @@
 import { Settings } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { duesEnsureMonthly } from "../../../lib/supabase/dues";
 import { useAuthStore } from "../../../store/authStore";
 import { duesActions } from "../../../store/duesStore";
@@ -11,6 +11,10 @@ import ManualChargeHome from "./ManualChargeHome";
 import ReconcileInbox from "./ReconcileInbox";
 import SessionsHome from "./SessionsHome";
 import { currentYm, shiftYm, ymLabel } from "./duesText";
+import { accountingActions, useAccountingMode } from "../../../store/accountingV2Store";
+import AccountingAdmin from "../../accounting/AccountingAdmin";
+import AccountingControls from "../../accounting/AccountingControls";
+import type { AccountingMode } from "../../../lib/dues/v2/types";
 
 type Page = "home" | "inbox" | "ledger" | "charge";
 const NAV: [Page, string][] = [
@@ -26,6 +30,17 @@ const YM_RE = /^\d{4}-\d{2}$/;
 // · /dues/:ym/charge(수동 부과).
 // 월 공통 데이터는 여기서 loadMonth(ym) 한 번(캐시) — 화면 전환 시 재조회 없음(ACCOUNTING_SPEC §11).
 export default function DuesAdminPage() {
+	const { mode, error } = useAccountingMode();
+	const ready = useAuthStore(s => s.ready && s.memberLoaded);
+	const admin = useAuthStore(s => s.isAdmin);
+	if (!ready) return null;
+	if (!admin) return <Navigate to="/" replace />;
+	if (error) return <AppScreen title="회비 관리" onRefresh={accountingActions.mode}><p role="alert">{error}</p><button type="button" className="btn-lq-secondary" onClick={() => void accountingActions.mode()}>다시 확인</button></AppScreen>;
+	if (!mode) return <AppScreen title="회비 관리"><p className="text-muted">회계 상태를 확인하는 중…</p></AppScreen>;
+	return mode.enabled ? <AccountingAdmin /> : <LegacyDuesAdminPage mode={mode} />;
+}
+
+function LegacyDuesAdminPage({ mode }: { mode: AccountingMode }) {
 	const navigate = useNavigate();
 	const params = useParams<{ ym?: string; page?: string }>();
 	const ready = useAuthStore((s) => s.ready);
@@ -76,6 +91,7 @@ export default function DuesAdminPage() {
 				</button>
 			}
 		>
+			<AccountingControls mode={mode} />
 			{/* 월 선택기 */}
 			<div className="flex items-center justify-center gap-4" style={{ marginBottom: 12 }}>
 				<button type="button" onClick={() => goYm(-1)} className="text-muted" style={{ background: "none", cursor: "pointer", fontSize: 22, lineHeight: 1, padding: 4 }} aria-label="이전 달">‹</button>

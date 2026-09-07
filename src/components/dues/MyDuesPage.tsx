@@ -1,11 +1,13 @@
 import { useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore";
 import { duesActions, useDuesStore } from "../../store/duesStore";
 import AppScreen from "../common/AppScreen";
 import { publicLedgerMaxYm } from "../admin/dues/duesText";
 import MyDuesTab from "./MyDuesTab";
 import MyLedgerTab from "./MyLedgerTab";
+import { accountingActions, useAccountingMode } from "../../store/accountingV2Store";
+import AccountingMember from "../accounting/AccountingMember";
 
 type Page = "home" | "ledger";
 const NAV: [Page, string][] = [
@@ -15,6 +17,17 @@ const NAV: [Page, string][] = [
 
 // 회비(회원 본인). 탭으로 분리: 내 회비(납부·이력) / 클럽 회계(월별 공개). URL: /my-dues · /my-dues/ledger.
 export default function MyDuesPage() {
+	const { mode, error } = useAccountingMode();
+	const ready = useAuthStore(s => s.ready && s.memberLoaded);
+	const member = useAuthStore(s => s.memberId);
+	if (!ready) return null;
+	if (!member) return <Navigate to="/" replace />;
+	if (error) return <AppScreen title="회비" onRefresh={accountingActions.mode}><p role="alert">{error}</p><button type="button" className="btn-lq-secondary" onClick={() => void accountingActions.mode()}>다시 확인</button></AppScreen>;
+	if (!mode) return <AppScreen title="회비"><p className="text-muted">납부 상태를 확인하는 중…</p></AppScreen>;
+	return mode.enabled ? <AccountingMember key={member} /> : <LegacyMyDuesPage />;
+}
+
+function LegacyMyDuesPage() {
 	const navigate = useNavigate();
 	const params = useParams<{ page?: string }>();
 	const ready = useAuthStore((s) => s.ready);
