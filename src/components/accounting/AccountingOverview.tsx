@@ -1,17 +1,16 @@
-import {
-	ArrowUpRight,
-	Check,
-	ChevronDown,
-	ChevronRight,
-	Search,
-} from "lucide-react";
-import { useMemo, useState } from "react";
+import { ArrowUpRight, Check, ChevronDown, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { billingProgress, overviewBalances } from "../../lib/dues/v2/overview";
 import { transactionNeedsSettlement } from "../../lib/dues/v2/quickSettlement";
 import { groupSummary, kstMonth, memberLabel } from "../../lib/dues/v2/summary";
 import type { AccountingData } from "../../lib/dues/v2/types";
 import { fmtMD, won } from "../admin/dues/duesText";
-import { nameMatches } from "../admin/dues/matching";
+import { readAccountingParticipation } from "../../lib/supabase/accountingV2";
+import {
+	groupParticipation,
+	type AccountingParticipation,
+	type BillingPerson,
+} from "../../lib/dues/v2/participation";
 
 function Progress({
 	paid,
@@ -51,9 +50,6 @@ export default function AccountingOverview({
 }) {
 	const [feeOpen, setFeeOpen] = useState(false);
 	const [groupOpen, setGroupOpen] = useState<string | null>(null);
-	const [unpaidOpen, setUnpaidOpen] = useState<string | null>(null);
-	const [query, setQuery] = useState("");
-	const [unpaidLimit, setUnpaidLimit] = useState(5);
 	const groups = useMemo(
 		() =>
 			data.groups
@@ -61,6 +57,41 @@ export default function AccountingOverview({
 				.sort((a, b) => b.occurred_on.localeCompare(a.occurred_on)),
 		[data.groups, ym],
 	);
+	const [participation, setParticipation] = useState<{
+		key: string;
+		source: AccountingData;
+		data: AccountingParticipation;
+	} | null>(null);
+	const [participationError, setParticipationError] = useState("");
+	const [retry, setRetry] = useState(0);
+	const sessionKey = groups
+		.filter((g) => g.kind === "court" && g.session_id != null)
+		.map((g) => g.session_id)
+		.sort((a, b) => a! - b!)
+		.join(",");
+	const contextKey = `${ym}:${sessionKey}:${data.mode.revision}:${retry}`;
+	useEffect(() => {
+		let disposed = false;
+		void readAccountingParticipation(
+			sessionKey ? sessionKey.split(",").map(Number) : [],
+		)
+			.then((result) => {
+				if (!disposed) {
+					setParticipation({ key: contextKey, source: data, data: result });
+					setParticipationError("");
+				}
+			})
+			.catch(() => {
+				if (!disposed) setParticipationError(contextKey);
+			});
+		return () => {
+			disposed = true;
+		};
+	}, [contextKey, sessionKey, data]);
+	const context =
+		participation?.key === contextKey && participation.source === data
+			? participation.data
+			: undefined;
 	const fee = useMemo(
 		() =>
 			billingProgress(
@@ -79,15 +110,34 @@ export default function AccountingOverview({
 		String(d.payload.ym ?? d.payload.date ?? "").startsWith(ym),
 	).length;
 	const month = `${Number(ym.slice(5))}월`;
-	const unpaid = balances.unpaid.filter((m) =>
-		nameMatches(memberLabel(data, m.id), query),
-	);
-	const roster = (progress: ReturnType<typeof billingProgress>) => (
+	const roster = (
+		progress: ReturnType<typeof billingProgress>,
+		people?: BillingPerson[],
+	) => (
 		<div className="ac-overview-roster">
-			{progress.rows.map((r) => {
+			{(
+				people ??
+				progress.rows.map(
+					(payment): BillingPerson => ({
+						memberId: payment.charge.member_id,
+						state: "charged",
+						reason: "",
+						payment,
+						label:
+							payment.remaining === 0
+								? "완납"
+								: payment.remaining === payment.later
+									? "납기 이월"
+									: payment.paid > 0
+										? "부분 납부"
+										: "미납",
+					}),
+				)
+			).map((person) => {
+				const r = person.payment;
 				const paidDates = [
 					...new Set(
-						r.payments
+						(r?.payments ?? [])
 							.map(
 								(a) =>
 									data.bank.find((t) => t.id === a.bank_tx_id)?.occurred_at,
@@ -96,42 +146,47 @@ export default function AccountingOverview({
 					),
 				].sort();
 				return (
-					<div key={r.charge.id} className="ac-overview-person">
+					<div key={person.memberId} className="ac-overview-person">
 						<div>
-							<strong>{memberLabel(data, r.charge.member_id)}</strong>
-							<small>
-								{r.remaining > 0
-									? r.due
-											.map(
-												(d) =>
-													`${d.due_ym.slice(0, 4)}년 ${Number(d.due_ym.slice(5))}월 납기 · ${won(d.remaining)}`,
-											)
-											.join(" / ")
-									: paidDates.length
-										? `${paidDates.map(fmtMD).join(", ")} 입금으로 납부`
-										: "납부 완료"}
-							</small>
+							<strong>{memberLabel(data, person.memberId)}</strong>
+							{r && (
+								<small>
+									{r.remaining > 0
+										? r.due
+												.map(
+													(d) =>
+														`${d.due_ym.slice(0, 4)}년 ${Number(d.due_ym.slice(5))}월 납기 · ${won(d.remaining)}`,
+												)
+												.join(" / ")
+										: paidDates.length
+											? `${paidDates.map(fmtMD).join(", ")} 입금으로 납부`
+											: "납부 완료"}
+								</small>
+							)}
+							{person.reason && <small>{person.reason}</small>}
 						</div>
 						<div className="ac-overview-person-amount">
 							<span
-								className={r.remaining === 0 ? "ac-in" : "ac-overview-amber"}
+								className={
+									person.state === "excluded"
+										? "ac-caption"
+										: r?.remaining === 0
+											? "ac-in"
+											: "ac-overview-amber"
+								}
 							>
-								{r.remaining === 0
-									? "완납"
-									: r.remaining === r.later
-										? "납기 이월"
-										: r.paid > 0
-											? "부분 납부"
-											: "미납"}
+								{person.label}
 							</span>
-							<strong className="ac-number">
-								{won(r.remaining || r.paid)}
-							</strong>
+							{r && (
+								<strong className="ac-number">
+									{won(r.remaining || r.paid)}
+								</strong>
+							)}
 						</div>
 					</div>
 				);
 			})}
-			{!progress.rows.length && (
+			{!(people?.length ?? progress.rows.length) && (
 				<p className="ac-overview-empty">발행된 부과가 없습니다.</p>
 			)}
 		</div>
@@ -236,17 +291,38 @@ export default function AccountingOverview({
 						{groups.filter((g) => g.kind !== "monthly").length}개 항목
 					</span>
 				</div>
+				{participationError === contextKey && (
+					<div className="ac-overview-context-error" role="alert">
+						<p>
+							참석·제외 내역을 불러오지 못했습니다. 납부 내역은 아래에서 확인할
+							수 있습니다.
+						</p>
+						<button
+							type="button"
+							className="ac-link"
+							onClick={() => setRetry((n) => n + 1)}
+						>
+							다시 불러오기
+						</button>
+					</div>
+				)}
 				<div className="ac-overview-list">
 					{groups
 						.filter((g) => g.kind !== "monthly")
 						.map((g) => {
-							const progress = billingProgress(data, [g], ym);
+							const participation = groupParticipation(data, g, ym, context);
+							const progress = participation.progress;
 							const summary = groupSummary(data, g);
 							const label = g.session_id
 								? (sessionLabels.get(g.session_id) ?? g.label)
 								: g.label;
 							return (
-								<div key={g.id} className="ac-overview-group">
+								<div
+									key={g.id}
+									className="ac-overview-group"
+									role="region"
+									aria-label={`${label} 부과 현황`}
+								>
 									<button
 										type="button"
 										className="ac-overview-group-toggle"
@@ -262,6 +338,33 @@ export default function AccountingOverview({
 											<strong>{label}</strong>
 											<ChevronDown size={15} />
 										</div>
+										<div className="ac-overview-headcounts">
+											<span>
+												{participation.complete ? "전체" : "발행 명단"}{" "}
+												<b>{participation.totalCount}명</b>
+											</span>
+											<span>
+												부과 <b>{participation.chargedCount}명</b>
+											</span>
+											{participation.excludedCount > 0 && (
+												<span>
+													제외 <b>{participation.excludedCount}명</b>
+												</span>
+											)}
+											{participation.unissuedCount > 0 && (
+												<span className="ac-overview-amber">
+													미발행 <b>{participation.unissuedCount}명</b>
+												</span>
+											)}
+										</div>
+										{participation.exclusions.length > 0 && (
+											<p className="ac-overview-exclusions">
+												부과 제외 ·{" "}
+												{participation.exclusions
+													.map((e) => `${e.label} ${e.count}명`)
+													.join(" · ")}
+											</p>
+										)}
 										<div className="ac-overview-group-meta">
 											<span>
 												{progress.rows.length
@@ -274,14 +377,19 @@ export default function AccountingOverview({
 											</span>
 											<strong
 												className={
-													progress.remaining > 0 ? "ac-overview-amber" : "ac-in"
+													progress.remaining > 0 ||
+													participation.unissuedCount > 0
+														? "ac-overview-amber"
+														: "ac-in"
 												}
 											>
 												{progress.remaining > 0
 													? `${won(progress.remaining)} 남음`
-													: progress.rows.length
-														? "납부 완료"
-														: ""}
+													: participation.unissuedCount > 0
+														? "부과 확인 필요"
+														: progress.rows.length
+															? "납부 완료"
+															: ""}
 											</strong>
 										</div>
 										{progress.rows.length > 0 && (
@@ -298,7 +406,30 @@ export default function AccountingOverview({
 											</p>
 										)}
 									</button>
-									{groupOpen === g.id && roster(progress)}
+									{groupOpen === g.id && (
+										<>
+											{participation.attendance && (
+												<p className="ac-overview-attendance ac-caption">
+													현재 참석 기록 · 참석 확정{" "}
+													{participation.attendance.attendCount}명
+													{participation.attendance.targetDayCancelCount > 0 &&
+														` · 당일취소 부과 ${participation.attendance.targetDayCancelCount}명`}
+													{participation.attendance.boardAddedCount > 0 &&
+														` · 보드 추가 ${participation.attendance.boardAddedCount}명`}
+													{participation.attendance.mode === "split" &&
+														" · 엔빵은 운영진 포함"}
+												</p>
+											)}
+											{g.kind === "court" && !participation.complete && (
+												<p className="ac-overview-attendance ac-caption">
+													{context || participationError === contextKey
+														? "참석 기록을 확인할 수 없어 발행 명단만 표시합니다."
+														: "참석·제외 인원을 확인 중입니다."}
+												</p>
+											)}
+											{roster(progress, participation.rows)}
+										</>
+									)}
 								</div>
 							);
 						})}
@@ -306,81 +437,6 @@ export default function AccountingOverview({
 				{!groups.some((g) => g.kind !== "monthly") && (
 					<p className="ac-overview-empty">
 						이 달의 대관·모임 내역이 없습니다.
-					</p>
-				)}
-			</section>
-			<section className="ac-overview-section" aria-label="미납 현황">
-				<div className="ac-overview-heading">
-					<h2>
-						남은 미납 <span>{balances.unpaid.length}명</span>
-					</h2>
-					<strong className="ac-number">{won(balances.outstanding)}</strong>
-				</div>
-				<p className="ac-overview-footnote">
-					{month}까지 납기가 도래한 금액 · 이전 달 미납 포함
-				</p>
-				{balances.unpaid.length > 0 && (
-					<>
-						<div className="ac-search ac-overview-search">
-							<Search size={15} />
-							<input
-								aria-label="미납 회원 검색"
-								placeholder="이름으로 찾기"
-								value={query}
-								onChange={(e) => {
-									setQuery(e.target.value);
-									setUnpaidLimit(5);
-								}}
-							/>
-						</div>
-						<div className="ac-overview-list">
-							{unpaid.slice(0, unpaidLimit).map((m) => (
-								<div key={m.id} className="ac-overview-unpaid">
-									<button
-										type="button"
-										aria-expanded={unpaidOpen === m.id}
-										onClick={() =>
-											setUnpaidOpen(unpaidOpen === m.id ? null : m.id)
-										}
-									>
-										<span>{memberLabel(data, m.id)}</span>
-										<strong className="ac-number">{won(m.amount)}</strong>
-										<ChevronDown size={14} />
-									</button>
-									{unpaidOpen === m.id && (
-										<div className="ac-overview-unpaid-lines">
-											{m.lines.map((l, i) => (
-												<div key={`${l.label}-${l.ym}-${i}`}>
-													<span>
-														{l.label}
-														<small>{l.ym} 납기</small>
-													</span>
-													<span className="ac-number">{won(l.amount)}</span>
-												</div>
-											))}
-										</div>
-									)}
-								</div>
-							))}
-						</div>
-						{unpaid.length > unpaidLimit && (
-							<button
-								type="button"
-								className="ac-overview-expand"
-								onClick={() => setUnpaidLimit(unpaidLimit + 10)}
-							>
-								미납 회원 더 보기 ({unpaid.length - unpaidLimit}명)
-								<ChevronDown size={14} />
-							</button>
-						)}
-						{!unpaid.length && (
-							<p className="ac-overview-empty">검색된 미납 회원이 없습니다.</p>
-						)}
-					</>
-				)}
-				{!balances.unpaid.length && (
-					<p className="ac-overview-empty">
-						<Check size={15} /> 이 달까지 남은 미납이 없습니다.
 					</p>
 				)}
 			</section>

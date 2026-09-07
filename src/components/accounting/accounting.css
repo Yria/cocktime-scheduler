@@ -255,8 +255,7 @@
 .ac-overview-list:empty {
 	display: none;
 }
-.ac-overview-group + .ac-overview-group,
-.ac-overview-unpaid + .ac-overview-unpaid {
+.ac-overview-group + .ac-overview-group {
 	border-top: 1px solid var(--ac-border);
 }
 .ac-overview-group-toggle {
@@ -299,6 +298,36 @@
 	color: var(--text-secondary);
 	margin: 10px 0 8px;
 }
+.ac-overview-headcounts {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 14px;
+	margin-top: 12px;
+	font-size: var(--ac-type-caption);
+	color: var(--text-secondary);
+}
+.ac-overview-headcounts b {
+	color: var(--text-primary);
+	font-weight: 600;
+}
+.ac-overview-exclusions {
+	margin-top: 5px;
+	font-size: var(--ac-type-caption);
+	color: var(--text-secondary);
+	text-wrap: pretty;
+}
+.ac-overview-attendance {
+	padding: 10px 14px 0;
+	border-top: 1px solid var(--ac-border);
+}
+.ac-overview-context-error {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 12px;
+	font-size: var(--ac-type-caption);
+	color: var(--text-secondary);
+}
 .ac-overview-group-meta strong {
 	font-weight: 500;
 }
@@ -330,8 +359,7 @@
 	font-weight: 550;
 	overflow-wrap: anywhere;
 }
-.ac-overview-person small,
-.ac-overview-unpaid-lines small {
+.ac-overview-person small {
 	display: block;
 	font-size: var(--ac-type-caption);
 	color: var(--text-secondary);
@@ -354,47 +382,6 @@
 }
 .ac-overview-section > .ac-overview-footnote {
 	margin: -7px 0 12px;
-}
-.ac-overview-search {
-	margin-bottom: 10px;
-}
-.ac-overview-search input {
-	padding-block: 8px;
-	font-size: var(--ac-type-caption);
-}
-.ac-overview-unpaid > button {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	width: 100%;
-	min-height: 47px;
-	padding: 11px 14px;
-	text-align: left;
-	font-size: var(--ac-type-caption);
-}
-.ac-overview-unpaid > button > span {
-	flex: 1;
-	min-width: 0;
-	overflow-wrap: anywhere;
-}
-.ac-overview-unpaid > button > strong {
-	font-size: var(--ac-type-caption);
-	font-weight: 600;
-}
-.ac-overview-unpaid > button > svg {
-	color: var(--text-secondary);
-	flex-shrink: 0;
-}
-.ac-overview-unpaid-lines {
-	padding: 0 14px 12px;
-	font-size: var(--ac-type-caption);
-}
-.ac-overview-unpaid-lines > div {
-	display: flex;
-	justify-content: space-between;
-	gap: 12px;
-	padding: 8px 0;
-	border-top: 1px solid var(--ac-border);
 }
 .ac-overview-carry {
 	display: grid;
@@ -1573,7 +1560,6 @@
 	background: var(--ac-accent-soft);
 	border-color: var(--ac-accent-border);
 }
-
 
 /* Readable, reachable controls without extra card layers. */
 .accounting-screen button,

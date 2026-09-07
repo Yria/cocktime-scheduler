@@ -24,6 +24,7 @@ export interface Charge {
 	previous_id: string | null;
 	payer_hint: string | null;
 	issued_at: string;
+	basis?: Record<string, unknown>;
 }
 export interface DueSlice {
 	id: string;

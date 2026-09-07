@@ -7,6 +7,78 @@ import type {
 	OperationResult,
 } from "../dues/v2/types";
 import { supabase } from "./client";
+import type { AccountingParticipation } from "../dues/v2/participation";
+import type { SessionFeeRow } from "./dues";
+
+/** Attendance context only. Charges and paid amounts are read from the V2 ledger. */
+export async function readAccountingParticipation(
+	sessionIds: number[],
+): Promise<AccountingParticipation> {
+	if (!sessionIds.length) return { sessions: [], adminIds: [], flatFee: 0 };
+	const [sessions, admins, settings] = await Promise.all([
+		supabase
+			.from("sessions")
+			.select(
+				"id,title,status,scheduled_at,court_fee,recurring_schedules(court_fee),attendances(member_id,status,confirmed_at,cancelled_at),session_players(member_id)",
+			)
+			.in("id", sessionIds),
+		supabase.from("user_roles").select("member_id").eq("role", "admin"),
+		supabase
+			.from("dues_settings")
+			.select("court_fee_default")
+			.eq("id", 1)
+			.single(),
+	]);
+	if (sessions.error) throw sessions.error;
+	if (admins.error) throw admins.error;
+	if (settings.error) throw settings.error;
+	type RawSession = {
+		id: number;
+		title: string | null;
+		status: SessionFeeRow["status"];
+		scheduled_at: string | null;
+		court_fee: number | null;
+		recurring_schedules: { court_fee: number | null } | null;
+		attendances: {
+			member_id: string;
+			status: string;
+			confirmed_at: string | null;
+			cancelled_at: string | null;
+		}[];
+		session_players: { member_id: string | null }[];
+	};
+	return {
+		adminIds: (admins.data ?? []).map((m) => m.member_id),
+		flatFee: settings.data.court_fee_default,
+		sessions: ((sessions.data ?? []) as unknown as RawSession[]).map((s) => ({
+			id: s.id,
+			title: s.title,
+			status: s.status,
+			scheduledAt: s.scheduled_at,
+			courtFee: s.court_fee,
+			ruleCourtFee: s.recurring_schedules?.court_fee ?? null,
+			courtCount: null,
+			hours: null,
+			placeName: null,
+			attendeeIds: (s.attendances ?? [])
+				.filter((a) => ["confirmed", "late_pool"].includes(a.status))
+				.map((a) => a.member_id),
+			attendances: (s.attendances ?? []).map((a) => ({
+				memberId: a.member_id,
+				status: a.status,
+				confirmedAt: a.confirmed_at,
+				cancelledAt: a.cancelled_at,
+			})),
+			boardMemberIds: [
+				...new Set(
+					(s.session_players ?? [])
+						.map((p) => p.member_id)
+						.filter((id): id is string => !!id),
+				),
+			],
+		})),
+	};
+}
 
 export async function accountingMode(): Promise<AccountingMode> {
 	const { data, error } = await supabase.rpc("dues_v2_mode");

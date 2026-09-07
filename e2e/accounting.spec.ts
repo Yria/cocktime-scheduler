@@ -116,7 +116,7 @@ test.beforeEach(async ({ page, context }, testInfo) => {
 		),
 	);
 	await db.exec(
-		"alter table bank_transactions add column balance_after bigint",
+		"alter table bank_transactions add column balance_after bigint; alter table attendances add column confirmed_at timestamptz, add column cancelled_at timestamptz",
 	);
 	if (testInfo.title.startsWith("accounting layouts")) {
 		await db.exec(`
@@ -165,6 +165,34 @@ test.beforeEach(async ({ page, context }, testInfo) => {
 			);
 			return route.fulfill({ json: result.rows });
 		}
+		if (name === "sessions" && route.request().method() === "GET") {
+			const ids = (url.searchParams.get("id") ?? "")
+				.replace(/^in\.\(|\)$/g, "")
+				.split(",")
+				.map(Number)
+				.filter(Number.isFinite);
+			const result = await db.query(
+				`select s.id,s.title,s.status,s.scheduled_at,s.court_fee,
+				(select to_jsonb(r) from recurring_schedules r where r.id=s.recurring_schedule_id) as recurring_schedules,
+				(select coalesce(jsonb_agg(to_jsonb(a)),'[]') from attendances a where a.session_id=s.id) as attendances,
+				(select coalesce(jsonb_agg(to_jsonb(p)),'[]') from session_players p where p.session_id=s.id) as session_players
+				from sessions s where s.id=any($1::bigint[])`,
+				[ids],
+			);
+			return route.fulfill({ json: result.rows });
+		}
+		if (name === "user_roles" && route.request().method() === "GET")
+			return route.fulfill({
+				json: [{ member_id: "00000000-0000-4000-8000-000000000004" }],
+			});
+		if (name === "dues_settings" && route.request().method() === "GET")
+			return route.fulfill({
+				json: (
+					await db.query(
+						"select court_fee_default from dues_settings where id=1",
+					)
+				).rows[0],
+			});
 		const keys: Record<string, string[]> = {
 			dues_v2_mode: [],
 			dues_v2_read: [],
@@ -1027,11 +1055,14 @@ test("overview presents read-only payment progress and balances in both themes, 
 }) => {
 	const C = "00000000-0000-4000-8000-000000000003";
 	const D = "00000000-0000-4000-8000-000000000005";
+	const G = "00000000-0000-4000-8000-000000000006";
 	await db.exec(`
 		update members set birth_year=1996 where id='${A}';
 		update members set birth_year=2002 where id='${B}';
-		insert into members(id,name,is_active) values('${C}','박서연',true),('${D}','이민수',false);
+		insert into members(id,name,is_active) values('${C}','박서연',true),('${D}','이민수',false),('${G}','김민서',true);
 		update sessions set title='에이트민턴' where id=1;
+		insert into attendances(session_id,member_id,status) values (1,'${A}','confirmed'),(1,'${C}','confirmed'),(1,'${D}','late_pool'),(1,'00000000-0000-4000-8000-000000000004','confirmed');
+		insert into attendances(session_id,member_id,status,confirmed_at,cancelled_at) values (1,'${G}','cancelled','2026-08-22T10:00:00+09','2026-08-22T10:30:00+09');
 	`);
 	const monthly = await scalar<string>(
 		"select id from dues_v2_groups where source_key='monthly:2026-08'",
@@ -1086,9 +1117,20 @@ test("overview presents read-only payment progress and balances in both themes, 
 		"25",
 	);
 	await expect(fee.getByText("1 / 4명")).toBeVisible();
-	await expect(
-		overview.getByRole("region", { name: "미납 현황" }),
-	).toContainText("36,000원");
+	await expect(overview.getByRole("region", { name: "미납 현황" })).toHaveCount(
+		0,
+	);
+	await expect(overview.getByText("남은 미납", { exact: true })).toHaveCount(0);
+	const courtRegion = overview.getByRole("region", {
+		name: /에이트민턴.*부과 현황/,
+	});
+	await expect(courtRegion).toContainText("전체 6명");
+	await expect(courtRegion).toContainText("부과 3명");
+	await expect(courtRegion).toContainText("제외 3명");
+	await expect(courtRegion).toContainText("부과 취소 1명");
+	await expect(courtRegion).toContainText("운영진 1명");
+	await expect(courtRegion).toContainText("1시간 내 철회 1명");
+	await expect(courtRegion).toContainText("0/3명 납부");
 	await expect(
 		overview.getByRole("region", { name: "이월 현황" }),
 	).toContainText("2,000원");
@@ -1128,13 +1170,21 @@ test("overview presents read-only payment progress and balances in both themes, 
 	await expect(fee.getByText(/입금으로 납부/)).toBeVisible();
 	await expect(page.locator(".accounting-sheet")).toHaveCount(0);
 	await fee.getByRole("button", { name: "납부 명단" }).click();
-	await page.getByLabel("미납 회원 검색").fill("ㄱㅈㅎ");
-	const unpaid = overview.getByRole("region", { name: "미납 현황" });
-	await expect(unpaid.getByRole("button")).toHaveCount(2);
-	await unpaid.getByRole("button", { name: /2002년생/ }).click();
-	await expect(unpaid.getByText(/7월 회비/)).toBeVisible();
-	await expect(unpaid.getByText("3,000원", { exact: true })).toBeVisible();
-	await page.getByLabel("미납 회원 검색").fill("");
+	await courtRegion.getByRole("button").click();
+	await expect(
+		courtRegion.getByText("운영진 · 대관비 면제", { exact: true }),
+	).toBeVisible();
+	await expect(
+		courtRegion.getByText("확정 후 1시간 내 철회 · 미부과", { exact: true }),
+	).toBeVisible();
+	await expect(courtRegion.getByText("미납", { exact: true })).toHaveCount(3);
+	for (const theme of ["light", "dark"]) {
+		await page.evaluate(
+			(dark) => document.documentElement.classList.toggle("dark", dark),
+			theme === "dark",
+		);
+		await designEvidence(page, `participation-expanded-${theme}`);
+	}
 	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.evaluate(() => {
 		(document.activeElement as HTMLElement | null)?.blur();
@@ -1145,6 +1195,7 @@ test("overview presents read-only payment progress and balances in both themes, 
 		fullPage: true,
 		animations: "disabled",
 	});
+	await designEvidence(page, "participation-desktop");
 	expect(
 		calls.filter((c) =>
 			["dues_v2_command", "dues_v2_preview", "dues_v2_manage"].includes(c.name),
@@ -1178,12 +1229,41 @@ test("overview shows an unissued month as empty and resets the roster on month c
 		"0",
 	);
 	await expect(fee.getByText("모두 납부", { exact: true })).toHaveCount(0);
-	await expect(page.getByRole("region", { name: "미납 현황" })).toContainText(
-		"이 달까지 남은 미납이 없습니다.",
-	);
+	await expect(page.getByRole("region", { name: "미납 현황" })).toHaveCount(0);
 	await page.getByRole("button", { name: "다음 달", exact: true }).click();
 	await expect(page.getByRole("button", { name: "납부 명단" })).toHaveAttribute(
 		"aria-expanded",
 		"false",
 	);
+});
+
+test("overview retains issued facts when attendance fails and retries without writing", async ({
+	page,
+}) => {
+	let unavailable = true;
+	await page.route("**/rest/v1/sessions?**", async (route) => {
+		if (unavailable)
+			return route.fulfill({ status: 403, json: { message: "Unavailable" } });
+		return route.fallback();
+	});
+	await navigate(page, "/dues/2026-08");
+	const overview = page.getByRole("region", { name: "월별 납부 현황" });
+	await expect(overview.getByRole("alert")).toBeVisible();
+	const court = overview.getByRole("region", { name: /대관.*부과 현황/ });
+	await expect(court).toContainText("발행 명단 1명");
+	await expect(court).not.toContainText("전체");
+	await court.getByRole("button").click();
+	await expect(court).toContainText(
+		"참석 기록을 확인할 수 없어 발행 명단만 표시합니다.",
+	);
+	unavailable = false;
+	await overview.getByRole("button", { name: "다시 불러오기" }).click();
+	await expect(overview.getByRole("alert")).toHaveCount(0);
+	await expect(court).toContainText("전체 1명");
+	await expect(court).toContainText("부과 취소");
+	expect(
+		calls.filter((c) =>
+			["dues_v2_command", "dues_v2_preview", "dues_v2_manage"].includes(c.name),
+		),
+	).toHaveLength(0);
 });
