@@ -18,7 +18,9 @@ export default function RefundPicker({
 	outTxId,
 	value,
 	onChange,
+	compact = false,
 }: {
+	compact?: boolean;
 	data: AccountingData;
 	outTxId: number;
 	value: RefundSelection;
@@ -102,7 +104,7 @@ export default function RefundPicker({
 			);
 		});
 	return (
-		<div className="ac-refund">
+		<div className={`ac-refund ${compact ? "ac-refund-inline" : ""}`}>
 			<div className="ac-refund-outgoing">
 				<div>
 					<span className="ac-caption">

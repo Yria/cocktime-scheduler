@@ -13,6 +13,7 @@ import {
 import sql from "../../../../supabase/migrations/20260907030000_dues_v2.sql?raw";
 
 import activateSql from "../../../../scripts/accounting-v2-activate.sql?raw";
+import quickSql from "../../../../supabase/migrations/20260907060000_dues_v2_quick_settlement.sql?raw";
 import refundSql from "../../../../supabase/migrations/20260907050000_dues_v2_payer_refunds.sql?raw";
 
 const A = "00000000-0000-4000-8000-000000000001";
@@ -93,6 +94,7 @@ beforeAll(async () => {
 	try {
 		await db.exec(sql);
 		await db.exec(refundSql);
+		await db.exec(quickSql);
 	} catch (error) {
 		throw new Error(`Migration failed: ${String(error)}`);
 	}
@@ -864,4 +866,149 @@ it("database-owner deployment activation preserves financial facts and records t
 		),
 	).toBeNull();
 	await expectFailure(() => db.exec(script), /already exists|이미/);
+});
+
+describe("atomic matching from the settlement list", () => {
+	it("previews matching and partial payment together, commits once, and undoes both", async () => {
+		await manage("activate");
+		await db.exec(
+			"insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',6000,'2026-09-06','김지훈')",
+		);
+		const before = await state(),
+			old = await legacy(),
+			rev = (await mode()).revision;
+		const request = crypto.randomUUID();
+		const payload = {
+			action: "pay",
+			reason: "목록에서 납부 확인",
+			owner_id: B,
+			confirm_owner: true,
+			lines: [
+				{
+					position_id: await position(90),
+					due_id: await due(106),
+					amount: 4000,
+				},
+			],
+		};
+		await scalar("select dues_v2_preview($1,$2,$3)", [payload, request, rev]);
+		expect(await state()).toEqual(before);
+		const result = await command(payload, request, rev);
+		expect(await command(payload, request, rev)).toEqual(result);
+		expect(
+			await scalar(
+				"select owner_id from dues_v2_allocations where bank_tx_id=90",
+			),
+		).toBe(B);
+		expect(
+			await scalar(
+				"select sum(amount)::int from dues_v2_positions where bank_tx_id=90 and owner_id=$1 and purpose='member_pending'",
+				[B],
+			),
+		).toBe(2000);
+		expect(await legacy()).toEqual(old);
+		await manage("undo");
+		expect(await state()).toEqual(before);
+		expect(await legacy()).toEqual(old);
+	});
+	it("rolls back the ownership choice with an invalid payment and rejects unconfirmed/wrong-owner claims", async () => {
+		await manage("activate");
+		await db.exec(
+			"insert into bank_transactions(id,direction,amount,occurred_at) values(90,'in',6000,'2026-09-06')",
+		);
+		const before = await state();
+		const line = {
+			position_id: await position(90),
+			due_id: await due(106),
+			amount: 6000,
+		};
+		await expectFailure(() =>
+			command({
+				action: "pay",
+				owner_id: B,
+				confirm_owner: true,
+				lines: [line],
+			}),
+		);
+		expect(await state()).toEqual(before);
+		await expectFailure(
+			() =>
+				command({
+					action: "pay",
+					owner_id: B,
+					lines: [{ ...line, amount: 5000 }],
+				}),
+			/납부자를 먼저 선택/,
+		);
+		await expectFailure(
+			() =>
+				command({
+					action: "pay",
+					owner_id: A,
+					confirm_owner: true,
+					lines: [{ ...line, amount: 5000 }],
+				}),
+			/소유자/,
+		);
+		expect(await state()).toEqual(before);
+		await command({
+			action: "position",
+			position_id: await position(90),
+			owner_id: B,
+			amount: 6000,
+			purpose: "member_pending",
+		});
+		const matched = await state();
+		await expectFailure(
+			async () =>
+				command({
+					action: "pay",
+					owner_id: A,
+					confirm_owner: true,
+					proxy: true,
+					lines: [{ ...line, position_id: await position(90), amount: 5000 }],
+				}),
+			/납부자를 바꿀 수 없습니다/,
+		);
+		expect(await state()).toEqual(matched);
+		expect(
+			await scalar(
+				"select has_function_privilege('authenticated','public.dues_v2_match_position(uuid,uuid,boolean)','execute')",
+			),
+		).toBe(false);
+	});
+	it("matches unused money while carrying it together with a debt, preserving the remainder and undo", async () => {
+		await manage("activate");
+		await db.exec(
+			"insert into bank_transactions(id,direction,amount,occurred_at) values(90,'in',6000,'2026-09-06')",
+		);
+		const before = await state();
+		await command({
+			action: "carry",
+			member_id: B,
+			confirm_owner: true,
+			target_ym: "2099-01",
+			money: [{ position_id: await position(90), amount: 4000 }],
+			debts: [{ due_id: await due(106), amount: 3000 }],
+		});
+		expect(
+			await scalar(
+				"select sum(amount)::int from dues_v2_positions where bank_tx_id=90 and owner_id=$1 and purpose='carry'",
+				[B],
+			),
+		).toBe(4000);
+		expect(
+			await scalar(
+				"select sum(amount)::int from dues_v2_positions where bank_tx_id=90 and owner_id=$1 and purpose='member_pending'",
+				[B],
+			),
+		).toBe(2000);
+		expect(
+			await scalar(
+				"select sum(remaining)::int from dues_v2_due where due_ym='2099-01'",
+			),
+		).toBe(3000);
+		await manage("undo");
+		expect(await state()).toEqual(before);
+	});
 });

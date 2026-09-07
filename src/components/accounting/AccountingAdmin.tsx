@@ -1,3 +1,4 @@
+import { transactionNeedsSettlement } from "../../lib/dues/v2/quickSettlement";
 import { ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
 import "./accounting.css";
 import TransactionCard from "./TransactionCard";
@@ -41,6 +42,8 @@ export default function AccountingAdmin() {
 	const [draft, setDraft] = useState<OperationDraft | null>(null);
 	const [expanded, setExpanded] = useState<string | null>(null);
 	const [selected, setSelected] = useState<string[]>([]);
+	const [settling, setSettling] = useState(false);
+	const [onlyPending, setOnlyPending] = useState(false);
 	const [search, setSearch] = useState("");
 	const [issueError, setIssueError] = useState("");
 	const [busy, setBusy] = useState(false);
@@ -106,7 +109,7 @@ export default function AccountingAdmin() {
 		}
 	};
 	const sessionLabels = sessionChoiceLabels(sessions);
-	const disabled = mode.paused || busy || loading;
+	const disabled = mode.paused || busy || loading || settling;
 	return (
 		<AppScreen
 			title="회비 관리"
@@ -127,6 +130,7 @@ export default function AccountingAdmin() {
 				<button
 					type="button"
 					aria-label="이전 달"
+					disabled={settling}
 					onClick={() => go(shiftYm(ym, -1))}
 				>
 					<ChevronLeft size={20} />
@@ -137,6 +141,7 @@ export default function AccountingAdmin() {
 				<button
 					type="button"
 					aria-label="다음 달"
+					disabled={settling}
 					onClick={() => go(shiftYm(ym, 1))}
 				>
 					<ChevronRight size={20} />
@@ -148,6 +153,7 @@ export default function AccountingAdmin() {
 						type="button"
 						key={id}
 						aria-current={page === id ? "page" : undefined}
+						disabled={settling}
 						onClick={() => go(ym, id)}
 						className={`flex-1 rounded-lg py-2 text-sm ${page === id ? "bg-white dark:bg-white/15 font-bold" : "text-muted"}`}
 					>
@@ -205,15 +211,48 @@ export default function AccountingAdmin() {
 								<Search size={17} aria-hidden="true" />
 								<input
 									aria-label="거래 검색"
+									disabled={settling}
 									placeholder="이름 또는 거래 번호로 검색"
 									value={search}
 									onChange={(e) => setSearch(e.target.value)}
 								/>
 							</div>
+							<div
+								className="ac-inbox-filter"
+								role="group"
+								aria-label="거래 표시"
+							>
+								<button
+									type="button"
+									aria-pressed={!onlyPending}
+									disabled={settling}
+									onClick={() => setOnlyPending(false)}
+								>
+									전체
+								</button>
+								<button
+									type="button"
+									aria-pressed={onlyPending}
+									disabled={settling}
+									onClick={() => setOnlyPending(true)}
+								>
+									처리할 내역{" "}
+									<span>
+										{
+											data.bank.filter(
+												(t) =>
+													kstMonth(t.occurred_at) === ym &&
+													transactionNeedsSettlement(data, t.id),
+											).length
+										}
+									</span>
+								</button>
+							</div>
 							{data.bank
 								.filter(
 									(t) =>
 										kstMonth(t.occurred_at) === ym &&
+										(!onlyPending || transactionNeedsSettlement(data, t.id)) &&
 										(nameMatches(t.name ?? "", search) ||
 											String(t.id) === search),
 								)
@@ -224,13 +263,15 @@ export default function AccountingAdmin() {
 										data={data}
 										transaction={t}
 										disabled={disabled}
-										onAction={setDraft}
+										onDone={refresh}
+										onPendingChange={setSettling}
 										onMonth={(month) => go(month, "inbox")}
 									/>
 								))}
 							{!data.bank.some(
 								(t) =>
 									kstMonth(t.occurred_at) === ym &&
+									(!onlyPending || transactionNeedsSettlement(data, t.id)) &&
 									(nameMatches(t.name ?? "", search) ||
 										String(t.id) === search),
 							) && (

@@ -818,3 +818,226 @@
 	padding: 11px 14px;
 	box-shadow: none;
 }
+
+/* 정산함: 선택과 확인을 같은 카드 안에서 끝낸다. */
+.ac-inbox-filter {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin: 0 0 2px;
+}
+.ac-inbox-filter button {
+	padding: 6px 10px;
+	border-radius: 8px;
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+.ac-inbox-filter button[aria-pressed="true"] {
+	color: var(--ac-blue);
+	background: rgba(11, 132, 255, 0.1);
+	font-weight: 650;
+}
+.ac-inbox-filter span {
+	margin-left: 3px;
+}
+.ac-quick {
+	border-top: 1px solid var(--ac-border);
+	padding-top: 13px;
+}
+.ac-quick-fields {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	min-width: 0;
+}
+.ac-quick-fields:disabled {
+	opacity: 0.65;
+}
+.ac-quick-owner {
+	font-size: 11px;
+	color: var(--text-secondary);
+}
+.ac-quick-owner strong {
+	font-size: 12px;
+	margin-left: 6px;
+	color: var(--text-primary);
+	font-weight: 600;
+}
+.ac-choice-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+.ac-quick .ac-chip {
+	text-align: left;
+	padding: 8px 10px;
+	border: 1px solid transparent;
+}
+.ac-quick .ac-chip[aria-pressed="true"] {
+	color: var(--ac-blue);
+	background: rgba(11, 132, 255, 0.1);
+	border-color: rgba(11, 132, 255, 0.35);
+}
+.ac-quick .ac-member-picker {
+	gap: 6px;
+}
+.ac-quick .ac-people {
+	max-height: 150px;
+}
+.ac-quick .ac-person-option {
+	padding: 7px 9px;
+}
+.ac-quick .ac-avatar {
+	width: 28px;
+	height: 28px;
+	font-size: 11px;
+}
+.ac-quick .ac-selected-person {
+	padding: 9px;
+}
+.ac-quick .ac-person-copy strong {
+	font-size: 12px;
+}
+.ac-quick .ac-person-copy small {
+	font-size: 10px;
+}
+.ac-quick .ac-search input {
+	font-size: 13px;
+	padding-block: 9px;
+}
+.ac-quick-dues {
+	display: flex;
+	flex-direction: column;
+	gap: 7px;
+}
+.ac-quick-due {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.ac-quick-due > button {
+	flex: 1;
+	justify-content: flex-start;
+	min-width: 140px;
+}
+.ac-quick-due small {
+	display: block;
+	margin-top: 2px;
+	color: var(--text-secondary);
+	font-weight: 400;
+	font-size: 10px;
+}
+.ac-quick-amount {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	color: var(--text-secondary);
+	font-size: 12px;
+}
+.ac-quick-amount input {
+	border: 1px solid var(--ac-border);
+	border-radius: 8px;
+	background: var(--ac-fill);
+	width: 84px;
+	padding: 8px;
+	color: var(--text-primary);
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+.ac-quick-month {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+.ac-quick-month input {
+	min-width: 0;
+	max-width: 200px;
+	padding: 8px 10px;
+	background: var(--ac-fill);
+	color: var(--text-primary);
+	border-radius: 8px;
+	border: 1px solid var(--ac-border);
+}
+.ac-quick-more {
+	font-size: 11px;
+	color: var(--text-secondary);
+}
+.ac-quick-more > summary {
+	cursor: pointer;
+	padding: 3px 0;
+}
+.ac-quick-more > :not(summary) {
+	margin-top: 8px;
+}
+.ac-quick-more input {
+	width: 100%;
+}
+.ac-quick-more input[type="checkbox"] {
+	width: 17px;
+}
+.ac-quick-fields h4 {
+	font-size: 12px;
+	font-weight: 650;
+	margin-top: 4px;
+}
+.ac-quick-confirm {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-top: 12px;
+	padding-top: 12px;
+	border-top: 1px solid var(--ac-border);
+}
+.ac-quick-confirm > .ac-caption {
+	font-size: 11px;
+}
+.ac-quick-confirm-buttons {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 14px;
+}
+.ac-inline-confirm {
+	min-width: 110px;
+	border-radius: 9px;
+	background: #168344;
+	color: #fff;
+	padding: 10px 16px;
+	font-size: 13px;
+	font-weight: 650;
+}
+.ac-inline-confirm:disabled {
+	background: var(--ac-fill);
+	color: var(--text-secondary);
+}
+.ac-quick-error {
+	font-size: 12px;
+	color: var(--ac-red);
+}
+.ac-saved {
+	font-size: 12px;
+	color: var(--ac-green);
+}
+.ac-refund-inline .ac-refund-outgoing,
+.ac-refund-inline .ac-step-title > span {
+	display: none;
+}
+.ac-refund-inline {
+	gap: 10px;
+}
+.ac-refund-inline .ac-step-title h3 {
+	font-size: 12px;
+}
+.ac-refund-inline .ac-receipt {
+	padding: 10px;
+}
+.ac-refund-inline .ac-receipt-top strong {
+	font-size: 12px;
+}
+.ac-refund-inline .ac-check {
+	font-size: 11px;
+}

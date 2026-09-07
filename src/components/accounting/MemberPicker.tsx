@@ -1,5 +1,5 @@
 import { Check, Search, UserRound } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { matchingMembers } from "../../lib/dues/v2/selection";
 import { memberLabel } from "../../lib/dues/v2/summary";
 import type { AccountingData } from "../../lib/dues/v2/types";
@@ -17,6 +17,7 @@ export default function MemberPicker({
 	label?: string;
 	suggestedName?: string;
 }) {
+	const searchId = useId();
 	const [query, setQuery] = useState(suggestedName);
 	const matches = matchingMembers(data, query);
 	const selected = data.members.find((m) => m.id === value);
@@ -52,13 +53,13 @@ export default function MemberPicker({
 				</div>
 			) : (
 				<>
-					<label className="ac-label" htmlFor={`member-search-${label}`}>
+					<label className="ac-label" htmlFor={searchId}>
 						{label}
 					</label>
 					<div className="ac-search">
 						<Search size={17} aria-hidden="true" />
 						<input
-							id={`member-search-${label}`}
+							id={searchId}
 							aria-label={`${label} 이름·초성 검색`}
 							value={query}
 							onChange={(e) => setQuery(e.target.value)}

@@ -1,3 +1,5 @@
+import { useState } from "react";
+import QuickSettlement from "./QuickSettlement";
 import { ArrowRight, RotateCcw } from "lucide-react";
 import { kstMonth, memberLabel } from "../../lib/dues/v2/summary";
 import {
@@ -12,13 +14,15 @@ export default function TransactionCard({
 	data,
 	transaction: t,
 	disabled,
-	onAction,
+	onDone,
+	onPendingChange,
 	onMonth,
 }: {
 	data: AccountingData;
 	transaction: BankTransaction;
 	disabled: boolean;
-	onAction: (draft: OperationDraft) => void;
+	onDone: () => Promise<void>;
+	onPendingChange: (pending: boolean) => void;
 	onMonth: (ym: string) => void;
 }) {
 	const positions = data.positions.filter((p) => p.bank_tx_id === t.id);
@@ -28,13 +32,28 @@ export default function TransactionCard({
 	const refund = data.refunds.find((r) => r.out_tx_id === t.id);
 	const returned = data.refunds.filter((r) => r.in_tx_id === t.id);
 	const expense = data.expenses.find((e) => e.bank_tx_id === t.id);
+	const [draft, setDraft] = useState<OperationDraft | null>(() => {
+		const pending = positions.find((p) =>
+			["unassigned", "member_pending"].includes(p.purpose),
+		);
+		if (pending) return { type: "pay", positionId: pending.id };
+		if (t.direction === "out" && !refund && !expense?.group_id)
+			return { type: "expense", outTxId: t.id };
+		return null;
+	});
+	const [saved, setSaved] = useState(false);
+	const onAction = (next: OperationDraft) => {
+		setSaved(false);
+		setDraft(next);
+	};
+
 	const date = new Date(t.occurred_at).toLocaleDateString("ko-KR", {
 		timeZone: "Asia/Seoul",
 		month: "numeric",
 		day: "numeric",
 	});
 	return (
-		<section className="ac-card ac-transaction">
+		<section className="ac-card ac-transaction" aria-label={`거래 ${t.id}`}>
 			<div className="ac-transaction-heading">
 				<div className="ac-transaction-name">
 					<span className="ac-caption">{date}</span>
@@ -104,14 +123,15 @@ export default function TransactionCard({
 								</span>
 								<strong className="ac-number">{won(p.amount)}</strong>
 							</div>
-							{(p.owner_id || p.group_id || p.available_ym) && (
-								<p className="ac-caption">
-									{p.purpose === "club"
-										? data.groups.find((g) => g.id === p.group_id)?.label
-										: memberLabel(data, p.owner_id)}
-									{p.available_ym && ` · ${p.available_ym}부터 사용`}
-								</p>
-							)}
+							{(p.owner_id || p.group_id || p.available_ym) &&
+								draft?.positionId !== p.id && (
+									<p className="ac-caption">
+										{p.purpose === "club"
+											? data.groups.find((g) => g.id === p.group_id)?.label
+											: memberLabel(data, p.owner_id)}
+										{p.available_ym && ` · ${p.available_ym}부터 사용`}
+									</p>
+								)}
 							<div className="ac-actions">
 								<button
 									type="button"
@@ -124,7 +144,9 @@ export default function TransactionCard({
 									용도 지정
 									<ArrowRight size={13} />
 								</button>
-								{["member_pending", "carry"].includes(p.purpose) && (
+								{["unassigned", "member_pending", "carry"].includes(
+									p.purpose,
+								) && (
 									<>
 										<button
 											type="button"
@@ -141,7 +163,11 @@ export default function TransactionCard({
 											className="ac-chip"
 											disabled={disabled}
 											onClick={() =>
-												onAction({ type: "carry", memberId: p.owner_id! })
+												onAction({
+													type: "carry",
+													memberId: p.owner_id ?? undefined,
+													positionId: p.id,
+												})
 											}
 										>
 											이월
@@ -215,6 +241,26 @@ export default function TransactionCard({
 						)}
 					</div>
 				</>
+			)}
+			{draft && (
+				<QuickSettlement
+					key={JSON.stringify(draft)}
+					data={data}
+					draft={draft}
+					bankId={t.id}
+					disabled={disabled}
+					onPendingChange={onPendingChange}
+					onDone={onDone}
+					onClose={(success) => {
+						setDraft(null);
+						if (success) setSaved(true);
+					}}
+				/>
+			)}
+			{saved && (
+				<p className="ac-saved" role="status">
+					선택한 내역을 반영했습니다.
+				</p>
 			)}
 		</section>
 	);

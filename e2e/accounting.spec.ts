@@ -16,6 +16,7 @@ const migration = readFileSync(
 	"utf8",
 );
 let db: PGlite;
+let loseCommitResponse = false;
 let calls: { name: string; args: Record<string, unknown> }[];
 async function scalar<T = unknown>(
 	sql: string,
@@ -54,12 +55,22 @@ async function previewAndConfirm(page: Page, reason: string) {
 test.beforeEach(async ({ page, context }, testInfo) => {
 	db = new PGlite();
 	calls = [];
+	loseCommitResponse = false;
 	await db.exec(fixture("dues-v2-legacy.sql"));
 	await db.exec(migration);
 	await db.exec(
 		readFileSync(
 			new URL(
 				"../supabase/migrations/20260907050000_dues_v2_payer_refunds.sql",
+				import.meta.url,
+			),
+			"utf8",
+		),
+	);
+	await db.exec(
+		readFileSync(
+			new URL(
+				"../supabase/migrations/20260907060000_dues_v2_quick_settlement.sql",
 				import.meta.url,
 			),
 			"utf8",
@@ -123,11 +134,18 @@ test.beforeEach(async ({ page, context }, testInfo) => {
 						).rows[0],
 					)[0],
 			);
+			if (name === "dues_v2_command" && loseCommitResponse) {
+				loseCommitResponse = false;
+				return route.abort();
+			}
 			await route.fulfill({ json: result });
 		} catch (error) {
 			await route.fulfill({
 				status: 400,
-				json: { message: (error as Error).message, code: "P0001" },
+				json: {
+					message: (error as Error).message,
+					code: (error as { code?: string }).code ?? "P0001",
+				},
 			});
 		}
 	});
@@ -271,7 +289,8 @@ test("September refund finds and spends the remainder of an August deposit", asy
 		.click();
 	await expect(page.getByRole("radio", { name: /입금 #1 / })).not.toBeChecked();
 	await page.getByRole("radio", { name: /입금 #1 / }).check();
-	await previewAndConfirm(page, "8월 회식 잔액 9월 환불");
+	await page.getByRole("button", { name: "환불 확인", exact: true }).click();
+	await expect(page.locator(".accounting-sheet")).toHaveCount(0);
 	await expect(page.getByText("환불 완료", { exact: true })).toBeVisible();
 	expect(
 		await scalar("select amount from dues_v2_refunds where out_tx_id=9"),
@@ -356,9 +375,12 @@ test("unknown August deposit requires payer confirmation and leaves a visible me
 		.getByText("아직 납부자를 확인하지 않은 입금", { exact: false })
 		.click();
 	await page.getByRole("radio", { name: /입금 #90 / }).check();
-	await page.getByLabel("처리 사유").fill("입금자 확인 후 부분 환불");
-	await page.getByRole("button", { name: "변경 결과 확인" }).click();
-	await expect(page.getByRole("alert")).toContainText("실제 납부자");
+	await expect(
+		page.getByRole("button", { name: "환불 확인", exact: true }),
+	).toBeDisabled();
+	await expect(
+		page.getByText("미매칭 원입금의 실제 납부자를 확인해 주세요"),
+	).toBeVisible();
 	await page
 		.getByRole("checkbox", { name: /이 원입금이 .*000001.*돈임을 확인/ })
 		.check();
@@ -366,7 +388,8 @@ test("unknown August deposit requires payer confirmation and leaves a visible me
 		path: "test-results/accounting-refund-payer-mobile.png",
 		fullPage: true,
 	});
-	await previewAndConfirm(page, "입금자 확인 후 부분 환불");
+	await page.getByRole("button", { name: "환불 확인", exact: true }).click();
+	await expect(page.getByText("환불 완료", { exact: true })).toBeVisible();
 	expect(
 		await scalar("select owner_id from dues_v2_refunds where out_tx_id=9"),
 	).toBe(A);
@@ -391,7 +414,10 @@ test("same-name payer B can receive a missing monthly charge and pay it independ
 		.getByRole("group", { name: "납부자 검색 결과" })
 		.getByRole("button", { name: /000002/ })
 		.click();
-	await previewAndConfirm(page, "동명이인 B 입금 확인");
+	await receipt
+		.getByRole("button", { name: "용도 지정 확인", exact: true })
+		.click();
+	await expect(receipt.getByText("선택한 내역을 반영했습니다.")).toBeVisible();
 	await page.getByRole("button", { name: "부과", exact: true }).click();
 	await page
 		.getByRole("button", { name: "회비 대상 확인", exact: true })
@@ -412,9 +438,10 @@ test("same-name payer B can receive a missing monthly charge and pay it independ
 	await page.getByRole("button", { name: "정산함", exact: true }).click();
 	receipt = page.locator("section").filter({ hasText: "김지훈8월회비" });
 	await receipt.getByRole("button", { name: "납부 연결", exact: true }).click();
-	await expect(page.getByText(/선택한 낼 사람:.*000002/)).toBeVisible();
-	await page.getByLabel("8월 회비 선택 금액").fill("5000");
-	await previewAndConfirm(page, "동명이인 B 8월 회비 납부");
+	await expect(receipt.getByText(/납부자.*000002/)).toBeVisible();
+	await receipt.getByRole("button", { name: /^8월 회비/ }).click();
+	await receipt.getByRole("button", { name: "납부 확인", exact: true }).click();
+	await expect(receipt.getByText("선택한 내역을 반영했습니다.")).toBeVisible();
 	expect(
 		await scalar("select amount_paid from dues_charges where id=102"),
 	).toBe(5000);
@@ -469,7 +496,7 @@ test("manual charge reference sessions distinguish times and copy each roster by
 	).toBe("2");
 });
 
-test("accounting layouts keep actions visible on narrow screens in both themes", async ({
+test("accounting layouts keep settlement in the list in both themes", async ({
 	page,
 }) => {
 	const old = await scalar<string>(
@@ -489,92 +516,196 @@ test("accounting layouts keep actions visible on narrow screens in both themes",
 			(dark) => document.documentElement.classList.toggle("dark", dark),
 			theme === "dark",
 		);
-		await expect(
-			page.getByRole("button", { name: "환불 연결", exact: true }).first(),
-		).toBeVisible();
-		await page.screenshot({
-			path: `test-results/accounting-inbox-${theme}.png`,
-			fullPage: true,
-		});
-		await page
-			.locator("section")
-			.filter({ hasText: /김지훈.*6,000원/s })
-			.getByRole("button", { name: "환불 연결", exact: true })
-			.click();
-		await page.screenshot({
-			path: `test-results/accounting-payer-${theme}.png`,
-		});
-		await page
+		const card = page.getByRole("region", { name: "거래 9", exact: true });
+		await card.getByRole("button", { name: "환불 연결", exact: true }).click();
+		await card
 			.getByRole("group", { name: "납부자 검색 결과" })
 			.getByRole("button", { name: /1993/ })
 			.click();
-		await page.getByRole("radio", { name: /입금 #1 / }).check();
-		await page.locator(".ac-sheet-body").evaluate((el) => {
-			el.scrollTop = 0;
-		});
+		await card.getByRole("radio", { name: /입금 #1 / }).check();
+		await expect(
+			card.getByRole("button", { name: "환불 확인", exact: true }),
+		).toBeEnabled();
+		await expect(page.locator(".accounting-sheet")).toHaveCount(0);
+		await card.scrollIntoViewIfNeeded();
 		await page.screenshot({
-			path: `test-results/accounting-refund-${theme}.png`,
+			path: `test-results/accounting-inline-refund-${theme}.png`,
+			fullPage: true,
+			animations: "disabled",
 		});
 		expect(
 			await page.evaluate(
 				() => document.documentElement.scrollWidth <= window.innerWidth,
 			),
 		).toBe(true);
-		await expect(
-			page.getByRole("button", { name: "변경 결과 확인" }),
-		).toBeInViewport();
-		await page.setViewportSize({ width: 360, height: 550 });
-		await expect(
-			page.getByRole("button", { name: "변경 결과 확인" }),
-		).toBeInViewport();
-		await page.getByLabel("처리 사유").fill("화면 검증");
-		await page.getByRole("button", { name: "변경 결과 확인" }).click();
-		await expect(
-			page.getByRole("button", { name: "확정", exact: true }),
-		).toBeInViewport();
-		await page.getByRole("button", { name: "닫기", exact: true }).click();
-		await page.setViewportSize({ width: 390, height: 844 });
 	}
-	await navigate(page);
+	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.screenshot({
-		path: "test-results/accounting-overview-mobile.png",
+		path: "test-results/accounting-inline-desktop.png",
 		fullPage: true,
-	});
-	await page
-		.getByRole("button", { name: "미납·입금 이월", exact: true })
-		.click();
-	await page
-		.getByRole("group", { name: "회원 검색 결과" })
-		.getByRole("button", { name: /1988/ })
-		.click();
-	await expect(page.getByRole("button", { name: "변경 결과 확인" })).toHaveText(
-		"변경 결과 확인",
-	);
-	await page.screenshot({
-		path: "test-results/accounting-carry-mobile.png",
 		animations: "disabled",
 	});
-	await expect(
-		page.getByRole("button", { name: "변경 결과 확인" }),
-	).toBeInViewport();
-	await navigate(page, "/dues/2026-08/charge");
-	await page.getByRole("button", { name: "새 수동 부과", exact: true }).click();
-	await page.screenshot({ path: "test-results/accounting-issue-mobile.png" });
-	await expect(
-		page.getByRole("button", { name: "변경 결과 확인" }),
-	).toBeInViewport();
-	await navigate(page, "/dues/2026-08/ledger");
-	await expect(page.getByText("항목별 내역")).toBeVisible();
-	await page.screenshot({
-		path: "test-results/accounting-ledger-mobile.png",
-		fullPage: true,
-	});
-	await page.setViewportSize({ width: 1280, height: 900 });
-	await navigate(page, "/dues/2026-09/inbox");
-	await page.screenshot({
-		path: "test-results/accounting-inbox-desktop.png",
-		fullPage: true,
-	});
-	// Layout checks and preview never commit a financial operation.
 	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(0);
+});
+
+test("inline matching and payment need one confirmation and recover a lost response without double spending", async ({
+	page,
+}) => {
+	await db.exec(
+		"insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',6000,'2026-09-06','김지훈 회비')",
+	);
+	await page.setViewportSize({ width: 390, height: 844 });
+	await navigate(page, "/dues/2026-09/inbox");
+	const card = page.getByRole("region", { name: "거래 90", exact: true });
+	await card
+		.getByRole("group", { name: "납부자 검색 결과" })
+		.getByRole("button", { name: /000002/ })
+		.click();
+	await card.getByRole("button", { name: /^7월 회비/ }).click();
+	const confirm = card.getByRole("button", { name: "납부 확인", exact: true });
+	await expect(confirm).toBeEnabled();
+	await expect(card.getByText(/입금 잔액 1,000원/)).toBeVisible();
+	expect(
+		await scalar("select owner_id from dues_v2_positions where bank_tx_id=90"),
+	).toBeNull();
+	await expect(page.locator(".accounting-sheet")).toHaveCount(0);
+	await card.screenshot({
+		path: "test-results/accounting-inline-payment.png",
+		animations: "disabled",
+	});
+	loseCommitResponse = true;
+	await confirm.click();
+	const retry = card.getByRole("button", {
+		name: "결과 다시 확인",
+		exact: true,
+	});
+	await expect(retry).toBeEnabled();
+	await expect(
+		card.getByRole("button", { name: "납부자 변경" }),
+	).toBeDisabled();
+	await retry.click();
+	await expect(card.getByText("선택한 내역을 반영했습니다.")).toBeVisible();
+	const commits = calls.filter((c) => c.name === "dues_v2_command");
+	expect(commits).toHaveLength(2);
+	expect(commits[0].args).toEqual(commits[1].args);
+	expect(
+		calls.some(
+			(c) =>
+				c.name === "dues_v2_preview" &&
+				JSON.stringify(c.args) === JSON.stringify(commits[0].args),
+		),
+	).toBe(true);
+	expect(
+		await scalar(
+			"select count(*)::int from dues_v2_allocations where bank_tx_id=90",
+		),
+	).toBe(1);
+	expect(
+		await scalar(
+			"select sum(amount)::int from dues_v2_positions where bank_tx_id=90 and owner_id=$1",
+			[B],
+		),
+	).toBe(1000);
+});
+
+test("inline stale confirmation requires another explicit confirmation after refreshing", async ({
+	page,
+}) => {
+	await db.exec(
+		"insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',5000,'2026-09-06','김지훈')",
+	);
+	await navigate(page, "/dues/2026-09/inbox");
+	const card = page.getByRole("region", { name: "거래 90", exact: true });
+	await card
+		.getByRole("group", { name: "납부자 검색 결과" })
+		.getByRole("button", { name: /000002/ })
+		.click();
+	await card.getByRole("button", { name: /^7월 회비/ }).click();
+	const confirm = card.getByRole("button", { name: "납부 확인", exact: true });
+	await expect(confirm).toBeEnabled();
+	await command({ action: "apply" });
+	await confirm.click();
+	await expect(confirm).toBeEnabled();
+	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(1);
+	expect(
+		await scalar("select owner_id from dues_v2_positions where bank_tx_id=90"),
+	).toBeNull();
+	await confirm.click();
+	await expect(card.getByText("선택한 내역을 반영했습니다.")).toBeVisible();
+	expect(
+		await scalar(
+			"select count(*)::int from dues_v2_allocations where bank_tx_id=90",
+		),
+	).toBe(1);
+});
+
+test("inline expense confirmation advances the pending list and inline carry moves debt and cash together", async ({
+	page,
+}) => {
+	await db.exec(
+		"insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',6000,'2026-09-06','김지훈'),(91,'out',8000,'2026-09-05','체육관')",
+	);
+	await navigate(page, "/dues/2026-09/inbox");
+	await page.getByRole("button", { name: /^처리할 내역/ }).click();
+	const expense = page.getByRole("region", { name: "거래 91", exact: true });
+	await expense
+		.getByRole("group", { name: "회계 항목 선택" })
+		.getByRole("button", { name: "회식", exact: true })
+		.click();
+	await expense.getByRole("button", { name: "지출 확인", exact: true }).click();
+	await expect(expense).toHaveCount(0);
+	const receipt = page.getByRole("region", { name: "거래 90", exact: true });
+	await expect(receipt).toBeVisible();
+	await receipt.getByRole("button", { name: "이월", exact: true }).click();
+	await receipt
+		.getByRole("group", { name: "납부자 검색 결과" })
+		.getByRole("button", { name: /000002/ })
+		.click();
+	await receipt.getByLabel("이월할 월").fill("2099-01");
+	await receipt.getByRole("button", { name: /^7월 회비/ }).click();
+	await receipt
+		.getByRole("button", { name: "이 입금 · 6,000원", exact: true })
+		.click();
+	await receipt.getByLabel("7월 회비 선택 금액").fill("3000");
+	await receipt.getByRole("button", { name: "이월 확인", exact: true }).click();
+	await expect(receipt).toHaveCount(0);
+	await expect(page.locator(".accounting-sheet")).toHaveCount(0);
+	expect(
+		await scalar(
+			"select sum(remaining)::int from dues_v2_due where due_ym='2099-01'",
+		),
+	).toBe(3000);
+	expect(
+		await scalar(
+			"select sum(amount)::int from dues_v2_positions where bank_tx_id=90 and owner_id=$1 and purpose='carry'",
+			[B],
+		),
+	).toBe(6000);
+});
+
+test("inline proxy payment names both people and requires explicit consent", async ({
+	page,
+}) => {
+	await navigate(page, "/dues/2026-08/inbox");
+	const card = page.getByRole("region", { name: "거래 2", exact: true });
+	await card.getByText("다른 사람의 부과에 대납", { exact: true }).click();
+	await card
+		.getByRole("group", { name: "낼 사람 검색 결과" })
+		.getByRole("button", { name: /000002/ })
+		.click();
+	await card.getByRole("button", { name: /^7월 회비/ }).click();
+	const confirm = card.getByRole("button", { name: "납부 확인", exact: true });
+	await expect(confirm).toBeDisabled();
+	await card
+		.getByRole("checkbox", { name: "다른 사람의 부과에 대납하는 것을 확인함" })
+		.check();
+	await expect(card.getByText(/000001.*→.*000002.*1,000원 납부/)).toBeVisible();
+	await confirm.click();
+	await expect(card.getByText("선택한 내역을 반영했습니다.")).toBeVisible();
+	expect(
+		await scalar(
+			"select sum(a.amount-a.reversed)::int from dues_v2_allocations a join dues_v2_charges c on c.id=a.charge_id where a.bank_tx_id=2 and a.owner_id=$1 and c.member_id=$2",
+			[A, B],
+		),
+	).toBe(1000);
 });
