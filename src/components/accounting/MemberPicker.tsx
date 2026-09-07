@@ -1,3 +1,4 @@
+import { Check, Search, UserRound } from "lucide-react";
 import { useState } from "react";
 import { matchingMembers } from "../../lib/dues/v2/selection";
 import { memberLabel } from "../../lib/dues/v2/summary";
@@ -18,26 +19,29 @@ export default function MemberPicker({
 }) {
 	const [query, setQuery] = useState(suggestedName);
 	const matches = matchingMembers(data, query);
+	const selected = data.members.find((m) => m.id === value);
 	return (
-		<div className="flex flex-col gap-2">
-			<label className="text-sm">
-				{label} 이름·초성 검색
-				<input
-					aria-label={`${label} 이름·초성 검색`}
-					className="w-full rounded-xl border border-black/15 dark:border-white/20 bg-transparent px-3 py-2"
-					value={query}
-					onChange={(e) => setQuery(e.target.value)}
-					placeholder="이름 또는 초성"
-				/>
-			</label>
-			{value && (
-				<div className="flex gap-2 items-center text-sm rounded-lg bg-blue-500/10 p-2">
-					<span className="flex-1">
-						선택한 {label}: {memberLabel(data, value)}
+		<div className="ac-member-picker">
+			{selected ? (
+				<div className="ac-selected-person">
+					<span className="ac-avatar">
+						<UserRound size={18} />
 					</span>
+					<div className="ac-person-copy">
+						<span className="ac-caption">
+							선택한 {label}:{" "}
+							<span className="sr-only">{memberLabel(data, value)}</span>
+						</span>
+						<strong>{selected.name}</strong>
+						{memberLabel(data, value) !== selected.name && (
+							<small>
+								{memberLabel(data, value).slice(selected.name.length + 3)}
+							</small>
+						)}
+					</div>
 					<button
 						type="button"
-						className="text-[#0b84ff]"
+						className="ac-link"
 						onClick={() => {
 							onChange("");
 							setQuery("");
@@ -46,30 +50,68 @@ export default function MemberPicker({
 						{label} 변경
 					</button>
 				</div>
-			)}
-			<div
-				role="group"
-				aria-label={`${label} 검색 결과`}
-				className="max-h-40 overflow-y-auto flex flex-col gap-1"
-			>
-				{matches.map((m) => (
-					<button
-						key={m.id}
-						type="button"
-						aria-pressed={value === m.id}
-						className={`text-left text-sm rounded-lg p-2 ${value === m.id ? "bg-blue-500/15 text-[#0b84ff]" : "bg-black/5 dark:bg-white/5"}`}
-						onClick={() => onChange(m.id)}
+			) : (
+				<>
+					<label className="ac-label" htmlFor={`member-search-${label}`}>
+						{label}
+					</label>
+					<div className="ac-search">
+						<Search size={17} aria-hidden="true" />
+						<input
+							id={`member-search-${label}`}
+							aria-label={`${label} 이름·초성 검색`}
+							value={query}
+							onChange={(e) => setQuery(e.target.value)}
+							placeholder="이름 또는 초성으로 검색"
+							autoComplete="off"
+						/>
+					</div>
+					<div
+						role="group"
+						aria-label={`${label} 검색 결과`}
+						className="ac-people"
 					>
-						{memberLabel(data, m.id)}
-						{!m.active && " · 비활성"}
-					</button>
-				))}
-				{!matches.length && (
-					<p className="text-sm text-muted">
-						검색 결과가 없습니다. 이름이나 초성으로 다시 검색하세요.
-					</p>
-				)}
-			</div>
+						{matches.map((m) => {
+							const fullLabel = memberLabel(data, m.id);
+							return (
+								<button
+									key={m.id}
+									type="button"
+									aria-label={`${fullLabel}${!m.active ? " · 비활성" : ""}`}
+									aria-pressed={value === m.id}
+									className="ac-person-option"
+									onClick={() => onChange(m.id)}
+								>
+									<span className="ac-avatar">{m.name.slice(0, 1)}</span>
+									<span className="ac-person-copy">
+										<strong>{m.name}</strong>
+										<small>
+											{[
+												fullLabel.slice(m.name.length + 3),
+												!m.active ? "비활성" : "",
+											]
+												.filter(Boolean)
+												.join(" · ") || "회원"}
+										</small>
+									</span>
+									<Check
+										size={16}
+										className="ac-person-check"
+										aria-hidden="true"
+									/>
+								</button>
+							);
+						})}
+						{!matches.length && (
+							<p className="ac-empty">
+								검색 결과가 없어요.
+								<br />
+								이름이나 초성으로 다시 검색해 주세요.
+							</p>
+						)}
+					</div>
+				</>
+			)}
 		</div>
 	);
 }

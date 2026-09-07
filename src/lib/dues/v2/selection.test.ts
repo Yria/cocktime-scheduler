@@ -4,6 +4,7 @@ import {
 	receiptHistory,
 	sessionChoiceLabels,
 } from "./selection";
+import { memberLabel } from "./summary";
 import type { AccountingData } from "./types";
 
 describe("accounting person and session selection", () => {
@@ -22,6 +23,49 @@ describe("accounting person and session selection", () => {
 				members.map((m) => m.id),
 			);
 	});
+	it("distinguishes namesakes with available details and falls back to an ID for otherwise identical people", () => {
+		const members = [
+			{
+				id: "000001",
+				name: "김지훈",
+				guest: false,
+				active: true,
+				birth_year: 1993,
+				gender: "남",
+			},
+			{
+				id: "000002",
+				name: "김지훈",
+				guest: false,
+				active: true,
+				birth_year: 1988,
+				gender: "남",
+			},
+			{
+				id: "000003",
+				name: "김지훈",
+				guest: true,
+				active: false,
+				birth_year: null,
+				gender: null,
+			},
+			{
+				id: "000004",
+				name: "김지훈",
+				guest: true,
+				active: false,
+				birth_year: null,
+				gender: null,
+			},
+		];
+		const data = { members } as AccountingData;
+		const labels = members.map((m) => memberLabel(data, m.id));
+		expect(new Set(labels).size).toBe(4);
+		expect(labels[0]).toBe("김지훈 · 1993년생 · 남");
+		expect(labels[2]).toBe("김지훈 · 게스트 · #000003");
+		expect(labels.join(" ")).not.toContain("미등록");
+	});
+
 	it("uses sender IDs even when a deposit description matches someone else or a proxy beneficiary", () => {
 		const data = {
 			bank: [

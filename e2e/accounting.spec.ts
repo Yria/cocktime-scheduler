@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { test, expect, type Page } from "@playwright/test";
 
+test.use({ locale: "ko-KR" });
+
 const A = "00000000-0000-4000-8000-000000000001";
 const B = "00000000-0000-4000-8000-000000000002";
 const fixture = (name: string) =>
@@ -49,7 +51,7 @@ async function previewAndConfirm(page: Page, reason: string) {
 	).toHaveCount(0);
 }
 
-test.beforeEach(async ({ page, context }) => {
+test.beforeEach(async ({ page, context }, testInfo) => {
 	db = new PGlite();
 	calls = [];
 	await db.exec(fixture("dues-v2-legacy.sql"));
@@ -64,6 +66,19 @@ test.beforeEach(async ({ page, context }) => {
 		),
 	);
 	await db.exec(fixture("dues-v2-seed.sql"));
+	if (testInfo.title.startsWith("accounting layouts")) {
+		await db.exec(`
+		update members set birth_year=1993, gender='남' where id='${A}';
+		update members set birth_year=1988, gender='남' where id='${B}';
+		update bank_transactions set counterparty_name='김지훈' where id=9;
+		update bank_transactions set counterparty_name='김지훈 회식비' where id=1;
+		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values
+		(90,'in',5000,'2026-09-06T12:00:00+09','김지훈 9월 회비'),
+		(91,'out',48000,'2026-09-04T12:00:00+09','올림픽체육관'),
+		(92,'in',6000,'2026-09-02T12:00:00+09','이민수 대관비');
+	`);
+	}
+
 	await scalar("select dues_v2_manage('activate',0,'fixture',$1)", [
 		crypto.randomUUID(),
 	]);
@@ -128,7 +143,7 @@ test("cancel and reissue previews without writing, commits once, and undoes from
 	page,
 }) => {
 	await navigate(page);
-	await page.getByRole("button", { name: /^회식 납부/ }).click();
+	await page.getByRole("button", { name: /^회식 / }).click();
 	await page.getByRole("checkbox", { name: /000002/ }).uncheck();
 	await page.getByRole("button", { name: "선택한 1건 취소 후 발행" }).click();
 	await page.getByLabel(/000001 부과액/).fill("24000");
@@ -243,11 +258,13 @@ test("September refund finds and spends the remainder of an August deposit", asy
 	await expect(page.getByRole("radio", { name: /입금 #4 / })).toHaveCount(0);
 	await page.getByRole("radio", { name: /입금 #1 / }).check();
 	// Switching namesakes must discard the previous receipt selection.
+	await page.getByRole("button", { name: "납부자 변경" }).click();
 	await page
 		.getByRole("group", { name: "납부자 검색 결과" })
 		.getByRole("button", { name: /000002/ })
 		.click();
 	await expect(page.getByRole("radio", { name: /입금 #1 / })).toHaveCount(0);
+	await page.getByRole("button", { name: "납부자 변경" }).click();
 	await page
 		.getByRole("group", { name: "납부자 검색 결과" })
 		.getByRole("button", { name: /000001/ })
@@ -255,9 +272,7 @@ test("September refund finds and spends the remainder of an August deposit", asy
 	await expect(page.getByRole("radio", { name: /입금 #1 / })).not.toBeChecked();
 	await page.getByRole("radio", { name: /입금 #1 / }).check();
 	await previewAndConfirm(page, "8월 회식 잔액 9월 환불");
-	await expect(
-		page.getByText("환불 완료 · 원입금 #1", { exact: true }),
-	).toBeVisible();
+	await expect(page.getByText("환불 완료", { exact: true })).toBeVisible();
 	expect(
 		await scalar("select amount from dues_v2_refunds where out_tx_id=9"),
 	).toBe(6000);
@@ -305,7 +320,7 @@ test("replacement retains partial carry months and requires the changed amounts 
 		debts: [{ due_id: d, amount: 3000 }],
 	});
 	await navigate(page, "/dues/2026-07");
-	await page.getByRole("button", { name: /^7월 회비 납부/ }).click();
+	await page.getByRole("button", { name: /^7월 회비 / }).click();
 	await page.getByRole("checkbox", { name: /000001/ }).uncheck();
 	await page.getByRole("button", { name: "선택한 1건 취소 후 발행" }).click();
 	await expect(page.getByLabel("납기 1 월")).toHaveValue("2026-07");
@@ -338,7 +353,7 @@ test("unknown August deposit requires payer confirmation and leaves a visible me
 		.getByRole("button", { name: /000001/ })
 		.click();
 	await page
-		.getByText("아직 납부자를 확인하지 않은 입금", { exact: true })
+		.getByText("아직 납부자를 확인하지 않은 입금", { exact: false })
 		.click();
 	await page.getByRole("radio", { name: /입금 #90 / }).check();
 	await page.getByLabel("처리 사유").fill("입금자 확인 후 부분 환불");
@@ -452,4 +467,114 @@ test("manual charge reference sessions distinguish times and copy each roster by
 			"select basis->>'reference_session_id' from dues_v2_charges where legacy_id is null",
 		),
 	).toBe("2");
+});
+
+test("accounting layouts keep actions visible on narrow screens in both themes", async ({
+	page,
+}) => {
+	const old = await scalar<string>(
+		"select id from dues_v2_charges where legacy_id=100",
+	);
+	await command({
+		action: "replace",
+		charge_ids: [old],
+		lines: [
+			{ previous_id: old, member_id: A, amount: 24000, due_ym: "2026-08" },
+		],
+	});
+	await page.setViewportSize({ width: 390, height: 844 });
+	for (const theme of ["light", "dark"]) {
+		await navigate(page, "/dues/2026-09/inbox");
+		await page.evaluate(
+			(dark) => document.documentElement.classList.toggle("dark", dark),
+			theme === "dark",
+		);
+		await expect(
+			page.getByRole("button", { name: "환불 연결", exact: true }).first(),
+		).toBeVisible();
+		await page.screenshot({
+			path: `test-results/accounting-inbox-${theme}.png`,
+			fullPage: true,
+		});
+		await page
+			.locator("section")
+			.filter({ hasText: /김지훈.*6,000원/s })
+			.getByRole("button", { name: "환불 연결", exact: true })
+			.click();
+		await page.screenshot({
+			path: `test-results/accounting-payer-${theme}.png`,
+		});
+		await page
+			.getByRole("group", { name: "납부자 검색 결과" })
+			.getByRole("button", { name: /1993/ })
+			.click();
+		await page.getByRole("radio", { name: /입금 #1 / }).check();
+		await page.locator(".ac-sheet-body").evaluate((el) => {
+			el.scrollTop = 0;
+		});
+		await page.screenshot({
+			path: `test-results/accounting-refund-${theme}.png`,
+		});
+		expect(
+			await page.evaluate(
+				() => document.documentElement.scrollWidth <= window.innerWidth,
+			),
+		).toBe(true);
+		await expect(
+			page.getByRole("button", { name: "변경 결과 확인" }),
+		).toBeInViewport();
+		await page.setViewportSize({ width: 360, height: 550 });
+		await expect(
+			page.getByRole("button", { name: "변경 결과 확인" }),
+		).toBeInViewport();
+		await page.getByLabel("처리 사유").fill("화면 검증");
+		await page.getByRole("button", { name: "변경 결과 확인" }).click();
+		await expect(
+			page.getByRole("button", { name: "확정", exact: true }),
+		).toBeInViewport();
+		await page.getByRole("button", { name: "닫기", exact: true }).click();
+		await page.setViewportSize({ width: 390, height: 844 });
+	}
+	await navigate(page);
+	await page.screenshot({
+		path: "test-results/accounting-overview-mobile.png",
+		fullPage: true,
+	});
+	await page
+		.getByRole("button", { name: "미납·입금 이월", exact: true })
+		.click();
+	await page
+		.getByRole("group", { name: "회원 검색 결과" })
+		.getByRole("button", { name: /1988/ })
+		.click();
+	await expect(page.getByRole("button", { name: "변경 결과 확인" })).toHaveText(
+		"변경 결과 확인",
+	);
+	await page.screenshot({
+		path: "test-results/accounting-carry-mobile.png",
+		animations: "disabled",
+	});
+	await expect(
+		page.getByRole("button", { name: "변경 결과 확인" }),
+	).toBeInViewport();
+	await navigate(page, "/dues/2026-08/charge");
+	await page.getByRole("button", { name: "새 수동 부과", exact: true }).click();
+	await page.screenshot({ path: "test-results/accounting-issue-mobile.png" });
+	await expect(
+		page.getByRole("button", { name: "변경 결과 확인" }),
+	).toBeInViewport();
+	await navigate(page, "/dues/2026-08/ledger");
+	await expect(page.getByText("항목별 내역")).toBeVisible();
+	await page.screenshot({
+		path: "test-results/accounting-ledger-mobile.png",
+		fullPage: true,
+	});
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await navigate(page, "/dues/2026-09/inbox");
+	await page.screenshot({
+		path: "test-results/accounting-inbox-desktop.png",
+		fullPage: true,
+	});
+	// Layout checks and preview never commit a financial operation.
+	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(0);
 });

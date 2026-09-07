@@ -41,47 +41,44 @@ export default function CashLedgerView({
 		);
 	const ledger = shown.data;
 	return (
-		<div className="flex flex-col gap-3">
-			<p className="text-sm text-muted">
-				실제 입출금 날짜를 기준으로 합산합니다. 이전 달 입금을 이번 달 납부에
-				사용해도 새 수입을 만들지 않습니다.
-			</p>
-			<div className="grid grid-cols-3 gap-2 rounded-xl bg-black/5 dark:bg-white/5 p-3 text-sm">
-				<span>
-					수입
-					<br />
-					<strong>{won(ledger.income)}</strong>
-				</span>
-				<span>
-					지출
-					<br />
-					<strong>{won(ledger.expense)}</strong>
-				</span>
-				<span>
-					순액
-					<br />
-					<strong>{won(ledger.income - ledger.expense)}</strong>
-				</span>
-			</div>
-			{ledger.lines.map((l, i) => (
-				<div
-					key={`${l.group_id}-${i}`}
-					className="flex justify-between gap-3 border-b border-black/10 dark:border-white/10 py-2 text-sm"
-				>
-					<span>{l.label}</span>
-					<span className="text-right">
-						{l.income > 0 && (
-							<span className="text-green-700 dark:text-green-400">
-								+{won(l.income)}
-							</span>
-						)}
-						{l.income > 0 && l.expense > 0 && " / "}
-						{l.expense > 0 && (
-							<span className="text-red-600">−{won(l.expense)}</span>
-						)}
-					</span>
+		<div className="flex flex-col gap-4">
+			<section className="ac-card ac-ledger-summary">
+				<h2 className="ac-caption">이달의 수입 − 지출</h2>
+				<strong className="ac-number">
+					{won(ledger.income - ledger.expense)}
+				</strong>
+				<div className="ac-ledger-totals">
+					<div>
+						<span>수입</span>
+						<strong className="ac-number ac-in">{won(ledger.income)}</strong>
+					</div>
+					<div>
+						<span>지출</span>
+						<strong className="ac-number ac-out">{won(ledger.expense)}</strong>
+					</div>
 				</div>
-			))}
+			</section>
+			<p className="ac-caption">
+				실제 입출금 날짜를 기준으로 합산해요. 이전 달 입금을 납부에 사용해도
+				수입에 중복 반영하지 않습니다.
+			</p>
+			<section className="ac-card">
+				<h2 className="ac-caption">항목별 내역</h2>
+				{ledger.lines.map((l, i) => (
+					<div key={`${l.group_id}-${i}`} className="ac-ledger-row">
+						<span>{l.label}</span>
+						<div>
+							{l.income > 0 && <span className="ac-in">+{won(l.income)}</span>}
+							{l.expense > 0 && (
+								<span className="ac-out">−{won(l.expense)}</span>
+							)}
+						</div>
+					</div>
+				))}
+				{!ledger.lines.length && (
+					<p className="ac-empty">이 달의 입출금 내역이 없습니다.</p>
+				)}
+			</section>
 		</div>
 	);
 }

@@ -2,9 +2,25 @@ import type { AccountingData, BillingGroup } from "./types";
 
 export const memberLabel = (data: AccountingData, id: string | null) => {
 	const m = data.members.find((x) => x.id === id);
-	return m
-		? `${m.name}${m.guest ? " · 게스트" : ""}${data.members.filter((x) => x.name === m.name).length > 1 ? ` · ${m.birth_year ?? "출생연도 미등록"} · ${m.gender ?? "성별 미등록"} · ${m.id.slice(-6)}` : ""}`
-		: "미지정";
+	if (!m) return "미지정";
+	const namesakes = data.members.filter((x) => x.name === m.name);
+	const detail = [m.guest ? "게스트" : ""];
+	if (namesakes.length > 1) {
+		if (m.birth_year) detail.push(`${m.birth_year}년생`);
+		if (m.gender) detail.push(m.gender);
+		// 같은 이름과 인적 사항을 가진 사람도 별개 납부자로 선택할 수 있어야 한다.
+		if (
+			namesakes.some(
+				(x) =>
+					x.id !== m.id &&
+					x.guest === m.guest &&
+					x.birth_year === m.birth_year &&
+					x.gender === m.gender,
+			)
+		)
+			detail.push(`#${m.id.slice(-6)}`);
+	}
+	return [m.name, ...detail.filter(Boolean)].join(" · ");
 };
 
 export function kstMonth(iso: string): string {

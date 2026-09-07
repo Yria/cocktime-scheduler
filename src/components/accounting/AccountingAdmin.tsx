@@ -1,9 +1,12 @@
+import { ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
+import "./accounting.css";
+import TransactionCard from "./TransactionCard";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { sessionChoiceLabels } from "../../lib/dues/v2/selection";
 import { nameMatches } from "../admin/dues/matching";
 import { groupSummary, kstMonth, memberLabel } from "../../lib/dues/v2/summary";
-import { actionLabel, purposeLabel } from "../../lib/dues/v2/types";
+import { actionLabel } from "../../lib/dues/v2/types";
 import {
 	accountingCandidates,
 	accountingError,
@@ -107,6 +110,7 @@ export default function AccountingAdmin() {
 	return (
 		<AppScreen
 			title="회비 관리"
+			contentClassName="accounting-screen"
 			onBack={() => navigate("/")}
 			onRefresh={refresh}
 			right={
@@ -119,24 +123,26 @@ export default function AccountingAdmin() {
 				</button>
 			}
 		>
-			<div className="flex items-center justify-center gap-5 mb-4">
+			<div className="ac-month">
 				<button
 					type="button"
 					aria-label="이전 달"
 					onClick={() => go(shiftYm(ym, -1))}
 				>
-					‹
+					<ChevronLeft size={20} />
 				</button>
-				<strong>{ym}</strong>
+				<strong>
+					{ym.split("-")[0]}년 {Number(ym.split("-")[1])}월
+				</strong>
 				<button
 					type="button"
 					aria-label="다음 달"
 					onClick={() => go(shiftYm(ym, 1))}
 				>
-					›
+					<ChevronRight size={20} />
 				</button>
 			</div>
-			<nav className="flex gap-1 rounded-xl bg-black/5 dark:bg-white/5 p-1 mb-4">
+			<nav className="ac-tabs">
 				{tabs.map(([id, label]) => (
 					<button
 						type="button"
@@ -175,21 +181,35 @@ export default function AccountingAdmin() {
 						<CashLedgerView ym={ym} revision={data.mode.revision} />
 					) : page === "inbox" ? (
 						<div className="flex flex-col gap-3">
-							<button
-								type="button"
-								className="btn-lq-secondary"
-								disabled={busy}
-								onClick={() => void ingest()}
-							>
-								{busy ? "가져오는 중…" : "통장내역 가져오기 (Gmail)"}
-							</button>
-							<input
-								aria-label="거래 검색"
-								className="rounded-xl border border-black/15 dark:border-white/20 p-3 bg-transparent"
-								placeholder="입금자명·거래 번호 검색"
-								value={search}
-								onChange={(e) => setSearch(e.target.value)}
-							/>
+							<div className="ac-section-heading">
+								<h2>
+									통장 내역{" "}
+									<span className="ac-count">
+										{
+											data.bank.filter((t) => kstMonth(t.occurred_at) === ym)
+												.length
+										}
+									</span>
+								</h2>
+								<button
+									type="button"
+									className="ac-link ac-import"
+									disabled={busy}
+									onClick={() => void ingest()}
+								>
+									<Download size={15} />
+									{busy ? "가져오는 중…" : "내역 가져오기"}
+								</button>
+							</div>
+							<div className="ac-search">
+								<Search size={17} aria-hidden="true" />
+								<input
+									aria-label="거래 검색"
+									placeholder="이름 또는 거래 번호로 검색"
+									value={search}
+									onChange={(e) => setSearch(e.target.value)}
+								/>
+							</div>
 							{data.bank
 								.filter(
 									(t) =>
@@ -198,216 +218,32 @@ export default function AccountingAdmin() {
 											String(t.id) === search),
 								)
 								.sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))
-								.map((t) => {
-									const positions = data.positions.filter(
-											(p) => p.bank_tx_id === t.id,
-										),
-										allocations = data.allocations.filter(
-											(a) => a.bank_tx_id === t.id && a.amount > a.reversed,
-										);
-									const refund = data.refunds.find((r) => r.out_tx_id === t.id),
-										expense = data.expenses.find((e) => e.bank_tx_id === t.id);
-									return (
-										<section
-											key={t.id}
-											className="rounded-xl border border-black/10 dark:border-white/15 p-3 flex flex-col gap-2"
-										>
-											<div className="flex justify-between gap-2 text-sm">
-												<span>
-													{new Date(t.occurred_at).toLocaleDateString("ko-KR", {
-														timeZone: "Asia/Seoul",
-													})}{" "}
-													· {t.name || `거래 #${t.id}`}
-												</span>
-												<strong>
-													{t.direction === "in" ? "+" : "−"}
-													{won(t.amount)}
-												</strong>
-											</div>
-											{t.direction === "in" ? (
-												<>
-													{allocations.map((a) => (
-														<div
-															key={a.id}
-															className="flex gap-2 justify-between text-xs"
-														>
-															<span>
-																{memberLabel(data, a.owner_id)} →{" "}
-																{
-																	data.groups.find(
-																		(g) =>
-																			g.id ===
-																			data.charges.find(
-																				(c) => c.id === a.charge_id,
-																			)?.group_id,
-																	)?.label
-																}{" "}
-																· {won(a.amount - a.reversed)}
-															</span>
-															<button
-																type="button"
-																className="text-muted underline"
-																disabled={disabled}
-																onClick={() =>
-																	setDraft({
-																		type: "simple",
-																		command: {
-																			action: "reverse_payment",
-																			reason: "",
-																			allocation_id: a.id,
-																			amount: a.amount - a.reversed,
-																		},
-																	})
-																}
-															>
-																연결 해제
-															</button>
-														</div>
-													))}
-													{data.refunds
-														.filter((r) => r.in_tx_id === t.id)
-														.map((r) => (
-															<p
-																key={r.out_tx_id}
-																className="text-xs text-muted"
-															>
-																환불 {won(r.amount)} · 출금 #{r.out_tx_id}
-															</p>
-														))}
-													{positions.map((p) => (
-														<div
-															key={p.id}
-															className="rounded-lg bg-black/5 dark:bg-white/5 p-2 text-sm"
-														>
-															<p>
-																{purposeLabel[p.purpose]} {won(p.amount)} ·{" "}
-																{p.purpose === "club"
-																	? data.groups.find((g) => g.id === p.group_id)
-																			?.label
-																	: memberLabel(data, p.owner_id)}
-																{p.available_ym &&
-																	` · ${p.available_ym}부터 사용`}
-															</p>
-															<div className="flex gap-3 mt-2 text-xs text-[#0b84ff]">
-																<button
-																	type="button"
-																	disabled={disabled}
-																	onClick={() =>
-																		setDraft({
-																			type: "position",
-																			positionId: p.id,
-																		})
-																	}
-																>
-																	용도 지정
-																</button>
-																{["member_pending", "carry"].includes(
-																	p.purpose,
-																) && (
-																	<>
-																		<button
-																			type="button"
-																			disabled={disabled}
-																			onClick={() =>
-																				setDraft({
-																					type: "pay",
-																					positionId: p.id,
-																				})
-																			}
-																		>
-																			납부 연결
-																		</button>
-																		<button
-																			type="button"
-																			disabled={disabled}
-																			onClick={() =>
-																				setDraft({
-																					type: "carry",
-																					memberId: p.owner_id!,
-																				})
-																			}
-																		>
-																			이월
-																		</button>
-																	</>
-																)}
-															</div>
-														</div>
-													))}
-												</>
-											) : (
-												<>
-													<p className="text-xs text-muted">
-														{refund
-															? `환불 완료 · 원입금 #${refund.in_tx_id}`
-															: (data.groups.find(
-																	(g) => g.id === expense?.group_id,
-																)?.label ?? "미분류 출금")}
-													</p>
-													<div className="flex gap-3 text-sm text-[#0b84ff]">
-														{refund ? (
-															<>
-																<button
-																	type="button"
-																	onClick={() => {
-																		const source = data.bank.find(
-																			(b) => b.id === refund.in_tx_id,
-																		);
-																		if (source)
-																			go(kstMonth(source.occurred_at), "inbox");
-																	}}
-																>
-																	원입금 월 보기
-																</button>
-																<button
-																	type="button"
-																	disabled={disabled}
-																	onClick={() =>
-																		setDraft({
-																			type: "simple",
-																			command: {
-																				action: "reverse_refund",
-																				reason: "",
-																				out_tx_id: t.id,
-																			},
-																		})
-																	}
-																>
-																	환불 연결 해제
-																</button>
-															</>
-														) : (
-															<>
-																<button
-																	type="button"
-																	disabled={disabled}
-																	onClick={() =>
-																		setDraft({ type: "expense", outTxId: t.id })
-																	}
-																>
-																	지출 항목 지정
-																</button>
-																<button
-																	type="button"
-																	disabled={disabled || !!expense?.group_id}
-																	onClick={() =>
-																		setDraft({ type: "refund", outTxId: t.id })
-																	}
-																>
-																	환불 연결
-																</button>
-															</>
-														)}
-													</div>
-												</>
-											)}
-										</section>
-									);
-								})}
+								.map((t) => (
+									<TransactionCard
+										key={t.id}
+										data={data}
+										transaction={t}
+										disabled={disabled}
+										onAction={setDraft}
+										onMonth={(month) => go(month, "inbox")}
+									/>
+								))}
+							{!data.bank.some(
+								(t) =>
+									kstMonth(t.occurred_at) === ym &&
+									(nameMatches(t.name ?? "", search) ||
+										String(t.id) === search),
+							) && (
+								<p className="ac-empty">
+									{search
+										? "검색된 거래가 없습니다."
+										: "이 달의 통장 내역이 없습니다."}
+								</p>
+							)}
 						</div>
 					) : (
 						<div className="flex flex-col gap-3">
-							<div className="flex flex-wrap gap-2">
+							<div className="ac-actions ac-overview-actions">
 								<button
 									type="button"
 									className="btn-lq-primary"
@@ -434,7 +270,7 @@ export default function AccountingAdmin() {
 								</button>
 							</div>
 							{page === "charge" && (
-								<div className="rounded-xl border border-black/10 dark:border-white/15 p-3 flex flex-col gap-3">
+								<div className="ac-card ac-issue-tools flex flex-col gap-3">
 									<div className="flex gap-2">
 										<button
 											type="button"
@@ -573,34 +409,59 @@ export default function AccountingAdmin() {
 									const s = groupSummary(data, g),
 										live = s.charges.filter((c) => c.state === "live");
 									return (
-										<section
-											key={g.id}
-											className="rounded-xl border border-black/10 dark:border-white/15 p-3"
-										>
+										<section key={g.id} className="ac-card ac-group">
 											<button
 												type="button"
-												className="w-full text-left"
+												className="ac-group-toggle"
+												aria-expanded={expanded === g.id}
 												onClick={() => {
 													setExpanded(expanded === g.id ? null : g.id);
 													setSelected(live.map((c) => c.id));
 												}}
 											>
-												<strong className="text-sm">
-													{g.session_id
-														? (sessionLabels.get(g.session_id) ?? g.label)
-														: g.label}
-												</strong>
-												<p className="text-xs text-muted mt-1">
-													납부 {won(s.paid)} · 직접 수입 {won(s.direct)} · 지출{" "}
-													{won(s.spent)}
-												</p>
-												<p className="text-sm mt-1">
-													남은 미납 {won(s.outstanding)} · 현재 순액{" "}
-													{won(s.net)}
-												</p>
+												<div className="ac-section-heading">
+													<strong>
+														{g.session_id
+															? (sessionLabels.get(g.session_id) ?? g.label)
+															: g.label}
+													</strong>
+													<span
+														className={`ac-badge ${s.outstanding > 0 ? "is-amber" : "is-green"}`}
+													>
+														{s.outstanding > 0 ? "미납 있음" : "미납 없음"}
+													</span>
+												</div>
+												<div className="ac-group-total">
+													<span>납부액</span>
+													<strong className="ac-number">{won(s.paid)}</strong>
+													<ChevronRight
+														size={16}
+														className={expanded === g.id ? "ac-expanded" : ""}
+													/>
+												</div>
+												<div className="ac-meter" aria-hidden="true">
+													<span
+														style={{
+															width: `${s.paid + s.outstanding > 0 ? Math.min(100, (s.paid / (s.paid + s.outstanding)) * 100) : 0}%`,
+														}}
+													/>
+												</div>
+												<div className="ac-group-facts">
+													<span>
+														남은 미납 <b>{won(s.outstanding)}</b>
+													</span>
+													<span>
+														현재 순액 <b>{won(s.net)}</b>
+													</span>
+												</div>
+												{(s.direct > 0 || s.spent > 0) && (
+													<p className="ac-caption">
+														직접 수입 {won(s.direct)} · 지출 {won(s.spent)}
+													</p>
+												)}
 											</button>
 											{expanded === g.id && (
-												<div className="mt-3 flex flex-col gap-3">
+												<div className="ac-group-members flex flex-col gap-3">
 													{s.charges.map((c) => {
 														const due = data.due.filter(
 															(d) => d.charge_id === c.id,
@@ -667,7 +528,7 @@ export default function AccountingAdmin() {
 								})}
 						</div>
 					)}
-					<details className="my-5">
+					<details className="ac-disclosure ac-history">
 						<summary className="text-sm text-muted">처리 이력</summary>
 						<div className="flex flex-col gap-2 mt-3">
 							{data.operations.map((op) => (

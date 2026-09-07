@@ -422,7 +422,10 @@ export default function OperationDialog({
 	const moneyRows = (kind: "debt" | "money") =>
 		kind === "debt"
 			? memberDues.map((d) => (
-					<label key={d.id} className="flex items-center gap-2 text-sm">
+					<label
+						key={d.id}
+						className="ac-money-row flex items-center gap-2 text-sm"
+					>
 						<span className="flex-1">
 							{chargeName(d.charge_id)} · {d.due_ym} 납기
 							<br />
@@ -442,7 +445,10 @@ export default function OperationDialog({
 					</label>
 				))
 			: memberMoney.map((p) => (
-					<label key={p.id} className="flex items-center gap-2 text-sm">
+					<label
+						key={p.id}
+						className="ac-money-row flex items-center gap-2 text-sm"
+					>
 						<span className="flex-1">
 							{data.bank
 								.find((t) => t.id === p.bank_tx_id)
@@ -470,27 +476,17 @@ export default function OperationDialog({
 	return (
 		<ModalSheet
 			position="bottom"
-			className="p-5"
+			className="accounting-sheet"
+			title={title}
 			onClose={busy ? undefined : onClose}
 			closeOnEscape
 		>
-			<div className="flex items-center justify-between mb-4">
-				<h2 className="font-bold text-lg text-strong">{title}</h2>
-				<button
-					type="button"
-					className="text-muted"
-					disabled={busy}
-					onClick={onClose}
-				>
-					닫기
-				</button>
-			</div>
-			<div className="flex flex-col gap-4 max-h-[70dvh] overflow-y-auto pb-3">
+			<div className="ac-sheet-body" role="region" aria-label={title}>
 				{pending ? (
 					<>
 						<p className="text-sm text-muted">{pending.payload.reason}</p>
 						{(draft.type === "replace" || draft.type === "issue") && (
-							<div className="text-sm flex flex-col gap-3">
+							<div className="ac-preview-lines text-sm flex flex-col gap-3">
 								{initialCharges.map((c) => (
 									<div key={c.id}>
 										<p>
@@ -1187,6 +1183,9 @@ export default function OperationDialog({
 									<>
 										<h3 className="font-semibold text-sm">이미 낸 돈</h3>
 										{moneyRows("money")}
+										{memberMoney.length === 0 && (
+											<p className="ac-caption">이월할 입금 잔액이 없습니다.</p>
+										)}
 										<p className="text-muted text-sm">
 											선택한 달부터 본인의 납기가 도래한 부과에 자동 사용합니다.
 											남는 입금은 이후 납부에 이어 사용합니다.
@@ -1259,7 +1258,10 @@ export default function OperationDialog({
 								data={data}
 								outTxId={draft.outTxId!}
 								value={refund}
-								onChange={(value) => { setRefund(value); setError(""); }}
+								onChange={(value) => {
+									setRefund(value);
+									setError("");
+								}}
 							/>
 						)}
 						<label className="text-sm">
@@ -1274,6 +1276,8 @@ export default function OperationDialog({
 						</label>
 					</>
 				)}
+			</div>
+			<div className="ac-sheet-footer">
 				{error && (
 					<p role="alert" className="text-sm text-red-600 whitespace-pre-wrap">
 						{error}

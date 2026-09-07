@@ -1,3 +1,4 @@
+import "./accounting.css";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { memberSummary } from "../../lib/dues/v2/summary";
@@ -40,22 +41,23 @@ export default function AccountingMember() {
 	const summary = data ? memberSummary(data, member, ym) : null;
 	const ledger = params.page === "ledger";
 	return (
-		<AppScreen title="회비" onBack={() => navigate("/")} onRefresh={refresh}>
-			<nav className="flex gap-2 mb-4">
+		<AppScreen
+			contentClassName="accounting-screen"
+			title="회비"
+			onBack={() => navigate("/")}
+			onRefresh={refresh}
+		>
+			<nav className="ac-tabs">
 				<button
 					type="button"
-					className={
-						ledger ? "btn-lq-secondary flex-1" : "btn-lq-primary flex-1"
-					}
+					aria-current={!ledger ? "page" : undefined}
 					onClick={() => navigate("/my-dues")}
 				>
 					내 회비
 				</button>
 				<button
 					type="button"
-					className={
-						ledger ? "btn-lq-primary flex-1" : "btn-lq-secondary flex-1"
-					}
+					aria-current={ledger ? "page" : undefined}
 					onClick={() => navigate("/my-dues/ledger")}
 				>
 					클럽 회계
@@ -92,8 +94,8 @@ export default function AccountingMember() {
 					<CashLedgerView ym={ledgerYm} revision={data.mode.revision} />
 				</>
 			) : (
-				<div className="flex flex-col gap-4">
-					<section className="rounded-2xl bg-black/5 dark:bg-white/5 p-4">
+				<div className="ac-member-details flex flex-col gap-4">
+					<section className="ac-card ac-member-summary">
 						<h2 className="text-sm font-semibold">이번에 낼 돈</h2>
 						<p className="text-2xl font-bold my-2">{won(summary.toPay)}</p>
 						<p className="text-xs text-muted">
