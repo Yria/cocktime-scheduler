@@ -11,6 +11,7 @@ export default function MemberPicker({
 	label = "납부자",
 	suggestedName = "",
 	descriptionForMember,
+	compact = false,
 }: {
 	data: AccountingData;
 	value: string;
@@ -18,11 +19,104 @@ export default function MemberPicker({
 	label?: string;
 	suggestedName?: string;
 	descriptionForMember?: (id: string) => string;
+	compact?: boolean;
 }) {
 	const searchId = useId();
 	const [query, setQuery] = useState(suggestedName);
+	const [searchOpen, setSearchOpen] = useState(!suggestedName);
+	const [limit, setLimit] = useState(8);
 	const matches = matchingMembers(data, query);
 	const selected = data.members.find((m) => m.id === value);
+	if (compact) {
+		const choices =
+			selected && !matches.some((m) => m.id === selected.id)
+				? [selected, ...matches]
+				: matches;
+		return (
+			<div className="ac-payer-chips">
+				<div className="ac-payer-heading">
+					<label className="ac-label" htmlFor={searchId}>
+						{label}
+					</label>
+					<button
+						type="button"
+						className="ac-link"
+						aria-label={selected ? `${label} 변경` : `${label} 검색`}
+						onClick={() => {
+							setSearchOpen(!searchOpen);
+							if (selected) onChange("");
+						}}
+					>
+						<Search size={14} aria-hidden="true" /> 이름 검색
+					</button>
+				</div>
+				{(searchOpen || !choices.length) && (
+					<div className="ac-search">
+						<Search size={14} aria-hidden="true" />
+						<input
+							id={searchId}
+							aria-label={`${label} 이름·초성 검색`}
+							value={query}
+							onChange={(e) => {
+								setQuery(e.target.value);
+								setLimit(8);
+							}}
+							name="payer-search"
+							spellCheck={false}
+							placeholder="이름 또는 초성…"
+							autoComplete="off"
+						/>
+					</div>
+				)}
+				<div
+					className="ac-payer-options"
+					role="group"
+					aria-label={`${label} 검색 결과`}
+				>
+					{choices.slice(0, limit).map((m) => {
+						const fullLabel = memberLabel(data, m.id);
+						return (
+							<button
+								key={m.id}
+								type="button"
+								className="ac-payer-option"
+								aria-label={`${fullLabel}${!m.active ? " · 비활성" : ""}`}
+								aria-pressed={value === m.id}
+								onClick={() => onChange(value === m.id ? "" : m.id)}
+							>
+								<span>
+									<strong>{m.name}</strong>
+									{value === m.id && <Check size={14} aria-hidden="true" />}
+									{fullLabel !== m.name && (
+										<small>{fullLabel.slice(m.name.length + 3)}</small>
+									)}
+									{!m.active && <small>비활성</small>}
+								</span>
+								{descriptionForMember && (
+									<small>{descriptionForMember(m.id)}</small>
+								)}
+							</button>
+						);
+					})}
+				</div>
+				{choices.length > limit && (
+					<button
+						type="button"
+						className="ac-link ac-payer-more"
+						onClick={() => setLimit(limit + 12)}
+					>
+						후보 더 보기 ({choices.length - limit}명)
+					</button>
+				)}
+				{selected && (
+					<span className="sr-only">
+						선택한 {label}: {memberLabel(data, value)}
+					</span>
+				)}
+				{!choices.length && <p className="ac-caption">검색 결과가 없습니다.</p>}
+			</div>
+		);
+	}
 	return (
 		<div className="ac-member-picker">
 			{selected ? (

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { test, expect, type Page } from "@playwright/test";
 
@@ -37,6 +37,35 @@ async function navigate(page: Page, path = "/dues/2026-08", member?: string) {
 		`/e2e/accounting.html?${new URLSearchParams({ path, ...(member ? { member } : {}) })}`,
 	);
 	await expect(page.getByText("Loading", { exact: true })).toHaveCount(0);
+}
+
+// Self-contained copies of the rendered synthetic fixture for the design
+// skill's independent screenshot/visual-lint runtime. No production data.
+async function designEvidence(page: Page, name: string) {
+	await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+	await page.screenshot({
+		path: `test-results/design-${name}.png`,
+		fullPage: true,
+		animations: "disabled",
+	});
+	const html = await page.evaluate(() => {
+		const css = [...document.styleSheets]
+			.flatMap((sheet) => {
+				try {
+					return [...sheet.cssRules].map((rule) => rule.cssText);
+				} catch {
+					return [];
+				}
+			})
+			.join("\n");
+		const doc = document.documentElement.cloneNode(true) as HTMLElement;
+		doc.querySelectorAll("script,style,link").forEach((node) => node.remove());
+		const style = document.createElement("style");
+		style.textContent = css;
+		doc.querySelector("head")!.append(style);
+		return "<!doctype html>" + doc.outerHTML;
+	});
+	writeFileSync(`test-results/design-${name}.html`, html);
 }
 async function previewAndConfirm(page: Page, reason: string) {
 	await page.getByLabel("처리 사유").fill(reason);
@@ -225,17 +254,15 @@ test("payer choice distinguishes a paid namesake from an unpaid namesake and rem
 	}
 	await results.getByRole("button", { name: /1996년생/ }).click();
 	await expect(card.getByRole("button", { name: /^9월 회비/ })).toHaveCount(0);
-	await card.getByRole("button", { name: "납부자 변경", exact: true }).click();
-	await results.getByRole("button", { name: /2002년생/ }).click();
+	await results.getByRole("button", { name: /2002년생/ }).focus();
+	await page.keyboard.press("Enter");
 	await card.getByRole("button", { name: /^9월 회비/ }).click();
 	const confirm = card.getByRole("button", { name: "납부 확인", exact: true });
 	await expect(confirm).toBeEnabled();
 	await expect(card.getByText(/납부자 변경:.*1996.*→.*2002/)).toBeVisible();
 	// Changing candidates discards previously selected charges and their preview.
-	await card.getByRole("button", { name: "납부자 변경", exact: true }).click();
 	await results.getByRole("button", { name: /1996년생/ }).click();
 	await expect(confirm).toBeDisabled();
-	await card.getByRole("button", { name: "납부자 변경", exact: true }).click();
 	await results.getByRole("button", { name: /2002년생/ }).click();
 	await expect(card.getByRole("button", { name: /^9월 회비/ })).toHaveAttribute(
 		"aria-pressed",
@@ -244,6 +271,36 @@ test("payer choice distinguishes a paid namesake from an unpaid namesake and rem
 	await card.getByRole("button", { name: /^9월 회비/ }).click();
 	await expect(confirm).toBeEnabled();
 	await expect(page.locator(".accounting-sheet")).toHaveCount(0);
+	for (const [width, height] of [
+		[375, 812],
+		[430, 932],
+		[768, 1024],
+		[1024, 768],
+		[1440, 900],
+	]) {
+		await page.setViewportSize({ width, height });
+		for (const theme of ["light", "dark"]) {
+			await page.evaluate(
+				(dark) => document.documentElement.classList.toggle("dark", dark),
+				theme === "dark",
+			);
+			await designEvidence(page, `settlement-${width}-${theme}`);
+			expect(
+				await page.evaluate(
+					() => document.documentElement.scrollWidth <= window.innerWidth,
+				),
+			).toBe(true);
+			const sizes = await card.getByRole("button").evaluateAll((buttons) =>
+				buttons
+					.map((b) => ({
+						width: b.getBoundingClientRect().width,
+						height: b.getBoundingClientRect().height,
+					}))
+					.filter((b) => b.width > 0 && b.height > 0),
+			);
+			expect(sizes.every((s) => s.width >= 44 && s.height >= 44)).toBe(true);
+		}
+	}
 	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(0);
 	expect(
 		await scalar("select owner_id from dues_v2_positions where bank_tx_id=90"),
@@ -657,6 +714,7 @@ test("accounting layouts keep settlement in the list in both themes", async ({
 			fullPage: true,
 			animations: "disabled",
 		});
+		await designEvidence(page, `refund-${theme}`);
 		expect(
 			await page.evaluate(
 				() => document.documentElement.scrollWidth <= window.innerWidth,
@@ -895,6 +953,7 @@ test("ledger restores the compact monthly list and edits saved expenses without 
 			path: `test-results/accounting-compact-ledger-${theme}.png`,
 			animations: "disabled",
 		});
+		await designEvidence(page, `ledger-${theme}`);
 		expect(
 			await page.evaluate(
 				() => document.documentElement.scrollWidth <= window.innerWidth,
@@ -1055,6 +1114,7 @@ test("overview presents read-only payment progress and balances in both themes, 
 			fullPage: true,
 			animations: "disabled",
 		});
+		await designEvidence(page, `overview-${theme}`);
 		expect(
 			await page.evaluate(
 				() => document.documentElement.scrollWidth <= window.innerWidth,

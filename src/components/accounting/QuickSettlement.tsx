@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Check } from "lucide-react";
 import {
 	canChooseReceiptPayer,
 	payableDues,
@@ -286,6 +287,7 @@ export default function QuickSettlement({
 						onClick={() => setGroup(g.id)}
 					>
 						{g.label}
+						{group === g.id && <Check size={14} aria-hidden="true" />}
 					</button>
 				))}
 				{draft.type === "expense" && savedGroup && (
@@ -299,28 +301,6 @@ export default function QuickSettlement({
 					</button>
 				)}
 			</div>
-			<details className="ac-quick-more">
-				<summary>다른 항목 찾기</summary>
-				<input
-					className="ac-input"
-					aria-label="회계 항목 검색"
-					placeholder="항목·장소 검색"
-					value={groupQuery}
-					onChange={(e) => {
-						setGroupQuery(e.target.value);
-						setGroupLimit(6);
-					}}
-				/>
-				{groups.length > groupLimit && (
-					<button
-						type="button"
-						className="ac-link"
-						onClick={() => setGroupLimit(groupLimit + 12)}
-					>
-						항목 더 보기 ({groups.length - groupLimit})
-					</button>
-				)}
-			</details>
 		</div>
 	);
 	const duePicker = (
@@ -364,6 +344,7 @@ export default function QuickSettlement({
 								{d.due_ym} 납기 · {won(d.remaining)} 남음
 							</small>
 						</span>
+						{!!debts[d.id] && <Check size={14} aria-hidden="true" />}
 					</button>
 					{debts[d.id] !== undefined && debts[d.id] !== "" && (
 						<label className="ac-quick-amount">
@@ -404,6 +385,7 @@ export default function QuickSettlement({
 								</p>
 							)}
 							<MemberPicker
+								compact
 								data={data}
 								value={member}
 								onChange={changeMember}
@@ -413,40 +395,11 @@ export default function QuickSettlement({
 								}
 							/>
 							{payerChanged && (
-								<p className="ac-caption">
-									{payerChangeSummary} · 납부 확인 시 함께 저장
-								</p>
+								<p className="ac-caption">{payerChangeSummary}</p>
 							)}
 						</div>
 					))}
-				{draft.type === "pay" && owner && (
-					<>
-						{owner && duePicker}
-						<details className="ac-quick-more">
-							<summary>다른 사람의 부과에 대납</summary>
-							<MemberPicker
-								data={data}
-								value={beneficiary}
-								label="낼 사람"
-								onChange={(id) => {
-									setBeneficiary(id);
-									setDebts({});
-									setProxy(false);
-								}}
-							/>
-							{beneficiary && beneficiary !== owner && (
-								<label className="ac-check">
-									<input
-										type="checkbox"
-										checked={proxy}
-										onChange={(e) => setProxy(e.target.checked)}
-									/>
-									다른 사람의 부과에 대납하는 것을 확인함
-								</label>
-							)}
-						</details>
-					</>
-				)}
+				{draft.type === "pay" && owner && duePicker}
 				{draft.type === "carry" && (
 					<>
 						<label className="ac-quick-month">
@@ -563,24 +516,87 @@ export default function QuickSettlement({
 						compact
 					/>
 				)}
-				<details className="ac-quick-more">
-					<summary>메모 추가</summary>
-					<label className="ac-label">
-						처리 사유
-						<input
-							className="ac-input"
-							value={memo}
-							onChange={(e) => setMemo(e.target.value)}
-							placeholder="필요한 경우 입력"
-						/>
-					</label>
-				</details>
+				<div className="ac-quick-options">
+					{(draft.type === "expense" ||
+						(draft.type === "position" && purpose === "club")) && (
+						<details className="ac-quick-more">
+							<summary>다른 항목 찾기</summary>
+							<input
+								className="ac-input"
+								aria-label="회계 항목 검색"
+								placeholder="항목·장소 검색"
+								value={groupQuery}
+								onChange={(e) => {
+									setGroupQuery(e.target.value);
+									setGroupLimit(6);
+								}}
+							/>
+							{groups.length > groupLimit && (
+								<button
+									type="button"
+									className="ac-link"
+									onClick={() => setGroupLimit(groupLimit + 12)}
+								>
+									항목 더 보기 ({groups.length - groupLimit})
+								</button>
+							)}
+						</details>
+					)}
+					{draft.type === "pay" && owner && (
+						<details className="ac-quick-more">
+							<summary>다른 사람의 부과에 대납</summary>
+							<MemberPicker
+								compact
+								data={data}
+								value={beneficiary}
+								label="낼 사람"
+								onChange={(id) => {
+									setBeneficiary(id);
+									setDebts({});
+									setProxy(false);
+								}}
+							/>
+							{beneficiary && beneficiary !== owner && (
+								<label className="ac-check">
+									<input
+										type="checkbox"
+										checked={proxy}
+										onChange={(e) => setProxy(e.target.checked)}
+									/>
+									다른 사람의 부과에 대납하는 것을 확인함
+								</label>
+							)}
+						</details>
+					)}
+					<details className="ac-quick-more">
+						<summary>메모 추가</summary>
+						<label className="ac-label">
+							처리 사유
+							<input
+								className="ac-input"
+								value={memo}
+								onChange={(e) => setMemo(e.target.value)}
+								placeholder="필요한 경우 입력"
+							/>
+						</label>
+					</details>
+					<button
+						type="button"
+						className="ac-link ac-muted-link ac-quick-collapse"
+						disabled={flow.locked || flow.busy}
+						onClick={() => onClose()}
+					>
+						접기
+					</button>
+				</div>
 			</fieldset>
 			<div className="ac-quick-confirm">
-				<p className="ac-caption" aria-live="polite">
-					{hint || summary}
-					{flow.preparing && " · 확인 중…"}
-				</p>
+				<div className="ac-quick-confirm-status">
+					<p className="ac-caption" aria-live="polite">
+						{hint || summary}
+						{flow.preparing && " · 확인 중…"}
+					</p>
+				</div>
 				{flow.result && draft.type === "carry" && (
 					<p className="ac-caption">
 						이월 후 바로 납부에 사용 {won(flow.result.auto_applied)}
@@ -601,18 +617,19 @@ export default function QuickSettlement({
 					</p>
 				)}
 				<div className="ac-quick-confirm-buttons">
-					<button
-						type="button"
-						className="ac-link ac-muted-link"
-						disabled={flow.locked || flow.busy}
-						onClick={() => onClose()}
-					>
-						접기
-					</button>
 					{(!unchangedExpense || flow.locked) && (
 						<button
 							type="button"
 							className="ac-inline-confirm"
+							aria-label={
+								flow.busy
+									? "처리 중…"
+									: flow.locked
+										? "결과 다시 확인"
+										: draft.type === "expense" && savedGroup
+											? "변경 저장"
+											: `${title} 확인`
+							}
 							disabled={
 								(!flow.locked && disabled) ||
 								!flow.ready ||
@@ -632,6 +649,11 @@ export default function QuickSettlement({
 									: draft.type === "expense" && savedGroup
 										? "변경 저장"
 										: `${title} 확인`}
+							{draft.type === "pay" &&
+								selectedTotal > 0 &&
+								!flow.busy &&
+								!flow.locked &&
+								` · ${won(selectedTotal)}`}
 						</button>
 					)}
 				</div>

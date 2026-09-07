@@ -116,14 +116,22 @@ export default function TransactionCard({
 					))}
 					{positions.map((p) => (
 						<div key={p.id} className="ac-position">
-							<div className="ac-position-heading">
-								<span
-									className={`ac-badge ${p.purpose === "unassigned" ? "is-amber" : "is-neutral"}`}
-								>
-									{purposeLabel[p.purpose]}
-								</span>
-								<strong className="ac-number">{won(p.amount)}</strong>
-							</div>
+							{!(
+								positions.length === 1 &&
+								p.amount === t.amount &&
+								["unassigned", "member_pending"].includes(p.purpose)
+							) && (
+								<>
+									<div className="ac-position-heading">
+										<span
+											className={`ac-badge ${p.purpose === "unassigned" ? "is-amber" : "is-neutral"}`}
+										>
+											{purposeLabel[p.purpose]}
+										</span>
+										<strong className="ac-number">{won(p.amount)}</strong>
+									</div>
+								</>
+							)}
 							{(p.owner_id || p.group_id || p.available_ym) &&
 								draft?.positionId !== p.id && (
 									<p className="ac-caption">
@@ -137,13 +145,15 @@ export default function TransactionCard({
 								<button
 									type="button"
 									className="ac-chip"
+									aria-pressed={
+										draft?.type === "position" && draft.positionId === p.id
+									}
 									disabled={disabled}
 									onClick={() =>
 										onAction({ type: "position", positionId: p.id })
 									}
 								>
 									용도 지정
-									<ArrowRight size={13} />
 								</button>
 								{["unassigned", "member_pending", "carry"].includes(
 									p.purpose,
@@ -152,6 +162,9 @@ export default function TransactionCard({
 										<button
 											type="button"
 											className="ac-chip is-blue"
+											aria-pressed={
+												draft?.type === "pay" && draft.positionId === p.id
+											}
 											disabled={disabled}
 											onClick={() =>
 												onAction({ type: "pay", positionId: p.id })
@@ -162,6 +175,9 @@ export default function TransactionCard({
 										<button
 											type="button"
 											className="ac-chip"
+											aria-pressed={
+												draft?.type === "carry" && draft.positionId === p.id
+											}
 											disabled={disabled}
 											onClick={() =>
 												onAction({
