@@ -90,6 +90,7 @@ describe("buildRecommendData", () => {
 		const included = buildRecommendData({ teamId: "T" }, [], inputs);
 		expect(ids(included!.pool)).toEqual(["b", "p"]); // p(경기중) 포함
 		expect(included!.playingIds.has("p")).toBe(true);
+		expect(included!.ctx.ongoingGroups).toEqual([["p", "q", "r", "s"]]);
 
 		const excluded = buildRecommendData({ teamId: "T" }, [], inputs, { excludePlaying: true });
 		expect(ids(excluded!.pool)).toEqual(["b"]); // p 제외

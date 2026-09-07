@@ -3,7 +3,7 @@
  *
  * 보드의 "팀 구성 중" 그룹에서 빈 슬롯(+)을 눌렀을 때 보여줄 추천 팀원 순위를 계산한다.
  *
- * 기존 rankCandidates(실력 스프레드·그룹 재결성 회피·참여수·대기)를 기반(base cost)으로 두고,
+ * 기존 rankCandidates(실력 스프레드·그룹 재결성 회피·새 만남·참여수·대기)를 기반(base cost)으로 두고,
  * 보드 추천에 특화된 세 가지 요소를 가산한다. 점수는 "낮을수록 좋음"(비용) — 오름차순 정렬.
  *
  * 추가 요소:
@@ -40,16 +40,17 @@ export interface RecommendWeights extends Weights {
 }
 
 export const RECOMMEND_WEIGHTS: RecommendWeights = {
-	// ── 선발 핵심 3축: 경기수(W_GAME) ↔ 재결성 회피(W_GROUP2<3<4 에스컬레이션) ↔ 실력(W_SKILL) ──
+	// 판수·새 만남·재결성 회피·실력의 합산 비용. 2v2 실력 균형은 pairPlayers가 별도로 계산한다.
 	// 이 서비스는 "같은 경기를 할 4명"을 뽑는 것이고, 그 4명의 2v2 실력 균형은 페어 편성(pairPlayers)이
 	// interDiff/intraDiff로 따로 잡는다. 재결성 회피(2026-07 개편)는 쌍 누적이 아니라 "과거 경기 4인과의
-	// 겹침 수" 단위: 2명 겹침은 경기수(1판=10)를 못 뒤집는 타이브레이크, 3명 겹침은 1판을 넘어서고,
+	// 겹침 수" 단위: 1건의 2명 겹침 비용은 1판(10) 미만이며, 3명 겹침은 1판을 넘어서고,
 	// 4명 완전 재결성은 사실상 금지 수준 — 경기중 선수 ghost 페널티(W_PLAYING 30)보다도 커서
 	// "재결성될 바엔 경기중에서 데려오는" 선택이 성립한다.
-	W_GAME: 10.0, // 경기수 최우선 — 적게 뛴 사람부터(절대 판수 gameCount)
-	W_GROUP2: 8.0, // 과거 그룹과 2명 겹침(2명 유지+2명 교체) — 경기수 1판(10)을 못 뒤집는 최대값(구 Σc² 1회 동반과 등가)
+	W_GAME: 10.0, // 보정 판수가 적을수록 우대. 다른 항목과 합산한다.
+	W_GROUP2: 8.0, // 과거 그룹 1건과 2명 겹침 비용. 여러 경기 이력은 누적한다.
 	W_GROUP3: 24.0, // 과거 그룹과 3명 겹침(3명 유지+1명 교체) — 경기수 1판을 훌쩍 넘는 회피
 	W_GROUP4: 60.0, // 과거 그룹 4명 완전 재결성 — 사실상 금지(W_PLAYING 30·W_GENDER 50보다 크게)
+	W_NEW_ENCOUNTER: 12.0, // 아직 함께 뛰지 않은 확정 멤버 1명당 보너스. 첫 선발은 풀 내 미만남 비율.
 	W_SKILL: 1.5, // 실력 — 스프레드 증가분(밴드 확장)에만 작동
 	// 확장폭의 제곱(1.5·k²): k=2는 6으로 경기수 1판(10)에 밀리고 k=3(13.5)부터 넘어선다. 구 선형 3.0k는
 	// 큰 확장(k=6 → 18)도 2판 차이에 밀려, 남녀 등급 분포가 어긋난 로스터의 혼복에서 벌어진 팀이 그대로
@@ -162,10 +163,8 @@ export function recommendTeammates(
  * @param pool 후보 풀(호출자가 휴식/타팀소속 등 필터 완료. 경기중 선수 포함 가능 — maxPlaying으로 상한).
  * @param count 채울 인원 수(보통 4 − confirmed.length).
  * @param opts.maxPlaying 이번 호출에서 뽑을 경기중(ghost 예약) 선수 상한. 기본 0(대기 선수만).
- *   "팀당 1명" 불변식은 호출자 책임 — confirmed에 이미 있는 경기중 멤버(기존 ghost 예약·수동 선택)를
- *   차감해 전달해야 한다(autoFillTarget 참조). ghost는 그 선수의 현재 경기가 끝나야 합류하므로(코트
- *   대기 비용), 시뮬레이션 근거로 팀당 1명이 권장 상한 — 상한 없이 열면 "같은 진행중 경기의 2명"을
- *   함께 뽑아 방금 뛴 둘이 곧바로 또 뭉치는 역효과가 난다.
+ *   호출자가 용도에 맞게 지정한다. 운영진 자동편성은 빈 슬롯만큼 허용하되 새 팀의 대기 anchor
+ *   한 자리는 남긴다. 회원 파티는 0이다. 예약 선수가 모두 경기를 마쳐야 새 경기를 시작할 수 있다.
  * @returns 뽑힌 후보를 추천된 순서대로 반환. 풀이 모자라면 가능한 만큼만.
  */
 export function autoFillTeammates(
@@ -182,11 +181,10 @@ export function autoFillTeammates(
 	let remaining = [...pool];
 	let playingPicked = 0;
 	for (let i = 0; i < count && remaining.length > 0; i++) {
-		const ranked = recommendTeammates(working, remaining, ctx, weights);
-		// 경기중 선발 상한 도달 시 비경기중 후보 중 최상위로 — 상한 안에서는 순수 추천순(W_PLAYING 페널티 반영).
-		const pick = ranked.find(
-			(r) => playingPicked < maxPlaying || !ctx.playingIds.has(r.player.id),
-		);
+		// 첫 선발의 미만남 비율도 실제 선발 가능한 풀에서 계산한다.
+		const eligible = playingPicked < maxPlaying ? remaining : remaining.filter(p => !ctx.playingIds.has(p.id));
+		const ranked = recommendTeammates(working, eligible, ctx, weights);
+		const pick = ranked[0];
 		if (!pick) break;
 		const best = pick.player;
 		if (ctx.playingIds.has(best.id)) playingPicked++;

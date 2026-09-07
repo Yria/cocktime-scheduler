@@ -329,9 +329,8 @@ export const createMembershipSlice: StateCreator<
 
 	// 추천 모달의 "자동편성" 버튼 공용 — 팀/시드/새팀 어디서나 나머지 슬롯을 추천순으로 채워 commit.
 	// extraIds = 모달에서 사용자가 직접 고른 선수(먼저 포함하고 나머지를 자동 채움).
-	// 경기중 선수도 팀당 1명까지 ghost 예약으로 뽑을 수 있다(2026-07 개편) — W_PLAYING(30) 페널티를
-	// 안고도 상위인 경우(대기 후보들이 재결성 벌점 등으로 밀릴 때)만 뽑히며, commitTeammates가
-	// 경기중 pick을 자동으로 예약(ghost) 처리한다. 다른 팀에 이미 예약된 선수는 풀에서 제외.
+	// 경기중 선수도 빈 슬롯 수만큼 예약할 수 있다. 팀당 1명 상한 없이 추천 비용으로 고르며,
+	// commitTeammates가 예약으로 처리한다. 다른 팀에 이미 예약된 선수는 풀에서 제외한다.
 	autoFillTarget: (target, extraIds = []) => {
 		if (!claimEdit()) return; // 보기 전용 차단
 		const { drafts, reservations, magnets } = get();
@@ -349,17 +348,17 @@ export const createMembershipSlice: StateCreator<
 				lastGameType: ss.lastGameType,
 				cockCheckEnabled: ss.cockCheckEnabled,
 			},
-			{ excludeReserved: true }, // 이중 ghost 예약 방지(경기중 포함은 maxPlaying으로 상한)
+			{ excludeReserved: true }, // 다른 팀과 이중 예약 방지
 		);
 		if (!data) return;
 		const slotsToFill = 4 - data.confirmed.length; // confirmed = 기존 멤버 + extraIds
-		// ghost 상한은 "팀 단위" 1명 — 기존 ghost 예약·다이얼로그에서 직접 고른 경기중 선수(extraIds)를
-		// 차감해서, 자동편성 재실행/조합으로 한 팀에 ghost 2명이 생기지 않게 한다.
-		const playingInTeam = data.confirmed.filter((p) => data.playingIds.has(p.id)).length;
+		// 보드의 새 팀 생성에는 자유 대기 선수(anchor) 한 명이 필요하다.
+		// 아직 선택되지 않았다면 마지막 한 자리를 남긴다. 기존 예약 수는 추가 예약을 제한하지 않는다.
+		const needsAnchor = target.newTeam && !data.confirmed.some(p => !data.playingIds.has(p.id));
 		const picks =
 			slotsToFill > 0
 				? autoFillTeammates(data.confirmed, data.pool, data.ctx, slotsToFill, undefined, {
-						maxPlaying: Math.max(0, 1 - playingInTeam),
+						maxPlaying: Math.max(0, slotsToFill - (needsAnchor ? 1 : 0)),
 					})
 				: [];
 		const ids = [...extraIds, ...picks.map((p) => p.id)];

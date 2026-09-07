@@ -1,4 +1,6 @@
-# 회원 파티 SQL 검증
+# SQL 검증
+
+## 회원 파티
 
 `member_party.test.mjs`는 실제 PostgreSQL 엔진인 PGlite에 최소 스키마와 인증 역할을 만들고
 `20260907010000_member_party.sql`, `20260907020000_member_party_realtime.sql`을 각각 두 번 적용한 뒤 RPC를 실행한다. 원격 DB에는 연결하지 않는다.
@@ -27,3 +29,23 @@ RPC 계약은 `src/lib/supabase/memberParty.ts`에 정의한다. 최초 누름�
 해제는 `boardClientId` 없이도 가능하다.
 마감 후 신규 참가를 받지 않으며 10초가 지나도 확정하지 못한 라운드는 취소한다.
 확정/취소 시 모든 누름을 삭제하고 최근 결과를 보관해 새 라운드는 새 누름으로만 시작한다.
+
+## 늦참 평균 판수 보정
+
+```sh
+node --test supabase/tests/late_join_game_count.test.mjs
+```
+
+프로젝트 개발 의존성의 PGlite를 사용한다. 최소 스키마에
+`20260907040000_late_join_game_count.sql`을 두 번 적용하고 실제 보정 RPC·INSERT 트리거·설정 전환 트리거를 실행한다.
+기존 휴식 복귀 RPC와 자식 변경의 `sync_version` 갱신 함수도 함께 실행한다.
+
+검증 범위: 최초 참가 0판, 대기/경기 중 평균, 휴식·미확인·다른 세션 제외,
+반올림, 진행 중 판수 미가산, 등록과 확인 시점 구분, 콕 체크 OFF 추가,
+여러 명 일괄 추가, 기존 높은 판수 보존, 재확인 멱등성, 기존 행 upsert/중복 추가 보존,
+ON → OFF 전환과 동기화, 휴식 복귀, 내부 함수와 RPC 실행 권한.
+단일 로컬 DB 연결 검사이며 실제 Supabase RLS·네트워크 전달·서로 다른 연결의 잠금 경합은 검증하지 않는다.
+
+수학적 성질은 `pnpm exec vitest run src/lib/teamSelection/lateJoinFairness.test.ts --reporter=verbose`로 별도 확인한다.
+5,004개 판수 조합에 실제 SQL을 적용하고, 반복 합류의 오차·분산 경계 및 경기 종료 시점·그룹 이력 반례를 검사한다.
+일반 증명과 검증 범위는 [늦참 평균 판수 수학 검증](../../docs/TEAM_MATCHING_MATH.md)에 기록했다.

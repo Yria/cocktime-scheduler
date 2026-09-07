@@ -1,0 +1,877 @@
+{
+  "seeds": 200,
+  "seedStart": 10001,
+  "weights": [
+    0,
+    12
+  ],
+  "matchesPerSession": 48,
+  "durationMinutes": [
+    10,
+    15
+  ],
+  "maxPlaying": 1,
+  "scenarios": [
+    {
+      "name": "balanced24",
+      "size": 24,
+      "women": 12,
+      "courts": 3,
+      "grades": "balanced"
+    },
+    {
+      "name": "skew24",
+      "size": 24,
+      "women": 6,
+      "courts": 3,
+      "grades": "balanced"
+    },
+    {
+      "name": "split24",
+      "size": 24,
+      "women": 12,
+      "courts": 3,
+      "grades": "split"
+    },
+    {
+      "name": "tight16",
+      "size": 16,
+      "women": 4,
+      "courts": 3,
+      "grades": "balanced"
+    },
+    {
+      "name": "late28",
+      "size": 28,
+      "women": 8,
+      "courts": 3,
+      "grades": "balanced",
+      "late": 4
+    },
+    {
+      "name": "small8",
+      "size": 8,
+      "women": 0,
+      "courts": 2,
+      "grades": "equal"
+    }
+  ],
+  "rows": [
+    {
+      "scenario": "balanced24",
+      "weight": 0,
+      "averages": {
+        "unmetPairs": 74.115,
+        "distinct": 16.82375,
+        "distinctP10": 14.835,
+        "maxRepeat": 2.8164583333333315,
+        "gameStd": 0.4059673182327764,
+        "gameRange": 1.975,
+        "spread": 3.4151041666666675,
+        "balance": 1.2009375,
+        "waitP95": 21.88349879819742,
+        "utilization": 0.9781774651566564,
+        "overlap3": 0.018541666666666668,
+        "genderGap": 0.13166666666666632
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinct": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameStd": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0
+        },
+        "spread": {
+          "mean": 0,
+          "se": 0
+        },
+        "balance": {
+          "mean": 0,
+          "se": 0
+        },
+        "waitP95": {
+          "mean": 0,
+          "se": 0
+        },
+        "utilization": {
+          "mean": 0,
+          "se": 0
+        },
+        "overlap3": {
+          "mean": 0,
+          "se": 0
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        }
+      }
+    },
+    {
+      "scenario": "balanced24",
+      "weight": 12,
+      "averages": {
+        "unmetPairs": 47.055,
+        "distinct": 19.07875,
+        "distinctP10": 17.36,
+        "maxRepeat": 2.403333333333333,
+        "gameStd": 0.4294958039852682,
+        "gameRange": 1.975,
+        "spread": 3.8150000000000017,
+        "balance": 1.315208333333333,
+        "waitP95": 23.602176455261237,
+        "utilization": 0.9729382715301652,
+        "overlap3": 0.005000000000000002,
+        "genderGap": 0.1766666666666664
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": -27.06,
+          "se": 0.4324547206669568
+        },
+        "distinct": {
+          "mean": 2.255000000000001,
+          "se": 0.036037893388913084
+        },
+        "distinctP10": {
+          "mean": 2.525,
+          "se": 0.07330582322430437
+        },
+        "maxRepeat": {
+          "mean": -0.4131249999999999,
+          "se": 0.015169850465153569
+        },
+        "gameStd": {
+          "mean": 0.023528485752491796,
+          "se": 0.009224639588280367
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0.025559075328702552
+        },
+        "spread": {
+          "mean": 0.39989583333333345,
+          "se": 0.010181278351123957
+        },
+        "balance": {
+          "mean": 0.11427083333333336,
+          "se": 0.013767863044647267
+        },
+        "waitP95": {
+          "mean": 1.7186776570638023,
+          "se": 0.07327056864151604
+        },
+        "utilization": {
+          "mean": -0.005239193626491977,
+          "se": 0.0007485412415461402
+        },
+        "overlap3": {
+          "mean": -0.013541666666666667,
+          "se": 0.0015329954428886493
+        },
+        "genderGap": {
+          "mean": 0.044999999999999984,
+          "se": 0.017749969526794154
+        }
+      }
+    },
+    {
+      "scenario": "skew24",
+      "weight": 0,
+      "averages": {
+        "unmetPairs": 67.565,
+        "distinct": 17.369583333333324,
+        "distinctP10": 15.26,
+        "maxRepeat": 2.6656250000000004,
+        "gameStd": 0.5144839577048872,
+        "gameRange": 2.02,
+        "spread": 3.4408333333333347,
+        "balance": 1.2738541666666663,
+        "waitP95": 23.223639743225103,
+        "utilization": 0.9762538380522032,
+        "overlap3": 0.013437500000000005,
+        "genderGap": 0.602222222222221
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinct": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameStd": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0
+        },
+        "spread": {
+          "mean": 0,
+          "se": 0
+        },
+        "balance": {
+          "mean": 0,
+          "se": 0
+        },
+        "waitP95": {
+          "mean": 0,
+          "se": 0
+        },
+        "utilization": {
+          "mean": 0,
+          "se": 0
+        },
+        "overlap3": {
+          "mean": 0,
+          "se": 0
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        }
+      }
+    },
+    {
+      "scenario": "skew24",
+      "weight": 12,
+      "averages": {
+        "unmetPairs": 41.43,
+        "distinct": 19.547500000000007,
+        "distinctP10": 17.77,
+        "maxRepeat": 2.3312499999999994,
+        "gameStd": 0.5118955751605372,
+        "gameRange": 2.03,
+        "spread": 3.834791666666667,
+        "balance": 1.3657291666666662,
+        "waitP95": 24.43834472583009,
+        "utilization": 0.9670468402905027,
+        "overlap3": 0.0030208333333333333,
+        "genderGap": 0.5833333333333331
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": -26.135,
+          "se": 0.3816571575768601
+        },
+        "distinct": {
+          "mean": 2.177916666666667,
+          "se": 0.03180476313140501
+        },
+        "distinctP10": {
+          "mean": 2.51,
+          "se": 0.06496616823451552
+        },
+        "maxRepeat": {
+          "mean": -0.33437499999999987,
+          "se": 0.013655541686308526
+        },
+        "gameStd": {
+          "mean": -0.0025883825443501684,
+          "se": 0.010881325961122396
+        },
+        "gameRange": {
+          "mean": 0.01,
+          "se": 0.02651443145490552
+        },
+        "spread": {
+          "mean": 0.3939583333333333,
+          "se": 0.010388561330555091
+        },
+        "balance": {
+          "mean": 0.09187499999999998,
+          "se": 0.013755352430141038
+        },
+        "waitP95": {
+          "mean": 1.2147049826049807,
+          "se": 0.0801562890269369
+        },
+        "utilization": {
+          "mean": -0.009206997761700237,
+          "se": 0.0009573251154432068
+        },
+        "overlap3": {
+          "mean": -0.010416666666666668,
+          "se": 0.0011997871112109056
+        },
+        "genderGap": {
+          "mean": -0.01888888888888884,
+          "se": 0.0290801340593622
+        }
+      }
+    },
+    {
+      "scenario": "split24",
+      "weight": 0,
+      "averages": {
+        "unmetPairs": 123.6,
+        "distinct": 12.699999999999996,
+        "distinctP10": 11.11,
+        "maxRepeat": 3.579375,
+        "gameStd": 0.4093560089448725,
+        "gameRange": 1.885,
+        "spread": 1.0675,
+        "balance": 1.01,
+        "waitP95": 24.258763732259126,
+        "utilization": 0.9538267141417807,
+        "overlap3": 0.11354166666666668,
+        "genderGap": 0.15416666666666634
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinct": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameStd": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0
+        },
+        "spread": {
+          "mean": 0,
+          "se": 0
+        },
+        "balance": {
+          "mean": 0,
+          "se": 0
+        },
+        "waitP95": {
+          "mean": 0,
+          "se": 0
+        },
+        "utilization": {
+          "mean": 0,
+          "se": 0
+        },
+        "overlap3": {
+          "mean": 0,
+          "se": 0
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        }
+      }
+    },
+    {
+      "scenario": "split24",
+      "weight": 12,
+      "averages": {
+        "unmetPairs": 83.76,
+        "distinct": 16.020000000000003,
+        "distinctP10": 14.155,
+        "maxRepeat": 3.084999999999999,
+        "gameStd": 0.37846026311811765,
+        "gameRange": 1.87,
+        "spread": 2.533125,
+        "balance": 1.95875,
+        "waitP95": 24.189790231323222,
+        "utilization": 0.9606542699832238,
+        "overlap3": 0.01750000000000002,
+        "genderGap": 0.145833333333333
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": -39.84,
+          "se": 0.581128688642902
+        },
+        "distinct": {
+          "mean": 3.320000000000003,
+          "se": 0.048427390720241825
+        },
+        "distinctP10": {
+          "mean": 3.045,
+          "se": 0.06391636337854101
+        },
+        "maxRepeat": {
+          "mean": -0.49437500000000023,
+          "se": 0.017919508899642167
+        },
+        "gameStd": {
+          "mean": -0.030895745826754875,
+          "se": 0.013545294842756708
+        },
+        "gameRange": {
+          "mean": -0.015,
+          "se": 0.05036425110080289
+        },
+        "spread": {
+          "mean": 1.465625,
+          "se": 0.02601485219154124
+        },
+        "balance": {
+          "mean": 0.94875,
+          "se": 0.029590881854799855
+        },
+        "waitP95": {
+          "mean": -0.06897350093587253,
+          "se": 0.1386555535865614
+        },
+        "utilization": {
+          "mean": 0.006827555841442971,
+          "se": 0.0016049488666760594
+        },
+        "overlap3": {
+          "mean": -0.09604166666666664,
+          "se": 0.003190751604001265
+        },
+        "genderGap": {
+          "mean": -0.008333333333333335,
+          "se": 0.016614239148700978
+        }
+      }
+    },
+    {
+      "scenario": "tight16",
+      "weight": 0,
+      "averages": {
+        "unmetPairs": 2.08,
+        "distinct": 14.74,
+        "distinctP10": 14.015,
+        "maxRepeat": 4.249375,
+        "gameStd": 0.5411750234078947,
+        "gameRange": 2.035,
+        "spread": 4.0813541666666655,
+        "balance": 1.3633333333333335,
+        "waitP95": 13.921340232482908,
+        "utilization": 0.908164527211242,
+        "overlap3": 0.15281249999999993,
+        "genderGap": 0.5500000000000005
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinct": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameStd": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0
+        },
+        "spread": {
+          "mean": 0,
+          "se": 0
+        },
+        "balance": {
+          "mean": 0,
+          "se": 0
+        },
+        "waitP95": {
+          "mean": 0,
+          "se": 0
+        },
+        "utilization": {
+          "mean": 0,
+          "se": 0
+        },
+        "overlap3": {
+          "mean": 0,
+          "se": 0
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        }
+      }
+    },
+    {
+      "scenario": "tight16",
+      "weight": 12,
+      "averages": {
+        "unmetPairs": 0.205,
+        "distinct": 14.974375,
+        "distinctP10": 14.82,
+        "maxRepeat": 4.1278125,
+        "gameStd": 0.539019768297503,
+        "gameRange": 2.03,
+        "spread": 4.171875,
+        "balance": 1.395729166666667,
+        "waitP95": 14.91643249277751,
+        "utilization": 0.8830559379478357,
+        "overlap3": 0.1614583333333333,
+        "genderGap": 0.5766666666666669
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": -1.875,
+          "se": 0.09213751466172831
+        },
+        "distinct": {
+          "mean": 0.234375,
+          "se": 0.01151718933271604
+        },
+        "distinctP10": {
+          "mean": 0.805,
+          "se": 0.039910389574393974
+        },
+        "maxRepeat": {
+          "mean": -0.1215625,
+          "se": 0.01944481817833978
+        },
+        "gameStd": {
+          "mean": -0.002155255110391808,
+          "se": 0.012283097693214872
+        },
+        "gameRange": {
+          "mean": -0.005,
+          "se": 0.025060228956992517
+        },
+        "spread": {
+          "mean": 0.09052083333333344,
+          "se": 0.009214079904027624
+        },
+        "balance": {
+          "mean": 0.03239583333333334,
+          "se": 0.012329321829251724
+        },
+        "waitP95": {
+          "mean": 0.9950922602945955,
+          "se": 0.1367190567205787
+        },
+        "utilization": {
+          "mean": -0.02510858926340619,
+          "se": 0.002745668057779317
+        },
+        "overlap3": {
+          "mean": 0.00864583333333333,
+          "se": 0.004487436854987334
+        },
+        "genderGap": {
+          "mean": 0.02666666666666657,
+          "se": 0.03578582609032597
+        }
+      }
+    },
+    {
+      "scenario": "late28",
+      "weight": 0,
+      "averages": {
+        "unmetPairs": 150.845,
+        "distinct": 16.22535714285714,
+        "distinctP10": 13.18,
+        "maxRepeat": 2.392321428571429,
+        "gameStd": 0.4858276370451245,
+        "gameRange": 1.96,
+        "spread": 3.175625,
+        "balance": 1.211770833333334,
+        "waitP95": 26.03210953983561,
+        "utilization": 0.9768016677521156,
+        "overlap3": 0.004375000000000002,
+        "genderGap": 0.551875
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinct": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameStd": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0
+        },
+        "spread": {
+          "mean": 0,
+          "se": 0
+        },
+        "balance": {
+          "mean": 0,
+          "se": 0
+        },
+        "waitP95": {
+          "mean": 0,
+          "se": 0
+        },
+        "utilization": {
+          "mean": 0,
+          "se": 0
+        },
+        "overlap3": {
+          "mean": 0,
+          "se": 0
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        }
+      }
+    },
+    {
+      "scenario": "late28",
+      "weight": 12,
+      "averages": {
+        "unmetPairs": 119.97,
+        "distinct": 18.430714285714288,
+        "distinctP10": 15.57,
+        "maxRepeat": 2.001071428571429,
+        "gameStd": 0.5083719793736212,
+        "gameRange": 1.96,
+        "spread": 3.601145833333332,
+        "balance": 1.3238541666666668,
+        "waitP95": 27.075630369567886,
+        "utilization": 0.9744120829263792,
+        "overlap3": 0.0007291666666666666,
+        "genderGap": 0.451875
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": -30.875,
+          "se": 0.4357709912143299
+        },
+        "distinct": {
+          "mean": 2.2053571428571437,
+          "se": 0.03112649937245213
+        },
+        "distinctP10": {
+          "mean": 2.39,
+          "se": 0.0785515866090173
+        },
+        "maxRepeat": {
+          "mean": -0.39124999999999993,
+          "se": 0.011750822581871897
+        },
+        "gameStd": {
+          "mean": 0.022544342328497204,
+          "se": 0.007235717465804727
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0.03399674829262884
+        },
+        "spread": {
+          "mean": 0.4255208333333331,
+          "se": 0.011190321013746816
+        },
+        "balance": {
+          "mean": 0.11208333333333333,
+          "se": 0.012747548783981958
+        },
+        "waitP95": {
+          "mean": 1.0435208297322587,
+          "se": 0.06791161050812732
+        },
+        "utilization": {
+          "mean": -0.002389584825736439,
+          "se": 0.0006634784970343802
+        },
+        "overlap3": {
+          "mean": -0.0036458333333333347,
+          "se": 0.0007300634590523196
+        },
+        "genderGap": {
+          "mean": -0.1,
+          "se": 0.022005845214808063
+        }
+      }
+    },
+    {
+      "scenario": "small8",
+      "weight": 0,
+      "averages": {
+        "unmetPairs": 0,
+        "distinct": 7,
+        "distinctP10": 7,
+        "maxRepeat": 11.36,
+        "gameStd": 0.30931980515339463,
+        "gameRange": 1.2,
+        "spread": 0,
+        "balance": 0,
+        "waitP95": 15.735638219807939,
+        "utilization": 0.7467498002199174,
+        "overlap3": 0.9324999999999999,
+        "genderGap": 0
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinct": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameStd": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0
+        },
+        "spread": {
+          "mean": 0,
+          "se": 0
+        },
+        "balance": {
+          "mean": 0,
+          "se": 0
+        },
+        "waitP95": {
+          "mean": 0,
+          "se": 0
+        },
+        "utilization": {
+          "mean": 0,
+          "se": 0
+        },
+        "overlap3": {
+          "mean": 0,
+          "se": 0
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        }
+      }
+    },
+    {
+      "scenario": "small8",
+      "weight": 12,
+      "averages": {
+        "unmetPairs": 0,
+        "distinct": 7,
+        "distinctP10": 7,
+        "maxRepeat": 11.350625,
+        "gameStd": 0.28010407640085644,
+        "gameRange": 1.05,
+        "spread": 0,
+        "balance": 0,
+        "waitP95": 15.164540968668623,
+        "utilization": 0.7611989135108947,
+        "overlap3": 0.9262499999999991,
+        "genderGap": 0
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinct": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": -0.009375,
+          "se": 0.02661164349910803
+        },
+        "gameStd": {
+          "mean": -0.029215728752538094,
+          "se": 0.025748542469003058
+        },
+        "gameRange": {
+          "mean": -0.15,
+          "se": 0.09816149139025852
+        },
+        "spread": {
+          "mean": 0,
+          "se": 0
+        },
+        "balance": {
+          "mean": 0,
+          "se": 0
+        },
+        "waitP95": {
+          "mean": -0.571097251139323,
+          "se": 0.27786352802054787
+        },
+        "utilization": {
+          "mean": 0.014449113290977374,
+          "se": 0.004594844711736155
+        },
+        "overlap3": {
+          "mean": -0.006250000000000005,
+          "se": 0.00156293614794988
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        }
+      }
+    }
+  ]
+}

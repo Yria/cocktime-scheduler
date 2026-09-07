@@ -1,0 +1,951 @@
+{
+  "seeds": 200,
+  "seedStart": 10001,
+  "weights": [
+    12
+  ],
+  "playingLimits": [
+    1,
+    3
+  ],
+  "matchesPerSession": 48,
+  "durationMinutes": [
+    10,
+    15
+  ],
+  "scenarios": [
+    {
+      "name": "balanced24",
+      "size": 24,
+      "women": 12,
+      "courts": 3,
+      "grades": "balanced"
+    },
+    {
+      "name": "skew24",
+      "size": 24,
+      "women": 6,
+      "courts": 3,
+      "grades": "balanced"
+    },
+    {
+      "name": "split24",
+      "size": 24,
+      "women": 12,
+      "courts": 3,
+      "grades": "split"
+    },
+    {
+      "name": "tight16",
+      "size": 16,
+      "women": 4,
+      "courts": 3,
+      "grades": "balanced"
+    },
+    {
+      "name": "late28",
+      "size": 28,
+      "women": 8,
+      "courts": 3,
+      "grades": "balanced",
+      "late": 4
+    },
+    {
+      "name": "small8",
+      "size": 8,
+      "women": 0,
+      "courts": 2,
+      "grades": "equal"
+    }
+  ],
+  "rows": [
+    {
+      "scenario": "balanced24",
+      "weight": 12,
+      "maxPlaying": 1,
+      "averages": {
+        "unmetPairs": 47.055,
+        "distinct": 19.07875,
+        "distinctP10": 17.36,
+        "maxRepeat": 2.403333333333333,
+        "gameStd": 0.4294958039852682,
+        "gameRange": 1.975,
+        "spread": 3.8150000000000017,
+        "balance": 1.315208333333333,
+        "waitP95": 23.602176455261237,
+        "utilization": 0.9729382715301652,
+        "overlap3": 0.005000000000000002,
+        "genderGap": 0.1766666666666664,
+        "multiReservationRate": 0
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinct": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameStd": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0
+        },
+        "spread": {
+          "mean": 0,
+          "se": 0
+        },
+        "balance": {
+          "mean": 0,
+          "se": 0
+        },
+        "waitP95": {
+          "mean": 0,
+          "se": 0
+        },
+        "utilization": {
+          "mean": 0,
+          "se": 0
+        },
+        "overlap3": {
+          "mean": 0,
+          "se": 0
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        },
+        "multiReservationRate": {
+          "mean": 0,
+          "se": 0
+        }
+      }
+    },
+    {
+      "scenario": "balanced24",
+      "weight": 12,
+      "maxPlaying": 3,
+      "averages": {
+        "unmetPairs": 47.055,
+        "distinct": 19.07875,
+        "distinctP10": 17.36,
+        "maxRepeat": 2.402916666666666,
+        "gameStd": 0.42988255533121633,
+        "gameRange": 1.975,
+        "spread": 3.8148958333333347,
+        "balance": 1.3151041666666665,
+        "waitP95": 23.602176455261237,
+        "utilization": 0.9729382715301652,
+        "overlap3": 0.005000000000000002,
+        "genderGap": 0.1766666666666664,
+        "multiReservationRate": 0.00010416666666666666
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinct": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": -0.0004166666666666674,
+          "se": 0.00041666666666666767
+        },
+        "gameStd": {
+          "mean": 0.00038675134594812866,
+          "se": 0.0003867513459481286
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0
+        },
+        "spread": {
+          "mean": -0.0001041666666666674,
+          "se": 0.00010416666666666746
+        },
+        "balance": {
+          "mean": -0.0001041666666666674,
+          "se": 0.00010416666666666746
+        },
+        "waitP95": {
+          "mean": 0,
+          "se": 0
+        },
+        "utilization": {
+          "mean": 0,
+          "se": 0
+        },
+        "overlap3": {
+          "mean": 0,
+          "se": 0
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        },
+        "multiReservationRate": {
+          "mean": 0.00010416666666666666,
+          "se": 0.00010416666666666673
+        }
+      }
+    },
+    {
+      "scenario": "skew24",
+      "weight": 12,
+      "maxPlaying": 1,
+      "averages": {
+        "unmetPairs": 41.43,
+        "distinct": 19.547500000000007,
+        "distinctP10": 17.77,
+        "maxRepeat": 2.3312499999999994,
+        "gameStd": 0.5118955751605372,
+        "gameRange": 2.03,
+        "spread": 3.834791666666667,
+        "balance": 1.3657291666666662,
+        "waitP95": 24.43834472583009,
+        "utilization": 0.9670468402905027,
+        "overlap3": 0.0030208333333333333,
+        "genderGap": 0.5833333333333331,
+        "multiReservationRate": 0
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinct": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameStd": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0
+        },
+        "spread": {
+          "mean": 0,
+          "se": 0
+        },
+        "balance": {
+          "mean": 0,
+          "se": 0
+        },
+        "waitP95": {
+          "mean": 0,
+          "se": 0
+        },
+        "utilization": {
+          "mean": 0,
+          "se": 0
+        },
+        "overlap3": {
+          "mean": 0,
+          "se": 0
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        },
+        "multiReservationRate": {
+          "mean": 0,
+          "se": 0
+        }
+      }
+    },
+    {
+      "scenario": "skew24",
+      "weight": 12,
+      "maxPlaying": 3,
+      "averages": {
+        "unmetPairs": 41.505,
+        "distinct": 19.541250000000005,
+        "distinctP10": 17.77,
+        "maxRepeat": 2.331458333333333,
+        "gameStd": 0.51161229598734,
+        "gameRange": 2.025,
+        "spread": 3.8341666666666665,
+        "balance": 1.3660416666666664,
+        "waitP95": 24.43986236808269,
+        "utilization": 0.9670468402905027,
+        "overlap3": 0.003125,
+        "genderGap": 0.5833333333333331,
+        "multiReservationRate": 0.0003125
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0.075,
+          "se": 0.05842897161184763
+        },
+        "distinct": {
+          "mean": -0.006249999999999982,
+          "se": 0.004869080967653948
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": 0.0002083333333333326,
+          "se": 0.00020833333333333289
+        },
+        "gameStd": {
+          "mean": -0.00028327917319712905,
+          "se": 0.0002832791731971298
+        },
+        "gameRange": {
+          "mean": -0.005,
+          "se": 0.005000000000000019
+        },
+        "spread": {
+          "mean": -0.0006250000000000022,
+          "se": 0.0005306343322177696
+        },
+        "balance": {
+          "mean": 0.0003125,
+          "se": 0.0004299976911303612
+        },
+        "waitP95": {
+          "mean": 0.0015176422526041655,
+          "se": 0.0064856305743579
+        },
+        "utilization": {
+          "mean": 0,
+          "se": 0
+        },
+        "overlap3": {
+          "mean": 0.00010416666666666666,
+          "se": 0.00010416666666666673
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        },
+        "multiReservationRate": {
+          "mean": 0.0003125,
+          "se": 0.0001795130265939435
+        }
+      }
+    },
+    {
+      "scenario": "split24",
+      "weight": 12,
+      "maxPlaying": 1,
+      "averages": {
+        "unmetPairs": 83.76,
+        "distinct": 16.020000000000003,
+        "distinctP10": 14.155,
+        "maxRepeat": 3.084999999999999,
+        "gameStd": 0.37846026311811765,
+        "gameRange": 1.87,
+        "spread": 2.533125,
+        "balance": 1.95875,
+        "waitP95": 24.189790231323222,
+        "utilization": 0.9606542699832238,
+        "overlap3": 0.01750000000000002,
+        "genderGap": 0.145833333333333,
+        "multiReservationRate": 0
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinct": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameStd": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0
+        },
+        "spread": {
+          "mean": 0,
+          "se": 0
+        },
+        "balance": {
+          "mean": 0,
+          "se": 0
+        },
+        "waitP95": {
+          "mean": 0,
+          "se": 0
+        },
+        "utilization": {
+          "mean": 0,
+          "se": 0
+        },
+        "overlap3": {
+          "mean": 0,
+          "se": 0
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        },
+        "multiReservationRate": {
+          "mean": 0,
+          "se": 0
+        }
+      }
+    },
+    {
+      "scenario": "split24",
+      "weight": 12,
+      "maxPlaying": 3,
+      "averages": {
+        "unmetPairs": 84.16,
+        "distinct": 15.98666666666667,
+        "distinctP10": 14.13,
+        "maxRepeat": 3.09625,
+        "gameStd": 0.38108777377907727,
+        "gameRange": 1.91,
+        "spread": 2.51875,
+        "balance": 1.945625,
+        "waitP95": 24.20281080308023,
+        "utilization": 0.961177930121886,
+        "overlap3": 0.018020833333333354,
+        "genderGap": 0.14333333333333298,
+        "multiReservationRate": 0.005416666666666669
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0.4,
+          "se": 0.2544083687508178
+        },
+        "distinct": {
+          "mean": -0.03333333333333332,
+          "se": 0.02120069739590152
+        },
+        "distinctP10": {
+          "mean": -0.025,
+          "se": 0.03125314054570912
+        },
+        "maxRepeat": {
+          "mean": 0.011249999999999996,
+          "se": 0.007080869607990256
+        },
+        "gameStd": {
+          "mean": 0.002627510660959602,
+          "se": 0.005687417498975387
+        },
+        "gameRange": {
+          "mean": 0.04,
+          "se": 0.01984867374023339
+        },
+        "spread": {
+          "mean": -0.014375,
+          "se": 0.009834429413261467
+        },
+        "balance": {
+          "mean": -0.013125,
+          "se": 0.014381007047264378
+        },
+        "waitP95": {
+          "mean": 0.01302057175699872,
+          "se": 0.03503407489681575
+        },
+        "utilization": {
+          "mean": 0.0005236601386619144,
+          "se": 0.0005112316197345689
+        },
+        "overlap3": {
+          "mean": 0.0005208333333333335,
+          "se": 0.0008539828008178429
+        },
+        "genderGap": {
+          "mean": -0.0025000000000000087,
+          "se": 0.008394041850133822
+        },
+        "multiReservationRate": {
+          "mean": 0.005416666666666669,
+          "se": 0.0006477907738270891
+        }
+      }
+    },
+    {
+      "scenario": "tight16",
+      "weight": 12,
+      "maxPlaying": 1,
+      "averages": {
+        "unmetPairs": 0.205,
+        "distinct": 14.974375,
+        "distinctP10": 14.82,
+        "maxRepeat": 4.1278125,
+        "gameStd": 0.539019768297503,
+        "gameRange": 2.03,
+        "spread": 4.171875,
+        "balance": 1.395729166666667,
+        "waitP95": 14.91643249277751,
+        "utilization": 0.8830559379478357,
+        "overlap3": 0.1614583333333333,
+        "genderGap": 0.5766666666666669,
+        "multiReservationRate": 0
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinct": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameStd": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0
+        },
+        "spread": {
+          "mean": 0,
+          "se": 0
+        },
+        "balance": {
+          "mean": 0,
+          "se": 0
+        },
+        "waitP95": {
+          "mean": 0,
+          "se": 0
+        },
+        "utilization": {
+          "mean": 0,
+          "se": 0
+        },
+        "overlap3": {
+          "mean": 0,
+          "se": 0
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        },
+        "multiReservationRate": {
+          "mean": 0,
+          "se": 0
+        }
+      }
+    },
+    {
+      "scenario": "tight16",
+      "weight": 12,
+      "maxPlaying": 3,
+      "averages": {
+        "unmetPairs": 0.225,
+        "distinct": 14.971875,
+        "distinctP10": 14.785,
+        "maxRepeat": 4.14375,
+        "gameStd": 0.5469889267232689,
+        "gameRange": 2,
+        "spread": 4.182395833333334,
+        "balance": 1.3889583333333337,
+        "waitP95": 14.989303884582526,
+        "utilization": 0.881672796221999,
+        "overlap3": 0.15687499999999996,
+        "genderGap": 0.6183333333333334,
+        "multiReservationRate": 0.023229166666666662
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0.02,
+          "se": 0.03167041324922809
+        },
+        "distinct": {
+          "mean": -0.0025,
+          "se": 0.003958801656153511
+        },
+        "distinctP10": {
+          "mean": -0.035,
+          "se": 0.0303890187783607
+        },
+        "maxRepeat": {
+          "mean": 0.0159375,
+          "se": 0.013605319651993294
+        },
+        "gameStd": {
+          "mean": 0.007969158425765845,
+          "se": 0.01035458546967536
+        },
+        "gameRange": {
+          "mean": -0.03,
+          "se": 0.027372362542458423
+        },
+        "spread": {
+          "mean": 0.01052083333333332,
+          "se": 0.006192148328147783
+        },
+        "balance": {
+          "mean": -0.006770833333333326,
+          "se": 0.008940576237483996
+        },
+        "waitP95": {
+          "mean": 0.07287139180501309,
+          "se": 0.15017522044699358
+        },
+        "utilization": {
+          "mean": -0.0013831417258368711,
+          "se": 0.0019768217429631716
+        },
+        "overlap3": {
+          "mean": -0.004583333333333331,
+          "se": 0.003150752349599891
+        },
+        "genderGap": {
+          "mean": 0.041666666666666644,
+          "se": 0.02744849498904439
+        },
+        "multiReservationRate": {
+          "mean": 0.023229166666666662,
+          "se": 0.0015501676921139628
+        }
+      }
+    },
+    {
+      "scenario": "late28",
+      "weight": 12,
+      "maxPlaying": 1,
+      "averages": {
+        "unmetPairs": 119.97,
+        "distinct": 18.430714285714288,
+        "distinctP10": 15.57,
+        "maxRepeat": 2.001071428571429,
+        "gameStd": 0.5083719793736212,
+        "gameRange": 1.96,
+        "spread": 3.601145833333332,
+        "balance": 1.3238541666666668,
+        "waitP95": 27.075630369567886,
+        "utilization": 0.9744120829263792,
+        "overlap3": 0.0007291666666666666,
+        "genderGap": 0.451875,
+        "multiReservationRate": 0
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinct": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameStd": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0
+        },
+        "spread": {
+          "mean": 0,
+          "se": 0
+        },
+        "balance": {
+          "mean": 0,
+          "se": 0
+        },
+        "waitP95": {
+          "mean": 0,
+          "se": 0
+        },
+        "utilization": {
+          "mean": 0,
+          "se": 0
+        },
+        "overlap3": {
+          "mean": 0,
+          "se": 0
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        },
+        "multiReservationRate": {
+          "mean": 0,
+          "se": 0
+        }
+      }
+    },
+    {
+      "scenario": "late28",
+      "weight": 12,
+      "maxPlaying": 3,
+      "averages": {
+        "unmetPairs": 120.02,
+        "distinct": 18.42714285714286,
+        "distinctP10": 15.56,
+        "maxRepeat": 2.001607142857143,
+        "gameStd": 0.507672113515883,
+        "gameRange": 1.96,
+        "spread": 3.6017708333333314,
+        "balance": 1.3234375,
+        "waitP95": 27.103000499328626,
+        "utilization": 0.9742779419909046,
+        "overlap3": 0.0007291666666666666,
+        "genderGap": 0.4534375,
+        "multiReservationRate": 0.00041666666666666664
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0.05,
+          "se": 0.0561539520573422
+        },
+        "distinct": {
+          "mean": -0.0035714285714285765,
+          "se": 0.004010996575524448
+        },
+        "distinctP10": {
+          "mean": -0.01,
+          "se": 0.007053278933842962
+        },
+        "maxRepeat": {
+          "mean": 0.0005357142857142882,
+          "se": 0.0014865629823737866
+        },
+        "gameStd": {
+          "mean": -0.0006998658577382081,
+          "se": 0.0008387466309973125
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0
+        },
+        "spread": {
+          "mean": 0.000625,
+          "se": 0.0006753194231495797
+        },
+        "balance": {
+          "mean": -0.0004166666666666652,
+          "se": 0.001644269527193445
+        },
+        "waitP95": {
+          "mean": 0.027370129760742153,
+          "se": 0.01966737914675547
+        },
+        "utilization": {
+          "mean": -0.0001341409354747225,
+          "se": 0.0000978146909612411
+        },
+        "overlap3": {
+          "mean": 0,
+          "se": 0
+        },
+        "genderGap": {
+          "mean": 0.0015625,
+          "se": 0.0021901903771569596
+        },
+        "multiReservationRate": {
+          "mean": 0.00041666666666666664,
+          "se": 0.0002067570181274316
+        }
+      }
+    },
+    {
+      "scenario": "small8",
+      "weight": 12,
+      "maxPlaying": 1,
+      "averages": {
+        "unmetPairs": 0,
+        "distinct": 7,
+        "distinctP10": 7,
+        "maxRepeat": 11.350625,
+        "gameStd": 0.28010407640085644,
+        "gameRange": 1.05,
+        "spread": 0,
+        "balance": 0,
+        "waitP95": 15.164540968668623,
+        "utilization": 0.7611989135108947,
+        "overlap3": 0.9262499999999991,
+        "genderGap": 0,
+        "multiReservationRate": 0
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinct": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameStd": {
+          "mean": 0,
+          "se": 0
+        },
+        "gameRange": {
+          "mean": 0,
+          "se": 0
+        },
+        "spread": {
+          "mean": 0,
+          "se": 0
+        },
+        "balance": {
+          "mean": 0,
+          "se": 0
+        },
+        "waitP95": {
+          "mean": 0,
+          "se": 0
+        },
+        "utilization": {
+          "mean": 0,
+          "se": 0
+        },
+        "overlap3": {
+          "mean": 0,
+          "se": 0
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        },
+        "multiReservationRate": {
+          "mean": 0,
+          "se": 0
+        }
+      }
+    },
+    {
+      "scenario": "small8",
+      "weight": 12,
+      "maxPlaying": 3,
+      "averages": {
+        "unmetPairs": 0,
+        "distinct": 7,
+        "distinctP10": 7,
+        "maxRepeat": 11.105625,
+        "gameStd": 0.005,
+        "gameRange": 0.02,
+        "spread": 0,
+        "balance": 0,
+        "waitP95": 3.734899055155436,
+        "utilization": 0.9320273233123028,
+        "overlap3": 0.7083333333333326,
+        "genderGap": 0,
+        "multiReservationRate": 0.37291666666666673
+      },
+      "pairedDeltas": {
+        "unmetPairs": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinct": {
+          "mean": 0,
+          "se": 0
+        },
+        "distinctP10": {
+          "mean": 0,
+          "se": 0
+        },
+        "maxRepeat": {
+          "mean": -0.245,
+          "se": 0.02393852050188347
+        },
+        "gameStd": {
+          "mean": -0.27510407640085643,
+          "se": 0.019325010111698373
+        },
+        "gameRange": {
+          "mean": -1.03,
+          "se": 0.07085621366595438
+        },
+        "spread": {
+          "mean": 0,
+          "se": 0
+        },
+        "balance": {
+          "mean": 0,
+          "se": 0
+        },
+        "waitP95": {
+          "mean": -11.429641913513183,
+          "se": 0.20208751521487509
+        },
+        "utilization": {
+          "mean": 0.1708284098014082,
+          "se": 0.0031237680875132144
+        },
+        "overlap3": {
+          "mean": -0.2179166666666667,
+          "se": 0.0008067363647783115
+        },
+        "genderGap": {
+          "mean": 0,
+          "se": 0
+        },
+        "multiReservationRate": {
+          "mean": 0.37291666666666673,
+          "se": 0.00248442243382724
+        }
+      }
+    }
+  ]
+}

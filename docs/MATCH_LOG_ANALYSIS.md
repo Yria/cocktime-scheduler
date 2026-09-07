@@ -46,10 +46,10 @@ curl -s "$URL/matches?session_id=eq.108&status=eq.completed&order=started_at.asc
 
 ### 하네스 원칙
 - 점수 로직을 **재구현하지 말고 `src/lib/teamSelection/*` 실제 함수를 import** 한다(tsx/bun 실행, 외부 import는 전부 type-only라 가능). 포팅 오차가 최대 리스크.
-- ctx 형태: `groupHistory = {matchId, members(4인 id)}[]`, `lastGameType`, `playingIds`. 자동편성은 `autoFillTeammates(confirmed, pool, ctx, count, undefined, { maxPlaying: 1 })`.
+- ctx 형태: `groupHistory = {matchId, members(4인 id)}[]`, `lastGameType`, `playingIds`, 현재 코트의 `ongoingGroups`. 과거 예약 1명 제한을 재현할 때는 `maxPlaying: 1`을 전달한다. 2026-09-07 이후 운영진 자동편성은 빈 슬롯만큼 예약하되 새 팀의 대기 anchor 한 자리를 남긴다([현재 규칙 §8](TEAM_GENERATION_RULES.md#8-자동편성--autofillteammates)). 빈 새 팀 4명 선발은 `maxPlaying: 3`이다.
 - `Math.random`·`Date.now`를 **시드 PRNG·가상 클록으로 몽키패치**(pairPlayers 동점 랜덤·W_WAIT 분당 가중 재현에 필수).
 - 운영 흐름 재현: t=0 코트 순차 채움 → 완료 즉시 그 코트 자동편성 → ghost는 본인 경기 종료 후 팀 합류 → 완료 시 gameCount+1·waitSince=now·groupHistory append. 경기 시간 분포를 명시(예: 10~15분 균등)하고 실제 평균(≈11분)과의 차이를 wallclock 해석에서 분리한다.
-- 과거 하네스는 세션 스크래치패드(휘발)에 있었음 — 재구축 시 이 문서가 기준.
+- 과거 하네스는 세션 스크래치패드(휘발)에 있었다. 현재 재현 가능한 합성 하네스는 [team-mixing-simulation.test.ts](../scripts/team-mixing-simulation.test.ts), 최신 예약 정책 비교는 [검증 문서](TEAM_RESERVATION_VALIDATION.md)를 참고한다.
 
 ### ★ 함정 체크리스트 (전부 실제 감사에서 적발된 것)
 1. **시드별 로스터 셔플 필수** — 정렬 고정 로스터 + stable sort 동점 타이브레이크가 특정 집단(예: 여성 먼저)에 계통 편향을 만든다. 셔플 없이는 성별/등급 효과 결론이 오염된다.

@@ -620,9 +620,9 @@ describe("autoFillTeam — 구성 중 팀의 빈 슬롯을 추천도순으로 �
 		expect(reservations.size).toBe(0);
 	});
 
-	it("경기중 선수도 팀당 1명까지 ghost 예약으로 채운다(2026-07 개편)", () => {
+	it("동일 조건에서는 대기 선수를 먼저 채우고 남은 슬롯은 경기중 선수를 예약한다", () => {
 		h.players = new Map(["a", "b", "c", "d", "e"].map((id) => [id, player(id)]));
-		// d·e는 코트에서 경기중 → 대기(c)로 먼저 채우고, 남은 1슬롯은 경기중 1명만 ghost 예약(상한 1).
+		// d·e는 코트에서 경기중 → 경기중 비용 때문에 대기(c)가 먼저 선택된다.
 		h.courts = [{ id: 1, match: { teamA: ["d", "e"], teamB: ["y", "z"] } } as unknown as Court];
 		seed({
 			magnets: [mag("a", "T"), mag("b", "T"), mag("c", null), mag("d", null), mag("e", null)],
@@ -641,23 +641,70 @@ describe("autoFillTeam — 구성 중 팀의 빈 슬롯을 추천도순으로 �
 		expect([...reservations.values()].filter((r) => r.teamId === "T")).toHaveLength(1);
 	});
 
-	it("이미 ghost가 있는 팀에 자동편성을 다시 돌려도 ghost가 2명이 되지 않는다(팀 단위 상한)", () => {
-		h.players = new Map(["a", "b", "c", "d", "e"].map((id) => [id, player(id)]));
+	it("기존 예약이 있어도 경기중 선수를 추가 예약하고 반복 실행 시 중복되지 않는다", () => {
+		h.players = new Map(["a", "b", "d", "e"].map((id) => [id, player(id)]));
 		// d·e 경기중. 팀 T = anchor[a,b] + 기존 ghost 예약 d(3명) → 남은 1슬롯.
 		h.courts = [{ id: 1, match: { teamA: ["d", "e"], teamB: ["y", "z"] } } as unknown as Court];
 		seed({
-			magnets: [mag("a", "T"), mag("b", "T"), mag("c", null), mag("d", null), mag("e", null)],
+			magnets: [mag("a", "T"), mag("b", "T"), mag("d", null), mag("e", null)],
 			drafts: [draft("T", ["a", "b"])],
 			reservations: [{ id: "r1", playerId: "d", teamId: "T", createdAt: 1 }],
 		});
 		useBoardStore.getState().autoFillTeam("T");
+		useBoardStore.getState().autoFillTeam("T");
 		const { drafts, reservations } = useBoardStore.getState();
-		// 상한 1이 이미 소진(d) → 마지막 슬롯은 경기중 e가 아니라 대기 c로 채워진다.
-		expect(drafts.get("T")!.anchorMemberIds).toEqual(["a", "b", "c"]);
-		expect([...reservations.values()].filter((r) => r.teamId === "T").map((r) => r.playerId)).toEqual(["d"]);
+		expect(drafts.get("T")!.anchorMemberIds).toEqual(["a", "b"]);
+		expect([...reservations.values()].filter((r) => r.teamId === "T").map((r) => r.playerId).sort()).toEqual(["d", "e"]);
+		expect(teamMembers("T", drafts, reservations)).toHaveLength(4);
 	});
 
-	it("추천 가능한 대기 선수가 없으면 멤버를 바꾸지 않는다", () => {
+	it("대기 2명에 경기중 2명을 한 번에 예약할 수 있다", () => {
+		h.players = new Map(["a", "b", "c", "d"].map((id) => [id, player(id)]));
+		h.courts = [{ id: 1, match: { teamA: ["c", "d"], teamB: ["y", "z"] } } as Court];
+		seed({
+			magnets: [mag("a", "T"), mag("b", "T"), mag("c", null), mag("d", null)],
+			drafts: [draft("T", ["a", "b"])],
+		});
+		useBoardStore.getState().autoFillTeam("T");
+		const s = useBoardStore.getState();
+		expect(s.drafts.get("T")!.anchorMemberIds).toEqual(["a", "b"]);
+		expect([...s.reservations.values()].map(r => r.playerId).sort()).toEqual(["c", "d"]);
+		expect(teamMembers("T", s.drafts, s.reservations)).toHaveLength(4);
+	});
+
+	it.each([{ extraIds: [] }, { extraIds: ["b", "c"] }])("새 팀은 수동 선택 $extraIds 이후에도 대기 1명과 예약 3명으로 완성된다", ({ extraIds }) => {
+		h.players = new Map(["a", "b", "c", "d", "e"].map(id => [id, player(id)]));
+		// 대기 a의 비용이 높아도 팀을 만들 대기 anchor 한 자리는 확보해야 한다.
+		h.players.get("a")!.gameCount = 20;
+		h.courts = [{ id: 1, match: { teamA: ["b", "c"], teamB: ["d", "e"] } } as Court];
+		seed({ magnets: [...h.players.keys()].map(id => mag(id, null)) });
+		useBoardStore.getState().autoFillTarget({ newTeam: true }, extraIds);
+		const s = useBoardStore.getState();
+		expect(s.drafts.size).toBe(1);
+		const team = [...s.drafts.values()][0];
+		expect(team.anchorMemberIds).toEqual(["a"]);
+		expect(s.reservations.size).toBe(3);
+		const ids = teamMembers(team.id, s.drafts, s.reservations).map(m => m.playerId);
+		expect(new Set(ids).size).toBe(4);
+		for (const id of extraIds) expect(ids).toContain(id);
+	});
+
+	it("여러 명을 예약해도 다른 팀에서 이미 예약한 선수는 자동 선발하지 않는다", () => {
+		h.players = new Map(["a", "b", "c", "d", "e"].map(id => [id, player(id)]));
+		h.courts = [{ id: 1, match: { teamA: ["c", "d"], teamB: ["e", "z"] } } as Court];
+		seed({
+			magnets: [mag("a", null), mag("b", "U"), mag("c", null), mag("d", null), mag("e", null)],
+			drafts: [draft("U", ["b"])],
+			reservations: [res("r1", "c", "U")],
+		});
+		useBoardStore.getState().autoFillTarget({ seedId: "a" });
+		const s = useBoardStore.getState();
+		const team = [...s.drafts.values()].find(t => t.id !== "U")!;
+		expect(teamMembers(team.id, s.drafts, s.reservations).map(m => m.playerId).sort()).toEqual(["a", "d", "e"]);
+		expect([...s.reservations.values()].filter(r => r.playerId === "c")).toEqual([res("r1", "c", "U")]);
+	});
+
+	it("추천 가능한 선수가 없으면 멤버를 바꾸지 않는다", () => {
 		h.players = new Map(["a", "b"].map((id) => [id, player(id)]));
 		seed({ magnets: [mag("a", "T"), mag("b", "T")], drafts: [draft("T", ["a", "b"])] });
 		useBoardStore.getState().autoFillTeam("T");
@@ -886,6 +933,34 @@ describe("보드 배율(userScale) — 수동 조정 기억 vs 자동 축소", (
 
 // ── 요구4: 경기완료 → 프리 ─────────────────────────────────
 describe("요구4 — 경기완료(completeMatch → handleComplete DB 연동)", () => {
+	it("서로 다른 경기의 예약자 3명이 차례로 합류하고 마지막 경기가 끝나야 확정할 수 있다", async () => {
+		h.players = new Map(["a", "b", "c", "d"].map(id => [id, player(id)]));
+		h.courts = ["b", "c", "d"].map((id, i) => ({
+			id: i + 1,
+			match: { id: `m${i}`, courtId: i + 1, gameType: "남복", teamA: [id, `x${i}`], teamB: [`y${i}`, `z${i}`], startedAt: "" },
+		}));
+		seed({ magnets: [...h.players.keys()].map(id => mag(id, null)) });
+		useBoardStore.getState().autoFillTarget({ seedId: "a" });
+		const teamId = [...useBoardStore.getState().drafts.keys()][0];
+		expect(useBoardStore.getState().reservations.size).toBe(3);
+		h.handleComplete.mockImplementation(async (courtId: number) => {
+			h.courts.find(c => c.id === courtId)!.match = null;
+		});
+		useBoardStore.getState().confirmTeam(teamId);
+		expect(useBoardStore.getState().drafts.get(teamId)!.confirmedMs).toBeUndefined();
+
+		for (let courtId = 1; courtId <= 3; courtId++) {
+			await useBoardStore.getState().completeMatch(courtId);
+			useBoardStore.getState().confirmTeam(teamId);
+			const s = useBoardStore.getState();
+			expect(s.drafts.get(teamId)!.anchorMemberIds).toHaveLength(courtId + 1);
+			expect(s.reservations.size).toBe(3 - courtId);
+			expect(teamMembers(teamId, s.drafts, s.reservations)).toHaveLength(4);
+			if (courtId < 3) expect(s.drafts.get(teamId)!.confirmedMs).toBeUndefined();
+			else expect(s.drafts.get(teamId)!.confirmedMs).toEqual(expect.any(Number));
+		}
+	});
+
 	it("경기완료 클릭 → handleComplete(courtId) 호출", async () => {
 		h.players = new Map(["a", "b", "c", "d"].map((id) => [id, player(id)]));
 		// 경기중: draft 없음, 코트에 match, 멤버 자석 teamId null
@@ -971,6 +1046,21 @@ describe("예약(ghost) 구조 정합 — anchor xor ghost / 중복 / 동기화 
 
 // ── 공유 멤버십 적용(applyRemoteDrafts) ─────────────────────
 describe("applyRemoteDrafts — 공유된 보드 멤버십을 로컬에 반영(위치는 로컬)", () => {
+	it("대기 1명과 경기중 예약 3명으로 구성된 팀도 동기화 후 유지한다", () => {
+		h.players = new Map(["a", "b", "c", "d"].map(id => [id, player(id)]));
+		h.courts = [{ id: 1, match: { teamA: ["b", "c"], teamB: ["d", "z"] } } as Court];
+		seed({ magnets: [...h.players.keys()].map(id => mag(id, null)) });
+		useBoardStore.getState().applyRemoteDrafts({
+			teams: [{ id: "T", memberIds: ["a"], createdMs: 1 }],
+			reservations: ["b", "c", "d"].map(id => ({ id: `r-${id}`, playerId: id, teamId: "T", createdMs: 2 })),
+		});
+		const s = useBoardStore.getState();
+		expect(s.drafts.get("T")!.anchorMemberIds).toEqual(["a"]);
+		expect(s.reservations.size).toBe(3);
+		expect(teamMembers("T", s.drafts, s.reservations)).toHaveLength(4);
+		for (const id of ["b", "c", "d"]) expect(s.magnets.get(id)!.teamId).toBeNull();
+	});
+
 	it("payload의 팀/예약을 반영하고 멤버 자석 teamId를 설정", () => {
 		h.courts = [];
 		useBoardStore.getState().setStageSize(2000, 2000);

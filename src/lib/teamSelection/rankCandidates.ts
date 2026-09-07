@@ -3,7 +3,7 @@
  *
  * 원자 함수: 이미 확정된 N명이 있을 때, 풀에서 가장 어울리는 후보 순위를 반환한다.
  *
- * - confirmed가 0명이면 경기수(gameCount) 기준 정렬
+ * - confirmed가 0명이면 판수·대기·현재 풀의 미만남 비율을 비교
  * - 순수 함수 (랜덤 없음)
  * - 풀 구성(성별 필터, 대기/경기중 혼합 등)은 호출자 책임
  */
@@ -15,11 +15,13 @@ import type { GroupHistory, PlayerSkills, SessionPlayer } from "../../types";
 
 export interface RankContext {
 	/**
-	 * 완료 경기별 4인 그룹 이력 — 재결성 회피 벌점의 원천.
-	 * 회피 단위는 쌍(2명) 누적이 아니라 "과거 경기 4인과 새 팀의 겹침 수"다(2026-07 개편):
-	 * 후보 합류로 과거 그룹과 2명(약)·3명(중)·4명(재결성, 강) 겹치는 만큼 단계적으로 벌점한다.
+	 * 완료 경기별 4인 그룹 이력. 그룹 겹침 벌점과 새 만남 판단의 원천.
+	 * 반복 벌점은 과거 그룹과 2/3/4명 겹침을 누적한다. 새 만남 보너스는 이력에서
+	 * 동반 여부만 파생하므로 같은 두 사람의 반복 횟수와 구분한다.
 	 */
 	groupHistory: GroupHistory;
+	/** 진행 중인 경기의 4인 집합. 새 만남 판단에만 사용하며 완료 이력 벌점을 미리 더하지 않는다. */
+	ongoingGroups?: readonly (readonly string[])[];
 	/**
 	 * 현재 코트에서 경기중인 session_player.id — 대기 항(W_WAIT)을 끄는 데만 쓴다(2026-08).
 	 *
@@ -43,6 +45,8 @@ export interface ScoreBreakdown {
 	skill: number;
 	/** 그룹 재결성 벌점 합 — 과거 그룹과 2명 겹침×W_GROUP2 + 3명×W_GROUP3 + 4명×W_GROUP4 */
 	group: number;
+	/** 아직 함께 경기하지 않은 상대와의 만남 보너스(음수). */
+	encounter: number;
 	/** gameCount × W_GAME (적게 뛴 사람 우선 — 절대 판수). 늦참/휴식 복귀자는 합류 시점 평균 판수로 보정됨. */
 	game: number;
 	/** mixedCount × W_MIXED */
@@ -79,7 +83,9 @@ export interface Weights {
 	W_GROUP3: number;
 	/** 재결성 회피(강) — 과거 그룹 4명이 그대로 다시 뭉치는 경우 그룹당 벌점. 사실상 금지 수준으로 크게. */
 	W_GROUP4: number;
-	/** 경기수 — 최우선. 적게 뛴 사람(절대 판수 gameCount)부터 선발. */
+	/** 새로운 동반 쌍 하나의 보너스. 첫 선발은 현재 풀에서 미만남 비율로 비교. */
+	W_NEW_ENCOUNTER?: number;
+	/** 판수 비용. 다른 비용과 합산하며 절대 선발 순서를 강제하지 않는다. */
 	W_GAME: number;
 	W_MIXED: number;
 	W_WAIT: number;
@@ -89,9 +95,9 @@ export interface Weights {
 // 가중치 프로필
 // ─────────────────────────────────────────────
 
-// 우선순위: 경기수(W_GAME) > 재결성 회피(W_GROUP2, 겹침이 클수록 W_GROUP3·4로 급증) > 실력(W_SKILL).
+// 판수·새 만남·재결성 회피·실력 등을 합산한다. 가중치 크기가 절대 우선순위는 아니다.
 // - 재결성 회피(2026-07 개편): 쌍 단위 누적(Σc²·pair_history) 대신 "과거 경기 4인과의 겹침 수"로 벌점.
-//   W_GROUP2=8은 "경기수 1판(10)을 못 뒤집는다" 불변식을 지키는 최대값(구 Σc²의 1회 동반 벌점과 등가),
+//   W_GROUP2=8은 과거 경기 한 건의 항만 비교하면 경기수 1판(10)보다 작다. 여러 건이면 누적된다.
 //   3명 겹침(W_GROUP3=24)은 1판을 훌쩍 넘어서고, 4명 재결성(W_GROUP4=60)은 사실상 금지 수준
 //   (경기중 ghost 페널티 W_PLAYING 30·혼복 성별 페널티 W_GENDER 50보다도 크게).
 //   200시드 스윕 근거: (2,12,40)은 2인 겹침 회피가 구 Σc²의 1/4로 약해져 순후퇴(overlap3 3.9% vs 기준 1.3%),
@@ -105,7 +111,7 @@ export interface Weights {
 //    판수 형평 비용 gcStd +0.00, 3인 겹침 0.4→0.8%, interDiff 1.33→1.15. 같은 스프레드를 선형 W6.0으로
 //    달성하면 gcStd +0.02·interDiff 1.26으로 열위 — 제곱이 파레토 우월. 상세: docs/MATCH_LOG_ANALYSIS.md §4b)
 //   W_GROUP4(60) > k=6 확장(54)은 유지 — "재결성될 바엔 벌어진 팀" 순서가 뒤집히지 않는다.
-const DEFAULT_WEIGHTS: Weights = { W_SKILL: 1.5, W_SKILL_EXP: 2, W_GROUP2: 8.0, W_GROUP3: 24.0, W_GROUP4: 60.0, W_GAME: 10.0, W_MIXED: 0, W_WAIT: 0 };
+const DEFAULT_WEIGHTS: Weights = { W_SKILL: 1.5, W_SKILL_EXP: 2, W_GROUP2: 8.0, W_GROUP3: 24.0, W_GROUP4: 60.0, W_NEW_ENCOUNTER: 0, W_GAME: 10.0, W_MIXED: 0, W_WAIT: 0 };
 
 // ─────────────────────────────────────────────
 // 스킬 점수 유틸
@@ -163,22 +169,24 @@ function computeScore(
 	confirmed: SessionPlayer[],
 	context: RankContext,
 	weights: Weights = DEFAULT_WEIGHTS,
+	encounterCost = 0,
 ): { score: number; breakdown: ScoreBreakdown } {
 	// 적게 뛴 사람 우선 — 절대 판수(gameCount) 기준 비용. 클수록 후순위(양수 가산).
 	// 늦참/휴식 복귀자는 합류(콕확인)·복귀 시점에 그때의 활성 평균 판수로 보정되어(set_cock_checked /
 	// set_player_resting RPC) 0판으로 과대 우선되지 않는다.
 	const gameCost = candidate.gameCount * weights.W_GAME;
 
-	// confirmed가 0명이면 판수 + 대기시간만 반영
+	// 첫 선발은 판수·대기와 현재 후보 풀에서의 미만남 비율을 함께 반영한다.
 	if (confirmed.length === 0) {
 		const breakdown: ScoreBreakdown = {
 			skill: 0,
 			group: 0,
+			encounter: encounterCost,
 			game: gameCost,
 			mixed: candidate.mixedCount * weights.W_MIXED,
 			wait: waitCostOf(candidate, context, weights), // 오래 기다릴수록 점수 낮아져야 하므로 음수
 		};
-		return { score: breakdown.game + breakdown.mixed + breakdown.wait, breakdown };
+		return { score: breakdown.game + breakdown.mixed + breakdown.wait + breakdown.encounter, breakdown };
 	}
 
 	// 실력 차이: 후보 합류 시 팀 등급 밴드(min~max)의 "스프레드 증가분"을 W_SKILL_EXP 제곱한 값.
@@ -224,12 +232,13 @@ function computeScore(
 	const breakdown: ScoreBreakdown = {
 		skill: skillDiff * weights.W_SKILL,
 		group: groupCost,
+		encounter: encounterCost,
 		game: gameCost,
 		mixed: candidate.mixedCount * weights.W_MIXED,
 		wait: waitCostOf(candidate, context, weights),
 	};
 	return {
-		score: breakdown.skill + breakdown.group + breakdown.game + breakdown.mixed + breakdown.wait,
+		score: breakdown.skill + breakdown.group + breakdown.encounter + breakdown.game + breakdown.mixed + breakdown.wait,
 		breakdown,
 	};
 }
@@ -253,11 +262,29 @@ export function rankCandidates(
 	context: RankContext,
 	weights?: Weights,
 ): RankedCandidate[] {
+	const encounterWeight = weights?.W_NEW_ENCOUNTER ?? 0;
+	const met = new Map<string, Set<string>>();
+	if (encounterWeight > 0) {
+		for (const members of [...context.groupHistory.map(group => group.members), ...(context.ongoingGroups ?? [])]) {
+			for (const id of members) {
+				let peers = met.get(id);
+				if (!peers) met.set(id, peers = new Set());
+				for (const other of members) if (other !== id) peers.add(other);
+			}
+		}
+	}
 	return pool
 		.map((player) => {
-			const { score, breakdown } = computeScore(player, confirmed, context, weights);
+			let encounterCost = 0;
+			if (encounterWeight > 0) {
+				const peers = met.get(player.id);
+				const targets = confirmed.length > 0 ? confirmed : pool.filter(p => p.id !== player.id);
+				const unseen = targets.filter(p => !peers?.has(p.id)).length;
+				const gain = confirmed.length > 0 ? unseen : targets.length > 0 ? unseen / targets.length : 0;
+				encounterCost = gain > 0 ? -encounterWeight * gain : 0;
+			}
+			const { score, breakdown } = computeScore(player, confirmed, context, weights, encounterCost);
 			return { player, score, breakdown };
 		})
 		.sort((a, b) => a.score - b.score);
 }
-

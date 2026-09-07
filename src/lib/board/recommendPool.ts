@@ -125,6 +125,7 @@ export function buildRecommendData(
 
 	const ctx: RecommendContext = {
 		groupHistory,
+		ongoingGroups: courts.flatMap(court => court.match ? [[...court.match.teamA, ...court.match.teamB]] : []),
 		lastGameType,
 		playingIds,
 	};

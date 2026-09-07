@@ -173,7 +173,7 @@ describe("recommendTeammates", () => {
 		);
 		const r = ranked[0];
 		const b = r.breakdown!;
-		const sum = b.skill + b.group + b.game + b.mixed + b.wait + (b.rotate ?? 0) + (b.gender ?? 0) + (b.playing ?? 0);
+		const sum = b.skill + b.group + b.encounter + b.game + b.mixed + b.wait + (b.rotate ?? 0) + (b.gender ?? 0) + (b.playing ?? 0);
 		expect(sum).toBeCloseTo(r.score, 5);
 	});
 

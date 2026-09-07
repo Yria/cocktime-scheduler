@@ -216,10 +216,13 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 								<th className="text-left pr-2">이름</th>
 								<th className="text-right px-1">실력</th>
 								<th className="text-right px-1">재결성</th>
+								<th className="text-right px-1">새 만남</th>
 								<th className="text-right px-1">로테</th>
 								<th className="text-right px-1">성별</th>
 								<th className="text-right px-1">경기중</th>
 								<th className="text-right px-1">참여</th>
+								<th className="text-right px-1">대기</th>
+								<th className="text-right px-1">혼복수</th>
 								<th className="text-right px-1 font-bold">합계</th>
 								<th className="text-right pl-1 font-bold">%</th>
 							</tr>
@@ -233,10 +236,13 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 										<td className="text-left pr-2 whitespace-nowrap">{r.player.name}</td>
 										<td className="text-right px-1">{fmtScore(b?.skill)}</td>
 										<td className="text-right px-1">{fmtScore(b?.group)}</td>
+										<td className="text-right px-1">{fmtScore(b?.encounter)}</td>
 										<td className="text-right px-1">{fmtScore(b?.rotate)}</td>
 										<td className="text-right px-1">{fmtScore(b?.gender)}</td>
 										<td className="text-right px-1">{fmtScore(b?.playing)}</td>
 										<td className="text-right px-1">{fmtScore(b?.game)}</td>
+										<td className="text-right px-1">{fmtScore(b?.wait)}</td>
+										<td className="text-right px-1">{fmtScore(b?.mixed)}</td>
 										<td className="text-right px-1 font-bold">{r.score.toFixed(1)}</td>
 										<td className="text-right pl-1 font-bold">{pct}%</td>
 									</tr>
