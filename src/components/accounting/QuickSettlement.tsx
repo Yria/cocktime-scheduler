@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import {
+	canChooseReceiptPayer,
 	payableDues,
 	quickGroups,
 	refundLines,
 } from "../../lib/dues/v2/quickSettlement";
+import { billingProgress } from "../../lib/dues/v2/overview";
 import { receiptHistory } from "../../lib/dues/v2/selection";
 import { kstMonth, memberLabel } from "../../lib/dues/v2/summary";
 import {
@@ -36,7 +38,20 @@ export default function QuickSettlement({
 }) {
 	const tx = data.bank.find((t) => t.id === bankId)!;
 	const source = data.positions.find((p) => p.id === draft.positionId);
-	const initialMember = source?.owner_id ?? draft.memberId ?? "";
+	const choosePayer =
+		draft.type === "pay" && canChooseReceiptPayer(data, bankId);
+	const originalPayer = data.members.find((m) => m.id === source?.owner_id);
+	const ambiguousPayer =
+		choosePayer &&
+		originalPayer &&
+		data.members.some(
+			(m) =>
+				m.id !== originalPayer.id &&
+				m.name.replaceAll(" ", "") === originalPayer.name.replaceAll(" ", ""),
+		);
+	const initialMember = ambiguousPayer
+		? ""
+		: (source?.owner_id ?? draft.memberId ?? "");
 	const [member, setMember] = useState(initialMember);
 	const [beneficiary, setBeneficiary] = useState("");
 	const [proxy, setProxy] = useState(false);
@@ -61,7 +76,9 @@ export default function QuickSettlement({
 		confirmedOwner: false,
 		external: false,
 	});
-	const owner = source?.owner_id ?? member;
+	const owner = choosePayer ? member : (source?.owner_id ?? member);
+	const payerChanged =
+		!!source?.owner_id && !!owner && owner !== source.owner_id;
 	const recipient = beneficiary || owner;
 	const dues = payableDues(
 		data,
@@ -99,8 +116,15 @@ export default function QuickSettlement({
 						: draft.type === "simple"
 							? actionLabel[draft.command!.action]
 							: "용도 지정";
-	const reason =
-		memo.trim() || `정산함 · ${tx.name || `거래 #${tx.id}`} · ${title} 확인`;
+	const payerChangeSummary = payerChanged
+		? `납부자 변경: ${memberLabel(data, source!.owner_id)} → ${memberLabel(data, owner)}`
+		: "";
+	const reason = [
+		memo.trim() || `정산함 · ${tx.name || `거래 #${tx.id}`} · ${title} 확인`,
+		payerChangeSummary,
+	]
+		.filter(Boolean)
+		.join(" · ");
 	const positive = (value: string) => {
 		const n = Number(value);
 		if (!Number.isSafeInteger(n) || n <= 0)
@@ -135,7 +159,8 @@ export default function QuickSettlement({
 				action: "pay",
 				reason,
 				owner_id: owner,
-				confirm_owner: !source.owner_id,
+				confirm_owner: !source.owner_id || payerChanged,
+				...(payerChanged ? { reassign_owner: true } : {}),
 				lines,
 				proxy,
 			};
@@ -235,6 +260,19 @@ export default function QuickSettlement({
 		setMoney({});
 		setBeneficiary("");
 		setProxy(false);
+	};
+	const feeStatus = (id: string) => {
+		const month = kstMonth(tx.occurred_at);
+		const progress = billingProgress(
+			data,
+			data.groups.filter(
+				(g) => g.kind === "monthly" && g.occurred_on.startsWith(month),
+			),
+			month,
+		);
+		const rows = progress.rows.filter((r) => r.charge.member_id === id);
+		const remaining = rows.reduce((sum, r) => sum + r.remaining, 0);
+		return `${Number(month.slice(5))}월 회비 ${!rows.length ? "부과 없음" : remaining ? `${won(remaining)} 미납` : "완납"}`;
 	};
 	const groupPicker = (
 		<div className="ac-quick-groups">
@@ -354,17 +392,32 @@ export default function QuickSettlement({
 				className="ac-quick-fields"
 			>
 				{!["refund", "expense", "simple"].includes(draft.type) &&
-					(source?.owner_id ? (
+					(source?.owner_id && !choosePayer ? (
 						<p className="ac-quick-owner">
 							납부자 <strong>{memberLabel(data, source.owner_id)}</strong>
 						</p>
 					) : (
-						<MemberPicker
-							data={data}
-							value={member}
-							onChange={changeMember}
-							suggestedName={tx.name ?? ""}
-						/>
+						<div>
+							{ambiguousPayer && !member && (
+								<p className="ac-caption">
+									동명이인이 있습니다. 실제 입금자를 선택해 주세요.
+								</p>
+							)}
+							<MemberPicker
+								data={data}
+								value={member}
+								onChange={changeMember}
+								suggestedName={tx.name ?? ""}
+								descriptionForMember={
+									draft.type === "pay" ? feeStatus : undefined
+								}
+							/>
+							{payerChanged && (
+								<p className="ac-caption">
+									{payerChangeSummary} · 납부 확인 시 함께 저장
+								</p>
+							)}
+						</div>
 					))}
 				{draft.type === "pay" && owner && (
 					<>

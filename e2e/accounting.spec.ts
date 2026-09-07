@@ -78,6 +78,15 @@ test.beforeEach(async ({ page, context }, testInfo) => {
 	);
 	await db.exec(fixture("dues-v2-seed.sql"));
 	await db.exec(
+		readFileSync(
+			new URL(
+				"../supabase/migrations/20260907070000_dues_v2_payer_choice.sql",
+				import.meta.url,
+			),
+			"utf8",
+		),
+	);
+	await db.exec(
 		"alter table bank_transactions add column balance_after bigint",
 	);
 	if (testInfo.title.startsWith("accounting layouts")) {
@@ -91,6 +100,18 @@ test.beforeEach(async ({ page, context }, testInfo) => {
 		(91,'out',48000,'2026-09-04T12:00:00+09','올림픽체육관'),
 		(92,'in',6000,'2026-09-02T12:00:00+09','이민수 대관비');
 	`);
+	}
+	if (testInfo.title.startsWith("payer choice")) {
+		await db.exec(`
+			update members set birth_year=1996 where id='${A}';
+			update members set birth_year=2002 where id='${B}';
+			update dues_charges set member_id='${A}' where id=104;
+			update dues_allocations set member_id='${A}' where id=5;
+			insert into dues_charges(id,kind,member_id,amount_due,amount_paid,status,batch_id,period_ym)
+			values(107,'monthly_fee','${B}',5000,0,'unpaid',21,'2026-09');
+			insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name,paid_by)
+			values(90,'in',5000,'2026-09-06T22:46:33+09','김지훈9월 회비','${A}');
+		`);
 	}
 
 	await scalar("select dues_v2_manage('activate',0,'fixture',$1)", [
@@ -168,6 +189,86 @@ test.beforeEach(async ({ page, context }, testInfo) => {
 });
 test.afterEach(async () => {
 	await db.close();
+});
+
+test("payer choice distinguishes a paid namesake from an unpaid namesake and rematches only on confirmation", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await navigate(page, "/dues/2026-09/inbox");
+	const card = page.getByRole("region", { name: "거래 90", exact: true });
+	const results = card.getByRole("group", { name: "납부자 검색 결과" });
+	await expect(
+		card.getByText("동명이인이 있습니다. 실제 입금자를 선택해 주세요."),
+	).toBeVisible();
+	await expect(results.getByRole("button", { name: /1996년생/ })).toContainText(
+		"9월 회비 완납",
+	);
+	await expect(results.getByRole("button", { name: /2002년생/ })).toContainText(
+		"9월 회비 5,000원 미납",
+	);
+	for (const theme of ["light", "dark"]) {
+		await page.evaluate(
+			(dark) => document.documentElement.classList.toggle("dark", dark),
+			theme === "dark",
+		);
+		await page.screenshot({
+			path: `test-results/accounting-payer-choice-${theme}.png`,
+			fullPage: true,
+			animations: "disabled",
+		});
+		expect(
+			await page.evaluate(
+				() => document.documentElement.scrollWidth <= window.innerWidth,
+			),
+		).toBe(true);
+	}
+	await results.getByRole("button", { name: /1996년생/ }).click();
+	await expect(card.getByRole("button", { name: /^9월 회비/ })).toHaveCount(0);
+	await card.getByRole("button", { name: "납부자 변경", exact: true }).click();
+	await results.getByRole("button", { name: /2002년생/ }).click();
+	await card.getByRole("button", { name: /^9월 회비/ }).click();
+	const confirm = card.getByRole("button", { name: "납부 확인", exact: true });
+	await expect(confirm).toBeEnabled();
+	await expect(card.getByText(/납부자 변경:.*1996.*→.*2002/)).toBeVisible();
+	// Changing candidates discards previously selected charges and their preview.
+	await card.getByRole("button", { name: "납부자 변경", exact: true }).click();
+	await results.getByRole("button", { name: /1996년생/ }).click();
+	await expect(confirm).toBeDisabled();
+	await card.getByRole("button", { name: "납부자 변경", exact: true }).click();
+	await results.getByRole("button", { name: /2002년생/ }).click();
+	await expect(card.getByRole("button", { name: /^9월 회비/ })).toHaveAttribute(
+		"aria-pressed",
+		"false",
+	);
+	await card.getByRole("button", { name: /^9월 회비/ }).click();
+	await expect(confirm).toBeEnabled();
+	await expect(page.locator(".accounting-sheet")).toHaveCount(0);
+	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(0);
+	expect(
+		await scalar("select owner_id from dues_v2_positions where bank_tx_id=90"),
+	).toBe(A);
+	await confirm.click();
+	await expect(card).toHaveCount(0);
+	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(1);
+	expect(
+		await scalar(
+			"select a.owner_id from dues_v2_allocations a join dues_v2_charges c on c.id=a.charge_id where a.bank_tx_id=90 and c.legacy_id=107",
+		),
+	).toBe(B);
+	expect(
+		await scalar(
+			"select sum(a.amount-a.reversed)::int from dues_v2_allocations a join dues_v2_charges c on c.id=a.charge_id where c.legacy_id=104",
+		),
+	).toBe(5000);
+	expect(
+		await scalar("select paid_by from bank_transactions where id=90"),
+	).toBe(A);
+	await page.getByRole("button", { name: "회계", exact: true }).click();
+	await page.getByText("회계 변경 이력", { exact: true }).click();
+	await expect(
+		page.locator(".ac-history").getByText(/납부자 변경:.*1996.*→.*2002/),
+	).toBeVisible();
 });
 
 test("cancel and reissue previews without writing, commits once, and undoes from the UI", async ({
@@ -457,7 +558,11 @@ test("same-name payer B can receive a missing monthly charge and pay it independ
 	await page.getByRole("button", { name: "정산함", exact: true }).click();
 	receipt = page.locator("section").filter({ hasText: "김지훈8월회비" });
 	await receipt.getByRole("button", { name: "납부 연결", exact: true }).click();
-	await expect(receipt.getByText(/납부자.*000002/)).toBeVisible();
+	await receipt
+		.getByRole("group", { name: "납부자 검색 결과" })
+		.getByRole("button", { name: /000002/ })
+		.click();
+	await expect(receipt.getByText(/선택한 납부자:.*000002/)).toBeVisible();
 	await receipt.getByRole("button", { name: /^8월 회비/ }).click();
 	await receipt.getByRole("button", { name: "납부 확인", exact: true }).click();
 	await expect(receipt).toHaveCount(0);

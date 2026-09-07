@@ -10,12 +10,14 @@ export default function MemberPicker({
 	onChange,
 	label = "납부자",
 	suggestedName = "",
+	descriptionForMember,
 }: {
 	data: AccountingData;
 	value: string;
 	onChange: (id: string) => void;
 	label?: string;
 	suggestedName?: string;
+	descriptionForMember?: (id: string) => string;
 }) {
 	const searchId = useId();
 	const [query, setQuery] = useState(suggestedName);
@@ -39,13 +41,16 @@ export default function MemberPicker({
 								{memberLabel(data, value).slice(selected.name.length + 3)}
 							</small>
 						)}
+						{descriptionForMember && (
+							<small>{descriptionForMember(value)}</small>
+						)}
 					</div>
 					<button
 						type="button"
 						className="ac-link"
 						onClick={() => {
 							onChange("");
-							setQuery("");
+							setQuery(suggestedName);
 						}}
 					>
 						{label} 변경
@@ -94,6 +99,9 @@ export default function MemberPicker({
 												.filter(Boolean)
 												.join(" · ") || "회원"}
 										</small>
+										{descriptionForMember && (
+											<small>{descriptionForMember(m.id)}</small>
+										)}
 									</span>
 									<Check
 										size={16}

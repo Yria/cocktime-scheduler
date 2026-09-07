@@ -1,6 +1,26 @@
 import { kstMonth } from "./summary";
 import type { AccountingData } from "./types";
 
+// An unused receipt can be matched again as a whole. Once any of its money has
+// been paid or refunded, its original sender remains fixed (including reversals).
+export function canChooseReceiptPayer(data: AccountingData, bankId: number) {
+	const tx = data.bank.find((t) => t.id === bankId);
+	const positions = data.positions.filter(
+		(p) => p.bank_tx_id === bankId && p.amount > 0,
+	);
+	return (
+		!!tx &&
+		tx.direction === "in" &&
+		positions.length > 0 &&
+		positions.every((p) =>
+			["unassigned", "member_pending"].includes(p.purpose),
+		) &&
+		positions.reduce((sum, p) => sum + p.amount, 0) === tx.amount &&
+		!data.allocations.some((a) => a.bank_tx_id === bankId) &&
+		!data.refunds.some((r) => r.in_tx_id === bankId)
+	);
+}
+
 export function payableDues(
 	data: AccountingData,
 	memberId: string,

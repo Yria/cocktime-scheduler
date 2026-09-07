@@ -14,6 +14,7 @@ import sql from "../../../../supabase/migrations/20260907030000_dues_v2.sql?raw"
 
 import activateSql from "../../../../scripts/accounting-v2-activate.sql?raw";
 import quickSql from "../../../../supabase/migrations/20260907060000_dues_v2_quick_settlement.sql?raw";
+import payerChoiceSql from "../../../../supabase/migrations/20260907070000_dues_v2_payer_choice.sql?raw";
 import refundSql from "../../../../supabase/migrations/20260907050000_dues_v2_payer_refunds.sql?raw";
 
 const A = "00000000-0000-4000-8000-000000000001";
@@ -95,6 +96,7 @@ beforeAll(async () => {
 		await db.exec(sql);
 		await db.exec(refundSql);
 		await db.exec(quickSql);
+		await db.exec(payerChoiceSql);
 	} catch (error) {
 		throw new Error(`Migration failed: ${String(error)}`);
 	}
@@ -112,6 +114,174 @@ afterAll(async () => {
 });
 
 describe("real PostgreSQL accounting migration and commands", () => {
+	it("changes an unused receipt's payer with payment atomically, previews without writing, retries once, and undoes both", async () => {
+		await db.exec(
+			`insert into bank_transactions(id,direction,amount,occurred_at,paid_by) values(90,'in',6000,'2026-09-06','${A}')`,
+		);
+		await manage("activate");
+		const before = await state(),
+			old = await legacy();
+		const payload = {
+			action: "pay",
+			reason: "동명이인 납부자 확인",
+			owner_id: B,
+			confirm_owner: true,
+			reassign_owner: true,
+			lines: [
+				{
+					position_id: await position(90),
+					due_id: await due(106),
+					amount: 5000,
+				},
+			],
+		};
+		const revision = (await mode()).revision,
+			request = crypto.randomUUID();
+		await scalar("select dues_v2_preview($1,$2,$3)", [
+			payload,
+			request,
+			revision,
+		]);
+		expect(await state()).toEqual(before);
+		await command(payload, request, revision);
+		await command(payload, request, revision);
+		expect(
+			await scalar(
+				"select count(*)::int from dues_v2_allocations where bank_tx_id=90 and owner_id=$1",
+				[B],
+			),
+		).toBe(1);
+		expect(
+			await scalar(
+				"select sum(amount)::int from dues_v2_positions where bank_tx_id=90 and owner_id=$1",
+				[B],
+			),
+		).toBe(1000);
+		expect(
+			await scalar(
+				"select count(*)::int from dues_v2_positions where bank_tx_id=90 and owner_id<>$1",
+				[B],
+			),
+		).toBe(0);
+		expect(await legacy()).toEqual(old);
+		await manage("undo");
+		expect(await state()).toEqual(before);
+		expect(await legacy()).toEqual(old);
+	});
+	it("requires a separate payer-change flag and confirmation, and rolls the change back if payment fails", async () => {
+		await db.exec(
+			`insert into bank_transactions(id,direction,amount,occurred_at,paid_by) values(90,'in',6000,'2026-09-06','${A}')`,
+		);
+		await manage("activate");
+		const before = await state();
+		const payload = {
+			action: "pay",
+			owner_id: B,
+			lines: [
+				{
+					position_id: await position(90),
+					due_id: await due(106),
+					amount: 5000,
+				},
+			],
+		};
+		await expectFailure(
+			() => command({ ...payload, confirm_owner: true }),
+			/납부자를 바꿀 수 없습니다/,
+		);
+		await expectFailure(
+			() => command({ ...payload, reassign_owner: true }),
+			/실제 입금자/,
+		);
+		await expectFailure(() =>
+			command({
+				...payload,
+				confirm_owner: true,
+				reassign_owner: true,
+				lines: [{ ...payload.lines[0], amount: 6000 }],
+			}),
+		);
+		expect(await state()).toEqual(before);
+		expect(
+			await scalar(
+				"select has_function_privilege('authenticated','public.dues_v2_match_position(uuid,uuid,boolean,boolean)','execute')",
+			),
+		).toBe(false);
+	});
+	it("never changes a receipt's payer after payment, reversed payment, refund, carry or club designation", async () => {
+		await manage("activate");
+		const attempt = async (bank: number) => {
+			const before = await state();
+			await expectFailure(
+				async () =>
+					command({
+						action: "pay",
+						owner_id: B,
+						confirm_owner: true,
+						reassign_owner: true,
+						lines: [
+							{
+								position_id: await position(bank),
+								due_id: await due(106),
+								amount: 1000,
+							},
+						],
+					}),
+				/납부·환불·이월/,
+			);
+			expect(await state()).toEqual(before);
+		};
+		await attempt(2);
+		await command({
+			action: "reverse_payment",
+			allocation_id: await scalar(
+				"select id from dues_v2_allocations where bank_tx_id=2",
+			),
+			amount: 5000,
+		});
+		await attempt(2);
+		for (const purpose of ["carry", "club", "refund"] as const) {
+			await db.exec("savepoint payer_case");
+			await db.exec(
+				`insert into bank_transactions(id,direction,amount,occurred_at) values(90,'in',7000,'2026-09-06')`,
+			);
+			await command({
+				action: "position",
+				position_id: await position(90),
+				owner_id: A,
+				amount: 7000,
+				purpose: "member_pending",
+			});
+			if (purpose === "carry")
+				await command({
+					action: "carry",
+					member_id: A,
+					target_ym: "2099-01",
+					debts: [],
+					money: [{ position_id: await position(90), amount: 7000 }],
+				});
+			else if (purpose === "club")
+				await command({
+					action: "position",
+					position_id: await position(90),
+					owner_id: A,
+					amount: 7000,
+					purpose: "club",
+					group_id: await scalar(
+						"select id from dues_v2_groups where source_key='manual:meal:1'",
+					),
+				});
+			else
+				await command({
+					action: "refund",
+					owner_id: A,
+					out_tx_id: 9,
+					lines: [{ position_id: await position(90), amount: 6000 }],
+				});
+			await attempt(90);
+			await db.exec("rollback to savepoint payer_case");
+		}
+	});
 	it("preserves a partially paid multi-month schedule through replacement and undo", async () => {
 		await manage("activate");
 		const id = await charge(106);
