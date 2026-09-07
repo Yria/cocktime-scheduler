@@ -32,6 +32,7 @@ export default function TransactionCard({
 	const refund = data.refunds.find((r) => r.out_tx_id === t.id);
 	const returned = data.refunds.filter((r) => r.in_tx_id === t.id);
 	const expense = data.expenses.find((e) => e.bank_tx_id === t.id);
+	const expenseGroup = data.groups.find((g) => g.id === expense?.group_id);
 	const [draft, setDraft] = useState<OperationDraft | null>(() => {
 		const pending = positions.find((p) =>
 			["unassigned", "member_pending"].includes(p.purpose),
@@ -187,6 +188,7 @@ export default function TransactionCard({
 								<button
 									type="button"
 									className="ac-chip"
+									disabled={disabled}
 									onClick={() => {
 										const source = data.bank.find(
 											(b) => b.id === refund.in_tx_id,
@@ -217,26 +219,34 @@ export default function TransactionCard({
 							</>
 						) : (
 							<>
+								{expense?.group_id && (
+									<p className="ac-expense-saved">
+										<span className="ac-badge is-green">지출 처리됨</span>
+										<span>{expenseGroup?.label ?? "연결된 지출 항목"}</span>
+									</p>
+								)}
 								<button
 									type="button"
 									className="ac-chip"
-									aria-label="지출 항목 지정"
+									aria-label={
+										expense?.group_id ? "지출 항목 변경" : "지출 항목 지정"
+									}
 									disabled={disabled}
 									onClick={() => onAction({ type: "expense", outTxId: t.id })}
 								>
-									{data.groups.find((g) => g.id === expense?.group_id)?.label ??
-										"지출 항목 지정"}
-									<ArrowRight size={13} />
+									{expense?.group_id ? "항목 변경" : "지출 항목 지정"}
 								</button>
-								<button
-									type="button"
-									className="ac-chip is-blue"
-									disabled={disabled || !!expense?.group_id}
-									onClick={() => onAction({ type: "refund", outTxId: t.id })}
-								>
-									<RotateCcw size={14} />
-									환불 연결
-								</button>
+								{!expense?.group_id && (
+									<button
+										type="button"
+										className="ac-chip is-blue"
+										disabled={disabled}
+										onClick={() => onAction({ type: "refund", outTxId: t.id })}
+									>
+										<RotateCcw size={14} />
+										환불 연결
+									</button>
+								)}
 							</>
 						)}
 					</div>

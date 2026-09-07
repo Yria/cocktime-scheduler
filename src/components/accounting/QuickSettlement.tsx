@@ -46,7 +46,12 @@ export default function QuickSettlement({
 	const [changeMonth, setChangeMonth] = useState(false);
 	const [amount, setAmount] = useState(String(source?.amount ?? ""));
 	const [purpose, setPurpose] = useState("member_pending");
-	const [group, setGroup] = useState<string | null>(null);
+	const savedGroup =
+		data.expenses.find((e) => e.bank_tx_id === bankId)?.group_id ?? "";
+	const [group, setGroup] = useState<string | null>(
+		draft.type === "expense" ? savedGroup || null : null,
+	);
+	const unchangedExpense = draft.type === "expense" && group === savedGroup;
 	const [groupQuery, setGroupQuery] = useState("");
 	const [groupLimit, setGroupLimit] = useState(6);
 	const [memo, setMemo] = useState("");
@@ -74,6 +79,10 @@ export default function QuickSettlement({
 			(g) => g.id === data.charges.find((c) => c.id === id)?.group_id,
 		)?.label ?? "부과";
 	const groups = quickGroups(data, kstMonth(tx.occurred_at), groupQuery);
+	const visibleGroups = groups.slice(0, groupLimit);
+	const selectedGroup = data.groups.find((g) => g.id === group);
+	if (selectedGroup && !visibleGroups.some((g) => g.id === selectedGroup.id))
+		visibleGroups.unshift(selectedGroup);
 	const selectedTotal = Object.values(debts).reduce(
 		(sum, n) => sum + Number(n || 0),
 		0,
@@ -168,6 +177,12 @@ export default function QuickSettlement({
 			summary = `${won(Number(amount))} · ${purpose === "club" ? data.groups.find((g) => g.id === group)?.label : memberLabel(data, owner || null)}`;
 		} else if (draft.type === "expense") {
 			if (group === null) throw new Error("지출 항목을 선택하세요");
+			if (unchangedExpense)
+				throw new Error(
+					savedGroup
+						? "이미 이 항목으로 처리된 지출입니다. 변경할 항목을 선택하세요."
+						: "이미 미분류 상태입니다. 지출 항목을 선택하세요.",
+				);
 			command = {
 				action: "expense",
 				reason,
@@ -224,7 +239,7 @@ export default function QuickSettlement({
 	const groupPicker = (
 		<div className="ac-quick-groups">
 			<div className="ac-choice-chips" role="group" aria-label="회계 항목 선택">
-				{groups.slice(0, groupLimit).map((g) => (
+				{visibleGroups.map((g) => (
 					<button
 						type="button"
 						key={g.id}
@@ -235,7 +250,7 @@ export default function QuickSettlement({
 						{g.label}
 					</button>
 				))}
-				{draft.type === "expense" && (
+				{draft.type === "expense" && savedGroup && (
 					<button
 						type="button"
 						className="ac-chip"
@@ -541,27 +556,31 @@ export default function QuickSettlement({
 					>
 						접기
 					</button>
-					<button
-						type="button"
-						className="ac-inline-confirm"
-						disabled={
-							(!flow.locked && disabled) ||
-							!flow.ready ||
-							flow.busy ||
-							data.mode.paused
-						}
-						onClick={() =>
-							void flow.confirm().then((done) => {
-								if (done) onClose(true);
-							})
-						}
-					>
-						{flow.busy
-							? "처리 중…"
-							: flow.locked
-								? "결과 다시 확인"
-								: `${title} 확인`}
-					</button>
+					{(!unchangedExpense || flow.locked) && (
+						<button
+							type="button"
+							className="ac-inline-confirm"
+							disabled={
+								(!flow.locked && disabled) ||
+								!flow.ready ||
+								flow.busy ||
+								data.mode.paused
+							}
+							onClick={() =>
+								void flow.confirm().then((done) => {
+									if (done) onClose(true);
+								})
+							}
+						>
+							{flow.busy
+								? "처리 중…"
+								: flow.locked
+									? "결과 다시 확인"
+									: draft.type === "expense" && savedGroup
+										? "변경 저장"
+										: `${title} 확인`}
+						</button>
+					)}
 				</div>
 			</div>
 		</div>

@@ -2,6 +2,7 @@ import { transactionNeedsSettlement } from "../../lib/dues/v2/quickSettlement";
 import { ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
 import "./accounting.css";
 import TransactionCard from "./TransactionCard";
+import TransactionLedger from "./TransactionLedger";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { sessionChoiceLabels } from "../../lib/dues/v2/selection";
@@ -43,7 +44,6 @@ export default function AccountingAdmin() {
 	const [expanded, setExpanded] = useState<string | null>(null);
 	const [selected, setSelected] = useState<string[]>([]);
 	const [settling, setSettling] = useState(false);
-	const [onlyPending, setOnlyPending] = useState(false);
 	const [search, setSearch] = useState("");
 	const [issueError, setIssueError] = useState("");
 	const [busy, setBusy] = useState(false);
@@ -110,6 +110,19 @@ export default function AccountingAdmin() {
 	};
 	const sessionLabels = sessionChoiceLabels(sessions);
 	const disabled = mode.paused || busy || loading || settling;
+	const pending =
+		data?.bank
+			.filter(
+				(t) =>
+					kstMonth(t.occurred_at) === ym &&
+					transactionNeedsSettlement(data, t.id),
+			)
+			.sort(
+				(a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id - a.id,
+			) ?? [];
+	const shownPending = pending.filter(
+		(t) => nameMatches(t.name ?? "", search) || String(t.id) === search.trim(),
+	);
 	return (
 		<AppScreen
 			title="회비 관리"
@@ -184,23 +197,29 @@ export default function AccountingAdmin() {
 			) : (
 				<>
 					{page === "ledger" ? (
-						<CashLedgerView ym={ym} revision={data.mode.revision} />
+						<div className="flex flex-col gap-6">
+							<CashLedgerView ym={ym} revision={data.mode.revision} />
+							<TransactionLedger
+								key={ym}
+								data={data}
+								ym={ym}
+								disabled={disabled}
+								onDone={refresh}
+								onPendingChange={setSettling}
+								settling={settling}
+								onMonth={(month) => go(month, "ledger")}
+							/>
+						</div>
 					) : page === "inbox" ? (
 						<div className="flex flex-col gap-3">
 							<div className="ac-section-heading">
 								<h2>
-									통장 내역{" "}
-									<span className="ac-count">
-										{
-											data.bank.filter((t) => kstMonth(t.occurred_at) === ym)
-												.length
-										}
-									</span>
+									처리할 내역 <span className="ac-count">{pending.length}</span>
 								</h2>
 								<button
 									type="button"
 									className="ac-link ac-import"
-									disabled={busy}
+									disabled={disabled}
 									onClick={() => void ingest()}
 								>
 									<Download size={15} />
@@ -217,68 +236,22 @@ export default function AccountingAdmin() {
 									onChange={(e) => setSearch(e.target.value)}
 								/>
 							</div>
-							<div
-								className="ac-inbox-filter"
-								role="group"
-								aria-label="거래 표시"
-							>
-								<button
-									type="button"
-									aria-pressed={!onlyPending}
-									disabled={settling}
-									onClick={() => setOnlyPending(false)}
-								>
-									전체
-								</button>
-								<button
-									type="button"
-									aria-pressed={onlyPending}
-									disabled={settling}
-									onClick={() => setOnlyPending(true)}
-								>
-									처리할 내역{" "}
-									<span>
-										{
-											data.bank.filter(
-												(t) =>
-													kstMonth(t.occurred_at) === ym &&
-													transactionNeedsSettlement(data, t.id),
-											).length
-										}
-									</span>
-								</button>
-							</div>
-							{data.bank
-								.filter(
-									(t) =>
-										kstMonth(t.occurred_at) === ym &&
-										(!onlyPending || transactionNeedsSettlement(data, t.id)) &&
-										(nameMatches(t.name ?? "", search) ||
-											String(t.id) === search),
-								)
-								.sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))
-								.map((t) => (
-									<TransactionCard
-										key={t.id}
-										data={data}
-										transaction={t}
-										disabled={disabled}
-										onDone={refresh}
-										onPendingChange={setSettling}
-										onMonth={(month) => go(month, "inbox")}
-									/>
-								))}
-							{!data.bank.some(
-								(t) =>
-									kstMonth(t.occurred_at) === ym &&
-									(!onlyPending || transactionNeedsSettlement(data, t.id)) &&
-									(nameMatches(t.name ?? "", search) ||
-										String(t.id) === search),
-							) && (
+							{shownPending.map((t) => (
+								<TransactionCard
+									key={t.id}
+									data={data}
+									transaction={t}
+									disabled={disabled}
+									onDone={refresh}
+									onPendingChange={setSettling}
+									onMonth={(month) => go(month, "ledger")}
+								/>
+							))}
+							{!shownPending.length && (
 								<p className="ac-empty">
 									{search
 										? "검색된 거래가 없습니다."
-										: "이 달의 통장 내역이 없습니다."}
+										: "이 달에 정산할 내역이 없습니다."}
 								</p>
 							)}
 						</div>
