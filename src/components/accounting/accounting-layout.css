@@ -1,0 +1,859 @@
+/* Claude Design f2412ebf / 콕타임 회계 v2.dc.html.
+ * Existing DS tokens are retained; local sizes and gaps follow the supplied HTML. */
+.ac-layout-v2 .ac-tabs {
+	gap: var(--ac-s-1);
+	padding: 0;
+	background: transparent;
+	border: 0;
+	border-bottom: 1px solid var(--ac-rule-strong);
+	border-radius: 0;
+}
+.ac-layout-v2 .ac-tabs button {
+	font-size: 14.5px;
+	font-weight: 550;
+	border-radius: 0;
+	border-width: 0 0 2px;
+	border-bottom: 2px solid transparent;
+	background: transparent;
+}
+.ac-layout-v2 .ac-tabs button[aria-current="page"] {
+	font-weight: 700;
+	background: transparent;
+	border-bottom-color: var(--ac-ink);
+	box-shadow: none;
+}
+.ac-status-list,
+.ac-cash-layout {
+	display: grid;
+	gap: var(--ac-s-3);
+}
+.ac-status-card {
+	display: grid;
+	gap: var(--ac-s-2);
+}
+.ac-status-card .ac-overview-heading {
+	align-items: flex-start;
+}
+.ac-status-card .ac-overview-heading > div {
+	min-width: 0;
+}
+.ac-status-card .ac-badge {
+	flex-shrink: 0;
+}
+.ac-status-card .ac-overview-group-toggle {
+	padding: 0;
+}
+.ac-status-detail {
+	width: 100%;
+	justify-content: center;
+}
+.ac-cash-columns,
+.ac-row.ac-cash-columns {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) var(--ac-rail) var(--ac-rail);
+	column-gap: var(--ac-s-2);
+	align-items: baseline;
+}
+.ac-cash-columns > :first-child {
+	grid-column: 1;
+}
+.ac-cash-columns > :nth-child(2) {
+	grid-column: 2;
+	text-align: right;
+}
+.ac-cash-columns > :nth-child(3) {
+	grid-column: 3;
+	justify-self: stretch;
+	text-align: right;
+}
+.ac-cash-columns .ac-amount,
+.ac-cash-columns .ac-amount-2 {
+	font-size: var(--ac-fs-name);
+	white-space: nowrap;
+}
+.ac-layout-v2 .ac-inbox-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+}
+.ac-layout-v2 .ac-inbox-toolbar h2 {
+	flex: 1 1 auto;
+	flex-wrap: wrap;
+}
+.ac-layout-v2 .ac-inbox-toolbar > .ac-search {
+	order: 3;
+	flex: 1 0 100%;
+}
+.ac-layout-v2 .ac-import-button {
+	display: inline-flex;
+	align-items: center;
+	width: auto;
+	gap: var(--ac-s-2);
+	padding-inline: var(--ac-s-3);
+}
+.ac-layout-v2 .ac-search input:not([type="checkbox"]):not([type="radio"]) {
+	border: 0;
+	background: transparent;
+	padding-inline: 0;
+}
+.ac-layout-v2 .ac-payer-search-row {
+	flex-basis: 100%;
+}
+.ac-layout-v2 .ac-payer-chips.is-resolved .ac-payer-search-row {
+	flex: 1 1 140px;
+	grid-template-columns: minmax(0, 1fr);
+}
+.ac-layout-v2 .ac-payer-chips.is-resolved .ac-payer-search-row > label {
+	display: none;
+}
+.ac-layout-v2 .ac-payer-chips.is-resolved .ac-payer-options {
+	order: -1;
+}
+.ac-layout-v2 .ac-month {
+	gap: var(--ac-s-2);
+}
+
+.ac-layout-v2 .ac-transaction {
+	gap: var(--ac-s-2);
+}
+.ac-layout-v2 .ac-transaction-heading {
+	padding-block: var(--ac-s-1);
+	border-bottom: 1px solid var(--ac-rule);
+}
+.ac-layout-v2 .ac-row-gutter:not(.is-ok):not(.is-ask):not(.is-stop) {
+	color: var(--ac-ink-2);
+}
+.ac-layout-v2 .ac-ledger-filters {
+	flex-wrap: wrap;
+	overflow: visible;
+}
+.ac-layout-v2 .ac-inline-confirm,
+.ac-layout-v2 .ac-voucher-actions > .btn-lq-primary {
+	font-size: var(--ac-fs-total);
+	font-weight: 700;
+}
+.ac-layout-v2 .ac-transaction-heading .ac-row-body {
+	display: flex;
+	flex-direction: column-reverse;
+	gap: var(--ac-s-1);
+}
+.ac-layout-v2 .ac-quick-dues {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: var(--ac-s-2);
+}
+.ac-layout-v2 .ac-quick-due {
+	flex-wrap: wrap;
+	gap: var(--ac-s-1);
+	min-width: 0;
+	align-content: start;
+}
+.ac-layout-v2 .ac-quick-due > .ac-chip {
+	flex-basis: 100%;
+}
+.ac-layout-v2 .ac-quick-due.is-selected {
+	grid-column: 1 / -1;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 88px;
+	align-items: center;
+}
+.ac-layout-v2 .ac-quick-due:only-child {
+	grid-column: 1 / -1;
+}
+.ac-layout-v2 .ac-quick-due small {
+	font-size: var(--ac-fs-meta);
+}
+.ac-layout-v2 .ac-quick-amount {
+	width: 100%;
+}
+.ac-layout-v2 .ac-quick-amount input {
+	flex: 1;
+	width: 0;
+	min-width: 0;
+}
+.ac-layout-v2 .ac-quick-confirm {
+	padding-top: var(--ac-s-2);
+}
+.ac-allocation-summary {
+	display: grid;
+	gap: var(--ac-s-1);
+	padding-block: var(--ac-s-1);
+}
+.ac-allocation-meter {
+	display: flex;
+	height: 8px;
+	border-radius: var(--ac-r-chip);
+	overflow: hidden;
+	background: var(--ac-fill);
+}
+.ac-allocation-meter > span {
+	background: var(--ac-act);
+}
+.ac-allocation-summary > p {
+	display: flex;
+	justify-content: space-between;
+	gap: var(--ac-s-2);
+	font-size: var(--ac-fs-body);
+}
+.ac-layout-v2 .ac-voucher-compact {
+	display: grid;
+	gap: var(--ac-s-3);
+}
+.ac-voucher-identity {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(132px, 0.65fr);
+	gap: var(--ac-s-2);
+}
+.ac-voucher-identity label,
+.ac-voucher-compact label:not(.ac-check) {
+	min-width: 0;
+	display: grid;
+	gap: var(--ac-s-1);
+}
+.ac-voucher-roster {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--ac-s-1);
+}
+.ac-voucher-roster .ac-chip {
+	gap: var(--ac-s-1);
+}
+.ac-voucher-roster small {
+	font-size: var(--ac-fs-meta);
+}
+.ac-voucher-part {
+	display: grid;
+	gap: var(--ac-s-2);
+	padding-block: var(--ac-s-3);
+	border-top: 1px solid var(--ac-rule);
+}
+@media (max-width: 360px) {
+	.ac-layout-v2 .ac-quick-dues,
+	.ac-voucher-identity {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+/* 정산함: 원본 2b의 전표 순서(납부자 → 배분 → 확인).
+ * 상세 편집은 옵션을 열었을 때만 추가하고, 원장 편집에는 적용하지 않는다. */
+.ac-layout-v2 .ac-inbox-receipt {
+	padding: 0;
+	gap: 0;
+	border: 0;
+	box-shadow: 0 1px 2px rgba(16,32,44,.06), 0 10px 24px -18px rgba(16,32,44,.3);
+	overflow: hidden;
+}
+.ac-receipt-form,
+.ac-receipt-form .ac-quick-fields {
+	gap: 0;
+}
+.ac-receipt-heading {
+	position: relative;
+	padding: 12px 14px 10px;
+	border-bottom: 1px solid var(--ac-rule);
+}
+.ac-receipt-meta,
+.ac-receipt-identity,
+.ac-receipt-payer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--ac-s-2);
+	min-width: 0;
+}
+.ac-receipt-meta {
+	color: color-mix(in srgb, var(--ac-ink-3) 95%, var(--ac-ink-2));
+	font-size: var(--ac-fs-meta);
+	padding-right: 30px;
+}
+.ac-receipt-meta .ac-receipt-options-toggle {
+	position: absolute;
+	right: 14px;
+	top: 8px;
+	min-width: 26px;
+	min-height: 26px;
+	padding: 0;
+	justify-content: center;
+	color: var(--ac-ink-2);
+}
+.ac-receipt-payer {
+	justify-content: flex-start;
+	gap: 7px;
+	flex-wrap: wrap;
+}
+.ac-receipt-payer > strong {
+	font-size: 19px;
+	font-weight: 700;
+	letter-spacing: -.01em;
+	word-break: keep-all;
+	overflow-wrap: anywhere;
+}
+.ac-receipt-payer .ac-receipt-change {
+	min-width: 44px;
+	min-height: 26px;
+	padding: 0 7px;
+	border: 1px solid var(--ac-rule-strong);
+	border-radius: var(--ac-r-chip);
+	font-size: var(--ac-fs-meta);
+	font-weight: 650;
+	color: var(--ac-ink-2);
+	background: transparent;
+}
+.ac-receipt-amount {
+	flex-shrink: 0;
+	font-size: 22px;
+	font-weight: 700;
+	line-height: 1.05;
+	white-space: nowrap;
+}
+.ac-receipt-hint {
+	margin-top: 5px;
+	color: color-mix(in srgb, var(--ac-ink-3) 95%, var(--ac-ink-2));
+	font-size: 12.5px;
+	overflow-wrap: anywhere;
+}
+.ac-receipt-picker {
+	padding: 12px 14px;
+	background: var(--ac-fill);
+	border-bottom: 1px solid var(--ac-rule);
+}
+.ac-receipt-picker .ac-payer-search-row {
+	grid-template-columns: minmax(0, 1fr);
+}
+.ac-receipt-picker .ac-payer-search-row > label {
+	display: none;
+}
+.ac-receipt-picker .ac-payer-options {
+	display: flex;
+	flex-wrap: wrap;
+	width: 100%;
+	gap: var(--ac-s-1);
+}
+.ac-receipt-picker .ac-payer-option {
+	flex-direction: row;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 5px;
+	padding: 0 9px;
+	min-height: 36px;
+	min-width: 0;
+	border-radius: 9px;
+}
+.ac-receipt-picker .ac-payer-option strong { font-size: 12.5px; }
+.ac-receipt-picker .ac-payer-option small {
+	font-size: 11.5px;
+}
+.ac-receipt-form .ac-payment-targets,
+.ac-receipt-form .ac-quick-groups {
+	padding: 10px 14px;
+}
+.ac-receipt-form .ac-allocation-summary {
+	padding: 0 0 9px;
+	gap: 0;
+}
+.ac-receipt-form .ac-allocation-summary > p {
+	align-items: center;
+	font-size: 12.5px;
+	margin-top: 7px;
+	gap: 8px;
+}
+.ac-receipt-form .ac-allocation-summary strong {
+	font-size: var(--ac-fs-name);
+	white-space: nowrap;
+}
+.ac-receipt-form .ac-allocation-meter > span {
+	flex-shrink: 0;
+	border-right: 1px solid var(--ac-paper);
+}
+.ac-receipt-form .ac-allocation-meter > span:nth-child(even) {
+	background: var(--ac-ink-2);
+}
+.ac-layout-v2 .ac-receipt-dues {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	gap: var(--ac-s-1);
+}
+.ac-layout-v2 .ac-receipt-dues .ac-quick-due,
+.ac-layout-v2 .ac-receipt-dues .ac-quick-due.is-selected {
+	display: flex;
+	max-width: 100%;
+}
+.ac-layout-v2 .ac-receipt-dues .ac-chip {
+	gap: 5px;
+	flex-basis: auto;
+	min-height: 36px;
+	min-width: 0;
+	padding: 0 9px;
+	border-radius: 9px;
+	font-size: 12.5px;
+	font-weight: 650;
+}
+.ac-layout-v2 .ac-receipt-dues .ac-chip > span {
+	display: inline;
+	word-break: keep-all;
+}
+.ac-receipt-dues .ac-chip > .ac-number {
+	white-space: nowrap;
+	font-size: var(--ac-fs-meta);
+	flex-shrink: 0;
+	opacity: .7;
+}
+.ac-receipt-form .ac-quick-options {
+	margin: 0 var(--ac-s-3) var(--ac-s-3);
+	padding-top: var(--ac-s-3);
+	border-top: 1px solid var(--ac-rule);
+}
+.ac-layout-v2 .ac-receipt-form .ac-quick-confirm {
+	padding: 0 14px 12px;
+	border-top: 0;
+}
+.ac-layout-v2 .ac-receipt-form .ac-inline-confirm {
+	width: 100%;
+	min-height: 44px;
+	font-size: 15px;
+}
+.dark .ac-layout-v2 .ac-receipt-form .ac-inline-confirm:not(:disabled) {
+	background: color-mix(in srgb, var(--ac-ok-solid) 92%, var(--ac-sel-fg));
+}
+.ac-receipt-identity { align-items: flex-end; gap: 10px; margin-top: 6px; }
+.ac-receipt-amount.ac-in { color: var(--ac-act); }
+.ac-receipt-amount.ac-out { color: var(--ac-ink); }
+.ac-receipt-form .ac-allocation-meter { height: 10px; border-radius: 5px; }
+.ac-receipt-picker .ac-payer-chips { gap: 8px; }
+.ac-receipt-picker .ac-choice-chips { gap: 4px; }
+.ac-receipt-picker .ac-choice-chips .ac-chip { min-height: 34px; min-width: 0; padding: 0 9px; border-radius: 9px; font-size: 12.5px; }
+.accounting-screen .ac-receipt-picker input:not([type="checkbox"]):not([type="radio"]) { font-size: 12.5px; min-height: 42px; }
+.ac-receipt-picker .ac-search { background: var(--ac-paper); border-color: var(--ac-rule); }
+.ac-receipt-picker .ac-search-clear { min-height: 36px; min-width: 26px; }
+.ac-layout-v2 .ac-inbox-toolbar .ac-import-button {
+	min-height: 36px;
+	font-size: 13.5px;
+	font-weight: 650;
+	padding: 0 11px;
+	color: var(--ac-ink-2);
+	border-color: var(--ac-rule-strong);
+}
+.ac-receipt-form .ac-quick-groups .ac-choice-chips { gap: 4px; }
+.ac-receipt-form .ac-quick-groups .ac-chip {
+	min-height: 36px;
+	min-width: 0;
+	padding: 0 9px;
+	border-radius: 9px;
+	font-size: 12.5px;
+	font-weight: 650;
+	gap: 5px;
+}
+.ac-inbox-receipt > .ac-saved {
+	padding: 0 var(--ac-s-3) var(--ac-s-3);
+}
+
+/* Completed payments use the ledger's quiet card surface and one header divider. */
+.ac-layout-v2 .ac-settled-receipt {
+	padding: 12px;
+	gap: 0;
+	border: 1px solid var(--ac-rule);
+}
+.ac-settled-heading { display: grid; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--ac-rule); }
+.ac-settled-meta, .ac-settled-identity { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.ac-settled-meta { color: var(--ac-ink-2); font-size: 12px; }
+.ac-settled-identity > strong:first-child { min-width: 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
+.ac-settled-identity > .ac-number { color: var(--ac-act); font-size: 20px; white-space: nowrap; flex-shrink: 0; }
+.ac-settlement-history .ac-allocation { align-items: flex-start; padding-block: 12px; }
+.ac-settlement-history .ac-allocation:first-child { border-top: 0; }
+.ac-settlement-history .ac-allocation:last-child { padding-bottom: 0; }
+.ac-settlement-history .ac-allocation-copy { display: grid; gap: 4px; min-width: 0; }
+.ac-allocation-person { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ac-allocation-person > strong { font-size: 13px; font-weight: 600; }
+.ac-settlement-history .ac-allocation small { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.ac-settlement-history .ac-allocation-side { display: grid; justify-items: end; gap: 6px; flex-shrink: 0; }
+.ac-allocation-side > strong { font-size: 14.5px; white-space: nowrap; }
+.ac-settlement-history .ac-allocation-undo { min-height: 30px; padding: 3px 8px; font-size: 12px; font-weight: 550; background: transparent; color: var(--ac-ink-2); }
+
+/* Claude Design 2d: 종류·이름 / 명단 / 계산 / 합계·발행의 한 전표. */
+.ac-layout-v2 .ac-issue-slip {
+	padding: 0;
+	gap: 0;
+	border: 1px solid var(--ac-rule);
+	border-radius: var(--ac-r-card);
+	background: var(--ac-paper);
+	overflow: hidden;
+}
+.ac-issue-slip > .ac-quick-fields,
+.ac-layout-v2 .ac-issue-slip .ac-voucher-compact {
+	gap: 0;
+}
+.ac-issue-identity,
+.ac-issue-slip .ac-voucher-part {
+	display: grid;
+	gap: var(--ac-s-2);
+	padding: var(--ac-s-3);
+}
+.ac-issue-slip .ac-voucher-part {
+	border-color: var(--ac-rule);
+}
+.ac-issue-settings {
+	justify-self: start;
+	margin-inline: var(--ac-s-3);
+	min-height: 44px;
+	color: var(--ac-ink-2);
+}
+.ac-issue-slip .ac-voucher-identity {
+	grid-template-columns: minmax(0, 1fr) 136px;
+}
+.ac-issue-slip .ac-voucher-identity input {
+	min-width: 0;
+	width: 100%;
+}
+.ac-layout-v2 .ac-issue-slip input.ac-number {
+	font-weight: 700;
+}
+.dark .ac-issue-slip input[type="date"] {
+	color-scheme: dark;
+}
+.ac-issue-slip .ac-section-heading h4,
+.ac-issue-slip .ac-voucher-roster .ac-chip,
+.ac-issue-slip .ac-voucher-roster small {
+	font-size: var(--ac-fs-meta);
+}
+.ac-issue-slip .ac-voucher-roster .ac-chip {
+	padding: var(--ac-s-2);
+	gap: var(--ac-s-1);
+}
+.ac-issue-slip .ac-voucher-roster .is-excluded > span {
+	text-decoration: line-through;
+}
+.ac-issue-slip .ac-section-heading > span {
+	font-size: var(--ac-fs-meta);
+}
+.ac-issue-summary {
+	padding: var(--ac-s-3) var(--ac-s-3) 0;
+	border-top: 1px solid var(--ac-rule);
+}
+.ac-issue-summary-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: var(--ac-s-2);
+	font-size: var(--ac-fs-body);
+}
+.ac-issue-summary-row > strong {
+	font-size: var(--ac-fs-name);
+}
+.ac-issue-sum {
+	margin-top: var(--ac-s-2);
+	padding-top: var(--ac-s-2);
+	border-top: 1px solid var(--ac-rule-strong);
+}
+.ac-issue-sum > .ac-number {
+	font-size: var(--ac-fs-total);
+}
+.ac-issue-summary > .ac-caption {
+	margin-top: var(--ac-s-1);
+	font-size: var(--ac-fs-meta);
+}
+.ac-issue-confirm {
+	display: grid;
+	gap: var(--ac-s-2);
+	padding: var(--ac-s-3);
+}
+.ac-issue-confirm .ac-inline-confirm {
+	width: 100%;
+}
+.ac-issue-extras,
+.ac-issue-memo,
+.ac-issue-slip .ac-charge-session {
+	padding: var(--ac-s-3);
+	border-bottom: 1px solid var(--ac-rule);
+}
+.ac-issue-extras {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--ac-s-2);
+}
+.ac-charge-manage-link {
+	align-self: flex-end;
+	font-size: var(--ac-fs-meta);
+}
+@media (max-width: 360px) {
+	.ac-issue-slip .ac-voucher-identity {
+		grid-template-columns: minmax(0, 1fr) 126px;
+	}
+}
+
+/* Source screen 2c: 12px cards, 9px accounting rows.
+ * The month bar uses the shared overview layout at the user’s request.
+ * Pixel values below are the supplied HTML's local overrides, not new DS tokens. */
+.accounting-screen.ac-layout-v2.is-ledger {
+	gap: 12px;
+}
+.is-ledger .ac-tabs button {
+	font-size: 14.5px;
+	font-weight: 550;
+	padding: 0;
+}
+.is-ledger .ac-tabs button[aria-current="page"] { font-weight: 700; }
+.ac-ledger-page { display: grid; gap: 12px; }
+.ac-ledger-page .ac-cash-layout { --ac-gutter: 0px; }
+.ac-ledger-page .ac-ledger-summary { padding: 12px; }
+.ac-ledger-page .ac-ledger-summary .ac-sheet-head { padding: 0 0 8px; }
+.ac-ledger-page .ac-ledger-summary .ac-row {
+	grid-template-columns: 0 minmax(0, 1fr) 112px;
+	column-gap: 0;
+	align-items: center;
+	padding: 9px 8px;
+}
+.ac-ledger-page .ac-ledger-summary .ac-amount { align-self: center; padding-left: 10px; }
+.ac-ledger-page .ac-ledger-net .ac-amount { font-size: var(--ac-fs-total); font-weight: 700; }
+.ac-ledger-income { color: var(--ac-act); }
+.ac-ledger-bucket-rows { padding: 0 8px 8px; }
+.ac-ledger-page .ac-row.ac-cash-columns {
+	grid-template-columns: minmax(0, 1fr) 94px 80px;
+	column-gap: 0;
+	align-items: center;
+	padding-block: 9px;
+}
+.ac-ledger-page .ac-cash-columns .ac-amount {
+	font-size: var(--ac-fs-amount);
+	align-self: center;
+	padding-left: 10px;
+	margin-right: 4px;
+}
+.ac-ledger-page .ac-cash-columns .ac-amount-2 {
+	font-size: var(--ac-fs-body);
+	font-weight: 500;
+	align-self: center;
+	padding-left: 10px;
+}
+.ac-ledger-page .ac-cash-columns.ac-total .ac-amount { font-size: var(--ac-fs-total); margin-right: 0; }
+.ac-ledger-transactions-body { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+.ac-ledger-page .ac-ledger-search { margin: 0; height: 44px; border-color: var(--ac-rule); }
+.accounting-screen.is-ledger .ac-ledger-search input:not([type="checkbox"]):not([type="radio"]) { font-size: 12.5px; min-height: 42px; }
+.ac-ledger-page .ac-ledger-search select {
+	font-size: 12.5px;
+	color: var(--ac-ink-2);
+	background: transparent;
+	border: 0;
+	border-left: 1px solid var(--ac-rule);
+	min-width: 70px;
+	width: 70px;
+	flex: none;
+	min-height: 36px;
+	padding-inline: 4px;
+}
+.ac-ledger-page .ac-ledger-filters { gap: 4px; padding: 0; margin: 0; }
+.ac-ledger-page .ac-ledger-filters button {
+	min-height: 36px;
+	min-width: 0;
+	border-radius: 9px;
+	padding: 0 9px;
+	font-size: 12.5px;
+}
+.ac-ledger-transaction-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 0;
+	border-bottom: 1px solid var(--ac-rule);
+	min-height: 44px;
+}
+.ac-ledger-transaction-body { flex: 1; min-width: 0; }
+.ac-ledger-transaction-body > strong { font-size: 14.5px; font-weight: 600; word-break: keep-all; overflow-wrap: anywhere; }
+.ac-ledger-transaction-body .is-pending { color: var(--ac-ask); }
+.ac-ledger-transaction-body .ac-row-note { word-break: keep-all; }
+.ac-ledger-transaction-amount { flex: none; width: 78px; text-align: right; font-size: 14.5px; font-weight: 650; }
+.ac-ledger-page .ac-ledger-transaction-toggle {
+	flex: none;
+	min-height: 34px;
+	padding: 0 9px;
+	border: 1px solid var(--ac-rule-strong);
+	border-radius: 9px;
+	background: transparent;
+	font-size: 12.5px;
+	font-weight: 650;
+	color: var(--ac-ink-2);
+	white-space: nowrap;
+}
+/* Keep edited transaction inputs at the existing 16px size. */
+.ac-ledger-page .ac-ledger-detail { padding-block: 8px 12px; }
+.ac-ledger-page .ac-undo-block .ac-link { align-self: flex-start; }
+
+.ac-issue-name-heading { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.ac-issue-name-heading > label { font-size: var(--ac-fs-meta); font-weight: 600; color: var(--ac-ink-2); }
+.ac-issue-slip .ac-voucher-identity { align-items: end; }
+.ac-issue-slip .ac-voucher-identity > label { gap: 4px; }
+
+/* A preset precedes the editable form. Picking a session immediately fills its roster. */
+.ac-reference-preset {
+	display: grid;
+	gap: 8px;
+	padding: 12px;
+	background: var(--ac-band);
+	border-bottom: 1px solid var(--ac-rule);
+}
+.ac-reference-heading, .ac-reference-tools {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+.ac-reference-heading > strong {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	font-weight: 700;
+	color: var(--ac-ink);
+}
+.ac-reference-heading > span, .ac-reference-preset .ac-caption {
+	font-size: 12px;
+	color: var(--ac-ink-2);
+}
+.ac-reference-preset > .ac-caption { margin-top: -4px; }
+/* Keep month pages and their pagination inside one visible, keyboard-accessible list. */
+.ac-reference-list {
+	margin: 0;
+	padding: 10px;
+	list-style: none;
+	display: grid;
+	gap: 12px;
+	max-height: 248px;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	scrollbar-width: thin;
+	background: var(--ac-paper);
+	border: 1px solid var(--ac-rule);
+	border-radius: var(--ac-r-field);
+}
+.ac-reference-month { min-width: 0; display: grid; gap: 6px; }
+.ac-reference-month-label { font-size: 12px; font-weight: 600; color: var(--ac-ink-2); }
+.ac-reference-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.ac-reference-choice {
+	display: inline-flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	max-width: 100%;
+	min-width: 0;
+	min-height: 40px;
+	padding: 8px 10px;
+	border: 1px solid var(--ac-rule);
+	border-radius: var(--ac-r-chip);
+	background: var(--ac-fill);
+	color: var(--ac-ink);
+	font-size: 12.5px;
+	font-weight: 550;
+	line-height: 1.5;
+	text-align: left;
+}
+.ac-reference-choice > span { min-width: 0; overflow-wrap: anywhere; }
+.ac-reference-choice > svg { flex-shrink: 0; visibility: hidden; }
+.ac-reference-choice[aria-pressed="true"] {
+	background: var(--ac-sel-bg);
+	color: var(--ac-sel-fg);
+	border-color: var(--ac-sel-bg);
+}
+.ac-reference-choice[aria-pressed="true"] > svg { visibility: visible; }
+.ac-reference-more {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	width: 100%;
+	min-height: 36px;
+	padding: 6px 10px;
+	border: 1px dashed var(--ac-rule-strong);
+	border-radius: var(--ac-r-chip);
+	background: transparent;
+	color: var(--ac-act);
+	font-size: 12px;
+	font-weight: 600;
+}
+.ac-reference-tools .ac-check {
+	min-height: 32px;
+	font-size: 12px;
+	gap: 6px;
+	color: var(--ac-ink-2);
+}
+.ac-reference-preset .ac-link {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	min-height: 32px;
+	padding: 4px;
+	font-size: 12px;
+}
+.ac-reference-status {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 12px;
+	color: var(--ac-ink-2);
+}
+.ac-reference-status:empty { display: none; }
+.ac-reference-status svg { flex-shrink: 0; color: var(--ac-ok); }
+.ac-reference-error { font-size: 12px; color: var(--ac-stop); }
+
+/* Overview details open in the existing application modal surface. */
+.lq-sheet.ac-detail-sheet { max-width: 560px; border-radius: 14px; overflow: hidden; }
+.accounting-screen.ac-detail-content {
+	margin: 0;
+	max-width: none;
+	padding: 16px;
+	gap: 12px;
+	background: var(--ac-paper);
+	max-height: 90dvh;
+}
+.ac-detail-body {
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	display: grid;
+	gap: 12px;
+	/* Use half of the sheet's 16px right inset for a dedicated scroll lane. */
+	margin-inline-end: -8px;
+	/* Overlay scrollbars do not reserve a gutter, so keep their 8px lane too. */
+	padding-inline-end: 8px;
+	scrollbar-gutter: stable;
+	border-radius: 4px;
+}
+.ac-detail-body,
+.ac-reference-list {
+	scrollbar-width: thin;
+	scrollbar-color: color-mix(in srgb, var(--ac-ink-2) 55%, var(--ac-paper)) transparent;
+}
+/* Fallback for WebKit versions without the standard scrollbar properties. */
+.ac-detail-body::-webkit-scrollbar,
+.ac-reference-list::-webkit-scrollbar { width: 8px; }
+.ac-detail-body::-webkit-scrollbar-track,
+.ac-reference-list::-webkit-scrollbar-track { background: transparent; }
+.ac-detail-body::-webkit-scrollbar-thumb,
+.ac-reference-list::-webkit-scrollbar-thumb {
+	border: 2px solid var(--ac-paper);
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--ac-ink-2) 55%, var(--ac-paper));
+}
+.ac-detail-body::-webkit-scrollbar-thumb:hover,
+.ac-reference-list::-webkit-scrollbar-thumb:hover { background: var(--ac-ink-2); }
+.ac-detail-body::-webkit-scrollbar-button,
+.ac-reference-list::-webkit-scrollbar-button { display: none; }
+.ac-detail-body:focus-visible { outline-offset: -2px; }
+.ac-detail-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.ac-detail-heading > div { min-width: 0; }
+.ac-detail-heading h2 { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+.ac-detail-heading .ac-caption { margin-top: 4px; font-size: 12px; }
+.ac-detail-close {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	min-height: 36px;
+	flex-shrink: 0;
+	border: 1px solid var(--ac-rule);
+	border-radius: var(--ac-r-chip);
+	color: var(--ac-ink-2);
+	background: var(--ac-fill);
+}
+.ac-detail-content .ac-overview-roster { margin: 0; padding-top: 0; }
+.ac-detail-content .ac-overview-exclusions,
+.ac-detail-content .ac-overview-attendance { margin: 0; font-size: 12px; }

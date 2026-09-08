@@ -1,0 +1,76 @@
+{
+  "shape": "package",
+  "pkg": "cocktime-scheduler",
+  "globalName": "Cocktime",
+  "projectId": "9b0c4244-eed1-4710-b4fb-6316f80eb780",
+  "srcDir": "src/components/accounting",
+  "tsconfig": "tsconfig.app.json",
+  "buildCmd": "pnpm run build && cp \"$(ls -t dist/assets/index-*.css | head -1)\" .design-sync/compiled.css",
+  "cssEntry": ".design-sync/compiled.css",
+  "componentSrcMap": {
+    "AccountingAdmin": "src/components/accounting/AccountingAdmin.tsx",
+    "AccountingOverview": "src/components/accounting/AccountingOverview.tsx",
+    "TransactionCard": "src/components/accounting/TransactionCard.tsx",
+    "QuickSettlement": "src/components/accounting/QuickSettlement.tsx",
+    "TransactionLedger": "src/components/accounting/TransactionLedger.tsx",
+    "CashLedgerView": "src/components/accounting/CashLedgerView.tsx",
+    "ChargeVoucher": "src/components/accounting/ChargeVoucher.tsx",
+    "MemberPicker": "src/components/accounting/MemberPicker.tsx",
+    "RefundPicker": "src/components/accounting/RefundPicker.tsx",
+    "AccountingMember": "src/components/accounting/AccountingMember.tsx",
+    "OperationDialog": null
+  },
+  "runtimeFontPrefixes": [
+    "SF Pro",
+    "Apple SD Gothic Neo",
+    "Pretendard",
+    "Apple Color Emoji",
+    "Segoe UI Emoji",
+    "Noto Color Emoji"
+  ],
+  "extraEntries": [
+    "./.design-sync/preview-runtime.tsx"
+  ],
+  "provider": {
+    "component": "DuesPreview"
+  },
+  "overrides": {
+    "AccountingAdmin": {
+      "cardMode": "single",
+      "primaryStory": "AdminScreen",
+      "viewport": "430x980"
+    },
+    "AccountingMember": {
+      "cardMode": "single",
+      "primaryStory": "MyDues",
+      "viewport": "430x900"
+    },
+    "AccountingOverview": {
+      "cardMode": "single",
+      "primaryStory": "MonthStatus",
+      "viewport": "430x980"
+    },
+    "TransactionCard": {
+      "cardMode": "column"
+    },
+    "QuickSettlement": {
+      "cardMode": "column"
+    },
+    "TransactionLedger": {
+      "cardMode": "column"
+    },
+    "ChargeVoucher": {
+      "cardMode": "column"
+    },
+    "CashLedgerView": {
+      "cardMode": "column"
+    },
+    "RefundPicker": {
+      "cardMode": "column"
+    }
+  },
+  "readmeHeader": ".design-sync/conventions.md",
+  "guidelinesGlob": [
+    "docs/ACCOUNTING_SPEC.md"
+  ]
+}

@@ -29,3 +29,11 @@ playwright-report/
 *.njsproj
 *.sln
 *.sw?
+
+# design-sync (Claude Design 동기화) — 스테이징 스크립트·빌드 산출물·머신 상태
+.ds-sync/
+ds-bundle/
+.design-sync/compiled.css
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules

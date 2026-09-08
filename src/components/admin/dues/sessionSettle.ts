@@ -242,7 +242,7 @@ export function courtPerHead(session: SessionFeeRow, flatFee: number): number | 
 export function buildSessionSettle(
 	session: SessionFeeRow,
 	charges: CourtChargeRow[],
-	memberById: Map<string, AdminMemberRow>,
+	memberById: ReadonlyMap<string, Pick<AdminMemberRow, "id" | "name" | "birthYear" | "isAdmin" | "isGuest">>,
 	flatFee: number,
 	txns: { direction: "in" | "out"; amount: number }[],
 	draftMemberIds: ReadonlySet<string> = new Set(),

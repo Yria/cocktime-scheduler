@@ -12,6 +12,8 @@ import { remaining, subjectJosa, won } from "../admin/dues/duesText";
 import AccountCopyRow from "./AccountCopyRow";
 import RefundPendingCard from "./RefundPendingCard";
 import { chargeLabel, selectUnpaid, unpaidSum } from "./myUnpaid";
+import { useAccountingMode } from "../../store/accountingV2Store";
+import { AccountingEntryAlert } from "../accounting/AccountingMember";
 
 /**
  * 회비 진입 알림 — 앱을 열었을 때 **낼 돈**(미납)이나 **돌려받을 돈**(많이 보내 남은 잔돈)이 있으면 띄운다.
@@ -30,6 +32,13 @@ import { chargeLabel, selectUnpaid, unpaidSum } from "./myUnpaid";
  * - 보드(/session) 화면에선 App 이 언마운트해 경기 운영을 가리지 않는다.
  */
 export default function UnpaidDuesAlert() {
+	const { mode, error } = useAccountingMode();
+	const member = useAuthStore(s => s.memberId);
+	if (!mode || error || !member) return null;
+	return mode.enabled ? <AccountingEntryAlert key={member} /> : <LegacyUnpaidDuesAlert />;
+}
+
+function LegacyUnpaidDuesAlert() {
 	const navigate = useNavigate();
 	const onMyDues = useLocation().pathname.startsWith("/my-dues");
 	const memberId = useAuthStore((s) => s.memberId);

@@ -111,6 +111,15 @@ export function fmtMD(iso: string): string {
 	return new Date(iso).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric", timeZone: "Asia/Seoul" });
 }
 
+/**
+ * ISO → '9/6'(KST). 목록 행의 날짜 열 전용 — ko-KR numeric('9. 6.')은 34px 열에서
+ * 두 줄로 접혔다.
+ */
+export function fmtMDSlash(iso: string): string {
+	const kst = new Date(new Date(iso).getTime() + 9 * 3600 * 1000);
+	return `${kst.getUTCMonth() + 1}/${kst.getUTCDate()}`;
+}
+
 /** ISO(timestamptz) → 'YYYY-MM' (KST). null → null. */
 export function ymOfIso(iso: string | null): string | null {
 	if (!iso) return null;
@@ -123,3 +132,13 @@ export function sessionLabel(s: { scheduledAt: string | null; placeName?: string
 	const d = s.scheduledAt ? fmtMD(s.scheduledAt) : (s.title ?? "세션");
 	return s.placeName ? `${d} ${s.placeName}` : d;
 }
+
+/**
+ * 발행 대기(초안)의 보류 사유. 서버가 넣는 값(dues_charge_drafts.hold_reason)을 사람 말로 옮긴다.
+ * 값이 늘면 여기에 추가한다 — 모르는 값은 원문을 그대로 보여 준다.
+ */
+export const holdReasonLabel: Record<string, string> = {
+	amount_out_of_range: "인당 금액이 평소 범위를 벗어남",
+	head_count_jump: "대상 인원이 지난달과 크게 다름",
+	new_members: "이미 발행된 묶음에 새 대상이 생김",
+};

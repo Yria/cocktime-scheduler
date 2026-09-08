@@ -1,5 +1,5 @@
 {
-	"name": "vite-temp",
+	"name": "cocktime-scheduler",
 	"private": true,
 	"version": "0.0.0",
 	"homepage": "https://Yria.github.io/cocktime-scheduler",
@@ -12,6 +12,7 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:board:browser": "playwright test",
+		"test:accounting:browser": "playwright test e2e/accounting.spec.ts",
 		"preview": "vite preview",
 		"deploy": "pnpm run build && gh-pages -d dist",
 		"photos": "scripts/.venv/bin/python -u scripts/fetch_photos.py",
@@ -31,6 +32,7 @@
 		"react-markdown": "^10.1.0",
 		"react-router-dom": "^7.13.0",
 		"remark-gfm": "^4.0.1",
+		"uuid": "^14.0.2",
 		"zustand": "^5.0.11"
 	},
 	"devDependencies": {

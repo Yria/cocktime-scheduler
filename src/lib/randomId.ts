@@ -1,22 +1,18 @@
+import { v4 as uuidv4 } from "uuid";
+
 /**
- * UUID 생성 — 보안 컨텍스트(HTTPS/localhost) + 최신 브라우저에서만 `crypto.randomUUID`가 존재한다.
- * HTTP 접속이나 구형 iOS Safari(15.4 미만)·일부 WebView/PWA에서는 함수 자체가 없어
- * "crypto.randomUUID is not a function" 오류가 난다. 가용하면 표준 API를, 아니면 RFC4122 v4
- * 형식을 직접 만들어 폴백한다(편집 락 식별자 등 형식 호환이 필요하므로 동일 포맷 유지).
+ * UUID(v4) 생성. `crypto.randomUUID` 를 직접 부르지 않는 이유가 있다 — 그 API 는
+ * **보안 컨텍스트(HTTPS·localhost)에서만 존재**해서, 폰에서 `http://192.168.x.x:5173`
+ * 같은 LAN 주소로 개발 서버에 붙거나 구형 iOS Safari(15.4 미만)·일부 WebView 에서는
+ * 함수 자체가 없고 "crypto.randomUUID is not a function" 으로 죽는다.
+ *
+ * `uuid` 패키지가 그 분기를 대신 처리한다: 네이티브 `crypto.randomUUID` 가 있으면 그걸
+ * 쓰고, 없으면 `crypto.getRandomValues`(비보안 컨텍스트에서도 존재)로 RFC9562 v4 를
+ * 만든다. 포맷은 동일하므로 편집 락 식별자·회계 멱등 요청 ID 처럼 서버가 uuid 타입으로
+ * 받는 값에 그대로 쓸 수 있다.
+ *
+ * 새 코드도 `crypto.randomUUID()` 대신 이 함수를 쓴다.
  */
 export function randomId(): string {
-	if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-		return crypto.randomUUID();
-	}
-	// 폴백: crypto.getRandomValues가 있으면 그것으로, 없으면 Math.random으로 v4 UUID 생성
-	const bytes = new Uint8Array(16);
-	if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
-		crypto.getRandomValues(bytes);
-	} else {
-		for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
-	}
-	bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
-	bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant
-	const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0"));
-	return `${hex[0]}${hex[1]}${hex[2]}${hex[3]}-${hex[4]}${hex[5]}-${hex[6]}${hex[7]}-${hex[8]}${hex[9]}-${hex[10]}${hex[11]}${hex[12]}${hex[13]}${hex[14]}${hex[15]}`;
+	return uuidv4();
 }
