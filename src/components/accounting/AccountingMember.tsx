@@ -1,10 +1,10 @@
 import "./accounting.css";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { memberSummary } from "../../lib/dues/v2/summary";
-import { purposeLabel } from "../../lib/dues/v2/types";
-import { fetchClubAccount, type ClubAccount } from "../../lib/supabase/dues";
-import { useAccountingData } from "../../store/accountingV2Store";
+import { memberSummary } from "../../lib/dues/summary";
+import { purposeLabel } from "../../lib/dues/types";
+import { fetchClubAccount, type ClubAccount } from "../../lib/supabase/duesSettings";
+import { useDuesData } from "../../store/duesStore";
 import { useAuthStore } from "../../store/authStore";
 import {
 	entryAlertActions,
@@ -15,7 +15,7 @@ import {
 	publicLedgerMaxYm,
 	shiftYm,
 	won,
-} from "../admin/dues/duesText";
+} from "../../lib/dues/duesText";
 import AppScreen from "../common/AppScreen";
 import ConfirmDialog from "../common/ConfirmDialog";
 import AccountCopyRow from "../dues/AccountCopyRow";
@@ -25,7 +25,7 @@ export default function AccountingMember() {
 	const navigate = useNavigate();
 	const params = useParams<{ page: string }>();
 	const member = useAuthStore((s) => s.memberId)!;
-	const { data, error, refresh } = useAccountingData();
+	const { data, error, refresh } = useDuesData();
 	const [account, setAccount] = useState<ClubAccount | null>(null);
 	const [ledgerYm, setLedgerYm] = useState(publicLedgerMaxYm());
 	useEffect(() => {
@@ -248,7 +248,7 @@ export function AccountingEntryAlert() {
 	const complete = useAuthStore(
 		(s) => s.myGender != null && s.myBirthYear != null && !!s.myResidence,
 	);
-	const { data } = useAccountingData();
+	const { data } = useDuesData();
 	const summary =
 		data && member ? memberSummary(data, member, currentYm()) : null;
 	const show = useEntryAlertSlot(

@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type {
 	AccountingCommand,
 	OperationResult,
-} from "../../lib/dues/v2/types";
+} from "../../lib/dues/types";
 import {
 	accountingError,
 	commitAccounting,
 	previewAccounting,
-} from "../../lib/supabase/accountingV2";
+} from "../../lib/supabase/dues";
 import { randomId } from "../../lib/randomId";
 
 type Prepared = {

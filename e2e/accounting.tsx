@@ -1,9 +1,9 @@
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import AccountingAdmin from "../src/components/accounting/AccountingAdmin";
-import AccountingMember from "../src/components/accounting/AccountingMember";
+import DuesAdminPage from "../src/components/admin/dues/DuesAdminPage";
+import MyDuesPage from "../src/components/dues/MyDuesPage";
 import { useAuthStore } from "../src/store/authStore";
-import { useAccountingMode } from "../src/store/accountingV2Store";
+import { useDuesMode } from "../src/store/duesStore";
 import "../src/index.css";
 
 // All non-local traffic is intercepted by accounting.spec.ts. No auth/session effects mount.
@@ -16,19 +16,14 @@ useAuthStore.setState({
 	memberLoaded: true,
 });
 export function Fixture() {
-	const { mode, error } = useAccountingMode();
+	const { mode, error } = useDuesMode();
 	if (error) return <p role="alert">{error}</p>;
 	if (!mode) return <p>Loading</p>;
-	if (!mode.enabled)
-		return (
-			<>
-				<p>기존 부과 사용 중</p>
-			</>
-		);
 	return (
 		<Routes>
-			<Route path="/dues/:ym/:page?" element={<AccountingAdmin />} />
-			<Route path="/my-dues/:page?" element={<AccountingMember />} />
+			<Route path="/" element={<p>홈</p>} />
+			<Route path="/dues/:ym/:page?" element={<DuesAdminPage />} />
+			<Route path="/my-dues/:page?" element={<MyDuesPage />} />
 		</Routes>
 	);
 }

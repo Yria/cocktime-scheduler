@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, Ellipsis, Search } from "lucide-react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Ellipsis } from "lucide-react";
 import {
 	canChooseReceiptPayer,
 	suggestedReceiptPayer,
@@ -7,35 +7,45 @@ import {
 	payableDues,
 	payableTargets,
 	type PaymentTarget,
-	quickGroups,
 	refundLines,
-} from "../../lib/dues/v2/quickSettlement";
-import { billingProgress } from "../../lib/dues/v2/overview";
-import { receiptHistory } from "../../lib/dues/v2/selection";
-import { kstMonth, memberLabel } from "../../lib/dues/v2/summary";
+} from "../../lib/dues/quickSettlement";
+import { billingProgress } from "../../lib/dues/overview";
+import { receiptHistory } from "../../lib/dues/selection";
+import { kstMonth, memberLabel } from "../../lib/dues/summary";
 import {
 	actionLabel,
 	purposeLabel,
 	type AccountingCommand,
 	type AccountingData,
-} from "../../lib/dues/v2/types";
-import { shiftYm, signed, won } from "../admin/dues/duesText";
+	type FundPurpose,
+} from "../../lib/dues/types";
+import { shiftYm, won } from "../../lib/dues/duesText";
 import MemberPicker from "./MemberPicker";
 import type { OperationDraft } from "./OperationDialog";
 import RefundPicker, { type RefundSelection } from "./RefundPicker";
 import { useInlineAccounting } from "./useInlineAccounting";
-import { amountInputProps } from "../../lib/dues/v2/amountInput";
+import {
+	SettlementHeader,
+	SettlementEditor,
+	SettlementMemo,
+} from "./SettlementForm";
+import CarrySettlementFields from "./CarrySettlementFields";
+import PositionSettlementFields from "./PositionSettlementFields";
+import SettlementConfirmation from "./SettlementConfirmation";
+import SettlementGroupPicker from "./SettlementGroupPicker";
+import PaymentSettlementFields from "./PaymentSettlementFields";
+import SettlementOptions from "./SettlementOptions";
+import SettlementTargetPicker from "./SettlementTargetPicker";
 
 export default function QuickSettlement({
 	data,
-	draft,
+	draft: baseDraft,
 	bankId,
 	onDone,
 	onClose,
 	disabled,
 	onPendingChange,
 	origin = "정산함",
-	receipt = false,
 	history,
 	onAction,
 }: {
@@ -48,12 +58,21 @@ export default function QuickSettlement({
 	onPendingChange: (pending: boolean) => void;
 	/** 감사 로그의 처리 위치. 회계 탭에서 한 처리가 '정산함'으로 남던 것을 구분한다. */
 	origin?: string;
-	/** Shared receipt presentation for settlement inbox and ledger detail. */
-	receipt?: boolean;
 	/** Previously saved allocations/refunds, with their existing reversal actions. */
 	history?: ReactNode;
 	onAction?: (draft: OperationDraft) => void;
 }) {
+	// Secondary editors share the receipt so closing them preserves its payer and payment selection.
+	const [receiptAction, setReceiptAction] = useState<
+		"carry" | "position" | "refund" | null
+	>(null);
+	const draft = receiptAction
+		? { ...baseDraft, type: receiptAction }
+		: baseDraft;
+	const receiptEditor = !["pay", "expense"].includes(draft.type);
+	const optionsId = useId();
+	const payerPickerId = useId();
+	const optionsButton = useRef<HTMLButtonElement>(null);
 	const tx = data.bank.find((t) => t.id === bankId)!;
 	const source = data.positions.find((p) => p.id === draft.positionId);
 	const choosePayer =
@@ -76,11 +95,18 @@ export default function QuickSettlement({
 	const [payerPickerOpen, setPayerPickerOpen] = useState(!initialMember);
 	const payerButton = useRef<HTMLButtonElement>(null);
 	const [optionsOpen, setOptionsOpen] = useState(false);
-	const [selectedDebts, setDebts] = useState<Record<string, string>>(() =>
-		draft.type === "pay" && choosePayer && !ambiguousPayer
-			? suggestedReceiptDue(data, bankId, initialMember)
-			: {},
+	const [selectedPayments, setPayments] = useState<Record<string, string>>(
+		() =>
+			draft.type === "pay" && choosePayer && !ambiguousPayer
+				? suggestedReceiptDue(data, bankId, initialMember)
+				: {},
 	);
+	const [selectedCarryDebts, setCarryDebts] = useState<Record<string, string>>(
+		{},
+	);
+	const selectedDebts =
+		draft.type === "carry" ? selectedCarryDebts : selectedPayments;
+	const setDebts = draft.type === "carry" ? setCarryDebts : setPayments;
 	const [money, setMoney] = useState<Record<string, string>>({});
 	// 이월 기본 월은 이 입금이 속한 달의 다음 달 — 지난달을 보정할 때 오늘 기준 다음 달로 튀지 않는다.
 	const [ym, setYm] = useState(shiftYm(kstMonth(tx.occurred_at), 1));
@@ -88,7 +114,7 @@ export default function QuickSettlement({
 	const [amount, setAmount] = useState(String(source?.amount ?? ""));
 	// 현재 용도를 반영한다 — 항상 member_pending 이면 이월/직접수입 잔액에서도
 	// '회원 잔액'이 눌린 것처럼 보여 현재 상태를 오표기했다. 미귀속만 제안값을 쓴다.
-	const [purpose, setPurpose] = useState<string>(
+	const [purpose, setPurpose] = useState<FundPurpose>(
 		source && source.purpose !== "unassigned"
 			? source.purpose
 			: "member_pending",
@@ -99,8 +125,6 @@ export default function QuickSettlement({
 		draft.type === "expense" ? savedGroup || null : null,
 	);
 	const unchangedExpense = draft.type === "expense" && group === savedGroup;
-	const [groupQuery, setGroupQuery] = useState("");
-	const [groupLimit, setGroupLimit] = useState(6);
 	const [memo, setMemo] = useState("");
 	const [refund, setRefund] = useState<RefundSelection>({
 		memberId: "",
@@ -122,6 +146,9 @@ export default function QuickSettlement({
 			dues.some((d) => d.id === id),
 		),
 	);
+	const needsMonthChange = dues.some(
+		(d) => Number(debts[d.id]) > 0 && ym <= d.due_ym,
+	);
 	const targetName = (d: PaymentTarget) =>
 		d.prepayment?.label ?? groupName(d.charge_id);
 	const memberMoney = data.positions.filter(
@@ -134,17 +161,10 @@ export default function QuickSettlement({
 		data.groups.find(
 			(g) => g.id === data.charges.find((c) => c.id === id)?.group_id,
 		)?.label ?? "부과";
-	const groups = quickGroups(data, kstMonth(tx.occurred_at), groupQuery);
-	const visibleGroups = groups.slice(0, groupLimit);
-	const selectedGroup = data.groups.find((g) => g.id === group);
-	if (selectedGroup && !visibleGroups.some((g) => g.id === selectedGroup.id))
-		visibleGroups.unshift(selectedGroup);
 	const selectedTotal = Object.values(debts).reduce(
 		(sum, n) => sum + Number(n || 0),
 		0,
 	);
-	// 아직 어느 미납에도 얹지 않은 입금 잔액. '전부 사용' 버튼과 잔액 표기가 함께 쓴다.
-	const restAfterSelected = Math.max(0, (source?.amount ?? 0) - selectedTotal);
 	const title =
 		draft.type === "pay"
 			? "납부"
@@ -236,7 +256,12 @@ export default function QuickSettlement({
 				change_month: changeMonth,
 				confirm_owner: !!source && !source.owner_id,
 			};
-			summary = `${ym}로 미납 ${won(selectedTotal)} · 입금 ${won(ms.reduce((s, l) => s + l.amount, 0))} 이월`;
+			summary = `${ym}로 ${[
+				ds.length ? `미납 ${won(selectedTotal)}` : "",
+				ms.length ? `입금 ${won(ms.reduce((s, l) => s + l.amount, 0))}` : "",
+			]
+				.filter(Boolean)
+				.join(" · ")} 이월`;
 		} else if (draft.type === "position") {
 			if (!source) throw new Error("입금 잔액을 다시 확인하세요");
 			if (!owner && ["member_pending", "refund_pending"].includes(purpose))
@@ -259,7 +284,7 @@ export default function QuickSettlement({
 				owner_id: owner || null,
 				group_id: group || null,
 			};
-			summary = `${won(Number(amount))} · ${purpose === "club" ? data.groups.find((g) => g.id === group)?.label : memberLabel(data, owner || null)}`;
+			summary = `${purposeLabel[purpose]} ${won(Number(amount))} · ${purpose === "club" ? data.groups.find((g) => g.id === group)?.label : memberLabel(data, owner || null)}`;
 		} else if (draft.type === "expense") {
 			if (group === null) throw new Error("지출 항목을 선택하세요");
 			if (unchangedExpense)
@@ -316,13 +341,28 @@ export default function QuickSettlement({
 	}, [flow.locked, onPendingChange]);
 	const changeMember = (id: string) => {
 		setMember(id);
-		if (receipt && id) {
+		if (id) {
 			setPayerPickerOpen(false);
 			payerButton.current?.focus();
 		}
-		setDebts({});
+		setPayments({});
+		setCarryDebts({});
 		setMoney({});
 	};
+	const openReceiptEditor = (type: "carry" | "position" | "refund") => {
+		setReceiptAction(type);
+		setOptionsOpen(false);
+	};
+	const closeReceiptEditor = () => {
+		if (receiptAction) {
+			setReceiptAction(null);
+			setOptionsOpen(false);
+			optionsButton.current?.focus();
+		} else {
+			onClose(false);
+		}
+	};
+	const memoField = <SettlementMemo value={memo} onChange={setMemo} />;
 	const receiptMonth = kstMonth(tx.occurred_at);
 	const monthlyProgress = billingProgress(
 		data,
@@ -351,176 +391,30 @@ export default function QuickSettlement({
 		return `${Number(receiptMonth.slice(5))}월 회비 ${!rows.length ? "부과 없음" : remaining ? `${won(remaining)} 미납` : "완납"}`;
 	};
 	const groupPicker = (
-		<div className="ac-quick-groups">
-			{(!receipt || optionsOpen) && (
-				<div className="ac-search">
-					<Search size={15} aria-hidden="true" />
-					<input
-						aria-label="회계 항목 검색"
-						name="group-search"
-						autoComplete="off"
-						placeholder="항목·장소 검색…"
-						value={groupQuery}
-						onChange={(e) => {
-							setGroupQuery(e.target.value);
-							setGroupLimit(6);
-						}}
-					/>
-				</div>
-			)}
-			<div className="ac-choice-chips" role="group" aria-label="회계 항목 선택">
-				{visibleGroups.map((g) => (
-					<button
-						type="button"
-						key={g.id}
-						className="ac-chip"
-						aria-pressed={group === g.id}
-						onClick={() => setGroup(g.id)}
-					>
-						{g.label}
-						{group === g.id && <Check size={14} aria-hidden="true" />}
-					</button>
-				))}
-				{draft.type === "expense" && savedGroup && (
-					<button
-						type="button"
-						className="ac-chip"
-						aria-pressed={group === ""}
-						onClick={() => setGroup("")}
-					>
-						미분류로 변경
-					</button>
-				)}
-			</div>
-			{groups.length > groupLimit && (
-				<button
-					type="button"
-					className="ac-link"
-					onClick={() => setGroupLimit(groupLimit + 12)}
-				>
-					항목 더 보기 ({groups.length - groupLimit})
-				</button>
-			)}
-		</div>
+		<SettlementGroupPicker
+			data={data}
+			month={kstMonth(tx.occurred_at)}
+			value={group}
+			onChange={setGroup}
+			searchable={optionsOpen || receiptEditor}
+			allowUnclassified={draft.type === "expense" && !!savedGroup}
+		/>
 	);
 	const duePicker = (
-		<div
-			className={`ac-quick-dues${receipt && !optionsOpen ? " ac-receipt-dues" : ""}`}
-			role="group"
-			aria-label={
-				draft.type === "carry" ? "이월할 미납 선택" : "납부할 항목 선택"
-			}
-		>
-			{dues.map((d) => (
-				<div
-					key={d.id}
-					className={`ac-quick-due ${debts[d.id] ? "is-selected" : ""}`}
-				>
-					<button
-						type="button"
-						className="ac-chip"
-						aria-pressed={!!debts[d.id]}
-						aria-label={
-							receipt
-								? `${targetName(d)}${d.prepayment ? " · 선납" : ""} · ${d.due_ym} 납기 · ${won(debts[d.id] ? Number(debts[d.id]) : d.remaining)}`
-								: undefined
-						}
-						disabled={
-							draft.type === "pay" &&
-							!debts[d.id] &&
-							selectedTotal >= (source?.amount ?? 0)
-						}
-						onClick={() =>
-							setDebts((before) => ({
-								...before,
-								[d.id]: before[d.id]
-									? ""
-									: String(
-											draft.type === "pay"
-												? Math.min(
-														d.remaining,
-														Math.max(0, (source?.amount ?? 0) - selectedTotal),
-													)
-												: d.remaining,
-										),
-							}))
-						}
-					>
-						<span>
-							{targetName(d)}
-							{(d.prepayment || !receipt || optionsOpen) && (
-								<small>
-									{d.prepayment
-										? `예정 대관 · 선납${Number(debts[d.id] || 0) > 0 && Number(debts[d.id]) < d.remaining ? ` · ${won(d.remaining)} 중 일부 납부` : ""}`
-										: `${Number(d.due_ym.slice(5))}월 납기 · ${won(d.remaining)} 남음`}
-								</small>
-							)}
-						</span>
-						{receipt && !optionsOpen ? (
-							<span className="ac-number">
-								{won(debts[d.id] ? Number(debts[d.id]) : d.remaining)}
-							</span>
-						) : (
-							!!debts[d.id] && <Check size={14} aria-hidden="true" />
-						)}
-					</button>
-					{(!receipt || optionsOpen) &&
-						draft.type === "pay" &&
-						!debts[d.id] &&
-						selectedTotal >= (source?.amount ?? 0) && (
-							<span className="ac-quick-amount">입금 잔액 없음</span>
-						)}
-					{(!receipt || optionsOpen) &&
-						debts[d.id] !== undefined &&
-						debts[d.id] !== "" && (
-							<label className="ac-quick-amount">
-								<input
-									type="number"
-									aria-label={`${targetName(d)} 선택 금액`}
-									min="1"
-									max={d.remaining}
-									value={debts[d.id]}
-									{...amountInputProps}
-									onChange={(e) =>
-										setDebts({ ...debts, [d.id]: e.target.value })
-									}
-								/>
-								원
-							</label>
-						)}
-					{/* 칩 자동값은 min(잔액, 남은 미납)이라 부분납에서 대개 재입력이 필요했다.
-					    남은 입금 잔액을 한 번에 얹는 버튼으로 재입력 4~6키를 없앤다. */}
-					{(!receipt || optionsOpen) &&
-						draft.type === "pay" &&
-						!!debts[d.id] &&
-						Number(debts[d.id]) < d.remaining &&
-						restAfterSelected > 0 && (
-							<button
-								type="button"
-								className="ac-chip"
-								aria-label={`남은 잔액 ${won(restAfterSelected)} 전부 사용`}
-								onClick={() =>
-									setDebts((before) => ({
-										...before,
-										[d.id]: String(
-											Math.min(
-												d.remaining,
-												Number(before[d.id] || 0) + restAfterSelected,
-											),
-										),
-									}))
-								}
-							>
-								+{won(restAfterSelected)}
-							</button>
-						)}
-				</div>
-			))}
-		</div>
+		<SettlementTargetPicker
+			targets={dues}
+			selected={debts}
+			onChange={setDebts}
+			mode={draft.type === "carry" ? "carry" : "pay"}
+			available={source?.amount ?? 0}
+			detailed={optionsOpen}
+			targetName={targetName}
+		/>
 	);
+
 	return (
 		<div
-			className={`ac-quick${receipt ? " ac-receipt-form" : ""}`}
+			className="ac-quick ac-receipt-form"
 			role="region"
 			aria-label={`${title} 정산`}
 		>
@@ -528,87 +422,86 @@ export default function QuickSettlement({
 				disabled={disabled || flow.locked || flow.busy || data.mode.paused}
 				className="ac-quick-fields"
 			>
-				{receipt && (
-					<header className="ac-receipt-heading">
-						<div className="ac-receipt-meta">
-							<time dateTime={tx.occurred_at}>
-								{new Date(tx.occurred_at).toLocaleString("ko-KR", {
-									timeZone: "Asia/Seoul",
-									month: "numeric",
-									day: "numeric",
-									hour: "2-digit",
-									minute: "2-digit",
-									hour12: false,
-								})}
-							</time>
-							<button
-								type="button"
-								className="ac-link ac-receipt-options-toggle"
-								aria-label="정산 옵션"
-								aria-expanded={optionsOpen}
-								onClick={() => setOptionsOpen(!optionsOpen)}
-							>
-								<Ellipsis size={18} aria-hidden="true" />
-							</button>
-						</div>
-						<div className="ac-receipt-identity">
-							<div className="ac-receipt-payer">
-								<strong
-									className={!payer && draft.type === "pay" ? "ac-out" : ""}
-								>
-									{draft.type === "expense"
-										? tx.name || "출금"
-										: payer?.name || "회원 미지정"}
-								</strong>
-								{draft.type === "pay" && (choosePayer || !source?.owner_id) && (
-									<button
-										type="button"
-										className="ac-receipt-change"
-										ref={payerButton}
-										aria-label={owner ? "납부자 변경" : "납부자 선택"}
-										aria-expanded={payerPickerOpen}
-										onClick={() => setPayerPickerOpen(!payerPickerOpen)}
-									>
-										{owner ? "변경" : "회원 선택"}
-									</button>
-								)}
-							</div>
-							<strong
-								className={`ac-number ac-receipt-amount ${tx.direction === "in" ? "ac-in" : "ac-out"}`}
-							>
-								{tx.direction === "in" ? won(tx.amount) : signed(-tx.amount)}
-							</strong>
-						</div>
-						<p className="ac-receipt-hint">
-							{draft.type === "expense"
-								? "지출할 항목을 선택하세요"
+				<SettlementHeader
+					transaction={tx}
+					name={
+						tx.direction === "out" || draft.type === "simple"
+							? tx.name || (tx.direction === "out" ? "출금" : "입금")
+							: payer?.name || "회원 미지정"
+					}
+					balance={source?.amount}
+					hint={
+						draft.type === "simple"
+							? title
+							: tx.direction === "out"
+								? draft.type === "refund"
+									? "환불할 원입금을 연결하세요"
+									: "지출할 항목을 선택하세요"
 								: !owner
 									? ambiguousPayer
 										? "동명이인이 있습니다. 실제 입금자를 선택해 주세요."
 										: `입금자명 ${tx.name || "없음"} · 회원을 선택하세요`
-									: `${memberLabel(data, owner) !== payer?.name ? `${memberLabel(data, owner)} · ` : ""}입금자명 ${tx.name || "없음"}${payerChanged ? " · 납부자 변경 예정" : ""}`}
-						</p>
-						{source && source.amount !== tx.amount && (
-							<p className="ac-caption">정산할 잔액 {won(source.amount)}</p>
-						)}
-					</header>
+									: `${memberLabel(data, owner) !== payer?.name ? `${memberLabel(data, owner)} · ` : ""}입금자명 ${tx.name || "없음"}${payerChanged ? " · 납부자 변경 예정" : ""}`
+					}
+					options={
+						<button
+							type="button"
+							className="ac-link ac-receipt-options-toggle"
+							aria-label="정산 옵션"
+							ref={optionsButton}
+							aria-expanded={optionsOpen}
+							aria-controls={optionsOpen ? optionsId : undefined}
+							onClick={() => setOptionsOpen(!optionsOpen)}
+						>
+							<Ellipsis size={18} aria-hidden="true" />
+						</button>
+					}
+					payerAction={
+						["pay", "carry", "position"].includes(draft.type) &&
+						(choosePayer || !source?.owner_id) && (
+							<button
+								type="button"
+								className="ac-receipt-change"
+								ref={payerButton}
+								aria-label={owner ? "납부자 변경" : "납부자 선택"}
+								aria-expanded={payerPickerOpen}
+								aria-controls={payerPickerOpen ? payerPickerId : undefined}
+								onClick={() => setPayerPickerOpen(!payerPickerOpen)}
+							>
+								{owner ? "변경" : "회원 선택"}
+							</button>
+						)
+					}
+				/>
+				{optionsOpen && (
+					<SettlementOptions
+						id={optionsId}
+						data={data}
+						bankId={bankId}
+						draft={draft}
+						savedExpense={!!savedGroup}
+						history={history}
+						onAction={(next) => {
+							if (next.type === "refund") openReceiptEditor("refund");
+							else if (
+								next.positionId === source?.id &&
+								(next.type === "carry" || next.type === "position")
+							)
+								openReceiptEditor(next.type);
+							else onAction?.(next);
+						}}
+					/>
 				)}
-				{(!receipt || payerPickerOpen) &&
+				{payerPickerOpen &&
 					!["refund", "expense", "simple"].includes(draft.type) &&
-					(source?.owner_id && !choosePayer ? (
-						<p className="ac-quick-owner">
-							납부자 <strong>{memberLabel(data, source.owner_id)}</strong>
-						</p>
-					) : (
-						<div className={receipt ? "ac-receipt-picker" : undefined}>
-							{!receipt && ambiguousPayer && !member && (
-								<p className="ac-caption">
-									동명이인이 있습니다. 실제 입금자를 선택해 주세요.
-								</p>
-							)}
+					(!source?.owner_id || choosePayer) && (
+						<div
+							id={payerPickerId}
+							className="ac-receipt-picker ac-settlement-member-search"
+						>
 							<MemberPicker
 								compact
-								receipt={receipt}
+								receipt
 								data={data}
 								value={member}
 								onChange={changeMember}
@@ -617,372 +510,80 @@ export default function QuickSettlement({
 									draft.type === "pay" ? feeStatus : undefined
 								}
 							/>
-							{!receipt && payerChanged && (
-								<p className="ac-caption">{payerChangeSummary}</p>
-							)}
 						</div>
-					))}
+					)}
 				{draft.type === "pay" && owner && (
-					<div className="ac-payment-targets">
-						<div className="ac-allocation-summary" aria-label="입금 배분 요약">
-							<div className="ac-allocation-meter" aria-hidden="true">
-								{Object.entries(debts)
-									.filter(([, n]) => Number(n) > 0)
-									.map(([id, n]) => (
-										<span
-											key={id}
-											style={{
-												width: `${Math.min(100, (Number(n) / (source?.amount || 1)) * 100)}%`,
-											}}
-										/>
-									))}
-							</div>
-							<p>
-								<span>
-									{selectedTotal > (source?.amount ?? 0)
-										? "! 입금 잔액 초과"
-										: restAfterSelected > 0
-											? `입금 잔액 ${won(restAfterSelected)}${selectedTotal ? " 보관" : ""}`
-											: "✓ 남는 돈 없음"}
-								</span>
-								<strong className="ac-number">
-									{won(selectedTotal)}
-									{!receipt && " 선택"}
-								</strong>
-							</p>
-						</div>
-						{!receipt && <span className="ac-label">납부할 항목</span>}
+					<PaymentSettlementFields
+						available={source?.amount ?? 0}
+						selected={debts}
+					>
 						{duePicker}
-					</div>
+					</PaymentSettlementFields>
 				)}
-				{draft.type === "carry" && (
-					<>
-						<label className="ac-quick-month">
-							이월할 월
-							<input
-								type="month"
-								value={ym}
-								onChange={(e) => setYm(e.target.value)}
+				{receiptEditor && (
+					<SettlementEditor
+						title={draft.type === "refund" ? "환불 연결" : title}
+						onClose={closeReceiptEditor}
+					>
+						{draft.type === "carry" && (
+							<CarrySettlementFields
+								month={ym}
+								onMonth={setYm}
+								owner={owner}
+								dues={dues.length ? duePicker : null}
+								positions={memberMoney}
+								bankId={bankId}
+								money={money}
+								onMoney={setMoney}
+								needsMonthChange={needsMonthChange}
+								changeMonth={changeMonth}
+								onChangeMonth={setChangeMonth}
 							/>
-						</label>
-						{owner && (
-							<>
-								<h4>아직 안 낸 돈</h4>
-								{duePicker}
-								<h4>이미 낸 돈</h4>
-								{memberMoney.map((p) => (
-									<div key={p.id} className="ac-quick-due">
-										<button
-											type="button"
-											className="ac-chip"
-											aria-pressed={!!money[p.id]}
-											onClick={() =>
-												setMoney({
-													...money,
-													[p.id]: money[p.id] ? "" : String(p.amount),
-												})
-											}
-										>
-											{p.bank_tx_id === bankId
-												? "이 입금"
-												: `입금 #${p.bank_tx_id}`}{" "}
-											· {won(p.amount)}
-										</button>
-										{money[p.id] && (
-											<label className="ac-quick-amount">
-												<input
-													aria-label={`입금 ${p.bank_tx_id} 이월 금액`}
-													type="number"
-													min="1"
-													max={p.amount}
-													value={money[p.id]}
-													onChange={(e) =>
-														setMoney({ ...money, [p.id]: e.target.value })
-													}
-												/>
-												원
-											</label>
-										)}
-									</div>
-								))}
-								{!memberMoney.length && (
-									<p className="ac-caption">이월할 입금 잔액이 없습니다.</p>
-								)}
-							</>
 						)}
-						<div className="ac-quick-options">
-							{receipt && history}
-							<label className="ac-check">
-								<input
-									type="checkbox"
-									checked={changeMonth}
-									onChange={(e) => setChangeMonth(e.target.checked)}
-								/>
-								기존 납기를 앞당기거나 이월 월을 변경함
-							</label>
-						</div>
-					</>
-				)}
-				{draft.type === "position" && (
-					<>
-						<div
-							className="ac-choice-chips"
-							role="group"
-							aria-label="입금 용도 선택"
-						>
-							{[
-								["member_pending", "회원 잔액"],
-								["refund_pending", "환불 대기"],
-								["club", "직접 수입"],
-								["unassigned", "미귀속"],
-							].map(([id, label]) => (
-								<button
-									key={id}
-									type="button"
-									className="ac-chip"
-									aria-pressed={purpose === id}
-									onClick={() => setPurpose(id)}
-								>
-									{label}
-								</button>
-							))}
-						</div>
-						{purpose === "club" && groupPicker}
-						<label className="ac-quick-amount">
-							변경할 금액
-							<input
-								type="number"
-								value={amount}
-								min="1"
+						{draft.type === "position" && (
+							<PositionSettlementFields
+								purpose={purpose}
+								onPurpose={setPurpose}
+								amount={amount}
+								onAmount={setAmount}
 								max={source?.amount}
-								onChange={(e) => setAmount(e.target.value)}
+								groups={groupPicker}
 							/>
-							원
-						</label>
-					</>
+						)}
+						{draft.type === "refund" && (
+							<RefundPicker
+								data={data}
+								outTxId={bankId}
+								value={refund}
+								onChange={setRefund}
+								receipt
+							/>
+						)}
+						{memoField}
+					</SettlementEditor>
 				)}
 				{draft.type === "expense" && groupPicker}
-				{draft.type === "refund" && (
-					<RefundPicker
-						data={data}
-						outTxId={bankId}
-						value={refund}
-						onChange={setRefund}
-						compact
-					/>
-				)}
-				{(!receipt || optionsOpen) && (
-					<div className="ac-quick-options">
-						{receipt && history}
-						{receipt && (
-							<div
-								className="ac-choice-chips"
-								role="group"
-								aria-label="다른 정산 방법"
-							>
-								{source && (
-									<>
-										<button
-											type="button"
-											className="ac-chip"
-											onClick={() =>
-												onAction?.({
-													type: "carry",
-													positionId: source.id,
-													memberId: owner || undefined,
-												})
-											}
-										>
-											이월
-										</button>
-										<button
-											type="button"
-											className="ac-chip"
-											onClick={() =>
-												onAction?.({ type: "position", positionId: source.id })
-											}
-										>
-											용도 지정
-										</button>
-									</>
-								)}
-								{draft.type === "expense" && !savedGroup && (
-									<button
-										type="button"
-										className="ac-chip"
-										onClick={() =>
-											onAction?.({ type: "refund", outTxId: bankId })
-										}
-									>
-										환불 연결
-									</button>
-								)}
-							</div>
-						)}
-						{receipt &&
-							source &&
-							data.positions.some(
-								(p) =>
-									p.bank_tx_id === bankId && p.id !== source.id && p.amount > 0,
-							) && (
-								<div
-									className="ac-choice-chips"
-									role="group"
-									aria-label="이 입금의 다른 잔액"
-								>
-									{data.positions
-										.filter(
-											(p) =>
-												p.bank_tx_id === bankId &&
-												p.id !== source.id &&
-												p.amount > 0,
-										)
-										.map((p) => (
-											<button
-												key={p.id}
-												type="button"
-												className="ac-chip"
-												onClick={() =>
-													onAction?.({
-														type: [
-															"unassigned",
-															"member_pending",
-															"carry",
-														].includes(p.purpose)
-															? "pay"
-															: "position",
-														positionId: p.id,
-													})
-												}
-											>
-												{purposeLabel[p.purpose]} ·{" "}
-												{p.owner_id
-													? `${memberLabel(data, p.owner_id)} · `
-													: ""}
-												{won(p.amount)}
-											</button>
-										))}
-								</div>
-							)}
-						<label className="ac-inline-memo">
-							<span>메모</span>
-							<input
-								className="ac-input"
-								aria-label="처리 사유"
-								name="settlement-memo"
-								autoComplete="off"
-								value={memo}
-								onChange={(e) => setMemo(e.target.value)}
-								placeholder="필요한 경우 입력…"
-							/>
-						</label>
-					</div>
+				{optionsOpen && !receiptEditor && (
+					<div className="ac-quick-options">{memoField}</div>
 				)}
 			</fieldset>
 			{/* 확정 블록 — 검증 문구가 버튼 바로 위에 붙는다. '왜 못 누르는지'와 '누르면
 			    무엇이 일어나는지'를 손가락 위치에서 읽는다. hint 에 role="alert" 를 주지
 			    않는다(화면의 alert 는 서버 오류 하나로 유지한다). */}
-			{(!receipt || draft.type !== "pay" || owner || flow.locked) && (
-				<div className="ac-quick-confirm">
-					{hint ? (
-						<p className="ac-blockers" aria-live="assertive">
-							<span aria-hidden="true">!</span>
-							<span>
-								{hint}
-								{flow.preparing && " · 확인 중…"}
-							</span>
-						</p>
-					) : !receipt ? (
-						<p className="ac-quick-summary" aria-live="polite">
-							<span aria-hidden="true">✓</span>
-							<span>
-								{summary}
-								{flow.preparing && " · 확인 중…"}
-							</span>
-						</p>
-					) : null}
-					{flow.result && draft.type === "carry" && (
-						<p className="ac-caption">
-							이월 후 바로 납부에 사용 {won(flow.result.auto_applied)}
-						</p>
-					)}
-					{/* 잠긴 이유를 확정 블록 안에 적는다 — 스크롤로 카드가 화면 밖이면
-				    화면이 이유 없이 굳은 것처럼 보였다. */}
-					{data.mode.paused && (
-						<p className="ac-caption">
-							회계 처리가 일시 중지되어 확정할 수 없습니다.
-						</p>
-					)}
-					{flow.error && !flow.locked && (
-						<button
-							type="button"
-							className="ac-link"
-							onClick={() => void flow.refreshPreview()}
-						>
-							내역 새로고침
-						</button>
-					)}
-					{flow.error && (
-						<p className="ac-quick-error" role="alert">
-							{flow.error}
-						</p>
-					)}
-					<div className="ac-quick-confirm-buttons">
-						{(!unchangedExpense || flow.locked) && (
-							<button
-								type="button"
-								className="ac-inline-confirm"
-								aria-label={
-									flow.busy
-										? "처리 중…"
-										: flow.locked
-											? "결과 다시 확인"
-											: draft.type === "expense" && savedGroup
-												? "변경 저장"
-												: `${title} 확인`
-								}
-								disabled={
-									(!flow.locked && disabled) ||
-									!flow.ready ||
-									flow.busy ||
-									data.mode.paused
-								}
-								onClick={() =>
-									void flow.confirm().then((done) => {
-										if (done) onClose(true, summary || `${title} 확인`);
-									})
-								}
-							>
-								{flow.busy
-									? "처리 중…"
-									: flow.locked
-										? "결과 다시 확인"
-										: draft.type === "expense" && savedGroup
-											? "변경 저장"
-											: receipt
-												? "확인"
-												: `${title} 확인`}
-								{!receipt &&
-									draft.type === "pay" &&
-									selectedTotal > 0 &&
-									!flow.busy &&
-									!flow.locked &&
-									` · ${won(selectedTotal)}`}
-							</button>
-						)}
-						{/* 잘못 연 편집기를 접는 경로. 전에는 성공 외에 닫는 방법이 없어
-					    새로고침이 유일한 탈출구였다. */}
-						{!receipt && !flow.locked && !flow.busy && (
-							<button
-								type="button"
-								className="ac-inline-cancel"
-								onClick={() => onClose(false)}
-							>
-								취소
-							</button>
-						)}
-					</div>
-				</div>
+			{(draft.type !== "pay" || owner || flow.locked) && (
+				<SettlementConfirmation
+					flow={flow}
+					paused={data.mode.paused}
+					disabled={disabled}
+					hint={hint}
+					summary={summary}
+					title={title}
+					operation={draft.type}
+					showSummary={receiptEditor}
+					unchangedExpense={unchangedExpense}
+					savedExpense={!!savedGroup}
+					onClose={onClose}
+				/>
 			)}
 		</div>
 	);

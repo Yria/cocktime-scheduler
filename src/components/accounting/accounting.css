@@ -502,7 +502,8 @@
 	font-weight: 600;
 	text-align: left;
 }
-.ac-chip[aria-pressed="true"] {
+.ac-chip[aria-pressed="true"],
+.ac-chip:has(> input:checked) {
 	background: var(--ac-sel-bg);
 	border-color: var(--ac-sel-bg);
 	color: var(--ac-sel-fg);
@@ -516,9 +517,65 @@
 	border-color: var(--ac-act-line);
 	background: var(--ac-act-soft);
 }
-.ac-chip:disabled {
+.ac-chip:disabled,
+.ac-chip:has(> input:disabled) {
 	background: var(--ac-fill);
 	border-color: transparent;
+}
+.ac-chip.ac-settlement-choice {
+	position: relative;
+	justify-content: flex-start;
+	min-width: 0;
+	min-height: var(--ac-receipt-control-height, 36px);
+	gap: 5px;
+	padding: 4px 9px;
+	border-radius: 9px;
+	font-size: var(--ac-receipt-control-font, 12.5px);
+	font-weight: 650;
+	cursor: pointer;
+}
+.ac-chip.ac-settlement-choice > input {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	margin: 0;
+	opacity: 0;
+	cursor: inherit;
+}
+.ac-chip.ac-settlement-choice:has(> input:focus-visible) {
+	outline: 2px solid var(--ac-act);
+	outline-offset: 2px;
+}
+.ac-chip.ac-settlement-choice:has(> input:disabled) {
+	opacity: .55;
+	cursor: not-allowed;
+}
+.ac-chip.ac-settlement-choice > .ac-settlement-choice-copy {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	overflow-wrap: anywhere;
+	word-break: normal;
+}
+.ac-chip.ac-settlement-choice small {
+	font-size: var(--ac-fs-meta);
+	font-weight: 400;
+	color: inherit;
+	white-space: pre-line;
+}
+.ac-choice-chips > .ac-settlement-choice {
+	flex: 0 1 auto;
+	max-width: 100%;
+}
+.ac-chip.ac-settlement-choice > .ac-number,
+.ac-chip.ac-settlement-choice > svg {
+	flex-shrink: 0;
+	white-space: nowrap;
+}
+.ac-chip.ac-settlement-choice > .ac-number {
+	font-size: var(--ac-fs-meta);
 }
 /* 3지 세그먼트(처리 방식) — 한 트랙 안에서 고른다 */
 .ac-segment {
@@ -1470,72 +1527,18 @@
 	flex-direction: column;
 	gap: var(--ac-s-1);
 }
-.ac-receipt {
-	display: grid;
-	grid-template-columns: auto minmax(0, 1fr);
-	align-items: center;
-	gap: var(--ac-s-2);
-	border: 1px solid var(--ac-rule);
-	border-radius: var(--ac-r-chip);
-	padding: var(--ac-s-2) var(--ac-s-3);
-	min-height: 44px;
-	cursor: pointer;
-}
-.ac-receipt.is-selected {
-	border-color: var(--ac-act);
-	background: var(--ac-act-soft);
-}
-.ac-receipt.is-unavailable {
-	background: var(--ac-fill);
-	cursor: default;
-}
-.ac-receipt-content {
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-	min-width: 0;
-}
-.ac-receipt-top {
-	display: flex;
-	align-items: baseline;
-	justify-content: space-between;
-	gap: var(--ac-s-2);
-}
-.ac-receipt-top strong {
-	font-size: var(--ac-fs-name);
-	font-weight: 650;
-	overflow-wrap: break-word;
-}
-.ac-receipt.is-unavailable .ac-receipt-top strong {
-	color: var(--ac-ink-2);
-}
-.ac-receipt-id {
-	color: var(--ac-ink-3);
-}
-.ac-receipt-deductions {
-	font-size: var(--ac-fs-body);
-	color: var(--ac-ink-2);
-	border-top: 1px solid var(--ac-rule);
-	padding-top: 4px;
-	margin-top: 2px;
-}
 .ac-unknown-receipts > p,
 .ac-unknown-receipts > label {
 	margin-block: var(--ac-s-2);
 }
-.ac-unknown-receipts .ac-receipts,
-.ac-insufficient-receipts > .ac-receipts {
+.ac-unknown-receipts .ac-choice-chips {
 	margin-top: var(--ac-s-2);
 }
-.ac-insufficient-receipts > p {
-	margin-top: var(--ac-s-2);
-}
-.ac-owner-confirm {
-	padding: var(--ac-s-3);
-	background: var(--ac-ask-soft);
-	border-radius: var(--ac-r-field);
-	color: var(--ac-ask);
-	font-size: var(--ac-fs-body);
+.ac-refund-selection {
+	display: grid;
+	gap: var(--ac-s-2);
+	padding-top: var(--ac-s-2);
+	border-top: 1px solid var(--ac-rule);
 }
 
 /* ── 10. 부과 탭(전표) ────────────────────────────────────────────────── */

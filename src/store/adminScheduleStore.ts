@@ -3,7 +3,6 @@ import {
 	type OccurrencePatch,
 	type OneOffInput,
 	type RecurringRuleInput,
-	cancelOccurrence,
 	createOneOffOccurrence,
 	createRecurringRule,
 	deleteRecurringRule,
@@ -58,21 +57,6 @@ async function reloadOccurrences() {
 async function reloadRules() {
 	const rules = await fetchRecurringRules();
 	useAdminScheduleStore.setState({ rules });
-}
-
-/** 재설정 결과를 한 줄로 — 무엇이 지워지고 무엇이 새로 났는지 숨기지 않는다. */
-function courtResetToast(res: {
-	freed: number;
-	removed: number;
-	issued: number;
-	held: number;
-}): string {
-	const parts: string[] = [];
-	if (res.removed > 0) parts.push(`부과 ${res.removed}건 정리`);
-	if (res.issued > 0) parts.push(`${res.issued}명에게 재발행`);
-	if (res.held > 0) parts.push(`${res.held}명은 발행 대기 (금액 확인 필요)`);
-	if (res.freed > 0) parts.push(`입금 ${res.freed}건이 정산함으로 — 다시 확인해주세요`);
-	return parts.length > 0 ? parts.join(" · ") : "총액을 저장했어요 (정리할 부과 없음)";
 }
 
 export const adminScheduleActions = {
@@ -162,7 +146,8 @@ export const adminScheduleActions = {
 		// 대관 총액도 정원과 같은 모양: 값의 소유자가 전용 RPC 다. 일반 PATCH 로 넣으면 총액만 바뀌고
 		// 이미 발행된 부과 금액은 그대로 남는다(2026-08-23 이전의 실제 갭).
 		const courtFeeChanged =
-			patch.courtFee !== undefined && patch.courtFee !== (prev?.court_fee ?? null);
+			patch.courtFee !== undefined &&
+			patch.courtFee !== (prev?.court_fee ?? null);
 		// 정원 외 필드는 일반 PATCH. 정원이 바뀌었으면 capacity 는 아래 원자 RPC 가 소유하므로 제외.
 		const patchForUpdate = { ...patch };
 		if (capacityChanged) delete patchForUpdate.capacity;
@@ -184,29 +169,23 @@ export const adminScheduleActions = {
 				});
 			}
 		}
-		// 총액 변경 = 그 회차 정산 재시작(배분 해제 → 부과 삭제 → 재발행).
+		// 발행 이력이 없는 회차만 총액을 바꿀 수 있다. 서버가 재검증한다.
 		if (row && courtFeeChanged) {
-			const res = await setSessionCourtFee(sessionId, patch.courtFee ?? null);
-			toast(courtResetToast(res), { variant: "success" });
+			await setSessionCourtFee(sessionId, patch.courtFee ?? null);
+			void duesActions.load();
+			toast("대관 총액을 저장했어요", { variant: "success" });
 		}
 		if (row) await reloadOccurrences();
 		return row;
 	},
 
-	/**
-	 * 종료·진행 회차의 대관 총액 변경 = **그 회차 정산 재시작**(20260823080000).
-	 * 배분 해제(→ 그 입금이 정산함으로) → 부과 삭제 → 새 금액으로 재발행. 종전의 "미납분만 정정"은
-	 * 완납된 회차에서 아무 일도 못 했다(세션 147: 7명 완납 → fixed=0/locked=7).
-	 * 정보 뷰에서 부르는 이유: 대관비는 세션 종료 시점에 발행되고 "끝나고 실제 총액을 알게 됐다"가
-	 * 정상 흐름이라 그때 고칠 자리가 필요하다.
-	 */
+	/** 발행 이력이 없는 회차의 대관 총액 변경. 기존 부과 변경은 회비 관리에서 처리한다. */
 	async fixCourtFee(sessionId: number, amount: number | null) {
 		const res = await setSessionCourtFee(sessionId, amount);
 		await reloadOccurrences();
-		// 회비 관리(duesStore)는 월 단위 캐시(loadedYm)라, 무효화하지 않으면 재진입해도 **옛 부과가
-		// 그대로 보인다**(정산 대조 시트·정산함 칩까지). 부과를 흔든 조작이니 그 캐시를 버린다.
-		duesActions.invalidateMonth();
-		toast(courtResetToast(res), { variant: "success" });
+		// 예정 선납 후보의 새 금액을 즉시 반영한다.
+		void duesActions.load();
+		toast("대관 총액을 저장했어요", { variant: "success" });
 		return res;
 	},
 
@@ -219,17 +198,13 @@ export const adminScheduleActions = {
 		return row;
 	},
 
-	/**
-	 * 회차 삭제. 반복 규칙 회차는 그냥 delete 하면 sync 가 재생성하므로 tombstone(cancelled)으로
-	 * 남기고(달력 점에선 숨되 선택일 목록에 '취소됨' 으로 남아 되살리기 가능), 일회성 회차는
-	 * 규칙이 없어 완전 삭제한다(달력에서 완전히 사라짐).
-	 */
+	/** 반복 회차나 금융 기록이 있으면 취소로 보존하고, 기록 없는 일회성 회차만 삭제한다. */
 	async removeOccurrence(occ: SessionRow) {
-		const ok =
-			occ.recurring_schedule_id != null
-				? (await cancelOccurrence(occ.id)) != null
-				: await deleteSchedule(occ.id);
-		if (ok) await reloadOccurrences();
+		const ok = await deleteSchedule(occ.id);
+		if (ok) {
+			await reloadOccurrences();
+			void duesActions.load();
+		}
 		return ok;
 	},
 

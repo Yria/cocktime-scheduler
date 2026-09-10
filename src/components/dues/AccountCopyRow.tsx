@@ -1,5 +1,5 @@
 import { Copy } from "lucide-react";
-import type { ClubAccount } from "../../lib/supabase/dues";
+import type { ClubAccount } from "../../lib/supabase/duesSettings";
 import { toast } from "../../store/toastStore";
 
 /**

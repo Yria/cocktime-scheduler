@@ -46,7 +46,8 @@ const EMPTY: SplitResult = { perHead: 0, head: 0, charged: 0, diff: 0 };
  */
 export function splitAmount(input: SplitInput): SplitResult {
 	const head = Math.max(0, Math.floor(input.head));
-	const total = input.total != null && input.total > 0 ? Math.round(input.total) : null;
+	const total =
+		input.total != null && input.total > 0 ? Math.round(input.total) : null;
 
 	if (head === 0) {
 		// 대상이 없으면 나눗셈을 하지 않는다(총액만 있으면 전액이 '모자람'으로 보인다).

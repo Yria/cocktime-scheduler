@@ -1,16 +1,16 @@
 import { ChevronRight } from "lucide-react";
 import AccountingDetailModal from "./AccountingDetailModal";
 import { useEffect, useMemo, useState } from "react";
-import { billingProgress } from "../../lib/dues/v2/overview";
-import { groupSummary, memberLabel } from "../../lib/dues/v2/summary";
-import type { AccountingData } from "../../lib/dues/v2/types";
-import { fmtMD, won } from "../admin/dues/duesText";
-import { readAccountingParticipation } from "../../lib/supabase/accountingV2";
+import { billingProgress } from "../../lib/dues/overview";
+import { groupSummary, memberLabel } from "../../lib/dues/summary";
+import type { AccountingData } from "../../lib/dues/types";
+import { fmtMD, won } from "../../lib/dues/duesText";
+import { readAccountingParticipation } from "../../lib/supabase/dues";
 import {
 	groupParticipation,
 	type AccountingParticipation,
 	type BillingPerson,
-} from "../../lib/dues/v2/participation";
+} from "../../lib/dues/participation";
 
 function Progress({
 	paid,

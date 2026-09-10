@@ -1,3 +1,11 @@
+-- HISTORICAL: pre-promotion V1 transition tooling only.
+-- Current ledger validation: scripts/dues-verify.sql. Use a full PostgreSQL backup for recovery.
+do $$ begin
+ if to_regclass('public.dues_control') is not null then
+  raise exception '이 스크립트는 최초 v1 이관용입니다. 정식 원장은 scripts/dues-verify.sql로 확인하세요';
+ end if;
+end $$;
+
 -- Read-only export for accounting-v2-dry-run.mjs. Contains UUIDs and amounts;
 -- keep the resulting JSON outside Git. No names, bank descriptions or account numbers.
 select jsonb_build_object('observed_at',now(),'tables',jsonb_build_object(

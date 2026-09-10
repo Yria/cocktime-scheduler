@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import type { CashLedger } from "../../lib/dues/v2/types";
+import type { CashLedger } from "../../lib/dues/types";
 import {
 	accountingError,
 	readAccountingLedger,
-} from "../../lib/supabase/accountingV2";
-import { shortGroupLabel } from "../../lib/dues/v2/labelShorten";
-import { fmtMDSlash } from "../admin/dues/duesText";
+} from "../../lib/supabase/dues";
+import { shortGroupLabel } from "../../lib/dues/labelShorten";
+import { fmtMDSlash } from "../../lib/dues/duesText";
 
 export default function CashLedgerView({
 	ym,

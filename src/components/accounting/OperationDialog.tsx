@@ -1,4 +1,4 @@
-import type { AccountingCommand } from "../../lib/dues/v2/types";
+import type { AccountingCommand } from "../../lib/dues/types";
 
 /**
  * 회계 처리 한 건의 초안. 정산함은 카드 안에서(QuickSettlement), 부과 탭은 전표로

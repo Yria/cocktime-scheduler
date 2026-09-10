@@ -1,4 +1,4 @@
-import { transactionNeedsSettlement } from "../../lib/dues/v2/quickSettlement";
+import { transactionNeedsSettlement } from "../../lib/dues/quickSettlement";
 import {
 	ChevronLeft,
 	ChevronRight,
@@ -14,27 +14,27 @@ import AccountingOverview from "./AccountingOverview";
 import AccountingLedger from "./AccountingLedger";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { sessionChoiceLabels } from "../../lib/dues/v2/selection";
-import { nameMatches } from "../admin/dues/matching";
-import { groupSummary, kstMonth, memberLabel } from "../../lib/dues/v2/summary";
-import { actionLabel } from "../../lib/dues/v2/types";
+import { sessionChoiceLabels } from "../../lib/dues/selection";
+import { nameMatches } from "../../lib/dues/matching";
+import { groupSummary, kstMonth, memberLabel } from "../../lib/dues/summary";
+import { actionLabel } from "../../lib/dues/types";
 import {
 	accountingCandidates,
 	accountingError,
 	accountingSessions,
-} from "../../lib/supabase/accountingV2";
-import { ingestBankEmail } from "../../lib/supabase/dues";
+} from "../../lib/supabase/dues";
+import { ingestBankEmail } from "../../lib/supabase/duesSettings";
 import {
-	useAccountingData,
-	useAccountingStore,
-} from "../../store/accountingV2Store";
+	useDuesData,
+	useDuesStore,
+} from "../../store/duesStore";
 import {
 	currentYm,
 	holdReasonLabel,
 	shiftYm,
 	won,
-} from "../admin/dues/duesText";
-import DuesSettingsModal from "../admin/dues/DuesSettingsModal";
+} from "../../lib/dues/duesText";
+import DuesSettingsModal from "./DuesSettingsModal";
 import AppScreen from "../common/AppScreen";
 import ChargeVoucher from "./ChargeVoucher";
 import type { OperationDraft } from "./OperationDialog";
@@ -52,8 +52,8 @@ export default function AccountingAdmin() {
 	const params = useParams<{ ym: string; page: string }>();
 	const ym = params.ym && ymPattern.test(params.ym) ? params.ym : currentYm();
 	const page = tabs.some(([id]) => id === params.page) ? params.page : "home";
-	const { data, error, loading, refresh } = useAccountingData();
-	const mode = useAccountingStore((s) => s.mode)!;
+	const { data, error, loading, refresh } = useDuesData();
+	const mode = useDuesStore((s) => s.mode)!;
 	const [draft, setDraft] = useState<OperationDraft | null>(null);
 	const [chargeManagement, setChargeManagement] = useState(false);
 	const [manualVersion, setManualVersion] = useState(0);

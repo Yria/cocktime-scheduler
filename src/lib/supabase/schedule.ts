@@ -27,7 +27,8 @@ export async function syncOccurrences(
 ): Promise<void> {
 	if (!opts.force) {
 		const last = Number(localStorage.getItem(SYNC_LS_KEY) ?? 0);
-		if (Number.isFinite(last) && Date.now() - last < SYNC_MIN_INTERVAL_MS) return;
+		if (Number.isFinite(last) && Date.now() - last < SYNC_MIN_INTERVAL_MS)
+			return;
 	}
 	const { error } = await supabase.rpc("sync_schedule_occurrences");
 	if (error) {
@@ -77,14 +78,10 @@ export async function fetchSchedules(): Promise<SessionRow[]> {
 }
 
 export async function deleteSchedule(sessionId: number): Promise<boolean> {
-	const { error } = await supabase
-		.from("sessions")
-		.delete()
-		.eq("id", sessionId);
-	if (error) {
-		console.error("deleteSchedule:", error);
-		return false;
-	}
+	const { error } = await supabase.rpc("dues_delete_session", {
+		p_session_id: sessionId,
+	});
+	if (error) throw new Error(error.message);
 	return true;
 }
 

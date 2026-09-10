@@ -1,13 +1,13 @@
 import { useState } from "react";
 import QuickSettlement from "./QuickSettlement";
 import { ArrowRight, Check, RotateCcw } from "lucide-react";
-import { kstMonth, memberLabel } from "../../lib/dues/v2/summary";
+import { kstMonth, memberLabel } from "../../lib/dues/summary";
 import {
 	purposeLabel,
 	type AccountingData,
 	type BankTransaction,
-} from "../../lib/dues/v2/types";
-import { signed, won } from "../admin/dues/duesText";
+} from "../../lib/dues/types";
+import { signed, won } from "../../lib/dues/duesText";
 import { directionMark, type RowTone } from "./rowGlyph";
 import type { OperationDraft } from "./OperationDialog";
 
@@ -54,7 +54,8 @@ export default function TransactionCard({
 				: null);
 	const [saved, setSaved] = useState(false);
 	// The entry point belongs in the audit reason, not in the presentation choice.
-	const receipt = draft?.type === "pay" || draft?.type === "expense";
+	// Every active settlement uses the same receipt shell, including refunds and reversals.
+	const receipt = !!draft;
 	const paidReceipt =
 		!receipt &&
 		t.direction === "in" &&
@@ -188,17 +189,15 @@ export default function TransactionCard({
 											<strong className="ac-number">{won(p.amount)}</strong>
 										</div>
 									)}
-									{(p.owner_id || p.group_id || p.available_ym) &&
-										draft?.positionId !== p.id && (
-											<p className="ac-caption">
-												{p.purpose === "club"
-													? data.groups.find((g) => g.id === p.group_id)?.label
-													: memberLabel(data, p.owner_id)}
-												{p.available_ym && ` · ${p.available_ym}부터 사용`}
-											</p>
-										)}
-									{/* 처리 방식은 한 트랙 안에서 고른다 — 선택은 잉크 반전 하나로만 표현한다. */}
-									<div className="ac-actions ac-segment">
+									{(p.owner_id || p.group_id || p.available_ym) && (
+										<p className="ac-caption">
+											{p.purpose === "club"
+												? data.groups.find((g) => g.id === p.group_id)?.label
+												: memberLabel(data, p.owner_id)}
+											{p.available_ym && ` · ${p.available_ym}부터 사용`}
+										</p>
+									)}
+									<div className="ac-actions">
 										{["unassigned", "member_pending", "carry"].includes(
 											p.purpose,
 										) && (
@@ -206,9 +205,6 @@ export default function TransactionCard({
 												<button
 													type="button"
 													className="ac-chip"
-													aria-pressed={
-														draft?.type === "pay" && draft.positionId === p.id
-													}
 													disabled={disabled}
 													onClick={() =>
 														onAction({ type: "pay", positionId: p.id })
@@ -219,9 +215,6 @@ export default function TransactionCard({
 												<button
 													type="button"
 													className="ac-chip"
-													aria-pressed={
-														draft?.type === "carry" && draft.positionId === p.id
-													}
 													disabled={disabled}
 													onClick={() =>
 														onAction({
@@ -238,9 +231,6 @@ export default function TransactionCard({
 										<button
 											type="button"
 											className="ac-chip"
-											aria-pressed={
-												draft?.type === "position" && draft.positionId === p.id
-											}
 											disabled={disabled}
 											onClick={() =>
 												onAction({ type: "position", positionId: p.id })
@@ -307,7 +297,6 @@ export default function TransactionCard({
 									<button
 										type="button"
 										className="ac-chip"
-										aria-pressed={draft?.type === "expense"}
 										aria-label={
 											expense?.group_id ? "지출 항목 변경" : "지출 항목 지정"
 										}
@@ -320,7 +309,6 @@ export default function TransactionCard({
 										<button
 											type="button"
 											className="ac-chip"
-											aria-pressed={draft?.type === "refund"}
 											disabled={disabled}
 											onClick={() =>
 												onAction({ type: "refund", outTxId: t.id })
@@ -344,7 +332,6 @@ export default function TransactionCard({
 					bankId={t.id}
 					disabled={disabled}
 					origin={origin}
-					receipt={receipt}
 					history={settlementHistory}
 					onAction={onAction}
 					onPendingChange={onPendingChange}

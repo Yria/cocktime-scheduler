@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { Search } from "lucide-react";
-import { matchingMembers } from "../../lib/dues/v2/selection";
-import { memberLabel } from "../../lib/dues/v2/summary";
-import type { AccountingData } from "../../lib/dues/v2/types";
-import { amountInputProps } from "../../lib/dues/v2/amountInput";
-import { won } from "../admin/dues/duesText";
+import { matchingMembers } from "../../lib/dues/selection";
+import { memberLabel } from "../../lib/dues/summary";
+import type { AccountingData } from "../../lib/dues/types";
+import { amountInputProps } from "../../lib/dues/amountInput";
+import { won } from "../../lib/dues/duesText";
 
 export interface ManualIssueLine {
 	member_id: string;

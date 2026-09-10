@@ -1,7 +1,7 @@
 import { useEffect, useState, type ComponentProps } from "react";
-import { readAccountingBankBalances } from "../../lib/supabase/accountingV2";
-import { kstMonth } from "../../lib/dues/v2/summary";
-import { won } from "../admin/dues/duesText";
+import { readAccountingBankBalances } from "../../lib/supabase/dues";
+import { kstMonth } from "../../lib/dues/summary";
+import { won } from "../../lib/dues/duesText";
 import CashLedgerView from "./CashLedgerView";
 import TransactionLedger from "./TransactionLedger";
 

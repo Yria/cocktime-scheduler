@@ -1,8 +1,8 @@
 import { Check, Search, UserRound, X } from "lucide-react";
 import { useId, useState } from "react";
-import { matchingMembers } from "../../lib/dues/v2/selection";
-import { memberLabel } from "../../lib/dues/v2/summary";
-import type { AccountingData } from "../../lib/dues/v2/types";
+import { matchingMembers } from "../../lib/dues/selection";
+import { memberLabel } from "../../lib/dues/summary";
+import type { AccountingData } from "../../lib/dues/types";
 
 export default function MemberPicker({
 	data,
@@ -13,6 +13,7 @@ export default function MemberPicker({
 	descriptionForMember,
 	compact = false,
 	receipt = false,
+	showOwingFilter = true,
 }: {
 	data: AccountingData;
 	value: string;
@@ -22,6 +23,7 @@ export default function MemberPicker({
 	descriptionForMember?: (id: string) => string;
 	compact?: boolean;
 	receipt?: boolean;
+	showOwingFilter?: boolean;
 }) {
 	const searchId = useId();
 	const [query, setQuery] = useState(
@@ -111,7 +113,7 @@ export default function MemberPicker({
 						)}
 					</div>
 				</div>
-				{receipt && (
+				{receipt && showOwingFilter && (
 					<div
 						className="ac-choice-chips"
 						role="group"

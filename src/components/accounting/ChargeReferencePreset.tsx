@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, UsersRound } from "lucide-react";
-import { sessionChoiceLabels } from "../../lib/dues/v2/selection";
+import { sessionChoiceLabels } from "../../lib/dues/selection";
 import {
 	accountingError,
 	accountingReferenceMembers,
 	readAccountingReferenceSessions,
-} from "../../lib/supabase/accountingV2";
+} from "../../lib/supabase/dues";
 
 export interface ChargeReference {
 	id: number;

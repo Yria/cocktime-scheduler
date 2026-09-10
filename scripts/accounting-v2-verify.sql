@@ -1,3 +1,11 @@
+-- HISTORICAL: pre-promotion V1 transition tooling only.
+-- Current ledger validation: scripts/dues-verify.sql. Use a full PostgreSQL backup for recovery.
+do $$ begin
+ if to_regclass('public.dues_control') is not null then
+  raise exception '이 스크립트는 최초 v1 이관용입니다. 정식 원장은 scripts/dues-verify.sql로 확인하세요';
+ end if;
+end $$;
+
 -- Read-only post-activation verification. Counts are expected to match immediately
 -- after import; subsequent intentional V2 changes can differ from the legacy ledger.
 with paid as (

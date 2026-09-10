@@ -233,8 +233,7 @@
 	}
 }
 
-/* 정산함: 원본 2b의 전표 순서(납부자 → 배분 → 확인).
- * 상세 편집은 옵션을 열었을 때만 추가하고, 원장 편집에는 적용하지 않는다. */
+/* 정산함과 회계 상세는 같은 전표를 사용한다. 추가 작업은 카드 안에서 펼친다. */
 .ac-layout-v2 .ac-inbox-receipt {
 	padding: 0;
 	gap: 0;
@@ -245,6 +244,10 @@
 .ac-receipt-form,
 .ac-receipt-form .ac-quick-fields {
 	gap: 0;
+}
+.ac-receipt-form {
+	--ac-receipt-control-height: 36px;
+	--ac-receipt-control-font: 12.5px;
 }
 .ac-receipt-heading {
 	position: relative;
@@ -287,7 +290,7 @@
 	word-break: keep-all;
 	overflow-wrap: anywhere;
 }
-.ac-receipt-payer .ac-receipt-change {
+.ac-receipt-form .ac-receipt-change {
 	min-width: 44px;
 	min-height: 26px;
 	padding: 0 7px;
@@ -316,19 +319,19 @@
 	background: var(--ac-fill);
 	border-bottom: 1px solid var(--ac-rule);
 }
-.ac-receipt-picker .ac-payer-search-row {
+.ac-settlement-member-search .ac-payer-search-row {
 	grid-template-columns: minmax(0, 1fr);
 }
-.ac-receipt-picker .ac-payer-search-row > label {
+.ac-settlement-member-search .ac-payer-search-row > label {
 	display: none;
 }
-.ac-receipt-picker .ac-payer-options {
+.ac-settlement-member-search .ac-payer-options {
 	display: flex;
 	flex-wrap: wrap;
 	width: 100%;
 	gap: var(--ac-s-1);
 }
-.ac-receipt-picker .ac-payer-option {
+.ac-settlement-member-search .ac-payer-option {
 	flex-direction: row;
 	align-items: center;
 	flex-wrap: wrap;
@@ -338,8 +341,8 @@
 	min-width: 0;
 	border-radius: 9px;
 }
-.ac-receipt-picker .ac-payer-option strong { font-size: 12.5px; }
-.ac-receipt-picker .ac-payer-option small {
+.ac-settlement-member-search .ac-payer-option strong { font-size: 12.5px; }
+.ac-settlement-member-search .ac-payer-option small {
 	font-size: 11.5px;
 }
 .ac-receipt-form .ac-payment-targets,
@@ -371,38 +374,220 @@
 	display: flex;
 	flex-direction: row;
 	flex-wrap: wrap;
+	align-items: flex-start;
 	gap: var(--ac-s-1);
 }
 .ac-layout-v2 .ac-receipt-dues .ac-quick-due,
 .ac-layout-v2 .ac-receipt-dues .ac-quick-due.is-selected {
 	display: flex;
+	flex-direction: column;
 	max-width: 100%;
 }
 .ac-layout-v2 .ac-receipt-dues .ac-chip {
 	gap: 5px;
 	flex-basis: auto;
-	min-height: 36px;
+	min-height: var(--ac-receipt-control-height);
 	min-width: 0;
 	padding: 0 9px;
 	border-radius: 9px;
-	font-size: 12.5px;
+	font-size: var(--ac-receipt-control-font);
 	font-weight: 650;
-}
-.ac-layout-v2 .ac-receipt-dues .ac-chip > span {
-	display: inline;
-	word-break: keep-all;
-}
-.ac-receipt-dues .ac-chip > .ac-number {
-	white-space: nowrap;
-	font-size: var(--ac-fs-meta);
-	flex-shrink: 0;
-	opacity: .7;
 }
 .ac-receipt-form .ac-quick-options {
 	margin: 0 var(--ac-s-3) var(--ac-s-3);
 	padding-top: var(--ac-s-3);
 	border-top: 1px solid var(--ac-rule);
 }
+.ac-receipt-form .ac-receipt-tools {
+	margin: 0;
+	padding: 10px 14px;
+	border-top: 0;
+	border-bottom: 1px solid var(--ac-rule);
+	gap: var(--ac-s-2);
+}
+.ac-receipt-editor {
+	--ac-editor-label-width: 72px;
+	display: grid;
+	gap: var(--ac-s-3);
+	min-width: 0;
+	padding: 12px 14px;
+	margin-bottom: 10px;
+	background: var(--ac-fill);
+	border-bottom: 1px solid var(--ac-rule);
+	font-size: var(--ac-receipt-control-font);
+}
+.ac-receipt-editor-heading {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--ac-s-2);
+	font-size: var(--ac-fs-body);
+	padding-bottom: var(--ac-s-2);
+	border-bottom: 1px solid var(--ac-rule);
+}
+.ac-receipt-editor-heading:focus {
+	outline: none;
+}
+.ac-receipt-form .ac-receipt-editor .ac-quick-options {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+.ac-receipt-form .ac-receipt-editor .ac-quick-groups {
+	padding: 0;
+}
+.ac-receipt-form .ac-receipt-editor .ac-chip,
+.ac-receipt-form .ac-receipt-tools .ac-chip {
+	min-height: var(--ac-receipt-control-height);
+	min-width: 0;
+	padding: 4px 9px;
+	border-radius: 9px;
+	font-size: var(--ac-receipt-control-font);
+	font-weight: 650;
+	gap: 5px;
+}
+.ac-receipt-form .ac-receipt-editor .ac-quick-month,
+.ac-receipt-form .ac-receipt-editor .ac-check {
+	font-size: var(--ac-receipt-control-font);
+}
+.accounting-screen .ac-receipt-form input:not([type="checkbox"]):not([type="radio"]) {
+	min-height: 42px;
+	font-size: var(--ac-receipt-control-font);
+}
+.ac-receipt-editor .ac-receipt-field,
+.ac-receipt-editor .ac-inline-memo {
+	display: grid;
+	grid-template-columns: var(--ac-editor-label-width) minmax(0, 1fr);
+	align-items: start;
+	gap: var(--ac-s-2);
+	min-width: 0;
+	font-size: var(--ac-receipt-control-font);
+	color: var(--ac-ink-2);
+}
+.ac-receipt-editor .ac-receipt-field > h4,
+.ac-receipt-editor .ac-receipt-field > span:first-child,
+.ac-receipt-editor .ac-inline-memo > span {
+	padding-top: 11px;
+	font-size: inherit;
+	font-weight: 600;
+}
+.ac-receipt-editor .ac-receipt-field-stacked {
+	grid-template-columns: minmax(0, 1fr);
+	gap: var(--ac-s-1);
+}
+.ac-receipt-editor .ac-receipt-field-stacked > span:first-child {
+	padding-top: 0;
+}
+.ac-receipt-editor .ac-refund .ac-choice-chips {
+	gap: var(--ac-s-1);
+}
+.accounting-screen .ac-receipt-editor .ac-settlement-month {
+	width: 100%;
+	max-width: none;
+	min-width: 0;
+	background: var(--ac-paper);
+}
+.accounting-screen .ac-receipt-editor .ac-inline-memo input {
+	background: var(--ac-paper);
+}
+.ac-receipt-editor .ac-receipt-purpose-options {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: var(--ac-s-1);
+}
+.ac-receipt-editor .ac-receipt-purpose-options .ac-chip {
+	justify-content: space-between;
+	min-height: 40px;
+}
+.ac-layout-v2 .ac-receipt-editor .ac-receipt-dues {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: var(--ac-s-2);
+}
+.ac-layout-v2 .ac-receipt-editor .ac-quick-due {
+	gap: 0;
+	background: var(--ac-paper);
+	border: 1px solid var(--ac-rule);
+	border-radius: var(--ac-r-field);
+}
+.ac-layout-v2 .ac-receipt-editor .ac-quick-due > .ac-chip {
+	flex: none;
+	width: 100%;
+	border: 0;
+	min-height: 40px;
+}
+.ac-layout-v2 .ac-receipt-editor .ac-quick-due > .ac-chip > span:first-child {
+	flex: 1;
+}
+.ac-receipt-money-input {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	min-width: 0;
+	border: 1px solid var(--ac-rule);
+	border-radius: var(--ac-r-field);
+	padding-right: 10px;
+	background: var(--ac-paper);
+	font-size: var(--ac-receipt-control-font);
+	color: var(--ac-ink-2);
+}
+.ac-receipt-money-input:focus-within {
+	outline: 2px solid var(--ac-act);
+	outline-offset: 2px;
+}
+.accounting-screen .ac-receipt-money-input input[type="number"] {
+	flex: 1;
+	width: 0;
+	min-width: 0;
+	border: 0;
+	background: transparent;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+.accounting-screen .ac-receipt-money-input input:focus-visible {
+	outline: none;
+}
+.ac-receipt-editor .ac-receipt-month-change {
+	margin-left: calc(var(--ac-editor-label-width) + var(--ac-s-2));
+}
+.ac-layout-v2 .ac-receipt-dues .ac-quick-amount {
+	align-self: flex-end;
+	width: 132px;
+	max-width: 100%;
+}
+.ac-layout-v2 .ac-receipt-editor .ac-quick-due .ac-quick-amount {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: center;
+	gap: var(--ac-s-2);
+	width: 100%;
+	padding: var(--ac-s-2);
+}
+.ac-receipt-editor .ac-refund-payer,
+.ac-receipt-editor .ac-refund-sources {
+	display: grid;
+	gap: var(--ac-s-2);
+	min-width: 0;
+}
+.ac-refund-payer-value {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--ac-s-2);
+	min-height: 40px;
+}
+.ac-refund-payer-value > strong { color: var(--ac-ink); }
+.ac-receipt-editor .ac-refund .ac-section-heading { gap: var(--ac-s-2); margin: 0; }
+.ac-receipt-editor .ac-refund .ac-caption,
+.ac-receipt-editor .ac-refund .ac-link,
+.ac-receipt-editor .ac-refund .ac-empty { font-size: var(--ac-receipt-control-font); }
+.ac-receipt-editor .ac-refund .ac-empty { padding: var(--ac-s-2); }
+.ac-receipt-editor .ac-refund .ac-check { align-items: flex-start; padding-top: 8px; }
+.ac-receipt-editor .ac-refund .ac-disclosure { padding-top: var(--ac-s-1); }
+.ac-receipt-editor .ac-refund .ac-filter-toggle,
+.ac-receipt-editor .ac-refund .ac-disclosure > button { min-height: 32px; padding: 4px 0; }
+.ac-receipt-editor .ac-refund .ac-filter-fields { padding: 0; }
+.ac-receipt-editor .ac-refund .ac-filter-fields input { width: 100%; }
 .ac-layout-v2 .ac-receipt-form .ac-quick-confirm {
 	padding: 0 14px 12px;
 	border-top: 0;
@@ -419,12 +604,12 @@
 .ac-receipt-amount.ac-in { color: var(--ac-act); }
 .ac-receipt-amount.ac-out { color: var(--ac-ink); }
 .ac-receipt-form .ac-allocation-meter { height: 10px; border-radius: 5px; }
-.ac-receipt-picker .ac-payer-chips { gap: 8px; }
-.ac-receipt-picker .ac-choice-chips { gap: 4px; }
-.ac-receipt-picker .ac-choice-chips .ac-chip { min-height: 34px; min-width: 0; padding: 0 9px; border-radius: 9px; font-size: 12.5px; }
-.accounting-screen .ac-receipt-picker input:not([type="checkbox"]):not([type="radio"]) { font-size: 12.5px; min-height: 42px; }
-.ac-receipt-picker .ac-search { background: var(--ac-paper); border-color: var(--ac-rule); }
-.ac-receipt-picker .ac-search-clear { min-height: 36px; min-width: 26px; }
+.ac-settlement-member-search .ac-payer-chips { gap: 8px; }
+.ac-settlement-member-search .ac-choice-chips { gap: 4px; }
+.ac-settlement-member-search .ac-choice-chips .ac-chip { min-height: 34px; min-width: 0; padding: 0 9px; border-radius: 9px; font-size: 12.5px; }
+.accounting-screen .ac-settlement-member-search input:not([type="checkbox"]):not([type="radio"]) { font-size: 12.5px; min-height: 42px; }
+.ac-settlement-member-search .ac-search { background: var(--ac-paper); border-color: var(--ac-rule); }
+.ac-settlement-member-search .ac-search-clear { min-height: 36px; min-width: 26px; }
 .ac-layout-v2 .ac-inbox-toolbar .ac-import-button {
 	min-height: 36px;
 	font-size: 13.5px;

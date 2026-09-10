@@ -28,7 +28,7 @@ async function scalar<T = unknown>(
 }
 async function command(payload: Record<string, unknown>) {
 	return scalar(
-		"select dues_v2_command($1,$2,(select revision from dues_v2_control where id=1))",
+		"select dues_command($1,$2,(select revision from dues_control where id=1))",
 		[{ reason: "fixture", ...payload }, crypto.randomUUID()],
 	);
 }
@@ -176,6 +176,8 @@ test.beforeEach(async ({ page, context }, testInfo) => {
 			"utf8",
 		),
 	);
+	await db.exec("alter table sessions add column is_active boolean default true, add column is_overridden boolean default false");
+    await db.exec(readFileSync(new URL("../supabase/migrations/20260911010000_promote_dues.sql", import.meta.url), "utf8"));
 	await context.routeWebSocket(
 		/^(?!ws:\/\/(127\.0\.0\.1|localhost))/,
 		(socket) => socket.close(),
@@ -241,14 +243,14 @@ test.beforeEach(async ({ page, context }, testInfo) => {
 				).rows[0],
 			});
 		const keys: Record<string, string[]> = {
-			dues_v2_mode: [],
-			dues_v2_read: [],
-			dues_v2_sessions: [],
-			dues_v2_reference_members: ["p_session_id", "p_meal"],
-			dues_v2_preview: ["p_payload", "p_request_id", "p_revision"],
-			dues_v2_command: ["p_payload", "p_request_id", "p_revision"],
-			dues_v2_ledger: ["p_ym"],
-			dues_v2_candidates: ["p_kind", "p_ym", "p_session_id"],
+			dues_mode: [],
+			dues_read: [],
+			dues_sessions: [],
+			dues_reference_members: ["p_session_id", "p_meal"],
+			dues_preview: ["p_payload", "p_request_id", "p_revision"],
+			dues_command: ["p_payload", "p_request_id", "p_revision"],
+			dues_ledger: ["p_ym"],
+			dues_candidates: ["p_kind", "p_ym", "p_session_id"],
 		};
 		if (!url.pathname.includes("/rest/v1/rpc/") || !keys[name]) {
 			// The member account display is unrelated to these financial commands.
@@ -270,7 +272,7 @@ test.beforeEach(async ({ page, context }, testInfo) => {
 						).rows[0],
 					)[0],
 			);
-			if (name === "dues_v2_command" && loseCommitResponse) {
+			if (name === "dues_command" && loseCommitResponse) {
 				loseCommitResponse = false;
 				return route.abort();
 			}
@@ -391,21 +393,21 @@ test("payer choice distinguishes a paid namesake from an unpaid namesake and rem
 			expect(sizes.every((s) => s.width >= 24 && s.height >= 24)).toBe(true);
 		}
 	}
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(0);
 	expect(
-		await scalar("select owner_id from dues_v2_positions where bank_tx_id=90"),
+		await scalar("select owner_id from dues_positions where bank_tx_id=90"),
 	).toBe(A);
 	await confirm.click();
 	await expect(card).toHaveCount(0);
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(1);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(1);
 	expect(
 		await scalar(
-			"select a.owner_id from dues_v2_allocations a join dues_v2_charges c on c.id=a.charge_id where a.bank_tx_id=90 and c.legacy_id=107",
+			"select a.owner_id from dues_allocations a join dues_charges c on c.id=a.charge_id where a.bank_tx_id=90 and c.legacy_id=107",
 		),
 	).toBe(B);
 	expect(
 		await scalar(
-			"select sum(a.amount-a.reversed)::int from dues_v2_allocations a join dues_v2_charges c on c.id=a.charge_id where c.legacy_id=104",
+			"select sum(a.amount-a.reversed)::int from dues_allocations a join dues_charges c on c.id=a.charge_id where c.legacy_id=104",
 		),
 	).toBe(5000);
 	expect(
@@ -439,7 +441,7 @@ test("payer choice distinguishes a paid namesake from an unpaid namesake and rem
 	await expect
 		.poll(() =>
 			scalar(
-				"select sum(amount-reversed)::int from dues_v2_allocations where bank_tx_id=90",
+				"select sum(amount-reversed)::int from dues_allocations where bank_tx_id=90",
 			),
 		)
 		.toBe(0);
@@ -462,18 +464,18 @@ test("cancel and reissue previews without writing and commits once after recover
 		page.getByText("기존 납부금 재사용", { exact: true }),
 	).toBeVisible();
 	expect(
-		await scalar("select state from dues_v2_charges where legacy_id=100"),
+		await scalar("select state from dues_charges where legacy_id=100"),
 	).toBe("live");
 	await page.getByRole("button", { name: "확정", exact: true }).click();
 	await expect(
 		page.getByRole("button", { name: "확정", exact: true }),
 	).toHaveCount(0);
-	const preview = calls.find((c) => c.name === "dues_v2_preview")!,
-		commit = calls.find((c) => c.name === "dues_v2_command")!;
+	const preview = calls.find((c) => c.name === "dues_preview")!,
+		commit = calls.find((c) => c.name === "dues_command")!;
 	expect(commit.args).toEqual(preview.args);
 	expect(
 		await scalar(
-			"select sum(amount)::int from dues_v2_positions where purpose='member_pending' and bank_tx_id=1",
+			"select sum(amount)::int from dues_positions where purpose='member_pending' and bank_tx_id=1",
 		),
 	).toBe(6000);
 	await page.getByRole("button", { name: "회계", exact: true }).click();
@@ -481,7 +483,7 @@ test("cancel and reissue previews without writing and commits once after recover
 		page.getByRole("button", { name: "부과 운영·복구" }),
 	).toHaveCount(0);
 	expect(
-		await scalar("select state from dues_v2_charges where legacy_id=100"),
+		await scalar("select state from dues_charges where legacy_id=100"),
 	).toBe("cancelled");
 });
 
@@ -492,7 +494,7 @@ test("one carry form moves partial debt and actual money; member sees both futur
 		"insert into bank_transactions(id,direction,amount,occurred_at) values(91,'in',6000,'2026-08-30T12:00:00+09')",
 	);
 	const pos = await scalar<string>(
-		"select id from dues_v2_positions where bank_tx_id=91",
+		"select id from dues_positions where bank_tx_id=91",
 	);
 	await command({
 		action: "position",
@@ -519,10 +521,10 @@ test("one carry form moves partial debt and actual money; member sees both futur
 	await previewAndConfirm(page, "미납과 잔액 함께 이월");
 	expect(
 		await scalar(
-			"select sum(remaining)::int from dues_v2_due where due_ym='2099-01'",
+			"select sum(remaining)::int from dues_due where due_ym='2099-01'",
 		),
 	).toBe(3000);
-	expect(await scalar("select count(*)::int from dues_v2_charges")).toBe(7);
+	expect(await scalar("select count(*)::int from dues_charges")).toBe(7);
 	await db.exec(`set test.admin='false'; set test.member='${B}'`);
 	await navigate(page, "/my-dues", B);
 	await expect(
@@ -544,7 +546,7 @@ test("September refund finds and spends the remainder of an August deposit", asy
 	page,
 }) => {
 	const old = await scalar<string>(
-		"select id from dues_v2_charges where legacy_id=100",
+		"select id from dues_charges where legacy_id=100",
 	);
 	await command({
 		action: "replace",
@@ -587,7 +589,7 @@ test("September refund finds and spends the remainder of an August deposit", asy
 		page.getByRole("region", { name: "거래 9", exact: true }),
 	).toHaveCount(0);
 	expect(
-		await scalar("select amount from dues_v2_refunds where out_tx_id=9"),
+		await scalar("select amount from dues_refunds where out_tx_id=9"),
 	).toBe(6000);
 });
 
@@ -607,7 +609,7 @@ test("ledger has no migration recovery controls and keeps the financial history"
 	await page.getByText("회계 변경 이력", { exact: true }).click();
 	await expect(page.getByText("이월금 적용", { exact: true })).toBeVisible();
 	expect(
-		calls.some((c) => ["dues_v2_export", "dues_v2_manage"].includes(c.name)),
+		calls.some((c) => ["dues_export", "dues_manage"].includes(c.name)),
 	).toBe(false);
 	for (const viewport of [
 		{ width: 390, height: 844 },
@@ -631,7 +633,7 @@ test("replacement retains partial carry months and requires the changed amounts 
 	page,
 }) => {
 	const d = await scalar<string>(
-		"select d.id from dues_v2_due d join dues_v2_charges c on c.id=d.charge_id where c.legacy_id=106",
+		"select d.id from dues_due d join dues_charges c on c.id=d.charge_id where c.legacy_id=106",
 	);
 	await command({
 		action: "carry",
@@ -656,17 +658,32 @@ test("replacement retains partial carry months and requires the changed amounts 
 	await previewAndConfirm(page, "분납 유지하며 부담 감소");
 	expect(
 		await scalar(
-			"select sum(remaining)::int from dues_v2_due where due_ym='2099-01'",
+			"select sum(remaining)::int from dues_due where due_ym='2099-01'",
 		),
 	).toBe(3000);
 });
 
-test("unknown August deposit requires payer confirmation and leaves a visible member balance", async ({
+test("unsettled August deposit appears directly and requires payer confirmation before refund", async ({
 	page,
 }) => {
-	await db.query(
-		"insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',7000,'2026-08-01','김지훈0801')",
-	);
+	await db.exec(`
+		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values
+		(90,'in',7000,'2026-08-01','김지훈0801'),
+		(91,'in',8000,'2026-08-02','다른입금명'),
+		(92,'in',9000,'2026-08-03','김지훈'),
+		(99,'in',1000,'2026-08-04','소액입금');
+		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name)
+		select id, 'in', 6000, '2026-07-01'::date + (id - 93), '김지훈 ' || (id - 92) || '회비'
+		from generate_series(93, 98) as id;
+		select dues_sync_bank();
+	`);
+	await command({
+		action: "position",
+		position_id: await scalar<string>("select id from dues_positions where bank_tx_id=92"),
+		amount: 9000,
+		purpose: "member_pending",
+		owner_id: B,
+	});
 	await page.setViewportSize({ width: 390, height: 844 });
 	await navigate(page, "/dues/2026-09/inbox");
 	await page
@@ -679,9 +696,25 @@ test("unknown August deposit requires payer confirmation and leaves a visible me
 		.getByRole("group", { name: "납부자 검색 결과" })
 		.getByRole("button", { name: /000001/ })
 		.click();
-	await page
-		.getByText("아직 납부자를 확인하지 않은 입금", { exact: false })
-		.click();
+	const card = page.getByRole("region", { name: "거래 9", exact: true });
+	const main = card.locator('[aria-label="환불 원입금 후보"]');
+	await expect(main.getByRole("radio", { name: /입금 #90 .*환불 가능 7,000원/ })).toBeVisible();
+	await expect(card.getByText("이 납부자의 환불 가능한 입금이 없습니다.")).toHaveCount(0);
+	await expect(card.getByRole("radio", { name: /입금 #91 / })).toHaveCount(0);
+	await expect(card.getByRole("radio", { name: /입금 #92 / })).toHaveCount(0);
+	await expect(card.getByRole("button", { name: /잔액이 없거나 환불액보다 적은 입금/ })).toHaveCount(0);
+	await expect(card.getByRole("radio", { name: /입금 #[12] / })).toHaveCount(0);
+	await card.getByRole("button", { name: /다른 미정산 입금 찾기/ }).click();
+	await expect(card.getByRole("radio", { name: /입금 #91 / })).toBeEnabled();
+	await expect(card.getByRole("radio", { name: /입금 #99 / })).toHaveCount(0);
+	await expect(card.getByRole("radio", { name: /입금 #90 / })).toHaveCount(1);
+	await expect(card.getByRole("radio", { name: /입금 #92 / })).toHaveCount(0);
+	await card.getByRole("button", { name: /다른 미정산 입금 찾기/ }).click();
+	await card.getByRole("button", { name: "입금 검색 필터" }).click();
+	await card.getByLabel("입금월 (비우면 전체)").fill("2026-09");
+	await expect(card.getByRole("radio", { name: /입금 #90 / })).toHaveCount(0);
+	await card.getByLabel("입금월 (비우면 전체)").fill("");
+	await card.getByRole("button", { name: "입금 검색 필터" }).click();
 	await page.getByRole("radio", { name: /입금 #90 / }).check();
 	await expect(
 		page.getByRole("button", { name: "환불 확인", exact: true }),
@@ -689,25 +722,30 @@ test("unknown August deposit requires payer confirmation and leaves a visible me
 	await expect(
 		page.getByText("미매칭 원입금의 실제 납부자를 확인해 주세요"),
 	).toBeVisible();
+	for (const [width, height] of [[390, 844], [1440, 1000]]) {
+		await page.setViewportSize({ width, height });
+		for (const theme of ["light", "dark"]) {
+			await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), theme === "dark");
+			await designEvidence(page, `receipt-refund-unsettled-${width}-${theme}`);
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+		}
+	}
 	await page
 		.getByRole("checkbox", { name: /이 원입금이 .*000001.*돈임을 확인/ })
 		.check();
-	await page.screenshot({
-		path: "test-results/accounting-refund-payer-mobile.png",
-		fullPage: true,
-	});
 	await page.getByRole("button", { name: "환불 확인", exact: true }).click();
 	await expect(
 		page.getByRole("region", { name: "거래 9", exact: true }),
 	).toHaveCount(0);
 	expect(
-		await scalar("select owner_id from dues_v2_refunds where out_tx_id=9"),
+		await scalar("select owner_id from dues_refunds where out_tx_id=9"),
 	).toBe(A);
 	expect(
 		await scalar(
-			"select sum(amount)::int from dues_v2_positions where bank_tx_id=90 and purpose='member_pending'",
+			"select sum(amount)::int from dues_positions where bank_tx_id=90 and purpose='member_pending'",
 		),
 	).toBe(1000);
+	expect(calls.filter((c) => c.name === "dues_command").map((c) => (c.args.p_payload as { action: string }).action)).toEqual(["refund"]);
 });
 
 test("same-name payer B can receive a missing monthly charge and pay it independently of A", async ({
@@ -761,17 +799,17 @@ test("same-name payer B can receive a missing monthly charge and pay it independ
 	await receipt.getByRole("button", { name: "납부 확인", exact: true }).click();
 	await expect(receipt).toHaveCount(0);
 	expect(
-		await scalar("select amount_paid from dues_charges where id=102"),
+		await scalar("select amount_paid from dues_legacy.dues_charges where id=102"),
 	).toBe(5000);
 	expect(
 		await scalar(
-			"select sum(a.amount-a.reversed)::int from dues_v2_allocations a join dues_v2_charges c on c.id=a.charge_id join dues_v2_groups g on g.id=c.group_id where c.member_id=$1 and g.source_key='monthly:2026-08'",
+			"select sum(a.amount-a.reversed)::int from dues_allocations a join dues_charges c on c.id=a.charge_id join dues_groups g on g.id=c.group_id where c.member_id=$1 and g.source_key='monthly:2026-08'",
 			[B],
 		),
 	).toBe(5000);
 	expect(
 		await scalar(
-			"select owner_id from dues_v2_allocations where bank_tx_id=90",
+			"select owner_id from dues_allocations where bank_tx_id=90",
 		),
 	).toBe(B);
 });
@@ -824,7 +862,7 @@ test("manual charge reference sessions distinguish times and copy each roster by
 	await expect(page.getByRole("status")).toContainText("부과를 발행했습니다");
 	expect(
 		await scalar(
-			"select basis->>'reference_session_id' from dues_v2_charges where legacy_id is null",
+			"select basis->>'reference_session_id' from dues_charges where legacy_id is null",
 		),
 	).toBe("2");
 });
@@ -833,7 +871,7 @@ test("accounting layouts keep settlement in the list in both themes", async ({
 	page,
 }) => {
 	const old = await scalar<string>(
-		"select id from dues_v2_charges where legacy_id=100",
+		"select id from dues_charges where legacy_id=100",
 	);
 	await command({
 		action: "replace",
@@ -880,7 +918,7 @@ test("accounting layouts keep settlement in the list in both themes", async ({
 		fullPage: true,
 		animations: "disabled",
 	});
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(0);
 });
 
 test("inline matching and payment need one confirmation and recover a lost response without double spending", async ({
@@ -901,7 +939,7 @@ test("inline matching and payment need one confirmation and recover a lost respo
 	await expect(confirm).toBeEnabled();
 	await expect(card.getByText(/입금 잔액 1,000원/)).toBeVisible();
 	expect(
-		await scalar("select owner_id from dues_v2_positions where bank_tx_id=90"),
+		await scalar("select owner_id from dues_positions where bank_tx_id=90"),
 	).toBeNull();
 	await expect(page.locator(".accounting-sheet")).toHaveCount(0);
 	await card.screenshot({
@@ -921,18 +959,18 @@ test("inline matching and payment need one confirmation and recover a lost respo
 	await expect(card.getByRole("button", { name: "정산 옵션" })).toBeDisabled();
 	await retry.click();
 	await expect(card.getByText("선택한 내역을 반영했습니다.")).toBeVisible();
-	const commits = calls.filter((c) => c.name === "dues_v2_command");
+	const commits = calls.filter((c) => c.name === "dues_command");
 	expect(commits).toHaveLength(2);
 	expect(commits[0].args).toEqual(commits[1].args);
-	expect(calls.filter((c) => c.name === "dues_v2_preview")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_preview")).toHaveLength(0);
 	expect(
 		await scalar(
-			"select count(*)::int from dues_v2_allocations where bank_tx_id=90",
+			"select count(*)::int from dues_allocations where bank_tx_id=90",
 		),
 	).toBe(1);
 	expect(
 		await scalar(
-			"select sum(amount)::int from dues_v2_positions where bank_tx_id=90 and owner_id=$1",
+			"select sum(amount)::int from dues_positions where bank_tx_id=90 and owner_id=$1",
 			[B],
 		),
 	).toBe(1000);
@@ -956,15 +994,15 @@ test("inline stale confirmation requires another explicit confirmation after ref
 	await command({ action: "apply" });
 	await confirm.click();
 	await expect(confirm).toBeEnabled();
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(1);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(1);
 	expect(
-		await scalar("select owner_id from dues_v2_positions where bank_tx_id=90"),
+		await scalar("select owner_id from dues_positions where bank_tx_id=90"),
 	).toBeNull();
 	await confirm.click();
 	await expect(card).toHaveCount(0);
 	expect(
 		await scalar(
-			"select count(*)::int from dues_v2_allocations where bank_tx_id=90",
+			"select count(*)::int from dues_allocations where bank_tx_id=90",
 		),
 	).toBe(1);
 });
@@ -1007,12 +1045,12 @@ test("inline expense confirmation advances the pending list and inline carry mov
 	await expect(page.locator(".accounting-sheet")).toHaveCount(0);
 	expect(
 		await scalar(
-			"select sum(remaining)::int from dues_v2_due where due_ym='2099-01'",
+			"select sum(remaining)::int from dues_due where due_ym='2099-01'",
 		),
 	).toBe(3000);
 	expect(
 		await scalar(
-			"select sum(amount)::int from dues_v2_positions where bank_tx_id=90 and owner_id=$1 and purpose='carry'",
+			"select sum(amount)::int from dues_positions where bank_tx_id=90 and owner_id=$1 and purpose='carry'",
 			[B],
 		),
 	).toBe(6000);
@@ -1028,11 +1066,11 @@ test("ledger restores the compact monthly list and edits saved expenses without 
 			balanceReads.push(url.searchParams.get("select") ?? "");
 	});
 	const meal = await scalar<string>(
-		"select id from dues_v2_groups where source_key='manual:meal:1'",
+		"select id from dues_groups where source_key='manual:meal:1'",
 	);
 	await command({ action: "expense", out_tx_id: 9, group_id: meal });
 	await db.exec(`
-		insert into dues_v2_groups(source_key,kind,label,occurred_on)
+		insert into dues_groups(source_key,kind,label,occurred_on)
 		select 'manual:recent:'||n,'manual','최근 항목 '||n,'2026-09-06' from generate_series(1,7) n;
 		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name,balance_after) values
 		(90,'in',6000,'2026-09-06T12:00:00+09','김지훈 9월 회비',718592),
@@ -1040,7 +1078,7 @@ test("ledger restores the compact monthly list and edits saved expenses without 
 		(92,'in',3000,'2026-09-05T12:00:00+09','이월 입금',829592);
 	`);
 	const money = await scalar<string>(
-		"select id from dues_v2_positions where bank_tx_id=92",
+		"select id from dues_positions where bank_tx_id=92",
 	);
 	await command({
 		action: "carry",
@@ -1126,7 +1164,7 @@ test("ledger restores the compact monthly list and edits saved expenses without 
 	await expect(card.getByRole("button", { name: "변경 저장" })).toHaveCount(0);
 	expect(
 		calls.filter((c) =>
-			["dues_v2_preview", "dues_v2_command"].includes(c.name),
+			["dues_preview", "dues_command"].includes(c.name),
 		),
 	).toHaveLength(0);
 	await choices
@@ -1144,15 +1182,15 @@ test("ledger restores the compact monthly list and edits saved expenses without 
 	await card.getByLabel("회계 항목 검색").fill("회식");
 	await choices.getByRole("button", { name: "회식", exact: true }).click();
 	await expect(card.getByRole("button", { name: "변경 저장" })).toHaveCount(0);
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(0);
 	await choices.getByRole("button", { name: "미분류로 변경" }).click();
 	await card.getByRole("button", { name: "변경 저장" }).click();
 	await expect(ledger.getByRole("button", { name: "거래 9 상세" })).toHaveCount(
 		0,
 	); // no longer matches '회식'
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(1);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(1);
 	expect(
-		await scalar("select group_id from dues_v2_expenses where bank_tx_id=9"),
+		await scalar("select group_id from dues_expenses where bank_tx_id=9"),
 	).toBeNull();
 	await page.getByRole("button", { name: "정산함", exact: true }).click();
 	await expect(
@@ -1185,10 +1223,10 @@ test("overview presents read-only payment progress in both themes, with operatio
 		insert into attendances(session_id,member_id,status,confirmed_at,cancelled_at) values (1,'${G}','cancelled','2026-08-22T10:00:00+09','2026-08-22T10:30:00+09');
 	`);
 	const monthly = await scalar<string>(
-		"select id from dues_v2_groups where source_key='monthly:2026-08'",
+		"select id from dues_groups where source_key='monthly:2026-08'",
 	);
 	const court = await scalar<string>(
-		"select id from dues_v2_groups where source_key='court:1'",
+		"select id from dues_groups where source_key='court:1'",
 	);
 	await command({
 		action: "issue",
@@ -1209,10 +1247,10 @@ test("overview presents read-only payment progress in both themes, with operatio
 		})),
 	});
 	const debt = await scalar<string>(
-		"select d.id from dues_v2_due d join dues_v2_charges c on c.id=d.charge_id where c.legacy_id=106",
+		"select d.id from dues_due d join dues_charges c on c.id=d.charge_id where c.legacy_id=106",
 	);
 	const cash = await scalar<string>(
-		"select id from dues_v2_positions where bank_tx_id=2 and amount>0",
+		"select id from dues_positions where bank_tx_id=2 and amount>0",
 	);
 	await command({
 		action: "carry",
@@ -1336,7 +1374,7 @@ test("overview presents read-only payment progress in both themes, with operatio
 	await designEvidence(page, "overview-desktop");
 	expect(
 		calls.filter((c) =>
-			["dues_v2_command", "dues_v2_preview", "dues_v2_manage"].includes(c.name),
+			["dues_command", "dues_preview", "dues_manage"].includes(c.name),
 		),
 	).toHaveLength(0);
 	await page
@@ -1411,7 +1449,7 @@ test("overview retains issued facts when attendance fails and retries without wr
 	await expect(page.getByRole("dialog")).toContainText("부과 취소");
 	expect(
 		calls.filter((c) =>
-			["dues_v2_command", "dues_v2_preview", "dues_v2_manage"].includes(c.name),
+			["dues_command", "dues_preview", "dues_manage"].includes(c.name),
 		),
 	).toHaveLength(0);
 });
@@ -1430,7 +1468,7 @@ test("a unique dated receipt fits one card and confirms with no selection RPCs a
 		lines: [{ member_id: member, amount: 6500, due_ym: "2026-09" }],
 	});
 	// The UI must not wait for another read/preview after making a selection.
-	await page.route("**/rest/v1/rpc/dues_v2_read", async (route) => {
+	await page.route("**/rest/v1/rpc/dues_read", async (route) => {
 		await new Promise((resolve) => setTimeout(resolve, 300));
 		await route.fallback();
 	});
@@ -1495,19 +1533,19 @@ test("a unique dated receipt fits one card and confirms with no selection RPCs a
 			).toBe(true);
 		}
 	}
-	expect(calls.filter((c) => c.name === "dues_v2_read")).toHaveLength(1);
-	expect(calls.filter((c) => c.name === "dues_v2_sessions")).toHaveLength(0);
-	expect(calls.filter((c) => c.name === "dues_v2_preview")).toHaveLength(0);
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_read")).toHaveLength(1);
+	expect(calls.filter((c) => c.name === "dues_sessions")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_preview")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(0);
 	await confirm.click();
 	await expect(card).toHaveCount(0);
 	// A new revision should not trigger another full read after the explicit refresh.
-	expect(calls.filter((c) => c.name === "dues_v2_read")).toHaveLength(2);
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(1);
-	expect(calls.filter((c) => c.name === "dues_v2_preview")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_read")).toHaveLength(2);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(1);
+	expect(calls.filter((c) => c.name === "dues_preview")).toHaveLength(0);
 	expect(
 		await scalar(
-			"select sum(amount)::int from dues_v2_allocations where bank_tx_id=90",
+			"select sum(amount)::int from dues_allocations where bank_tx_id=90",
 		),
 	).toBe(6500);
 	writeFileSync(
@@ -1537,7 +1575,7 @@ test("a database rejection unlocks the form, and a corrected retry commits once"
 		.click();
 	await card.getByRole("button", { name: /^7월 회비/ }).click();
 	await db.exec(
-		"update dues_v2_control set paused=true,revision=revision+1 where id=1",
+		"update dues_control set paused=true,revision=revision+1 where id=1",
 	);
 	await card.getByRole("button", { name: "납부 확인", exact: true }).click();
 	await expect(card.getByRole("alert")).toContainText("일시 중지");
@@ -1545,11 +1583,11 @@ test("a database rejection unlocks the form, and a corrected retry commits once"
 	await expect(card.getByLabel("처리 사유")).toBeEnabled();
 	expect(
 		await scalar(
-			"select count(*)::int from dues_v2_allocations where bank_tx_id=90",
+			"select count(*)::int from dues_allocations where bank_tx_id=90",
 		),
 	).toBe(0);
 	await db.exec(
-		"update dues_v2_control set paused=false,revision=revision+1 where id=1",
+		"update dues_control set paused=false,revision=revision+1 where id=1",
 	);
 	await card.getByRole("button", { name: "내역 새로고침" }).click();
 	await card.getByLabel("처리 사유").fill("재개 후 납부 확인");
@@ -1557,12 +1595,12 @@ test("a database rejection unlocks the form, and a corrected retry commits once"
 	await expect(card).toHaveCount(0);
 	expect(
 		await scalar(
-			"select count(*)::int from dues_v2_allocations where bank_tx_id=90",
+			"select count(*)::int from dues_allocations where bank_tx_id=90",
 		),
 	).toBe(1);
 });
 
-test("a role change reloads account mode immediately instead of waiting for the poll interval", async ({
+test("role revocation refreshes mode and removes admin data without reloading the admin ledger", async ({
 	page,
 }) => {
 	await navigate(page, "/dues/2026-09/inbox");
@@ -1575,11 +1613,15 @@ test("a role change reloads account mode immediately instead of waiting for the 
 		useAuthStore.setState({ isAdmin: false });
 	});
 	await expect
-		.poll(() => calls.filter((c) => c.name === "dues_v2_mode").length)
+		.poll(() => calls.filter((c) => c.name === "dues_mode").length)
 		.toBe(2);
-	await expect
-		.poll(() => calls.filter((c) => c.name === "dues_v2_read").length)
-		.toBe(2);
+    await expect(page.getByRole("region", { name: "거래 9", exact: true })).toHaveCount(0);
+    await expect.poll(() => page.evaluate(async () => {
+        const moduleUrl = "/src/store/duesStore.ts";
+        const { useDuesStore } = await import(moduleUrl);
+        return useDuesStore.getState().data;
+    })).toBeNull();
+    expect(calls.filter((c) => c.name === "dues_read")).toHaveLength(1);
 });
 
 test("manual voucher splits and rounds the total for selected member IDs without writing before confirmation", async ({
@@ -1643,24 +1685,24 @@ test("manual voucher splits and rounds the total for selected member IDs without
 			).toBe(true);
 		}
 	}
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(0);
 	await voucher
 		.getByRole("button", { name: "2명에게 발행", exact: true })
 		.click();
 	await expect(page.getByRole("status")).toContainText("부과를 발행했습니다");
-	expect(calls.filter((c) => c.name === "dues_v2_preview")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_preview")).toHaveLength(0);
 	const issued = await db.query<{
 		member_id: string;
 		amount: number;
 		due_ym: string;
 	}>(
-		"select c.member_id,c.amount,d.due_ym from dues_v2_charges c join dues_v2_groups g on g.id=c.group_id join dues_v2_due d on d.charge_id=c.id where g.label='9월 회식 분할' order by c.member_id",
+		"select c.member_id,c.amount,d.due_ym from dues_charges c join dues_groups g on g.id=c.group_id join dues_due d on d.charge_id=c.id where g.label='9월 회식 분할' order by c.member_id",
 	);
 	expect(issued.rows).toEqual([
 		{ member_id: A, amount: 5100, due_ym: "2026-09" },
 		{ member_id: B, amount: 5100, due_ym: "2026-09" },
 	]);
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(1);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(1);
 });
 
 test("receipt options retain access to another balance split from the same deposit", async ({
@@ -1670,10 +1712,10 @@ test("receipt options retain access to another balance split from the same depos
 		"insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',6000,'2026-09-06','김지훈')",
 	);
 	const position = await scalar<string>(
-		"select id from dues_v2_positions where bank_tx_id=90",
+		"select id from dues_positions where bank_tx_id=90",
 	);
 	const group = await scalar<string>(
-		"select id from dues_v2_groups where source_key='manual:meal:1'",
+		"select id from dues_groups where source_key='manual:meal:1'",
 	);
 	await command({
 		action: "position",
@@ -1704,8 +1746,8 @@ test("receipt options retain access to another balance split from the same depos
 		card.getByRole("button", { name: "직접 수입", exact: true }),
 	).toHaveAttribute("aria-pressed", "true");
 	await expect(card.getByLabel("변경할 금액")).toHaveValue("1000");
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(0);
-	await card.getByRole("button", { name: "취소", exact: true }).click();
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(0);
+	await card.getByRole("button", { name: "용도 지정 닫기", exact: true }).click();
 	await expect(card.getByRole("button", { name: "정산 옵션" })).toBeVisible();
 });
 
@@ -1738,7 +1780,7 @@ test("manual issue keeps its draft across views and retries a lost response with
 	await expect(voucher.getByLabel("인당 금액", { exact: true })).toHaveValue(
 		"3500",
 	);
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(0);
 	loseCommitResponse = true;
 	await voucher
 		.getByRole("button", { name: "1명에게 발행", exact: true })
@@ -1760,13 +1802,13 @@ test("manual issue keeps its draft across views and retries a lost response with
 		.getByRole("button", { name: "결과 다시 확인", exact: true })
 		.click();
 	await expect(page.getByRole("status")).toContainText("부과를 발행했습니다");
-	const commits = calls.filter((c) => c.name === "dues_v2_command");
+	const commits = calls.filter((c) => c.name === "dues_command");
 	expect(commits).toHaveLength(2);
 	expect(commits[0].args).toEqual(commits[1].args);
-	expect(calls.filter((c) => c.name === "dues_v2_preview")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_preview")).toHaveLength(0);
 	expect(
 		await scalar(
-			"select count(*)::int from dues_v2_charges c join dues_v2_groups g on g.id=c.group_id where g.label='응답 유실 검증 부과' and c.member_id=$1 and c.amount=3500",
+			"select count(*)::int from dues_charges c join dues_groups g on g.id=c.group_id where g.label='응답 유실 검증 부과' and c.member_id=$1 and c.amount=3500",
 			[B],
 		),
 	).toBe(1);
@@ -1853,7 +1895,7 @@ test("the charge design keeps a full roster and its totals together on mobile an
 	}
 	expect(
 		calls.filter((c) =>
-			["dues_v2_command", "dues_v2_preview"].includes(c.name),
+			["dues_command", "dues_preview"].includes(c.name),
 		),
 	).toHaveLength(0);
 });
@@ -1864,11 +1906,11 @@ test("custom manual issue creates its own group and leaves existing same-name gr
 	await db.exec(`
 		update members set birth_year=1996 where id='${A}';
 		update members set birth_year=2002 where id='${B}';
-		update dues_v2_groups set label='정모 회식비' where source_key='manual:meal:1';
+		update dues_groups set label='정모 회식비' where source_key='manual:meal:1';
 	`);
-	const groupsBefore = await db.query("select * from dues_v2_groups order by id");
-	const chargesBefore = await db.query("select * from dues_v2_charges order by id");
-	const allocationsBefore = await db.query("select * from dues_v2_allocations order by id");
+	const groupsBefore = await db.query("select * from dues_groups order by id");
+	const chargesBefore = await db.query("select * from dues_charges order by id");
+	const allocationsBefore = await db.query("select * from dues_allocations order by id");
 	await navigate(page, "/dues/2026-09/charge");
 	const voucher = page.getByRole("region", { name: "부과 발행", exact: true });
 	await expect(voucher.getByRole("group", { name: "회계 묶음", exact: true })).toHaveCount(0);
@@ -1886,22 +1928,22 @@ test("custom manual issue creates its own group and leaves existing same-name gr
 			await designEvidence(page, `custom-charge-${width}-${theme}`);
 		}
 	}
-	expect(calls.filter((c) => c.name === "dues_v2_read")).toHaveLength(1);
-	expect(calls.filter((c) => ["dues_v2_command", "dues_v2_preview"].includes(c.name))).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_read")).toHaveLength(1);
+	expect(calls.filter((c) => ["dues_command", "dues_preview"].includes(c.name))).toHaveLength(0);
 	await voucher.getByRole("button", { name: "1명에게 발행" }).click();
 	await expect(page.getByRole("status")).toContainText("부과를 발행했습니다");
-	const commits = calls.filter((c) => c.name === "dues_v2_command");
+	const commits = calls.filter((c) => c.name === "dues_command");
 	expect(commits).toHaveLength(1);
 	expect(commits[0].args.p_payload).not.toHaveProperty("group_id");
 	expect(commits[0].args.p_payload).toMatchObject({
 		label: "정모 회식비", date: "2026-09-08",
 		lines: [{ member_id: B, amount: 3500, due_ym: "2026-09" }],
 	});
-	const afterGroups = (await db.query("select * from dues_v2_groups order by id")).rows;
+	const afterGroups = (await db.query("select * from dues_groups order by id")).rows;
 	expect(afterGroups).toHaveLength(groupsBefore.rows.length + 1);
 	expect(afterGroups.filter((g) => groupsBefore.rows.some((old) => old.id === g.id))).toEqual(groupsBefore.rows);
-	expect((await db.query("select * from dues_v2_allocations order by id")).rows).toEqual(allocationsBefore.rows);
-	const after = (await db.query("select * from dues_v2_charges order by id")).rows;
+	expect((await db.query("select * from dues_allocations order by id")).rows).toEqual(allocationsBefore.rows);
+	const after = (await db.query("select * from dues_charges order by id")).rows;
 	expect(after).toHaveLength(chargesBefore.rows.length + 1);
 	expect(after.filter((c) => chargesBefore.rows.some((old) => old.id === c.id))).toEqual(chargesBefore.rows);
 });
@@ -1933,7 +1975,7 @@ test("charge roster presets replace the draft automatically and load older month
 	await expect(preset.getByRole("combobox")).toHaveCount(0);
 	await expect(source.locator("button[value='21']")).toHaveCount(1);
 	await expect(source.locator("button[value='30']")).toHaveCount(0);
-	expect(calls.filter((c) => c.name === "dues_v2_sessions")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_sessions")).toHaveLength(0);
 	expect(calls.filter((c) => c.name === "reference_sessions")).toHaveLength(2);
 	const range = calls.find(
 		(c) => c.name === "reference_sessions" && c.args.start,
@@ -2003,7 +2045,7 @@ test("charge roster presets replace the draft automatically and load older month
 	expect(
 		calls.filter(
 			(c) =>
-				c.name === "dues_v2_reference_members" &&
+				c.name === "dues_reference_members" &&
 				c.args.p_session_id === 20 &&
 				c.args.p_meal === true,
 		),
@@ -2050,19 +2092,19 @@ test("charge roster presets replace the draft automatically and load older month
 		"aria-pressed",
 		"true",
 	);
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(0);
 	await voucher
 		.getByRole("button", { name: "1명에게 발행", exact: true })
 		.click();
 	await expect(page.getByRole("status")).toContainText("부과를 발행했습니다");
 	expect(
 		await scalar(
-			"select basis->>'reference_session_id' from dues_v2_charges where legacy_id is null",
+			"select basis->>'reference_session_id' from dues_charges where legacy_id is null",
 		),
 	).toBe("40");
 	expect(
 		await scalar(
-			"select count(*)::int from dues_v2_charges where legacy_id is null and member_id=$1 and amount=11000",
+			"select count(*)::int from dues_charges where legacy_id is null and member_id=$1 and amount=11000",
 			[B],
 		),
 	).toBe(1);
@@ -2095,7 +2137,7 @@ test("charge preset fetch failures preserve the draft and allow retry without pr
 		release = resolve;
 	});
 	await page.route(
-		"**/rpc/dues_v2_reference_members",
+		"**/rpc/dues_reference_members",
 		async (route) => {
 			await wait;
 			await route.fulfill({ status: 503, json: { message: "연결 실패" } });
@@ -2162,7 +2204,7 @@ test("charge preset fetch failures preserve the draft and allow retry without pr
 		.getByRole("button", { name: "더 보기 · 2026년 8월", exact: true })
 		.click();
 	await expect(source.locator("button[value='1']")).toHaveCount(1);
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(0);
 });
 
 test("overview detail keeps its close button visible while a long roster scrolls", async ({
@@ -2307,12 +2349,12 @@ test("ledger detail uses the inbox receipt and retains partial-payment reversal 
 			).toBe(true);
 		}
 	}
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(0);
 	await card.getByRole("button", { name: "납부 확인", exact: true }).click();
 	await expect(
 		card.getByText("정산할 잔액 500원", { exact: true }),
 	).toBeVisible();
-	const commit = calls.find((c) => c.name === "dues_v2_command")!;
+	const commit = calls.find((c) => c.name === "dues_command")!;
 	expect(commit.args.p_payload).toMatchObject({
 		reason: "회계 · 박민준0906 · 납부 확인",
 	});
@@ -2329,17 +2371,17 @@ test("ledger detail uses the inbox receipt and retains partial-payment reversal 
 	await expect
 		.poll(() =>
 			scalar(
-				"select sum(amount)::int from dues_v2_positions where bank_tx_id=90",
+				"select sum(amount)::int from dues_positions where bank_tx_id=90",
 			),
 		)
 		.toBe(6500);
 	expect(
 		await scalar(
-			"select sum(amount-reversed)::int from dues_v2_allocations where bank_tx_id=90",
+			"select sum(amount-reversed)::int from dues_allocations where bank_tx_id=90",
 		),
 	).toBe(0);
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(2);
-	expect(calls.filter((c) => c.name === "dues_v2_preview")).toHaveLength(0);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(2);
+	expect(calls.filter((c) => c.name === "dues_preview")).toHaveLength(0);
 });
 
 test("partial settlement keeps its remainder in inbox but another member needs a separate charge target", async ({
@@ -2380,10 +2422,10 @@ test("partial settlement keeps its remainder in inbox but another member needs a
 		0,
 	);
 	const position = await scalar<string>(
-		"select id from dues_v2_positions where bank_tx_id=90 and amount>0",
+		"select id from dues_positions where bank_tx_id=90 and amount>0",
 	);
 	const due = await scalar<string>(
-		"select d.id from dues_v2_due d join dues_v2_charges c on c.id=d.charge_id where c.group_id=$1 and c.member_id=$2",
+		"select d.id from dues_due d join dues_charges c on c.id=d.charge_id where c.group_id=$1 and c.member_id=$2",
 		[issued.group_id, B],
 	);
 	const lines = [{ position_id: position, due_id: due, amount: 6000 }];
@@ -2401,27 +2443,27 @@ test("partial settlement keeps its remainder in inbox but another member needs a
 	);
 	expect(
 		await scalar(
-			"select sum(amount)::int from dues_v2_positions where bank_tx_id=90",
+			"select sum(amount)::int from dues_positions where bank_tx_id=90",
 		),
 	).toBe(6000);
 	// Feasibility check on the synthetic DB only: preserve A as sender while paying B's charge.
 	await command({ action: "pay", owner_id: A, proxy: true, lines });
 	expect(
 		await scalar(
-			"select sum(amount)::int from dues_v2_positions where bank_tx_id=90",
+			"select sum(amount)::int from dues_positions where bank_tx_id=90",
 		),
 	).toBe(0);
 	expect(
 		await scalar(
-			"select count(*)::int from dues_v2_allocations where bank_tx_id=90 and owner_id=$1",
+			"select count(*)::int from dues_allocations where bank_tx_id=90 and owner_id=$1",
 			[A],
 		),
 	).toBe(2);
 	expect(
-		await scalar("select remaining from dues_v2_due where id=$1", [due]),
+		await scalar("select remaining from dues_due where id=$1", [due]),
 	).toBe(0);
 	// The removed UI never submits the proxy command used by this feasibility probe.
-	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(1);
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(1);
 });
 
 test("upcoming court prepayment shares the receipt, keeps namesakes and same-day sessions distinct, and retries without duplicates", async ({
@@ -2435,7 +2477,7 @@ test("upcoming court prepayment shares the receipt, keeps namesakes and same-day
 		(11,'오후','open','2026-09-13T15:00:00+09','2026-09-13T18:00:00+09',10);
 		insert into attendances(session_id,member_id,status) values(10,'${A}','confirmed'),(11,'${A}','confirmed'),(10,'${B}','waitlisted');
 		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',8000,'2026-09-10T12:00:00+09','김지훈0913');
-		select dues_v2_sync_bank();
+		select dues_sync_bank();
 	`);
 	await navigate(page, "/dues/2026-09/inbox");
 	const card = page.getByRole("region", { name: "거래 90", exact: true });
@@ -2475,14 +2517,14 @@ test("upcoming court prepayment shares the receipt, keeps namesakes and same-day
 			).toBe(true);
 		}
 	}
-	expect(calls.filter((c) => c.name === "dues_v2_read")).toHaveLength(1);
+	expect(calls.filter((c) => c.name === "dues_read")).toHaveLength(1);
 	expect(
 		calls.filter((c) =>
 			[
-				"dues_v2_command",
-				"dues_v2_preview",
-				"dues_v2_candidates",
-				"dues_v2_sessions",
+				"dues_command",
+				"dues_preview",
+				"dues_candidates",
+				"dues_sessions",
 			].includes(c.name),
 		),
 	).toHaveLength(0);
@@ -2496,16 +2538,16 @@ test("upcoming court prepayment shares the receipt, keeps namesakes and same-day
 		.click();
 	expect(
 		await scalar(
-			"select count(*)::int from dues_v2_charges c join dues_v2_groups g on g.id=c.group_id where g.session_id=10 and c.member_id=$1",
+			"select count(*)::int from dues_charges c join dues_groups g on g.id=c.group_id where g.session_id=10 and c.member_id=$1",
 			[A],
 		),
 	).toBe(1);
 	expect(
 		await scalar(
-			"select sum(amount)::int from dues_v2_positions where bank_tx_id=90",
+			"select sum(amount)::int from dues_positions where bank_tx_id=90",
 		),
 	).toBe(2000);
-	const commits = calls.filter((c) => c.name === "dues_v2_command");
+	const commits = calls.filter((c) => c.name === "dues_command");
 	expect(commits).toHaveLength(2);
 	expect(commits[0].args).toEqual(commits[1].args);
 	await expect(card).toBeVisible();
@@ -2524,7 +2566,7 @@ test("a stale upcoming court fee refreshes before an explicit new confirmation",
 		insert into places values(10,'에이트민턴',true);
 		insert into sessions(id,title,status,scheduled_at,ends_at,place_id) values(10,'예정','open','2026-10-04T09:00:00+09','2026-10-04T12:00:00+09',10);
 		insert into attendances(session_id,member_id,status) values(10,'${A}','confirmed');
-		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',8000,'2026-09-10T12:00:00+09','이민수'); select dues_v2_sync_bank();`);
+		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',8000,'2026-09-10T12:00:00+09','이민수'); select dues_sync_bank();`);
 	await navigate(page, "/dues/2026-09/inbox");
 	const card = page.getByRole("region", { name: "거래 90", exact: true });
 	await card.getByRole("button", { name: /2026-10-04.*선납/ }).click();
@@ -2533,7 +2575,7 @@ test("a stale upcoming court fee refreshes before an explicit new confirmation",
 	await expect(card.getByText(/바뀐 내역을 확인한 뒤 다시 확인/)).toBeVisible();
 	expect(
 		await scalar(
-			"select count(*)::int from dues_v2_groups where session_id=10",
+			"select count(*)::int from dues_groups where session_id=10",
 		),
 	).toBe(0);
 	// The receipt retains the chosen partial amount, but shows the updated full fee.
@@ -2542,7 +2584,7 @@ test("a stale upcoming court fee refreshes before an explicit new confirmation",
 	await card.getByRole("button", { name: /^납부 확인/ }).click();
 	expect(
 		await scalar(
-			"select sum(amount)::int from dues_v2_allocations where bank_tx_id=90",
+			"select sum(amount)::int from dues_allocations where bank_tx_id=90",
 		),
 	).toBe(7000);
 	expect(
@@ -2550,4 +2592,216 @@ test("a stale upcoming court fee refreshes before an explicit new confirmation",
 			"select to_char(occurred_at at time zone 'Asia/Seoul','YYYY-MM') from bank_transactions where id=90",
 		),
 	).toBe("2026-09");
+});
+
+test("receipt editors keep the compact card and preserve payment choices when closed", async ({
+	page,
+}) => {
+	await db.exec(`update members set name='박현아' where id='${A}';
+		update members set name='이서연' where id='${B}';
+		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',5000,'2026-09-09T11:24:00+09','9월회비박현아');`);
+	await command({
+		action: "issue",
+		kind: "manual",
+		label: "9월 모임",
+		date: "2026-09-13",
+		lines: [{ member_id: A, amount: 6000, due_ym: "2026-09" }],
+	});
+	await page.setViewportSize({ width: 390, height: 844 });
+	await navigate(page, "/dues/2026-09/inbox");
+	const card = page.getByRole("region", { name: "거래 90", exact: true });
+	const options = card.getByRole("button", { name: "정산 옵션", exact: true });
+	const payer = card.locator(".ac-receipt-payer");
+	const payment = card
+		.getByRole("group", { name: "납부할 항목 선택", exact: true })
+		.getByRole("button", { name: /^9월 모임/ });
+	await payment.click();
+	const cardStyles = () =>
+		card.evaluate((el) =>
+			[
+				".ac-receipt-heading",
+				".ac-receipt-payer strong",
+				".ac-receipt-amount",
+				".ac-inline-confirm",
+			].map((selector) => {
+				const style = getComputedStyle(el.querySelector(selector)!);
+				return {
+					font: style.fontSize,
+					padding: style.padding,
+					minHeight: style.minHeight,
+				};
+			}),
+		);
+	const initialStyles = await cardStyles();
+	await options.click();
+	await card.getByLabel("9월 모임 선택 금액").fill("3000");
+	await expect(payment).toHaveAttribute("aria-pressed", "true");
+	expect(await cardStyles()).toEqual(initialStyles);
+	await designEvidence(page, "receipt-options-390-dark");
+
+	for (const [action, label] of [
+		["carry", "이월"],
+		["position", "용도 지정"],
+	]) {
+		await card.getByRole("button", { name: label, exact: true }).click();
+		const editor = card.getByRole("group", {
+			name: `${label} 설정`,
+			exact: true,
+		});
+		await expect(editor).toBeVisible();
+		await expect(card.locator(".ac-receipt-editor-heading")).toBeFocused();
+		await expect(
+			card.locator(".ac-segment, .ac-transaction-heading"),
+		).toHaveCount(0);
+		await expect(
+			card.getByRole("button", { name: "납부 연결", exact: true }),
+		).toHaveCount(0);
+		await expect(
+			card.getByRole("group", { name: "납부자 검색 결과" }),
+		).toHaveCount(0);
+		await expect(payer).toContainText("박현아");
+		expect(await cardStyles()).toEqual(initialStyles);
+		if (action === "carry") {
+			await expect(
+				editor.getByRole("button", { name: /^9월 모임/ }),
+			).toHaveAttribute("aria-pressed", "false");
+			await editor.getByLabel("이월할 월").fill("2099-01");
+			await editor
+				.getByRole("button", { name: "이 입금 · 5,000원", exact: true })
+				.click();
+			await editor.getByLabel("입금 90 이월 금액").fill("2000");
+		} else {
+			await editor
+				.getByRole("button", { name: "환불 대기", exact: true })
+				.click();
+			await editor.getByLabel("변경할 금액").fill("1500");
+		}
+		await expect(
+			card.getByRole("button", { name: `${label} 확인`, exact: true }),
+		).toBeEnabled();
+		for (const [width, height] of [
+			[390, 844],
+			[1440, 1000],
+		]) {
+			await page.setViewportSize({ width, height });
+			for (const theme of ["light", "dark"]) {
+				await page.evaluate(
+					(dark) => document.documentElement.classList.toggle("dark", dark),
+					theme === "dark",
+				);
+				await designEvidence(page, `receipt-${action}-${width}-${theme}`);
+				expect(
+					await page.evaluate(
+						() => document.documentElement.scrollWidth <= innerWidth,
+					),
+				).toBe(true);
+				const box = (await card.boundingBox())!;
+				const confirmBox = (await card
+					.getByRole("button", { name: `${label} 확인`, exact: true })
+					.boundingBox())!;
+				expect(Math.abs(box.width - confirmBox.width - 28)).toBeLessThan(2);
+			}
+		}
+		await editor
+			.getByRole("button", { name: `${label} 닫기`, exact: true })
+			.click();
+		await expect(editor).toHaveCount(0);
+		await expect(options).toBeFocused();
+		await expect(payment).toHaveAttribute("aria-pressed", "true");
+		await expect(payer).toContainText("박현아");
+		await expect(card).toContainText("입금 잔액 2,000원 보관");
+		await options.click();
+		await expect(card.getByLabel("9월 모임 선택 금액")).toHaveValue("3000");
+	}
+	expect(calls.filter((call) => call.name === "dues_command")).toHaveLength(
+		0,
+	);
+	await options.click();
+	await card.getByRole("button", { name: "납부 확인", exact: true }).click();
+	await expect
+		.poll(() =>
+			scalar(
+				"select sum(amount-reversed)::int from dues_allocations where bank_tx_id=90",
+			),
+		)
+		.toBe(3000);
+	expect(calls.filter((call) => call.name === "dues_command")).toHaveLength(
+		1,
+	);
+});
+
+test("cash-only receipt carry shows one grouped amount without debt controls", async ({ page }) => {
+	const member = "00000000-0000-4000-8000-000000000008";
+	await db.exec(`insert into members(id,name,birth_year) values('${member}','박현아',1995);
+		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',5000,'2026-09-09T11:24:00+09','9월회비박현아');`);
+	await page.setViewportSize({ width: 390, height: 844 });
+	await navigate(page, "/dues/2026-09/inbox");
+	const card = page.getByRole("region", { name: "거래 90", exact: true });
+	await card.getByRole("button", { name: "정산 옵션", exact: true }).click();
+	await card.getByRole("button", { name: "이월", exact: true }).click();
+	const editor = card.getByRole("group", { name: "이월 설정", exact: true });
+	await expect(editor.getByRole("group", { name: "이월할 미납 선택" })).toHaveCount(0);
+	await expect(editor.getByRole("checkbox")).toHaveCount(0);
+	await expect(card.getByRole("button", { name: "이월 확인", exact: true })).toBeDisabled();
+	await editor.getByRole("button", { name: "이 입금 · 5,000원", exact: true }).click();
+	await expect(editor.getByLabel("입금 90 이월 금액")).toHaveValue("5000");
+	await expect(editor.getByLabel("이월할 월")).toHaveValue("2026-10");
+	await expect(card.getByRole("button", { name: "이월 확인", exact: true })).toBeEnabled();
+	await page.evaluate(() => document.documentElement.classList.add("dark"));
+	await designEvidence(page, "receipt-cash-only-390-dark");
+	await card.getByRole("button", { name: "이월 확인", exact: true }).click();
+	await expect(card).toHaveCount(0);
+	expect(await scalar("select sum(amount)::int from dues_positions where bank_tx_id=90 and purpose='carry' and available_ym='2026-10'")).toBe(5000);
+});
+
+test("refund shares the receipt shell and restores the expense draft on close", async ({ page }) => {
+	const member = "00000000-0000-4000-8000-000000000008";
+	await db.exec(`insert into members(id,name,birth_year) values('${member}','성재경',1995);
+		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values
+		(90,'in',7000,'2026-09-09T11:24:00+09','성재경'),
+		(91,'out',5000,'2026-09-10T12:00:00+09','성재경'); select dues_sync_bank();`);
+	const position = await scalar<string>("select id from dues_positions where bank_tx_id=90");
+	await command({ action: "position", position_id: position, amount: 7000, purpose: "member_pending", owner_id: member });
+	await page.setViewportSize({ width: 390, height: 844 });
+	await navigate(page, "/dues/2026-09/inbox");
+	const card = page.getByRole("region", { name: "거래 91", exact: true });
+	const options = card.getByRole("button", { name: "정산 옵션", exact: true });
+	const style = () => card.evaluate((el) => [".ac-receipt-heading", ".ac-receipt-payer strong", ".ac-inline-confirm"].map((selector) => {
+		const s = getComputedStyle(el.querySelector(selector)!); return { font: s.fontSize, padding: s.padding, height: s.minHeight };
+	}));
+	const expenseStyle = await style();
+	await card.getByRole("group", { name: "회계 항목 선택" }).getByRole("button", { name: "회식", exact: true }).click();
+	await options.click();
+	await card.getByRole("button", { name: "환불 연결", exact: true }).click();
+	const editor = card.getByRole("group", { name: "환불 연결 설정", exact: true });
+	await expect(editor).toBeVisible();
+	await expect(card.locator(".ac-receipt-heading")).toHaveCount(1);
+	await expect(card.locator(".ac-refund-outgoing, .ac-transaction-heading, .ac-segment")).toHaveCount(0);
+	await expect(card.getByRole("group", { name: "납부자 필터" })).toHaveCount(0);
+	expect(await style()).toEqual(expenseStyle);
+	await page.evaluate(() => document.documentElement.classList.add("dark"));
+	await designEvidence(page, "receipt-refund-search-390-dark");
+	await editor.getByRole("group", { name: "납부자 검색 결과" }).getByRole("button", { name: /성재경/ }).click();
+	await editor.getByRole("radio", { name: /입금 #90 / }).check();
+	await expect(card.getByRole("button", { name: "환불 확인", exact: true })).toBeEnabled();
+	for (const [width, height] of [[390, 844], [1440, 1000]]) {
+		await page.setViewportSize({ width, height });
+		for (const theme of ["light", "dark"]) {
+			await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), theme === "dark");
+			await designEvidence(page, `receipt-refund-${width}-${theme}`);
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+		}
+	}
+	await editor.getByRole("button", { name: "환불 연결 닫기", exact: true }).click();
+	await expect(options).toBeFocused();
+	await expect(card.getByRole("group", { name: "회계 항목 선택" }).getByRole("button", { name: "회식", exact: true })).toHaveAttribute("aria-pressed", "true");
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(0);
+	await options.click();
+	await card.getByRole("button", { name: "환불 연결", exact: true }).click();
+	await expect(editor.getByRole("radio", { name: /입금 #90 / })).toBeChecked();
+	await card.getByRole("button", { name: "환불 확인", exact: true }).click();
+	await expect(card).toHaveCount(0);
+	expect(await scalar("select amount from dues_refunds where out_tx_id=91")).toBe(5000);
+	expect(await scalar("select group_id from dues_expenses where bank_tx_id=91")).toBeNull();
+	expect(calls.filter((c) => c.name === "dues_command").map((c) => (c.args.p_payload as { action: string }).action)).toEqual(["refund"]);
 });

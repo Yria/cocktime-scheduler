@@ -1,3 +1,11 @@
+-- HISTORICAL: pre-promotion V1 transition tooling only.
+-- Current ledger validation: scripts/dues-verify.sql. Use a full PostgreSQL backup for recovery.
+do $$ begin
+ if to_regclass('public.dues_control') is not null then
+  raise exception '이 스크립트는 최초 v1 이관용입니다. 정식 원장은 scripts/dues-verify.sql로 확인하세요';
+ end if;
+end $$;
+
 -- 과거 납부 처리 보존 및 새 부과/이월 모델 전환을 위한 읽기 전용 조사.
 -- 실행: supabase db query --linked --output json --file scripts/accounting-transition-audit.sql
 -- 단일 SELECT의 동일 스냅샷에서 집계한다. 데이터/설정/마감 상태를 변경하지 않는다.

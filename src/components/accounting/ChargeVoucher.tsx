@@ -1,20 +1,20 @@
 import { useEffect, useState } from "react";
-import { matchingMembers, receiptHistory } from "../../lib/dues/v2/selection";
+import { matchingMembers, receiptHistory } from "../../lib/dues/selection";
 import MemberPicker from "./MemberPicker";
 import RefundPicker, { type RefundSelection } from "./RefundPicker";
-import { memberLabel } from "../../lib/dues/v2/summary";
+import { memberLabel } from "../../lib/dues/summary";
 import type {
 	AccountingCommand,
 	AccountingData,
 	OperationResult,
-} from "../../lib/dues/v2/types";
-import { actionLabel, purposeLabel } from "../../lib/dues/v2/types";
+} from "../../lib/dues/types";
+import { actionLabel, purposeLabel } from "../../lib/dues/types";
 import {
 	accountingError,
 	commitAccounting,
 	previewAccounting,
-} from "../../lib/supabase/accountingV2";
-import { shiftYm, won } from "../admin/dues/duesText";
+} from "../../lib/supabase/dues";
+import { shiftYm, won } from "../../lib/dues/duesText";
 import type { OperationDraft } from "./OperationDialog";
 import { randomId } from "../../lib/randomId";
 import ManualChargeFields from "./ManualChargeFields";
@@ -1146,15 +1146,23 @@ export default function ChargeVoucher({
 					</>
 				)}
 				{draft.type === "refund" && (
-					<RefundPicker
-						data={data}
-						outTxId={draft.outTxId!}
-						value={refund}
-						onChange={(value) => {
-							setRefund(value);
-							setError("");
-						}}
-					/>
+					<>
+						<div className="ac-refund-outgoing">
+							<strong>{outgoing?.name || "출금"}</strong>
+							<strong className="ac-out ac-number">
+								−{won(outgoing?.amount ?? 0)}
+							</strong>
+						</div>
+						<RefundPicker
+							data={data}
+							outTxId={draft.outTxId!}
+							value={refund}
+							onChange={(value) => {
+								setRefund(value);
+								setError("");
+							}}
+						/>
+					</>
 				)}
 				{(!compactManual || optionsOpen) && (
 					<label className={compactManual ? "ac-issue-memo" : undefined}>

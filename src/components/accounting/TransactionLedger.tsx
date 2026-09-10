@@ -1,11 +1,11 @@
 import { Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { transactionNeedsSettlement } from "../../lib/dues/v2/quickSettlement";
-import { kstMonth, memberLabel } from "../../lib/dues/v2/summary";
-import { shortGroupLabel } from "../../lib/dues/v2/labelShorten";
-import type { AccountingData, BankTransaction } from "../../lib/dues/v2/types";
-import { fmtMDSlash, won } from "../admin/dues/duesText";
-import { nameMatches } from "../admin/dues/matching";
+import { transactionNeedsSettlement } from "../../lib/dues/quickSettlement";
+import { kstMonth, memberLabel } from "../../lib/dues/summary";
+import { shortGroupLabel } from "../../lib/dues/labelShorten";
+import type { AccountingData, BankTransaction } from "../../lib/dues/types";
+import { fmtMDSlash, won } from "../../lib/dues/duesText";
+import { nameMatches } from "../../lib/dues/matching";
 import TransactionCard from "./TransactionCard";
 
 function describeTransaction(data: AccountingData, tx: BankTransaction) {

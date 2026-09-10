@@ -7,7 +7,7 @@ import {
 	kstWallClockToISO,
 } from "../../lib/schedule/calendar";
 import { parseCourtFee } from "../../lib/schedule/courtFee";
-import { countSessionPrepaid } from "../../lib/supabase/dues";
+import { sessionDeletionInfo } from "../../lib/supabase/dues";
 import type {
 	OccurrencePatch,
 	OneOffInput,
@@ -184,17 +184,17 @@ export function useOccurrenceForm(
 		if (!occurrence || busy || deletingRef.current) return;
 		deletingRef.current = true;
 		try {
-			let msg = "이 회차를 삭제할까요? 되돌릴 수 없어요.";
-			// 일회성 회차는 하드 삭제(반복 회차는 cancelled 텀스톤이라 선납 부과 보존). 선납(입금 배분된) 대관비가
-			// 걸린 세션을 하드 삭제하면 그 입금이 미정산으로 되돌아가므로(돈은 사라지지 않음) 미리 경고한다.
-			if (!isRuleBased) {
-				const n = await countSessionPrepaid(occurrence.id);
-				if (n > 0)
-					msg = `이 세션에 선납 정산 ${n}건이 걸려 있어요.\n삭제하면 해당 입금이 미정산으로 되돌아가요(돈은 사라지지 않고 정산함에 다시 떠요).\n계속 삭제할까요?`;
-			}
+			const info = await sessionDeletionInfo(occurrence.id);
+			const msg = info.preserve
+				? "이 회차를 취소할까요? 부과·납부 기록은 유지돼요. 부과 취소나 환불은 회비 관리에서 처리해 주세요."
+				: "이 회차를 삭제할까요? 되돌릴 수 없어요.";
 			if (!confirm(msg)) return;
-			void run(async () => {
+			await run(async () => {
 				await onDelete(occurrence);
+			});
+		} catch (e) {
+			await run(async () => {
+				throw e;
 			});
 		} finally {
 			deletingRef.current = false;
