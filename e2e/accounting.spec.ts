@@ -170,6 +170,12 @@ test.beforeEach(async ({ page, context }, testInfo) => {
 			"utf8",
 		),
 	);
+	await db.exec(
+		readFileSync(
+			new URL("../supabase/migrations/20260910010000_court_prepayment.sql", import.meta.url),
+			"utf8",
+		),
+	);
 	await context.routeWebSocket(
 		/^(?!ws:\/\/(127\.0\.0\.1|localhost))/,
 		(socket) => socket.close(),
@@ -2416,4 +2422,132 @@ test("partial settlement keeps its remainder in inbox but another member needs a
 	).toBe(0);
 	// The removed UI never submits the proxy command used by this feasibility probe.
 	expect(calls.filter((c) => c.name === "dues_v2_command")).toHaveLength(1);
+});
+
+test("upcoming court prepayment shares the receipt, keeps namesakes and same-day sessions distinct, and retries without duplicates", async ({
+	page,
+}) => {
+	await db.exec(`
+		update members set birth_year=1996 where id='${A}'; update members set birth_year=2002 where id='${B}';
+		insert into places values(10,'에이트민턴',true);
+		insert into sessions(id,title,status,scheduled_at,ends_at,place_id) values
+		(10,'오전','open','2026-09-13T09:00:00+09','2026-09-13T12:00:00+09',10),
+		(11,'오후','open','2026-09-13T15:00:00+09','2026-09-13T18:00:00+09',10);
+		insert into attendances(session_id,member_id,status) values(10,'${A}','confirmed'),(11,'${A}','confirmed'),(10,'${B}','waitlisted');
+		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',8000,'2026-09-10T12:00:00+09','김지훈0913');
+		select dues_v2_sync_bank();
+	`);
+	await navigate(page, "/dues/2026-09/inbox");
+	const card = page.getByRole("region", { name: "거래 90", exact: true });
+	await card
+		.getByRole("group", { name: "납부자 검색 결과" })
+		.getByRole("button", { name: /2002년생/ })
+		.click();
+	await expect(card.getByRole("button", { name: /선납/ })).toHaveCount(0);
+	await card.getByRole("button", { name: "납부자 변경", exact: true }).click();
+	await card
+		.getByRole("group", { name: "납부자 검색 결과" })
+		.getByRole("button", { name: /1996년생/ })
+		.click();
+	const targets = card.getByRole("group", { name: "납부할 항목 선택" });
+	const morning = targets.getByRole("button", { name: /09:00–12:00.*선납/ });
+	await expect(morning).toBeVisible();
+	await expect(
+		targets.getByRole("button", { name: /15:00–18:00.*선납/ }),
+	).toBeVisible();
+	await morning.click();
+	await expect(card).toContainText("입금 잔액 2,000원 보관");
+	for (const [width, height] of [
+		[390, 844],
+		[1280, 900],
+	]) {
+		await page.setViewportSize({ width, height });
+		for (const theme of ["light", "dark"]) {
+			await page.evaluate(
+				(dark) => document.documentElement.classList.toggle("dark", dark),
+				theme === "dark",
+			);
+			await designEvidence(page, `court-prepayment-${width}-${theme}`);
+			expect(
+				await page.evaluate(
+					() => document.documentElement.scrollWidth <= innerWidth,
+				),
+			).toBe(true);
+		}
+	}
+	expect(calls.filter((c) => c.name === "dues_v2_read")).toHaveLength(1);
+	expect(
+		calls.filter((c) =>
+			[
+				"dues_v2_command",
+				"dues_v2_preview",
+				"dues_v2_candidates",
+				"dues_v2_sessions",
+			].includes(c.name),
+		),
+	).toHaveLength(0);
+	loseCommitResponse = true;
+	await card.getByRole("button", { name: /^납부 확인/ }).click();
+	await expect(
+		card.getByRole("button", { name: "결과 다시 확인", exact: true }),
+	).toBeEnabled();
+	await card
+		.getByRole("button", { name: "결과 다시 확인", exact: true })
+		.click();
+	expect(
+		await scalar(
+			"select count(*)::int from dues_v2_charges c join dues_v2_groups g on g.id=c.group_id where g.session_id=10 and c.member_id=$1",
+			[A],
+		),
+	).toBe(1);
+	expect(
+		await scalar(
+			"select sum(amount)::int from dues_v2_positions where bank_tx_id=90",
+		),
+	).toBe(2000);
+	const commits = calls.filter((c) => c.name === "dues_v2_command");
+	expect(commits).toHaveLength(2);
+	expect(commits[0].args).toEqual(commits[1].args);
+	await expect(card).toBeVisible();
+	await expect(
+		card.getByRole("button", { name: /09:00–12:00.*선납/ }),
+	).toHaveCount(0);
+	await expect(
+		card.getByRole("button", { name: /15:00–18:00.*선납/ }),
+	).toBeVisible();
+});
+
+test("a stale upcoming court fee refreshes before an explicit new confirmation", async ({
+	page,
+}) => {
+	await db.exec(`update members set name='이민수' where id='${A}';
+		insert into places values(10,'에이트민턴',true);
+		insert into sessions(id,title,status,scheduled_at,ends_at,place_id) values(10,'예정','open','2026-10-04T09:00:00+09','2026-10-04T12:00:00+09',10);
+		insert into attendances(session_id,member_id,status) values(10,'${A}','confirmed');
+		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',8000,'2026-09-10T12:00:00+09','이민수'); select dues_v2_sync_bank();`);
+	await navigate(page, "/dues/2026-09/inbox");
+	const card = page.getByRole("region", { name: "거래 90", exact: true });
+	await card.getByRole("button", { name: /2026-10-04.*선납/ }).click();
+	await db.exec("update dues_settings set court_fee_default=7000");
+	await card.getByRole("button", { name: /^납부 확인/ }).click();
+	await expect(card.getByText(/바뀐 내역을 확인한 뒤 다시 확인/)).toBeVisible();
+	expect(
+		await scalar(
+			"select count(*)::int from dues_v2_groups where session_id=10",
+		),
+	).toBe(0);
+	// The receipt retains the chosen partial amount, but shows the updated full fee.
+	await card.getByRole("button", { name: /2026-10-04.*선납/ }).click();
+	await card.getByRole("button", { name: /2026-10-04.*선납.*7,000/ }).click();
+	await card.getByRole("button", { name: /^납부 확인/ }).click();
+	expect(
+		await scalar(
+			"select sum(amount)::int from dues_v2_allocations where bank_tx_id=90",
+		),
+	).toBe(7000);
+	expect(
+		await scalar(
+			"select to_char(occurred_at at time zone 'Asia/Seoul','YYYY-MM') from bank_transactions where id=90",
+		),
+	).toBe("2026-09");
 });

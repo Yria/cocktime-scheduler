@@ -88,6 +88,15 @@ export interface Operation {
 }
 export interface AccountingData {
 	mode: AccountingMode;
+	/** Unissued, confirmed upcoming court attendance; candidates are never debts. */
+	prepayments?: {
+		session_id: number;
+		member_id: string;
+		amount: number;
+		due_ym: string;
+		label: string;
+		occurred_on: string;
+	}[];
 	groups: BillingGroup[];
 	charges: Charge[];
 	due: DueSlice[];

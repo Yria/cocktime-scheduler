@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { suggestedReceiptDue, suggestedReceiptPayer } from "./quickSettlement";
+import {
+	payableTargets,
+	suggestedReceiptDue,
+	suggestedReceiptPayer,
+} from "./quickSettlement";
 import type { AccountingData } from "./types";
 
 const fixture = () =>
@@ -20,6 +24,52 @@ const fixture = () =>
 	}) as AccountingData;
 
 describe("receipt suggestions before explicit confirmation", () => {
+	it("includes upcoming attendance across months while requiring a unique dated match for a suggestion", () => {
+		const data = fixture();
+		data.due = [];
+		data.prepayments = [
+			{
+				session_id: 10,
+				member_id: "a",
+				amount: 6500,
+				due_ym: "2026-09",
+				label: "오전 대관",
+				occurred_on: "2026-09-06",
+			},
+		];
+		expect(suggestedReceiptDue(data, 1, "a")).toEqual({
+			"prepay:10:a": "6500",
+		});
+		data.prepayments.push({
+			...data.prepayments[0],
+			session_id: 11,
+			label: "오후 대관",
+		});
+		expect(suggestedReceiptDue(data, 1, "a")).toEqual({});
+		data.prepayments[1].due_ym = "2026-10";
+		expect(payableTargets(data, "a", "2026-09")).toHaveLength(2);
+		expect(payableTargets(data, "b", "2026-09")).toEqual([]);
+	});
+	it("never offers an issued, cancelled or waived court charge as a new prepayment", () => {
+		const data = fixture();
+		data.groups[0].session_id = 10;
+		data.prepayments = [
+			{
+				session_id: 10,
+				member_id: "a",
+				amount: 6500,
+				due_ym: "2026-09",
+				label: "대관",
+				occurred_on: "2026-09-06",
+			},
+		];
+		for (const state of ["live", "cancelled", "waived"] as const) {
+			data.charges[0].state = state;
+			expect(
+				payableTargets(data, "a", "2026-09").some((d) => d.prepayment),
+			).toBe(false);
+		}
+	});
 	it("uses a single cleaned bank-name match and refuses namesakes or an empty description", () => {
 		const data = fixture();
 		expect(suggestedReceiptPayer(data, 1)).toBe("a");

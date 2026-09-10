@@ -48,8 +48,12 @@ export function useInlineAccounting(
 		key: string;
 		revision: number;
 		message: string;
+		stale?: boolean;
 	} | null>(null);
-	const error = failure?.key === key ? failure.message : "";
+	// A refresh can change a prepayment's expected fee and therefore the payload key.
+	// Keep the conflict explanation visible until the next explicit confirmation.
+	const error =
+		failure && (failure.key === key || failure.stale) ? failure.message : "";
 	const running = useRef(false);
 	useEffect(() => {
 		if (attempt || !needsPreview) return;
@@ -102,6 +106,7 @@ export function useInlineAccounting(
 				setFailure({
 					key,
 					revision,
+					stale: true,
 					message:
 						"다른 처리가 반영됐어요. 바뀐 내역을 확인한 뒤 다시 확인해 주세요.",
 				});

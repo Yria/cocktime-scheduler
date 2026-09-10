@@ -1,5 +1,5 @@
 import { kstMonth } from "./summary";
-import type { AccountingData } from "./types";
+import type { AccountingData, DueSlice } from "./types";
 import { matchingMembers } from "./selection";
 
 // Suggestions are never saved until the user confirms. Namesakes stay unselected.
@@ -18,13 +18,18 @@ export function suggestedReceiptDue(
 	const tx = data.bank.find((t) => t.id === bankId);
 	if (!tx || !owner) return {};
 	const ym = kstMonth(tx.occurred_at);
-	const candidates = payableDues(data, owner, ym).filter(
+	const candidates = payableTargets(data, owner, ym).filter(
 		(d) => d.due_ym === ym && d.remaining === tx.amount,
 	);
 	// A date written in a bank description (0906) can distinguish equal court fees.
 	const date = tx.name?.match(/(?:^|\D)(0[1-9]|1[0-2])([0-2]\d|3[01])(?:\D|$)/);
 	const dated = date
 		? candidates.filter((d) => {
+				if (d.prepayment)
+					return (
+						d.prepayment.occurred_on ===
+						`${ym.slice(0, 4)}-${date[1]}-${date[2]}`
+					);
 				const charge = data.charges.find((c) => c.id === d.charge_id);
 				return data.groups.some(
 					(g) =>
@@ -76,6 +81,40 @@ export function payableDues(
 				a.due_ym.localeCompare(b.due_ym) ||
 				a.id.localeCompare(b.id),
 		);
+}
+
+export type PaymentTarget = DueSlice & {
+	prepayment?: NonNullable<AccountingData["prepayments"]>[number];
+};
+
+/** Existing obligations and upcoming attendance share the receipt's selection UI. */
+export function payableTargets(
+	data: AccountingData,
+	memberId: string,
+	ym: string,
+): PaymentTarget[] {
+	return [
+		...payableDues(data, memberId, ym),
+		...(data.prepayments ?? [])
+			.filter(
+				(p) =>
+					p.member_id === memberId &&
+					!data.charges.some(
+						(c) =>
+							c.member_id === memberId &&
+							data.groups.some(
+								(g) => g.id === c.group_id && g.session_id === p.session_id,
+							),
+					),
+			)
+			.map((p) => ({
+				id: `prepay:${p.session_id}:${p.member_id}`,
+				charge_id: "",
+				due_ym: p.due_ym,
+				remaining: p.amount,
+				prepayment: p,
+			})),
+	];
 }
 export function refundLines(
 	data: AccountingData,

@@ -5,6 +5,8 @@ import {
 	suggestedReceiptPayer,
 	suggestedReceiptDue,
 	payableDues,
+	payableTargets,
+	type PaymentTarget,
 	quickGroups,
 	refundLines,
 } from "../../lib/dues/v2/quickSettlement";
@@ -74,7 +76,7 @@ export default function QuickSettlement({
 	const [payerPickerOpen, setPayerPickerOpen] = useState(!initialMember);
 	const payerButton = useRef<HTMLButtonElement>(null);
 	const [optionsOpen, setOptionsOpen] = useState(false);
-	const [debts, setDebts] = useState<Record<string, string>>(() =>
+	const [selectedDebts, setDebts] = useState<Record<string, string>>(() =>
 		draft.type === "pay" && choosePayer && !ambiguousPayer
 			? suggestedReceiptDue(data, bankId, initialMember)
 			: {},
@@ -110,7 +112,18 @@ export default function QuickSettlement({
 	const payerChanged =
 		!!source?.owner_id && !!owner && owner !== source.owner_id;
 	const payer = data.members.find((m) => m.id === owner);
-	const dues = payableDues(data, owner, kstMonth(tx.occurred_at));
+	const dues: PaymentTarget[] =
+		draft.type === "pay"
+			? payableTargets(data, owner, kstMonth(tx.occurred_at))
+			: payableDues(data, owner, kstMonth(tx.occurred_at));
+	// A refreshed attendance/fee revision may remove a previously selected candidate.
+	const debts = Object.fromEntries(
+		Object.entries(selectedDebts).filter(([id]) =>
+			dues.some((d) => d.id === id),
+		),
+	);
+	const targetName = (d: PaymentTarget) =>
+		d.prepayment?.label ?? groupName(d.charge_id);
 	const memberMoney = data.positions.filter(
 		(p) =>
 			(p.owner_id === owner &&
@@ -169,24 +182,31 @@ export default function QuickSettlement({
 	try {
 		if (draft.type === "pay") {
 			if (!owner) throw new Error("납부자를 선택하세요");
-			const lines = Object.entries(debts)
-				.filter(([, n]) => n !== "" && Number(n) !== 0)
-				.map(([id, value]) => ({
-					due_id: id,
-					amount: positive(value),
-					position_id: source?.id,
-				}));
-			if (!lines.length)
+			const selected = Object.entries(debts).filter(
+				([, n]) => n !== "" && Number(n) !== 0,
+			);
+			if (!selected.length)
 				throw new Error(
 					dues.length
 						? "납부할 항목을 선택하세요"
-						: "이 회원에게 남은 미납이 없습니다",
+						: "이 회원에게 남은 미납이나 선납할 대관이 없습니다",
 				);
-			for (const line of lines) {
-				const due = dues.find((d) => d.id === line.due_id);
-				if (!due || line.amount > due.remaining)
+			const lines = selected.map(([id, value]) => {
+				const due = dues.find((d) => d.id === id);
+				const amount = positive(value);
+				if (!due || amount > due.remaining)
 					throw new Error("선택 금액이 부과 잔액보다 큽니다");
-			}
+				return {
+					...(due.prepayment
+						? {
+								session_id: due.prepayment.session_id,
+								expected_amount: due.remaining,
+							}
+						: { due_id: id }),
+					amount,
+					position_id: source?.id,
+				};
+			});
 			if (!source || selectedTotal > source.amount)
 				throw new Error("선택 금액이 입금 잔액보다 큽니다");
 			command = {
@@ -314,9 +334,17 @@ export default function QuickSettlement({
 	const feeStatus = (id: string) => {
 		if (!tx.name?.includes("회비")) {
 			const unpaid = payableDues(data, id, receiptMonth);
-			return unpaid.length
-				? `미납 ${unpaid.length}건 · ${won(unpaid.reduce((sum, d) => sum + d.remaining, 0))}`
-				: "남은 미납 없음";
+			const prepayments = (data.prepayments ?? []).filter(
+				(p) => p.member_id === id,
+			);
+			return [
+				unpaid.length
+					? `미납 ${unpaid.length}건 · ${won(unpaid.reduce((sum, d) => sum + d.remaining, 0))}`
+					: "남은 미납 없음",
+				prepayments.length ? `대관 선납 ${prepayments.length}건` : "",
+			]
+				.filter(Boolean)
+				.join(" · ");
 		}
 		const rows = monthlyProgress.rows.filter((r) => r.charge.member_id === id);
 		const remaining = rows.reduce((sum, r) => sum + r.remaining, 0);
@@ -394,7 +422,7 @@ export default function QuickSettlement({
 						aria-pressed={!!debts[d.id]}
 						aria-label={
 							receipt
-								? `${groupName(d.charge_id)} · ${d.due_ym} 납기 · ${won(debts[d.id] ? Number(debts[d.id]) : d.remaining)}`
+								? `${targetName(d)}${d.prepayment ? " · 선납" : ""} · ${d.due_ym} 납기 · ${won(debts[d.id] ? Number(debts[d.id]) : d.remaining)}`
 								: undefined
 						}
 						disabled={
@@ -419,10 +447,12 @@ export default function QuickSettlement({
 						}
 					>
 						<span>
-							{groupName(d.charge_id)}
-							{(!receipt || optionsOpen) && (
+							{targetName(d)}
+							{(d.prepayment || !receipt || optionsOpen) && (
 								<small>
-									{Number(d.due_ym.slice(5))}월 납기 · {won(d.remaining)} 남음
+									{d.prepayment
+										? `예정 대관 · 선납${Number(debts[d.id] || 0) > 0 && Number(debts[d.id]) < d.remaining ? ` · ${won(d.remaining)} 중 일부 납부` : ""}`
+										: `${Number(d.due_ym.slice(5))}월 납기 · ${won(d.remaining)} 남음`}
 								</small>
 							)}
 						</span>
@@ -446,7 +476,7 @@ export default function QuickSettlement({
 							<label className="ac-quick-amount">
 								<input
 									type="number"
-									aria-label={`${groupName(d.charge_id)} 선택 금액`}
+									aria-label={`${targetName(d)} 선택 금액`}
 									min="1"
 									max={d.remaining}
 									value={debts[d.id]}
