@@ -1,5 +1,5 @@
 import { kstMonth, memberLabel } from "./summary";
-import type { AccountingData, BillingGroup } from "./types";
+import type { AccountingData, BillingGroup, CashLedger } from "./types";
 
 export function billingProgress(
 	data: AccountingData,
@@ -105,4 +105,39 @@ export function overviewBalances(data: AccountingData, ym: string) {
 		carry,
 		carryCash: carry.reduce((sum, p) => sum + p.amount, 0),
 	};
+}
+
+/**
+ * 회계 탭의 항목 칩 순서 — **종류 묶음 + 날짜순**이다.
+ * 대관비(회차 날짜) → 회비(월) → 수동 묶음(발생일) → 묶음 없는 합성 항목
+ * (환불·환불 원입금·미분류·이월 입금 …). 같은 종류가 붙어 있어야 찾는 종류로 바로
+ * 스크롤할 수 있다. 금액 순으로 세우면 날짜가 흩어져 '8/16 대관비'를 눈으로 좇을 수
+ * 없다(가로 스크롤이라 화면 밖 항목은 아예 보이지 않는다).
+ *
+ * 서버(`dues_ledger`)는 라벨 문자열순으로만 준다 — 종류·발생일은 `dues_groups` 에
+ * 있으므로 정렬은 클라이언트 몫이다.
+ */
+const BUCKET_KIND_RANK: Record<BillingGroup["kind"], number> = {
+	court: 0,
+	monthly: 1,
+	manual: 2,
+};
+
+export function sortLedgerBuckets(
+	lines: CashLedger["lines"],
+	groups: BillingGroup[],
+): CashLedger["lines"] {
+	const byId = new Map(groups.map((g) => [g.id, g]));
+	const of = (line: CashLedger["lines"][number]) =>
+		line.group_id ? byId.get(line.group_id) : undefined;
+	return [...lines].sort((a, b) => {
+		const ga = of(a);
+		const gb = of(b);
+		return (
+			(ga ? BUCKET_KIND_RANK[ga.kind] : 3) -
+				(gb ? BUCKET_KIND_RANK[gb.kind] : 3) ||
+			(ga?.occurred_on ?? "").localeCompare(gb?.occurred_on ?? "") ||
+			a.label.localeCompare(b.label)
+		);
+	});
 }

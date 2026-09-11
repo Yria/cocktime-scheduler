@@ -1054,6 +1054,97 @@
 	background: var(--ac-sel-bg);
 	border-color: var(--ac-sel-bg);
 }
+/* 항목별 수지 = 거래 내역의 두 번째 필터 줄. 항목이 15개를 넘는 달이 있어 한 줄에
+   하나씩 놓으면 필터가 목록보다 길어진다 — 같은 가로 스크롤 트랙에 두 줄짜리 칩으로
+   접는다. 대조가 본업이라 수입·지출을 칩 안에 함께 둔다(0 인 쪽은 생략 — 표의 `—`
+   자리표시는 열을 맞추기 위한 것이고 칩에는 열이 없다). */
+/* 상태 필터(`.ac-ledger-filters`)와 **같은 트랙에 두지 않는다**: 홈 톤이 그 줄의
+   버튼을 무테두리 틴트 면으로 덮는데, 그러면 누를 수 있는 항목 칩과 누를 수 없는
+   합성 항목 칩이 똑같이 보인다. 스크롤 동작만 같은 값으로 따로 쓴다. */
+.ac-bucket-filters {
+	display: flex;
+	gap: var(--ac-s-2);
+	overflow-x: auto;
+	padding-block: 0 var(--ac-s-2);
+	scrollbar-width: none;
+}
+.ac-bucket-filters::-webkit-scrollbar {
+	display: none;
+}
+/* 폭을 고정한다. 칩마다 폭이 다르면 수입·지출이 칩마다 다른 x 에 서서 가로로 훑을
+   때 열이 생기지 않는다 — 이 줄의 본업은 대조다. 이름은 한 줄로 자르고, 금액은 같은
+   폭의 두 칸에 각각 오른쪽 정렬한다(표의 금액 레일과 같은 규칙). */
+.ac-bucket-chip {
+	flex-shrink: 0;
+	display: inline-flex;
+	flex-direction: column;
+	align-items: stretch;
+	justify-content: center;
+	gap: 1px;
+	width: 150px;
+	padding: 5px var(--ac-s-2);
+	border: 1px solid var(--ac-rule);
+	border-radius: var(--ac-r-chip);
+	background: var(--ac-paper);
+	text-align: left;
+}
+.ac-bucket-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: var(--ac-fs-meta);
+	font-weight: 600;
+	color: var(--ac-ink-2);
+}
+.ac-bucket-sums {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	align-items: baseline;
+	gap: 4px;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+.ac-bucket-sums > strong,
+.ac-bucket-sums > small {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	text-align: right;
+}
+.ac-bucket-sums > strong {
+	font-size: 13.5px;
+	font-weight: 700;
+}
+.ac-bucket-sums > small {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--ac-ink-2);
+}
+/* 0 인 칸의 자리표시 — 숫자와 같은 무게로 읽히면 안 된다. */
+.ac-bucket-zero {
+	color: var(--ac-ink-3);
+	font-weight: 600;
+}
+/* 선택은 화면 전체에서 채움 반전 하나로만 말한다(SPEC §3.7). */
+button.ac-bucket-chip[aria-pressed="true"] {
+	background: var(--ac-sel-bg);
+	border-color: var(--ac-sel-bg);
+}
+button.ac-bucket-chip[aria-pressed="true"] .ac-bucket-name,
+button.ac-bucket-chip[aria-pressed="true"] .ac-bucket-sums > strong,
+button.ac-bucket-chip[aria-pressed="true"] .ac-bucket-sums > small {
+	color: var(--ac-sel-fg);
+}
+/* 좁힐 대상이 없는 합성 항목(환불·미분류·이월 …). 틴트 면으로 말하지 않는다 —
+   바로 윗줄의 상태 필터에서 틴트 면은 '안 눌린 버튼'이라 같은 화면에서 회색이 두 뜻을
+   갖는다. 점선 윤곽(이 스킨이 '내용이 아니라 자리'를 말할 때 쓰는 어휘)과 흐린 글자로
+   '읽기만 하는 칩'을 말한다. */
+.ac-bucket-chip.is-static {
+	border-style: dashed;
+}
+.ac-bucket-chip.is-static .ac-bucket-name,
+.ac-bucket-chip.is-static .ac-bucket-sums > small {
+	color: var(--ac-ink-3);
+}
 .ac-ledger-filters button > span {
 	color: inherit;
 	opacity: 0.75;
@@ -1067,28 +1158,8 @@
 .ac-ledger-transaction-toggle[aria-expanded="true"] svg {
 	transform: rotate(180deg);
 }
-.ac-ledger-chevron {
-	display: inline-flex;
-	align-items: center;
-	color: var(--ac-ink-2);
-}
 .ac-ledger-detail {
 	padding-block: var(--ac-s-2) var(--ac-s-3);
-}
-/* 항목 행은 셰브론이 금액 오른쪽에 붙어야 한다 — 3열 그리드에 4번째 자식이
-   들어가면 다음 줄로 떨어진다. */
-.ac-ledger-item {
-	width: 100%;
-	grid-template-columns:
-		var(--ac-gutter) minmax(0, 1fr) var(--ac-rail)
-		14px;
-}
-.ac-ledger-item > .ac-ledger-chevron {
-	grid-column: 4;
-	align-self: center;
-}
-.ac-ledger-item:hover {
-	background: var(--ac-fill);
 }
 
 /* ── 9. 정산함 탭 ─────────────────────────────────────────────────────── */
@@ -1881,42 +1952,206 @@
 	color: var(--ac-ask);
 }
 
-/* ── 11. 회원 내 회비 ─────────────────────────────────────────────────── */
-.ac-member-summary {
-	padding-inline: var(--ac-s-4);
+/* ── 11. 회원 내 회비 — Claude Design f2412ebf 3a ──────────────────────────
+ * 원본 `콕타임 회계 v2.dc.html` 의 3a 아트보드('내 회비 — 납부 현황 · 계좌 ·
+ * 모임 수지')를 옮긴 것이다. 아래 px 값은 그 HTML 의 인라인 치수이며 새 토큰이
+ * 아니다(운영진 쪽 `.ac-ledger-page` 와 같은 방식 — 페이지 클래스가 행 기하만
+ * 지역적으로 덮는다). 색·활자·반경 토큰 정의는 건드리지 않는다(SPEC §3.7).
+ *
+ * 행 기하를 `.ac-mine-page` 가 아니라 카드/시트에 걸어 두는 이유: 같은 화면의
+ * 클럽 회계 탭이 쓰는 `.ac-cash-columns`(3열)를 덮어써 지출 열을 죽이기 때문이다.
+ */
+.ac-mine-page {
+	/* 회원 화면에는 거터 글리프가 없다 — 원본의 `--ac-gutter:0px` 그대로.
+	   세로 스택과 12px 간격은 `.accounting-screen` 이 이미 준다. */
+	--ac-gutter: 0px;
 }
-.ac-member-summary > p:first-of-type {
-	font-size: var(--ac-fs-metric);
-	font-weight: 700;
-	letter-spacing: -0.02em;
-	font-variant-numeric: tabular-nums;
-	margin-block: var(--ac-s-2);
+.ac-mine-card > .ac-sheet-head {
+	padding: 0 0 var(--ac-s-2);
 }
-.ac-member-details > section:not(.ac-member-summary) {
-	background: var(--ac-paper);
-	border: 1px solid var(--ac-rule);
-	border-radius: var(--ac-r-card);
-	padding: var(--ac-s-4);
+.ac-mine-card > .ac-row,
+.ac-mine-list .ac-row {
+	grid-template-columns: 0 minmax(0, 1fr) 112px;
+	column-gap: 0;
+	align-items: center;
 }
-.ac-member-details > section > h2,
-.ac-member-details > section > .ac-sheet-head h2 {
-	color: var(--ac-ink-2);
-	font-size: var(--ac-fs-meta);
-	font-weight: 700;
+.ac-mine-card > .ac-row > .ac-amount,
+.ac-mine-list .ac-row > .ac-amount {
+	align-self: center;
+	padding-left: 10px;
 }
-.ac-member-details > section {
+ /* 시트 안쪽 행 묶음 — 운영진 `.ac-ledger-bucket-rows` 와 같은 8px 들여쓰기. */
+/* 빈 달의 점선 박스는 머리글 선에 0px 로 붙어 있었다(실측: 좌우 16 · 아래 14 · 위 0).
+   테두리 있는 박스가 다른 선에 맞닿으면 두 선이 한 덩어리로 읽힌다 — 위 간격을 그
+   컨테이너가 쓰는 안쪽 여백과 같게 맞춘다. 카드 패딩은 톤마다 달라(장부 12 · 홈 14)
+   같은 토큰을 되받되 장부 톤에서도 값이 있도록 폴백을 둔다. */
+.ac-mine-card > .ac-empty {
+	margin-top: var(--ac-surface-pad, var(--ac-s-3));
+}
+/* 클럽 회계 탭의 빈 달도 같은 규칙 — 거기 컨테이너의 안쪽 여백은 8px 다. */
+.ac-mine-ledger .ac-ledger-bucket-rows .ac-empty {
+	margin-top: var(--ac-s-2);
+}
+/* 시트 안쪽 행 묶음 — 운영진 `.ac-ledger-bucket-rows` 와 같은 8px 들여쓰기.
+   `:not(.ac-sheet-head)` 가 필요하다: 머리글도 시트의 직계 div 라 빼지 않으면
+   장부 톤에서 머리글 패딩까지 이 값으로 덮인다. */
+.ac-mine-list > div:not(.ac-sheet-head) {
+	padding: 0 var(--ac-s-2) var(--ac-s-2);
+}
+.ac-mine-list .ac-row {
+	padding-block: 10px;
+}
+/* 첫 화면의 주인공은 '그 달에 낸 돈'이다. 부과 총액은 그 옆의 기준값. */
+.ac-mine-hero {
 	display: flex;
-	flex-direction: column;
-	gap: var(--ac-s-1);
+	align-items: baseline;
+	gap: var(--ac-s-2);
+	padding: 2px 0 10px;
 }
-/* 회원 화면의 세로 나열 행(근거·이력) — 운영진 레일과 같은 규칙선을 쓴다. */
-.ac-row-stack {
-	padding-block: var(--ac-s-2);
-	border-bottom: 1px solid var(--ac-rule);
+.ac-mine-hero > .ac-number {
+	font-size: 34px;
+	font-weight: 800;
+	color: var(--ac-ink);
+}
+.ac-mine-hero > span:last-child {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--ac-ink-3);
+}
+.ac-mine-card > .ac-meter {
+	margin-bottom: 10px;
+}
+/* 카드의 마지막 줄('남은 금액')은 **합계가 아니다** — 위 줄들의 합은 히어로의 낸 돈이고
+   이 줄은 아직 남은 돈이다. 그래서 합계 기호를 쓰지 않는다: 이중선도, 20px 도 없다
+   (위 `.ac-total` 주석의 "크기와 이중선은 한 세트" 규율을 지키는 쪽은 쓰지 않는 것이다).
+   대신 조금 굵은 1px 로 끊고, 아직 낼 돈이 있을 때만 확인 색으로 말한다. */
+.ac-mine-rest {
+	border-top: 1px solid var(--ac-rule-strong);
+	margin-top: var(--ac-s-1);
+}
+.ac-mine-rest::before {
+	display: none;
+}
+.ac-mine-rest > .ac-row-body > strong {
+	font-weight: 700;
+}
+.ac-mine-due {
+	color: var(--ac-ask);
+	font-weight: 700;
+}
+/* 클럽 회계 탭 — 운영진 `.ac-ledger-page` 와 같은 기하지만 그 클래스를 빌려 쓰지
+   않는다. 그쪽 래퍼에는 아래 거래 내역 표와 한 장으로 잇는 홈 톤 규칙(D20)이 달려
+   있어서, 표가 없는 회원 화면에 붙이면 항목별 수지 시트의 바닥이 열린 채로 끝난다. */
+.ac-mine-ledger,
+.ac-mine-ledger .ac-cash-layout {
+	display: grid;
+	gap: var(--ac-s-3);
+}
+.ac-mine-ledger .ac-cash-layout {
+	--ac-gutter: 0px;
+}
+.ac-mine-ledger .ac-ledger-summary {
+	padding: var(--ac-s-3);
+}
+.ac-mine-ledger .ac-ledger-summary .ac-sheet-head {
+	padding: 0 0 var(--ac-s-2);
+}
+.ac-mine-ledger .ac-ledger-summary .ac-row {
+	grid-template-columns: 0 minmax(0, 1fr) 112px;
+	column-gap: 0;
+	align-items: center;
+	padding: 9px var(--ac-s-2);
+}
+.ac-mine-ledger .ac-ledger-summary .ac-amount {
+	align-self: center;
+	padding-left: 10px;
+}
+.ac-mine-ledger .ac-ledger-net .ac-amount {
+	font-size: var(--ac-fs-total);
+	font-weight: 700;
+}
+.ac-mine-ledger .ac-row.ac-cash-columns {
+	grid-template-columns: minmax(0, 1fr) 94px 80px;
+	column-gap: 0;
+	align-items: center;
+	padding-block: 9px;
+}
+.ac-mine-ledger .ac-cash-columns .ac-amount {
+	font-size: var(--ac-fs-amount);
+	align-self: center;
+	padding-left: 10px;
+	margin-right: 4px;
+}
+.ac-mine-ledger .ac-cash-columns .ac-amount-2 {
 	font-size: var(--ac-fs-body);
+	font-weight: 500;
+	align-self: center;
+	padding-left: 10px;
 }
-.ac-row-stack:last-child {
-	border-bottom: 0;
+.ac-mine-ledger .ac-cash-columns.ac-total .ac-amount {
+	font-size: var(--ac-fs-total);
+	margin-right: 4px;
+}
+/* 합계 띠 풀블리드. 틴트 면이 컨테이너 패딩(시트 12~16 + 행 묶음 8) 안쪽에서 끝나면
+   카드 가운데에 뜬 조각처럼 잘려 보인다. 음수 마진으로 **상자만** 시트 폭까지 넓히고
+   같은 값을 패딩으로 되돌린다 — 콘텐츠 박스는 1px 도 움직이지 않으므로 금액 열 x
+   좌표가 다른 행과 그대로 일치한다(실측 265 = 265).
+   `width: auto` 가 필수다: `.ac-row { width: 100% }` 를 그대로 두면 폭이 컨테이너에
+   고정돼 음수 마진이 상자를 넓히지 못하고 통째로 왼쪽으로 밀기만 한다.
+   운영진 쪽 같은 규칙(accounting-home.css D18)은 `.ac-ledger-page` 스코프라 회원
+   화면에는 닿지 않는다 — 회원은 이 규칙을 쓴다. */
+.ac-mine-ledger .ac-cash-columns.ac-total,
+.ac-mine-list .ac-row.ac-total {
+	width: auto;
+	margin-inline: calc(-1 * (var(--ac-surface-pad-x, var(--ac-s-3)) + var(--ac-s-2)));
+	padding-inline: calc(var(--ac-surface-pad-x, var(--ac-s-3)) + var(--ac-s-2));
+}
+.ac-mine-note {
+	word-break: keep-all;
+}
+.ac-mine-note b {
+	color: var(--ac-ink-2);
+}
+/* 입금 계좌 — 번호가 주인공이고 복사가 바로 옆에 붙는다. */
+.ac-account-line {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 2px 0 var(--ac-s-2);
+}
+.ac-account-line > div {
+	flex: 1;
+	min-width: 0;
+}
+.ac-account-line .ac-row-note {
+	margin-top: 2px;
+}
+.ac-account-number {
+	font-size: 21px;
+	font-weight: 750;
+	letter-spacing: -0.01em;
+	color: var(--ac-ink);
+}
+.ac-account-copy {
+	flex: none;
+	min-height: 44px;
+	padding: 0 14px;
+	border: 1px solid var(--ac-rule-strong);
+	border-radius: var(--ac-r-field);
+	background: transparent;
+	font-size: 13.5px;
+	font-weight: 700;
+	color: var(--ac-ink-2);
+	white-space: nowrap;
+}
+.ac-account-copy.is-done {
+	border-color: var(--ac-ok);
+	color: var(--ac-ok);
+}
+/* 계좌 카드의 구분 띠는 원본처럼 카드 안쪽에 둔다(공용 `.ac-band` 의 풀블리드
+   음수 마진을 여기서만 되돌린다). */
+.ac-mine-card > .ac-band {
+	margin: var(--ac-s-1) 0 var(--ac-s-2);
 }
 
 /* ── 13. 폭 대응 ──────────────────────────────────────────────────────── */

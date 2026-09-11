@@ -1,0 +1,794 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   /dues(운영진 회비 관리) 홈 톤 스킨.
+
+   accounting.css 의 규율 1~4 를 그대로 상속하되 규율 1의 "그림자 0" 만 개정한다 —
+   목록 표면은 여전히 0, 부양 2용도(탭 썸·선택 칩 / 주 확정 버튼·영수증 카드)에만
+   허용한다. 둘 다 홈이 실제로 쓰는 표현이고, accounting-layout.css:241 이 이미 영수증
+   카드에 그림자를 하드코딩해 규율은 오늘도 깨져 있다(여기서 토큰화하며 다크 결함도
+   함께 수리). **박스 테두리에 글로우를 얹는 표현은 홈에 없으므로 쓰지 않는다.**
+
+   ── 스코프 ──
+   모든 선택자는 `.accounting-screen.ac-layout-v2`(0,2,0 이상)로 시작한다. 이 접두는
+   기존 `.ac-layout-v2 .x`(0,2,0)를 소스 순서와 무관하게 이긴다.
+   import 는 accounting-layout.css **뒤**여야 (0,3,0) 동률 77곳과 토큰 블록이 갈린다.
+
+   **2026-09-11 부터 회원 화면(`/my-dues`)도 `.ac-layout-v2` 를 붙인다**(사용자 요청으로
+   회원 화면도 홈 톤). 따라서 "이 파일은 /my-dues 에 닿지 않는다"는 더 이상 참이 아니다.
+   회원 화면이 실제로 그리는 것은 `.ac-card`·`.ac-sheet`·`.ac-row`(+`.ac-total`)·
+   `.ac-notice`·`.ac-meter`·`.ac-band`·`.ac-row-state`·`.ac-empty`·`.ac-tabs`·`.ac-month`
+   과 공용 `CashLedgerView` 뿐이다 — 정산함·부과·거래 카드 계열은 회원 화면에 없다.
+   회원 전용 기하는 accounting.css §11(`.ac-mine-*`)에 있고, 운영진 전용 래퍼
+   `.ac-ledger-page` 는 회원 화면이 쓰지 않는다(회원은 `.ac-mine-ledger`).
+
+   ── 기하 동결 구역 ──
+   .ac-inbox-receipt · .ac-settled-receipt · .ac-receipt-* · .ac-quick-* ·
+   .ac-settlement-* · .ac-transaction · .ac-armed(=.ac-issue-slip 과 같은 엘리먼트)
+   에서는 색·그림자·반경만 쓴다. e2e 기하 예산이 폭을 재고 있다(G2 = 카드폭−확인버튼폭
+   = 28±2, 실측 정확히 28.00 → 여유 0). 테두리를 지울 때도 `border: 0` 이 아니라
+   `border-color: transparent` 로 폭 1px 을 남긴다.
+
+   ── 레일 금지 ──
+   --ac-gutter/--ac-rail/--ac-rail-2 는 한 번도 선언하지 않는다. 선언하는 순간
+   accounting.css:1923/1929/1935 의 `.accounting-screen`(0,1,0) 반응형 미디어 블록
+   3개가 죽어 금액 레일 정렬이 붕괴한다.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── B1. 토큰 — 라이트 ────────────────────────────────────────────────── */
+/* 이 한 블록이 두 CSS 의 var(--ac-*) 소비 지점 ~420개와 포털 안 상세 모달
+   (AccountingDetailModal.tsx:40 이 3클래스를 모두 단다)까지 한 번에 홈 팔레트로 옮긴다. */
+.accounting-screen.ac-layout-v2 {
+	/* 별칭 — 홈 토큰이 :root/.dark 쌍을 이미 가지므로 다크에서 자동 스왑된다.
+	   다크 블록에 다시 쓰면 홈이 바뀔 때 회비만 안 따라오는 이중 관리가 된다. */
+	--ac-ink: var(--tone-strong);
+	--ac-rule: var(--card-lq-border); /* 홈의 유일한 헤어라인 */
+	--ac-rule-strong: var(--seg-track-deep); /* 홈의 유일한 "한 단 진한 중립" */
+	--ac-fill: var(--seg-track); /* 홈 세그먼트 트랙 */
+	--ac-fill-deep: var(--seg-track-deep); /* 홈 입력 포커스 배경 심화용 */
+	--ac-band: var(--card-lq-border);
+
+	/* 먹 2·3단만 별칭을 끊는다. 홈의 --tone-muted(#64748b)·--tone-faint(#98a0ab) 는
+	   흰 지면 전용 값이라, 이 스킨이 두 색을 --ac-fill 틴트 면 위로 옮기는 순간
+	   4.16:1 / 2.31:1 로 AA 아래로 내려간다. 이 토큰들이 칠하는 것은 장식이 아니라
+	   상태 글리프·지표 라벨·메타 같은 **글자**다. */
+	--ac-ink-2: #55647a; /* --ac-fill 위 5.27:1 / 흰 지면 6.02:1 */
+	--ac-ink-3: #636e7e; /* --ac-fill 위 4.52:1 / 흰 지면 5.17:1 */
+
+	/* 지면 */
+	--ac-paper: #ffffff; /* 홈 --card-lq-bg */
+
+	/* 경계 전용 — 면 없이 윤곽만으로 서는 두 곳(.ac-empty 점선, .ac-total 상단선)용.
+	   --ac-rule-strong 은 rgba(0,0,0,.13) 라 지면 대비 1.35:1 이라 윤곽이 사라진다. */
+	--ac-edge: #97a1af;
+
+	/* 상태 3색: 정착 / 대기 / 차단. 색 하나로 말하지 않는다 — 항상 글리프·상태어와 함께.
+	   홈 원값(--ios-green #34c759 / --ios-orange #ff9500 / --ios-red #ff3b30)은 흰 면 위
+	   본문 대비가 각각 1.9 / 2.2 / 3.7:1 이라 글자색으로 쓸 수 없다. 색상은 홈 계열을
+	   유지하되 명도만 AA 까지 내린 값을 쓴다(--ac-*-soft 틴트 면 위 기준으로 검산). */
+	--ac-ok: #2c7a57; /* 홈 딥그린(ScheduleCard isLive) 실사용값. 틴트 위 4.73:1 */
+	--ac-ok-soft: rgba(52, 199, 89, 0.14);
+	--ac-ok-line: rgba(44, 122, 87, 0.25);
+	--ac-ok-solid: #2c7a57; /* 흰 글자를 얹는 채움 전용 */
+	--ac-ask: #935f1c; /* 틴트 면 위 4.85:1 (#9e6826 은 4.23:1 로 미달) */
+	--ac-ask-soft: rgba(245, 158, 11, 0.14);
+	--ac-ask-line: rgba(245, 158, 11, 0.25);
+	--ac-stop: #c72e25; /* 홈 --ios-red 를 AA 까지. 틴트 위 4.78:1 */
+	--ac-stop-soft: rgba(255, 59, 48, 0.1);
+	--ac-stop-line: rgba(255, 59, 48, 0.25);
+
+	/* 행동. 글자용(어둡게)과 채움용(홈 원값)을 나눈다 — --ac-ok/--ac-ok-solid 와 같은 패턴 */
+	--ac-act: #096cd1; /* 글자·링크·포커스링. 흰 지면 5.1:1 */
+	--ac-act-solid: #0b84ff; /* 흰 글자를 **얹지 않는** 채움/리브 전용. 홈 CTA 원값 */
+	--ac-act-soft: rgba(11, 132, 255, 0.1);
+	--ac-act-line: rgba(11, 132, 255, 0.25);
+
+	/* 선택 = 파랑 채움 + 흰 글자. 이 두 줄로 잉크 반전 6곳과 자식 반전 4개가 함께 넘어온다.
+	   위치(탭)=흰 썸 / 선택=파랑 면 / 행동=파랑 글자 로 형태까지 갈리므로 색 혼동은 없다.
+	   #0b84ff 를 그대로 쓰면 흰 글자가 3.65:1 이라 한 단 어두운 파랑을 쓴다(6.28:1). */
+	--ac-sel-bg: #0b5fb8;
+	--ac-sel-fg: #ffffff;
+
+	/* 그림자 3종 — 규율 1 개정의 전부. 이 밖에는 쓰지 않는다 */
+	--ac-lift:
+		0 1px 2px rgba(16, 32, 44, 0.06), 0 10px 24px -18px rgba(16, 32, 44, 0.3);
+	--ac-thumb: 0 1px 3px rgba(0, 0, 0, 0.14); /* 홈 .ctl-seg button.on */
+	--ac-glow-ok: 0 4px 12px rgba(44, 122, 87, 0.3); /* 홈 btn-lq-green, index.css:396 */
+
+	/* 테마 불변 3개 — 홈 카드 실측 padding: 14px 16px (ScheduleCard.tsx:239) */
+	--ac-surface-pad: 14px;
+	--ac-surface-pad-x: 16px;
+	--ac-ls-tight: -0.025em; /* 홈 전역 h1~h4 자간. 18px 이상 제목급에만 쓴다 */
+}
+
+/* ── B2. 토큰 — 다크 ──────────────────────────────────────────────────── */
+/* 라이트 블록(0,2,0)은 기존 `.dark .accounting-screen`(0,2,0)과 동률 + 나중 소스라
+   다크에서도 이긴다. 따라서 다크에서 값이 달라야 하는 것은 **반드시** 여기서 다시
+   선언한다 — 하나라도 빠지면 그 토큰만 다크에서 라이트 색으로 남는다.
+   별칭 6개는 여기에 없다(홈 토큰 자동 스왑). solid·sel·surface-pad·ls-tight 계열은
+   라이트 값이 다크에서도 정답이라 흘려보낸다. */
+.dark .accounting-screen.ac-layout-v2 {
+	/* 홈 ScheduleCard 의 반투명 면이 슬레이트 지면 위에서 실제로 만드는 색.
+	   회비는 카드 위에 면이 겹치므로 불투명값을 쓴다(--card-lq-bg #1c1c1e 는
+	   중립 지면용이라 슬레이트 위에서 따뜻하게 뜬다). */
+	--ac-paper: #1b1d24;
+	/* 다크는 홈 --tone-muted 로 충분하다(--ac-fill 위 5.45:1) — 별칭을 되살려 자동 스왑 유지 */
+	--ac-ink-2: var(--tone-muted);
+	--ac-ink-3: #9aa5b5; /* --tone-faint 는 --ac-fill 위 3.25:1 로 미달 */
+	--ac-edge: #5a6577;
+	--ac-ok: #30d158;
+	/* 다크에선 12px 상태어가 얹히므로 알파 상향 */
+	--ac-ok-soft: rgba(52, 199, 89, 0.18);
+	--ac-ok-line: rgba(48, 209, 88, 0.3);
+	--ac-ask: #e0a860; /* 홈 --late-amber 다크값 */
+	--ac-ask-soft: rgba(224, 168, 96, 0.18);
+	--ac-ask-line: rgba(224, 168, 96, 0.3);
+	--ac-stop: #ff7269;
+	--ac-stop-soft: rgba(255, 59, 48, 0.18);
+	--ac-stop-line: rgba(255, 114, 105, 0.3);
+	--ac-act: #68b3ff;
+	--ac-act-soft: rgba(11, 132, 255, 0.2);
+	--ac-act-line: rgba(104, 179, 255, 0.32);
+	/* 다크 그림자는 색이 아니라 알파로 깊이를 만든다(홈 --shadow-gentle 규범) */
+	--ac-lift: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 24px -18px rgba(0, 0, 0, 0.7);
+	--ac-thumb: 0 1px 3px rgba(0, 0, 0, 0.5);
+	--ac-glow-ok: 0 4px 12px rgba(48, 209, 88, 0.22);
+}
+
+/* ── B3. 수입 = 파랑 ──────────────────────────────────────────────────── */
+/* 초록을 "정착/완료" 한 역할에만 남겨야 3역할 색 체계가 깨끗해진다. 이미
+   .ac-receipt-amount.ac-in 과 .ac-ledger-income 이 파랑이라 내부 불일치 해소이기도 하다.
+   회원 화면에는 거터 글리프가 없어(`--ac-gutter:0`) `.ac-in` 자체가 나오지 않는다. */
+.accounting-screen.ac-layout-v2 .ac-in {
+	color: var(--ac-act);
+}
+
+/* ── B4. 눌림 — 홈의 관용구 ───────────────────────────────────────────── */
+/* 홈은 예외 없이 base 규칙에 transition 을 두고 :active 에는 transform 만 둔다
+   (index.css:352-360 .btn-lq-primary). transition 을 :active 안에 두면 뗄 때 스냅으로
+   튄다 — <label class="ac-chip"> 처럼 base transition 이 없는 칩에서 특히 노골적이다.
+   transform 은 레이아웃 영향이 0 이라 기하 예산을 한 톨도 쓰지 않는다.
+   .ac-row 에는 절대 넣지 않는다 — `+ .ac-row::before` 구분선의 컨테이닝 블록이 바뀐다.
+   accounting.css:1950 의 prefers-reduced-motion 블록이 이미 transition 을 죽인다. */
+.accounting-screen.ac-layout-v2 .ac-chip,
+.accounting-screen.ac-layout-v2 .ac-tabs button,
+.accounting-screen.ac-layout-v2 .ac-inline-confirm,
+.accounting-screen.ac-layout-v2 .ac-import-button,
+.accounting-screen.ac-layout-v2 .ac-btn-undo {
+	transition:
+		transform 0.15s cubic-bezier(0.25, 1, 0.5, 1),
+		opacity 0.15s;
+}
+.accounting-screen.ac-layout-v2 .ac-chip:not(:disabled):active,
+.accounting-screen.ac-layout-v2 .ac-tabs button:not(:disabled):active,
+.accounting-screen.ac-layout-v2 .ac-inline-confirm:not(:disabled):active,
+.accounting-screen.ac-layout-v2 .ac-import-button:not(:disabled):active,
+.accounting-screen.ac-layout-v2 .ac-btn-undo:not(:disabled):active {
+	transform: scale(0.97);
+}
+
+/* ── S1. 월 네비 ──────────────────────────────────────────────────────── */
+/* 월 표시는 이 화면의 최상위 문맥이다. 홈이 섹션 제목에 쓰는 18/800/-0.025em 을
+   그대로 받아 "지금 보는 달"이 목록보다 한 단 위임을 굵기로 말하게 한다.
+   (원본 accounting.css:395 는 18px + -0.02em 으로 굵기가 없어 행 이름과 섞였다) */
+.accounting-screen.ac-layout-v2 .ac-month strong {
+	font-size: 18px;
+	font-weight: 800;
+	letter-spacing: var(--ac-ls-tight);
+}
+
+/* ── S2~S4. 탭 = 홈 알약 세그먼트 ─────────────────────────────────────── */
+/* accounting-layout.css:3-10 이 트랙(gap/padding/background/border/border-radius)을
+   전부 지우고 밑줄로 바꿔놨기 때문에, 여섯 선언을 한 번에 되감아야 트랙이 산다.
+   `border: 0` 은 layout:8 의 border-bottom 잔재까지 같이 지우기 위한 것. */
+.accounting-screen.ac-layout-v2 .ac-tabs {
+	display: flex;
+	gap: 2px;
+	padding: 2px;
+	background: var(--ac-fill);
+	border: 0;
+	border-radius: 11px;
+}
+
+/* (0,3,1) 이라야 layout:11 과 layout:774(`.is-ledger .ac-tabs button`) 를 동시에 이긴다.
+   반경 11/9 는 홈의 9/7 을 44px 컨트롤(트랙 48px) 크기로 한 단 올린 값.
+   굵기 550 은 홈 5단(800/700/600/500/400)에 없어 600 으로 스냅한다. */
+.accounting-screen.ac-layout-v2 .ac-tabs button {
+	flex: 1;
+	min-width: 0;
+	padding: 0 6px;
+	border: 0;
+	border-radius: 9px;
+	background: transparent;
+	color: var(--ac-ink-2);
+	font-size: 13.5px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+/* 현재 탭 = 부양한 흰 썸(iOS 세그먼티드). 파랑 채움을 쓰지 않는 이유는 aria-current 가
+   '위치'이고 aria-pressed 가 '선택'이기 때문이다 — 둘을 같은 파랑으로 칠하면
+   accounting.css:424-425 가 경고한 혼동이 재현된다.
+   border-bottom-color 를 빼먹으면 layout:19 의 검은 밑줄이 썸 아래 남는다. */
+.accounting-screen.ac-layout-v2 .ac-tabs button[aria-current="page"] {
+	background: var(--ac-paper);
+	color: var(--ac-ink);
+	font-weight: 700;
+	border-bottom-color: transparent;
+	box-shadow: var(--ac-thumb);
+}
+
+/* 탭은 카드가 아니라 **페이지 지면** 위에 놓인다(AccountingAdmin.tsx:198 이 콘텐츠 div 의
+   직계 자식). 다크 지면(#0f172a) 위에서 --ac-paper(#1b1d24) 썸은 트랙(rgba(255,255,255,.05)
+   ≈#1b2335)보다 어두워 '떠오른 칸'이 '눌린 구멍'으로 뒤집힌다. 다크는 밝기로 띄운다. */
+.dark .accounting-screen.ac-layout-v2 .ac-tabs button[aria-current="page"] {
+	background: rgba(255, 255, 255, 0.16);
+	box-shadow: none; /* 어두운 면 위 검은 그림자는 신호가 되지 못한다 */
+}
+
+/* ── S5~S9. 표면(시트 · 카드) ─────────────────────────────────────────── */
+/* 12 → 16. 홈 카드의 가로 여백(ScheduleCard.tsx:239 `padding: "14px 16px"`). */
+.accounting-screen.ac-layout-v2 .ac-sheet {
+	padding-inline: var(--ac-surface-pad-x);
+}
+
+/* 자식 결합자로 좁힌다. `.ac-ledger-summary` 는 `.ac-card` 이고 `.ac-sheet` 의 후손도
+   아니라(CashLedgerView.tsx:68) 지금은 어떤 형태로도 layout:783 과 만나지 않지만,
+   나중에 요약이 시트 안으로 들어와도 (0,4,0) 인 이 규칙이 layout:783(0,3,0) 을 이겨
+   장부 카드 머리가 20px 부푸는 일을 `>` 가 막는다. */
+.accounting-screen.ac-layout-v2 .ac-sheet > .ac-sheet-head {
+	padding-block: var(--ac-surface-pad);
+}
+
+/* 홈은 자간을 h1~h4 에만 준다. 크기 15 · 굵기 700 은 이미 홈과 같아 자간만 얹는다. */
+.accounting-screen.ac-layout-v2 .ac-sheet-head h2,
+.accounting-screen.ac-layout-v2 .ac-sheet-head h3,
+.accounting-screen.ac-layout-v2 .ac-section-heading h2,
+.accounting-screen.ac-layout-v2 .ac-section-heading h3 {
+	letter-spacing: var(--ac-ls-tight);
+}
+
+/* 홈 메타 라인은 12.5/600 이다(현재 12/500). 머리 오른쪽 보조 수치가 제목에 딸린
+   '메타'로 읽히게 하는 최소 조정. `h2 > span` 은 건드리지 않는다. */
+.accounting-screen.ac-layout-v2 .ac-sheet-head > span {
+	font-size: 12.5px;
+	font-weight: 600;
+}
+
+/* `:not(.ac-transaction)` 이 이 파일의 최대 안전장치다. 빼면 (0,3,0) 이
+   `.ac-layout-v2 .ac-inbox-receipt{padding:0;border:0}`(0,2,0)를 이겨 영수증 카드에
+   패딩이 되살아나고 G2(28→32) · G1 이 동시에 죽는다. TransactionCard.tsx:139 는
+   세 상태 모두 `ac-card ac-transaction` 을 항상 붙이므로 receipt 클래스로 거르면 안 된다. */
+.accounting-screen.ac-layout-v2 .ac-card:not(.ac-transaction) {
+	padding: var(--ac-surface-pad) var(--ac-surface-pad-x);
+	box-shadow: none;
+}
+
+/* ── S11~S12. empty · notice ─────────────────────────────────────────── */
+/* `.ac-armed`(부과 전표 카드)에는 아무 규칙도 두지 않는다. 홈에는 박스 테두리에
+   글로우를 얹는 표현이 없고, accounting-layout.css:657-662 가 이미 이 카드를
+   균일한 1px 홈 카드(`.ac-issue-slip`)로 정리해 놨다. 여기서 테두리 색이나
+   그림자를 덮으면 그 정리를 되돌리는 것이라 손대지 않는 것이 정답이다. */
+
+/* 홈에는 '채워진 회색 빈 박스'가 없다. 빈 상태는 점선 플레이스홀더 + faint 13.5px 이다.
+   면을 지우면 목록 안에서 빈 칸이 '내용 없음'으로 읽힌다. 점선이 유일한 윤곽이 되므로
+   rgba 인 --ac-rule-strong(1.35:1) 이 아니라 불투명 --ac-edge 를 쓴다. */
+.accounting-screen.ac-layout-v2 .ac-empty {
+	padding: 20px 14px;
+	background: transparent;
+	border: 1px dashed var(--ac-edge);
+	border-radius: var(--ac-r-card);
+	color: var(--ac-ink-3);
+	font-size: 13.5px;
+	line-height: 1.6;
+}
+
+/* 홈 정모 배너 = 틴트 면 + 25% 역할색 테두리. 면·글자색은 토큰이 이미 홈화했으므로
+   여기서는 테두리만 얹는다. 그림자는 주지 않는다(목록 표면 그림자 0). */
+.accounting-screen.ac-layout-v2 .ac-notice {
+	border: 1px solid var(--ac-rule);
+}
+
+/* 상태를 색 하나로만 말하지 않기 위해 테두리도 같은 상태를 말하게 한다. */
+.accounting-screen.ac-layout-v2 .ac-notice.is-ask {
+	border-color: var(--ac-ask-line);
+}
+.accounting-screen.ac-layout-v2 .ac-notice.is-stop {
+	border-color: var(--ac-stop-line);
+}
+
+/* ── S13~S19. 배지 · 칩 · 세그먼트 ────────────────────────────────────── */
+/* 홈 상태 배지(ScheduleCard.tsx:753-766) 실측: 알약 · 5px 11px · 12.5px/700 · gap 5.
+   행 높이 영향은 0 이다(.ac-row 는 min-height:44px 지배). */
+.accounting-screen.ac-layout-v2 .ac-badge {
+	gap: 5px;
+	border-radius: 999px;
+	padding: 5px 11px;
+	font-size: 12.5px;
+	font-weight: 700;
+	line-height: 1;
+}
+
+/* 홈에는 테두리 있는 칩이 없다 — 면만 있다.
+   `border: 0` 이 아니라 `border-color: transparent` 인 이유는 폭(1px)을 남겨
+   `.ac-chip.ac-settlement-choice`(36px 동결 구역)의 기하를 그대로 지키기 위해서다.
+   **미선택에만** 면을 주는 것이 핵심 — :not() 을 빼면 이 규칙(0,3,0)이
+   accounting.css:505 `.ac-chip[aria-pressed="true"]{background:var(--ac-sel-bg)}`(0,2,0)를
+   이겨 '선택됨'이 어떤 채널로도 표시되지 않는다(정산 처리방식 라디오는 선택 신호가
+   :has(> input:checked) 하나뿐이라 특히 치명적). */
+.accounting-screen.ac-layout-v2
+.ac-chip:not([aria-pressed="true"]):not(:has(> input:checked)) {
+	background: var(--ac-fill);
+	border-color: transparent;
+	color: var(--ac-ink-2);
+}
+.accounting-screen.ac-layout-v2 .ac-chip {
+	font-weight: 600;
+}
+
+/* 선택의 배경·글자 반전은 `--ac-sel-bg/-fg` 가 이미 처리한다. 다만 위 :not() 규칙이
+   (0,4,0)이므로 여기서 (0,4,0)으로 다시 못박아야 순서가 확정된다.
+   더하는 것은 홈의 '선택은 살짝 떠 있다' 하나뿐. */
+.accounting-screen.ac-layout-v2 .ac-chip[aria-pressed="true"],
+.accounting-screen.ac-layout-v2 .ac-chip:has(> input:checked) {
+	background: var(--ac-sel-bg);
+	color: var(--ac-sel-fg);
+	border-color: transparent;
+	box-shadow: var(--ac-thumb);
+}
+
+/* 세그먼트를 탭과 같은 트랙 문법으로 통일한다(현재 3px/r10).
+   두 컨트롤이 같은 '한 트랙 안에서 고르기'인데 모양이 다르면 학습이 두 번 든다. */
+.accounting-screen.ac-layout-v2 .ac-segment {
+	padding: 2px;
+	gap: 2px;
+	border-radius: 11px;
+}
+
+/* 트랙 11 − 패딩 2 = 9. 안쪽 칩이 트랙 곡률과 동심이 된다.
+   background 를 함께 되돌린다 — --ac-fill 이 rgba 라 트랙 면 위에 칩 면이 겹치면
+   색이 쌓여 미선택 칩이 사이 간격보다 진해진다(세그먼트의 읽기가 뒤집힌다). */
+.accounting-screen.ac-layout-v2 .ac-segment
+	> .ac-chip:not([aria-pressed="true"]):not(:has(> input:checked)) {
+	background: transparent;
+}
+.accounting-screen.ac-layout-v2 .ac-segment > .ac-chip {
+	border-radius: 9px;
+}
+
+/* ── S20~S22. 행 프리미티브(거터 · 상태어) ────────────────────────────── */
+/* layout:122 (0,5,0) 이 무상태 거터를 `--ac-ink-2` 로 올려놨다. 상태 없는 행이 상태 있는
+   행만큼 눈에 띄면 글리프+상태어+색 3중 인코딩의 신호대잡음이 떨어진다.
+   `:not` 3개를 그대로 복사해야 (0,6,0) 으로 이긴다. */
+.accounting-screen.ac-layout-v2
+.ac-row-gutter:not(.is-ok):not(.is-ask):not(.is-stop) {
+	color: var(--ac-ink-3);
+}
+
+/* 상태어 알약은 **짧은 상태어(is-ok/is-ask)에만** 준다. 거터 글리프가 이미
+   ✓/?/— 를 말하므로 알약은 '스캔용 두 번째 채널'로만 의미가 있고, 사유 문장
+   (부과 제외·운영진 · 대관비 면제 …)은 알약에 넣으면 문장을 가둔 것처럼 무거워진다.
+   `.ac-row-body` 가 column flex 라 기본 stretch 로 늘어난다 — align-self/width 가
+   없으면 알약이 아니라 이름 열을 가로지르는 전폭 색 막대가 된다.
+   `.ac-row-state` 는 회원 화면(`/my-dues` 납부 내역의 `✓ 확인됨`)에도 있고, 회원
+   화면도 `.ac-layout-v2` 를 달았으므로 이 알약이 거기에도 적용된다 — 의도된 결과다
+   (`.ac-row-body` 가 column flex 라 위의 align-self/width 가 거기서도 필수다). */
+.accounting-screen.ac-layout-v2 .ac-row-state.is-ok,
+.accounting-screen.ac-layout-v2 .ac-row-state.is-ask,
+.accounting-screen.ac-layout-v2 .ac-row-state.is-stop {
+	display: inline-flex;
+	align-self: flex-start;
+	width: fit-content; /* AccountingOverview.tsx:377 의 블록 <p> 용 */
+	align-items: center;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: var(--ac-fs-meta);
+	font-weight: 700;
+	line-height: 1.35;
+}
+
+/* 거터 글리프와 뜻이 정확히 같은 상태어(✓=완납 · ?=미납)는 화면에서 감춘다 —
+   왼쪽 글리프로 이미 읽히는데 알약까지 붙어 행이 3줄로 부푼다(사용자 지적).
+   `?` 가 구분해 주지 못하는 '부분 납부'·'납기 이월'은 그대로 보인다.
+   DOM 에서 지우지 않는 이유: 글리프가 aria-hidden 이라 이 문구가 사라지면
+   스크린리더에 상태를 전할 채널이 하나도 남지 않는다(e2e 계약이기도 하다). */
+.accounting-screen.ac-layout-v2 .ac-row-state.is-glyph-echo {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+/* 상태별 면은 글자색과 같은 역할색의 틴트다 — 색이 두 번 말하는 게 아니라
+   글자색(전경)과 면(배경)이 같은 상태를 가리켜 대비가 항상 성립한다. */
+.accounting-screen.ac-layout-v2 .ac-row-state.is-ok {
+	background: var(--ac-ok-soft);
+}
+.accounting-screen.ac-layout-v2 .ac-row-state.is-ask {
+	background: var(--ac-ask-soft);
+}
+.accounting-screen.ac-layout-v2 .ac-row-state.is-stop {
+	background: var(--ac-stop-soft);
+}
+
+/* ── S23~S28. 종착 표면 · 굵기 스냅 ───────────────────────────────────── */
+/* 3px 이중선 폐기 — 홈의 선은 1px 하나뿐이다. 다만 accounting.css:314 의 경고
+   ("이중선 없이 20px 을 쓰지 않는다")대로 대체 신호를 반드시 함께 준다:
+   홈이 종착·요약을 말하는 방식이 '면'이므로 틴트 면으로 갚는다.
+   padding · margin-inline 은 금지 — `.ac-total` 은 `.ac-row.ac-cash-columns`
+   그리드 행이라 좌우 박스를 건드리면 금액 열 x좌표가 움직인다. */
+.accounting-screen.ac-layout-v2 .ac-total {
+	border-top: 1px solid var(--ac-edge);
+	background: var(--ac-fill);
+	margin-top: var(--ac-s-2);
+}
+
+/* 650 은 홈 굵기 5단에 없다. layout:812 와 (0,4,0) 동률이지만 그쪽은
+   font-size · margin-right 라 선언이 겹치지 않는다. */
+.accounting-screen.ac-layout-v2 .ac-total .ac-amount,
+.accounting-screen.ac-layout-v2 .ac-total-amount {
+	font-weight: 700;
+}
+
+/* 살아 있는 유일한 3px 밴드(accounting.css:1195). 홈의 구획은 띠가 아니라
+   `mt-3 pt-3 border-t` 다 — 두께를 여백으로 갚아 같은 '경계'를 만든다. */
+.accounting-screen.ac-layout-v2 .ac-done-list {
+	border-top: 1px solid var(--ac-rule);
+	margin-top: var(--ac-s-3);
+	padding-top: var(--ac-s-3);
+}
+
+/* 굵기 스냅 — 홈 5단(800/700/600/500/400) 밖 값이 화면 곳곳에 남아 있으면
+   '홈 활자'가 성립하지 않는다. e2e 에 fontWeight 단언은 0건이고 굵기는 기하
+   동결 대상도 아니므로 안전하게 통일할 수 있다. 650 → 700. */
+.accounting-screen.ac-layout-v2 .ac-transaction-heading .ac-row-body > strong,
+.accounting-screen.ac-layout-v2 .ac-overview-people strong,
+.accounting-screen.ac-layout-v2 .ac-overview-group-title strong,
+.accounting-screen.ac-layout-v2 .ac-overview-headcounts b,
+.accounting-screen.ac-layout-v2 .ac-payer-option strong,
+.accounting-screen.ac-layout-v2 .ac-person-copy strong,
+.accounting-screen.ac-layout-v2 .ac-group-toggle > .ac-section-heading > strong,
+.accounting-screen.ac-layout-v2 .ac-group-facts b,
+.accounting-screen.ac-layout-v2 .ac-draft-row strong,
+.accounting-screen.ac-layout-v2 .ac-receipt-form .ac-receipt-change,
+.accounting-screen.ac-layout-v2 .ac-settled-identity > strong:first-child,
+.accounting-screen.ac-layout-v2 .ac-ledger-transaction-amount {
+	font-weight: 700;
+}
+/* 550 → 600 */
+.accounting-screen.ac-layout-v2 .ac-settlement-history .ac-allocation-undo,
+.accounting-screen.ac-layout-v2 .ac-reference-choice {
+	font-weight: 600;
+}
+
+/* ── D1. 영수증 카드 부양 ─────────────────────────────────────────────── */
+/* layout:241 이 영수증 카드 그림자를 rgba(16,32,44,…) 로 하드코딩해 다크에서 그림자가
+   사라져 있었다(기존 결함). 토큰으로 옮기면 --ac-lift 의 다크 값이 자동으로 따라온다
+   → 여기에 .dark 짝을 따로 쓰지 않는 이유. 동결 구역이라 그림자 외에는 한 줄도 쓰지 않는다. */
+.accounting-screen.ac-layout-v2 .ac-inbox-receipt,
+.accounting-screen.ac-layout-v2 .ac-settled-receipt {
+	box-shadow: var(--ac-lift);
+}
+
+/* ── D2. 가져오기 버튼 ────────────────────────────────────────────────── */
+/* 홈에는 테두리 버튼이 없다 — 보조 액션은 틴트 면(btn-tint-blue).
+   layout:613 이 이 버튼만 36px/무채색으로 내려놨는데 동결 구역 밖이라
+   44px 터치 타깃을 되살릴 수 있는 세 곳 중 하나다. */
+.accounting-screen.ac-layout-v2 .ac-inbox-toolbar .ac-import-button {
+	background: var(--ac-act-soft);
+	border-color: transparent;
+	color: var(--ac-act);
+	font-weight: 700;
+	min-height: 44px;
+}
+
+/* ── D3~D5. 주 확정 버튼 ──────────────────────────────────────────────── */
+/* 홈의 솔리드 CTA — 같은 색 글로우까지가 한 벌이다. 알약(999px)이 아닌 r12 인 이유:
+   홈은 카드 '안' 액션에 라운드 렉트를 쓰고 알약은 모달 액션에만 쓴다.
+   /dues 의 확정 버튼은 전부 카드 안이다. border-color:transparent 는 폭 보존 관용구. */
+.accounting-screen.ac-layout-v2 .ac-inline-confirm {
+	border-radius: var(--ac-r-card);
+	border-color: transparent;
+	background: var(--ac-ok-solid);
+	color: #fff;
+	box-shadow: var(--ac-glow-ok);
+}
+/* 비활성은 '눌리지 않는 면'으로만 말한다 — 글로우가 남으면 누를 수 있는 것처럼 보인다. */
+.accounting-screen.ac-layout-v2 .ac-inline-confirm:disabled {
+	background: var(--ac-fill);
+	color: var(--ac-ink-3);
+	box-shadow: none;
+}
+/* layout:600 (0,5,0) 이 다크에서 배경을 color-mix(--ac-ok-solid 92%, --ac-sel-fg) 로
+   다시 칠한다. --ac-sel-fg 가 #fff 가 되면 결과가 내려앉아 흰 글자 대비가 3.9:1 이 된다.
+   (0,6,0) 으로 되돌려 4.9:1 을 지킨다 — 안 하면 '다크에서 확정 버튼만 색이 다름'이 난다. */
+.dark .accounting-screen.ac-layout-v2
+	.ac-receipt-form
+	.ac-inline-confirm:not(:disabled) {
+	background: var(--ac-ok-solid);
+	box-shadow: var(--ac-glow-ok);
+}
+
+/* ── D6. 틴트 면 위의 칩 ──────────────────────────────────────────────── */
+/* 이 세 컨테이너의 면이 --ac-fill 이라, 칩 면(같은 --ac-fill)이 그 위에서 사라진다.
+   미선택 칩만 종이색으로 되돌린다. :not() 두 개가 필수 — 빼면 이 규칙(0,6,1)이
+   accounting.css:505 의 선택 상태를 이겨 '선택 = 파랑 채움'을 지워버린다. */
+.accounting-screen.ac-layout-v2 .ac-receipt-picker
+	.ac-chip:not([aria-pressed="true"]):not(:has(> input:checked)),
+.accounting-screen.ac-layout-v2
+	.ac-receipt-editor
+	.ac-chip:not([aria-pressed="true"]):not(:has(> input:checked)),
+.accounting-screen.ac-layout-v2
+	.ac-filter-fields
+	.ac-chip:not([aria-pressed="true"]):not(:has(> input:checked)) {
+	background: var(--ac-paper);
+}
+
+/* ── D7~D9. 입력 한 벌 ────────────────────────────────────────────────── */
+/* 홈 입력(.lq-input)은 테두리가 없고 면만 있다. layout:611·814 가 .ac-search 를
+   종이+테두리로 되돌려 놨던 두 곳까지 (0,3,0) 으로 한 번에 통일한다 —
+   화면 안에 입력이 두 모습이면 안 된다. */
+.accounting-screen.ac-layout-v2 .ac-search {
+	border-color: transparent;
+	background: var(--ac-fill);
+}
+/* 홈의 포커스 관용구는 링이 아니라 '배경 심화'다. 아웃라인 링(accounting.css:157)은
+   별도로 유지되므로 키보드 사용자는 두 신호를 함께 받는다. */
+.accounting-screen.ac-layout-v2 .ac-search:focus-within {
+	background: var(--ac-fill-deep);
+	border-color: var(--ac-act);
+}
+
+/* :not() 두 개를 원본 그대로 복사해야 accounting.css:638 의 테두리·배경을 이긴다.
+   min-height·font-size 는 절대 쓰지 않는다 — 16px 는 iOS 자동확대 방지 기능이고,
+   높이는 동결 구역 여러 곳이 이미 조정해 놨다. */
+.accounting-screen.ac-layout-v2
+input:not([type="checkbox"]):not([type="radio"]),
+.accounting-screen.ac-layout-v2 select,
+.accounting-screen.ac-layout-v2 .ac-input,
+.accounting-screen.ac-layout-v2 .ac-field {
+	border-color: transparent;
+	background: var(--ac-fill);
+}
+
+/* 위 규칙은 layout:93(`.ac-layout-v2 .ac-search input:not…`, 0,4,1)과 동률이라 소스
+   순서로 이겨 버린다 → 검색창 면 위에 input 면이 또 얹혀 반경 10px 사각형이 겹쳐 보인다.
+   `.ac-search` 안쪽은 언제나 투명이어야 홈의 '한 장의 면'이 성립한다.
+   select 도 같은 역전이 나 layout:816-819 의 좌측 구분선이 사라진다 — 함께 되돌린다. */
+.accounting-screen.ac-layout-v2 .ac-search
+	input:not([type="checkbox"]):not([type="radio"]),
+.accounting-screen.ac-layout-v2 .ac-search select {
+	background: transparent;
+}
+.accounting-screen.ac-layout-v2 .ac-ledger-page .ac-ledger-search select {
+	border-left-color: var(--ac-rule);
+}
+
+/* ── D10. 되돌리기/미분류 블록 ────────────────────────────────────────── */
+/* 3px double 좌캡은 이 저장소에만 있는 방언이다. 홈이 위험/경고를 말하는 방식은
+   정모 배너 문법 — 틴트 면 + 25% 역할색 테두리 + r10.
+   (블록 안 버튼 색은 아래 D17 에서 한곳에 모아 정한다.) */
+.accounting-screen.ac-layout-v2 .ac-undo-block {
+	border: 1px solid var(--ac-stop-line);
+	border-radius: var(--ac-r-field);
+	background: var(--ac-stop-soft);
+}
+
+/* ── D12. 전표 미리보기 ───────────────────────────────────────────────── */
+/* 살아 있는 이중선 2/2(accounting.css:1760). 홈은 선 두께가 1px 하나뿐.
+   세로 방향 변화만 생기므로 G3(가로 26±2)와 무관하다. */
+.accounting-screen.ac-layout-v2 .ac-preview {
+	border-top: 1px solid var(--ac-edge);
+}
+
+/* ── D13~D14. 장부 컨트롤 ─────────────────────────────────────────────── */
+/* 장부 필터는 홈 알약 필터로 — 색만 바꾸고 높이는 layout:829 의 36px 을 그대로 둔다.
+   12.5px 글자에 44px 은 과하게 두툼해 목록보다 컨트롤이 먼저 읽힌다(사용자 지적).
+   색은 :not([aria-pressed="true"]) 로 분리해야 한다 — 이 규칙이 (0,4,1) 이라
+   accounting.css:1052 의 선택 상태(0,2,1)를 이겨 파랑 채움을 지워버린다. */
+.accounting-screen.ac-layout-v2 .ac-ledger-page
+	.ac-ledger-filters
+	button:not([aria-pressed="true"]) {
+	background: var(--ac-fill);
+	border-color: transparent;
+}
+
+/* 상세 토글은 글자("상세 보기"/"닫기")를 버리고 셰브런만 남겼다 — 금액 레일 오른쪽에
+   글자 버튼이 서면 그 폭만큼 금액이 밀려 행마다 끝이 어긋나 보였다(사용자 지적).
+   홈의 행 끝 관용구(ScheduleCard 의 faint ChevronRight)와 같은 무테두리 아이콘이다.
+   접근명은 aria-label(`거래 N 상세`)이 유지하므로 e2e 계약도 그대로다. */
+.accounting-screen.ac-layout-v2 .ac-ledger-page .ac-ledger-transaction-toggle {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	min-width: 32px;
+	height: 32px;
+	min-height: 32px;
+	padding: 0;
+	border: 0;
+	border-radius: 999px;
+	background: transparent;
+	color: var(--ac-ink-3);
+}
+.accounting-screen.ac-layout-v2
+	.ac-ledger-page
+	.ac-ledger-transaction-toggle[aria-expanded="true"] {
+	background: var(--ac-fill);
+	color: var(--ac-ink-2);
+}
+/* 셰브런 회전 — 접힘 ▾ / 펼침 ▴. accounting.css:1821 의 .ac-expanded(90도)는
+   목록 디스클로저용이라 여기서는 180도로 따로 쓴다. */
+.accounting-screen.ac-layout-v2 .ac-ledger-page
+	.ac-ledger-transaction-toggle
+	> svg {
+	transition: transform 0.15s ease-out;
+}
+.accounting-screen.ac-layout-v2
+	.ac-ledger-page
+	.ac-ledger-transaction-toggle[aria-expanded="true"]
+	> svg {
+	transform: rotate(180deg);
+}
+
+/* ── D18. 합계 띠 풀블리드 ────────────────────────────────────────────── */
+/* 합계 행의 틴트 면이 컨테이너 패딩(카드 16 + 목록 8 = 24px) 안쪽에서 끝나 카드
+   가운데에 뜬 조각처럼 잘려 보였다(사용자 지적). 음수 마진으로 박스만 카드 폭까지
+   넓히고 같은 값을 패딩으로 되돌려준다 — **콘텐츠 박스는 1px도 움직이지 않으므로
+   금액 열 x좌표가 다른 행과 그대로 일치한다.** .ac-total::before 는 이미 없어
+   구분선 문제도 없다. */
+.accounting-screen.ac-layout-v2 .ac-ledger-page .ac-cash-columns.ac-total {
+	/* `width: auto` 가 필수다. accounting.css:214 의 `.ac-row { width: 100% }` 를
+	   그대로 두면 폭이 컨테이너에 고정돼 음수 마진이 상자를 넓히지 못하고 통째로
+	   왼쪽으로 밀기만 한다(왼쪽만 넘치고 오른쪽은 24px 모자라는 비대칭). */
+	width: auto;
+	margin-inline: calc(-1 * (var(--ac-surface-pad-x) + 8px));
+	padding-inline: calc(var(--ac-surface-pad-x) + 8px);
+}
+/* 합계의 수입 금액만 4px 오른쪽으로 튀어나와 있었다 — layout:804 가 모든
+   `.ac-cash-columns .ac-amount` 에 `margin-right: 4px` 를 주는데 layout:812 가
+   합계에서만 0 으로 지웠기 때문(실측 269 vs 265). 대조가 본업인 표에서 합계 열만
+   어긋나면 눈이 한 번 더 멈춘다. */
+.accounting-screen.ac-layout-v2 .ac-ledger-page
+	.ac-cash-columns.ac-total
+	.ac-amount {
+	margin-right: 4px;
+}
+
+/* ── D15. 지표 활자 ───────────────────────────────────────────────────── */
+/* 26px 지표는 홈 기준으로 제목급이라 제목 자간(-0.025em)을 받는다. 같은 클래스에
+   같은 값을 주므로 열 간 자릿수 정렬은 그대로 유지되고, tabular-nums·nowrap 은
+   건드리지 않는다. */
+.accounting-screen.ac-layout-v2 .ac-overview-metric-row .ac-amount,
+.accounting-screen.ac-layout-v2 .ac-ledger-metric > strong {
+	font-weight: 700;
+	letter-spacing: var(--ac-ls-tight);
+}
+
+/* ── D16. 거래 카드 표면을 정산 아이템과 통일 ─────────────────────────── */
+/* 미정산 거래는 자동으로 초안이 붙어 `.ac-inbox-receipt`(테두리 0 + 부양)로 그려지고,
+   정산이 끝난 거래만 이 평범한 `.ac-transaction` 으로 남는다(TransactionCard.tsx:48-54).
+   그래서 목록에서 두 카드가 나란히 서면 정산 완료 카드에만 색 테두리가 붙어 표면이
+   따로 노는 것처럼 보였다(사용자 지적). 두 표면을 같게 만든다 — 테두리는 색만 지우고
+   폭은 남기고(border-width 는 기하 동결) 영수증과 같은 부양만 준다.
+   영수증 계열은 :not() 으로 반드시 제외한다(제외하지 않으면 (0,5,0)이 layout:238
+   `padding:0` 을 이겨 G2 가 깨진다). 상태는 접힌 줄의 '미정산'과 카드 내용이 말한다. */
+.accounting-screen.ac-layout-v2
+.ac-transaction:not(.ac-inbox-receipt):not(.ac-settled-receipt) {
+	border-color: transparent;
+	box-shadow: var(--ac-lift);
+}
+
+/* 카드 안 행동 줄 — 13px 글자에 44px(accounting.css:141 전역 최소값)은 지나치게 두툼해
+   행동 줄이 본문보다 먼저 읽혔다(사용자 지적). 장부 필터와 같은 36px 로 맞춘다.
+   전역 button 규칙은 건드리지 않는다(입력·아이콘 버튼까지 휩쓴다). */
+.accounting-screen.ac-layout-v2 .ac-actions .ac-chip,
+.accounting-screen.ac-layout-v2 .ac-actions .ac-btn-undo {
+	min-height: 36px;
+}
+
+/* 되돌리기 버튼은 홈의 위험 틴트(btn-tint-red 문법) — 옆에 서는 `.ac-chip` 도 틴트
+   면이라 테두리 있는 버튼 하나만 튀지 않게 한다. */
+.accounting-screen.ac-layout-v2 .ac-btn-undo {
+	background: var(--ac-stop-soft);
+	border-color: transparent;
+	border-radius: var(--ac-r-chip);
+	color: var(--ac-stop);
+	font-weight: 600;
+}
+/* 단, 같은 위험 틴트 면 위(.ac-undo-block)에서는 면이 겹쳐 버튼이 사라지므로
+   종이색으로 띄운다(장부의 미분류 블록·부과 탭 되돌리기 이력). */
+.accounting-screen.ac-layout-v2 .ac-undo-block .ac-btn-undo {
+	background: var(--ac-paper);
+	border-color: var(--ac-stop-line);
+}
+
+/* ── D17. 동결 구역 되돌리기 ──────────────────────────────────────────── */
+/* .ac-empty 규칙(0,3,0)이 layout:583-584(0,3,0)와 동률인데 이 파일이 뒤에 로드되므로
+   환불 패널의 빈 상태가 padding 8→20px, font 12.5→13.5px 로 벌어진다. 그곳은
+   `.ac-receipt-*` 동결 구역이라 기하를 원본 그대로 되돌린다(0,5,0). */
+.accounting-screen.ac-layout-v2 .ac-receipt-editor .ac-refund .ac-empty {
+	padding: var(--ac-s-2);
+	font-size: var(--ac-receipt-control-font);
+	line-height: 1.5;
+	border: 0;
+}
+
+/* ── D19. 상세 모달 스크롤 레인 ───────────────────────────────────────── */
+/* 실측(390px, Chromium): 시트 안쪽 오른끝 365 / 본문 콘텐츠 오른끝 349 /
+   본문 테두리상자 오른끝 357 → 스크롤 레인이 349~357 뿐이라 금액 글자와 **여유 0px**.
+   게다가 iOS·macOS 의 오버레이 스크롤바에서는 `scrollbar-gutter: stable` 이 한 톨도
+   예약하지 않아(실측 offsetWidth−clientWidth = 0) 바가 글자 위에 그대로 얹힌다.
+
+   마진과 패딩을 같은 값으로 키워 레인만 넓힌다: 음수 마진으로 테두리상자를 시트
+   안쪽 끝(365)까지 밀고, 같은 16px 을 패딩으로 되돌려 **콘텐츠 오른끝은 349 그대로**
+   — 머리글·행 정렬이 1px도 변하지 않으면서 레인이 8px → 16px 이 된다. */
+.accounting-screen.ac-layout-v2 .ac-detail-body {
+	margin-inline-end: calc(-1 * var(--ac-surface-pad-x));
+	padding-inline-end: var(--ac-surface-pad-x);
+}
+
+/* ── D21. 카드 안에 펼친 원입금 ───────────────────────────────────────── */
+/* 환불 출금 카드 안에서 원입금 카드를 그대로 편다. 카드 안 카드라 한 단 들여
+   구분하되, 안쪽 카드의 부양은 끈다 — 겹친 그림자는 깊이가 아니라 때로 보인다. */
+.accounting-screen.ac-layout-v2 .ac-refund-source {
+	margin-top: var(--ac-s-3);
+	padding-top: var(--ac-s-3);
+	border-top: 1px solid var(--ac-rule);
+}
+.accounting-screen.ac-layout-v2 .ac-refund-source .ac-transaction {
+	box-shadow: none;
+	background: var(--ac-fill);
+}
+
+/* 처리 끝난 출금 카드의 금액은 붉은색이다 — layout:645 가 `.ac-settled-identity >
+   .ac-number` 를 파랑(수입)으로 고정해 두어 출금까지 파랗게 나왔다. */
+.accounting-screen.ac-layout-v2 .ac-settled-identity > .ac-number.ac-out {
+	color: var(--ac-stop);
+}
+
+/* ── P. 인쇄 — 총무의 실제 산출물은 월 정산 보고다 ────────────────────── */
+/* 반드시 **파일 맨 끝**이어야 한다. 미디어 쿼리는 특정도를 더하지 않으므로, 위쪽에
+   두면 같은 (0,3,0) 화면 규칙들에게 소스 순서로 전부 진다.
+   화면은 홈 톤, 종이는 장부 톤이 의도된 결과다. 틴트·그림자는 잉크 낭비이자 스캔
+   노이즈라 전부 끈다. 다크 짝을 함께 두지 않으면 다크 모드에서 인쇄할 때
+   `.dark .accounting-screen.ac-layout-v2`(0,3,0)가 이 블록(0,2,0)을 이겨 종이가
+   슬레이트 팔레트로 나간다. */
+@media print {
+	.accounting-screen.ac-layout-v2,
+	.dark .accounting-screen.ac-layout-v2 {
+		--ac-paper: #fff;
+		--ac-ink: #000;
+		--ac-ink-2: #333;
+		--ac-ink-3: #555;
+		--ac-rule: #999;
+		--ac-rule-strong: #000;
+		--ac-edge: #000;
+		--ac-band: #999;
+		--ac-fill: transparent;
+		--ac-fill-deep: transparent;
+		--ac-ok-soft: transparent;
+		--ac-ask-soft: transparent;
+		--ac-stop-soft: transparent;
+		--ac-act-soft: transparent;
+		--ac-lift: none;
+		--ac-thumb: none;
+		--ac-glow-ok: none;
+	}
+	/* 화면에서는 1px + 틴트 면으로 종착을 말하지만, 종이에서는 면이 안 찍히므로
+	   장부의 관용구인 이중선을 되살린다. 박스(padding/margin-inline)는 건드리지
+	   않는다 — .ac-total 은 그리드 행이라 좌우를 만지면 금액 열 x좌표가 움직인다. */
+	.accounting-screen.ac-layout-v2 .ac-total {
+		border-top: 3px double #000;
+		background: none;
+	}
+	/* 토큰으로 끌 수 없는(값을 직접 쓴) 그림자를 명시적으로 끈다 */
+	.accounting-screen.ac-layout-v2 .ac-inbox-receipt,
+	.accounting-screen.ac-layout-v2 .ac-settled-receipt,
+	.accounting-screen.ac-layout-v2 .ac-inline-confirm,
+	.accounting-screen.ac-layout-v2 .ac-tabs button[aria-current="page"],
+	.accounting-screen.ac-layout-v2 .ac-chip[aria-pressed="true"] {
+		box-shadow: none;
+	}
+}

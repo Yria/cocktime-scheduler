@@ -1,16 +1,28 @@
-import { Search, X } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import { fmtMDSlash, won } from "../../lib/dues/duesText";
+import { shortGroupLabel } from "../../lib/dues/labelShorten";
+import { nameMatches } from "../../lib/dues/matching";
+import { sortLedgerBuckets } from "../../lib/dues/overview";
 import { transactionNeedsSettlement } from "../../lib/dues/quickSettlement";
 import { kstMonth, memberLabel } from "../../lib/dues/summary";
-import { shortGroupLabel } from "../../lib/dues/labelShorten";
-import type { AccountingData, BankTransaction } from "../../lib/dues/types";
-import { fmtMDSlash, won } from "../../lib/dues/duesText";
-import { nameMatches } from "../../lib/dues/matching";
+import type {
+	AccountingData,
+	BankTransaction,
+	CashLedger,
+} from "../../lib/dues/types";
 import TransactionCard from "./TransactionCard";
 
+/**
+ * 무엇에 쓰였는지("회식", "2099-01 이월" …)를 문장으로 만든다. **화면에는 쓰지 않는다** —
+ * 행을 누르면 펼쳐지는 상세가 같은 내용을 그대로 보여 주므로(실측 확인) 접힌 줄에 또
+ * 두면 날짜가 설명에 묻힌다. 이 문장은 검색 대상으로만 쓰인다: 목록에 안 보이는 항목명
+ * 으로도 찾을 수 있어야 하고("회식" 검색이 그 거래를 집어낸다), 쪼개진 정산의 금액도
+ * 검색어가 될 수 있어야 해서 금액을 붙인 원문을 유지한다.
+ */
 function describeTransaction(data: AccountingData, tx: BankTransaction) {
 	const groups = new Set<string>();
-	const notes: string[] = [];
+	const notes: { text: string; amount?: number }[] = [];
 	const groupName = (id: string | null) => {
 		if (id) groups.add(id);
 		return data.groups.find((g) => g.id === id)?.label ?? "미분류";
@@ -22,21 +34,22 @@ function describeTransaction(data: AccountingData, tx: BankTransaction) {
 		const refund = refunds[0];
 		if (refund) {
 			const source = data.bank.find((t) => t.id === refund.in_tx_id);
-			notes.push(
-				`환불 → ${refund.owner_id ? memberLabel(data, refund.owner_id) : source?.name || `입금 #${refund.in_tx_id}`}`,
-			);
+			notes.push({
+				text: `환불 → ${refund.owner_id ? memberLabel(data, refund.owner_id) : source?.name || `입금 #${refund.in_tx_id}`}`,
+			});
 		} else {
 			const expense = data.expenses.find((e) => e.bank_tx_id === tx.id);
-			if (expense?.group_id) notes.push(groupName(expense.group_id));
+			if (expense?.group_id) notes.push({ text: groupName(expense.group_id) });
 		}
 	} else {
 		for (const a of data.allocations.filter(
 			(a) => a.bank_tx_id === tx.id && a.amount > a.reversed,
 		)) {
 			const charge = data.charges.find((c) => c.id === a.charge_id);
-			notes.push(
-				`${groupName(charge?.group_id ?? null)} 납부 ${won(a.amount - a.reversed)}`,
-			);
+			notes.push({
+				text: `${groupName(charge?.group_id ?? null)} 납부`,
+				amount: a.amount - a.reversed,
+			});
 		}
 		for (const p of data.positions.filter(
 			(p) => p.bank_tx_id === tx.id && p.amount > 0,
@@ -49,15 +62,21 @@ function describeTransaction(data: AccountingData, tx: BankTransaction) {
 						: p.purpose === "refund_pending"
 							? "환불 대기"
 							: "미정산";
-			notes.push(`${label} ${won(p.amount)}`);
+			notes.push({ text: label, amount: p.amount });
 		}
 		if (refunds.length)
-			notes.push(
-				`환불 완료 ${won(refunds.reduce((sum, r) => sum + r.amount, 0))}`,
-			);
+			notes.push({
+				text: "환불 완료",
+				amount: refunds.reduce((sum, r) => sum + r.amount, 0),
+			});
 	}
 	return {
-		note: notes.map(shortGroupLabel).join(" · ") || "미정산",
+		searchText:
+			notes
+				.map(({ text, amount }) =>
+					shortGroupLabel(amount != null ? `${text} ${won(amount)}` : text),
+				)
+				.join(" · ") || "미정산",
 		groups,
 		refund: refunds.length > 0,
 		pending: transactionNeedsSettlement(data, tx.id),
@@ -74,10 +93,9 @@ export default function TransactionLedger({
 	settling,
 	onDone,
 	onPendingChange,
-	onMonth,
 	filter,
 	onFilter,
-	balances,
+	lines = [],
 }: {
 	data: AccountingData;
 	ym: string;
@@ -85,11 +103,11 @@ export default function TransactionLedger({
 	settling: boolean;
 	onDone: () => Promise<void>;
 	onPendingChange: (pending: boolean) => void;
-	onMonth: (ym: string) => void;
-	/** 항목별 내역과 공유하는 필터. 부모가 소유해 두 블록이 같은 값을 본다. */
+	/** 항목 칩과 공유하는 필터. 부모가 소유해 두 줄이 같은 값을 본다. */
 	filter: string;
 	onFilter: (key: string) => void;
-	balances: Map<number, number | null>;
+	/** 그 달의 항목별 수지. 이 목록을 좁히는 필터 줄로 그린다(SPEC §3.3). */
+	lines?: CashLedger["lines"];
 }) {
 	const [query, setQuery] = useState("");
 	const [sort, setSort] = useState<"date" | "amount">("date");
@@ -122,7 +140,7 @@ export default function TransactionLedger({
 			(r) =>
 				matchesFilter(r, filter) &&
 				(nameMatches(
-					`${r.tx.name ?? ""} ${r.note} ${fmtMDSlash(r.tx.occurred_at)} ${r.tx.occurred_at.slice(0, 10)}`,
+					`${r.tx.name ?? ""} ${r.searchText} ${fmtMDSlash(r.tx.occurred_at)} ${r.tx.occurred_at.slice(0, 10)}`,
 					query,
 				) ||
 					String(r.tx.id) === query.trim()),
@@ -130,6 +148,17 @@ export default function TransactionLedger({
 		.sort((a, b) => (sort === "amount" ? b.tx.amount - a.tx.amount : 0));
 	const number = (n: number) => n.toLocaleString("ko-KR");
 	const selectedGroup = data.groups.find((g) => g.id === filter);
+	// 항목이 15개를 넘는 달이 있어 한 줄에 하나씩 놓으면 필터가 목록보다 길어진다.
+	// 가로로 흐르는 칩으로 접되, 대조가 본업이므로 수입·지출을 칩 안에 함께 둔다.
+	//
+	// 순서는 **종류 묶음 + 날짜순**이다(사용자 선택): 대관비(회차 날짜) → 회비(월) →
+	// 수동 묶음(발생일) → 묶음 없는 합성 항목(환불·미분류·이월 …). 같은 종류가 붙어
+	// 있어야 찾는 종류로 바로 스크롤할 수 있다. 금액 순으로 세우면 날짜가 흩어져
+	// '8/16 대관비'를 눈으로 좇을 수 없다.
+	const buckets = useMemo(
+		() => sortLedgerBuckets(lines, data.groups),
+		[lines, data.groups],
+	);
 	return (
 		<section
 			className="ac-sheet ac-transaction-ledger"
@@ -207,8 +236,69 @@ export default function TransactionLedger({
 						</button>
 					)}
 				</div>
+				{buckets.length > 0 && (
+					<div
+						className="ac-bucket-filters"
+						role="group"
+						aria-label="항목별 수지"
+					>
+						{buckets.map((line, index) => {
+							const picked = !!line.group_id && filter === line.group_id;
+							const money = `수입 ${won(line.income)} · 지출 ${won(line.expense)}`;
+							const inner = (
+								<>
+									<span className="ac-bucket-name">
+										{shortGroupLabel(line.label)}
+									</span>
+									{/* 두 칸을 항상 채운다. 0 인 쪽을 생략하면 칩마다 수입·지출이
+									    자리를 바꿔 앉아 가로로 훑을 때 열이 서지 않는다 — 표의
+									    `—` 자리표시가 칩에서도 같은 일을 한다. */}
+									<span className="ac-bucket-sums">
+										<strong
+											className={
+												line.income ? "ac-ledger-income" : "ac-bucket-zero"
+											}
+										>
+											{line.income ? number(line.income) : "—"}
+										</strong>
+										<small className={line.expense ? "" : "ac-bucket-zero"}>
+											{line.expense ? `−${number(line.expense)}` : "—"}
+										</small>
+									</span>
+								</>
+							);
+							// 환불·미분류처럼 묶음 ID 가 없는 합성 항목은 좁힐 대상이 없다 —
+							// 눌러도 아무 일이 없는 버튼을 두면 나머지 칩의 클릭도 못 믿게 된다.
+							// 숫자는 읽을 수 있어야 하므로 버튼 대신 같은 모양의 칩으로 남긴다.
+							return line.group_id ? (
+								<button
+									key={`${line.group_id}-${index}`}
+									type="button"
+									className="ac-bucket-chip"
+									aria-pressed={picked}
+									aria-label={`${line.label} ${money}${picked ? " 필터 해제" : " 거래 보기"}`}
+									disabled={settling}
+									onClick={() => {
+										onFilter(picked ? "all" : (line.group_id as string));
+										setExpanded(null);
+									}}
+								>
+									{inner}
+								</button>
+							) : (
+								<span
+									key={`static-${index}`}
+									className="ac-bucket-chip is-static"
+									aria-label={`${line.label} ${money}`}
+								>
+									{inner}
+								</span>
+							);
+						})}
+					</div>
+				)}
 				<div>
-					{shown.map(({ tx, note, pending }) => (
+					{shown.map(({ tx, pending }) => (
 						<div key={tx.id} className="ac-ledger-transaction">
 							<div
 								className="ac-ledger-transaction-row"
@@ -217,11 +307,14 @@ export default function TransactionLedger({
 							>
 								<div className="ac-ledger-transaction-body">
 									<strong>{tx.name || `거래 #${tx.id}`}</strong>
+									{/* 항목 설명은 펼친 상세가 책임진다 — 접힌 줄에 같은 문구를
+									    또 두면 날짜가 설명에 묻힌다. '미정산'만 남기는 이유:
+									    펼침 화면은 이 상태를 문구가 아니라 '항목을 선택하세요'
+									    UI 로 대체하므로, 목록에서 판단이 남은 건을 세로로 훑을
+									    신호가 여기뿐이다(미정산 필터가 가리키는 그 신호). */}
 									<div className={`ac-row-note ${pending ? "is-pending" : ""}`}>
-										{fmtMDSlash(tx.occurred_at)} ·{" "}
-										{pending && note !== "미정산" && !note.includes("미정산")
-											? `미정산 · ${note}`
-											: note}
+										{fmtMDSlash(tx.occurred_at)}
+										{pending ? " · 미정산" : ""}
 									</div>
 								</div>
 								<span
@@ -230,6 +323,9 @@ export default function TransactionLedger({
 									{tx.direction === "in" ? "+" : "−"}
 									{number(tx.amount)}
 								</span>
+								{/* 글자 버튼이 금액 오른쪽에 서면 그 폭만큼 금액 레일이 밀려
+								    행마다 끝이 어긋나 보인다. 홈의 행 끝 관용구인 셰브런
+								    아이콘만 남기고, 접근명은 aria-label 이 계속 책임진다. */}
 								<button
 									type="button"
 									className="ac-ledger-transaction-toggle"
@@ -239,16 +335,11 @@ export default function TransactionLedger({
 									aria-controls={`ledger-detail-${tx.id}`}
 									onClick={() => setExpanded(expanded === tx.id ? null : tx.id)}
 								>
-									{expanded === tx.id ? "닫기" : "상세 보기"}
+									<ChevronDown size={18} aria-hidden="true" />
 								</button>
 							</div>
 							{expanded === tx.id && (
 								<div id={`ledger-detail-${tx.id}`} className="ac-ledger-detail">
-									{balances.get(tx.id) != null && (
-										<p className="ac-caption">
-											거래 후 잔액 {won(balances.get(tx.id)!)}
-										</p>
-									)}
 									<TransactionCard
 										data={data}
 										transaction={tx}
@@ -256,7 +347,6 @@ export default function TransactionLedger({
 										origin="회계"
 										onDone={onDone}
 										onPendingChange={onPendingChange}
-										onMonth={onMonth}
 									/>
 								</div>
 							)}

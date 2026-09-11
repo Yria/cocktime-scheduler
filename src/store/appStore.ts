@@ -281,7 +281,7 @@ export const appActions = {
 	checkActiveSession: () => useAppStore.getState().checkActiveSessionAction(),
 	startOrUpdateSession: (
 		selected: Player[],
-		settings: { courtCount: number; singleWomanIds: string[]; cockCheckEnabled: boolean },
+		settings: SessionSettings,
 	) => useAppStore.getState().startOrUpdateSessionAction(selected, settings),
 	updatePlayer: (player: Player) =>
 		useAppStore.getState().updatePlayerAction(player),

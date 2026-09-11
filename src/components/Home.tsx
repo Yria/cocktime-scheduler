@@ -23,6 +23,7 @@ import ScheduleCard from "./schedule/ScheduleCard";
 import EmptyState from "./shared/EmptyState";
 import HeaderTicketBadge from "./vfx/HeaderTicketBadge";
 import Spinner from "./shared/Spinner";
+import EmailPasswordLogin from "./auth/EmailPasswordLogin";
 
 interface Props {
 	onStart: () => void;
@@ -108,6 +109,7 @@ export default function Home({ onStart }: Props) {
 	const installState = useInstallPromptStore();
 
 	const [authBusy, setAuthBusy] = useState(false);
+	const [emailAuthBusy, setEmailAuthBusy] = useState(false);
 	const [busyId, setBusyId] = useState<number | null>(null);
 	const [editingProfile, setEditingProfile] = useState(false);
 
@@ -257,7 +259,7 @@ export default function Home({ onStart }: Props) {
 					<button
 						type="button"
 						onClick={handleKakaoLogin}
-						disabled={authBusy}
+						disabled={authBusy || emailAuthBusy}
 						style={{
 							width: "100%",
 							padding: "15px",
@@ -267,8 +269,8 @@ export default function Home({ onStart }: Props) {
 							color: "#191600",
 							background: "#FEE500",
 							border: "none",
-							cursor: authBusy ? "not-allowed" : "pointer",
-							opacity: authBusy ? 0.6 : 1,
+							cursor: authBusy || emailAuthBusy ? "not-allowed" : "pointer",
+							opacity: authBusy || emailAuthBusy ? 0.6 : 1,
 							display: "flex",
 							alignItems: "center",
 							justifyContent: "center",
@@ -284,6 +286,12 @@ export default function Home({ onStart }: Props) {
 						</svg>
 						{authBusy ? "이동 중…" : "카카오로 로그인"}
 					</button>
+					<div className="w-full flex items-center gap-3 text-xs text-muted" aria-hidden="true">
+						<span className="h-px flex-1 bg-black/10 dark:bg-white/15" />
+						또는
+						<span className="h-px flex-1 bg-black/10 dark:bg-white/15" />
+					</div>
+					<EmailPasswordLogin disabled={authBusy} onBusyChange={setEmailAuthBusy} />
 				</div>
 			</div>
 		);

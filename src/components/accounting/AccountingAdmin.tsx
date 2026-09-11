@@ -1,4 +1,3 @@
-import { transactionNeedsSettlement } from "../../lib/dues/quickSettlement";
 import {
 	ChevronLeft,
 	ChevronRight,
@@ -7,15 +6,23 @@ import {
 	Settings,
 	X,
 } from "lucide-react";
+import { transactionNeedsSettlement } from "../../lib/dues/quickSettlement";
 import "./accounting.css";
 import "./accounting-layout.css";
-import TransactionCard from "./TransactionCard";
-import AccountingOverview from "./AccountingOverview";
-import AccountingLedger from "./AccountingLedger";
+// 홈 톤 스킨 — 반드시 accounting-layout.css **뒤**. 모든 규칙이 .ac-layout-v2 스코프이고
+// 동률 특정도 다수가 소스 순서로 갈린다. 2026-09-11 부터 회원 화면(AccountingMember)도
+// 같은 클래스를 달아 홈 톤으로 그린다 — 이 스킨을 고칠 때 회원 화면도 함께 본다.
+import "./accounting-home.css";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { sessionChoiceLabels } from "../../lib/dues/selection";
+import {
+	currentYm,
+	holdReasonLabel,
+	shiftYm,
+	won,
+} from "../../lib/dues/duesText";
 import { nameMatches } from "../../lib/dues/matching";
+import { sessionChoiceLabels } from "../../lib/dues/selection";
 import { groupSummary, kstMonth, memberLabel } from "../../lib/dues/summary";
 import { actionLabel } from "../../lib/dues/types";
 import {
@@ -24,20 +31,14 @@ import {
 	accountingSessions,
 } from "../../lib/supabase/dues";
 import { ingestBankEmail } from "../../lib/supabase/duesSettings";
-import {
-	useDuesData,
-	useDuesStore,
-} from "../../store/duesStore";
-import {
-	currentYm,
-	holdReasonLabel,
-	shiftYm,
-	won,
-} from "../../lib/dues/duesText";
-import DuesSettingsModal from "./DuesSettingsModal";
+import { useDuesData, useDuesStore } from "../../store/duesStore";
 import AppScreen from "../common/AppScreen";
+import AccountingLedger from "./AccountingLedger";
+import AccountingOverview from "./AccountingOverview";
 import ChargeVoucher from "./ChargeVoucher";
+import DuesSettingsModal from "./DuesSettingsModal";
 import type { OperationDraft } from "./OperationDialog";
+import TransactionCard from "./TransactionCard";
 
 const tabs = [
 	["home", "현황"],
@@ -290,7 +291,6 @@ export default function AccountingAdmin() {
 							settling={settling}
 							filter={ledgerFilter}
 							onFilter={setLedgerFilter}
-							onMonth={(month) => go(month, "ledger")}
 							onInbox={() => go(ym, "inbox")}
 						/>
 					) : page === "inbox" ? (
@@ -352,7 +352,6 @@ export default function AccountingAdmin() {
 									onDone={refresh}
 									onPendingChange={setSettling}
 									onSettled={(text) => setDone((rows) => [text, ...rows])}
-									onMonth={(month) => go(month, "ledger")}
 								/>
 							))}
 							{!shownPending.length && (

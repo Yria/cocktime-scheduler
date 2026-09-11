@@ -124,6 +124,21 @@ export function fmtMDSlash(iso: string): string {
 	return `${kst.getUTCMonth() + 1}/${kst.getUTCDate()}`;
 }
 
+const DOW = ["일", "월", "화", "수", "목", "금", "토"];
+
+/**
+ * '9/8 (화)' (KST). 회원 화면의 날짜 표기 — 회차·납부일을 요일까지 말한다.
+ * timestamptz 와 `YYYY-MM-DD`(date 열: `dues_groups.occurred_on`) 둘 다 받는다.
+ * date 는 정오로 고정해 파싱한다 — 자정은 시간대 계산에서 날짜가 밀 수 있다.
+ */
+export function fmtMDDow(value: string): string {
+	const iso = /^\d{4}-\d{2}-\d{2}$/.test(value)
+		? `${value}T12:00:00+09:00`
+		: value;
+	const kst = new Date(new Date(iso).getTime() + 9 * 3600 * 1000);
+	return `${fmtMDSlash(iso)} (${DOW[kst.getUTCDay()]})`;
+}
+
 /** ISO(timestamptz) → 'YYYY-MM' (KST). null → null. */
 export function ymOfIso(iso: string | null): string | null {
 	if (!iso) return null;

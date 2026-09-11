@@ -27,11 +27,7 @@ interface AuthState {
 	myCreatedAt: string | null;
 }
 
-export const useAuthStore = create<AuthState>(() => ({
-	user: null,
-	session: null,
-	ready: false,
-	memberLoaded: false,
+const emptyMemberState = {
 	memberId: null,
 	isAdmin: false,
 	myName: null,
@@ -40,9 +36,23 @@ export const useAuthStore = create<AuthState>(() => ({
 	myResidence: null,
 	myMembershipStartedAt: null,
 	myCreatedAt: null,
+};
+
+export const useAuthStore = create<AuthState>(() => ({
+	user: null,
+	session: null,
+	ready: false,
+	memberLoaded: false,
+	...emptyMemberState,
 }));
 
 let initialized = false;
+// 같은 계정이라도 로그아웃 후 다시 로그인했다면 이전 요청의 결과는 사용할 수 없다.
+let authGeneration = 0;
+
+function isCurrentUser(userId: string, generation: number): boolean {
+	return authGeneration === generation && useAuthStore.getState().user?.id === userId;
+}
 
 // 회원 조회를 이미 끝냈거나 진행 중인 auth user id. onAuthStateChange 는 구독 즉시 INITIAL_SESSION 을
 // 쏘고, 그 뒤로도 TOKEN_REFRESHED(시간당)·다른 탭 BroadcastChannel·재포커스마다 다시 발화한다.
@@ -53,7 +63,8 @@ let memberLoadFor: string | null = null;
 let memberEnsuredFor: string | null = null;
 
 /** 로그인 사용자의 members 행을 보장하고 member_id·운영진 여부를 store에 채운다. */
-async function loadMember(user: User) {
+async function loadMember(user: User, generation: number) {
+	if (!isCurrentUser(user.id, generation)) return;
 	// 본인 member 행 보장 (RLS members_insert). 이미 있으면 무시.
 	if (memberEnsuredFor !== user.id) {
 		await supabase
@@ -62,6 +73,7 @@ async function loadMember(user: User) {
 				{ auth_user_id: user.id, name: authDisplayName(user) },
 				{ onConflict: "auth_user_id", ignoreDuplicates: true },
 			);
+		if (!isCurrentUser(user.id, generation)) return;
 		memberEnsuredFor = user.id;
 	}
 	const { data: member } = await supabase
@@ -70,7 +82,9 @@ async function loadMember(user: User) {
 		.select("id, name, gender, birth_year, residence, membership_started_at, created_at")
 		.eq("auth_user_id", user.id)
 		.maybeSingle();
+	if (!isCurrentUser(user.id, generation)) return;
 	const { data: admin } = await supabase.rpc("is_admin");
+	if (!isCurrentUser(user.id, generation)) return;
 	// 행이 안 보이면(upsert 실패·RLS·최초 가입 레이스) 다음 이벤트에서 보장부터 다시 시도한다.
 	if (!member) memberEnsuredFor = null;
 	useAuthStore.setState({
@@ -88,19 +102,30 @@ async function loadMember(user: User) {
 }
 
 function applySession(session: Session | null) {
+	const user = session?.user ?? null;
+	const identityChanged = (useAuthStore.getState().user?.id ?? null) !== (user?.id ?? null);
+	if (identityChanged) {
+		authGeneration++;
+		memberLoadFor = null;
+		memberEnsuredFor = null;
+	}
 	useAuthStore.setState({
 		session,
-		user: session?.user ?? null,
+		user,
 		ready: true,
+		// 새 user와 이전 계정의 권한·프로필이 한 프레임이라도 같이 노출되지 않도록 원자적으로 초기화.
+		...(identityChanged || !user ? { ...emptyMemberState, memberLoaded: !user } : {}),
 	});
-	if (session?.user) {
-		const u = session.user;
+	if (user) {
+		const u = user;
+		const generation = authGeneration;
 		// 같은 사용자로 이벤트가 또 와도(토큰 갱신·다른 탭·재포커스) 회원 조회는 다시 하지 않는다.
 		if (memberLoadFor === u.id) return;
 		memberLoadFor = u.id;
 		// onAuthStateChange 콜백 내에서 supabase를 직접 await하면 데드락 위험 → 디퍼.
 		setTimeout(() => {
-			void loadMember(u).catch((e) => {
+			void loadMember(u, generation).catch((e) => {
+				if (!isCurrentUser(u.id, generation)) return;
 				// 실패한 사용자는 잠가두지 않는다 — 다음 auth 이벤트에서 다시 시도해야 memberLoaded 가 풀린다.
 				console.error("loadMember:", e);
 				if (memberLoadFor === u.id) memberLoadFor = null;
@@ -110,7 +135,6 @@ function applySession(session: Session | null) {
 		// 비로그인: 로드할 회원정보가 없으므로 즉시 settled 처리.
 		memberLoadFor = null;
 		memberEnsuredFor = null;
-		useAuthStore.setState({ memberId: null, isAdmin: false, memberLoaded: true });
 	}
 }
 
@@ -135,6 +159,15 @@ export const authActions = {
 		const { error } = await supabase.auth.signInWithOAuth({
 			provider: "kakao",
 			options: { redirectTo },
+		});
+		if (error) throw error;
+	},
+
+	/** 이메일 로그인도 기존 onAuthStateChange 경로로 세션·회원 정보를 갱신한다. */
+	async signInWithPassword(email: string, password: string) {
+		const { error } = await supabase.auth.signInWithPassword({
+			email: email.trim(),
+			password, // 앞뒤 공백도 비밀번호의 일부다. 별도 저장·정규화하지 않는다.
 		});
 		if (error) throw error;
 	},
@@ -169,6 +202,7 @@ export const authActions = {
 	}) {
 		const user = useAuthStore.getState().user;
 		if (!user) return false;
+		const generation = authGeneration;
 		const { error } = await supabase
 			.from("members")
 			.update({
@@ -178,6 +212,7 @@ export const authActions = {
 				residence: profile.residence,
 			})
 			.eq("auth_user_id", user.id);
+		if (!isCurrentUser(user.id, generation)) return false;
 		if (error) {
 			console.error("updateProfile:", error);
 			return false;

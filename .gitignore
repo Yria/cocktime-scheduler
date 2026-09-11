@@ -18,6 +18,7 @@ scripts/__pycache__/
 .playwright-mcp/
 test-results/
 playwright-report/
+.pnpm-store/
 
 # Editor directories and files
 .vscode/*

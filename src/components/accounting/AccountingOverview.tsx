@@ -1,16 +1,16 @@
 import { ChevronRight } from "lucide-react";
-import AccountingDetailModal from "./AccountingDetailModal";
 import { useEffect, useMemo, useState } from "react";
-import { billingProgress } from "../../lib/dues/overview";
-import { groupSummary, memberLabel } from "../../lib/dues/summary";
-import type { AccountingData } from "../../lib/dues/types";
 import { fmtMD, won } from "../../lib/dues/duesText";
-import { readAccountingParticipation } from "../../lib/supabase/dues";
+import { billingProgress } from "../../lib/dues/overview";
 import {
-	groupParticipation,
 	type AccountingParticipation,
 	type BillingPerson,
+	groupParticipation,
 } from "../../lib/dues/participation";
+import { groupSummary, memberLabel } from "../../lib/dues/summary";
+import type { AccountingData } from "../../lib/dues/types";
+import { readAccountingParticipation } from "../../lib/supabase/dues";
+import AccountingDetailModal from "./AccountingDetailModal";
 
 function Progress({
 	paid,
@@ -158,6 +158,10 @@ export default function AccountingOverview({
 				const done = person.state !== "excluded" && r?.remaining === 0;
 				const tone =
 					person.state === "excluded" ? "" : done ? "is-ok" : "is-ask";
+				// 거터 글리프(✓/?)와 뜻이 정확히 같은 두 상태어는 화면에서 감춘다.
+				// '부분 납부'·'납기 이월'은 ? 가 구분해 주지 못하므로 그대로 보인다.
+				// 글리프가 aria-hidden 이라 문구 자체는 DOM 에 남겨 보조기기에 전한다.
+				const glyphEcho = person.label === "완납" || person.label === "미납";
 				return (
 					<div key={person.memberId} className="ac-row">
 						<span className={`ac-row-gutter ${tone}`} aria-hidden="true">
@@ -165,7 +169,11 @@ export default function AccountingOverview({
 						</span>
 						<span className="ac-row-body">
 							<strong>{memberLabel(data, person.memberId)}</strong>
-							<span className={`ac-row-state ${tone}`}>{person.label}</span>
+							<span
+								className={`ac-row-state ${tone}${glyphEcho ? " is-glyph-echo" : ""}`}
+							>
+								{person.label}
+							</span>
 							{r && (
 								<span className="ac-row-note">
 									{r.remaining > 0

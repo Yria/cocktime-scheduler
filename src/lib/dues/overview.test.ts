@@ -1,6 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { billingProgress, overviewBalances } from "./overview";
-import type { AccountingData } from "./types";
+import {
+	billingProgress,
+	overviewBalances,
+	sortLedgerBuckets,
+} from "./overview";
+import type { AccountingData, BillingGroup } from "./types";
+
+function g(
+	id: string,
+	kind: BillingGroup["kind"],
+	occurred_on: string,
+	label: string,
+): BillingGroup {
+	return {
+		id,
+		source_key: `${kind}:${id}`,
+		kind,
+		label,
+		occurred_on,
+		session_id: null,
+		basis: {},
+	};
+}
 
 function fixture(): AccountingData {
 	return {
@@ -210,5 +231,79 @@ describe("overview accounting scopes", () => {
 			["a", 1000],
 		]);
 		expect(balances.carry.map((p) => p.id)).toEqual(["cash"]);
+	});
+});
+
+describe("sortLedgerBuckets — 항목 칩 순서", () => {
+	const groups: BillingGroup[] = [
+		g("c-830", "court", "2026-08-30", "2026-08-30 · 에이트민턴 · 19:00"),
+		g("c-89", "court", "2026-08-09", "2026-08-09 · 에이트민턴 · 19:00"),
+		g("c-816", "court", "2026-08-16", "2026-08-16 · 에이트민턴 · 19:00"),
+		g("m-9", "monthly", "2026-09-01", "9월 회비"),
+		g("m-8", "monthly", "2026-08-01", "8월 회비"),
+		g("x-cock", "manual", "2026-08-25", "콕공구"),
+		g("x-meal", "manual", "2026-08-22", "8. 22. 정모"),
+	];
+	const line = (group_id: string | null, label: string, income = 0, expense = 0) => ({
+		group_id,
+		label,
+		income,
+		expense,
+	});
+
+	it("대관비(날짜) → 회비(월) → 수동 묶음(발생일) → 묶음 없는 항목 순이다", () => {
+		// 서버는 라벨 문자열순으로만 주므로 뒤섞인 입력을 흉내 낸다.
+		const lines = [
+			line(null, "환불", 0, 49000),
+			line("m-9", "9월 회비", 10000),
+			line("x-cock", "콕공구", 540000, 600000),
+			line("c-830", "2026-08-30 · 에이트민턴 · 19:00", 156000, 169000),
+			line(null, "이월 입금", 5000),
+			line("c-89", "2026-08-09 · 에이트민턴 · 19:00", 156000, 195000),
+			line("x-meal", "8. 22. 정모", 510000, 701000),
+			line("m-8", "8월 회비", 375000),
+			line("c-816", "2026-08-16 · 에이트민턴 · 19:00", 48000, 78000),
+			line(null, "환불 원입금", 50000),
+		];
+		expect(sortLedgerBuckets(lines, groups).map((l) => l.label)).toEqual([
+			"2026-08-09 · 에이트민턴 · 19:00",
+			"2026-08-16 · 에이트민턴 · 19:00",
+			"2026-08-30 · 에이트민턴 · 19:00",
+			"8월 회비",
+			"9월 회비",
+			"8. 22. 정모",
+			"콕공구",
+			"이월 입금",
+			"환불",
+			"환불 원입금",
+		]);
+	});
+
+	it("금액은 순서를 바꾸지 않는다 — 큰 지출이 날짜를 앞지르지 못한다", () => {
+		const lines = [
+			line("c-830", "2026-08-30 · 에이트민턴 · 19:00", 1000),
+			line("c-89", "2026-08-09 · 에이트민턴 · 19:00", 0, 9_000_000),
+		];
+		expect(sortLedgerBuckets(lines, groups)[0].group_id).toBe("c-89");
+	});
+
+	it("모르는 묶음 ID 는 합성 항목과 같이 맨 뒤로 간다(라벨순)", () => {
+		const lines = [
+			line("ghost", "사라진 묶음", 1000),
+			line("m-8", "8월 회비", 2000),
+			line(null, "미분류", 3000),
+		];
+		expect(sortLedgerBuckets(lines, groups).map((l) => l.label)).toEqual([
+			"8월 회비",
+			"미분류",
+			"사라진 묶음",
+		]);
+	});
+
+	it("원본 배열을 바꾸지 않는다", () => {
+		const lines = [line("m-9", "9월 회비"), line("c-89", "8/9")];
+		const copy = [...lines];
+		sortLedgerBuckets(lines, groups);
+		expect(lines).toEqual(copy);
 	});
 });

@@ -1,4 +1,4 @@
 import { AccountingMember } from "cocktime-scheduler";
 
-/** 회원이 보는 내 회비 — 이번에 낼 돈, 낼 돈의 근거, 입금 잔액·이월, 납부 이력. */
+/** 회원이 보는 내 회비 — 달 단위 납부 현황, 입금 계좌, 그 달의 납부 내역. */
 export const MyDues = () => <AccountingMember />;

@@ -1,7 +1,7 @@
 /**
  * conflict.ts
  *
- * 세션 설정(코트수/참가자/단식여성) 로컬↔서버 충돌 판정 순수 함수.
+ * 세션 설정 로컬↔서버 충돌 판정 순수 함수.
  * SessionSetup(충돌 발생 여부)과 SessionConflictDialog(항목별 강조)가 공유.
  */
 

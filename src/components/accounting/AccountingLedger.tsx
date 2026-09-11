@@ -1,17 +1,25 @@
-import { useEffect, useState, type ComponentProps } from "react";
-import { readAccountingBankBalances } from "../../lib/supabase/dues";
-import { kstMonth } from "../../lib/dues/summary";
+import { type ComponentProps, useEffect, useState } from "react";
 import { won } from "../../lib/dues/duesText";
+import { kstMonth } from "../../lib/dues/summary";
+import type { CashLedger } from "../../lib/dues/types";
+import { readAccountingBankBalances } from "../../lib/supabase/dues";
 import CashLedgerView from "./CashLedgerView";
 import TransactionLedger from "./TransactionLedger";
 
 export default function AccountingLedger({
 	onInbox,
 	...props
-}: Omit<ComponentProps<typeof TransactionLedger>, "balances"> & {
+}: ComponentProps<typeof TransactionLedger> & {
 	onInbox: () => void;
 }) {
-	const { ym, data, onFilter } = props;
+	const { ym, data } = props;
+	// 항목 줄은 통장 카드가 이미 조회한 것을 올려받는다 — 거래 내역의 필터 칩이
+	// 같은 값을 쓰되 `dues_ledger` 를 두 번 부르지 않는다. 달이 바뀌면 새 조회가
+	// 도착할 때까지 지난달 칩을 보여 주지 않으려고 ym 을 함께 들고 있는다.
+	const [lines, setLines] = useState<{ ym: string; rows: CashLedger["lines"] }>({
+		ym: "",
+		rows: [],
+	});
 	const [bank, setBank] = useState<{
 		ym: string;
 		revision: number;
@@ -32,11 +40,11 @@ export default function AccountingLedger({
 			disposed = true;
 		};
 	}, [ym, data.mode.revision]);
-	// Summary and transaction details share the one existing bank-balance read.
+	// 통장 잔액 조회는 요약 카드의 '통장잔액' 한 줄에만 쓴다(거래별 잔액 표기는 폐기 —
+	// 행 오른쪽 금액과 나란히 두 숫자가 경쟁했다).
 	const rows =
 		bank?.ym === ym && bank.revision === data.mode.revision ? bank.rows : [];
 	const latest = rows[0];
-	const balances = new Map(rows.map((tx) => [tx.id, tx.balance_after]));
 	const unassigned = data.positions.filter(
 		(p) =>
 			p.purpose === "unassigned" &&
@@ -49,19 +57,23 @@ export default function AccountingLedger({
 			<CashLedgerView
 				ym={ym}
 				revision={data.mode.revision}
+				buckets={false}
+				onLines={(rows) => setLines({ ym, rows })}
 				closingBalance={
 					latest?.balance_after != null
 						? { amount: latest.balance_after, occurredAt: latest.occurred_at }
 						: undefined
 				}
-				onPickGroup={(id) => onFilter(id ?? "all")}
 			/>
 			{bank?.ym === ym && bank.error && (
 				<p className="ac-caption" role="status">
 					통장 잔액을 불러오지 못했습니다. 화면을 새로고침해 주세요.
 				</p>
 			)}
-			<TransactionLedger {...props} balances={balances} />
+			<TransactionLedger
+				{...props}
+				lines={lines.ym === ym ? lines.rows : []}
+			/>
 			{unassigned.length > 0 && (
 				<div className="ac-undo-block">
 					<strong>

@@ -253,8 +253,17 @@ test.beforeEach(async ({ page, context }, testInfo) => {
 			dues_candidates: ["p_kind", "p_ym", "p_session_id"],
 		};
 		if (!url.pathname.includes("/rest/v1/rpc/") || !keys[name]) {
-			// The member account display is unrelated to these financial commands.
-			if (name === "dues_club_account") return route.fulfill({ json: null });
+			// The member account display is unrelated to these financial commands,
+			// but the member screen renders it as a card — serve a real payload.
+			if (name === "dues_club_account")
+				return route.fulfill({
+					json: {
+						bank_name: "토스뱅크",
+						account: "1000-1234-5678",
+						account_holder: "김총무",
+						monthly_fee: 5000,
+					},
+				});
 			return route.abort();
 		}
 		const args = route.request().postDataJSON() ?? {};
@@ -527,10 +536,26 @@ test("one carry form moves partial debt and actual money; member sees both futur
 	expect(await scalar("select count(*)::int from dues_charges")).toBe(7);
 	await db.exec(`set test.admin='false'; set test.member='${B}'`);
 	await navigate(page, "/my-dues", B);
+	// 달 카드는 이름이 달에 묶이지 않는 region 이다(테스트 시계는 실제 시각이다).
+	await expect(
+		page.getByRole("region", { name: "회비 납부 현황" }),
+	).toBeVisible();
+	// 진입 달(=이번 달)에 부과가 없는 회원이 보는 첫 화면. 카드는 사라지지 않는다.
+	await designEvidence(page, "my-dues-entry-light");
 	await expect(
 		page.getByText("앞으로 낼 돈 3,000원 · 이미 낸 돈 6,000원"),
 	).toBeVisible();
-	await expect(page.getByText("이번에 낼 돈", { exact: true })).toBeVisible();
+	await expect(page.getByRole("region", { name: "입금 계좌" })).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "계좌번호 복사" }),
+	).toBeVisible();
+	// 달 이동은 같은 조회 스냅샷에서 계산한다 — 새 dues_read 를 만들지 않는다.
+	const reads = calls.filter((c) => c.name === "dues_read").length;
+	const month = page.locator(".ac-month strong");
+	const shown = await month.innerText();
+	await page.getByRole("button", { name: "이전 달", exact: true }).click();
+	await expect(month).not.toHaveText(shown);
+	expect(calls.filter((c) => c.name === "dues_read")).toHaveLength(reads);
 	expect(
 		await page.evaluate(
 			() => document.documentElement.scrollWidth <= window.innerWidth,
@@ -540,6 +565,29 @@ test("one carry form moves partial debt and actual money; member sees both futur
 		path: "test-results/accounting-member-mobile.png",
 		fullPage: true,
 	});
+	for (const theme of ["light", "dark"]) {
+		await page.evaluate(
+			(dark) => document.documentElement.classList.toggle("dark", dark),
+			theme === "dark",
+		);
+		await designEvidence(page, `my-dues-${theme}`);
+	}
+	await page.evaluate(() =>
+		document.documentElement.classList.remove("dark"),
+	);
+	await page.getByRole("button", { name: "클럽 회계", exact: true }).click();
+	await expect(page.getByText("항목별 수지")).toBeVisible();
+	await expect(
+		page.getByText("회원 화면에서는 항목별 합계까지만 보입니다.", {
+			exact: false,
+		}),
+	).toBeVisible();
+	expect(
+		await page.evaluate(
+			() => document.documentElement.scrollWidth <= window.innerWidth,
+		),
+	).toBe(true);
+	await designEvidence(page, "my-dues-ledger-light");
 });
 
 test("September refund finds and spends the remainder of an August deposit", async ({
@@ -598,9 +646,9 @@ test("ledger has no migration recovery controls and keeps the financial history"
 }) => {
 	await command({ action: "apply" });
 	await navigate(page, "/dues/2026-09/ledger");
-	await expect(page.getByRole("region", { name: "이달의 수지" })).toContainText(
-		"잔액 646,592",
-	);
+	const summary = page.getByRole("region", { name: "이달의 수지" });
+	await expect(summary).toContainText("통장잔액");
+	await expect(summary).toContainText("646,592");
 	await expect(
 		page.getByRole("button", {
 			name: /부과 운영·복구|직전 처리 되돌리기|기존 부과로 복귀|처리 일시 중지|백업/,
@@ -1103,15 +1151,25 @@ test("ledger restores the compact monthly list and edits saved expenses without 
 	await expect(
 		ledger.getByRole("button", { name: /^거래 \d+ 상세$/ }),
 	).toHaveCount(4);
+	// 접힌 줄은 날짜 + 금액 + (미정산) 만 말한다. 어디에 쓰였는지는 펼친 상세가
+	// 책임진다(아래 '지출 처리됨 · 회식' 검사). 판단이 남은 건은 목록에서 바로 보여야 한다.
+	const row9 = ledger.getByRole("group", { name: "거래 9 요약" });
+	await expect(row9).toContainText("9/2");
+	await expect(row9).not.toContainText("회식");
+	const row92 = ledger.getByRole("group", { name: "거래 92 요약" });
+	await expect(row92).toContainText("+3,000");
+	await expect(row92).not.toContainText("2099-01");
 	await expect(
-		ledger.getByRole("group", { name: "거래 9 요약" }),
-	).toContainText("회식");
-	await expect(
-		ledger.getByRole("group", { name: "거래 92 요약" }),
-	).toContainText("2099-01 이월 3,000원");
-	await expect(page.getByRole("region", { name: "이달의 수지" })).toContainText(
-		"9/6 잔액 718,592",
-	);
+		ledger.getByRole("group", { name: "거래 90 요약" }),
+	).toContainText("미정산");
+	// 펼치면 이월 내역이 그대로 드러난다 — 접힌 줄에서 뺀 설명의 행선지.
+	await ledger.getByRole("button", { name: "거래 92 상세" }).click();
+	await expect(page.locator("#ledger-detail-92")).toContainText("2099-01");
+	await ledger.getByRole("button", { name: "거래 92 상세" }).click();
+	const summary = page.getByRole("region", { name: "이달의 수지" });
+	await expect(summary).toContainText("통장잔액");
+	await expect(summary).toContainText("9/6 기준");
+	await expect(summary).toContainText("718,592");
 	await expect(ledger.locator(".ac-transaction")).toHaveCount(0);
 	await page.setViewportSize({ width: 390, height: 844 });
 	for (const theme of ["light", "dark"]) {
@@ -1136,6 +1194,28 @@ test("ledger restores the compact monthly list and edits saved expenses without 
 		ledger.getByRole("button", { name: /^거래 \d+ 상세$/ }),
 	).toHaveCount(2);
 	await filters.getByRole("button", { name: "전체", exact: true }).click();
+	// 항목별 수지는 거래 내역 안의 필터 줄이다 — 누르면 그 항목의 거래만 남고 다시
+	// 누르면 풀린다. 좁힐 대상이 없는 합성 항목(미분류·이월 …)은 버튼이 아니지만
+	// 금액은 읽을 수 있어야 한다.
+	const buckets = ledger.getByRole("group", { name: "항목별 수지" });
+	// 순서는 종류 묶음 + 날짜순 — 묶음이 있는 항목(회식)이 먼저, 묶음 없는 합성
+	// 항목(미분류·이월 입금)이 라벨순으로 뒤에 선다.
+	await expect(buckets.locator(".ac-bucket-name")).toHaveText([
+		"회식",
+		"미분류",
+		"이월 입금",
+	]);
+	await expect(buckets.getByText("미분류", { exact: true })).toBeVisible();
+	await expect(buckets.getByRole("button", { name: /^미분류/ })).toHaveCount(0);
+	await buckets.getByRole("button", { name: /^회식 .* 거래 보기$/ }).click();
+	await expect(
+		ledger.getByRole("button", { name: /^거래 \d+ 상세$/ }),
+	).toHaveCount(1);
+	await expect(ledger.getByRole("group", { name: "거래 9 요약" })).toBeVisible();
+	await buckets.getByRole("button", { name: /^회식 .* 필터 해제$/ }).click();
+	await expect(
+		ledger.getByRole("button", { name: /^거래 \d+ 상세$/ }),
+	).toHaveCount(4);
 	await ledger.getByLabel("전체 거래 검색").fill("2026-09-05");
 	await expect(
 		ledger.getByRole("button", { name: /^거래 \d+ 상세$/ }),
