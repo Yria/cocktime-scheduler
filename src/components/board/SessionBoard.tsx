@@ -31,6 +31,10 @@ import type { RecommendTarget } from "../../hooks/useTeammateRecommendations";
 // 제스처 밴드 밖으로 보낸다. 거터 strip 은 같은 보드 배경색이라 시각적으로 이음매 없음. 줌과 무관(화면 px 고정).
 const EDGE_GUTTER = 16;
 
+// 2026-09-13 임시 중단. true로 되돌리면 회원 파티 버튼과 참여 기능을 다시 제공한다.
+// 패널을 마운트하지 않아 상태 조회·홀드 갱신·자동 확정도 실행하지 않는다.
+const MEMBER_PARTY_ENABLED = false;
+
 export default function SessionBoard() {
 	const stageContainerRef = useRef<HTMLDivElement | null>(null);
 	const { w: cw, h: ch } = useContainerSize(stageContainerRef);
@@ -149,7 +153,7 @@ export default function SessionBoard() {
 				<CockCheckModal playerId={cockTarget} onClose={() => setCockTarget(null)} />
 			)}
 			<ViewerLockOverlay />
-			<MemberPartyPanel />
+			{MEMBER_PARTY_ENABLED && <MemberPartyPanel />}
 			<EditorTakenNotice />
 			<DebugMatchModal />
 		</div>
