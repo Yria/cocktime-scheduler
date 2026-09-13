@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	payableTargets,
+	previouslyPaidReceiptTargets,
 	suggestedReceiptDue,
 	suggestedReceiptPayer,
 } from "./quickSettlement";
@@ -107,5 +108,61 @@ describe("receipt suggestions before explicit confirmation", () => {
 		expect(suggestedReceiptDue(data, 1, "a")).toEqual({});
 		data.charges[1].state = "cancelled";
 		expect(suggestedReceiptDue(data, 1, "a")).toEqual({ d: "6500" });
+	});
+});
+
+describe("already paid dated receipts", () => {
+	const paidFixture = () => {
+		const data = fixture();
+		data.charges[0].amount = 6500;
+		data.groups[0].kind = "court";
+		data.groups[0].label = "9월 6일 대관";
+		data.due[0].remaining = 0;
+		data.bank.push({
+			...data.bank[0],
+			id: 2,
+			occurred_at: "2026-09-03T00:00:00Z",
+		});
+		data.allocations = [
+			{
+				id: "a1",
+				bank_tx_id: 2,
+				charge_id: "c",
+				due_id: "d",
+				owner_id: "a",
+				amount: 6500,
+				reversed: 0,
+				created_at: "2026-09-03T00:00:00Z",
+			},
+		];
+		return data;
+	};
+	it("explains a completed charge using a different original deposit without offering another charge", () => {
+		const data = paidFixture();
+		expect(previouslyPaidReceiptTargets(data, 1, "a")).toMatchObject([
+			{
+				group: { label: "9월 6일 대관" },
+				payments: [{ receipt: { id: 2 }, amount: 6500 }],
+			},
+		]);
+		expect(payableTargets(data, "a", "2026-09")).toEqual([]);
+		expect(previouslyPaidReceiptTargets(data, 1, "b")).toEqual([]);
+		expect(previouslyPaidReceiptTargets(data, 2, "a")).toEqual([]);
+	});
+	it("does not call reversed, partially paid, waived or unrelated charges fully paid", () => {
+		const data = paidFixture();
+		data.allocations[0].reversed = 500;
+		expect(previouslyPaidReceiptTargets(data, 1, "a")).toEqual([]);
+		data.allocations[0].reversed = 0;
+		data.due[0].remaining = 500;
+		expect(previouslyPaidReceiptTargets(data, 1, "a")).toEqual([]);
+		data.due[0].remaining = 0;
+		data.charges[0].state = "waived";
+		expect(previouslyPaidReceiptTargets(data, 1, "a")).toEqual([]);
+		data.charges[0].state = "live";
+		data.bank[0].name = "박민준0905";
+		expect(previouslyPaidReceiptTargets(data, 1, "a")).toEqual([]);
+		data.bank[0].name = "박민준";
+		expect(previouslyPaidReceiptTargets(data, 1, "a")).toEqual([]);
 	});
 });

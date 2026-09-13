@@ -6,6 +6,7 @@ import {
 	suggestedReceiptDue,
 	payableDues,
 	payableTargets,
+	previouslyPaidReceiptTargets,
 	type PaymentTarget,
 	refundLines,
 } from "../../lib/dues/quickSettlement";
@@ -95,6 +96,10 @@ export default function QuickSettlement({
 	const [payerPickerOpen, setPayerPickerOpen] = useState(!initialMember);
 	const payerButton = useRef<HTMLButtonElement>(null);
 	const [optionsOpen, setOptionsOpen] = useState(false);
+	const [proxyMembers, setProxyMembers] = useState<string[]>([]);
+	const [proxyPickerOpen, setProxyPickerOpen] = useState(false);
+	const proxyPickerId = useId();
+	const proxyButton = useRef<HTMLButtonElement>(null);
 	const [selectedPayments, setPayments] = useState<Record<string, string>>(
 		() =>
 			draft.type === "pay" && choosePayer && !ambiguousPayer
@@ -138,8 +143,17 @@ export default function QuickSettlement({
 	const payer = data.members.find((m) => m.id === owner);
 	const dues: PaymentTarget[] =
 		draft.type === "pay"
-			? payableTargets(data, owner, kstMonth(tx.occurred_at))
+			? [
+					...payableTargets(data, owner, kstMonth(tx.occurred_at)),
+					...proxyMembers
+						.filter((id) => id !== owner)
+						.flatMap((id) => payableDues(data, id, kstMonth(tx.occurred_at))),
+				]
 			: payableDues(data, owner, kstMonth(tx.occurred_at));
+	const alreadyPaid =
+		draft.type === "pay"
+			? previouslyPaidReceiptTargets(data, bankId, owner)
+			: [];
 	// A refreshed attendance/fee revision may remove a previously selected candidate.
 	const debts = Object.fromEntries(
 		Object.entries(selectedDebts).filter(([id]) =>
@@ -149,8 +163,16 @@ export default function QuickSettlement({
 	const needsMonthChange = dues.some(
 		(d) => Number(debts[d.id]) > 0 && ym <= d.due_ym,
 	);
-	const targetName = (d: PaymentTarget) =>
-		d.prepayment?.label ?? groupName(d.charge_id);
+	const targetMember = (d: PaymentTarget) =>
+		d.prepayment?.member_id ??
+		data.charges.find((c) => c.id === d.charge_id)?.member_id;
+	const targetName = (d: PaymentTarget) => {
+		const id = targetMember(d);
+		const label = d.prepayment?.label ?? groupName(d.charge_id);
+		return draft.type === "pay" && proxyMembers.length && id
+			? `${memberLabel(data, id)}${id !== owner ? " 대납" : ""} · ${label}`
+			: label;
+	};
 	const memberMoney = data.positions.filter(
 		(p) =>
 			(p.owner_id === owner &&
@@ -209,7 +231,7 @@ export default function QuickSettlement({
 				throw new Error(
 					dues.length
 						? "납부할 항목을 선택하세요"
-						: "이 회원에게 남은 미납이나 선납할 대관이 없습니다",
+						: "본인 미납이 없습니다. 다른 회원 대납이나 잔액 용도를 선택하세요",
 				);
 			const lines = selected.map(([id, value]) => {
 				const due = dues.find((d) => d.id === id);
@@ -235,9 +257,24 @@ export default function QuickSettlement({
 				owner_id: owner,
 				confirm_owner: !source.owner_id || payerChanged,
 				...(payerChanged ? { reassign_owner: true } : {}),
+				...(dues.some(
+					(d) => Number(debts[d.id]) > 0 && targetMember(d) !== owner,
+				)
+					? { proxy: true }
+					: {}),
 				lines,
 			};
-			summary = `${memberLabel(data, owner)} · 입금 잔액 ${won(source.amount - selectedTotal)}`;
+			const beneficiaries = [
+				...new Set(
+					dues.filter((d) => Number(debts[d.id]) > 0).map(targetMember),
+				),
+			]
+				.filter((id): id is string => !!id)
+				.map(
+					(id) =>
+						`${memberLabel(data, id)}${id !== owner ? " 대납" : " 납부"} ${won(dues.filter((d) => targetMember(d) === id).reduce((sum, d) => sum + Number(debts[d.id] || 0), 0))}`,
+				);
+			summary = `${beneficiaries.join(" · ")} · 입금 잔액 ${won(source.amount - selectedTotal)}`;
 		} else if (draft.type === "carry") {
 			if (!owner) throw new Error("이월할 납부자를 선택하세요");
 			const ds = entries(debts, "due_id"),
@@ -346,6 +383,8 @@ export default function QuickSettlement({
 			payerButton.current?.focus();
 		}
 		setPayments({});
+		setProxyMembers([]);
+		setProxyPickerOpen(false);
 		setCarryDebts({});
 		setMoney({});
 	};
@@ -517,7 +556,122 @@ export default function QuickSettlement({
 						available={source?.amount ?? 0}
 						selected={debts}
 					>
+						{alreadyPaid.map(({ charge, group, payments }) => (
+							<div
+								key={charge.id}
+								className="ac-quick-options"
+								role="note"
+								aria-label="기존 납부 내역"
+							>
+								<strong>{group.label} · 이미 완납</strong>
+								{payments.map(({ receipt, amount }, index) => (
+									<p key={`${receipt.id}:${index}`} className="ac-caption">
+										{new Date(receipt.occurred_at).toLocaleDateString("ko-KR", {
+											timeZone: "Asia/Seoul",
+											month: "numeric",
+											day: "numeric",
+										})}{" "}
+										입금 · {receipt.name || "입금"} · {won(amount)} 납부
+									</p>
+								))}
+								<p className="ac-caption">
+									이번 입금 {won(source?.amount ?? 0)}은 별도 잔액으로 남아
+									있습니다.
+								</p>
+							</div>
+						))}
 						{duePicker}
+						<div
+							className="ac-choice-chips"
+							role="group"
+							aria-label="대납 대상"
+						>
+							{proxyMembers
+								.filter((id) => id !== owner)
+								.map((id) => (
+									<button
+										key={id}
+										type="button"
+										className="ac-chip"
+										aria-label={`${memberLabel(data, id)} 대납 취소`}
+										onClick={() => {
+											setProxyMembers((before) =>
+												before.filter((m) => m !== id),
+											);
+											const ids = new Set(
+												payableDues(data, id, receiptMonth).map((d) => d.id),
+											);
+											setPayments((before) =>
+												Object.fromEntries(
+													Object.entries(before).filter(
+														([key]) => !ids.has(key),
+													),
+												),
+											);
+										}}
+									>
+										{memberLabel(data, id)} 대납 · 취소
+									</button>
+								))}
+							<button
+								type="button"
+								className="ac-chip"
+								ref={proxyButton}
+								aria-expanded={proxyPickerOpen}
+								aria-controls={proxyPickerOpen ? proxyPickerId : undefined}
+								onClick={() => setProxyPickerOpen(!proxyPickerOpen)}
+							>
+								다른 회원 대납
+							</button>
+						</div>
+						{proxyPickerOpen && (
+							<div
+								id={proxyPickerId}
+								className="ac-receipt-picker ac-settlement-member-search"
+							>
+								<p className="ac-caption">
+									이 입금으로 대신 납부할 회원의 미납을 선택하세요. 입금자는{" "}
+									{memberLabel(data, owner)}으로 유지됩니다.
+								</p>
+								<MemberPicker
+									compact
+									receipt
+									label="대납할 회원"
+									value=""
+									data={{
+										...data,
+										members: data.members.filter(
+											(m) => m.id !== owner && !proxyMembers.includes(m.id),
+										),
+									}}
+									descriptionForMember={(id) => {
+										const remaining = payableDues(
+											data,
+											id,
+											receiptMonth,
+										).reduce((sum, d) => sum + d.remaining, 0);
+										return remaining
+											? `미납 ${won(remaining)}`
+											: "대납할 미납 없음";
+									}}
+									onChange={(id) => {
+										setProxyMembers((before) => [...before, id]);
+										setProxyPickerOpen(false);
+										proxyButton.current?.focus();
+									}}
+								/>
+							</div>
+						)}
+						{proxyMembers
+							.filter(
+								(id) =>
+									id !== owner && !payableDues(data, id, receiptMonth).length,
+							)
+							.map((id) => (
+								<p key={id} className="ac-caption">
+									{memberLabel(data, id)}에게 대납할 미납이 없습니다.
+								</p>
+							))}
 					</PaymentSettlementFields>
 				)}
 				{receiptEditor && (
@@ -579,7 +733,9 @@ export default function QuickSettlement({
 					summary={summary}
 					title={title}
 					operation={draft.type}
-					showSummary={receiptEditor}
+					showSummary={
+						receiptEditor || (draft.type === "pay" && proxyMembers.length > 0)
+					}
 					unchangedExpense={unchangedExpense}
 					savedExpense={!!savedGroup}
 					onClose={onClose}

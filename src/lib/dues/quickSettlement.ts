@@ -2,6 +2,52 @@ import { kstMonth } from "./summary";
 import type { AccountingData, DueSlice } from "./types";
 import { matchingMembers } from "./selection";
 
+function receiptTargetDate(data: AccountingData, bankId: number) {
+	const tx = data.bank.find((t) => t.id === bankId);
+	const date = tx?.name?.match(
+		/(?:^|\D)(0[1-9]|1[0-2])([0-2]\d|3[01])(?:\D|$)/,
+	);
+	return tx && date
+		? `${kstMonth(tx.occurred_at).slice(0, 4)}-${date[1]}-${date[2]}`
+		: null;
+}
+
+/** Explain a dated receipt whose charge was already paid from another deposit. */
+export function previouslyPaidReceiptTargets(
+	data: AccountingData,
+	bankId: number,
+	memberId: string,
+) {
+	const date = receiptTargetDate(data, bankId);
+	if (!date || !memberId) return [];
+	return data.charges.flatMap((charge) => {
+		const group = data.groups.find((g) => g.id === charge.group_id);
+		if (
+			charge.member_id !== memberId ||
+			charge.state !== "live" ||
+			group?.kind !== "court" ||
+			group.occurred_on !== date ||
+			data.due.some((d) => d.charge_id === charge.id && d.remaining > 0)
+		)
+			return [];
+		const payments = data.allocations
+			.filter(
+				(a) =>
+					a.charge_id === charge.id &&
+					a.bank_tx_id !== bankId &&
+					a.amount > a.reversed,
+			)
+			.flatMap((a) => {
+				const receipt = data.bank.find((t) => t.id === a.bank_tx_id);
+				return receipt ? [{ receipt, amount: a.amount - a.reversed }] : [];
+			});
+		return charge.amount > 0 &&
+			payments.reduce((sum, p) => sum + p.amount, 0) === charge.amount
+			? [{ charge, group, payments }]
+			: [];
+	});
+}
+
 // Suggestions are never saved until the user confirms. Namesakes stay unselected.
 export function suggestedReceiptPayer(data: AccountingData, bankId: number) {
 	const tx = data.bank.find((t) => t.id === bankId);

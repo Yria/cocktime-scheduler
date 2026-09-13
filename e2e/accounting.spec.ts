@@ -304,6 +304,177 @@ test.afterEach(async () => {
 	await db.close();
 });
 
+for (const partiallyPaid of [false, true]) {
+	test(`receipt proxy settles two members while preserving the sender (${partiallyPaid ? "remaining balance" : "one confirmation"})`, async ({
+		page,
+	}) => {
+		await db.exec(`
+			update members set name='박민준' where id='${A}';
+			update members set name='이서연',is_guest=true where id='${B}';
+			insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name)
+			values(90,'in',12000,'2026-09-13T17:59:00+09','박민준/이서연_0913');
+			select dues_sync_bank();
+		`);
+		await command({
+			action: "issue",
+			kind: "manual",
+			label: "9월 13일 대관",
+			date: "2026-09-13",
+			lines: [A, B].map((member_id) => ({
+				member_id,
+				amount: 6000,
+				due_ym: "2026-09",
+			})),
+		});
+		const position = await scalar<string>(
+			"select id from dues_positions where bank_tx_id=90 and amount>0",
+		);
+		const ownDue = await scalar<string>(
+			"select d.id from dues_due d join dues_charges c on c.id=d.charge_id join dues_groups g on g.id=c.group_id where c.member_id=$1 and g.label='9월 13일 대관'",
+			[A],
+		);
+		if (partiallyPaid)
+			await command({
+				action: "pay",
+				owner_id: A,
+				confirm_owner: true,
+				lines: [{ position_id: position, due_id: ownDue, amount: 6000 }],
+			});
+		await navigate(page, "/dues/2026-09/inbox");
+		const card = page.getByRole("region", { name: "거래 90", exact: true });
+		if (!partiallyPaid) {
+			await card
+				.getByRole("group", { name: "납부자 검색 결과" })
+				.getByRole("button", { name: "박민준", exact: true })
+				.click();
+			await card.getByRole("button", { name: /^9월 13일 대관 ·/ }).click();
+		} else {
+			await expect(
+				card.getByRole("button", { name: "납부자 변경", exact: true }),
+			).toHaveCount(0);
+		}
+		await card
+			.getByRole("button", { name: "다른 회원 대납", exact: true })
+			.click();
+		await card.getByLabel("대납할 회원 이름·초성 검색").fill("이서연");
+		await card
+			.getByRole("group", { name: "대납할 회원 검색 결과" })
+			.getByRole("button", { name: /이서연/ })
+			.click();
+		await card
+			.getByRole("button", { name: /이서연.*대납 · 9월 13일 대관/ })
+			.click();
+		await expect(card).toContainText("남는 돈 없음");
+		await expect(card).toContainText("이서연 · 게스트 대납 6,000원");
+		await card.getByRole("button", { name: "정산 옵션" }).click();
+		await card.getByRole("button", { name: "이월", exact: true }).click();
+		await card.getByRole("button", { name: "이월 닫기", exact: true }).click();
+		await expect(card).toContainText("남는 돈 없음");
+		if (partiallyPaid) {
+			for (const width of [390, 1280]) {
+				await page.setViewportSize({ width, height: 900 });
+				for (const theme of ["light", "dark"]) {
+					await page.evaluate(
+						(dark) => document.documentElement.classList.toggle("dark", dark),
+						theme === "dark",
+					);
+					await designEvidence(page, `receipt-proxy-${width}-${theme}`);
+					expect(
+						await page.evaluate(
+							() => document.documentElement.scrollWidth <= innerWidth,
+						),
+					).toBe(true);
+				}
+			}
+		}
+		await card.getByRole("button", { name: "납부 확인", exact: true }).click();
+		await expect(
+			card.getByRole("region", { name: "납부 정산", exact: true }),
+		).toHaveCount(0);
+		expect(
+			await scalar(
+				"select sum(amount)::int from dues_positions where bank_tx_id=90",
+			),
+		).toBe(0);
+		expect(
+			await scalar(
+				"select count(distinct c.member_id)::int from dues_allocations a join dues_charges c on c.id=a.charge_id where a.bank_tx_id=90 and a.owner_id=$1 and a.amount-a.reversed=6000",
+				[A],
+			),
+		).toBe(2);
+		expect(
+			await scalar(
+				"select count(*)::int from dues_positions where bank_tx_id=90 and owner_id is distinct from $1",
+				[A],
+			),
+		).toBe(0);
+		expect(
+			calls.filter((c) => c.name === "dues_command").at(-1)?.args.p_payload,
+		).toMatchObject({ owner_id: A, proxy: true });
+		await db.query("select dues_assert()");
+	});
+}
+
+test("dated repeat receipt explains its earlier full payment without duplicating the charge", async ({
+	page,
+}) => {
+	await db.exec(`update members set name='박민준' where id='${A}';
+		insert into sessions(id,title,status,scheduled_at) values(10,'대관','closed','2026-09-13T15:00:00+09');
+		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values
+		(90,'in',6000,'2026-09-10T12:35:00+09','박민준0913'),
+		(91,'in',6000,'2026-09-13T14:12:00+09','박민준0913');
+		select dues_sync_bank();`);
+	await command({
+		action: "issue",
+		kind: "court",
+		session_id: 10,
+		label: "9월 13일 대관",
+		date: "2026-09-13",
+		lines: [{ member_id: A, amount: 6000, due_ym: "2026-09" }],
+	});
+	await command({
+		action: "pay",
+		owner_id: A,
+		confirm_owner: true,
+		lines: [
+			{
+				position_id: await scalar(
+					"select id from dues_positions where bank_tx_id=90 and amount>0",
+				),
+				due_id: await scalar(
+					"select d.id from dues_due d join dues_charges c on c.id=d.charge_id join dues_groups g on g.id=c.group_id where g.session_id=10",
+				),
+				amount: 6000,
+			},
+		],
+	});
+	await navigate(page, "/dues/2026-09/inbox");
+	const card = page.getByRole("region", { name: "거래 91", exact: true });
+	const note = card.getByRole("note", { name: "기존 납부 내역" });
+	await expect(note).toContainText("2026-09-13 · 대관 · 이미 완납");
+	await expect(note).toContainText("9. 10. 입금 · 박민준0913 · 6,000원 납부");
+	await expect(note).toContainText("이번 입금 6,000원은 별도 잔액");
+	await expect(
+		card.getByRole("button", { name: "납부 확인", exact: true }),
+	).toBeDisabled();
+	for (const width of [390, 1280]) {
+		await page.setViewportSize({ width, height: 900 });
+		await designEvidence(page, `receipt-already-paid-${width}`);
+		expect(
+			await page.evaluate(
+				() => document.documentElement.scrollWidth <= innerWidth,
+			),
+		).toBe(true);
+	}
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(0);
+	expect(
+		await scalar(
+			"select sum(amount)::int from dues_positions where bank_tx_id=91",
+		),
+	).toBe(6000);
+	await db.query("select dues_assert()");
+});
+
 test("payer choice distinguishes a paid namesake from an unpaid namesake and rematches only on confirmation", async ({
 	page,
 }) => {
