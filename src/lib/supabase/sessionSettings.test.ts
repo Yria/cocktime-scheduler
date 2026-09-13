@@ -5,13 +5,14 @@ vi.mock("./client", () => ({ supabase: client }));
 
 import { fetchSessionSettingsForConflictCheck, startSession, updateSession } from "./session";
 
-function query(data: unknown) {
-	const result = { data, error: null };
+function query(data: unknown, error: { message: string } | null = null) {
+	const result = { data, error };
 	const promise = Promise.resolve(result);
 	return {
 		select: vi.fn().mockReturnThis(),
 		insert: vi.fn().mockReturnThis(),
 		update: vi.fn().mockReturnThis(),
+		upsert: vi.fn().mockReturnThis(),
 		eq: vi.fn().mockReturnThis(),
 		single: vi.fn().mockResolvedValue(result),
 		then: promise.then.bind(promise),
@@ -41,6 +42,15 @@ describe("세션 설정 저장과 읽기", () => {
 		client.from.mockReturnValueOnce(read).mockReturnValueOnce(query([]));
 		expect((await fetchSessionSettingsForConflictCheck(7))?.cockCheckEnabled).toBe(true);
 		expect(read.select).toHaveBeenCalledWith("court_count, cock_check_enabled");
+	});
+
+	it("게스트 등록 실패를 성공으로 처리하거나 기존 참가자 삭제를 계속하지 않는다", async () => {
+		const existing = [{ id: "saved-row", player_id: "old-member", status: "waiting" }];
+		const insert = query(null, { message: 'duplicate key violates unique constraint "uq_session_member"' });
+		client.from.mockReturnValueOnce(query(existing)).mockReturnValueOnce(insert);
+		await expect(updateSession(7, 2, [{ id: "guest-new", name: "중복", gender: "M", skills: { grade: 5 } }], [], true))
+			.rejects.toThrow("이미 등록된 참가자입니다");
+		expect(client.from).toHaveBeenCalledTimes(2);
 	});
 
 });

@@ -1,5 +1,11 @@
 # SQL 검증
 
+## 게스트 등록 통합
+
+`node_modules/.bin/vitest run src/lib/supabase/guestRegistration.test.ts`는 실제 등록 함수·보드 트리거·대관 대상 SQL을 PGlite에서 실행한다. 일정/보드 등록 순서, 회차 간 재사용, 기존 중복 회원의 회차 연결 우선, 중복 보드 차단, 실패 시 회원 생성 롤백, 구버전 UPSERT, 권한, 정원·게스트 상한·늦참·재초대 유지와 9/13 연결 복구의 경기 기록 보존을 검사한다. 정원 상한 헬퍼는 지정한 테스트 값으로 대체한다. 서로 다른 DB 연결의 잠금 경합은 이 단일 연결 테스트 범위에 포함하지 않는다.
+
+`node_modules/.bin/playwright test e2e/session-setup.spec.ts`는 등록 실패를 성공으로 처리하지 않고, 선택을 유지한 채 원인 안내 후 재시도할 수 있는지 검사한다. 모든 외부 요청은 가로채므로 운영 데이터에 쓰지 않는다.
+
 ## 회원 파티
 
 `member_party.test.mjs`는 실제 PostgreSQL 엔진인 PGlite에 최소 스키마와 인증 역할을 만들고

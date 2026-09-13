@@ -237,11 +237,15 @@ alter table public.sessions
 
 -- session_players : 회원 연결만. 선수 정보는 여전히 세션 스냅샷(아래 §6).
 alter table public.session_players
-  add column member_id uuid references public.members(id) on delete set null;  -- 게스트 NULL
+  add column member_id uuid references public.members(id) on delete set null;  -- 과거 미연결 이력만 NULL; 신규 게스트도 회원 연결 필수
 create index idx_sp_member on public.session_players(member_id);
 ```
 
 > `matches`, `pair_history`는 **변경 없음**. 전부 `session_players.id`(UUID) 기준이라 무영향.
+
+**게스트 등록 통합(20260913010000)**: 일정 `add_guest_attendance`와 보드 INSERT 트리거가 내부 `_register_guest_member`를 공유한다. 이름은 NFC 정규화·공백 제거·소문자 키와 성별로 비교하며, 해당 회차에서 사용 중인 게스트를 우선 재사용하고 그 밖에는 최신 게스트 행을 사용한다. 같은 이름·성별의 동시 등록은 트랜잭션 잠금으로 직렬화한다. 활성 회원과 같은 이름은 게스트로 만들 수 없고, 실제 동명이인은 구분되는 이름으로 등록한다.
+
+보드의 `guest-*`는 설정 중 사용하는 임시 키이며 저장 시 회원 생성/재사용과 `member_id` 연결이 한 INSERT 안에서 완료된다. 회원 연결 없는 신규 보드 행과 `(session_id, member_id)` 중복은 저장되지 않는다. 구버전 재시도도 이미 저장된 회원 연결을 유지한다. 보드 추가는 실제 참가 기록이므로 일정 신청·초대자·정원 카운터를 임의로 만들지 않고, 회계는 연결된 보드 참가자를 기존 대관 대상 규칙에 포함한다. 등록 오류는 설정 화면에 표시하며, 실패한 추가 뒤에 기존 참가자 삭제나 저장 완료 처리를 계속하지 않는다. 과거 경기의 보드 ID·키·스냅샷은 유지한다.
 
 ### 4.3 반복 일정 (요일·주차 규칙) — 마이그레이션 `20260622010000`
 
@@ -279,10 +283,10 @@ alter table public.sessions
 - **종료(`ends_at`) 상한 가드**: status 검사에 더해 **종료 시각이 지나면 마감**한다 — `ends_at is not null and ends_at <= now()` 이면 `session ended` 예외. `join_session`·`add_guest_attendance`·`start_session_from_schedule`(경기 시작) 세 RPC 모두에 적용해 종료된 일정은 회원·운영진 누구도 참석/게스트신청/경기시작을 할 수 없다. `ends_at`이 NULL인 즉석/미정 회차는 가드 통과(차단 안 함). sync A단계(어제 이전 draft/open→closed)는 일(日) 단위 정리라, 당일 종료 직후의 미세 구간은 이 가드 + 홈 필터(아래)가 실시간으로 막는다. 마이그레이션 `20260624030000_attendance_end_time_guard.sql`.
 - **정원 외 늦참 풀(`late_pool`)** — 마이그레이션 `20260708010000`: 늦참 슬라이더로 도착시각을 **경기 후반 2/3 지점 이후**(예: 18:00~21:00 세션이면 20:00="8시")로 넘기면, 정원 큐와 분리된 **독립 접수**로 전환한다. `late_pool` 은 `confirmed_count` 에 미포함(정원 무관) — 현실에서 "늦게 와서 자리 나면 참여, 없으면 대기"를 시스템화한 것. 현장 판정(자리/대기)은 보드 대기 로테이션이 담당하고, RSVP 단계는 정원 분리 + 표기까지만 책임진다(`start_session_from_schedule` 은 여전히 `confirmed` 만 편입). `set_late_minutes(bigint,int)` 가 경계를 원자 처리: **확정→풀** 전환 시 정원 1칸 반납 + 대기 1순위 자동 승급(`promoted`), **풀→복귀** 시 여유 있으면 `confirmed`, 만석이면 **부과 없는 일정에서 프리패스 두 갈래**(운영진 총수<2 / 초과 확정 신규<2 · §5.1)로 정원 초과 `confirmed`, 그 외 `waitlisted`(큐 뒤 재진입). 경계는 절대시각이 아니라 `v_start + (v_end - v_start)*2/3`(종료시각 필수). 초대자가 `late_pool` 이면 그 게스트도 `late_pool` 상속. 정원 재조정(`set_session_capacity`)은 `late_pool` 을 건드리지 않는다(정원 독립). 클라 8시 경계 크로싱은 확인 다이얼로그로 게이팅하고 UI 는 앰버→바이올렛으로 구분(`late_minutes` 반환 `{status, promoted}`).
 - **게스트 확정 상한 = 세션당 2명** — 마이그레이션 `20260712010000`: 정원(`capacity`)과 별개로, `status='confirmed'` 인 게스트(`invited_by` 有)는 세션당 **최대 2명**. 3번째부터는 정원이 남아도 `waitlisted` 로 접수되고, **확정 게스트가 빠질 때(취소/제거/강등)만** 승급 대상이 된다(회원은 이 상한과 무관 — 기존 정원 규칙 그대로). 승급 로직은 단일 헬퍼 `promote_next_waitlisted(session_id)` 로 모아 상한 규칙이 한 곳에 살게 했고(`cancel_attendance`·`cancel_guest_attendance`·`admin_cancel_attendance`·`set_late_minutes` 가 공유; `set_session_capacity` 는 배치라 인라인 반영), 헬퍼는 알림을 넣지 않는다(호출자가 상황별 알림 INSERT). 대기 1순위 선택식은 `status='waitlisted' AND (invited_by IS NULL OR <확정 게스트 수> < 2) AND (정원 여유 OR 운영진 프리패스) ORDER BY position ASC` — 운영진 프리패스는 **빈자리가 0이어도** 승급시킨다(부과 없는 일정). **신규회원 프리패스는 이 식에 없다** — 부여는 본인이 누른 순간뿐이다(§5.1). 게스트도 프리패스 대상이 아니다. **확정 게스트 수는 `session_counters` FOR UPDATE 락 안에서만 읽으므로 `count(*)` 로 판정**한다(§5.1 `count(*)` 금지의 예외 — 정원 총량이 아니라 락 안의 하위상한이라 경쟁 없음; 6개 전이 지점 카운터 배선 드리프트 회피). 도입 시 기존 위반(확정 게스트 >2)인 open 세션을 함께 정리(먼저 신청한 2명 유지, 나머지 대기 강등 후 빈 정원은 대기 회원으로 재승급, **알림 없음**).
-- **동명 회원 게스트 차단** — 마이그레이션 `20260712010000`: `add_guest_attendance` 는 활성 회원(`is_guest=false AND is_active`)과 **이름이 같은 게스트 신청을 거부**한다(`name_is_member` 예외 → 클라 "이미 같은 이름의 회원이 있어요…"). 게스트가 실제 회원과 구분되지 않아 "회원처럼" 참여하는 혼동을 서버에서 근본 차단(회원 본인은 직접 참석 신청). 이름 비교는 `btrim(lower(...))`.
-- **게스트 members 행 재사용** — 마이그레이션 `20260819030000`: 같은 게스트가 다시 오면 **기존 행에 붙인다**(이름 `btrim(lower(...))` + 성별 일치, 여러 행이면 `created_at desc` 최신 1행, `is_guest AND auth_user_id is null` 인 행만). 종전에는 신청마다 members 를 무조건 insert 해 프로덕션에 게스트 47행(실인원 30명, 잉여 17행)이 쌓였고, 그 잉여가 새는 화면이 **정산함 납부자 후보·검색**이었다(회원관리는 `is_guest=false` 로 걸러 게스트를 안 보여줘 운영진이 손댈 방법도 없었다).
+- **동명 회원 게스트 차단** — 마이그레이션 `20260712010000`: `add_guest_attendance` 는 활성 회원(`is_guest=false AND is_active`)과 **이름이 같은 게스트 신청을 거부**한다(`name_is_member` 예외 → 클라 "이미 같은 이름의 회원이 있어요…"). 게스트가 실제 회원과 구분되지 않아 "회원처럼" 참여하는 혼동을 서버에서 근본 차단(회원 본인은 직접 참석 신청). 이름 비교는 `name_match_key`(NFC 정규화·공백 제거·소문자)다.
+- **게스트 members 행 재사용** — 마이그레이션 `20260819030000`: 같은 게스트가 다시 오면 **기존 행에 붙인다**(이름 `name_match_key` + 성별 일치, 현재 회차에서 사용 중인 행 우선 후 `created_at desc` 최신 1행, `is_guest AND auth_user_id is null` 인 행만). 종전에는 신청마다 members 를 무조건 insert 해 프로덕션에 게스트 47행(실인원 30명, 잉여 17행)이 쌓였고, 그 잉여가 새는 화면이 **정산함 납부자 후보·검색**이었다(회원관리는 `is_guest=false` 로 걸러 게스트를 안 보여줘 운영진이 손댈 방법도 없었다).
   - **성별까지 같아야 재사용**한다 — 이름만으로 합치면 동명이인 게스트가 한 사람으로 뭉쳐 과거 참석·회계가 남의 것으로 붙는다. 오합치는 회계 CASCADE 때문에 분리보다 훨씬 비싸므로 애매하면 새 행을 만든다.
-  - `skills` 는 덮지 않는다(과거 편성의 근거). 저장된 skills 에 `grade` 가 아예 없을 때만 이번 입력으로 채운다.
+  - 회원의 `skills`는 이번 입력의 키로 갱신한다. 과거 편성 근거는 `session_players.skills` 스냅샷으로 보존한다. 비활성 게스트의 재등록은 회원을 활성화한다.
   - **같은 세션 중복 차단**: 그 게스트 행이 이미 그 세션에 있으면 `guest_already_joined` 예외(클라 "이미 이 일정에 신청된 게스트예요…"). `attendances` PK `(session_id, member_id)` 라 어차피 충돌하지만 raw 23505 는 안내가 안 된다. 실측 사고(session 103 김지훈×2, 114 공태호×2)를 이 게이트가 막는다. 취소했던 게스트를 다시 초대하면 그 참석 행을 되살리고 `invited_by` 를 재초대자로 갱신한다(소유권 검사가 `invited_by` 기준이라 필수).
   - **기존 47행 병합(백필)은 하지 않았다** — 같은 세션에 잔재 두 행이 함께 있는 사례가 있어 PK 충돌이고, `dues_charges`/`dues_allocations` 귀속이 바뀌어 공개회계 수치가 움직인다. 이 마이그레이션의 목적은 증가를 멈추는 것.
 - **편집 권한**: 회차 개별 수정/취소/일회성 추가는 `sessions` anon_all 정책 하 클라이언트 직접 쓰기(운영진 UI 게이트). 규칙 CRUD 는 `recurring_schedules` RLS(select authenticated / write `is_admin()`).

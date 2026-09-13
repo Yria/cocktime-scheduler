@@ -150,9 +150,8 @@ export default function App() {
 	const handleSetupStart = useCallback(
 		async (selected: Player[], settings: SessionSettings) => {
 			const success = await appActions.startOrUpdateSession(selected, settings);
-			if (success) {
-				navRef.current("/session");
-			}
+			if (!success) throw new Error("세션 설정을 저장하지 못했습니다. 다시 시도해 주세요.");
+			navRef.current("/session");
 		},
 		[],
 	);

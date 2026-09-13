@@ -17,6 +17,14 @@ import type {
 } from "./types";
 import { COMPLETED_MATCH_TEAM_COLUMNS } from "./types";
 
+function playerSaveError(error: { message: string }): Error {
+	if (error.message.includes("name_is_member"))
+		return new Error("같은 이름의 회원이 있습니다. 게스트 추가 대신 회원 목록에서 선택해 주세요.");
+	if (error.message.includes("uq_session_member"))
+		return new Error("이미 등록된 참가자입니다. 명단을 확인해 주세요. 동명이인이면 이름을 구분해 주세요.");
+	return new Error("참가자를 저장하지 못했습니다. 명단을 확인하고 다시 시도해 주세요.");
+}
+
 export async function fetchActiveSession(): Promise<SessionRow | null> {
 	const { data } = await supabase
 		.from("sessions")
@@ -93,7 +101,7 @@ export async function startSession(
 	const rows = players.map((p) => ({
 		session_id: session.id,
 		player_id: p.id,
-		// 회원(members.id)은 member_id 로 링크 — 게스트(guest-*)는 null.
+		// 임시 guest-* 키도 INSERT 트리거가 공통 등록 로직으로 members에 연결한다.
 		member_id: isGuestId(p.id) ? null : p.id,
 		name: p.name,
 		gender: p.gender,
@@ -110,6 +118,7 @@ export async function startSession(
 
 	if (pe || !playerRows) {
 		console.error("session_players insert:", pe);
+		if (pe) throw playerSaveError(pe);
 		return null;
 	}
 
@@ -147,45 +156,23 @@ export async function updateSession(
 	// DB에 ON DELETE SET NULL이 설정되어 있으므로 매치 참조 체크 불필요
 	// 삭제 시 매치의 참조만 NULL이 되고 매치 기록은 보존됨
 
-	// add / upsert / delete 병렬 처리
-	const ops: PromiseLike<void>[] = [];
+	// 등록 실패 시 뒤의 변경/삭제/완료 신호를 보내지 않는다.
 	if (playersToAdd.length > 0) {
 		// 신규 추가는 (session_id, player_id) 충돌 시 무시(DO NOTHING) — 두 기기 동시 추가나
 		// stale diff로 인한 중복 row 생성을 막는다(기존 행의 상태를 덮어쓰지 않음).
-		ops.push(
-			supabase
-				.from("session_players")
-				.upsert(playersToAdd, { onConflict: "session_id,player_id", ignoreDuplicates: true })
-				.then((res) => {
-					if (res.error)
-						console.error("session_players add error:", res.error);
-				}),
-		);
+		const { error } = await supabase.from("session_players").upsert(playersToAdd, {
+			onConflict: "session_id,player_id", ignoreDuplicates: true,
+		});
+		if (error) throw playerSaveError(error);
 	}
 	if (playersToUpsert.length > 0) {
-		ops.push(
-			supabase
-				.from("session_players")
-				.upsert(playersToUpsert)
-				.then((res) => {
-					if (res.error)
-						console.error("session_players upsert error:", res.error);
-				}),
-		);
+		const { error } = await supabase.from("session_players").upsert(playersToUpsert);
+		if (error) throw playerSaveError(error);
 	}
 	if (playersToRemoveIds.length > 0) {
-		ops.push(
-			supabase
-				.from("session_players")
-				.delete()
-				.in("id", playersToRemoveIds)
-				.then((res) => {
-					if (res.error)
-						console.error("session_players delete error:", res.error);
-				}),
-		);
+		const { error } = await supabase.from("session_players").delete().in("id", playersToRemoveIds);
+		if (error) throw playerSaveError(error);
 	}
-	await Promise.all(ops);
 
 	// 2. Update sessions table LAST — this triggers postgres_changes on other clients.
 	// All session_players changes must be complete before this fires so that

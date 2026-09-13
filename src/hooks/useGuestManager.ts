@@ -28,6 +28,7 @@ export function useGuestManager(
 	function addGuest() {
 		const name = guestName.trim();
 		if (!name) return;
+		// 로컬 선택 초안의 키. 보드 저장 시 서버가 members 등록·연결을 함께 완료한다.
 		const id = makeGuestId();
 		const newGuest: Player = {
 			id,

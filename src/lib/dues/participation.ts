@@ -95,6 +95,7 @@ export function groupParticipation(
 		);
 		const rows: CourtChargeRow[] = [...charges.values()].map((c, i) => {
 			const payment = people.get(c.member_id)?.payment;
+			const line = c.basis?.line;
 			return {
 				id: i,
 				memberId: c.member_id,
@@ -114,7 +115,10 @@ export function groupParticipation(
 									? "partial"
 									: "unpaid",
 				payerHint: c.payer_hint,
-				isDayCancel: c.basis?.is_day_cancel === true,
+				isDayCancel:
+					typeof line === "object" && line !== null && "is_day_cancel" in line
+						? line.is_day_cancel === true
+						: c.basis?.is_day_cancel === true,
 				voidedBy: null,
 			};
 		});

@@ -41,7 +41,7 @@ export function diffSessionPlayers(
 		.map((p) => ({
 			session_id: sessionId,
 			player_id: p.id,
-			// 회원(members.id)은 member_id 로 링크 — 게스트(guest-*)는 null.
+			// 미저장 guest-*의 회원 연결은 INSERT 트리거가 일정과 같은 등록 로직으로 채운다.
 			member_id: isGuestId(p.id) ? null : p.id,
 			name: p.name,
 			gender: p.gender,

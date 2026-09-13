@@ -120,13 +120,17 @@ export default function SessionSetup({ onStart }: Props) {
 	} | null>(null);
 	// 더블 서브밋 가드: 시작/업데이트 in-flight 동안 재진입 차단(동시 startSession 으로 쌍둥이 active 세션 생성 방지).
 	const [submitting, setSubmitting] = useState(false);
+	const [saveError, setSaveError] = useState("");
 
 	// 실제 시작/업데이트 실행 — 동시 호출 차단 + 완료까지 버튼 비활성.
 	async function runStart(selectedPlayers: Player[], settings: SessionSettings) {
 		if (submitting) return;
 		setSubmitting(true);
+		setSaveError("");
 		try {
 			await onStart(selectedPlayers, settings);
+		} catch (error) {
+			setSaveError(error instanceof Error ? error.message : "세션 설정을 저장하지 못했습니다.");
 		} finally {
 			setSubmitting(false);
 		}
@@ -266,6 +270,11 @@ export default function SessionSetup({ onStart }: Props) {
 					zIndex: 50,
 				}}
 			>
+				{saveError && (
+					<p role="alert" className="mb-3 text-sm text-red-700 dark:text-red-300">
+						{saveError}
+					</p>
+				)}
 				<button
 					type="button"
 					onClick={handleStart}

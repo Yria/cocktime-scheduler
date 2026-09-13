@@ -93,7 +93,7 @@ function fixture(kind: BillingGroup["kind"] = "court") {
 			previous_id: null,
 			payer_hint: null,
 			issued_at: "2026-09-01",
-			basis: { is_day_cancel: memberId === "day" },
+			basis: { line: { is_day_cancel: memberId === "day" } },
 		});
 		data.due.push({
 			id: `due-${id}`,
@@ -118,6 +118,12 @@ function fixture(kind: BillingGroup["kind"] = "court") {
 }
 
 describe("group participation based on 30ddf07", () => {
+	it("이전 부과의 당일취소 표시도 유지한다", () => {
+		const { data, group, context, charge } = fixture();
+		charge("day").basis = { is_day_cancel: true };
+		expect(groupParticipation(data, group, "2026-09", context).rows.find((r) => r.memberId === "day")?.reason)
+			.toBe("당일취소 부과");
+	});
 	it("separates flat-fee admins and grace withdrawals from real payments, retaining namesakes, late arrivals, day cancellations and board guests", () => {
 		const { data, group, context, charge } = fixture();
 		charge("a", 6000);
