@@ -25,6 +25,32 @@ const fixture = () =>
 	}) as AccountingData;
 
 describe("receipt suggestions before explicit confirmation", () => {
+	it("offers a restored prepayment despite its cancelled history, then suppresses it when reissued", () => {
+		const data = fixture();
+		data.groups[0].session_id = 10;
+		data.due = [];
+		data.charges[0].state = "cancelled";
+		data.charges[0].basis = { prepayment: true, prepayment_reversed: true };
+		data.prepayments = [
+			{
+				session_id: 10,
+				member_id: "a",
+				amount: 6000,
+				due_ym: "2026-09",
+				label: "대관",
+				occurred_on: "2026-09-20",
+			},
+		];
+		expect(payableTargets(data, "a", "2026-09")).toHaveLength(1);
+		data.charges.push({
+			...data.charges[0],
+			id: "new",
+			previous_id: "c",
+			state: "live",
+			basis: { prepayment: true },
+		});
+		expect(payableTargets(data, "a", "2026-09")).toHaveLength(0);
+	});
 	it("includes upcoming attendance across months while requiring a unique dated match for a suggestion", () => {
 		const data = fixture();
 		data.due = [];

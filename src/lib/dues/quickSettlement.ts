@@ -1,6 +1,7 @@
 import { kstMonth } from "./summary";
 import type { AccountingData, DueSlice } from "./types";
 import { matchingMembers } from "./selection";
+import { isReversedPrepayment } from "./chargeState";
 
 function receiptTargetDate(data: AccountingData, bankId: number) {
 	const tx = data.bank.find((t) => t.id === bankId);
@@ -148,6 +149,7 @@ export function payableTargets(
 					!data.charges.some(
 						(c) =>
 							c.member_id === memberId &&
+							!isReversedPrepayment(c) &&
 							data.groups.some(
 								(g) => g.id === c.group_id && g.session_id === p.session_id,
 							),

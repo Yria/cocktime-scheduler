@@ -308,6 +308,8 @@ export default function AccountingOverview({
 						.map((g) => {
 							const participation = groupParticipation(data, g, ym, context);
 							const progress = participation.progress;
+							const missingCount =
+								participation.unissuedCount - participation.pendingCount;
 							const summary = groupSummary(data, g);
 							const label = g.session_id
 								? (sessionLabels.get(g.session_id) ?? g.label)
@@ -341,9 +343,14 @@ export default function AccountingOverview({
 													제외 <b>{participation.excludedCount}명</b>
 												</span>
 											)}
-											{participation.unissuedCount > 0 && (
+											{participation.pendingCount > 0 && (
+												<span>
+													예정 <b>{participation.pendingCount}명</b>
+												</span>
+											)}
+											{missingCount > 0 && (
 												<span className="ac-overview-amber">
-													미발행 <b>{participation.unissuedCount}명</b>
+													미발행 <b>{missingCount}명</b>
 												</span>
 											)}
 										</span>
@@ -357,19 +364,22 @@ export default function AccountingOverview({
 										</span>
 										<strong
 											className={
-												progress.remaining > 0 ||
-												participation.unissuedCount > 0
+												progress.remaining > 0 || missingCount > 0
 													? "ac-overview-amber"
-													: "ac-in"
+													: participation.pendingCount > 0
+														? ""
+														: "ac-in"
 											}
 										>
 											{progress.remaining > 0
 												? `${won(progress.remaining)} 남음`
-												: participation.unissuedCount > 0
+												: missingCount > 0
 													? "부과 확인 필요"
-													: progress.rows.length
-														? "납부 완료"
-														: ""}
+													: participation.pendingCount > 0
+														? "종료 후 부과"
+														: progress.rows.length
+															? "납부 완료"
+															: ""}
 										</strong>
 									</div>
 									{progress.rows.length > 0 && (

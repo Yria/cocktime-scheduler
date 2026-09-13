@@ -7,6 +7,7 @@ import {
 import type { CourtChargeRow, SessionFeeRow } from "./sessionTypes";
 import { billingProgress } from "./overview";
 import { memberLabel } from "./summary";
+import { isReversedPrepayment } from "./chargeState";
 import type { AccountingData, BillingGroup, Charge } from "./types";
 
 export interface AccountingParticipation {
@@ -37,7 +38,7 @@ export function groupParticipation(
 	const replaced = new Set(all.map((c) => c.previous_id).filter(Boolean));
 	const charges = new Map<string, Charge>();
 	for (const charge of all
-		.filter((c) => !replaced.has(c.id))
+		.filter((c) => !replaced.has(c.id) && !isReversedPrepayment(c))
 		.sort(
 			(a, b) =>
 				a.issued_at.localeCompare(b.issued_at) || a.id.localeCompare(b.id),
@@ -217,6 +218,8 @@ export function groupParticipation(
 		chargedCount: rows.filter((p) => p.state === "charged").length,
 		excludedCount: rows.filter((p) => p.state === "excluded").length,
 		unissuedCount: rows.filter((p) => p.state === "unissued").length,
+		pendingCount:
+			session?.status !== "closed" ? (attendance?.pending.length ?? 0) : 0,
 		exclusions: [...exclusions].map(([label, count]) => ({ label, count })),
 	};
 }

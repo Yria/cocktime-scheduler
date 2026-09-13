@@ -7,6 +7,7 @@ import {
 	X,
 } from "lucide-react";
 import { transactionNeedsSettlement } from "../../lib/dues/quickSettlement";
+import { isReversedPrepayment } from "../../lib/dues/chargeState";
 import "./accounting.css";
 import "./accounting-layout.css";
 // 홈 톤 스킨 — 반드시 accounting-layout.css **뒤**. 모든 규칙이 .ac-layout-v2 스코프이고
@@ -610,8 +611,9 @@ export default function AccountingAdmin() {
 																	const due = data.due.filter(
 																		(d) => d.charge_id === c.id,
 																	);
-																	const state =
-																		c.state === "cancelled"
+																	const state = isReversedPrepayment(c)
+																		? "선납 취소"
+																		: c.state === "cancelled"
 																			? "취소"
 																			: c.state === "waived"
 																				? "면제"

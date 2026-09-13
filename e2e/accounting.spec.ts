@@ -178,6 +178,7 @@ test.beforeEach(async ({ page, context }, testInfo) => {
 	);
 	await db.exec("alter table sessions add column is_active boolean default true, add column is_overridden boolean default false");
     await db.exec(readFileSync(new URL("../supabase/migrations/20260911010000_promote_dues.sql", import.meta.url), "utf8"));
+	await db.exec(readFileSync(new URL("../supabase/migrations/20260914010000_restore_reversed_prepayment.sql", import.meta.url), "utf8"));
 	await context.routeWebSocket(
 		/^(?!ws:\/\/(127\.0\.0\.1|localhost))/,
 		(socket) => socket.close(),
@@ -2748,6 +2749,59 @@ test("partial settlement keeps its remainder in inbox but another member needs a
 	).toBe(0);
 	// The removed UI never submits the proxy command used by this feasibility probe.
 	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(1);
+});
+
+test("reversed prepayment returns to pending in the roster and can be paid again from its receipt", async ({ page }) => {
+	await db.exec(`
+		update members set name='테스트회원',birth_year=1996 where id='${A}';
+		insert into places values(10,'예정 체육관',true);
+		insert into sessions(id,title,status,scheduled_at,ends_at,place_id) values
+		(10,'예정 대관','open',now()+interval '7 days',now()+interval '7 days 3 hours',10);
+		insert into attendances(session_id,member_id,status) values(10,'${A}','confirmed');
+		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',6000,'2026-09-10T12:00:00+09','테스트회원');
+		select dues_sync_bank();
+	`);
+	await command({ action: "pay", owner_id: A, confirm_owner: true, lines: [{ position_id: await scalar("select id from dues_positions where bank_tx_id=90 and amount>0"), session_id: 10, expected_amount: 6000, amount: 6000 }] });
+	const label = await scalar<string>("select to_char(scheduled_at at time zone 'Asia/Seoul','YYYY-MM-DD')||' · 예정 체육관' from sessions where id=10");
+	const month = await scalar<string>("select to_char(scheduled_at at time zone 'Asia/Seoul','YYYY-MM') from sessions where id=10");
+	await navigate(page, "/dues/2026-09/ledger");
+	await page.getByRole("button", { name: "거래 90 상세", exact: true }).click();
+	const card = page.getByRole("region", { name: "거래 90", exact: true });
+	await card.getByRole("button", { name: /연결 해제$/ }).click();
+	await card.getByRole("button", { name: "납부 연결 해제 확인", exact: true }).click();
+	await expect.poll(() => scalar("select count(*)::int from dues_charges c join dues_groups g on g.id=c.group_id where g.session_id=10 and c.state='live'")).toBe(0);
+	await navigate(page, `/dues/${month}`);
+	const overview = page.getByRole("region", { name: `${label} 부과 현황`, exact: true });
+	await expect(overview).toContainText("종료 후 부과");
+	await expect(overview).not.toContainText("부과 확인 필요");
+	for (const width of [390, 1280]) {
+		await page.setViewportSize({ width, height: 900 });
+		for (const theme of ["light", "dark"]) {
+			await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), theme === "dark");
+			await designEvidence(page, `prepayment-overview-${width}-${theme}`);
+		}
+	}
+	await page.getByRole("button", { name: `${label} 부과 현황 자세히 보기`, exact: true }).click();
+	const roster = page.getByRole("dialog", { name: `${label} 부과 명단`, exact: true });
+	await expect(roster).toContainText("테스트회원");
+	await expect(roster).toContainText("종료 후 부과");
+	await expect(roster.getByText("부과 취소", { exact: true })).toHaveCount(0);
+	for (const width of [390, 1280]) {
+		await page.setViewportSize({ width, height: 900 });
+		for (const theme of ["light", "dark"]) {
+			await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), theme === "dark");
+			await designEvidence(page, `prepayment-restored-${width}-${theme}`);
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+		}
+	}
+	await navigate(page, "/dues/2026-09/inbox");
+	const target = card.getByRole("button", { name: /선납/ });
+	await expect(target).toBeVisible();
+	await target.click();
+	await card.getByRole("button", { name: "납부 확인", exact: true }).click();
+	await expect.poll(() => scalar("select count(*)::int from dues_charges c join dues_groups g on g.id=c.group_id where g.session_id=10 and c.state='live'")).toBe(1);
+	expect(await scalar("select sum(amount-reversed)::int from dues_allocations where bank_tx_id=90")).toBe(6000);
+	await db.exec("select dues_assert()");
 });
 
 test("upcoming court prepayment shares the receipt, keeps namesakes and same-day sessions distinct, and retries without duplicates", async ({

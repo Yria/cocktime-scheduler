@@ -167,6 +167,7 @@ export const actionLabel: Record<string, string> = {
 	position: "입금 용도 지정",
 	pay: "납부 확인",
 	reverse_payment: "납부 연결 해제",
+	restore_prepayment: "선납 취소 후 예정 상태 복구",
 	refund: "환불 연결",
 	reverse_refund: "환불 연결 해제",
 	expense: "지출 귀속",

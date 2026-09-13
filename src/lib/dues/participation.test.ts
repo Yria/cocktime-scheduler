@@ -118,11 +118,37 @@ function fixture(kind: BillingGroup["kind"] = "court") {
 }
 
 describe("group participation based on 30ddf07", () => {
+	it("fully reversed prepayments return to attendance pending while ordinary cancellations remain excluded", () => {
+		const { data, group, context, charge } = fixture();
+		context.sessions[0].status = "open";
+		const c = charge("a");
+		c.state = "cancelled";
+		c.basis = { prepayment: true, prepayment_reversed: true };
+		data.due[0].remaining = 0;
+		const cancelled = charge("b");
+		cancelled.state = "cancelled";
+		data.due[1].remaining = 0;
+		const result = groupParticipation(data, group, "2026-09", context);
+		expect(result.pendingCount).toBe(3); // restored member, board guest, day cancellation
+		expect(result.rows.find((p) => p.memberId === "a")).toMatchObject({
+			state: "unissued",
+			label: "종료 후 부과",
+		});
+		expect(result.rows.find((p) => p.memberId === "b")).toMatchObject({
+			state: "excluded",
+			label: "부과 취소",
+		});
+		context.sessions[0].status = "closed";
+		expect(groupParticipation(data, group, "2026-09", context).pendingCount).toBe(0);
+	});
 	it("이전 부과의 당일취소 표시도 유지한다", () => {
 		const { data, group, context, charge } = fixture();
 		charge("day").basis = { is_day_cancel: true };
-		expect(groupParticipation(data, group, "2026-09", context).rows.find((r) => r.memberId === "day")?.reason)
-			.toBe("당일취소 부과");
+		expect(
+			groupParticipation(data, group, "2026-09", context).rows.find(
+				(r) => r.memberId === "day",
+			)?.reason,
+		).toBe("당일취소 부과");
 	});
 	it("separates flat-fee admins and grace withdrawals from real payments, retaining namesakes, late arrivals, day cancellations and board guests", () => {
 		const { data, group, context, charge } = fixture();
