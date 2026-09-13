@@ -360,6 +360,19 @@ export default function QuickSettlement({
 		} else if (draft.type === "simple") {
 			command = { ...draft.command!, reason };
 			summary = `${title} · ${won(Number(draft.command!.amount ?? tx.amount))}`;
+			if (command.action === "reverse_payment") {
+				const payment = data.allocations.find(
+					(a) => a.id === command!.allocation_id && a.bank_tx_id === bankId,
+				);
+				const charge = data.charges.find((c) => c.id === payment?.charge_id);
+				const amount = positive(String(command.amount));
+				if (!payment || !charge || amount > payment.amount - payment.reversed)
+					throw new Error(
+						"해제할 납부 연결이 변경됐습니다. 내역을 다시 확인하세요",
+					);
+				summary = `${memberLabel(data, charge.member_id)} · ${groupName(charge.id)} · ${won(amount)} 연결 해제 → ${memberLabel(data, payment.owner_id)} 입금 잔액으로 복원`;
+				command.reason = `${reason} · ${summary}`;
+			}
 		}
 	} catch (e) {
 		hint = (e as Error).message;

@@ -153,47 +153,51 @@ export default function TransactionCard({
 	const settlementHistory =
 		allocations.length > 0 || returned.length > 0 ? (
 			<SettledList direction={t.direction}>
-				{allocations.map((a) => (
-					<SettledRow
-						key={a.id}
-						amount={won(a.amount - a.reversed)}
-						actions={
-							<button
-								type="button"
-								className="ac-chip ac-allocation-undo"
-								disabled={disabled}
-								onClick={() =>
-									onAction({
-										type: "simple",
-										command: {
-											action: "reverse_payment",
-											reason: "",
-											allocation_id: a.id,
-											amount: a.amount - a.reversed,
-										},
-									})
-								}
-							>
-								연결 해제
-							</button>
-						}
-					>
-						<SettledWho>
-							{/* 머리글이 이미 '납부 완료'라고 말하면 줄마다 또 붙이지 않는다. */}
-							{!paidReceipt && <span className="ac-badge is-green">납부</span>}
-							<strong>{memberLabel(data, a.owner_id)}</strong>
-						</SettledWho>
-						<small>
-							{
-								data.groups.find(
-									(g) =>
-										g.id ===
-										data.charges.find((c) => c.id === a.charge_id)?.group_id,
-								)?.label
+				{allocations.map((a) => {
+					const charge = data.charges.find((c) => c.id === a.charge_id);
+					const beneficiary = memberLabel(data, charge?.member_id ?? null);
+					const group =
+						data.groups.find((g) => g.id === charge?.group_id)?.label ?? "부과";
+					return (
+						<SettledRow
+							key={a.id}
+							amount={won(a.amount - a.reversed)}
+							actions={
+								<button
+									type="button"
+									className="ac-chip ac-allocation-undo"
+									aria-label={`${beneficiary} · ${group} · ${won(a.amount - a.reversed)} 연결 해제`}
+									disabled={disabled}
+									onClick={() =>
+										onAction({
+											type: "simple",
+											command: {
+												action: "reverse_payment",
+												reason: "",
+												allocation_id: a.id,
+												amount: a.amount - a.reversed,
+											},
+										})
+									}
+								>
+									연결 해제
+								</button>
 							}
-						</small>
-					</SettledRow>
-				))}
+						>
+							<SettledWho>
+								{/* 머리글이 이미 '납부 완료'라고 말하면 줄마다 또 붙이지 않는다. */}
+								{!paidReceipt && (
+									<span className="ac-badge is-green">납부</span>
+								)}
+								<strong>{beneficiary}</strong>
+							</SettledWho>
+							<small>{group}</small>
+							{charge?.member_id !== a.owner_id && (
+								<small>{memberLabel(data, a.owner_id)} 입금으로 대납</small>
+							)}
+						</SettledRow>
+					);
+				})}
 				{returned.map((r) => (
 					<SettledRow key={r.out_tx_id} amount={won(r.amount)}>
 						<SettledWho>

@@ -412,6 +412,39 @@ for (const partiallyPaid of [false, true]) {
 			calls.filter((c) => c.name === "dues_command").at(-1)?.args.p_payload,
 		).toMatchObject({ owner_id: A, proxy: true });
 		await db.query("select dues_assert()");
+		if (partiallyPaid) {
+			await page.getByRole("button", { name: "회계", exact: true }).click();
+			await page.getByRole("button", { name: "거래 90 상세", exact: true }).click();
+			const history = card.getByRole("group", { name: "이 입금의 처리 내역" });
+			await expect(history.getByText("박민준", { exact: true })).toBeVisible();
+			await expect(history.getByText("이서연 · 게스트", { exact: true })).toBeVisible();
+			await expect(history.getByText("박민준 입금으로 대납", { exact: true })).toBeVisible();
+			for (const width of [390, 1280]) {
+				await page.setViewportSize({ width, height: 900 });
+				await designEvidence(page, `proxy-history-${width}`);
+				expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+			}
+			await history.getByRole("button", { name: /^이서연.*6,000원 연결 해제$/ }).click();
+			await expect(card.locator(".ac-quick-summary")).toContainText("이서연 · 게스트 · 9월 13일 대관 · 6,000원 연결 해제 → 박민준 입금 잔액으로 복원");
+			for (const width of [390, 1280]) {
+				await page.setViewportSize({ width, height: 900 });
+				await designEvidence(page, `proxy-reversal-${width}`);
+				expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+			}
+			await card.getByRole("button", { name: "납부 연결 해제 확인", exact: true }).click();
+			await expect(card).toContainText("정산할 잔액 6,000원");
+			expect(await scalar("select remaining from dues_due where id=$1", [ownDue])).toBe(0);
+			expect(await scalar("select sum(amount)::int from dues_positions where bank_tx_id=90 and owner_id=$1", [A])).toBe(6000);
+			await page.getByRole("button", { name: "현황", exact: true }).click();
+			await page.getByRole("button", { name: "9월 13일 대관 부과 현황 자세히 보기", exact: true }).click();
+			const roster = page.getByRole("dialog", { name: "9월 13일 대관 부과 명단" });
+			const beneficiary = roster.locator(".ac-row").filter({ hasText: "이서연" });
+			await expect(beneficiary).toContainText("미납");
+			await expect(beneficiary).toContainText("2026년 9월 납기 · 6,000원");
+			await expect(beneficiary).not.toContainText("입금으로 납부");
+			await expect(roster.locator(".ac-row").filter({ hasText: "박민준" })).toContainText("입금으로 납부");
+			await db.query("select dues_assert()");
+		}
 	});
 }
 
@@ -614,7 +647,7 @@ test("payer choice distinguishes a paid namesake from an unpaid namesake and rem
 			await designEvidence(page, `settled-payment-${width}-${theme}`);
 		}
 	}
-	await card.getByRole("button", { name: "연결 해제", exact: true }).click();
+	await card.getByRole("button", { name: /연결 해제$/ }).click();
 	await card
 		.getByRole("button", { name: "납부 연결 해제 확인", exact: true })
 		.click();
@@ -2615,7 +2648,7 @@ test("ledger detail uses the inbox receipt and retains partial-payment reversal 
 	await expect(
 		card.getByText("다른 사람의 부과에 대납", { exact: true }),
 	).toHaveCount(0);
-	await history.getByRole("button", { name: "연결 해제", exact: true }).click();
+	await history.getByRole("button", { name: /연결 해제$/ }).click();
 	await card
 		.getByRole("button", { name: "납부 연결 해제 확인", exact: true })
 		.click();
