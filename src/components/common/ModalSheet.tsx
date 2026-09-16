@@ -48,6 +48,9 @@ export default function ModalSheet({
 	children,
 }: ModalSheetProps) {
 	const sheetRef = useRef<HTMLDivElement>(null);
+	// 캔버스 pointerup으로 모달이 열린 뒤 같은 터치의 click이 배경에 도달할 수 있다.
+	// 배경에서 새로 시작한 입력만 닫기로 인정한다(열기 터치는 이 pointerdown이 없음).
+	const backdropPress = useRef(false);
 	const [docHeight, setDocHeight] = useState(0);
 
 	// 배경 스크롤 잠금 — react-aria usePreventScroll. iOS 는 html overflow:hidden + touchmove 차단 +
@@ -89,7 +92,13 @@ export default function ModalSheet({
 			    backdrop-filter blur 가 이어진다. 배경(딤 영역) 클릭 시 닫기. */}
 			<div
 				className="lq-overlay"
-				onClick={onClose}
+				onPointerDown={() => { backdropPress.current = true; }}
+				onPointerCancel={() => { backdropPress.current = false; }}
+				onClick={() => {
+					const shouldClose = backdropPress.current;
+					backdropPress.current = false;
+					if (shouldClose) onClose?.();
+				}}
 				style={{
 					position: "absolute",
 					top: 0,
@@ -109,6 +118,7 @@ export default function ModalSheet({
 					ref={sheetRef}
 					className={`lq-sheet w-full ${widthClass} rounded-3xl overflow-y-auto overscroll-contain no-sb ${className}`}
 					style={{ maxHeight: "90dvh", pointerEvents: "auto" }}
+					onPointerDownCapture={() => { backdropPress.current = false; }}
 					onClick={(e) => e.stopPropagation()}
 				>
 					{title != null && (
