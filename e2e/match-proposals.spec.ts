@@ -6,7 +6,7 @@ import { cardControls } from "../src/lib/board/pixi/cardControls";
 declare global { interface Window { proposalTest: ProposalTestApi } }
 const uid = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
 
-async function setup(page: Page, role = "member", options: { failSend?: boolean; failResolve?: boolean; adminIds?: string[]; server?: { proposals: MatchProposal[] } } = {}) {
+async function setup(page: Page, role = "member", options: { failSend?: boolean; cancelSend?: boolean; failResolve?: boolean; adminIds?: string[]; server?: { proposals: MatchProposal[] } } = {}) {
 	const writes: string[] = [];
 	const server = options.server ?? { proposals: [] };
 	await page.routeWebSocket("wss://**", (socket) => socket.close());
@@ -22,7 +22,7 @@ async function setup(page: Page, role = "member", options: { failSend?: boolean;
 			const body = request.postDataJSON();
 			const authorId = role.startsWith("admin") ? uid(1) : role === "other" ? uid(3) : uid(2);
 			const proposal: MatchProposal = { id: body.p_id, session_id: 1, created_by: authorId, creator_name: role.startsWith("admin") ? "운영진" : "민수", player_ids: body.p_player_ids,
-				player_names: body.p_player_ids.map((id: string) => ["운영진", "민수", "지수", "현우", "수빈"][Number(id.slice(-2)) - 1]), status: "pending", created_at: "2026-09-18T00:00:00Z", updated_at: "2026-09-18T00:00:00Z" };
+				player_names: body.p_player_ids.map((id: string) => ["운영진", "민수", "지수", "현우", "수빈"][Number(id.slice(-2)) - 1]), status: options.cancelSend ? "rejected" : "pending", created_at: "2026-09-18T00:00:00Z", updated_at: "2026-09-18T00:00:00Z" };
 			server.proposals = [proposal, ...server.proposals];
 			return route.fulfill({ json: proposal });
 		}
@@ -40,7 +40,9 @@ async function setup(page: Page, role = "member", options: { failSend?: boolean;
 		if (url.includes("/rpc/start_match_proposal")) {
 			const body = request.postDataJSON();
 			const row = { ...server.proposals.find((item) => item.id === body.p_id)!, status: "started" as const, match_id: body.p_match_id };
-			server.proposals = server.proposals.map((item) => item.id === row.id ? row : item);
+			server.proposals = server.proposals.map((item) => item.id === row.id ? row
+				: ["pending", "reviewed"].includes(item.status) && item.player_ids.some(id => row.player_ids.includes(id))
+					? { ...item, status: "rejected" } : item);
 			return route.fulfill({ json: row });
 		}
 		if (url.includes("/rpc/resolve_match_proposal")) {
@@ -191,12 +193,17 @@ test("administrator switches between private proposals and shared editing withou
 	expect(writes.filter(url => url.includes("create_match_proposal"))).toHaveLength(1);
 });
 
-test("overlapping proposals render independent magnets and a started match disables the other proposal", async ({ page }, testInfo) => {
+test("starting one overlapping proposal cancels the others for administrators and authors", async ({ page, context }, testInfo) => {
 	const first = { ...proposal, player_ids: [2, 3, 4, 5].map(uid), player_names: ["민수", "지수", "현우", "수빈"] };
-	const second = { ...proposal, id: uid(201), created_by: uid(1), creator_name: "운영진",
+	const second = { ...proposal, id: uid(201), created_by: uid(3), creator_name: "지수",
 		player_ids: [2, 6, 7, 8].map(uid), player_names: ["민수", "지훈", "서연", "민재"] };
-	const server = { proposals: [first, second] };
+	const unrelated = { ...proposal, id: uid(202), created_by: uid(9), player_ids: [9, 10].map(uid) };
+	const server = { proposals: [first, second, unrelated] };
 	const writes = await setup(page, "admin", { server });
+	const author = await context.newPage();
+	await setup(author, "other", { server });
+	expect(await cards(author)).toHaveLength(1);
+	await page.bringToFront();
 	await page.getByRole("button", { name: "정렬", exact: true }).click();
 	const groups = await cards(page);
 	const magnets = groups.flatMap(group => group.members).filter(member => member.player.id === uid(2));
@@ -206,16 +213,47 @@ test("overlapping proposals render independent magnets and a started match disab
 	await page.screenshot({ path: testInfo.outputPath("overlapping-proposals.png") });
 	const firstIndex = groups.findIndex(group => group.source.kind === "proposal" && group.source.groupId === first.id);
 	await pressFooter(page, firstIndex);
-	await expect.poll(async () => (await cards(page)).length).toBe(1);
+	await expect.poll(() => server.proposals.find(item => item.id === first.id)?.status).toBe("started");
+	expect(server.proposals.find(item => item.id === second.id)?.status).toBe("rejected");
 	await page.evaluate(ids => window.proposalTest.session.setState({ courts: [
 		{ id: 1, match: { id: "started-proposal", courtId: 1, gameType: "혼합", teamA: [ids[0], ids[1]], teamB: [ids[2], ids[3]], startedAt: new Date().toISOString() } },
 		{ id: 2, match: null },
 	] }), first.player_ids);
-	await expect.poll(async () => (await cards(page))[0]?.appearance.ctaEnabled).toBe(false);
-	expect((await cards(page))[0].members.some(member => member.player.id === uid(2))).toBe(true);
-	await pressFooter(page);
+	await expect.poll(async () => (await cards(page)).length).toBe(1);
+	expect((await cards(page))[0].source).toEqual({ kind: "proposal", groupId: unrelated.id });
 	expect(writes.filter(url => url.includes("start_match_proposal"))).toHaveLength(1);
-	expect(server.proposals.find(item => item.id === second.id)?.status).toBe("pending");
+	await page.screenshot({ path: testInfo.outputPath("overlapping-proposals-cancelled.png") });
+	await author.bringToFront();
+	await author.evaluate(() => window.dispatchEvent(new Event("online")));
+	await expect.poll(async () => (await cards(author)).length).toBe(0);
+	await author.reload();
+	await expect.poll(() => author.evaluate(() => window.proposalTest.proposals.getState().loading)).toBe(false);
+	expect(await cards(author)).toHaveLength(0);
+	await author.close();
+});
+
+test("starting a member's match cancels their whole unsent proposal without a server write", async ({ page }) => {
+	const writes = await setup(page);
+	await pair(page, 2, 3);
+	await pair(page, 6, 7);
+	expect(await cards(page)).toHaveLength(2);
+	await page.evaluate(ids => window.proposalTest.session.setState({ courts: [
+		{ id: 1, match: { id: "other-team", courtId: 1, gameType: "혼합", teamA: [ids[0], ids[1]], teamB: [ids[2], ids[3]], startedAt: new Date().toISOString() } },
+	] }), [1,2,4,5].map(uid));
+	await expect.poll(async () => (await cards(page)).length).toBe(1);
+	expect((await cards(page))[0].members.map(member => member.player.id).sort()).toEqual([uid(6),uid(7)]);
+	expect(await page.evaluate(id => window.proposalTest.scene().entities.some(view => view.kind === "magnet" && view.player.id === id), uid(3))).toBe(true);
+	await expect(page.getByText("선택한 회원의 경기가 시작되어 매칭 제안을 취소했어요")).toBeVisible();
+	expect(writes).toEqual([]);
+});
+
+test("a submission overtaken by match start disappears with a cancellation notice", async ({ page }) => {
+	const writes = await setup(page, "member", { cancelSend: true });
+	await pair(page, 2, 3);
+	await pressFooter(page);
+	await expect.poll(async () => (await cards(page)).length).toBe(0);
+	await expect(page.getByText("선택한 회원의 경기가 시작되어 매칭 제안을 취소했어요")).toBeVisible();
+	expect(writes.filter(url => url.includes("create_match_proposal"))).toHaveLength(1);
 });
 
 test("failed sends and rejections retain the group for retry", async ({ page }) => {

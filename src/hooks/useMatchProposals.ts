@@ -314,7 +314,9 @@ async function submitGroup(groupId: string) {
 			anchors: new Map(current.anchors).set(groupId, current.groups.find((item) => item.id === groupId)?.anchor ?? group.anchor),
 			revision: current.revision + 1,
 		}));
-		toast("운영진에게 매칭 제안을 보냈어요", { variant: "success" });
+		toast(isActiveMatchProposal(proposal) ? "운영진에게 매칭 제안을 보냈어요"
+			: proposal.status === "started" ? "이 제안으로 경기가 시작됐어요"
+			: "선택한 회원의 경기가 시작되어 매칭 제안을 취소했어요", { variant: "success" });
 	} catch (error) {
 		if (useMatchProposalStore.getState().scope === scope && matchProposalScope() === scope) {
 			toast(errorMessage(error, "제안을 보내지 못했어요. 묶음은 그대로 있으니 다시 눌러주세요."), { variant: "error" });
@@ -366,14 +368,24 @@ export function useMatchProposals() {
 		const state = useMatchProposalStore.getState();
 		const board = useBoardStore.getState();
 		const players = useSessionStore.getState().sessionPlayers;
+		const playing = playingIdsFromCourts(courts);
+		// Unsent groups live only on this device; cancel the whole suggestion on a start.
+		const availableGroups = state.groups.filter((group) => !group.playerIds.some((id) => playing.has(id)));
+		const cancelledLocal = availableGroups.length !== state.groups.length;
 		let changed = false;
-		const groups = state.groups.map((group) => {
+		const groups = availableGroups.map((group) => {
 			const ids = group.playerIds.filter((id) => players.has(id));
 			const anchor = clampAnchor(group.anchor, board.stageW, board.stageH);
 			if (ids.length === group.playerIds.length && anchor.x === group.anchor.x && anchor.y === group.anchor.y) return group;
 			changed = true; return { ...group, playerIds: ids, anchor };
 		}).filter((group) => group.playerIds.length > 0);
-		if (changed) state.setGroups(groups);
+		if (changed || cancelledLocal) state.setGroups(groups);
+		if (cancelledLocal) toast("선택한 회원의 경기가 시작되어 매칭 제안을 취소했어요");
+		// The DB cancels sent proposals atomically. Hide stale cards during realtime catch-up.
+		const active = state.proposals.filter((proposal) => !proposal.player_ids.some((id) => playing.has(id)));
+		if (active.length !== state.proposals.length) useMatchProposalStore.setState((current) => ({
+			proposals: active, revision: current.revision + 1,
+		}));
 		settleProposalLayout();
 	}, [bounds, drafts, courts, playerIds, proposals]);
 	useEffect(() => {
