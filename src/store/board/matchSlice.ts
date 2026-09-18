@@ -30,7 +30,7 @@ import { claimEdit, pushDraftsToRemote, serializeBoardDrafts, syncState } from "
 /** 경기 슬라이스 — 원격 멤버십 적용/자가치유·경기 시작/완료/로스터 수정. */
 export type MatchSlice = Pick<
 	BoardState,
-	"applyRemoteDrafts" | "healPlayingAnchors" | "startMatch" | "completeMatch" | "setMatchRoster"
+	"applyRemoteDrafts" | "healPlayingAnchors" | "startMatch" | "completeMatch" | "setMatchRoster" | "dismissTeam"
 >;
 
 export const createMatchSlice: StateCreator<
@@ -39,6 +39,12 @@ export const createMatchSlice: StateCreator<
 	[],
 	MatchSlice
 > = (set, get) => ({
+	dismissTeam: (teamId) => {
+		if (!claimEdit() || get().assigningTeamIds.has(teamId)) return;
+		const ids = [...(get().drafts.get(teamId)?.anchorMemberIds ?? [])];
+		set((state) => dissolveDraft(state, teamId));
+		get().scatterMagnets(ids);
+	},
 	applyRemoteDrafts: (payload) => {
 		// 멤버십이 실제로 안 바뀐 재수신/스냅샷(applyDraftsIfNewer는 동일 멤버십도 매번 새 객체 set)이면
 		// 자석 위치를 전혀 만지지 않는다 — 자유 자석 위치는 로컬 전용이므로 보존되어야 한다.

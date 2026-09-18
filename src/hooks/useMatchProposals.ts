@@ -6,11 +6,14 @@ import { useSessionStore } from "../store/sessionStore";
 import { useMatchProposalStore } from "../store/matchProposalStore";
 import { toast } from "../store/toastStore";
 import { supabase } from "../lib/supabase/client";
-import { fetchMatchProposals, sendMatchProposal, updateMatchProposal } from "../lib/supabase/matchProposals";
+import { editMatchProposals, fetchMatchProposals, sendMatchProposal, startMatchProposal, updateMatchProposal, type MatchProposal } from "../lib/supabase/matchProposals";
 import { dropProposalMember, isActiveMatchProposal, placeProposalAnchors, removeProposalMember, type ProposalComposer, type ProposalComposerSnapshot } from "../lib/board/matchProposals";
-import { clampAnchor, isInsideTeamBounds } from "../lib/board/geometry";
+import { clampAnchor, isInsideTeamBounds, slotIndexAt } from "../lib/board/geometry";
 import { cockPendingIds, playingIdsFromCourts } from "../lib/board/membership";
 import { arrangeBoard } from "../lib/board/arrange";
+import { buildRecommendData } from "../lib/board/recommendPool";
+import { autoFillTeammates, pairPlayers } from "../lib/teamSelection";
+import type { SessionPlayer } from "../types";
 import { randomId } from "../lib/randomId";
 import { settleFreeMagnets } from "../lib/board/settle";
 import type { DraftTeam } from "../types/board";
@@ -86,6 +89,12 @@ function errorMessage(error: unknown, fallback: string) {
 	if (message.includes("session closed")) return "종료된 세션에는 제안할 수 없어요.";
 	if (message.includes("player left session")) return "세션을 나간 회원이 있어요. 제안할 회원을 다시 골라주세요.";
 	if (message.includes("not participant")) return "이 세션에 참여한 회원만 제안할 수 있어요.";
+	if (message.includes("not editor")) return "현재 보드 편집 권한이 필요해요.";
+	if (message.includes("proposal changed")) return "제안이 변경됐어요. 최신 명단을 확인해 주세요.";
+	if (message.includes("proposal already closed")) return "이미 처리된 제안이에요.";
+	if (message.includes("players already grouped")) return "다른 팀에 포함된 회원이 있어요.";
+	if (message.includes("players")) return "경기 중이거나 대기 상태가 아닌 회원이 있어요.";
+	if (message.includes("court already assigned")) return "다른 경기가 코트에 먼저 배정됐어요.";
 	return fallback;
 }
 
@@ -95,6 +104,43 @@ export const proposalComposer: ProposalComposer = {
 		return state.scope && state.scope === matchProposalScope() ? state : EMPTY;
 	},
 	subscribe: (listener) => useMatchProposalStore.subscribe(listener),
+	dropSubmitted: (playerId, point, sourceGroupId) => {
+		if (!canEditSubmitted()) return false;
+		const state = useMatchProposalStore.getState();
+		const source = state.proposals.find((proposal) => proposal.id === sourceGroupId && isActiveMatchProposal(proposal));
+		const target = [...state.proposals].reverse().find((proposal) => isActiveMatchProposal(proposal)
+			&& state.anchors.has(proposal.id) && isInsideTeamBounds(point, state.anchors.get(proposal.id)!));
+		if (!source && !target) return false;
+		if ((source && state.resolvingIds.has(source.id)) || (target && state.resolvingIds.has(target.id))) return true;
+		if (!target) {
+			if (source) void editSubmitted([{ proposal: source, ids: source.player_ids.filter((id) => id !== playerId) }]);
+			return true;
+		}
+		const slot = slotIndexAt(point, state.anchors.get(target.id)!);
+		if (slot < 0) return true;
+		const ids = [...target.player_ids];
+		const existing = ids.indexOf(playerId);
+		if (existing >= 0) {
+			if (source?.id === target.id && slot < ids.length && slot !== existing) {
+				[ids[slot], ids[existing]] = [ids[existing], ids[slot]];
+				void editSubmitted([{ proposal: target, ids }]);
+			}
+			return true;
+		}
+		const displaced = ids[slot];
+		if (slot < ids.length) ids[slot] = playerId;
+		else if (ids.length < 4) ids.push(playerId);
+		else return true;
+		const changes = [{ proposal: target, ids }];
+		if (source && source.id !== target.id) changes.push({ proposal: source,
+			ids: source.player_ids.flatMap((id) => id === playerId ? displaced ? [displaced] : [] : [id]) });
+		void editSubmitted(changes);
+		return true;
+	},
+	removeSubmittedMember: (groupId, playerId) => {
+		const proposal = useMatchProposalStore.getState().proposals.find((item) => item.id === groupId);
+		if (proposal) void editSubmitted([{ proposal, ids: proposal.player_ids.filter((id) => id !== playerId) }]);
+	},
 	drop: (playerId, point) => {
 		if (!editable()) return;
 		const state = useMatchProposalStore.getState();
@@ -145,11 +191,85 @@ export const proposalComposer: ProposalComposer = {
 		if (!state.scope || state.scope !== matchProposalScope()) return;
 		const proposal = state.proposals.find((item) => item.id === groupId);
 		if (proposal) {
-			if (state.isAdmin && proposal.status === "pending") void resolveProposal(groupId, "reviewed");
+			if (state.isAdmin) { if (proposal.player_ids.length < 4) autoFillSubmitted(proposal); else void startSubmitted(proposal); }
 			else if (proposal.created_by === state.viewerId) void resolveProposal(groupId, "withdrawn");
 		} else void submitGroup(groupId);
 	},
 };
+
+function canEditSubmitted() {
+	const state = useMatchProposalStore.getState();
+	return !!state.scope && state.scope === matchProposalScope() && state.isAdmin && useSessionStore.getState().isEditor;
+}
+
+function applyProposals(rows: MatchProposal[]) {
+	useMatchProposalStore.setState((state) => ({ revision: state.revision + 1,
+		proposals: [...rows, ...state.proposals.filter((proposal) => !rows.some((row) => row.id === proposal.id))].filter(isActiveMatchProposal) }));
+}
+
+async function editSubmitted(changes: { proposal: MatchProposal; ids: string[] }[]) {
+	if (!canEditSubmitted()) return;
+	const state = useMatchProposalStore.getState();
+	const session = useSessionStore.getState();
+	if (!session._clientId || changes.some(({ proposal }) => state.resolvingIds.has(proposal.id) || !isActiveMatchProposal(proposal))) return;
+	const scope = state.scope;
+	const ids = changes.map(({ proposal }) => proposal.id);
+	useMatchProposalStore.setState({ resolvingIds: new Set([...state.resolvingIds, ...ids]) });
+	try {
+		const rows = await editMatchProposals(changes.map(({ proposal, ids }) => ({ id: proposal.id, updated_at: proposal.updated_at, player_ids: ids })), session._clientId, session._myName ?? "운영진");
+		if (scope === matchProposalScope()) applyProposals(rows);
+	} catch (error) {
+		if (scope === matchProposalScope()) {
+			toast(errorMessage(error, "명단을 바꾸지 못했어요. 다시 시도해 주세요."), { variant: "error" });
+			window.dispatchEvent(new Event("online"));
+		}
+	} finally {
+		if (scope === matchProposalScope()) useMatchProposalStore.setState((current) => ({ resolvingIds: new Set([...current.resolvingIds].filter((id) => !ids.includes(id))) }));
+	}
+}
+
+function autoFillSubmitted(proposal: MatchProposal) {
+	if (!canEditSubmitted()) return;
+	const board = useBoardStore.getState(), session = useSessionStore.getState();
+	const data = buildRecommendData({ newTeam: true }, proposal.player_ids, { ...board, ...session }, { excludePlaying: true, excludeReserved: true });
+	if (!data || data.confirmed.length !== proposal.player_ids.length) { toast("세션을 나간 회원을 먼저 빼주세요.", { variant: "error" }); return; }
+	const picks = autoFillTeammates(data.confirmed, data.pool, data.ctx, 4 - data.confirmed.length);
+	if (!picks.length) { toast("자동매칭할 수 있는 대기 회원이 없어요.", { variant: "error" }); return; }
+	void editSubmitted([{ proposal, ids: [...proposal.player_ids, ...picks.map((player) => player.id)] }]);
+}
+
+async function startSubmitted(proposal: MatchProposal) {
+	if (!canEditSubmitted()) return;
+	const state = useMatchProposalStore.getState(), session = useSessionStore.getState();
+	if (!session._clientId || state.resolvingIds.has(proposal.id)) return;
+	const empty = session.courts.find((court) => !court.match);
+	if (!empty) { toast("빈 코트가 없어요", { variant: "error" }); return; }
+	const four = proposal.player_ids.map((id) => session.sessionPlayers.get(id)).filter((player): player is SessionPlayer => !!player);
+	if (four.length !== 4) return;
+	const team = pairPlayers(four as [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer], useAppStore.getState().sessionMeta?.singleWomanIds ?? [], "회원 매칭 제안");
+	const scope = state.scope, anchor = state.anchors.get(proposal.id);
+	useMatchProposalStore.setState({ resolvingIds: new Set([...state.resolvingIds, proposal.id]) });
+	try {
+		const row = await startMatchProposal(proposal, randomId(), empty.id, team, session._clientId, session._myName ?? "운영진");
+		if (scope !== matchProposalScope()) return;
+		applyProposals([row]);
+		await useSessionStore.getState().resyncFromServer();
+		if (scope !== matchProposalScope()) return;
+		const court = useSessionStore.getState().courts.find((item) => item.match?.id === row.match_id);
+		if (court && anchor) useBoardStore.getState().setCourtAnchor(court.id, anchor.x, anchor.y);
+		toast("경기를 시작했어요", { variant: "success" });
+	} catch (error) {
+		if (scope === matchProposalScope()) {
+			toast(errorMessage(error, "경기를 시작하지 못했어요. 다시 시도해 주세요."), { variant: "error" });
+			void useSessionStore.getState().resyncFromServer();
+			window.dispatchEvent(new Event("online"));
+		}
+	} finally {
+		if (scope === matchProposalScope()) useMatchProposalStore.setState((current) => {
+			const resolvingIds = new Set(current.resolvingIds); resolvingIds.delete(proposal.id); return { resolvingIds };
+		});
+	}
+}
 
 async function submitGroup(groupId: string) {
 	if (!editable()) return;

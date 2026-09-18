@@ -5,7 +5,7 @@ import type { Court, SessionPlayer } from "../../../types";
 import type { DraftTeam } from "../../../types/board";
 import type { ProposalComposerSnapshot } from "../matchProposals";
 import type { MatchProposal } from "../../supabase/matchProposals";
-import { CTA_DISABLED_COLOR, CTA_PLAY_COLOR, CTA_START_COLOR, TEAM_BOX_ABOVE, TEAM_CONFIRMED_BG, TEAM_READY_BG, TEAM_RESERVED_BG, TEAM_W } from "../constants";
+import { CTA_PLAY_COLOR, CTA_START_COLOR, TEAM_BOX_ABOVE, TEAM_READY_BG, TEAM_RESERVED_BG, TEAM_W } from "../constants";
 import { createBoardProjection } from "./projection";
 import type { BoardSnapshot, CardView, MagnetView } from "./types";
 
@@ -46,7 +46,7 @@ describe("Pixi board projection", () => {
 		const { bs, ss } = fixture();
 		ss.isEditor = false;
 		const proposal: MatchProposal = { id: "p", session_id: 1, created_by: "author", creator_name: "민수",
-			player_ids: ["a", "b"], player_names: ["a", "b"], status: "pending", created_at: "2026-09-18" };
+			player_ids: ["a", "b"], player_names: ["a", "b"], status: "pending", created_at: "2026-09-18", updated_at: "2026-09-18" };
 		const state: ProposalComposerSnapshot = { enabled: true, groups: [], sendingIds: new Set(), proposals: [proposal],
 			anchors: new Map([["p", { x: 200, y: 250 }]]), resolvingIds: new Set(), viewerId: "author", isAdmin: false };
 		const project = createBoardProjection();
@@ -55,9 +55,10 @@ describe("Pixi board projection", () => {
 		expect(author.members).toHaveLength(2);
 		expect(author.members.every((member) => !member.draggable)).toBe(true);
 		expect(project(bs, ss, { ...state, viewerId: "other" }).entities.some((item) => item.key === "proposal:p")).toBe(false);
+		ss.isEditor = true;
 		const admin = { ...state, enabled: false, isAdmin: true, viewerId: "admin" };
-		expect(card(project(bs, ss, admin), "proposal:p").appearance).toMatchObject({ dashed: true, ctaLabel: "확인했어요", ctaEnabled: true, showUnconfirm: true });
-		for (const status of ["withdrawn", "rejected"] as const) {
+		expect(card(project(bs, ss, admin), "proposal:p").appearance).toMatchObject({ dashed: true, ctaLabel: "자동매칭", ctaEnabled: true, showUnconfirm: true });
+		for (const status of ["withdrawn", "rejected", "started"] as const) {
 			expect(project(bs, ss, { ...admin, proposals: [{ ...proposal, status }] }).entities.some((item) => item.key === "proposal:p")).toBe(false);
 		}
 		expect(bs.drafts.size).toBe(0);
@@ -90,16 +91,16 @@ describe("Pixi board projection", () => {
 		expect(first.members.every((member) => member.draggable && !member.cockPending)).toBe(true);
 	});
 
-	it("preserves forming, ready, confirmed and reserved card presentation", () => {
+	it("starts full groups directly and keeps automatic filling and reserved states", () => {
 		const { bs, ss } = fixture();
 		team(bs, "T", ["a", "b"], { createdBy: "운영자" });
 		expect(card(createBoardProjection()(bs, ss), "team:T").appearance).toMatchObject({
-			label: "팀 구성 중 · 2/4 · by 운영자", ctaLabel: "2명 더 필요", ctaColor: CTA_DISABLED_COLOR, labelBold: false, showVs: false,
+			label: "팀 구성 중 · 2/4 · by 운영자", ctaLabel: "자동매칭", ctaColor: CTA_START_COLOR, labelBold: false, showVs: false,
 		});
 		team(bs, "T", ["a", "b", "c", "d"]);
-		expect(card(createBoardProjection()(bs, ss), "team:T").appearance).toMatchObject({ fill: TEAM_READY_BG, ctaLabel: "매칭확정", ctaColor: CTA_START_COLOR, ctaEnabled: true });
+		expect(card(createBoardProjection()(bs, ss), "team:T").appearance).toMatchObject({ fill: TEAM_READY_BG, ctaLabel: "경기시작", ctaColor: CTA_PLAY_COLOR, ctaEnabled: true });
 		team(bs, "T", ["a", "b", "c", "d"], { confirmedMs: 5 });
-		expect(card(createBoardProjection()(bs, ss), "team:T").appearance).toMatchObject({ fill: TEAM_CONFIRMED_BG, label: "매칭확정 1번째", ctaLabel: "경기시작", ctaColor: CTA_PLAY_COLOR, blink: true, showUnconfirm: true });
+		expect(card(createBoardProjection()(bs, ss), "team:T").appearance).toMatchObject({ fill: TEAM_READY_BG, label: "팀 완성 · 4/4", ctaLabel: "경기시작", ctaColor: CTA_PLAY_COLOR, blink: false, showUnconfirm: true });
 		team(bs, "T", ["a", "b", "c"], { confirmedMs: 5 });
 		bs.magnets.set("d", { ...bs.magnets.get("d")!, teamId: null });
 		bs.reservations.set("r", { id: "r", playerId: "d", teamId: "T", createdAt: 1 });
@@ -109,13 +110,13 @@ describe("Pixi board projection", () => {
 		expect(reserved.appearance).toMatchObject({ fill: TEAM_RESERVED_BG, label: "4/4 · 예약 포함(경기중)", ctaLabel: "예약 대기", ctaEnabled: false, blink: false });
 	});
 
-	it("retains confirmed rank and next-up distinction, including a full court and viewer", () => {
+	it("ignores legacy confirmation order and disables starting without a court or editor", () => {
 		const { bs, ss } = fixture();
 		team(bs, "later", ["a", "b", "c", "d"], { confirmedMs: 20 });
 		team(bs, "first", ["e", "f", "g", "h"], { confirmedMs: 10 });
 		let snapshot = createBoardProjection()(bs, ss);
-		expect(card(snapshot, "team:later").appearance).toMatchObject({ label: "매칭확정 2번째", blink: false });
-		expect(card(snapshot, "team:first").appearance.blink).toBe(true);
+		expect(card(snapshot, "team:later").appearance).toMatchObject({ label: "팀 완성 · 4/4", blink: false });
+		expect(card(snapshot, "team:first").appearance.blink).toBe(false);
 		ss.courts = [court(1, ["i", "j", "k", "l"])];
 		snapshot = createBoardProjection()(bs, ss);
 		expect(card(snapshot, "team:first").appearance).toMatchObject({ ctaLabel: "코트 대기", ctaEnabled: false, blink: false });

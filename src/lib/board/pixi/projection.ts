@@ -4,15 +4,15 @@ import type { StagePoint } from "../../../types/board";
 import { isActiveMatchProposal, type ProposalComposerSnapshot } from "../matchProposals";
 import {
 	CTA_DISABLED_COLOR, CTA_FINISH_COLOR, CTA_PLAY_COLOR, CTA_START_COLOR,
-	TEAM_BOX_ABOVE, TEAM_CONFIRMED_BG, TEAM_CONFIRMED_STROKE,
+	TEAM_BOX_ABOVE,
 	TEAM_FORMING_BG, TEAM_FORMING_STROKE, TEAM_PLAYING_BG, TEAM_PLAYING_STROKE,
 	TEAM_READY_BG, TEAM_READY_STROKE, TEAM_RESERVED_BG, TEAM_RESERVED_STROKE,
 	TEAM_W, TEXT_SECONDARY, PROPOSAL_BG, PROPOSAL_STROKE, PROPOSAL_CTA,
 } from "../constants";
 import { computeSlotOffset, emptySlotIndices } from "../geometry";
 import {
-	confirmRank, findReservation, isTeamStartable, matchPlayerIds,
-	nextUpConfirmedTeamId, playingIdsFromCourts, teamMembers, wouldDissolveByPlaying,
+	findReservation, isTeamStartable, matchPlayerIds,
+	playingIdsFromCourts, teamMembers, wouldDissolveByPlaying,
 } from "../membership";
 import { sourceKey, type BoardEntity, type BoardSnapshot, type BoardSource, type CardAppearance, type CardView, type MagnetView } from "./types";
 
@@ -42,7 +42,7 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 	return (bs, ss, proposals) => {
 		const draggedPlayerId = bs.dragInfo?.playerId ?? null;
 		const inputs = [bs.magnets, bs.drafts, bs.reservations, bs.courtAnchors, draggedPlayerId,
-			ss.sessionPlayers, ss.courts, ss.restingIds, ss.cockCheckEnabled, ss.isEditor,
+			ss.sessionPlayers, ss.courts, ss.restingIds, ss.cockCheckEnabled, ss.isEditor, bs.assigningTeamIds,
 			proposals?.enabled, proposals?.groups, proposals?.sendingIds, proposals?.proposals,
 			proposals?.anchors, proposals?.resolvingIds, proposals?.viewerId, proposals?.isAdmin];
 		if (sameArray(previousInputs, inputs)) return previous;
@@ -56,9 +56,6 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 		const selected = new Set(groups.flatMap((group) => group.playerIds));
 		const restingIds = new Set(ss.restingIds);
 		const hasEmptyCourt = ss.courts.some((court) => !court.match);
-		const nextUp = hasEmptyCourt && ss.isEditor
-			? nextUpConfirmedTeamId(bs.drafts, bs.reservations, bs.magnets, playingIds)
-			: null;
 
 		const magnet = (source: BoardSource & { playerId: string }, point: StagePoint, resting = false): MagnetView | null => {
 			const player = ss.sessionPlayers.get(source.playerId);
@@ -106,13 +103,12 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 			const full = count === 4;
 			const startable = isTeamStartable(team.id, bs.drafts, bs.reservations, bs.magnets, playingIds);
 			const canStart = full && startable;
-			const confirmed = canStart && team.confirmedMs != null;
-			const ctaEnabled = confirmed ? ss.isEditor && hasEmptyCourt : canStart && ss.isEditor;
-			const labelColor = confirmed ? TEAM_CONFIRMED_STROKE : startable ? TEAM_READY_STROKE
+			const busy = bs.assigningTeamIds?.has(team.id) === true;
+			const ctaEnabled = ss.isEditor && !busy && (!full || (canStart && hasEmptyCourt));
+			const labelColor = startable ? TEAM_READY_STROKE
 				: full ? TEAM_RESERVED_STROKE : TEXT_SECONDARY;
 			const baseLabel = !full ? `팀 구성 중 · ${count}/4`
-				: confirmed ? `매칭확정 ${confirmRank(team.id, bs.drafts) ?? "?"}번째`
-					: canStart ? "팀 완성 · 4/4" : "4/4 · 예약 포함(경기중)";
+				: canStart ? "팀 완성 · 4/4" : "4/4 · 예약 포함(경기중)";
 			const members: MagnetView[] = [];
 			for (const member of membership) {
 				let source: BoardSource & { playerId: string };
@@ -128,17 +124,16 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 			}
 			const source: CardView["source"] = { kind: "team", teamId: team.id };
 			card({
-				kind: "card", key: sourceKey(source), source, point: team.anchor, draggable: true, members, confirmed,
+				kind: "card", key: sourceKey(source), source, point: team.anchor, draggable: !busy, members, confirmed: false,
 				emptySlots: emptySlotIndices(new Set(membership.filter((member) => member.playerId !== draggedPlayerId).map((member) => member.slot))),
 				appearance: {
-					fill: confirmed ? TEAM_CONFIRMED_BG : startable ? TEAM_READY_BG : full ? TEAM_RESERVED_BG : TEAM_FORMING_BG,
-					stroke: confirmed ? TEAM_CONFIRMED_STROKE : startable ? TEAM_READY_STROKE : full ? TEAM_RESERVED_STROKE : TEAM_FORMING_STROKE,
+					fill: startable ? TEAM_READY_BG : full ? TEAM_RESERVED_BG : TEAM_FORMING_BG,
+					stroke: startable ? TEAM_READY_STROKE : full ? TEAM_RESERVED_STROKE : TEAM_FORMING_STROKE,
 					label: team.createdBy ? `${baseLabel} · by ${team.createdBy}` : baseLabel,
 					labelColor, labelBold: full, showVs: full,
-					ctaLabel: confirmed ? hasEmptyCourt ? "경기시작" : "코트 대기" : canStart ? "매칭확정" : full ? "예약 대기" : `${4 - count}명 더 필요`,
-					ctaColor: !ctaEnabled ? CTA_DISABLED_COLOR : confirmed ? CTA_PLAY_COLOR : CTA_START_COLOR,
-					ctaEnabled, showUnconfirm: confirmed && ss.isEditor, showEdit: false,
-					blink: confirmed && nextUp === team.id,
+					ctaLabel: busy ? "시작 중…" : canStart ? hasEmptyCourt ? "경기시작" : "코트 대기" : full ? "예약 대기" : "자동매칭",
+					ctaColor: !ctaEnabled ? CTA_DISABLED_COLOR : canStart ? CTA_PLAY_COLOR : CTA_START_COLOR,
+					ctaEnabled, showUnconfirm: ss.isEditor, showEdit: false, blink: false,
 				},
 			});
 		}
@@ -199,12 +194,19 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 			if (!point) continue;
 			const source: CardView["source"] = { kind: "proposal", groupId: proposal.id };
 			const busy = proposals.resolvingIds.has(proposal.id);
-			const canReview = proposals.isAdmin && proposal.status === "pending";
+			const editable = proposals.isAdmin && ss.isEditor && !busy;
+			const full = proposal.player_ids.length === 4;
+			const ready = proposal.player_ids.every((id) => {
+				const player = ss.sessionPlayers.get(id);
+				return player && !playingIds.has(id) && player.status === "waiting"
+					&& (!ss.cockCheckEnabled || player.cockChecked) && !bs.magnets.get(id)?.teamId
+					&& ![...bs.reservations.values()].some((reservation) => reservation.playerId === id);
+			});
 			const canWithdraw = proposal.created_by === proposals.viewerId;
 			const members = proposal.player_ids.map((playerId, index): MagnetView => {
 				const memberSource: BoardSource = { kind: "proposal-member", playerId, groupId: proposal.id };
 				return { kind: "magnet", key: sourceKey(memberSource), source: memberSource,
-					point: computeSlotOffset(index), draggable: false, ghost: false, resting: false, cockPending: false,
+					point: computeSlotOffset(index), draggable: editable, ghost: false, resting: false, cockPending: false,
 					player: ss.sessionPlayers.get(playerId) ?? {
 						id: playerId, playerId, memberId: null, name: proposal.player_names[index], gender: "M", skills: { grade: 0 },
 						status: "waiting", gameCount: 0, mixedCount: 0, waitSince: null, joinedAtMatch: 0, allowMixedSingle: false, cockChecked: true,
@@ -215,11 +217,13 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 				emptySlots: emptySlotIndices(new Set(proposal.player_ids.map((_, index) => index))), confirmed: false,
 				appearance: {
 					fill: PROPOSAL_BG, stroke: PROPOSAL_STROKE, dashed: true,
-					label: `${proposal.status === "reviewed" ? "확인한 제안" : "매칭 제안"} · ${proposal.creator_name}`,
+					label: `매칭 제안 · ${proposal.creator_name}`,
 					labelColor: PROPOSAL_STROKE, labelBold: true, showVs: false,
-					ctaLabel: busy ? "처리 중…" : canReview ? "확인했어요" : canWithdraw ? "제안 취소" : "운영진 확인",
-					ctaColor: !busy && (canReview || canWithdraw) ? PROPOSAL_CTA : CTA_DISABLED_COLOR,
-					ctaEnabled: !busy && (canReview || canWithdraw), showUnconfirm: proposals.isAdmin, showEdit: false, blink: false,
+					ctaLabel: busy ? "처리 중…" : proposals.isAdmin ? full ? "경기시작" : "자동매칭" : "제안 취소",
+					ctaColor: !busy && (proposals.isAdmin ? editable && (!full || (ready && hasEmptyCourt)) : canWithdraw)
+						? proposals.isAdmin && full ? CTA_PLAY_COLOR : PROPOSAL_CTA : CTA_DISABLED_COLOR,
+					ctaEnabled: !busy && (proposals.isAdmin ? editable && (!full || (ready && hasEmptyCourt)) : canWithdraw),
+					showUnconfirm: proposals.isAdmin, showEdit: false, blink: false,
 				},
 			});
 		}

@@ -97,7 +97,7 @@ function setup({ editor = true, scale = 1 } = {}) {
 		}),
 		settleBoard: vi.fn(), handleGhostDrop: vi.fn(), handlePlayingMagnetDrop: vi.fn(),
 		cancelReservation: vi.fn(), detachMember: vi.fn(), restPlayer: vi.fn(), unrestPlayer: vi.fn(),
-		confirmTeam: vi.fn(), unconfirmTeam: vi.fn(), startMatch: vi.fn(), completeMatch: vi.fn(),
+		confirmTeam: vi.fn(), unconfirmTeam: vi.fn(), dismissTeam: vi.fn(), autoFillTeam: vi.fn(), startMatch: vi.fn(), completeMatch: vi.fn(),
 	} as unknown as BoardState));
 	const canvas = new TestCanvas();
 	const renderer = { screen: { width: 390, height: 600 }, resize: vi.fn((width: number, height: number) => { renderer.screen = { width, height }; }) };
@@ -135,12 +135,9 @@ afterEach(() => {
 });
 
 describe("BoardRuntime input and scene integration", () => {
-	it("keeps the gap between unconfirm and start inactive while both buttons remain usable", () => {
+	it("keeps the gap between dismiss and start inactive while both buttons remain usable", () => {
 		const { runtime, board } = setup();
 		addTeam("T", ["a", "b", "c", "d"]);
-		const drafts = new Map(board.getState().drafts);
-		drafts.set("T", { ...drafts.get("T")!, confirmedMs: 1 });
-		board.setState({ drafts });
 		const tap = (x: number) => {
 			runtime.controller.pointerDown({ id: 1, x, y: 269 });
 			runtime.controller.pointerUp({ id: 1, x, y: 269 });
@@ -148,11 +145,37 @@ describe("BoardRuntime input and scene integration", () => {
 		// Card anchor is (200, 180): cancel ends at x=161, start begins at x=167.
 		tap(164);
 		expect(board.getState().startMatch).not.toHaveBeenCalled();
-		expect(board.getState().unconfirmTeam).not.toHaveBeenCalled();
+		expect(board.getState().dismissTeam).not.toHaveBeenCalled();
 		tap(147);
-		expect(board.getState().unconfirmTeam).toHaveBeenCalledExactlyOnceWith("T");
+		expect(board.getState().dismissTeam).toHaveBeenCalledExactlyOnceWith("T");
 		tap(200);
 		expect(board.getState().startMatch).toHaveBeenCalledExactlyOnceWith("T");
+		expect(board.getState().confirmTeam).not.toHaveBeenCalled();
+	});
+
+	it("fills an incomplete group without confirming it", () => {
+		const { runtime, board } = setup();
+		addTeam();
+		runtime.controller.pointerDown({ id: 1, x: 200, y: 269 });
+		runtime.controller.pointerUp({ id: 1, x: 200, y: 269 });
+		expect(board.getState().autoFillTeam).toHaveBeenCalledExactlyOnceWith("T");
+		expect(board.getState().confirmTeam).not.toHaveBeenCalled();
+		expect(board.getState().startMatch).not.toHaveBeenCalled();
+	});
+
+	it("places court editing left of completion and removes the old top-right hit target", () => {
+		const { runtime, callbacks, board } = setup();
+		board.setState({ courtAnchors: new Map([[1, { x: 200, y: 180 }]]) });
+		stores.session.setState({ courts: [{ id: 1, match: { id: "M", courtId: 1, gameType: "남복", teamA: ["a", "b"], teamB: ["c", "d"], startedAt: "2026-09-18" } }] });
+		const tap = (x: number, y: number) => {
+			runtime.controller.pointerDown({ id: 1, x, y }); runtime.controller.pointerUp({ id: 1, x, y });
+		};
+		tap(260, 97);
+		expect(callbacks.onEditMatch).not.toHaveBeenCalled();
+		tap(147, 269);
+		expect(callbacks.onEditMatch).toHaveBeenCalledExactlyOnceWith(1);
+		tap(200, 269);
+		expect(board.getState().completeMatch).toHaveBeenCalledExactlyOnceWith(1);
 	});
 
 	it("draws on invalidation and leaves no continuous idle frame loop", () => {

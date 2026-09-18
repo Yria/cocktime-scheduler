@@ -15,7 +15,7 @@ import type { SessionPlayer } from "../src/types";
 import "../src/index.css";
 
 const params = new URLSearchParams(location.search);
-const isAdmin = params.get("role") === "admin";
+const isAdmin = params.get("role")?.startsWith("admin") === true;
 const userNumber = isAdmin ? 1 : params.get("role") === "other" ? 3 : 2;
 const uid = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
 const user = { id: uid(userNumber), aud: "authenticated", app_metadata: {}, user_metadata: {}, created_at: "2026-09-18T00:00:00Z" } satisfies User;
@@ -27,12 +27,12 @@ const players = Array.from({ length: 10 }, (_, i): SessionPlayer => ({
 	gender: i % 2 ? "F" : "M", skills: { grade: 5 }, status: "waiting", gameCount: i % 3,
 	mixedCount: 0, waitSince: null, joinedAtMatch: 0, allowMixedSingle: false, cockChecked: true,
 }));
-useSessionStore.setState({ sessionPlayers: new Map(players.map((p) => [p.id, p])), isEditor: false,
+useSessionStore.setState({ sessionPlayers: new Map(players.map((p) => [p.id, p])), isEditor: params.get("role") === "admin",
 	courts: [{ id: 1, match: null }, { id: 2, match: null }], restingIds: [], cockCheckEnabled: false,
-	lockSynced: true, lockFree: false, holderName: "운영진", holderClientId: "another-device", _clientId: null,
+	lockSynced: true, lockFree: false, holderName: "운영진", holderClientId: "another-device", _clientId: isAdmin ? "test-client" : null, _myName: "운영진",
 	boardDrafts: { teams: [], reservations: [] },
 	// Keep the actual proposal transport; stub unrelated live session channels and editor claiming.
-	subscribe: () => {}, unsubscribe: () => {}, claimEditingIfFree: () => {},
+	subscribe: () => {}, unsubscribe: () => {}, claimEditingIfFree: () => {}, resyncFromServer: async () => {},
 });
 useBoardStore.getState().reset();
 const project = createBoardProjection();

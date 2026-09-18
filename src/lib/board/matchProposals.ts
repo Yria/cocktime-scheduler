@@ -68,6 +68,8 @@ export interface ProposalComposer {
 	getSnapshot: () => ProposalComposerSnapshot;
 	subscribe: (listener: () => void) => () => void;
 	drop: (playerId: string, point: StagePoint) => void;
+	dropSubmitted: (playerId: string, point: StagePoint, sourceGroupId?: string) => boolean;
+	removeSubmittedMember: (groupId: string, playerId: string) => void;
 	move: (groupId: string, point: StagePoint) => void;
 	removeMember: (playerId: string) => void;
 	removeGroup: (groupId: string) => void;

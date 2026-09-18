@@ -128,6 +128,7 @@ export interface BoardState {
 	/** 휴식 선수를 복귀(status='waiting', 평균 판수 보정). 자석은 정렬되는 자유 자석 위치로. */
 	unrestPlayer: (playerId: string) => void;
 	startMatch: (teamId: string) => Promise<void>;
+	dismissTeam: (teamId: string) => void;
 	completeMatch: (courtId: number) => Promise<void>;
 	/** 경기 수정: 진행중 매치의 최종 로스터 설정(빠진 선수는 자유 자석으로 흩어짐). */
 	setMatchRoster: (
