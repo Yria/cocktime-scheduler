@@ -4,8 +4,6 @@ import { useContainerSize } from "../../hooks/useContainerSize";
 import { useSessionBoardEffects } from "../../hooks/useSessionBoardEffects";
 import { useMatchProposals, settleProposalLayout } from "../../hooks/useMatchProposals";
 import { useBoardStore } from "../../store/boardStore";
-import { useAuthStore } from "../../store/authStore";
-import { useMatchProposalStore } from "../../store/matchProposalStore";
 import { useSessionStore } from "../../store/sessionStore";
 import { playingIdsFromCourts } from "../../lib/board/membership";
 import {
@@ -24,7 +22,6 @@ import MatchEditModal from "./MatchEditModal";
 import ViewerLockOverlay from "./ViewerLockOverlay";
 import EditorTakenNotice from "./EditorTakenNotice";
 import DebugMatchModal from "./DebugMatchModal";
-import MatchProposalPanel from "./MatchProposalPanel";
 import { ArrangeFab, BoardSyncingBadge, NewTeamFab, ZoomControls } from "./SessionBoardChrome";
 import type { RecommendTarget } from "../../hooks/useTeammateRecommendations";
 
@@ -46,8 +43,6 @@ export default function SessionBoard() {
 	// 세션 동기화/편집권 부수효과(풀 초기화·원격 멤버십 적용·Realtime 구독·자동 점유·I2 자가치유) — useSessionBoardEffects로 분리.
 	useSessionBoardEffects();
 	const proposals = useMatchProposals();
-	const isAdmin = useAuthStore((s) => s.isAdmin);
-	const showProposalPanel = useMatchProposalStore((s) => s.enabled || (isAdmin && s.scope !== null));
 
 	const courts = useSessionStore((s) => s.courts);
 	const playingIds = useMemo(() => playingIdsFromCourts(courts), [courts]);
@@ -129,7 +124,7 @@ export default function SessionBoard() {
 			{/* 드롭존 오버레이(칠판 밖 DOM) — 상단 '팀에서 빼기'는 네비 영역, 하단 '휴식하기'는 바텀 바 영역에 점선 박스+문구로 표시. */}
 			{showDetach && <DetachZoneOverlay />}
 			{showRest && <RestDropOverlay />}
-			<div ref={stageContainerRef} style={{ position: "absolute", top: `calc(${TOOLBAR_H + (showProposalPanel ? 72 : 0)}px + env(safe-area-inset-top))`, left: `max(${EDGE_GUTTER}px, env(safe-area-inset-left))`, right: `max(${EDGE_GUTTER}px, env(safe-area-inset-right))`, bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px))`, touchAction: "none" }}>
+			<div ref={stageContainerRef} style={{ position: "absolute", top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top))`, left: `max(${EDGE_GUTTER}px, env(safe-area-inset-left))`, right: `max(${EDGE_GUTTER}px, env(safe-area-inset-right))`, bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px))`, touchAction: "none" }}>
 				<SessionBoardRenderer width={stageW} height={stageH}
 					onMagnetClick={onMagnetClick} onCockCheck={onCockCheck} onSlotClick={openTeamRecommend} onEditMatch={onEditMatch} proposals={proposals} />
 			</div>
@@ -139,7 +134,7 @@ export default function SessionBoard() {
 			{/* 줌 컨트롤(우상단) — 0.5~1배 축소(편집/보기 공통) */}
 			<ZoomControls setScale={setScale} />
 			{/* 우하단 플로팅 정렬 버튼 */}
-			<ArrangeFab onClick={() => { arrangeAtCurrentScale(); settleProposalLayout(); }} />
+			<ArrangeFab onClick={() => { arrangeAtCurrentScale(); settleProposalLayout(true); }} />
 			{recommendTarget && (
 				<RecommendTeammateDialog
 					teamId={recommendTarget.teamId ?? undefined}
@@ -155,7 +150,6 @@ export default function SessionBoard() {
 				<CockCheckModal playerId={cockTarget} onClose={() => setCockTarget(null)} />
 			)}
 			<ViewerLockOverlay />
-			<MatchProposalPanel />
 			<EditorTakenNotice />
 			<DebugMatchModal />
 		</div>

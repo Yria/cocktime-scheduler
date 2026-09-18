@@ -344,7 +344,9 @@ function paintCard(context: CanvasRenderingContext2D, appearance: CardAppearance
 	context.fill();
 	context.strokeStyle = appearance.stroke;
 	context.lineWidth = 2;
+	context.setLineDash(appearance.dashed ? [7, 5] : []);
 	context.stroke();
+	context.setLineDash([]);
 	text(context, appearance.label, -halfW, CARD_TOP + TEAM_PAD, TEAM_W, 11,
 		appearance.labelColor, appearance.labelBold, undefined, true);
 	if (appearance.showVs) text(context, "vs", -halfW, -TEAM_VS_H / 2, TEAM_W, 10, `${appearance.labelColor}80`);
@@ -365,7 +367,7 @@ function paintCard(context: CanvasRenderingContext2D, appearance: CardAppearance
 }
 
 function paintCardControls(context: CanvasRenderingContext2D, appearance: CardAppearance, flash: boolean) {
-	const { main, unconfirm } = cardControls(appearance.showUnconfirm);
+	const { main, unconfirm } = cardControls(appearance.showUnconfirm, appearance.dashed);
 	if (unconfirm) {
 		const { x, y, width, height } = unconfirm;
 		roundedRect(context, x, y, width, height, 8);
@@ -401,7 +403,7 @@ export const CardVisual = memo(function CardVisual({ appearance, dragging }: {
 	appearance: CardAppearance; dragging: boolean; flash: boolean;
 }) {
 	const key = JSON.stringify(["card", appearance.fill, appearance.stroke, appearance.label,
-		appearance.labelColor, appearance.labelBold, appearance.showVs, appearance.showEdit]);
+		appearance.labelColor, appearance.labelBold, appearance.showVs, appearance.showEdit, appearance.dashed]);
 	const raster = useRaster(key, CARD_BOUNDS, (context) => paintCard(context, appearance));
 	return <>
 		{!dragging && <CachedSprite cacheKey="card-shadow"
@@ -420,12 +422,12 @@ export const CardVisual = memo(function CardVisual({ appearance, dragging }: {
 export const CardControlsVisual = memo(function CardControlsVisual({ appearance, dragging, flash }: {
 	appearance: CardAppearance; dragging: boolean; flash: boolean;
 }) {
-	const key = JSON.stringify(["card-controls", appearance.ctaLabel, appearance.ctaColor, appearance.showUnconfirm, appearance.blink]);
+	const key = JSON.stringify(["card-controls", appearance.ctaLabel, appearance.ctaColor, appearance.showUnconfirm, appearance.blink, appearance.dashed]);
 	const bounds = { x: -TEAM_W / 2, y: CTA_Y - 2, width: TEAM_W, height: TEAM_CTA_H + 4 };
 	const normal = useRaster(`${key}:normal`, bounds, (context) => paintCardControls(context, appearance, false));
 	const highlighted = useRaster(`${key}:${appearance.blink ? "flash" : "normal"}`, bounds,
 		(context) => paintCardControls(context, appearance, true));
-	const { main } = cardControls(appearance.showUnconfirm);
+	const { main } = cardControls(appearance.showUnconfirm, appearance.dashed);
 	return <>
 		{appearance.blink && flash && !dragging && <CachedSprite cacheKey={`cta-glow:${main.x}`}
 			bounds={{ x: -TEAM_W / 2 - 22, y: CTA_Y - 30, width: TEAM_W + 44, height: TEAM_CTA_H + 60 }}

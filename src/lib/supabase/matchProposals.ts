@@ -7,7 +7,7 @@ export interface MatchProposal {
 	creator_name: string;
 	player_ids: string[];
 	player_names: string[];
-	status: "pending" | "reviewed" | "withdrawn";
+	status: "pending" | "reviewed" | "withdrawn" | "rejected";
 	created_at: string;
 }
 
@@ -15,7 +15,7 @@ export async function fetchMatchProposals(sessionId: number): Promise<MatchPropo
 	// RLS filters at the server: the author and administrators only.
 	const { data, error } = await supabase.from("match_proposals")
 		.select("id, session_id, created_by, creator_name, player_ids, player_names, status, created_at")
-		.eq("session_id", sessionId).neq("status", "withdrawn").order("created_at", { ascending: false });
+		.eq("session_id", sessionId).in("status", ["pending", "reviewed"]).order("created_at", { ascending: false });
 	if (error) throw error;
 	return (data ?? []) as MatchProposal[];
 }
@@ -28,7 +28,7 @@ export async function sendMatchProposal(sessionId: number, id: string, playerIds
 	return data as MatchProposal;
 }
 
-export async function updateMatchProposal(id: string, status: "reviewed" | "withdrawn"): Promise<void> {
+export async function updateMatchProposal(id: string, status: "reviewed" | "withdrawn" | "rejected"): Promise<void> {
 	const { error } = await supabase.rpc("resolve_match_proposal", { p_id: id, p_status: status });
 	if (error) throw error;
 }

@@ -254,16 +254,17 @@ export class BoardRuntime {
 			const button = (key: string, action: () => void): BoardInteractionTarget => ({ key: `${view.key}:${key}`, point: center, draggable: false, onTap: () => {
 				if (this.isValid(view.source) && useSessionStore.getState().isEditor) action();
 			} });
-			const controls = cardControls(view.appearance.showUnconfirm);
+			const controls = cardControls(view.appearance.showUnconfirm, view.appearance.dashed);
+			const controlPaddingY = view.source.kind === "proposal" ? 6 : 0;
 			const inControl = (rect: typeof controls.main | null) => rect !== null
-				&& x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+				&& x >= rect.x && x <= rect.x + rect.width && y >= rect.y - controlPaddingY && y <= rect.y + rect.height + controlPaddingY;
 			if (view.source.kind === "proposal") {
 				const id = view.source.groupId;
 				const action = inControl(controls.unconfirm) ? "remove" : inControl(controls.main) ? "submit" : null;
 				if (action) return { key: `${view.key}:${action}`, point: center, draggable: false, onTap: () => {
-					if (!this.isValid(view.source) || !this.callbacks.proposals?.getSnapshot().enabled) return;
-					if (action === "remove") this.callbacks.proposals.removeGroup(id);
-					else if (view.appearance.ctaEnabled) this.callbacks.proposals.submit(id);
+					if (!this.isValid(view.source)) return;
+					if (action === "remove") this.callbacks.proposals?.removeGroup(id);
+					else if (view.appearance.ctaEnabled) this.callbacks.proposals?.submit(id);
 				} };
 			}
 			if (view.source.kind === "team" && inControl(controls.unconfirm)) {
@@ -281,7 +282,8 @@ export class BoardRuntime {
 			if (view.source.kind === "court" && view.appearance.showEdit && x >= TEAM_W / 2 - 26 && x <= TEAM_W / 2 - 2 && y >= -TEAM_BOX_ABOVE + 4 && y <= -TEAM_BOX_ABOVE + 28) {
 				const id = view.source.courtId; return button("edit", () => this.callbacks.onEditMatch(id));
 			}
-			for (const member of [...view.members].reverse()) if (inside(this.point(member, view), MAGNET_HIT_R)) return this.magnetTarget(member, view);
+			// Submitted rosters are immutable copies. Dragging anywhere on them moves only the private card.
+			if (!view.appearance.dashed) for (const member of [...view.members].reverse()) if (inside(this.point(member, view), MAGNET_HIT_R)) return this.magnetTarget(member, view);
 			if (view.source.kind === "team") {
 				const id = view.source.teamId;
 				for (const slot of view.emptySlots) {
@@ -305,7 +307,7 @@ export class BoardRuntime {
 		this.lifted.set(parent?.key ?? view.key, ++this.z);
 		const binding = this.bindings.get(view.key); if (binding) binding.animation = undefined;
 		const bs = useBoardStore.getState();
-		if (view.kind === "card") bs.markManualLayout();
+		if (view.kind === "card") { if (view.source.kind !== "proposal") bs.markManualLayout(); }
 		else bs.setDragInfo({ playerId: view.player.id, detachable: !this.callbacks.proposals?.getSnapshot().enabled && (view.source.kind === "anchor" || view.ghost), restable: useSessionStore.getState().isEditor && !view.ghost && view.source.kind !== "playing" });
 		this.committing = false; this.publish();
 	}

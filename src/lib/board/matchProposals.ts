@@ -1,6 +1,7 @@
 import type { MagnetPosition, StagePoint } from "../../types/board";
-import { PAIR_RADIUS } from "./constants";
-import { clampAnchor, distance, isInsideTeamBounds } from "./geometry";
+import type { MatchProposal } from "../supabase/matchProposals";
+import { PAIR_RADIUS, TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_W } from "./constants";
+import { clampAnchor, distance, isInsideTeamBounds, teamRect } from "./geometry";
 
 export interface ProposalGroup {
 	id: string;
@@ -8,10 +9,58 @@ export interface ProposalGroup {
 	anchor: StagePoint;
 }
 
+export function isActiveMatchProposal(proposal: MatchProposal): boolean {
+	return proposal.status === "pending" || proposal.status === "reviewed";
+}
+
 export interface ProposalComposerSnapshot {
 	enabled: boolean;
 	groups: readonly ProposalGroup[];
 	sendingIds: ReadonlySet<string>;
+	proposals: readonly MatchProposal[];
+	anchors: ReadonlyMap<string, StagePoint>;
+	resolvingIds: ReadonlySet<string>;
+	viewerId: string | null;
+	isAdmin: boolean;
+}
+
+/** Private positions stay on this device; new cards avoid actual teams and other proposals. */
+export function placeProposalAnchors(ids: readonly string[], current: ReadonlyMap<string, StagePoint>,
+	obstacles: readonly StagePoint[], bounds: { width: number; height: number }): Map<string, StagePoint> {
+	const anchors = new Map<string, StagePoint>();
+	const occupied = [...obstacles];
+	for (const id of ids) {
+		const existing = current.get(id);
+		if (existing) {
+			const point = clampAnchor(existing, bounds.width, bounds.height);
+			anchors.set(id, point); occupied.push(point);
+		}
+	}
+	for (const id of ids) {
+		if (anchors.has(id)) continue;
+		let best = clampAnchor({ x: TEAM_W / 2, y: TEAM_BOX_ABOVE }, bounds.width, bounds.height);
+		let bestScore = Infinity;
+		const cols = Math.max(1, Math.floor((bounds.width - 24 + 16) / (TEAM_W + 16)));
+		const rowHeight = TEAM_BOX_ABOVE + TEAM_BOX_BELOW + 16;
+		const rows = Math.max(1, Math.ceil(bounds.height / rowHeight));
+		for (let row = 0; row < rows; row++) {
+			for (let col = 0; col < cols; col++) {
+				const { x, y } = clampAnchor({ x: 12 + TEAM_W / 2 + col * (TEAM_W + 16),
+					y: 10 + TEAM_BOX_ABOVE + row * rowHeight }, bounds.width, bounds.height);
+				const rect = teamRect({ x, y }, 8);
+				const score = occupied.reduce((sum, point) => {
+					const other = teamRect(point, 0);
+					return sum + Math.max(0, Math.min(rect.maxX, other.maxX) - Math.max(rect.minX, other.minX))
+						* Math.max(0, Math.min(rect.maxY, other.maxY) - Math.max(rect.minY, other.minY));
+				}, 0);
+				if (score < bestScore) { best = { x, y }; bestScore = score; }
+				if (score === 0) break;
+			}
+			if (bestScore === 0) break;
+		}
+		anchors.set(id, best); occupied.push(best);
+	}
+	return anchors;
 }
 
 /** A separate local model: none of these commands modify shared board membership. */

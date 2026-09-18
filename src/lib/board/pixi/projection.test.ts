@@ -3,6 +3,8 @@ import type { BoardState } from "../../../store/board/types";
 import type { SessionState } from "../../../store/sessionStoreState";
 import type { Court, SessionPlayer } from "../../../types";
 import type { DraftTeam } from "../../../types/board";
+import type { ProposalComposerSnapshot } from "../matchProposals";
+import type { MatchProposal } from "../../supabase/matchProposals";
 import { CTA_DISABLED_COLOR, CTA_PLAY_COLOR, CTA_START_COLOR, TEAM_BOX_ABOVE, TEAM_CONFIRMED_BG, TEAM_READY_BG, TEAM_RESERVED_BG, TEAM_W } from "../constants";
 import { createBoardProjection } from "./projection";
 import type { BoardSnapshot, CardView, MagnetView } from "./types";
@@ -40,6 +42,27 @@ function card(snapshot: BoardSnapshot, key: string): CardView {
 }
 
 describe("Pixi board projection", () => {
+	it("shows sent proposals as private dashed groups for author and admin, with rejection only for admin", () => {
+		const { bs, ss } = fixture();
+		ss.isEditor = false;
+		const proposal: MatchProposal = { id: "p", session_id: 1, created_by: "author", creator_name: "민수",
+			player_ids: ["a", "b"], player_names: ["a", "b"], status: "pending", created_at: "2026-09-18" };
+		const state: ProposalComposerSnapshot = { enabled: true, groups: [], sendingIds: new Set(), proposals: [proposal],
+			anchors: new Map([["p", { x: 200, y: 250 }]]), resolvingIds: new Set(), viewerId: "author", isAdmin: false };
+		const project = createBoardProjection();
+		const author = card(project(bs, ss, state), "proposal:p");
+		expect(author.appearance).toMatchObject({ dashed: true, ctaLabel: "제안 취소", showUnconfirm: false });
+		expect(author.members).toHaveLength(2);
+		expect(author.members.every((member) => !member.draggable)).toBe(true);
+		expect(project(bs, ss, { ...state, viewerId: "other" }).entities.some((item) => item.key === "proposal:p")).toBe(false);
+		const admin = { ...state, enabled: false, isAdmin: true, viewerId: "admin" };
+		expect(card(project(bs, ss, admin), "proposal:p").appearance).toMatchObject({ dashed: true, ctaLabel: "확인했어요", ctaEnabled: true, showUnconfirm: true });
+		for (const status of ["withdrawn", "rejected"] as const) {
+			expect(project(bs, ss, { ...admin, proposals: [{ ...proposal, status }] }).entities.some((item) => item.key === "proposal:p")).toBe(false);
+		}
+		expect(bs.drafts.size).toBe(0);
+	});
+
 	it("keeps team/free/court order, world card positions and local member slots", () => {
 		const { bs, ss } = fixture();
 		team(bs, "T", ["a", "b"], { slots: { a: 3, b: 1 } });

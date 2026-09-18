@@ -7,14 +7,16 @@ import { useMatchProposalStore } from "../store/matchProposalStore";
 import { toast } from "../store/toastStore";
 import { supabase } from "../lib/supabase/client";
 import { fetchMatchProposals, sendMatchProposal, updateMatchProposal } from "../lib/supabase/matchProposals";
-import { dropProposalMember, removeProposalMember, type ProposalComposer, type ProposalComposerSnapshot } from "../lib/board/matchProposals";
-import { clampAnchor } from "../lib/board/geometry";
-import { playingIdsFromCourts } from "../lib/board/membership";
+import { dropProposalMember, isActiveMatchProposal, placeProposalAnchors, removeProposalMember, type ProposalComposer, type ProposalComposerSnapshot } from "../lib/board/matchProposals";
+import { clampAnchor, isInsideTeamBounds } from "../lib/board/geometry";
+import { cockPendingIds, playingIdsFromCourts } from "../lib/board/membership";
+import { arrangeBoard } from "../lib/board/arrange";
 import { randomId } from "../lib/randomId";
 import { settleFreeMagnets } from "../lib/board/settle";
 import type { DraftTeam } from "../types/board";
 
-const EMPTY: ProposalComposerSnapshot = { enabled: false, groups: [], sendingIds: new Set() };
+const EMPTY: ProposalComposerSnapshot = { enabled: false, groups: [], sendingIds: new Set(),
+	proposals: [], anchors: new Map(), resolvingIds: new Set(), viewerId: null, isAdmin: false };
 
 export function matchProposalScope() {
 	const auth = useAuthStore.getState();
@@ -28,16 +30,48 @@ function editable() {
 }
 
 /** Keep surrounding magnets reachable without putting private groups into boardStore.drafts. */
-export function settleProposalLayout() {
-	if (!editable()) return;
-	const { groups } = useMatchProposalStore.getState();
-	if (!groups.length) return;
+export function settleProposalLayout(rearrange = false) {
+	const state = useMatchProposalStore.getState();
+	if (!state.scope || state.scope !== matchProposalScope()) return;
+	const groups = state.groups;
+	const { proposals } = state;
 	const board = useBoardStore.getState();
 	const session = useSessionStore.getState();
+	const visible = proposals.filter((proposal) => isActiveMatchProposal(proposal)
+		&& (state.isAdmin || proposal.created_by === state.viewerId));
+	const realAnchors = [...[...board.drafts.values()].map((team) => team.anchor), ...board.courtAnchors.values()];
+	if (rearrange) {
+		// Arrange cloned layout data with private cards as temporary obstacles. Never put them in shared drafts.
+		const magnets = new Map([...board.magnets].map(([id, magnet]) => [id, { ...magnet }]));
+		const drafts = new Map([...board.drafts].map(([id, team]) => [id, { ...team }]));
+		const courtAnchors = new Map(board.courtAnchors);
+		const privateIds = [...groups.map((group) => group.id), ...visible.map((proposal) => proposal.id)];
+		for (const id of privateIds) drafts.set(`proposal:${id}`, { id: `proposal:${id}`, anchorMemberIds: [],
+			anchor: { x: 0, y: 0 }, createdAt: Number.MAX_SAFE_INTEGER });
+		const excluded = playingIdsFromCourts(session.courts);
+		for (const group of groups) for (const id of group.playerIds) excluded.add(id);
+		arrangeBoard({ magnets, drafts, reservations: board.reservations, courtAnchors, courts: session.courts,
+			sessionPlayers: session.sessionPlayers, playingIds: excluded, restingIds: new Set(session.restingIds),
+			cockPendingIds: cockPendingIds(session.sessionPlayers.values(), session.cockCheckEnabled),
+			viewW: board.stageW, viewH: board.stageH });
+		useBoardStore.setState({ magnets, courtAnchors });
+		useMatchProposalStore.setState({
+			groups: groups.map((group) => ({ ...group, anchor: drafts.get(`proposal:${group.id}`)!.anchor })),
+			anchors: new Map(visible.map((proposal) => [proposal.id, drafts.get(`proposal:${proposal.id}`)!.anchor])),
+		});
+		return;
+	}
+	const anchors = placeProposalAnchors(visible.map((proposal) => proposal.id), state.anchors,
+		[...groups.map((group) => group.anchor), ...realAnchors],
+		{ width: board.stageW, height: board.stageH });
+	if (anchors.size !== state.anchors.size || [...anchors].some(([id, point]) =>
+		point.x !== state.anchors.get(id)?.x || point.y !== state.anchors.get(id)?.y)) useMatchProposalStore.setState({ anchors });
+	if (!groups.length && !anchors.size) return;
 	const magnets = new Map([...board.magnets].map(([id, magnet]) => [id, { ...magnet }]));
 	const obstacles = new Map<string, DraftTeam>(board.drafts);
 	for (const group of groups) obstacles.set(`proposal:${group.id}`, { id: `proposal:${group.id}`,
 		anchorMemberIds: [], anchor: group.anchor, createdAt: 0 });
+	for (const [id, anchor] of anchors) obstacles.set(`proposal:${id}`, { id: `proposal:${id}`, anchorMemberIds: [], anchor, createdAt: 0 });
 	for (const [id, anchor] of board.courtAnchors) obstacles.set(`court:${id}`, { id: `court:${id}`, anchorMemberIds: [], anchor, createdAt: 0 });
 	const excluded = playingIdsFromCourts(session.courts);
 	for (const group of groups) for (const id of group.playerIds) excluded.add(id);
@@ -67,6 +101,7 @@ export const proposalComposer: ProposalComposer = {
 		const board = useBoardStore.getState();
 		const session = useSessionStore.getState();
 		if (!session.sessionPlayers.has(playerId)) return;
+		if ([...state.anchors.values()].some((anchor) => isInsideTeamBounds(point, anchor))) return;
 		if (state.groups.some((group) => state.sendingIds.has(group.id) && group.playerIds.includes(playerId))) return;
 		// Freeze a sending group so a pending request and the visible selection cannot diverge.
 		const frozen = state.groups.filter((group) => state.sendingIds.has(group.id));
@@ -82,11 +117,14 @@ export const proposalComposer: ProposalComposer = {
 		settleProposalLayout();
 	},
 	move: (groupId, point) => {
-		if (!editable()) return;
 		const board = useBoardStore.getState();
 		const state = useMatchProposalStore.getState();
-		state.setGroups(state.groups.map((group) => group.id === groupId
-			? { ...group, anchor: clampAnchor(point, board.stageW, board.stageH) } : group));
+		if (!state.scope || state.scope !== matchProposalScope()) return;
+		const anchor = clampAnchor(point, board.stageW, board.stageH);
+		if (state.proposals.some((proposal) => proposal.id === groupId && isActiveMatchProposal(proposal)
+			&& (state.isAdmin || proposal.created_by === state.viewerId))) {
+			useMatchProposalStore.setState({ anchors: new Map(state.anchors).set(groupId, anchor) });
+		} else if (editable()) state.setGroups(state.groups.map((group) => group.id === groupId ? { ...group, anchor } : group));
 		settleProposalLayout();
 	},
 	removeMember: (playerId) => {
@@ -96,11 +134,21 @@ export const proposalComposer: ProposalComposer = {
 		state.setGroups(removeProposalMember(state.groups, playerId));
 	},
 	removeGroup: (groupId) => {
-		if (!editable()) return;
 		const state = useMatchProposalStore.getState();
-		if (!state.sendingIds.has(groupId)) state.setGroups(state.groups.filter((group) => group.id !== groupId));
+		if (!state.scope || state.scope !== matchProposalScope()) return;
+		if (state.isAdmin && state.proposals.some((proposal) => proposal.id === groupId)) {
+			void resolveProposal(groupId, "rejected");
+		} else if (editable() && !state.sendingIds.has(groupId)) state.setGroups(state.groups.filter((group) => group.id !== groupId));
 	},
-	submit: (groupId) => { void submitGroup(groupId); },
+	submit: (groupId) => {
+		const state = useMatchProposalStore.getState();
+		if (!state.scope || state.scope !== matchProposalScope()) return;
+		const proposal = state.proposals.find((item) => item.id === groupId);
+		if (proposal) {
+			if (state.isAdmin && proposal.status === "pending") void resolveProposal(groupId, "reviewed");
+			else if (proposal.created_by === state.viewerId) void resolveProposal(groupId, "withdrawn");
+		} else void submitGroup(groupId);
+	},
 };
 
 async function submitGroup(groupId: string) {
@@ -116,7 +164,8 @@ async function submitGroup(groupId: string) {
 		if (useMatchProposalStore.getState().scope !== scope || matchProposalScope() !== scope) return;
 		useMatchProposalStore.setState((current) => ({
 			groups: current.groups.filter((item) => item.id !== groupId),
-			proposals: [proposal, ...current.proposals.filter((item) => item.id !== proposal.id)], error: null,
+			proposals: [proposal, ...current.proposals.filter((item) => item.id !== proposal.id)].filter(isActiveMatchProposal), error: null,
+			anchors: new Map(current.anchors).set(groupId, current.groups.find((item) => item.id === groupId)?.anchor ?? group.anchor),
 			revision: current.revision + 1,
 		}));
 		toast("운영진에게 매칭 제안을 보냈어요", { variant: "success" });
@@ -131,13 +180,27 @@ async function submitGroup(groupId: string) {
 	}
 }
 
-export async function resolveProposal(id: string, status: "reviewed" | "withdrawn") {
+export async function resolveProposal(id: string, status: "reviewed" | "withdrawn" | "rejected") {
 	const scope = matchProposalScope();
-	await updateMatchProposal(id, status);
-	if (scope !== matchProposalScope() || useMatchProposalStore.getState().scope !== scope) return;
-	useMatchProposalStore.setState((state) => ({ revision: state.revision + 1, proposals: status === "withdrawn"
-		? state.proposals.filter((item) => item.id !== id)
-		: state.proposals.map((item) => item.id === id ? { ...item, status } : item) }));
+	const state = useMatchProposalStore.getState();
+	const proposal = state.proposals.find((item) => item.id === id);
+	if (!scope || state.scope !== scope || state.resolvingIds.has(id) || !proposal || !isActiveMatchProposal(proposal)
+		|| (status === "withdrawn" ? proposal.created_by !== state.viewerId : !state.isAdmin)) return;
+	useMatchProposalStore.setState({ resolvingIds: new Set([...state.resolvingIds, id]) });
+	try {
+		await updateMatchProposal(id, status);
+		if (scope !== matchProposalScope() || useMatchProposalStore.getState().scope !== scope) return;
+		useMatchProposalStore.setState((current) => ({ revision: current.revision + 1, proposals: status !== "reviewed"
+			? current.proposals.filter((item) => item.id !== id)
+			: current.proposals.map((item) => item.id === id ? { ...item, status } : item) }));
+		toast(status === "rejected" ? "매칭 제안을 거절했어요" : status === "withdrawn" ? "매칭 제안을 취소했어요" : "매칭 제안을 확인했어요", { variant: "success" });
+	} catch {
+		if (scope === matchProposalScope()) toast("처리하지 못했어요. 다시 눌러주세요.", { variant: "error" });
+	} finally {
+		if (scope === matchProposalScope() && useMatchProposalStore.getState().scope === scope) useMatchProposalStore.setState((current) => {
+			const resolvingIds = new Set(current.resolvingIds); resolvingIds.delete(id); return { resolvingIds };
+		});
+	}
 }
 
 export function useMatchProposals() {
@@ -150,9 +213,10 @@ export function useMatchProposals() {
 	const bounds = useBoardStore((state) => `${state.stageW}:${state.stageH}`);
 	const drafts = useBoardStore((state) => state.drafts);
 	const courts = useSessionStore((state) => state.courts);
+	const proposals = useMatchProposalStore((state) => state.proposals);
 	const playerIds = useSessionStore((state) => [...state.sessionPlayers.keys()].join(","));
 	useEffect(() => {
-		if (!editable()) return;
+		if (!matchProposalScope()) return;
 		const state = useMatchProposalStore.getState();
 		const board = useBoardStore.getState();
 		const players = useSessionStore.getState().sessionPlayers;
@@ -165,10 +229,10 @@ export function useMatchProposals() {
 		}).filter((group) => group.playerIds.length > 0);
 		if (changed) state.setGroups(groups);
 		settleProposalLayout();
-	}, [bounds, drafts, courts, playerIds]);
+	}, [bounds, drafts, courts, playerIds, proposals]);
 	useEffect(() => {
 		const scope = matchProposalScope();
-		useMatchProposalStore.getState().reset(scope ?? undefined, !isAdmin && participating && !!scope);
+		useMatchProposalStore.getState().reset(scope ?? undefined, !isAdmin && participating && !!scope, userId, isAdmin);
 		if (!sessionId || !scope) return;
 		let disposed = false;
 		let request = 0;
@@ -181,10 +245,15 @@ export function useMatchProposals() {
 				const proposals = await fetchMatchProposals(sessionId);
 				if (!disposed && sequence === request && scope === matchProposalScope()) {
 					if (revision !== useMatchProposalStore.getState().revision) { void refresh(); return; }
-					useMatchProposalStore.setState({ proposals, error: null });
+					useMatchProposalStore.setState({ proposals: proposals.filter((proposal) => isActiveMatchProposal(proposal)
+						&& (isAdmin || proposal.created_by === userId)), error: null });
 				}
 			} catch {
-				if (!disposed && sequence === request && scope === matchProposalScope()) useMatchProposalStore.setState({ error: "제안을 불러오지 못했어요. 잠시 후 다시 확인할게요." });
+				if (!disposed && sequence === request && scope === matchProposalScope()) {
+					const error = "제안을 불러오지 못했어요. 잠시 후 다시 확인할게요.";
+					if (!useMatchProposalStore.getState().error) toast(error, { variant: "error" });
+					useMatchProposalStore.setState({ error });
+				}
 			} finally {
 				if (!disposed && sequence === request && scope === matchProposalScope()) useMatchProposalStore.setState({ loading: false });
 			}

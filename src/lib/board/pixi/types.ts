@@ -21,6 +21,7 @@ export interface MagnetAppearance {
 export interface CardAppearance {
 	fill: string;
 	stroke: string;
+	dashed?: boolean;
 	label: string;
 	labelColor: string;
 	labelBold: boolean;

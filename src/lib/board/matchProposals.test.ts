@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { dropProposalMember, removeProposalMember, type ProposalGroup } from "./matchProposals";
+import { dropProposalMember, placeProposalAnchors, removeProposalMember, type ProposalGroup } from "./matchProposals";
+import { teamRect } from "./geometry";
 
 const bounds = { width: 800, height: 600 };
 const point = { x: 200, y: 250 };
@@ -31,5 +32,17 @@ describe("private proposal composition", () => {
 	it("dragging out removes membership; removing the last member removes only that group", () => {
 		expect(dropProposalMember([group(["a", "b"])], "a", { x: 700, y: 500 }, [], bounds, "new")[0].playerIds).toEqual(["b"]);
 		expect(removeProposalMember([group(["a"])], "a")).toEqual([]);
+	});
+	it("arranges private cards around real groups while preserving existing local positions", () => {
+		const actual = { x: 91, y: 111 };
+		const anchors = placeProposalAnchors(["local", "sent"], new Map(), [actual], bounds);
+		const rects = [actual, ...anchors.values()].map((anchor) => teamRect(anchor, 0));
+		for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
+			const a = rects[i], b = rects[j];
+			expect(a.maxX <= b.minX || b.maxX <= a.minX || a.maxY <= b.minY || b.maxY <= a.minY).toBe(true);
+		}
+		const moved = new Map(anchors).set("sent", { x: 600, y: 300 });
+		expect(placeProposalAnchors(["sent"], moved, [], bounds)).toEqual(new Map([["sent", { x: 600, y: 300 }]]));
+		expect(placeProposalAnchors(["sent"], new Map(), [], bounds).get("sent")).not.toEqual(moved.get("sent"));
 	});
 });

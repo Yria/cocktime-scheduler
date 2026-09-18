@@ -1,7 +1,7 @@
 import type { BoardState } from "../../../store/board/types";
 import type { useSessionStore } from "../../../store/sessionStore";
 import type { StagePoint } from "../../../types/board";
-import type { ProposalComposerSnapshot } from "../matchProposals";
+import { isActiveMatchProposal, type ProposalComposerSnapshot } from "../matchProposals";
 import {
 	CTA_DISABLED_COLOR, CTA_FINISH_COLOR, CTA_PLAY_COLOR, CTA_START_COLOR,
 	TEAM_BOX_ABOVE, TEAM_CONFIRMED_BG, TEAM_CONFIRMED_STROKE,
@@ -27,7 +27,7 @@ function samePoint(a: StagePoint, b: StagePoint): boolean {
 }
 
 function sameAppearance(a: CardAppearance, b: CardAppearance): boolean {
-	return (Object.keys(a) as (keyof CardAppearance)[]).every((key) => a[key] === b[key]);
+	return a.dashed === b.dashed && (Object.keys(a) as (keyof CardAppearance)[]).every((key) => a[key] === b[key]);
 }
 
 /**
@@ -43,7 +43,8 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 		const draggedPlayerId = bs.dragInfo?.playerId ?? null;
 		const inputs = [bs.magnets, bs.drafts, bs.reservations, bs.courtAnchors, draggedPlayerId,
 			ss.sessionPlayers, ss.courts, ss.restingIds, ss.cockCheckEnabled, ss.isEditor,
-			proposals?.enabled, proposals?.groups, proposals?.sendingIds];
+			proposals?.enabled, proposals?.groups, proposals?.sendingIds, proposals?.proposals,
+			proposals?.anchors, proposals?.resolvingIds, proposals?.viewerId, proposals?.isAdmin];
 		if (sameArray(previousInputs, inputs)) return previous;
 		previousInputs = inputs;
 
@@ -186,7 +187,39 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 					fill: PROPOSAL_BG, stroke: PROPOSAL_STROKE, label: `나만 보는 묶음 · ${group.playerIds.length}/4`,
 					labelColor: PROPOSAL_STROKE, labelBold: true, showVs: false,
 					ctaLabel: sending ? "보내는 중…" : "매칭 제안", ctaColor: sending ? CTA_DISABLED_COLOR : PROPOSAL_CTA,
-					ctaEnabled: !sending && members.length === group.playerIds.length, showUnconfirm: !sending, showEdit: false, blink: false,
+					ctaEnabled: !sending && members.length === group.playerIds.length, showUnconfirm: false, showEdit: false, blink: false,
+				},
+			});
+		}
+
+		for (const proposal of proposals?.proposals ?? []) {
+			if (!proposals || !isActiveMatchProposal(proposal)
+				|| (!proposals.isAdmin && proposal.created_by !== proposals.viewerId)) continue;
+			const point = proposals.anchors.get(proposal.id);
+			if (!point) continue;
+			const source: CardView["source"] = { kind: "proposal", groupId: proposal.id };
+			const busy = proposals.resolvingIds.has(proposal.id);
+			const canReview = proposals.isAdmin && proposal.status === "pending";
+			const canWithdraw = proposal.created_by === proposals.viewerId;
+			const members = proposal.player_ids.map((playerId, index): MagnetView => {
+				const memberSource: BoardSource = { kind: "proposal-member", playerId, groupId: proposal.id };
+				return { kind: "magnet", key: sourceKey(memberSource), source: memberSource,
+					point: computeSlotOffset(index), draggable: false, ghost: false, resting: false, cockPending: false,
+					player: ss.sessionPlayers.get(playerId) ?? {
+						id: playerId, playerId, memberId: null, name: proposal.player_names[index], gender: "M", skills: { grade: 0 },
+						status: "waiting", gameCount: 0, mixedCount: 0, waitSince: null, joinedAtMatch: 0, allowMixedSingle: false, cockChecked: true,
+					},
+				};
+			});
+			card({ kind: "card", key: sourceKey(source), source, point, draggable: true, members,
+				emptySlots: emptySlotIndices(new Set(proposal.player_ids.map((_, index) => index))), confirmed: false,
+				appearance: {
+					fill: PROPOSAL_BG, stroke: PROPOSAL_STROKE, dashed: true,
+					label: `${proposal.status === "reviewed" ? "확인한 제안" : "매칭 제안"} · ${proposal.creator_name}`,
+					labelColor: PROPOSAL_STROKE, labelBold: true, showVs: false,
+					ctaLabel: busy ? "처리 중…" : canReview ? "확인했어요" : canWithdraw ? "제안 취소" : "운영진 확인",
+					ctaColor: !busy && (canReview || canWithdraw) ? PROPOSAL_CTA : CTA_DISABLED_COLOR,
+					ctaEnabled: !busy && (canReview || canWithdraw), showUnconfirm: proposals.isAdmin, showEdit: false, blink: false,
 				},
 			});
 		}

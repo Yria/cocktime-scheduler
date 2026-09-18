@@ -21,6 +21,8 @@ grant execute on function auth.uid(), public.is_admin() to authenticated;
 `);
 const sql = readFileSync(new URL('../migrations/20260918010000_private_match_proposals.sql', import.meta.url), 'utf8');
 await db.exec(sql); await db.exec(sql);
+const rejectionSql = readFileSync(new URL('../migrations/20260918020000_reject_match_proposals.sql', import.meta.url), 'utf8');
+await db.exec(rejectionSql); await db.exec(rejectionSql);
 const uid = (n) => `00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
 for (let i=1;i<=8;i++) {
  await db.query('insert into auth.users values($1)',[uid(i)]);
@@ -49,6 +51,7 @@ await assert.rejects(db.query('select public.create_match_proposal(1,$1,array[nu
 assert.equal((await send(202,[3])).player_ids.length,1); // Author need not be among proposed members.
 assert.equal((await send(203,[2,3,4,5])).player_ids.length,4);
 await assert.rejects(resolve(200,'reviewed')); // Ordinary member cannot impersonate staff.
+await assert.rejects(resolve(200,'rejected')); // Authors cannot reject on behalf of administrators.
 await assert.rejects(db.query("update public.match_proposals set status='reviewed'"));
 await assert.rejects(db.query('delete from public.match_proposals'));
 await assert.rejects(db.query('insert into public.match_proposals(id,session_id,created_by,creator_name,player_ids,player_names) values($1,1,$2,\'forged\',array[$2]::uuid[],array[\'forged\'])',[uid(300),uid(3)]));
@@ -66,6 +69,14 @@ assert.deepEqual(await list(),[]);
 await as(2); assert.equal((await list()).find(p=>p.id===uid(200)).status,'reviewed');
 await resolve(200,'withdrawn'); await resolve(200,'withdrawn');
 await as(1); await assert.rejects(resolve(200,'reviewed')); // Delayed staff action cannot revive withdrawn proposal.
+await assert.rejects(resolve(200,'rejected'));
+await resolve(203,'rejected'); await resolve(203,'rejected'); // Admin dismissal is idempotent.
+await assert.rejects(resolve(203,'reviewed')); // A stale confirmation cannot revive a rejection.
+await as(2);
+assert.equal((await list()).find(p=>p.id===uid(203)).status,'rejected'); // The author can receive the terminal UPDATE.
+await assert.rejects(resolve(203,'withdrawn'));
+assert.equal((await send(203,[2,3,4,5])).status,'rejected'); // A delayed send retry does not re-open it.
+await as(3); assert.equal((await list()).some(p=>p.id===uid(203)),false);
 await as(0,'anon'); await assert.rejects(list()); await assert.rejects(send(206,[2]));
 await as(0); await assert.rejects(send(206,[2]));
 await db.exec('reset role');
@@ -73,4 +84,4 @@ assert.deepEqual((await db.query('select board_drafts from public.sessions where
 await db.exec("update public.sessions set status='closed' where id=1");
 await as(2); await assert.rejects(send(206,[2]));
 await db.close();
-console.log('Private match proposal SQL: RLS, roles, 1–4 members, idempotency, lifecycle and shared-board isolation passed.');
+console.log('Private match proposal SQL: RLS, roles, 1–4 members, idempotency, rejection lifecycle and shared-board isolation passed.');
