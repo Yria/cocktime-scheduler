@@ -53,7 +53,8 @@ function CardContents({ runtime, view, presentation, preview = false }: {
 	useLayoutEffect(() => { runtime.scheduler.invalidate(); });
 	return <>
 		<CardVisual appearance={view.appearance} dragging={presentation.playerDragging} flash={flash} />
-		{hover?.kind === "slot" && view.source.kind === "team" && hover.teamId === view.source.teamId && (
+		{hover?.kind === "slot" && ((view.source.kind === "team" && hover.teamId === view.source.teamId)
+			|| (view.source.kind === "proposal" && hover.teamId === view.source.groupId)) && (
 			<pixiContainer x={computeSlotOffset(hover.slotIndex).x} y={computeSlotOffset(hover.slotIndex).y}><SlotHoverVisual /></pixiContainer>
 		)}
 		{view.emptySlots.map((slot) => {

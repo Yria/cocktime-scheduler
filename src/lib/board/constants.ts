@@ -94,6 +94,11 @@ export const TEAM_QUEUED_STROKE = "#3B82F6";
 export const TEAM_CONFIRMED_BG = "#172554";
 export const TEAM_CONFIRMED_STROKE = "#3B82F6";
 
+// Private, unsent member proposals. Distinct from actual teams and court reservations.
+export const PROPOSAL_BG = "#083344";
+export const PROPOSAL_STROKE = "#67E8F9";
+export const PROPOSAL_CTA = "#0E7490";
+
 // CTA
 export const CTA_START_COLOR = "#22C55E";
 export const CTA_FINISH_COLOR = "#3B82F6";

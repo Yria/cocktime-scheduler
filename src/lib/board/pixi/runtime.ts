@@ -3,8 +3,9 @@ import { useBoardStore } from "../../../store/boardStore";
 import { useDebugStore } from "../../../store/debugStore";
 import { useSessionStore } from "../../../store/sessionStore";
 import type { StagePoint } from "../../../types/board";
-import { EMPTY_SLOT_R, MAGNET_HIT_R, TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_W } from "../constants";
-import { computeSlotOffset, isInDetachZone, isInRestField } from "../geometry";
+import { EMPTY_SLOT_R, MAGNET_HIT_R, PAIR_RADIUS, TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_W } from "../constants";
+import { computeSlotOffset, isInDetachZone, isInRestField, isInsideTeamBounds } from "../geometry";
+import type { ProposalComposer } from "../matchProposals";
 import { resolveDropTarget } from "../dropResolver";
 import { cockPendingIds, playingIdsFromCourts } from "../membership";
 import { registerBoardCameraFlush } from "./cameraBridge";
@@ -20,6 +21,7 @@ export interface BoardCallbacks {
 	onCockCheck: (id: string) => void;
 	onSlotClick: (id: string) => void;
 	onEditMatch: (id: number) => void;
+	proposals?: ProposalComposer;
 }
 
 interface Binding {
@@ -57,6 +59,7 @@ export class BoardRuntime {
 	private pendingHover = false;
 	private skipAnimationPlayer: string | null = null;
 	private cleanups: (() => void)[] = [];
+	private proposalUnsubscribe?: () => void;
 	private presentation: BoardPresentation;
 	private eligibility: { players: unknown; courts: unknown; resting: unknown; cock: boolean; playing: Set<string>; notReady: Set<string>; restingIds: Set<string> } | null = null;
 	readonly scheduler;
@@ -85,13 +88,22 @@ export class BoardRuntime {
 			onCancel: () => this.cancelDrag(),
 		});
 		this.cleanups.push(useBoardStore.subscribe(this.refresh), useSessionStore.subscribe(this.refresh));
+		this.proposalUnsubscribe = callbacks.proposals?.subscribe(this.refresh);
+		this.cleanups.push(() => this.proposalUnsubscribe?.());
 		this.cleanups.push(registerBoardCameraFlush(() => this.controller.flushZoom()));
 		this.attachInput(app.canvas);
 	}
 
 	getSnapshot = () => this.presentation;
 	subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-	setCallbacks(callbacks: BoardCallbacks) { this.callbacks = callbacks; }
+	setCallbacks(callbacks: BoardCallbacks) {
+		if (callbacks.proposals !== this.callbacks.proposals) {
+			this.proposalUnsubscribe?.();
+			this.proposalUnsubscribe = callbacks.proposals?.subscribe(this.refresh);
+		}
+		this.callbacks = callbacks;
+		this.refresh();
+	}
 	setWorld = (node: Container | null) => { this.world = node; this.scheduler.invalidate(); };
 	setPreview = (node: Container | null) => { this.preview = node; this.scheduler.invalidate(); };
 	zIndex(key: string, initial: number) { return this.lifted.get(key) ?? initial; }
@@ -99,8 +111,9 @@ export class BoardRuntime {
 
 	private readPresentation(): BoardPresentation {
 		const bs = useBoardStore.getState();
-		return { scene: this.projection(bs, useSessionStore.getState()), drag: this.dragging, hover: bs.hoverTarget, playerDragging: bs.dragInfo !== null };
+		return { scene: this.readScene(), drag: this.dragging, hover: bs.hoverTarget, playerDragging: bs.dragInfo !== null };
 	}
+	private readScene() { return this.projection(useBoardStore.getState(), useSessionStore.getState(), this.callbacks.proposals?.getSnapshot()); }
 
 	private refresh = () => {
 		if (this.disposed || this.committing) return;
@@ -186,11 +199,11 @@ export class BoardRuntime {
 		return scene.entities.flatMap((e) => e.kind === "card" ? [e, ...e.members] : [e]);
 	}
 	private find(source: BoardSource, scene = this.presentation.scene) { return this.allViews(scene).find((v) => v.key === sourceKey(source)); }
-	private isValid(source: BoardSource, scene = this.projection(useBoardStore.getState(), useSessionStore.getState())) {
+	private isValid(source: BoardSource, scene = this.readScene()) {
 		const view = this.find(source, scene);
 		return !!view && JSON.stringify(view.source) === JSON.stringify(source);
 	}
-	private isDragValid(scene = this.projection(useBoardStore.getState(), useSessionStore.getState())) {
+	private isDragValid(scene = this.readScene()) {
 		const original = this.dragging?.view;
 		if (!original || !this.isValid(original.source, scene)) return false;
 		if (original.kind !== "card") return true;
@@ -219,6 +232,10 @@ export class BoardRuntime {
 			onDoubleTap: () => invoke(() => {
 				navigator.vibrate?.(30);
 				const bs = useBoardStore.getState(); const source = view.source;
+				if (this.callbacks.proposals?.getSnapshot().enabled) {
+					if (source.kind === "proposal-member") this.callbacks.proposals.removeMember(source.playerId);
+					return;
+				}
 				if (source.kind === "ghost") bs.cancelReservation(source.reservationId);
 				else if (view.resting) bs.unrestPlayer(view.player.id);
 				else if (source.kind === "anchor") bs.detachMember(source.playerId, this.point(view, parent));
@@ -240,11 +257,20 @@ export class BoardRuntime {
 			const controls = cardControls(view.appearance.showUnconfirm);
 			const inControl = (rect: typeof controls.main | null) => rect !== null
 				&& x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+			if (view.source.kind === "proposal") {
+				const id = view.source.groupId;
+				const action = inControl(controls.unconfirm) ? "remove" : inControl(controls.main) ? "submit" : null;
+				if (action) return { key: `${view.key}:${action}`, point: center, draggable: false, onTap: () => {
+					if (!this.isValid(view.source) || !this.callbacks.proposals?.getSnapshot().enabled) return;
+					if (action === "remove") this.callbacks.proposals.removeGroup(id);
+					else if (view.appearance.ctaEnabled) this.callbacks.proposals.submit(id);
+				} };
+			}
 			if (view.source.kind === "team" && inControl(controls.unconfirm)) {
 				const id = view.source.teamId;
 				return button("unconfirm", () => useBoardStore.getState().unconfirmTeam(id));
 			}
-			if (inControl(controls.main)) {
+			if (view.source.kind !== "proposal" && inControl(controls.main)) {
 				if (view.source.kind === "court") { const id = view.source.courtId; return button("complete", () => { void useBoardStore.getState().completeMatch(id); }); }
 				const id = view.source.teamId;
 				if (view.appearance.ctaEnabled) return button("cta", () => {
@@ -280,7 +306,7 @@ export class BoardRuntime {
 		const binding = this.bindings.get(view.key); if (binding) binding.animation = undefined;
 		const bs = useBoardStore.getState();
 		if (view.kind === "card") bs.markManualLayout();
-		else bs.setDragInfo({ playerId: view.player.id, detachable: view.source.kind === "anchor" || view.ghost, restable: useSessionStore.getState().isEditor && !view.ghost && view.source.kind !== "playing" });
+		else bs.setDragInfo({ playerId: view.player.id, detachable: !this.callbacks.proposals?.getSnapshot().enabled && (view.source.kind === "anchor" || view.ghost), restable: useSessionStore.getState().isEditor && !view.ghost && view.source.kind !== "playing" });
 		this.committing = false; this.publish();
 	}
 
@@ -292,11 +318,14 @@ export class BoardRuntime {
 		this.committing = true; this.pendingHover = false;
 		const bs = useBoardStore.getState(); const source = drag.view.source;
 		try {
-			if (source.kind === "team") { bs.setTeamAnchor(source.teamId, point.x, point.y); bs.settleBoard({ teamId: source.teamId }); }
+			if (source.kind === "proposal") this.callbacks.proposals?.move(source.groupId, point);
+			else if (source.kind === "team") { bs.setTeamAnchor(source.teamId, point.x, point.y); bs.settleBoard({ teamId: source.teamId }); }
 			else if (source.kind === "court") { bs.setCourtAnchor(source.courtId, point.x, point.y); bs.settleBoard({ courtId: source.courtId }); }
 			else {
 				this.skipAnimationPlayer = source.playerId;
-				if (source.kind === "playing") bs.handlePlayingMagnetDrop(source.playerId, point);
+				if (this.callbacks.proposals?.getSnapshot().enabled) this.callbacks.proposals.drop(source.playerId, point);
+				else if (source.kind === "proposal-member") { /* Composer was disabled while dragging. */ }
+				else if (source.kind === "playing") bs.handlePlayingMagnetDrop(source.playerId, point);
 				else if (source.kind === "ghost") {
 					if (isInDetachZone(point)) bs.cancelReservation(source.reservationId);
 					else bs.handleGhostDrop(source.reservationId, point);
@@ -325,7 +354,7 @@ export class BoardRuntime {
 	}
 
 	private restoreSource(key: string) {
-		const latest = this.allViews(this.projection(useBoardStore.getState(), useSessionStore.getState())).find((v) => v.key === key);
+		const latest = this.allViews(this.readScene()).find((v) => v.key === key);
 		const binding = this.bindings.get(key);
 		if (latest && binding) {
 			binding.animation = undefined; binding.point = latest.point;
@@ -335,6 +364,24 @@ export class BoardRuntime {
 
 	private updateHover(source: BoardSource, point: StagePoint) {
 		const ss = useSessionStore.getState();
+		const proposals = this.callbacks.proposals?.getSnapshot();
+		if (proposals?.enabled) {
+			if (!("playerId" in source)) return;
+			const bs = useBoardStore.getState();
+			const group = [...proposals.groups].reverse().find((item) => isInsideTeamBounds(point, item.anchor));
+			if (group) {
+				bs.setHoverTarget(group.playerIds.length < 4 && !proposals.sendingIds.has(group.id)
+					? { kind: "slot", teamId: group.id, slotIndex: group.playerIds.length } : null);
+				return;
+			}
+			const selected = new Set(proposals.groups.flatMap((item) => item.playerIds));
+			const partner = this.presentation.scene.entities.find((view) => view.kind === "magnet"
+				&& view.source.kind === "free" && view.player.id !== source.playerId && !selected.has(view.player.id)
+				&& Math.hypot(view.point.x - point.x, view.point.y - point.y) <= PAIR_RADIUS);
+			bs.setHoverTarget(partner?.kind === "magnet" ? { kind: "magnet", id: partner.player.id } : null);
+			return;
+		}
+		if (source.kind === "proposal" || source.kind === "proposal-member") return;
 		if (!ss.isEditor || source.kind === "team" || source.kind === "court" || source.kind === "playing") return;
 		const bs = useBoardStore.getState();
 		const rest = isInRestField(point, this.height / this.scale);

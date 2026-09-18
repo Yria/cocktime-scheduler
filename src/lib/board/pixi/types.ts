@@ -6,6 +6,8 @@ export type BoardSource =
 	| { kind: "anchor"; playerId: string; teamId: string }
 	| { kind: "ghost"; playerId: string; teamId: string; reservationId: string }
 	| { kind: "playing"; playerId: string; courtId: number; matchId: string }
+	| { kind: "proposal-member"; playerId: string; groupId: string }
+	| { kind: "proposal"; groupId: string }
 	| { kind: "team"; teamId: string }
 	| { kind: "court"; courtId: number; matchId: string };
 
@@ -42,7 +44,7 @@ export interface MagnetView extends MagnetAppearance {
 export interface CardView {
 	kind: "card";
 	key: string;
-	source: Extract<BoardSource, { kind: "team" | "court" }>;
+	source: Extract<BoardSource, { kind: "team" | "court" | "proposal" }>;
 	point: StagePoint;
 	draggable: boolean;
 	appearance: CardAppearance;
@@ -66,5 +68,7 @@ export function sourceKey(source: BoardSource): string {
 		case "playing": return `playing:${source.courtId}:${source.matchId}:${source.playerId}`;
 		case "team": return `team:${source.teamId}`;
 		case "court": return `court:${source.courtId}:${source.matchId}`;
+		case "proposal": return `proposal:${source.groupId}`;
+		case "proposal-member": return `proposal:${source.groupId}:${source.playerId}`;
 	}
 }

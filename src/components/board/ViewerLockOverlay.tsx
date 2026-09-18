@@ -1,5 +1,6 @@
 import { useSessionStore } from "../../store/sessionStore";
 import { useBoardStore } from "../../store/boardStore";
+import { useAuthStore } from "../../store/authStore";
 import { TOOLBAR_H, COURT_BAR_H } from "../../lib/board/constants";
 
 /**
@@ -23,10 +24,11 @@ export default function ViewerLockOverlay() {
 	const isEditor = useSessionStore((s) => s.isEditor);
 	const lockSynced = useSessionStore((s) => s.lockSynced);
 	const openPresence = useBoardStore((s) => s.setPresenceModalOpen);
+	const isAdmin = useAuthStore((s) => s.isAdmin);
 
 	// 내가 편집자가 아니면 항상 보기 전용 표지 노출(자유·남이 보유 모두). lockSynced 전엔 서버 진실 미확정
 	// (초기 isEditor=false)이라 전원에게 깜빡 뜨는 것 방지로 숨긴다.
-	const locked = lockSynced && !isEditor;
+	const locked = isAdmin && lockSynced && !isEditor;
 	if (!locked) return null;
 
 	return (

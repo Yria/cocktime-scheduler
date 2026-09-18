@@ -65,7 +65,7 @@ interface Pinch {
 type Gesture = Press | Pinch | { phase: "suppressed" };
 
 function isMagnet(target: BoardInteractionTarget): boolean {
-	return target.source != null && target.source.kind !== "team" && target.source.kind !== "court";
+	return target.source != null && target.source.kind !== "team" && target.source.kind !== "court" && target.source.kind !== "proposal";
 }
 
 /**

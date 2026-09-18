@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoardStageLayout } from "../../hooks/useBoardStageLayout";
 import { useContainerSize } from "../../hooks/useContainerSize";
 import { useSessionBoardEffects } from "../../hooks/useSessionBoardEffects";
+import { useMatchProposals, settleProposalLayout } from "../../hooks/useMatchProposals";
 import { useBoardStore } from "../../store/boardStore";
+import { useAuthStore } from "../../store/authStore";
+import { useMatchProposalStore } from "../../store/matchProposalStore";
 import { useSessionStore } from "../../store/sessionStore";
 import { playingIdsFromCourts } from "../../lib/board/membership";
 import {
@@ -21,7 +24,7 @@ import MatchEditModal from "./MatchEditModal";
 import ViewerLockOverlay from "./ViewerLockOverlay";
 import EditorTakenNotice from "./EditorTakenNotice";
 import DebugMatchModal from "./DebugMatchModal";
-import MemberPartyPanel from "./MemberPartyPanel";
+import MatchProposalPanel from "./MatchProposalPanel";
 import { ArrangeFab, BoardSyncingBadge, NewTeamFab, ZoomControls } from "./SessionBoardChrome";
 import type { RecommendTarget } from "../../hooks/useTeammateRecommendations";
 
@@ -30,10 +33,6 @@ import type { RecommendTarget } from "../../hooks/useTeammateRecommendations";
 // (touch-action:none 으로도 시스템 엣지 제스처는 못 막음). 캔버스를 가장자리에서 띄워 드래그 영역을
 // 제스처 밴드 밖으로 보낸다. 거터 strip 은 같은 보드 배경색이라 시각적으로 이음매 없음. 줌과 무관(화면 px 고정).
 const EDGE_GUTTER = 16;
-
-// 2026-09-13 임시 중단. true로 되돌리면 회원 파티 버튼과 참여 기능을 다시 제공한다.
-// 패널을 마운트하지 않아 상태 조회·홀드 갱신·자동 확정도 실행하지 않는다.
-const MEMBER_PARTY_ENABLED = false;
 
 export default function SessionBoard() {
 	const stageContainerRef = useRef<HTMLDivElement | null>(null);
@@ -46,6 +45,9 @@ export default function SessionBoard() {
 		useBoardStageLayout(stageW, stageH, cw, ch);
 	// 세션 동기화/편집권 부수효과(풀 초기화·원격 멤버십 적용·Realtime 구독·자동 점유·I2 자가치유) — useSessionBoardEffects로 분리.
 	useSessionBoardEffects();
+	const proposals = useMatchProposals();
+	const isAdmin = useAuthStore((s) => s.isAdmin);
+	const showProposalPanel = useMatchProposalStore((s) => s.enabled || (isAdmin && s.scope !== null));
 
 	const courts = useSessionStore((s) => s.courts);
 	const playingIds = useMemo(() => playingIdsFromCourts(courts), [courts]);
@@ -127,9 +129,9 @@ export default function SessionBoard() {
 			{/* 드롭존 오버레이(칠판 밖 DOM) — 상단 '팀에서 빼기'는 네비 영역, 하단 '휴식하기'는 바텀 바 영역에 점선 박스+문구로 표시. */}
 			{showDetach && <DetachZoneOverlay />}
 			{showRest && <RestDropOverlay />}
-			<div ref={stageContainerRef} style={{ position: "absolute", top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top))`, left: `max(${EDGE_GUTTER}px, env(safe-area-inset-left))`, right: `max(${EDGE_GUTTER}px, env(safe-area-inset-right))`, bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px))`, touchAction: "none" }}>
+			<div ref={stageContainerRef} style={{ position: "absolute", top: `calc(${TOOLBAR_H + (showProposalPanel ? 72 : 0)}px + env(safe-area-inset-top))`, left: `max(${EDGE_GUTTER}px, env(safe-area-inset-left))`, right: `max(${EDGE_GUTTER}px, env(safe-area-inset-right))`, bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px))`, touchAction: "none" }}>
 				<SessionBoardRenderer width={stageW} height={stageH}
-					onMagnetClick={onMagnetClick} onCockCheck={onCockCheck} onSlotClick={openTeamRecommend} onEditMatch={onEditMatch} />
+					onMagnetClick={onMagnetClick} onCockCheck={onCockCheck} onSlotClick={openTeamRecommend} onEditMatch={onEditMatch} proposals={proposals} />
 			</div>
 			{/* 좌하단 + 버튼 — 빈 추천 모달을 열어 새 팀을 만든다(편집자만, 정렬 버튼과 대칭·동일 크기) */}
 			{isEditor && <NewTeamFab onClick={() => setRecommendTarget({ newTeam: true })} />}
@@ -137,7 +139,7 @@ export default function SessionBoard() {
 			{/* 줌 컨트롤(우상단) — 0.5~1배 축소(편집/보기 공통) */}
 			<ZoomControls setScale={setScale} />
 			{/* 우하단 플로팅 정렬 버튼 */}
-			<ArrangeFab onClick={arrangeAtCurrentScale} />
+			<ArrangeFab onClick={() => { arrangeAtCurrentScale(); settleProposalLayout(); }} />
 			{recommendTarget && (
 				<RecommendTeammateDialog
 					teamId={recommendTarget.teamId ?? undefined}
@@ -153,7 +155,7 @@ export default function SessionBoard() {
 				<CockCheckModal playerId={cockTarget} onClose={() => setCockTarget(null)} />
 			)}
 			<ViewerLockOverlay />
-			{MEMBER_PARTY_ENABLED && <MemberPartyPanel />}
+			<MatchProposalPanel />
 			<EditorTakenNotice />
 			<DebugMatchModal />
 		</div>
