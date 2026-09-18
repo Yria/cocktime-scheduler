@@ -9,6 +9,7 @@ import type { PhotoAsset } from "../../../lib/board/pixi/texturePool";
 import { usePlayerPhotoUrl } from "../../../lib/playerPhoto";
 import { getNameInitial } from "../../../lib/player";
 import { skillScore } from "../../../lib/teamSelection";
+import { useAuthStore } from "../../../store/authStore";
 import { magnetGenderInk, magnetSkillAngle, MAGNET_GENDER_RING_W, MAGNET_SKILL_ARC_RATIO } from "../../../lib/magnetStyle";
 import {
 	COCK_PENDING_COLOR, CTA_PLAY_FLASH, CTA_UNCONFIRM_COLOR, EMPTY_SLOT_R,
@@ -230,7 +231,7 @@ function bodyOpacity({ cockPending, ghost, resting }: MagnetAppearance) {
 	return cockPending ? 0.5 : ghost ? RESERVATION_OPACITY : resting ? RESTING_OPACITY : 1;
 }
 
-function paintMagnet(context: CanvasRenderingContext2D, appearance: MagnetAppearance, photo: HTMLImageElement | null, withShadow: boolean) {
+function paintMagnet(context: CanvasRenderingContext2D, appearance: MagnetAppearance, photo: HTMLImageElement | null, withShadow: boolean, showSkill: boolean) {
 	const { player, ghost, cockPending } = appearance;
 	// Apply opacity to each primitive before flattening; badges remain separate and opaque.
 	context.globalAlpha = bodyOpacity(appearance);
@@ -273,7 +274,7 @@ function paintMagnet(context: CanvasRenderingContext2D, appearance: MagnetAppear
 	context.lineWidth = MAGNET_GENDER_RING_W;
 	context.stroke();
 	ringBand(context, 360, RING_BG_COLOR);
-	ringBand(context, magnetSkillAngle(skillScore(player)), ghost ? "#9CA3AF" : RING_FG_COLOR);
+	if (showSkill) ringBand(context, magnetSkillAngle(skillScore(player)), ghost ? "#9CA3AF" : RING_FG_COLOR);
 	context.save();
 	if (withShadow) shadow(context, "rgba(0,0,0,0.6)", 3, 1);
 	text(context, player.name, -MAGNET_R, MAGNET_R - NAME_FONT - 10, MAGNET_SIZE, NAME_FONT, "#FFFFFF");
@@ -343,13 +344,14 @@ export const MagnetVisual = memo(function MagnetVisual({ appearance, dragging, h
 }) {
 	const url = usePlayerPhotoUrl(appearance.player.memberId);
 	const photo = usePhoto(url);
+	const showSkill = useAuthStore((state) => state.memberLoaded && state.isAdmin);
 	const { player, ghost, cockPending, resting } = appearance;
-	const key = JSON.stringify(["magnet", player.name, player.gender, skillScore(player), ghost, cockPending, resting, url, !!photo]);
+	const key = JSON.stringify(["magnet", player.name, player.gender, showSkill ? skillScore(player) : null, ghost, cockPending, resting, url, !!photo]);
 	const nameBottom = MAGNET_R - NAME_FONT - 10 + Math.ceil(Array.from(player.name).length * NAME_FONT / MAGNET_SIZE) * NAME_FONT + 5;
 	const bounds = { x: -40, y: -40, width: 80, height: Math.max(40, nameBottom) + 40 };
 	// Prewarm both small variants during asset preparation, not on pointerdown.
-	const normal = useRaster(`${key}:shadow`, bounds, (context) => paintMagnet(context, appearance, photo, true));
-	const moving = useRaster(`${key}:flat`, bounds, (context) => paintMagnet(context, appearance, photo, false));
+	const normal = useRaster(`${key}:shadow`, bounds, (context) => paintMagnet(context, appearance, photo, true, showSkill));
+	const moving = useRaster(`${key}:flat`, bounds, (context) => paintMagnet(context, appearance, photo, false, showSkill));
 	return <>
 		<RasterSprite raster={dragging ? moving : normal} />
 		{hovered && <CachedSprite cacheKey={`magnet-hover:${dragging}`} alpha={bodyOpacity(appearance)}
