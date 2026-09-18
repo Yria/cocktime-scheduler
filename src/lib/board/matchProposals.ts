@@ -24,6 +24,12 @@ export interface ProposalComposerSnapshot {
 	isAdmin: boolean;
 }
 
+/** Use the same privacy boundary for cards, floor magnets and local layout. */
+export function visibleMatchProposals(snapshot?: ProposalComposerSnapshot): MatchProposal[] {
+	return snapshot?.proposals.filter((proposal) => isActiveMatchProposal(proposal)
+		&& (snapshot.isAdmin || proposal.created_by === snapshot.viewerId)) ?? [];
+}
+
 /** Private positions stay on this device; new cards avoid actual teams and other proposals. */
 export function placeProposalAnchors(ids: readonly string[], current: ReadonlyMap<string, StagePoint>,
 	obstacles: readonly StagePoint[], bounds: { width: number; height: number }): Map<string, StagePoint> {

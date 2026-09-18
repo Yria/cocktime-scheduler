@@ -1,7 +1,7 @@
 import type { BoardState } from "../../../store/board/types";
 import type { useSessionStore } from "../../../store/sessionStore";
 import type { StagePoint } from "../../../types/board";
-import { isActiveMatchProposal, type ProposalComposerSnapshot } from "../matchProposals";
+import { visibleMatchProposals, type ProposalComposerSnapshot } from "../matchProposals";
 import {
 	CTA_DISABLED_COLOR, CTA_FINISH_COLOR, CTA_PLAY_COLOR, CTA_START_COLOR,
 	TEAM_BOX_ABOVE,
@@ -53,7 +53,8 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 		const playingIds = playingIdsFromCourts(ss.courts);
 		const composing = proposals?.enabled === true;
 		const groups = composing ? proposals.groups : [];
-		const selected = new Set(groups.flatMap((group) => group.playerIds));
+		const visibleProposals = visibleMatchProposals(proposals);
+		const selected = new Set([...groups.flatMap((group) => group.playerIds), ...visibleProposals.flatMap((proposal) => proposal.player_ids)]);
 		const restingIds = new Set(ss.restingIds);
 		const hasEmptyCourt = ss.courts.some((court) => !court.match);
 
@@ -187,9 +188,8 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 			});
 		}
 
-		for (const proposal of proposals?.proposals ?? []) {
-			if (!proposals || !isActiveMatchProposal(proposal)
-				|| (!proposals.isAdmin && proposal.created_by !== proposals.viewerId)) continue;
+		for (const proposal of visibleProposals) {
+			if (!proposals) continue;
 			const point = proposals.anchors.get(proposal.id);
 			if (!point) continue;
 			const source: CardView["source"] = { kind: "proposal", groupId: proposal.id };

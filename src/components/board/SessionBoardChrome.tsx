@@ -1,5 +1,6 @@
 import { ZOOM_STEP } from "../../store/boardStore";
 import { TOOLBAR_H, COURT_BAR_H } from "../../lib/board/constants";
+import { Search } from "lucide-react";
 import Spinner from "../shared/Spinner";
 
 // SessionBoard의 DOM 크롬(플로팅 버튼·배지) 프레젠테이셔널 컴포넌트 묶음.
@@ -87,7 +88,7 @@ export function NewTeamFab({ onClick }: { onClick: () => void }) {
 }
 
 // 줌 컨트롤(우상단) — 0.5~1배 축소(편집/보기 공통)
-export function ZoomControls({ setScale }: { setScale: (v: number | ((prev: number) => number)) => void }) {
+export function ZoomControls({ setScale, onSearch }: { setScale: (v: number | ((prev: number) => number)) => void; onSearch?: () => void }) {
 	return (
 		<div
 			style={{
@@ -102,6 +103,8 @@ export function ZoomControls({ setScale }: { setScale: (v: number | ((prev: numb
 		>
 			<button type="button" onClick={() => setScale((s) => s + ZOOM_STEP)} aria-label="확대" style={zoomBtnStyle}>＋</button>
 			<button type="button" onClick={() => setScale((s) => s - ZOOM_STEP)} aria-label="축소" style={zoomBtnStyle}>－</button>
+			{onSearch && <button type="button" onClick={onSearch} aria-label="회원 찾기" title="회원 찾기 · 빈 공간 두 번 탭"
+				style={{ ...zoomBtnStyle, width: 44, height: 44, marginLeft: -4, marginTop: 2 }}><Search size={20} aria-hidden="true" /></button>}
 		</div>
 	);
 }

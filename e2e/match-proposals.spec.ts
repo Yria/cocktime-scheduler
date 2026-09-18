@@ -290,3 +290,94 @@ test("playing court has footer editing left of completion on mobile", async ({ p
 	await page.mouse.click(canvas.x + (group.point.x + rect.x + rect.width / 2) * scale, canvas.y + (group.point.y + rect.y + rect.height / 2) * scale);
 	await expect(page.getByText("경기 수정 · 1번 코트", { exact: true })).toBeVisible();
 });
+
+
+for (const role of ["member", "admin", "other"]) {
+	test(`${role} hides floor duplicates only for visible proposals and restores them on dismissal`, async ({ page }) => {
+		const server = { proposals: [proposal] };
+		await setup(page, role, { server });
+		const floor = () => page.evaluate(() => window.proposalTest.scene().entities.filter((view) => view.kind === "magnet").map((view) => view.player.id));
+		await expect.poll(floor).toHaveLength(role === "other" ? 10 : 8);
+		if (role === "other") { expect(await floor()).toContain(uid(2)); return; }
+		expect(await floor()).not.toContain(uid(2));
+		await pressFooter(page, 0, role === "admin");
+		await expect.poll(floor).toHaveLength(10);
+		expect(await page.evaluate(() => window.proposalTest.board.getState().magnets.get("00000000-0000-0000-0000-000000000002")?.teamId)).toBeNull();
+	});
+}
+
+for (const [role, width, height] of [["member", 390, 844], ["admin", 1280, 800]] as const) {
+	test(`${role} locates a proposal member by initial consonants at ${width}px`, async ({ page }, testInfo) => {
+		const errors: string[] = []; page.on("pageerror", (error) => errors.push(error.message));
+		await page.setViewportSize({ width, height });
+		const writes = await setup(page, role, { server: { proposals: [proposal] } });
+		await page.getByRole("button", { name: "정렬", exact: true }).click();
+		const canvas = (await page.locator("canvas").boundingBox())!;
+		await page.mouse.dblclick(canvas.x + canvas.width / 2, canvas.y + canvas.height - 160, { delay: 90 });
+		const dialog = page.getByRole("dialog", { name: "회원 찾기" });
+		await expect(dialog).toBeVisible();
+		const input = page.getByRole("searchbox", { name: "이름 또는 초성" });
+		await expect(input).toBeFocused();
+		await input.fill("없는회원"); await expect(dialog.getByText("일치하는 회원이 없어요.")).toBeVisible();
+		await input.fill("ㅁㅅ");
+		await expect(dialog.getByRole("button", { name: "민수 매칭 제안" })).toHaveCount(1);
+		await page.screenshot({ path: testInfo.outputPath(`search-${width}.png`) });
+		await dialog.getByRole("button", { name: "민수 매칭 제안" }).click();
+		await expect(dialog).toHaveCount(0);
+		await expect(page.getByRole("status").filter({ hasText: "민수 위치를 보드에 표시" })).toBeVisible();
+		await page.evaluate(() => new Promise<void>((resolve) => {
+			let frames = 0; const tick = () => { if (++frames >= 20) resolve(); else requestAnimationFrame(tick); }; requestAnimationFrame(tick);
+		}));
+		await page.screenshot({ path: testInfo.outputPath(`located-${width}.png`) });
+		const screenshot = await page.locator("canvas").screenshot();
+		const yellowPixels = await page.evaluate(async (data) => {
+			const image = new Image(); image.src = `data:image/png;base64,${data}`; await image.decode();
+			const canvas = document.createElement("canvas"); canvas.width = image.width; canvas.height = image.height;
+			const context = canvas.getContext("2d")!; context.drawImage(image, 0, 0);
+			const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+			let count = 0; for (let i = 0; i < pixels.length; i += 4) if (pixels[i] > 220 && pixels[i + 1] > 190 && pixels[i + 2] < 130) count++;
+			return count;
+		}, screenshot.toString("base64"));
+		expect(yellowPixels).toBeGreaterThan(50);
+		await expect(page.getByRole("status").filter({ hasText: "민수 위치를 보드에 표시" })).toHaveCount(0, { timeout: 6000 });
+		await page.getByRole("button", { name: "회원 찾기", exact: true }).click();
+		await page.getByRole("searchbox").fill("수빈");
+		await expect(page.getByRole("button", { name: "수빈 대기 중" })).toBeVisible();
+		await page.keyboard.press("Escape"); await expect(dialog).toHaveCount(0);
+		expect(writes.filter((url) => !url.includes("board_save_drafts"))).toEqual([]);
+		expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+		expect(errors).toEqual([]);
+	});
+}
+
+test("touch opens search; playing and waiting members remain findable with reduced motion", async ({ page }, testInfo) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "dark" });
+	await setup(page, "member");
+	await page.evaluate((ids) => {
+		document.documentElement.classList.add("dark");
+		window.proposalTest.session.setState({ courts: [{ id: 1, match: { id: "search-match", courtId: 1, gameType: "혼복", teamA: [ids[0], ids[1]], teamB: [ids[2], ids[3]], startedAt: new Date().toISOString() } }] });
+	}, [1,2,3,4].map(uid));
+	const canvas = (await page.locator("canvas").boundingBox())!;
+	const cdp = await page.context().newCDPSession(page);
+	const points = [{ id: 1, x: canvas.x + canvas.width / 2, y: canvas.y + canvas.height - 160 }];
+	await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: points });
+	await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+	await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: points });
+	await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+	await expect(page.getByRole("dialog", { name: "회원 찾기" })).toBeVisible();
+	await page.getByRole("searchbox").fill("ㅇㅇㅈ");
+	await expect(page.getByRole("button", { name: "운영진 1번 코트 · 경기 중" })).toBeVisible();
+	await page.screenshot({ path: testInfo.outputPath("search-dark-mobile.png") });
+	await page.getByRole("searchbox").press("Enter");
+	await expect(page.getByRole("status").filter({ hasText: "운영진 위치를 보드에 표시" })).toBeVisible();
+	await page.getByRole("button", { name: "회원 찾기", exact: true }).click();
+	await page.getByRole("searchbox").fill("수빈");
+	await page.getByRole("searchbox").press("Enter");
+	await expect(page.getByRole("status").filter({ hasText: "수빈 위치를 보드에 표시" })).toBeVisible();
+	await page.evaluate(() => new Promise<void>((resolve) => {
+		let frames = 0; const tick = () => { if (++frames >= 20) resolve(); else requestAnimationFrame(tick); }; requestAnimationFrame(tick);
+	}));
+	await page.screenshot({ path: testInfo.outputPath("located-free-dark-mobile.png") });
+	await cdp.detach();
+});

@@ -7,7 +7,7 @@ import { useMatchProposalStore } from "../store/matchProposalStore";
 import { toast } from "../store/toastStore";
 import { supabase } from "../lib/supabase/client";
 import { editMatchProposals, fetchMatchProposals, sendMatchProposal, startMatchProposal, updateMatchProposal, type MatchProposal } from "../lib/supabase/matchProposals";
-import { dropProposalMember, isActiveMatchProposal, placeProposalAnchors, removeProposalMember, type ProposalComposer, type ProposalComposerSnapshot } from "../lib/board/matchProposals";
+import { dropProposalMember, isActiveMatchProposal, visibleMatchProposals, placeProposalAnchors, removeProposalMember, type ProposalComposer, type ProposalComposerSnapshot } from "../lib/board/matchProposals";
 import { clampAnchor, isInsideTeamBounds, slotIndexAt } from "../lib/board/geometry";
 import { cockPendingIds, playingIdsFromCourts } from "../lib/board/membership";
 import { arrangeBoard } from "../lib/board/arrange";
@@ -37,11 +37,9 @@ export function settleProposalLayout(rearrange = false) {
 	const state = useMatchProposalStore.getState();
 	if (!state.scope || state.scope !== matchProposalScope()) return;
 	const groups = state.groups;
-	const { proposals } = state;
 	const board = useBoardStore.getState();
 	const session = useSessionStore.getState();
-	const visible = proposals.filter((proposal) => isActiveMatchProposal(proposal)
-		&& (state.isAdmin || proposal.created_by === state.viewerId));
+	const visible = visibleMatchProposals(state);
 	const realAnchors = [...[...board.drafts.values()].map((team) => team.anchor), ...board.courtAnchors.values()];
 	if (rearrange) {
 		// Arrange cloned layout data with private cards as temporary obstacles. Never put them in shared drafts.
@@ -53,6 +51,7 @@ export function settleProposalLayout(rearrange = false) {
 			anchor: { x: 0, y: 0 }, createdAt: Number.MAX_SAFE_INTEGER });
 		const excluded = playingIdsFromCourts(session.courts);
 		for (const group of groups) for (const id of group.playerIds) excluded.add(id);
+		for (const proposal of visible) for (const id of proposal.player_ids) excluded.add(id);
 		arrangeBoard({ magnets, drafts, reservations: board.reservations, courtAnchors, courts: session.courts,
 			sessionPlayers: session.sessionPlayers, playingIds: excluded, restingIds: new Set(session.restingIds),
 			cockPendingIds: cockPendingIds(session.sessionPlayers.values(), session.cockCheckEnabled),
@@ -69,7 +68,7 @@ export function settleProposalLayout(rearrange = false) {
 		{ width: board.stageW, height: board.stageH });
 	if (anchors.size !== state.anchors.size || [...anchors].some(([id, point]) =>
 		point.x !== state.anchors.get(id)?.x || point.y !== state.anchors.get(id)?.y)) useMatchProposalStore.setState({ anchors });
-	if (!groups.length && !anchors.size) return;
+	if (!groups.length && !anchors.size && !state.anchors.size) return;
 	const magnets = new Map([...board.magnets].map(([id, magnet]) => [id, { ...magnet }]));
 	const obstacles = new Map<string, DraftTeam>(board.drafts);
 	for (const group of groups) obstacles.set(`proposal:${group.id}`, { id: `proposal:${group.id}`,
@@ -78,6 +77,7 @@ export function settleProposalLayout(rearrange = false) {
 	for (const [id, anchor] of board.courtAnchors) obstacles.set(`court:${id}`, { id: `court:${id}`, anchorMemberIds: [], anchor, createdAt: 0 });
 	const excluded = playingIdsFromCourts(session.courts);
 	for (const group of groups) for (const id of group.playerIds) excluded.add(id);
+	for (const proposal of visible) for (const id of proposal.player_ids) excluded.add(id);
 	settleFreeMagnets(magnets, obstacles, board.stageW, board.stageH, excluded);
 	if ([...magnets].some(([id, magnet]) => magnet.x !== board.magnets.get(id)?.x || magnet.y !== board.magnets.get(id)?.y)) {
 		useBoardStore.setState({ magnets });
@@ -152,9 +152,10 @@ export const proposalComposer: ProposalComposer = {
 		// Freeze a sending group so a pending request and the visible selection cannot diverge.
 		const frozen = state.groups.filter((group) => state.sendingIds.has(group.id));
 		const playing = playingIdsFromCourts(session.courts);
+		const proposedIds = new Set(visibleMatchProposals(state).flatMap((proposal) => proposal.player_ids));
 		const next = dropProposalMember(state.groups, playerId, point,
 			[...board.magnets.values()].filter((magnet) => magnet.teamId === null
-				&& !playing.has(magnet.playerId)),
+				&& !playing.has(magnet.playerId) && !proposedIds.has(magnet.playerId)),
 			{ width: board.stageW, height: board.stageH }, randomId());
 		if (frozen.some((group) => next.find((candidate) => candidate.id === group.id) !== group)) return;
 		state.setGroups(next);

@@ -25,6 +25,7 @@ function setup(target: BoardInteractionTarget | null = magnet(), initialScale = 
 		onDragMove: vi.fn(),
 		onDragEnd: vi.fn(),
 		onCancel: vi.fn(),
+		onEmptyDoubleTap: vi.fn(),
 	};
 	const controller = createBoardInteractionController(ports);
 	const down = (x = 100, y = 100, id = 1) => controller.pointerDown({ id, x, y });
@@ -294,5 +295,35 @@ describe("cancellation and disposal", () => {
 		expect(target.onLongPress).not.toHaveBeenCalled();
 		expect(s.ports.onZoom).not.toHaveBeenCalled();
 		expect(vi.getTimerCount()).toBe(0);
+	});
+});
+
+
+describe("empty-board double tap", () => {
+	it("accepts two nearby short taps and clears the pending timer", () => {
+		const s = setup(null, 0.5);
+		s.down(); s.up(); vi.advanceTimersByTime(100); s.down(108, 104); s.up(108, 104);
+		expect(s.ports.onEmptyDoubleTap).toHaveBeenCalledOnce();
+		expect(s.ports.onDragStart).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("ignores distant taps, movement, long presses and expired taps", () => {
+		const s = setup(null);
+		s.down(); s.up(); s.down(200); s.up(200); s.controller.cancel();
+		s.down(); s.move(140); s.up(); s.down(); s.up(); s.controller.cancel();
+		s.down(); vi.advanceTimersByTime(600); s.up(); s.down(); s.up(); s.controller.cancel();
+		s.down(); s.up(); vi.advanceTimersByTime(300); s.down(); s.up();
+		expect(s.ports.onEmptyDoubleTap).not.toHaveBeenCalled();
+	});
+
+	it("pinch, cancel and button taps break the empty tap sequence", () => {
+		const s = setup(null);
+		s.down(); s.up(); s.down(); s.down(150, 100, 2); s.up(); s.up(150,100,2); s.down(); s.up();
+		expect(s.ports.onEmptyDoubleTap).not.toHaveBeenCalled();
+		s.controller.cancel(); s.down(); s.up();
+		s.ports.pick.mockReturnValue(magnet()); s.down(); s.up(); s.ports.pick.mockReturnValue(null); s.down(); s.up();
+		expect(s.ports.onEmptyDoubleTap).not.toHaveBeenCalled();
+		s.controller.dispose(); expect(vi.getTimerCount()).toBe(0);
 	});
 });

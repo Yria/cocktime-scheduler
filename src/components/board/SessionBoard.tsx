@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useBoardStageLayout } from "../../hooks/useBoardStageLayout";
 import { useContainerSize } from "../../hooks/useContainerSize";
 import { useSessionBoardEffects } from "../../hooks/useSessionBoardEffects";
@@ -13,6 +14,7 @@ import {
 } from "../../lib/board/constants";
 import BoardToolbar from "./BoardToolbar";
 import RestBar from "./RestBar";
+import BoardPlayerSearch from "./BoardPlayerSearch";
 import SessionBoardRenderer from "./SessionBoardRenderer";
 import DetachZoneOverlay from "./DetachZoneOverlay";
 import RestDropOverlay from "./RestDropOverlay";
@@ -43,6 +45,15 @@ export default function SessionBoard() {
 	// 세션 동기화/편집권 부수효과(풀 초기화·원격 멤버십 적용·Realtime 구독·자동 점유·I2 자가치유) — useSessionBoardEffects로 분리.
 	useSessionBoardEffects();
 	const proposals = useMatchProposals();
+	const [searchOpen, setSearchOpen] = useState(false);
+	const [locate, setLocate] = useState<{ playerId: string; name: string } | null>(null);
+	// Keep focus inside the native tap so mobile browsers can open the keyboard.
+	const openSearch = useCallback(() => flushSync(() => setSearchOpen(true)), []);
+	useEffect(() => {
+		if (!locate) return;
+		const timer = window.setTimeout(() => setLocate(null), 4000);
+		return () => window.clearTimeout(timer);
+	}, [locate]);
 
 	const courts = useSessionStore((s) => s.courts);
 	const playingIds = useMemo(() => playingIdsFromCourts(courts), [courts]);
@@ -126,15 +137,19 @@ export default function SessionBoard() {
 			{showRest && <RestDropOverlay />}
 			<div ref={stageContainerRef} style={{ position: "absolute", top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top))`, left: `max(${EDGE_GUTTER}px, env(safe-area-inset-left))`, right: `max(${EDGE_GUTTER}px, env(safe-area-inset-right))`, bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px))`, touchAction: "none" }}>
 				<SessionBoardRenderer width={stageW} height={stageH}
-					onMagnetClick={onMagnetClick} onCockCheck={onCockCheck} onSlotClick={openTeamRecommend} onEditMatch={onEditMatch} proposals={proposals} />
+					onMagnetClick={onMagnetClick} onCockCheck={onCockCheck} onSlotClick={openTeamRecommend} onEditMatch={onEditMatch} proposals={proposals} onEmptyDoubleTap={openSearch} locate={locate} />
 			</div>
 			{/* 좌하단 + 버튼 — 빈 추천 모달을 열어 새 팀을 만든다(편집자만, 정렬 버튼과 대칭·동일 크기) */}
 			{isEditor && <NewTeamFab onClick={() => setRecommendTarget({ newTeam: true })} />}
 			<RestBar />
 			{/* 줌 컨트롤(우상단) — 0.5~1배 축소(편집/보기 공통) */}
-			<ZoomControls setScale={setScale} />
+			<ZoomControls setScale={setScale} onSearch={openSearch} />
 			{/* 우하단 플로팅 정렬 버튼 */}
 			<ArrangeFab onClick={() => { arrangeAtCurrentScale(); settleProposalLayout(true); }} />
+			{searchOpen && <BoardPlayerSearch onClose={() => setSearchOpen(false)} onSelect={(playerId, name) => {
+				setSearchOpen(false); setLocate({ playerId, name });
+			}} />}
+			{locate && <span role="status" className="sr-only">{locate.name} 위치를 보드에 표시하고 있어요.</span>}
 			{recommendTarget && (
 				<RecommendTeammateDialog
 					teamId={recommendTarget.teamId ?? undefined}

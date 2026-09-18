@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyn
 import { computeSlotOffset } from "../../../lib/board/geometry";
 import type { BoardRuntime, BoardPresentation } from "../../../lib/board/pixi/runtime";
 import type { BoardEntity, CardView, MagnetView } from "../../../lib/board/pixi/types";
-import { BoardTextureProvider, CardVisual, CardControlsVisual, EmptySlotVisual, MagnetVisual, SlotHoverVisual } from "./PixiVisuals";
+import { BoardTextureProvider, CardVisual, CardControlsVisual, EmptySlotVisual, MagnetVisual, SlotHoverVisual, LocateVisual } from "./PixiVisuals";
 
 extend({ Container });
 
@@ -20,13 +20,14 @@ function usePosition(runtime: BoardRuntime, view: BoardEntity, parentKey?: strin
 	return ref;
 }
 
-const Magnet = memo(function Magnet({ runtime, view, parentKey, hidden, dragging, hovered }: {
-	runtime: BoardRuntime; view: MagnetView; parentKey?: string; hidden: boolean; dragging: boolean; hovered: boolean;
+const Magnet = memo(function Magnet({ runtime, view, parentKey, hidden, dragging, hovered, located }: {
+	runtime: BoardRuntime; view: MagnetView; parentKey?: string; hidden: boolean; dragging: boolean; hovered: boolean; located: boolean;
 }) {
 	const ref = usePosition(runtime, view, parentKey);
 	useLayoutEffect(() => { runtime.scheduler.invalidate(); });
 	return <pixiContainer ref={ref} visible={!hidden} eventMode="none">
 		<MagnetVisual appearance={view} dragging={dragging} hovered={hovered} />
+		{located && <LocateVisual />}
 	</pixiContainer>;
 });
 
@@ -64,7 +65,7 @@ function CardContents({ runtime, view, presentation, preview = false }: {
 		{view.members.map((member) => preview
 			? <pixiContainer key={member.key} x={member.point.x} y={member.point.y}><MagnetVisual appearance={member} dragging={presentation.playerDragging} hovered={false} /></pixiContainer>
 			: <Magnet key={member.key} runtime={runtime} view={member} parentKey={view.key}
-				hidden={presentation.drag?.view.key === member.key} dragging={presentation.playerDragging} hovered={hover?.kind === "magnet" && hover.id === member.player.id} />)}
+				located={presentation.locate?.playerId === member.player.id} hidden={presentation.drag?.view.key === member.key} dragging={presentation.playerDragging} hovered={hover?.kind === "magnet" && hover.id === member.player.id} />)}
 		<CardControlsVisual appearance={view.appearance} dragging={presentation.playerDragging} flash={flash} />
 	</>;
 }
@@ -89,7 +90,7 @@ export function BoardScene({ runtime, resolution }: { runtime: BoardRuntime; res
 				{presentation.scene.entities.map((view, index) => view.kind === "card"
 					? <Card key={view.key} runtime={runtime} view={view} index={index} presentation={presentation} />
 					: <pixiContainer key={view.key} zIndex={runtime.zIndex(view.key, index)}>
-						<Magnet runtime={runtime} view={view} hidden={drag?.view.key === view.key} dragging={presentation.playerDragging} hovered={presentation.hover?.kind === "magnet" && presentation.hover.id === view.player.id} />
+						<Magnet runtime={runtime} view={view} located={presentation.locate?.playerId === view.player.id} hidden={drag?.view.key === view.key} dragging={presentation.playerDragging} hovered={presentation.hover?.kind === "magnet" && presentation.hover.id === view.player.id} />
 					</pixiContainer>)}
 			</pixiContainer>
 			{drag && <pixiContainer ref={setPreview} eventMode="none">

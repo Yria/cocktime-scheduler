@@ -53,6 +53,10 @@ describe("Pixi board projection", () => {
 		const author = card(project(bs, ss, state), "proposal:p");
 		expect(author.appearance).toMatchObject({ dashed: true, ctaLabel: "제안 취소", showUnconfirm: false });
 		expect(author.members).toHaveLength(2);
+		expect(project(bs, ss, state).entities.some((view) => view.key === "free:a" || view.key === "free:b")).toBe(false);
+		expect(project(bs, ss, { ...state, viewerId: "other" }).entities.some((view) => view.key === "free:a")).toBe(true);
+		expect(project(bs, ss, { ...state, proposals: [] }).entities.some((view) => view.key === "free:a")).toBe(true);
+		expect(bs.magnets.get("a")?.teamId).toBeNull();
 		expect(author.members.every((member) => !member.draggable)).toBe(true);
 		expect(project(bs, ss, { ...state, viewerId: "other" }).entities.some((item) => item.key === "proposal:p")).toBe(false);
 		ss.isEditor = true;

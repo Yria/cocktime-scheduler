@@ -29,6 +29,7 @@ export interface BoardInteractionPorts {
 	onDragEnd: (target: BoardInteractionTarget, worldCenter: StagePoint) => void;
 	/** Discard previews and restore any uncommitted zoom from the current store. */
 	onCancel: () => void;
+	onEmptyDoubleTap?: () => void;
 }
 
 export interface BoardInteractionController {
@@ -56,6 +57,7 @@ interface Press {
 	offset: StagePoint;
 	longPressTimer: Timer | null;
 	longPressFired: boolean;
+	startedAt: number;
 }
 interface Pinch {
 	phase: "pinching";
@@ -77,6 +79,7 @@ export function createBoardInteractionController(ports: BoardInteractionPorts): 
 	const pointers = new Map<number, BoardPointerSample>();
 	const pendingTaps = new Map<string, Timer>();
 	let gesture: Gesture | null = null;
+	let emptyTap: { point: StagePoint; timer: Timer } | null = null;
 	let wheelTimer: Timer | null = null;
 	let zoomPending = false;
 	let zoomChanged = false;
@@ -99,7 +102,9 @@ export function createBoardInteractionController(ports: BoardInteractionPorts): 
 		if (timer !== undefined) clearTimeout(timer);
 		pendingTaps.delete(key);
 	};
+	const clearEmptyTap = () => { if (emptyTap) clearTimeout(emptyTap.timer); emptyTap = null; };
 	const clearTaps = () => {
+		clearEmptyTap();
 		for (const timer of pendingTaps.values()) clearTimeout(timer);
 		pendingTaps.clear();
 	};
@@ -124,7 +129,7 @@ export function createBoardInteractionController(ports: BoardInteractionPorts): 
 		ports.onZoom(next);
 	};
 	const cancel = () => {
-		const hadWork = gesture !== null || pointers.size > 0 || pendingTaps.size > 0 || zoomPending;
+		const hadWork = gesture !== null || pointers.size > 0 || pendingTaps.size > 0 || emptyTap !== null || zoomPending;
 		if (gesture?.phase === "pressed" || gesture?.phase === "dragging") clearLongPress(gesture);
 		clearTaps();
 		clearWheelTimer();
@@ -172,6 +177,7 @@ export function createBoardInteractionController(ports: BoardInteractionPorts): 
 		if (pointers.size !== 1 || gesture?.phase === "suppressed") return;
 		const world = toWorld(sample);
 		const target = ports.pick(world);
+		if (target) clearEmptyTap();
 		const press: Press = {
 			phase: "pressed",
 			id: sample.id,
@@ -180,6 +186,7 @@ export function createBoardInteractionController(ports: BoardInteractionPorts): 
 			offset: target ? { x: world.x - target.point.x, y: world.y - target.point.y } : { x: 0, y: 0 },
 			longPressTimer: null,
 			longPressFired: false,
+			startedAt: Date.now(),
 		};
 		gesture = press;
 		if (target && isMagnet(target) && target.onLongPress) {
@@ -207,9 +214,13 @@ export function createBoardInteractionController(ports: BoardInteractionPorts): 
 			current.distance = distance;
 			return;
 		}
-		if (current.id !== sample.id || !current.target || current.longPressFired) return;
+		if (current.id !== sample.id || current.longPressFired) return;
 		const dx = sample.x - current.start.x;
 		const dy = sample.y - current.start.y;
+		if (!current.target) {
+			if (Math.hypot(dx, dy) > LONG_PRESS_DISTANCE) { current.longPressFired = true; clearEmptyTap(); }
+			return;
+		}
 		if (dx * dx + dy * dy > LONG_PRESS_DISTANCE * LONG_PRESS_DISTANCE) clearLongPress(current);
 		if (current.phase === "pressed" && current.target.draggable && Math.max(Math.abs(dx), Math.abs(dy)) >= DRAG_DISTANCE) {
 			clearLongPress(current);
@@ -241,7 +252,16 @@ export function createBoardInteractionController(ports: BoardInteractionPorts): 
 		if (current.id !== sample.id) return;
 		clearLongPress(current);
 		gesture = null;
-		if (!current.target) return;
+		if (!current.target) {
+			if (current.longPressFired || Date.now() - current.startedAt >= LONG_PRESS_MS || ports.pick(toWorld(sample))) { clearEmptyTap(); return; }
+			if (emptyTap && Math.hypot(sample.x - emptyTap.point.x, sample.y - emptyTap.point.y) <= 24) {
+				clearTaps(); ports.onEmptyDoubleTap?.();
+			} else {
+				clearTaps();
+				emptyTap = { point: { x: sample.x, y: sample.y }, timer: setTimeout(() => { emptyTap = null; }, DOUBLE_TAP_MS) };
+			}
+			return;
+		}
 		if (current.phase === "dragging") {
 			ports.onDragEnd(current.target, centerAt(current, sample));
 		} else if (!current.longPressFired && ports.pick(toWorld(sample))?.key === current.target.key) {
@@ -254,6 +274,7 @@ export function createBoardInteractionController(ports: BoardInteractionPorts): 
 		pointerUp,
 		wheel: (deltaY) => {
 			if (disposed || pointers.size > 0 || !Number.isFinite(deltaY) || deltaY === 0) return;
+			clearEmptyTap();
 			applyZoom(ports.getScale() + (deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP));
 			clearWheelTimer();
 			wheelTimer = setTimeout(flushZoom, WHEEL_COMMIT_MS);

@@ -297,6 +297,35 @@ function paintMagnet(context: CanvasRenderingContext2D, appearance: MagnetAppear
 	}
 }
 
+/** A bounded search signal: keep the name visible and pulse only its outer halo. */
+export function LocateVisual() {
+	const [bright, setBright] = useState(true);
+	useEffect(() => {
+		const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+		let timer: number | undefined;
+		const update = () => {
+			window.clearInterval(timer);
+			setBright(true);
+			if (!motion.matches && !document.hidden) timer = window.setInterval(() => setBright((value) => !value), 600);
+		};
+		update(); motion.addEventListener("change", update); document.addEventListener("visibilitychange", update);
+		return () => { window.clearInterval(timer); motion.removeEventListener("change", update); document.removeEventListener("visibilitychange", update); };
+	}, []);
+	const color = "#FDE047";
+	return <>
+		<CachedSprite cacheKey="player-locator-ring" bounds={{ x: -44, y: -49, width: 88, height: 93 }} paint={(context) => {
+			circle(context, MAGNET_R + 4); context.lineWidth = 3; context.strokeStyle = color; context.stroke();
+			context.fillStyle = color; context.beginPath(); context.moveTo(-6, -MAGNET_R - 16);
+			context.lineTo(6, -MAGNET_R - 16); context.lineTo(0, -MAGNET_R - 8); context.closePath(); context.fill();
+		}} />
+		<CachedSprite cacheKey="player-locator-halo" alpha={bright ? 1 : 0.25}
+			bounds={{ x: -52, y: -52, width: 104, height: 104 }} paint={(context) => {
+				circle(context, MAGNET_R + 7); context.lineWidth = 3; context.strokeStyle = color;
+				shadow(context, color, 12); context.stroke();
+			}} />
+	</>;
+}
+
 function Badge({ label, fill }: { label: string; fill: string }) {
 	return <CachedSprite cacheKey={`badge:${label}:${fill}`}
 		bounds={{ x: MAGNET_R - 24, y: -MAGNET_R - 1, width: 32, height: 18 }}

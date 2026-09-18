@@ -22,6 +22,8 @@ export interface BoardCallbacks {
 	onSlotClick: (id: string) => void;
 	onEditMatch: (id: number) => void;
 	proposals?: ProposalComposer;
+	onEmptyDoubleTap?: () => void;
+	locate?: { playerId: string } | null;
 }
 
 interface Binding {
@@ -36,6 +38,7 @@ export interface BoardPresentation {
 	drag: { view: BoardEntity; point: StagePoint } | null;
 	hover: ReturnType<typeof useBoardStore.getState>["hoverTarget"];
 	playerDragging: boolean;
+	locate: BoardCallbacks["locate"];
 }
 
 /** One instance per mounted renderer. Only the commit paths call domain commands. */
@@ -86,6 +89,7 @@ export class BoardRuntime {
 			},
 			onDragEnd: (_target, point) => this.finishDrag(point),
 			onCancel: () => this.cancelDrag(),
+			onEmptyDoubleTap: () => this.callbacks.onEmptyDoubleTap?.(),
 		});
 		this.cleanups.push(useBoardStore.subscribe(this.refresh), useSessionStore.subscribe(this.refresh));
 		this.proposalUnsubscribe = callbacks.proposals?.subscribe(this.refresh);
@@ -101,6 +105,12 @@ export class BoardRuntime {
 			this.proposalUnsubscribe?.();
 			this.proposalUnsubscribe = callbacks.proposals?.subscribe(this.refresh);
 		}
+		if (callbacks.locate && callbacks.locate !== this.callbacks.locate) {
+			for (const view of this.readScene().entities) {
+				const members = view.kind === "card" ? view.members : [view];
+				if (members.some((member) => member.player.id === callbacks.locate?.playerId)) this.lifted.set(view.key, ++this.z);
+			}
+		}
 		this.callbacks = callbacks;
 		this.refresh();
 	}
@@ -111,7 +121,7 @@ export class BoardRuntime {
 
 	private readPresentation(): BoardPresentation {
 		const bs = useBoardStore.getState();
-		return { scene: this.readScene(), drag: this.dragging, hover: bs.hoverTarget, playerDragging: bs.dragInfo !== null };
+		return { scene: this.readScene(), drag: this.dragging, hover: bs.hoverTarget, playerDragging: bs.dragInfo !== null, locate: this.callbacks.locate };
 	}
 	private readScene() { return this.projection(useBoardStore.getState(), useSessionStore.getState(), this.callbacks.proposals?.getSnapshot()); }
 
@@ -131,7 +141,7 @@ export class BoardRuntime {
 			this.scheduler.invalidate();
 		}
 		if (next.scene === this.presentation.scene && next.drag === this.presentation.drag
-			&& next.hover === this.presentation.hover && next.playerDragging === this.presentation.playerDragging) return;
+			&& next.hover === this.presentation.hover && next.playerDragging === this.presentation.playerDragging && next.locate === this.presentation.locate) return;
 		this.presentation = next;
 		for (const listener of this.listeners) listener();
 	};
