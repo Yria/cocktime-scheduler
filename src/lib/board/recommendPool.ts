@@ -50,8 +50,8 @@ export interface RecommendPoolTarget {
  *
  * @param extraConfirmedIds 진행 중 다중선택분(다이얼로그). 확정 멤버처럼 점수 재계산 + 풀에서 제외.
  * @param options.excludePlaying true면 경기중 선수를 풀에서 제외.
- * @param options.excludeReserved true면 다른 팀에 ghost 예약된 선수를 풀에서 제외(자동편성용 —
- *   같은 선수를 두 팀이 동시에 예약하는 이중 booking 방지. 수동 다이얼로그는 사용자 판단에 맡겨 미적용).
+ * @param options.excludeReserved true면 다른 팀에 ghost 예약된 선수를 풀에서 제외.
+ *   추천 목록과 자동편성 모두 적용해 같은 선수를 두 팀이 동시에 예약하지 않게 한다.
  */
 export function buildRecommendData(
 	target: RecommendPoolTarget,
@@ -124,6 +124,8 @@ export function buildRecommendData(
 	}
 
 	const ctx: RecommendContext = {
+		players: [...sessionPlayers.values()],
+		cockCheckEnabled,
 		groupHistory,
 		ongoingGroups: courts.flatMap(court => court.match ? [[...court.match.teamA, ...court.match.teamB]] : []),
 		lastGameType,

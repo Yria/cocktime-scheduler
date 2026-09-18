@@ -40,6 +40,7 @@ vi.mock("./appStore", () => ({
 }));
 
 import { useBoardStore } from "./boardStore";
+import { useAdminCoverageStore } from "./adminCoverageStore";
 import { teamMembers } from "../lib/board/membership";
 import { TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_W, MAGNET_SIZE } from "../lib/board/constants";
 
@@ -84,6 +85,7 @@ function seed(opts: {
 }
 
 beforeEach(() => {
+	useAdminCoverageStore.setState({ loaded: true, memberIds: new Set(), starting: new Map(), prompt: null });
 	h.handleAssign.mockReset();
 	h.handleComplete.mockReset();
 	h.courts = [];
@@ -99,6 +101,54 @@ beforeEach(() => {
 });
 
 // ── 요구1: 자유 자석 드래그로 팀 생성 ──────────────────────
+describe("운영진 교대 — 실제 경기 시작 가드", () => {
+	function setup(second = true) {
+		h.players = new Map(["a", "b", "c", "d", "e", "f", "g", "h"].map(id => [id, player(id)]));
+		h.players.get("a")!.memberId = "admin";
+		h.courts = [{ id: 1, match: null }, { id: 2, match: null }];
+		useAdminCoverageStore.setState({ memberIds: new Set(["admin"]) });
+		seed({ drafts: [{ ...draft("A", ["a", "b", "c", "d"]), confirmedMs: 10 }, ...(second ? [{ ...draft("B", ["e", "f", "g", "h"]), confirmedMs: 20 }] : [])],
+			magnets: [...h.players.keys()].map(id => mag(id, id < "e" ? "A" : second ? "B" : null)) });
+	}
+	it("마지막 운영진 팀을 보류하고 대체 팀을 안내하며 원래 순번을 보존한다", async () => {
+		setup();
+		await useBoardStore.getState().startMatch("A");
+		expect(h.handleAssign).not.toHaveBeenCalled();
+		expect(useAdminCoverageStore.getState().prompt?.alternative?.key).toBe("team:B");
+		expect(useBoardStore.getState().drafts.get("A")!.confirmedMs).toBe(10);
+	});
+	it("대체 팀이 없을 때 명시적으로 선택한 이번 경기만 예외 시작한다", async () => {
+		setup(false);
+		await useBoardStore.getState().startMatch("A");
+		expect(h.handleAssign).not.toHaveBeenCalled();
+		expect(useAdminCoverageStore.getState().prompt?.alternative).toBeUndefined();
+		useAdminCoverageStore.getState().prompt!.start();
+		expect(h.handleAssign).toHaveBeenCalledWith(expect.anything(), 1, true);
+		await Promise.resolve();
+		expect(useAdminCoverageStore.getState().starting.size).toBe(0);
+	});
+	it("확인창을 연 뒤 대체 팀이 생기면 기존 예외 승인을 재사용하지 않는다", async () => {
+		setup(false);
+		await useBoardStore.getState().startMatch("A");
+		const consent = useAdminCoverageStore.getState().prompt!.start;
+		useBoardStore.setState(s => ({ drafts: new Map(s.drafts).set("B", draft("B", ["e", "f", "g", "h"])) }));
+		consent();
+		expect(h.handleAssign).not.toHaveBeenCalled();
+		expect(useAdminCoverageStore.getState().prompt?.alternative?.key).toBe("team:B");
+	});
+	it("아직 서버 응답이 없는 첫 운영진의 출전도 반영해 두 번째 출전을 막는다", async () => {
+		setup(); h.players.get("e")!.memberId = "admin2";
+		useAdminCoverageStore.setState({ memberIds: new Set(["admin", "admin2"]) });
+		let finish!: () => void;
+		h.handleAssign.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+		const first = useBoardStore.getState().startMatch("A");
+		await useBoardStore.getState().startMatch("B");
+		expect(h.handleAssign).toHaveBeenCalledTimes(1);
+		expect(useAdminCoverageStore.getState().prompt?.key).toBe("team:B");
+		finish(); await first;
+	});
+});
+
 describe("요구1 — 자유 자석 두 개로 팀 생성(createPair)", () => {
 	it("근접한 두 자유 자석을 겹치면 2인 forming 팀이 생긴다", () => {
 		seed({ magnets: [mag("a", null, 100, 400), mag("b", null, 130, 400)] });
@@ -602,6 +652,26 @@ describe("commitTeammates — 다중 선택 커밋", () => {
 
 // ── 자동편성(autoFillTeam) ───────────────────────────────────
 describe("autoFillTeam — 구성 중 팀의 빈 슬롯을 추천도순으로 채움", () => {
+	it("대기 팀이 가능하면 새로운 상대인 경기중 선수보다 반복 대기 조합을 채운다", () => {
+		h.players = new Map(["a", "b", "c", "d", "e", "f", "g", "h"].map(id => [id, player(id)]));
+		for (const id of ["a", "b", "c", "d"]) h.players.get(id)!.gameCount = 10;
+		h.groupHistory = [{ matchId: "repeat", members: ["a", "b", "c", "d"] }];
+		h.courts = [{ id: 1, match: { teamA: ["e", "f"], teamB: ["g", "h"] } } as Court];
+		seed({ magnets: [...h.players.keys()].map(id => mag(id, null)) });
+		useBoardStore.getState().autoFillTarget({ newTeam: true });
+		const s = useBoardStore.getState();
+		expect(s.reservations.size).toBe(0);
+		expect([...[...s.drafts.values()][0].anchorMemberIds].sort()).toEqual(["a", "b", "c", "d"]);
+	});
+	it.each([["a", "d"], ["a", "b", "c", "d"]])("선택한 멤버와 허용 조합을 만들 수 없으면 자동편성을 커밋하지 않는다 (%j)", (...selected) => {
+		h.players = new Map(["a", "b", "c", "d"].map(id => [id, player(id)]));
+		h.players.get("d")!.gender = "F";
+		h.players.get("d")!.skills.grade = 3;
+		seed({ magnets: [...h.players.keys()].map(id => mag(id, null)) });
+		useBoardStore.getState().autoFillTarget({ newTeam: true }, selected);
+		expect(useBoardStore.getState().drafts.size).toBe(0);
+		expect(useBoardStore.getState().reservations.size).toBe(0);
+	});
 	it("2인 팀을 대기 선수로 4명까지 채운다(전원 anchor → 경기시작 가능 상태)", () => {
 		h.players = new Map(["a", "b", "c", "d", "e"].map((id) => [id, player(id)]));
 		seed({

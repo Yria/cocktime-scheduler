@@ -37,6 +37,8 @@ export interface SessionPlayer {
 	mixedCount: number;
 	waitSince: string | null;
 	joinedAtMatch: number;
+	/** Recorded session registration time; older in-memory fixtures may omit it. */
+	joinedAt?: string;
 	/** 콕(셔틀콕) 제출 확인 여부. 콕체크 on일 때 false면 매칭 대기 아님(비활성). */
 	cockChecked: boolean;
 }
@@ -72,10 +74,12 @@ export interface GeneratedTeam {
 export interface GroupHistoryEntry {
 	matchId: string;
 	members: readonly string[];
+	/** Server completion time, used to rebuild personal exchange streaks. */
+	completedAt?: string;
 }
 
 /**
- * 동반 그룹 이력 — 완료된 경기 1건당 한 항목(순서 무관).
+ * 동반 그룹 이력 — 완료된 경기 1건당 한 항목. 교류 공백은 completedAt 순서로 재구성한다.
  * 완료된 matches 에서 파생되며(스냅샷 로드 + match_completed 누적 + resync 병합), 쌍 단위 누적(구 pair_history)을 대체한다.
  * 회피 단위는 "과거 경기 4인과 새 팀의 겹침 수": 2명(약) < 3명(중) < 4명 재결성(강) 순으로 벌점이 커진다.
  */

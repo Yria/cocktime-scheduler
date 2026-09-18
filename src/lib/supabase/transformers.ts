@@ -1,4 +1,5 @@
 import type { Court, GameType, Gender, GroupHistory, PlayerSkills, SessionPlayer } from "../../types";
+import { orderedGroupHistory } from "../teamSelection/groupPolicy";
 import { normalizeSkills } from "./members";
 import type {
 	ClientSessionState,
@@ -59,19 +60,21 @@ export function rowToSessionPlayer(row: SessionPlayerRow): SessionPlayer {
 		mixedCount: row.mixed_count,
 		waitSince: row.wait_since,
 		joinedAtMatch: row.joined_at_match ?? 0,
+		joinedAt: row.joined_at,
 		cockChecked: row.cock_checked ?? false,
 	};
 }
 
 /** 완료 매치 row들 → 그룹 이력(경기당 {matchId, 4인 id}). 재결성 회피 벌점의 원천 — 초기 스냅샷과 resync가 공유. */
 export function matchRowsToGroupHistory(completed: CompletedMatchTeamRow[]): GroupHistory {
-	return completed.map((m) => ({
+	return orderedGroupHistory(completed.map((m) => ({
 		matchId: m.id,
+		...(m.ended_at ? { completedAt: m.ended_at } : {}),
 		// 선수 삭제(FK ON DELETE SET NULL)로 빠진 자리는 제외 — 남은 멤버끼리의 겹침만 벌점에 반영.
 		members: [m.team_a_p1, m.team_a_p2, m.team_b_p1, m.team_b_p2].filter(
 			(id): id is string => id !== null,
 		),
-	}));
+	})));
 }
 
 /**
@@ -82,10 +85,15 @@ export function matchRowsToGroupHistory(completed: CompletedMatchTeamRow[]): Gro
  * 로컬 참조를 그대로 반환해 불필요한 재렌더를 막는다.
  */
 export function mergeGroupHistory(local: GroupHistory, server: GroupHistory): GroupHistory {
-	const localIds = new Set(local.map((g) => g.matchId));
-	if (!server.some((g) => !localIds.has(g.matchId))) return local;
+	const localById = new Map(local.map(g => [g.matchId, g]));
+	const changed = server.some(g => {
+		const existing = localById.get(g.matchId);
+		return !existing || (g.completedAt !== undefined && g.completedAt !== existing.completedAt)
+			|| [...new Set(g.members)].sort().join() !== [...new Set(existing.members)].sort().join();
+	});
+	if (!changed) return local;
 	const serverIds = new Set(server.map((g) => g.matchId));
-	return [...server, ...local.filter((g) => !serverIds.has(g.matchId))];
+	return orderedGroupHistory([...server.map(g => ({ ...localById.get(g.matchId), ...g })), ...local.filter((g) => !serverIds.has(g.matchId))]);
 }
 
 /**

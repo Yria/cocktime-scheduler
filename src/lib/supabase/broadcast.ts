@@ -22,6 +22,7 @@ export type BroadcastPayload =
 				teamA: [SessionPlayer, SessionPlayer];
 				teamB: [SessionPlayer, SessionPlayer];
 				updatedPlayers: SessionPlayer[];
+				completedAt?: string;
 			};
 	  }
 	| {

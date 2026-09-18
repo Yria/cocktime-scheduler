@@ -24,6 +24,7 @@ import MatchEditModal from "./MatchEditModal";
 import ViewerLockOverlay from "./ViewerLockOverlay";
 import EditorTakenNotice from "./EditorTakenNotice";
 import DebugMatchModal from "./DebugMatchModal";
+import AdminCoverageNotice from "./AdminCoverageNotice";
 import { ArrangeFab, BoardSyncingBadge, NewTeamFab, ZoomControls } from "./SessionBoardChrome";
 import type { RecommendTarget } from "../../hooks/useTeammateRecommendations";
 
@@ -166,6 +167,7 @@ export default function SessionBoard() {
 			)}
 			<ViewerLockOverlay />
 			<EditorTakenNotice />
+			<AdminCoverageNotice />
 			<DebugMatchModal />
 		</div>
 	);

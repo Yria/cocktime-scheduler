@@ -6,7 +6,7 @@ import { cardControls } from "../src/lib/board/pixi/cardControls";
 declare global { interface Window { proposalTest: ProposalTestApi } }
 const uid = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
 
-async function setup(page: Page, role = "member", options: { failSend?: boolean; failResolve?: boolean; server?: { proposals: MatchProposal[] } } = {}) {
+async function setup(page: Page, role = "member", options: { failSend?: boolean; failResolve?: boolean; adminIds?: string[]; server?: { proposals: MatchProposal[] } } = {}) {
 	const writes: string[] = [];
 	const server = options.server ?? { proposals: [] };
 	await page.routeWebSocket("wss://**", (socket) => socket.close());
@@ -14,6 +14,7 @@ async function setup(page: Page, role = "member", options: { failSend?: boolean;
 		const request = route.request();
 		const url = request.url();
 		if (request.method() === "POST") writes.push(url);
+		if (url.includes("/rest/v1/members?") && url.includes("user_roles")) return route.fulfill({ json: (options.adminIds ?? [uid(1), uid(9)]).map(id => ({ id, user_roles: [{ role: "admin" }] })) });
 		if (url.includes("/rpc/board_save_drafts")) return route.fulfill({ json: (request.postDataJSON().p_base_version ?? 0) + 1 });
 		if (url.includes("/rest/v1/match_proposals")) return route.fulfill({ json: server.proposals });
 		if (url.includes("/rpc/create_match_proposal")) {
@@ -299,6 +300,21 @@ test("admin automatically fills four and starts directly; member keeps cancellat
 	expect(writes.filter((url) => url.includes("start_match_proposal"))).toHaveLength(1);
 	expect(server.proposals[0].status).toBe("started");
 	expect(await page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(0);
+});
+
+test("a proposal containing the last administrator requires an explicit start exception", async ({ page }) => {
+	const server = { proposals: [{ ...proposal, player_ids: [1, 2, 3, 4].map(uid), player_names: ["운영진", "민수", "지수", "현우"] }] };
+	const writes = await setup(page, "admin", { server, adminIds: [uid(1)] });
+	await expect.poll(async () => (await cards(page))[0]?.appearance.ctaLabel).toBe("교대 확인");
+	await pressFooter(page);
+	await expect(page.getByRole("button", { name: "교대까지 대기" })).toBeVisible();
+	expect(writes.some(url => url.includes("start_match_proposal"))).toBe(false);
+	await page.getByRole("button", { name: "교대까지 대기" }).click();
+	await pressFooter(page);
+	const request = page.waitForRequest(r => r.url().includes("start_match_proposal_with_admin_coverage"));
+	await page.getByRole("button", { name: "이번 경기 시작" }).click();
+	expect((await request).postDataJSON().p_allow_admin_absence).toBe(true);
+	await expect.poll(async () => (await cards(page)).length).toBe(0);
 });
 
 test("admin without editor permission can reject but cannot edit or start", async ({ page }) => {

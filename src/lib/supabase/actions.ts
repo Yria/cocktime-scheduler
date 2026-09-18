@@ -8,6 +8,7 @@ import type {
 import { supabase } from "./client";
 import { rowToSessionPlayer } from "./transformers";
 import type { SessionPlayerRow } from "./types";
+import { toast } from "../../store/toastStore";
 
 export async function dbAssignMatch(
 	sessionId: number,
@@ -16,9 +17,10 @@ export async function dbAssignMatch(
 	courtId: number,
 	clientId: string | null,
 	name: string | null,
+	allowAdminAbsence = false,
 ): Promise<boolean> {
 	// 단일 트랜잭션으로 (편집 락 가드 +) matches INSERT + session_players UPDATE 실행
-	const { error } = await supabase.rpc("assign_match", {
+	const { error } = await supabase.rpc("assign_match_with_admin_coverage", {
 		p_match_id: matchId,
 		p_session_id: sessionId,
 		p_court_id: courtId,
@@ -29,8 +31,13 @@ export async function dbAssignMatch(
 		p_team_b_p2: team.teamB[1],
 		p_client_id: clientId,
 		p_name: name,
+		p_allow_admin_absence: allowAdminAbsence,
 	});
 	if (error) {
+		if (error.message?.includes("admin coverage required")) {
+			toast("운영진의 경기 상태가 바뀌었어요. 동기화 후 다시 시작해 주세요.", { variant: "error" });
+			return false;
+		}
 		// 다른 기기가 먼저 같은 코트를 배정한 경우(부분 유니크 인덱스 충돌)
 		if (error.message?.includes("court already assigned")) {
 			console.warn("dbAssignMatch: Court already assigned by another client");

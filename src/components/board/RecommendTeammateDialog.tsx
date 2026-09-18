@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { ListOrdered } from "lucide-react";
 import type { SessionPlayer } from "../../types";
 import { useSessionStore } from "../../store/sessionStore";
 import { useBoardStore } from "../../store/boardStore";
@@ -24,9 +25,6 @@ const SORT_OPTIONS: PlayerPickerSortOption[] = [
 	{ value: "waitTime", label: "대기시간" },
 ];
 
-/** 디버그 점수 분해 표시 — 0(또는 미세)이면 가운뎃점, 그 외 소수1자리. */
-const fmtScore = (n?: number): string => (n === undefined || Math.abs(n) < 0.05 ? "·" : n.toFixed(1));
-
 export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClose }: Props) {
 	const commitTeammates = useBoardStore((s) => s.commitTeammates);
 	const autoFillTarget = useBoardStore((s) => s.autoFillTarget);
@@ -35,7 +33,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 
 	// 진행 중 다중선택
 	const [selectedIds, setSelectedIds] = useState<string[]>([]);
-	// 점수 분해 디버그 토글(제목 우측 🐛 버튼)
+	// 추천 우선순위 확인(운영진용).
 	const [debug, setDebug] = useState(false);
 
 	const { ranked, members, playingIds } = useTeammateRecommendations({ teamId, seedId, newTeam }, selectedIds);
@@ -58,11 +56,6 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 		return grades.length ? { min: Math.min(...grades), max: Math.max(...grades) } : null;
 	}, [members, selectedPlayers]);
 
-	// 디버그: 점수 분해 % 계산용 min/max (ranked score 기준)
-	const dbgRange = useMemo(() => {
-		const scores = ranked.map((r) => r.score);
-		return scores.length ? { min: Math.min(...scores), max: Math.max(...scores) } : { min: 0, max: 0 };
-	}, [ranked]);
 
 	const toggle = (playerId: string) => {
 		setSelectedIds((prev) => {
@@ -85,7 +78,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 	const pickerPlayers = useMemo((): PlayerPickerItem[] =>
 		ranked.map((item, index) => ({
 			player: item.player,
-			// "경기중" 배지/흐림은 추천 정렬 정책(deprioritizePlaying)과 무관하게,
+			// "경기중" 배지/흐림은 추천 순위과 무관하게,
 			// 실제로 경기중인 선수에게는 항상 표시한다 — 배지는 추천 상태가 아니라 사실(경기중)을 나타낸다.
 			// 경기중 판별은 courts 기반 playingIds(status는 경기 시작 직후 갱신 지연).
 			isPlaying: playingIds.has(item.player.id),
@@ -94,7 +87,6 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 			skillRank: skillBand
 				? Math.max(0, skillBand.min - skillScore(item.player), skillScore(item.player) - skillBand.max)
 				: -skillScore(item.player),
-			fitnessScore: item.score,
 			waitSince: item.player.waitSince ?? undefined,
 		})),
 		[ranked, skillBand, playingIds],
@@ -126,10 +118,12 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 					<button
 						type="button"
 						onClick={() => setDebug((d) => !d)}
-						className={`text-xs px-2 py-1 rounded ${debug ? "bg-purple-500 text-white" : "text-gray-400 dark:text-gray-500"}`}
-						title="점수 분해 디버그"
+						className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded ${debug ? "bg-purple-500 text-white" : "text-gray-600 dark:text-gray-300"}`}
+						title="추천 우선순위 확인"
+						aria-label="추천 우선순위 확인"
+						aria-pressed={debug}
 					>
-						🐛
+						<ListOrdered size={18} aria-hidden="true" />
 					</button>
 				</div>
 				<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{headerNote}</p>
@@ -207,48 +201,15 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 
 			{debug && ranked.length > 0 && (
 				<div className="flex-1 min-h-0 overflow-auto px-5 pb-3">
-					<div className="text-[11px] text-gray-500 dark:text-gray-400 mb-1">
-						점수 분해 · 합계 낮을수록 상위 · 값은 가중치 적용 기여도(− = 유리)
-					</div>
-					<table className="text-[11px] w-full border-collapse">
-						<thead>
-							<tr className="text-gray-400 dark:text-gray-500">
-								<th className="text-left pr-2">이름</th>
-								<th className="text-right px-1">실력</th>
-								<th className="text-right px-1">재결성</th>
-								<th className="text-right px-1">새 만남</th>
-								<th className="text-right px-1">로테</th>
-								<th className="text-right px-1">성별</th>
-								<th className="text-right px-1">경기중</th>
-								<th className="text-right px-1">참여</th>
-								<th className="text-right px-1">대기</th>
-								<th className="text-right px-1">혼복수</th>
-								<th className="text-right px-1 font-bold">합계</th>
-								<th className="text-right pl-1 font-bold">%</th>
+					<p className="text-xs text-gray-500 dark:text-gray-400 mb-2">후보를 포함한 최선의 4명 조합 · 왼쪽 조건부터 비교 · 남은 경기 수는 많을수록 우선</p>
+					<table className="text-xs w-full border-collapse">
+						<thead><tr>{["이름", "경기 중", "남은 경기", "출전 초과", "중복 벌점", "동반 반복", "보조 점수"].map(label => <th key={label} className="px-1 py-2 text-left break-keep">{label}</th>)}</tr></thead>
+						<tbody>{ranked.map(({ player, priority: p }) => (
+							<tr key={player.id} className="border-t border-gray-100 dark:border-gray-800">
+								<td className="px-1 py-2 whitespace-nowrap">{player.name}</td>
+								{[p.playing, p.remainingCapacity, p.overplay, p.maximumOverlap, p.repeatedPairs, p.quality.toFixed(1)].map((value, i) => <td key={i} className="px-1 py-2">{value}</td>)}
 							</tr>
-						</thead>
-						<tbody>
-							{ranked.map((r) => {
-								const b = r.breakdown;
-								const pct = dbgRange.max === dbgRange.min ? 100 : Math.round(((dbgRange.max - r.score) / (dbgRange.max - dbgRange.min)) * 100);
-								return (
-									<tr key={r.player.id} className="border-t border-gray-100 dark:border-gray-800 text-gray-700 dark:text-gray-300">
-										<td className="text-left pr-2 whitespace-nowrap">{r.player.name}</td>
-										<td className="text-right px-1">{fmtScore(b?.skill)}</td>
-										<td className="text-right px-1">{fmtScore(b?.group)}</td>
-										<td className="text-right px-1">{fmtScore(b?.encounter)}</td>
-										<td className="text-right px-1">{fmtScore(b?.rotate)}</td>
-										<td className="text-right px-1">{fmtScore(b?.gender)}</td>
-										<td className="text-right px-1">{fmtScore(b?.playing)}</td>
-										<td className="text-right px-1">{fmtScore(b?.game)}</td>
-										<td className="text-right px-1">{fmtScore(b?.wait)}</td>
-										<td className="text-right px-1">{fmtScore(b?.mixed)}</td>
-										<td className="text-right px-1 font-bold">{r.score.toFixed(1)}</td>
-										<td className="text-right pl-1 font-bold">{pct}%</td>
-									</tr>
-								);
-							})}
-						</tbody>
+						))}</tbody>
 					</table>
 				</div>
 			)}

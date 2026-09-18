@@ -24,6 +24,11 @@ describe("matchRowsToGroupHistory — 완료 매치 → 그룹 이력 파생", (
 		const gh = matchRowsToGroupHistory([row("m1", ["a", null, "c", "d"])]);
 		expect(gh[0].members).toEqual(["a", "c", "d"]);
 	});
+	it("서버 조회 순서와 무관하게 완료 시각을 보존하고 정렬한다", () => {
+		const late = { ...row("m2", ["a", "b", "c", "d"]), ended_at: "2026-09-18T10:20:00Z" };
+		const early = { ...row("m1", ["a", "e", "f", "g"]), ended_at: "2026-09-18T10:10:00Z" };
+		expect(matchRowsToGroupHistory([late, early]).map(g => [g.matchId, g.completedAt])).toEqual([["m1", early.ended_at], ["m2", late.ended_at]]);
+	});
 });
 
 describe("mergeGroupHistory — resync 병합(matchId 집합 기준)", () => {
@@ -46,5 +51,13 @@ describe("mergeGroupHistory — resync 병합(matchId 집합 기준)", () => {
 		const merged = mergeGroupHistory([g("m1"), g("m2")], [g("m1"), g("m3")]);
 		expect(merged.map((x) => x.matchId).sort()).toEqual(["m1", "m2", "m3"]);
 		expect(new Set(merged.map((x) => x.matchId)).size).toBe(merged.length);
+	});
+	it("같은 matchId라도 서버 완료 시각과 수정된 참가자 이력을 반영한다", () => {
+		const local = [{ ...g("m1"), completedAt: "2026-09-18T10:20:00Z" }, { ...g("m2"), completedAt: "2026-09-18T10:15:00Z" }];
+		const server = [{ matchId: "m1", members: ["corrected"], completedAt: "2026-09-18T10:10:00Z" }];
+		const merged = mergeGroupHistory(local, server);
+		expect(merged.map(g => g.matchId)).toEqual(["m1", "m2"]);
+		expect(merged[0]).toEqual(server[0]);
+		expect(mergeGroupHistory(merged, server)).toBe(merged);
 	});
 });

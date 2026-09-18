@@ -156,13 +156,14 @@ describe("늦참 평균 보정의 수학적 성질과 한계", () => {
 		vi.setSystemTime(new Date("2026-09-07T10:00:00Z"));
 		const old = player("old", 3, 10);
 		const late = player("late", 3);
-		const ranked = recommendTeammates([], [late, old], emptyContext());
-		const novelty = RECOMMEND_WEIGHTS.W_NEW_ENCOUNTER ?? 0;
-		expect(ranked.map(row => [row.player.id, row.score])).toEqual([["old", 20 - novelty], ["late", 30 - novelty]]);
+		const fixed = ["s1", "s2", "s3"].map(id => player(id, 3));
+		const ranked = recommendTeammates(fixed, [late, old], emptyContext());
+		expect(ranked.map(row => row.player.id)).toEqual(["old", "late"]);
+		expect(ranked[1].priority.quality - ranked[0].priority.quality).toBe(10);
 		vi.useRealTimers();
 	});
 
-	it("실제 추천 반례: 평균 보정을 해도 이력이 없는 늦참자가 더 적게 뛴 기존자보다 먼저 뽑힐 수 있다", () => {
+	it("평균 보정 후 한 판 차이는 중복을 줄이는 데 허용하지만 두 판 앞서면 반복 우대를 막는다", () => {
 		const seed = player("seed", 3);
 		const old = player("old", 2);
 		const late = player("late", 3); // Population [2,3,3,4] has mean 3.
@@ -173,9 +174,10 @@ describe("늦참 평균 보정의 수학적 성질과 한계", () => {
 				{ matchId: "m2", members: ["seed", "old", "c", "d"] },
 			],
 		};
-		const ranked = recommendTeammates([seed], [old, late], context);
-		expect(ranked.map(row => [row.player.id, row.score])).toEqual([["late", 30 - (RECOMMEND_WEIGHTS.W_NEW_ENCOUNTER ?? 0)], ["old", 36]]);
-		expect(autoFillTeammates([seed], [old, late], context, 1).map(p => p.id)).toEqual(["late"]);
+		const fixed = [seed, player("s2", 2), player("s3", 2)];
+		expect(autoFillTeammates(fixed, [old, late], context, 1).map(p => p.id)).toEqual(["late"]);
+		late.gameCount = 4;
+		expect(autoFillTeammates(fixed, [old, late], context, 1).map(p => p.id)).toEqual(["old"]);
 	});
 });
 

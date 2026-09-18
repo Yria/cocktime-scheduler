@@ -23,20 +23,21 @@ import { skillScore } from "./rankCandidates";
  * - 여자 0명 → 남복
  * - 여자 2명 → 혼복
  * - 여자 4명 → 여복
- * - 여자 1명 → allowMixedSingle 또는 singleWomanIds 포함 시 혼합, 아니면 남복
+ * - 여자 1명 → 여성 등급 4 이상이면 혼합, 아니면 남복(수동 편성의 기존 표시 폴백)
  * - 여자 3명 → 남복 (남자 1명 포함)
  */
 export function determineGameType(
 	four: [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer],
 	singleWomanIds: string[],
 ): GameType {
+	// Keep the existing caller signature; eligibility now comes from grade alone.
+	void singleWomanIds;
 	const women = four.filter((p) => p.gender === "F");
 	if (women.length === 0) return "남복";
 	if (women.length === 4) return "여복";
 	if (women.length === 2) return "혼복";
 	if (women.length === 1) {
-		const isSingleAllowed =
-			women[0].allowMixedSingle || singleWomanIds.includes(women[0].playerId);
+		const isSingleAllowed = skillScore(women[0]) >= 4;
 		return isSingleAllowed ? "혼합" : "남복";
 	}
 	// 여자 3명 (남자 1명): 남복으로 처리

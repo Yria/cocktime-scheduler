@@ -78,10 +78,13 @@ export function handleMatchStarted(payload: BroadcastPayloadData, set: SetFn) {
 }
 
 export function handleMatchCompleted(payload: BroadcastPayloadData, set: SetFn) {
-	const { matchId, courtId, gameType, teamA, teamB, updatedPlayers } = payload;
+	const { matchId, courtId, gameType, teamA, teamB, updatedPlayers, completedAt } = payload;
 	const teamAPlayers = teamA as [SessionPlayer, SessionPlayer];
 	const teamBPlayers = teamB as [SessionPlayer, SessionPlayer];
 	const allPlayers = [...teamAPlayers, ...teamBPlayers];
+	// Compatibility with clients that do not yet send completedAt: updated waitSince is server time too.
+	const completionTime = typeof completedAt === "string" ? completedAt
+		: (updatedPlayers as SessionPlayer[]).find(p => allPlayers.some(member => member.id === p.id))?.waitSince ?? undefined;
 
 	set((state) => {
 		// 완료된 경기의 4인 묶음을 그룹 이력에 추가(재결성 회피 원천). 완료 시점에만 1회 누적.
@@ -94,6 +97,7 @@ export function handleMatchCompleted(payload: BroadcastPayloadData, set: SetFn) 
 					...state.groupHistory,
 					{
 						matchId: mid,
+						...(completionTime ? { completedAt: completionTime } : {}),
 						members: [teamAPlayers[0].id, teamAPlayers[1].id, teamBPlayers[0].id, teamBPlayers[1].id],
 					},
 				];

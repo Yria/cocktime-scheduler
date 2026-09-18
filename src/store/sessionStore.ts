@@ -187,7 +187,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 
 	// ── DB Actions ──────────────────────────────────────────
-	handleAssign: async (team: GeneratedTeam, courtId: number) => {
+	handleAssign: async (team: GeneratedTeam, courtId: number, allowAdminAbsence = false) => {
 		const { courts, _channel, isEditor, _clientId, _myName } = get();
 		if (!_channel || !isEditor) { return; } // 보기 전용 차단
 
@@ -204,6 +204,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			courtId,
 			_clientId,
 			_myName ?? "기기",
+			allowAdminAbsence,
 		);
 
 		if (ok) {
@@ -266,6 +267,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				teamA: teamAPlayers,
 				teamB: teamBPlayers,
 				updatedPlayers: result.updatedPlayers,
+				// complete_match sets ended_at and all four wait_since values to the same server time.
+				completedAt: result.updatedPlayers.find(p => [...match.teamA, ...match.teamB].includes(p.id))?.waitSince ?? undefined,
 			},
 		};
 		get().applyBroadcast(payload);

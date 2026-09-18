@@ -1,5 +1,13 @@
 # SQL 검증
 
+## 운영진 교대
+
+`node supabase/tests/admin_coverage.test.mjs`는 실제 편집 잠금·경기 배정·회원 제안 RPC와
+운영진 교대 마이그레이션을 로컬 PGlite에서 실행한다. 마지막 운영진 출전 보류,
+연속한 두 코트 배정, 실패 시 경기·선수 상태·카운터 롤백, 명시적 예외,
+휴식·미확인·유일 운영진, 제안 시작 권한과 재시도 멱등성을 확인한다.
+운영 DB에 쓰지 않으며, 서로 다른 DB 연결의 잠금 경합은 테스트 범위에 포함하지 않는다.
+
 ## 비공개 매칭 제안
 
 `node supabase/tests/match_proposals.test.mjs`는 로컬 PGlite에 최소 스키마와 인증 역할을 만들고

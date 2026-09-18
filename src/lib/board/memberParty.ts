@@ -13,7 +13,7 @@ export function getMemberPartyCandidates(inputs: RecommendPoolInputs): SessionPl
 }
 
 /**
- * 회원 파티의 현재 홀드 참가자 중 가용한 4명을 기존 추천 순서로 선발한다.
+ * 회원 파티의 현재 홀드 참가자 중 가용한 4명을 중복+실력 정책으로 선발한다.
  * 첫 참가자도 일반 후보이며, 경기중 선수나 홀드하지 않은 선수로 보충하지 않는다.
  * 반환 순서는 teamA 2명 + teamB 2명. 설정·운영진 상태·홀드 유효성은 서버가 검증한다.
  */

@@ -22,6 +22,7 @@ import {
 	nowMs,
 } from "../../lib/board/draftMutations";
 import { autoFillTeammates } from "../../lib/teamSelection";
+import { allowedGameType } from "../../lib/teamSelection/groupPolicy";
 import { useSessionStore } from "../sessionStore";
 import { toast } from "../toastStore";
 import type { BoardState, DragSource } from "./types";
@@ -329,7 +330,7 @@ export const createMembershipSlice: StateCreator<
 
 	// 추천 모달의 "자동편성" 버튼 공용 — 팀/시드/새팀 어디서나 나머지 슬롯을 추천순으로 채워 commit.
 	// extraIds = 모달에서 사용자가 직접 고른 선수(먼저 포함하고 나머지를 자동 채움).
-	// 경기중 선수도 빈 슬롯 수만큼 예약할 수 있다. 팀당 1명 상한 없이 추천 비용으로 고르며,
+	// 대기자로 허용 팀을 완성할 수 없을 때만 필요한 최소 인원을 경기중에서 예약하며,
 	// commitTeammates가 예약으로 처리한다. 다른 팀에 이미 예약된 선수는 풀에서 제외한다.
 	autoFillTarget: (target, extraIds = []) => {
 		if (!claimEdit()) return; // 보기 전용 차단
@@ -352,6 +353,13 @@ export const createMembershipSlice: StateCreator<
 		);
 		if (!data) return;
 		const slotsToFill = 4 - data.confirmed.length; // confirmed = 기존 멤버 + extraIds
+		if (slotsToFill <= 0) {
+			if (extraIds.length === 0) return;
+			if (!allowedGameType(data.confirmed)) {
+				toast("현재 선택과 참가 인원으로 편성 가능한 조합이 없어요", { variant: "error" });
+				return;
+			}
+		}
 		// 보드의 새 팀 생성에는 자유 대기 선수(anchor) 한 명이 필요하다.
 		// 아직 선택되지 않았다면 마지막 한 자리를 남긴다. 기존 예약 수는 추가 예약을 제한하지 않는다.
 		const needsAnchor = target.newTeam && !data.confirmed.some(p => !data.playingIds.has(p.id));
@@ -361,9 +369,13 @@ export const createMembershipSlice: StateCreator<
 						maxPlaying: Math.max(0, slotsToFill - (needsAnchor ? 1 : 0)),
 					})
 				: [];
+		if (slotsToFill > 0 && picks.length === 0) {
+			toast("현재 선택과 참가 인원으로 편성 가능한 조합이 없어요", { variant: "error" });
+			return;
+		}
 		const ids = [...extraIds, ...picks.map((p) => p.id)];
 		if (ids.length === 0) {
-			toast("자동편성할 선수가 없어요", { variant: "error" });
+			toast("현재 선택과 참가 인원으로 편성 가능한 조합이 없어요", { variant: "error" });
 			return;
 		}
 		// 새 팀 모드는 anchor(비경기중 1명)가 필수 — 전원 경기중이면 commitTeammates가 조용히

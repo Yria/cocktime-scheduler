@@ -3,7 +3,7 @@ import type { SessionPlayer } from "../types";
 import { useSessionStore } from "../store/sessionStore";
 import { useBoardStore } from "../store/boardStore";
 import { buildRecommendData } from "../lib/board/recommendPool";
-import { recommendTeammates, RECOMMEND_WEIGHTS } from "../lib/teamSelection";
+import { recommendTeammates } from "../lib/teamSelection";
 import type { RankedCandidate } from "../lib/teamSelection";
 
 export type { RankedCandidate };
@@ -33,8 +33,8 @@ export interface TeammateRecommendations {
  *
  * pool = 보드의 가용 선수 − 확정 멤버 − 휴식(resting) 선수 − 다른 보드 팀에 묶인 선수
  *        (보드는 상태 무관 전원을 자석으로 노출하되, 휴식 선수는 추천 후보에서 제외.
- *         경기중 선수만 recommendTeammates에서 페널티로 하위 처리)
- * 점수 기준: 실력 유사 > 미동반 > 게임타입 로테이션 + 성별 균형 + 대기 우선
+ *         경기중 후보는 대기자만으로 허용 팀을 완성할 수 없을 때만 추천)
+ * 네 명을 완성할 수 있는 조합으로 추천하며 자동편성과 같은 우선순위를 사용한다.
  */
 export function useTeammateRecommendations(
 	target: RecommendTarget | null,
@@ -61,30 +61,12 @@ export function useTeammateRecommendations(
 			{ teamId, seedId, newTeam },
 			selectedIds,
 			{ drafts, reservations, magnets, sessionPlayers, courts, groupHistory, lastGameType, cockCheckEnabled },
+			{ excludeReserved: true },
 		);
 		if (!data) return empty;
 		const { confirmed, members, pool, ctx, playingIds } = data;
 
-		// 기본: 경기중 페널티(W_PLAYING) 적용 → 경기중이 뒤로 정렬되는 순위
-		const baseRanked = recommendTeammates(confirmed, pool, ctx);
-
-		// 적합도 %(전체 상대값: 최고=100%, 최악=0%) 기준으로 "정렬에서" 경기중 페널티 적용 여부만 결정한다.
-		// 비경기중 후보 중 10% 이상이 하나도 없으면(좋은 후보가 경기중에 몰림) 페널티 해제 →
-		// 경기중 후보라도 순수 추천순으로 상위 노출한다. (경기중 배지 표시는 이 값과 무관 — playingIds로 항상 표시)
-		// (비경기중 후보가 0명이어도 some=false → 해제)
-		const scores = baseRanked.map((r) => r.score);
-		const min = Math.min(...scores);
-		const max = Math.max(...scores);
-		const pctOf = (s: number) => (max === min ? 100 : ((max - s) / (max - min)) * 100);
-		// "경기중"은 courts 기반 playingIds로 판별(status는 경기 시작 직후 갱신이 지연됨)
-		const deprioritizePlaying = baseRanked.some(
-			(r) => !playingIds.has(r.player.id) && pctOf(r.score) >= 10,
-		);
-
-		// 해제 시 경기중 페널티 없이 순수 추천순으로 재정렬
-		const ranked = deprioritizePlaying
-			? baseRanked
-			: recommendTeammates(confirmed, pool, ctx, { ...RECOMMEND_WEIGHTS, W_PLAYING: 0 });
+		const ranked = recommendTeammates(confirmed, pool, ctx);
 
 		return { ranked, members, playingIds };
 	}, [teamId, seedId, newTeam, selectedIds, drafts, reservations, magnets, sessionPlayers, courts, groupHistory, lastGameType, cockCheckEnabled]);

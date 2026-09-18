@@ -13,6 +13,7 @@ import { cardControls } from "./cardControls";
 import { createFrameScheduler } from "./frameScheduler";
 import { createBoardInteractionController, type BoardInteractionTarget } from "./interactionController";
 import { createBoardProjection } from "./projection";
+import { useAdminCoverageStore } from "../../../store/adminCoverageStore";
 import type { BoardEntity, BoardSnapshot, BoardSource, CardView, MagnetView } from "./types";
 import { sourceKey } from "./types";
 
@@ -91,7 +92,7 @@ export class BoardRuntime {
 			onCancel: () => this.cancelDrag(),
 			onEmptyDoubleTap: () => this.callbacks.onEmptyDoubleTap?.(),
 		});
-		this.cleanups.push(useBoardStore.subscribe(this.refresh), useSessionStore.subscribe(this.refresh));
+		this.cleanups.push(useBoardStore.subscribe(this.refresh), useSessionStore.subscribe(this.refresh), useAdminCoverageStore.subscribe(this.refresh));
 		this.proposalUnsubscribe = callbacks.proposals?.subscribe(this.refresh);
 		this.cleanups.push(() => this.proposalUnsubscribe?.());
 		this.cleanups.push(registerBoardCameraFlush(() => this.controller.flushZoom()));
@@ -123,7 +124,7 @@ export class BoardRuntime {
 		const bs = useBoardStore.getState();
 		return { scene: this.readScene(), drag: this.dragging, hover: bs.hoverTarget, playerDragging: bs.dragInfo !== null, locate: this.callbacks.locate };
 	}
-	private readScene() { return this.projection(useBoardStore.getState(), useSessionStore.getState(), this.callbacks.proposals?.getSnapshot()); }
+	private readScene() { return this.projection(useBoardStore.getState(), useSessionStore.getState(), this.callbacks.proposals?.getSnapshot(), useAdminCoverageStore.getState()); }
 
 	private refresh = () => {
 		if (this.disposed || this.committing) return;

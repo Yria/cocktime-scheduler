@@ -1,6 +1,7 @@
 import type { BoardState } from "../../../store/board/types";
 import type { useSessionStore } from "../../../store/sessionStore";
 import type { StagePoint } from "../../../types/board";
+import { coverageQueue, leavesNoAdmin } from "../adminCoverage";
 import { visibleMatchProposals, type ProposalComposerSnapshot } from "../matchProposals";
 import {
 	CTA_DISABLED_COLOR, CTA_FINISH_COLOR, CTA_PLAY_COLOR, CTA_START_COLOR,
@@ -17,6 +18,7 @@ import {
 import { sourceKey, type BoardEntity, type BoardSnapshot, type BoardSource, type CardAppearance, type CardView, type MagnetView } from "./types";
 
 type SessionSnapshot = ReturnType<typeof useSessionStore.getState>;
+interface CoverageSnapshot { memberIds: ReadonlySet<string>; loaded: boolean; starting: ReadonlyMap<string, readonly string[]> }
 
 function sameArray<T>(a: readonly T[], b: readonly T[]): boolean {
 	return a.length === b.length && a.every((value, index) => value === b[index]);
@@ -34,17 +36,17 @@ function sameAppearance(a: CardAppearance, b: CardAppearance): boolean {
  * 기존 보드의 표시 규칙만 투영한다. store/네트워크를 읽거나 정합 명령을 실행하지 않는다.
  * 캐시는 이 보드 인스턴스에만 속하고, 사라진 엔티티는 다음 snapshot에서 바로 해제된다.
  */
-export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, proposals?: ProposalComposerSnapshot) => BoardSnapshot {
+export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, proposals?: ProposalComposerSnapshot, coverage?: CoverageSnapshot) => BoardSnapshot {
 	let previous: BoardSnapshot = { entities: [], isEditor: false };
 	let previousInputs: readonly unknown[] = [];
 	let cache = new Map<string, BoardEntity>();
 
-	return (bs, ss, proposals) => {
+	return (bs, ss, proposals, coverage) => {
 		const draggedPlayerId = bs.dragInfo?.playerId ?? null;
 		const inputs = [bs.magnets, bs.drafts, bs.reservations, bs.courtAnchors, draggedPlayerId,
 			ss.sessionPlayers, ss.courts, ss.restingIds, ss.cockCheckEnabled, ss.isEditor, bs.assigningTeamIds,
 			proposals?.enabled, proposals?.groups, proposals?.sendingIds, proposals?.proposals,
-			proposals?.anchors, proposals?.resolvingIds, proposals?.viewerId, proposals?.isAdmin];
+			proposals?.anchors, proposals?.resolvingIds, proposals?.viewerId, proposals?.isAdmin, coverage?.memberIds, coverage?.loaded, coverage?.starting];
 		if (sameArray(previousInputs, inputs)) return previous;
 		previousInputs = inputs;
 
@@ -57,6 +59,10 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 		const selected = new Set([...groups.flatMap((group) => group.playerIds), ...visibleProposals.flatMap((proposal) => proposal.player_ids)]);
 		const restingIds = new Set(ss.restingIds);
 		const hasEmptyCourt = ss.courts.some((court) => !court.match);
+		const coverageInput = { ...bs, ...ss, adminMemberIds: coverage?.memberIds ?? new Set<string>(),
+			startingIds: new Set([...(coverage?.starting.values() ?? [])].flat()), proposals: visibleProposals };
+		const queue = coverage?.loaded ? coverageQueue(coverageInput) : [];
+		const nextTeam = queue.find(team => !leavesNoAdmin(team.ids, coverageInput));
 
 		const magnet = (source: BoardSource & { playerId: string }, point: StagePoint, resting = false): MagnetView | null => {
 			const player = ss.sessionPlayers.get(source.playerId);
@@ -106,12 +112,14 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 			const full = count === 4;
 			const startable = isTeamStartable(team.id, bs.drafts, bs.reservations, bs.magnets, playingIds);
 			const canStart = full && startable;
+			const held = canStart && coverage?.loaded && leavesNoAdmin(membership.map(m => m.playerId), coverageInput);
+			const next = coverage?.loaded && coverage.memberIds.size > 0 && nextTeam?.key === `team:${team.id}`;
 			const busy = bs.assigningTeamIds?.has(team.id) === true;
 			const ctaEnabled = ss.isEditor && !busy && (!full || (canStart && hasEmptyCourt));
 			const labelColor = startable ? TEAM_READY_STROKE
 				: full ? TEAM_RESERVED_STROKE : TEXT_SECONDARY;
 			const baseLabel = !full ? `팀 구성 중 · ${count}/4`
-				: canStart ? "팀 완성 · 4/4" : "4/4 · 예약 포함(경기중)";
+				: held ? "운영진 교대 대기" : canStart ? next ? "다음 경기 · 4/4" : "팀 완성 · 4/4" : "4/4 · 예약 포함(경기중)";
 			const members: MagnetView[] = [];
 			for (const member of membership) {
 				let source: BoardSource & { playerId: string };
@@ -134,9 +142,9 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 					stroke: startable ? TEAM_READY_STROKE : full ? TEAM_RESERVED_STROKE : TEAM_FORMING_STROKE,
 					label: team.createdBy ? `${baseLabel} · by ${team.createdBy}` : baseLabel,
 					labelColor, labelBold: full, showVs: full,
-					ctaLabel: busy ? "시작 중…" : canStart ? hasEmptyCourt ? "경기시작" : "코트 대기" : full ? "예약 대기" : "자동매칭",
+					ctaLabel: busy ? "시작 중…" : canStart ? hasEmptyCourt ? held ? "교대 확인" : "경기시작" : "코트 대기" : full ? "예약 대기" : "자동매칭",
 					ctaColor: !ctaEnabled ? CTA_DISABLED_COLOR : canStart ? CTA_PLAY_COLOR : CTA_START_COLOR,
-					ctaEnabled, showUnconfirm: ss.isEditor, showEdit: false, blink: false,
+					ctaEnabled, showUnconfirm: ss.isEditor, showEdit: false, blink: !!next && hasEmptyCourt,
 				},
 			});
 		}
@@ -205,6 +213,8 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 					&& ![...bs.reservations.values()].some((reservation) => reservation.playerId === id);
 			});
 			const canWithdraw = proposal.created_by === proposals.viewerId;
+			const held = full && ready && coverage?.loaded && leavesNoAdmin(proposal.player_ids, coverageInput);
+			const next = coverage?.loaded && coverage.memberIds.size > 0 && nextTeam?.key === `proposal:${proposal.id}`;
 			const members = proposal.player_ids.map((playerId, index): MagnetView => {
 				const memberSource: BoardSource = { kind: "proposal-member", playerId, groupId: proposal.id };
 				return { kind: "magnet", key: sourceKey(memberSource), source: memberSource,
@@ -219,13 +229,13 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 				emptySlots: emptySlotIndices(new Set(proposal.player_ids.map((_, index) => index))), confirmed: false,
 				appearance: {
 					fill: PROPOSAL_BG, stroke: PROPOSAL_STROKE, dashed: true,
-					label: `매칭 제안 · ${proposal.creator_name}`,
+					label: held ? "운영진 교대 대기" : next ? `다음 경기 · ${proposal.creator_name}` : `매칭 제안 · ${proposal.creator_name}`,
 					labelColor: PROPOSAL_STROKE, labelBold: true, showVs: false,
-					ctaLabel: busy ? "처리 중…" : proposals.isAdmin ? full ? "경기시작" : "자동매칭" : "제안 취소",
+					ctaLabel: busy ? "처리 중…" : proposals.isAdmin ? full ? held ? "교대 확인" : "경기시작" : "자동매칭" : "제안 취소",
 					ctaColor: !busy && (proposals.isAdmin ? editable && (!full || (ready && hasEmptyCourt)) : canWithdraw)
 						? proposals.isAdmin && full ? CTA_PLAY_COLOR : PROPOSAL_CTA : CTA_DISABLED_COLOR,
 					ctaEnabled: !busy && (proposals.isAdmin ? editable && (!full || (ready && hasEmptyCourt)) : canWithdraw),
-					showUnconfirm: proposals.isAdmin, showEdit: false, blink: false,
+					showUnconfirm: proposals.isAdmin, showEdit: false, blink: !!next && hasEmptyCourt && proposals.isAdmin,
 				},
 			});
 		}
