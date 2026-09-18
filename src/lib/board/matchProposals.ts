@@ -1,7 +1,8 @@
 import type { MagnetPosition, StagePoint } from "../../types/board";
 import type { MatchProposal } from "../supabase/matchProposals";
-import { PAIR_RADIUS, TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_W } from "./constants";
-import { clampAnchor, distance, isInsideTeamBounds, teamRect } from "./geometry";
+import { PAIR_RADIUS, PAIR_RADIUS_DETACH, TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_W } from "./constants";
+import { nearestFreePartner } from "./dropResolver";
+import { clampAnchor, isInsideTeamBounds, teamRect } from "./geometry";
 
 export interface ProposalGroup {
 	id: string;
@@ -88,7 +89,7 @@ export function removeProposalMember(groups: readonly ProposalGroup[], playerId:
 		.filter((group) => group.playerIds.length > 0);
 }
 
-/** Drop onto a local group, another free magnet, or open space (a one-person proposal). */
+/** Like an actual team, a new proposal starts only when two free magnets overlap. */
 export function dropProposalMember(
 	groups: readonly ProposalGroup[], playerId: string, point: StagePoint,
 	freeMagnets: readonly MagnetPosition[], bounds: { width: number; height: number }, newId: string,
@@ -100,15 +101,14 @@ export function dropProposalMember(
 			? { ...group, playerIds: [...group.playerIds, playerId] } : group);
 	}
 	const selected = new Set(groups.flatMap((group) => group.playerIds));
-	const partner = freeMagnets.filter((magnet) => magnet.playerId !== playerId && !selected.has(magnet.playerId))
-		.map((magnet) => ({ magnet, distance: distance(point, magnet) }))
-		.filter((candidate) => candidate.distance <= PAIR_RADIUS)
-		.sort((a, b) => a.distance - b.distance)[0]?.magnet;
+	const candidates = new Map(freeMagnets.filter((magnet) => !selected.has(magnet.playerId)).map((magnet) => [magnet.playerId, magnet]));
+	const partner = nearestFreePartner(playerId, point, candidates, new Set(), new Set(), new Set(),
+		selected.has(playerId) ? PAIR_RADIUS_DETACH : PAIR_RADIUS);
 	const next = removeProposalMember(groups, playerId);
-	// Pulling a member into open space removes it from the local group.
-	if (selected.has(playerId) && !partner) return next;
+	// Open space only moves a free magnet or removes a member from an existing local group.
+	if (!partner) return next;
 	return [...next, {
-		id: newId, playerIds: partner ? [partner.playerId, playerId] : [playerId],
-		anchor: clampAnchor(point, bounds.width, bounds.height),
+		id: newId, playerIds: [partner.id, playerId],
+		anchor: clampAnchor({ x: (point.x + partner.pos.x) / 2, y: (point.y + partner.pos.y) / 2 }, bounds.width, bounds.height),
 	}];
 }

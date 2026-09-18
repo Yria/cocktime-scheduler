@@ -42,6 +42,21 @@ function card(snapshot: BoardSnapshot, key: string): CardView {
 }
 
 describe("Pixi board projection", () => {
+	it("lets composing members drag only free and local proposal magnets", () => {
+		const { bs, ss } = fixture();
+		ss.isEditor = false;
+		team(bs, "T", ["a", "b"]);
+		ss.courts = [court(1, ["e", "f", "g", "h"])];
+		bs.reservations.set("r", { id: "r", playerId: "e", teamId: "T", createdAt: 1 });
+		const state: ProposalComposerSnapshot = { enabled: true, groups: [{ id: "local", playerIds: ["c"], anchor: { x: 600, y: 200 } }],
+			sendingIds: new Set(), proposals: [], anchors: new Map(), resolvingIds: new Set(), viewerId: "author", isAdmin: false };
+		const snapshot = createBoardProjection()(bs, ss, state);
+		expect(card(snapshot, "team:T").members.every((member) => !member.draggable)).toBe(true);
+		expect(card(snapshot, "court:1:match-1").members.every((member) => !member.draggable)).toBe(true);
+		expect(card(snapshot, "proposal:local").members.every((member) => member.draggable)).toBe(true);
+		expect(snapshot.entities.find((view) => view.key === "free:d")?.draggable).toBe(true);
+	});
+
 	it("shows sent proposals as private dashed groups for author and admin, with rejection only for admin", () => {
 		const { bs, ss } = fixture();
 		ss.isEditor = false;

@@ -61,7 +61,15 @@ async function drag(page: Page, player: number, target?: { x: number; y: number 
 	const canvas = (await page.locator("canvas").boundingBox())!;
 	const state = await page.evaluate((id) => {
 		const s = window.proposalTest.board.getState();
-		return { point: s.magnets.get(id)!, scale: s.scale };
+		const scene = window.proposalTest.scene();
+		for (const view of scene.entities) {
+			if (view.kind === "magnet" && view.player.id === id) return { point: view.point, scale: s.scale };
+			if (view.kind === "card") {
+				const member = view.members.find((item) => item.player.id === id);
+				if (member) return { point: { x: view.point.x + member.point.x, y: view.point.y + member.point.y }, scale: s.scale };
+			}
+		}
+		throw new Error(`Missing rendered magnet ${id}`);
 	}, uid(player));
 	const destination = target ?? { x: 180, y: 350 };
 	await page.mouse.move(canvas.x + state.point.x * state.scale, canvas.y + state.point.y * state.scale);
@@ -79,6 +87,10 @@ async function cards(page: Page) {
 	return page.evaluate(() => window.proposalTest.scene().entities.filter((view) => view.kind === "card" && view.source.kind === "proposal"));
 }
 
+async function pair(page: Page, player: number, partner: number) {
+	await drag(page, player, await page.evaluate((id) => window.proposalTest.board.getState().magnets.get(id)!, uid(partner)));
+}
+
 async function pressFooter(page: Page, index = 0, reject = false) {
 	await expect.poll(async () => (await cards(page)).length).toBeGreaterThan(index);
 	const card = (await cards(page))[index];
@@ -93,14 +105,14 @@ async function pressFooter(page: Page, index = 0, reject = false) {
 const proposal: MatchProposal = { id: uid(200), session_id: 1, created_by: uid(2), creator_name: "민수", player_ids: [uid(2), uid(3)],
 	player_names: ["민수", "지수"], status: "pending", created_at: "2026-09-18T00:00:00Z", updated_at: "2026-09-18T00:00:00Z" };
 
-test("member groups 1–4 and sees the sent dashed group at the same location", async ({ page }) => {
+test("member starts with a pair, grows to four and sees the sent dashed group at the same location", async ({ page }) => {
 	const errors: string[] = []; page.on("pageerror", (error) => errors.push(error.message));
 	const writes = await setup(page);
 	await expect(page.getByRole("button", { name: "보기 전용", exact: true })).toHaveCount(0);
 	await expect(page.locator(".proposal-dock, .proposal-sheet")).toHaveCount(0);
-	await drag(page, 2);
-	await expect.poll(() => page.evaluate(() => window.proposalTest.proposals.getState().groups[0]?.playerIds.length)).toBe(1);
-	for (const id of [3, 4, 5, 6]) {
+	await pair(page, 2, 3);
+	await expect.poll(() => page.evaluate(() => window.proposalTest.proposals.getState().groups[0]?.playerIds.length)).toBe(2);
+	for (const id of [4, 5, 6]) {
 		await drag(page, id, await page.evaluate(() => window.proposalTest.proposals.getState().groups[0].anchor));
 	}
 	await expect.poll(() => page.evaluate(() => window.proposalTest.proposals.getState().groups[0]?.playerIds.length)).toBe(4);
@@ -122,10 +134,10 @@ test("member groups 1–4 and sees the sent dashed group at the same location", 
 
 test("failed sends and rejections retain the group for retry", async ({ page }) => {
 	await setup(page, "member", { failSend: true });
-	await drag(page, 2);
+	await pair(page, 2, 3);
 	await pressFooter(page);
 	await expect(page.getByText("제안을 보내지 못했어요. 묶음은 그대로 있으니 다시 눌러주세요.")).toBeVisible();
-	expect(await page.evaluate(() => window.proposalTest.proposals.getState().groups[0].playerIds)).toEqual([uid(2)]);
+	expect(await page.evaluate(() => window.proposalTest.proposals.getState().groups[0].playerIds)).toEqual([uid(3), uid(2)]);
 	await page.unrouteAll();
 	await setup(page, "admin", { failResolve: true, server: { proposals: [proposal] } });
 	await pressFooter(page, 0, true);
@@ -168,7 +180,7 @@ test("arrange repositions both draft and sent proposals locally", async ({ page 
 	await page.mouse.move(canvas.x + 460 * scale, canvas.y + 330 * scale, { steps: 8 });
 	await page.mouse.up();
 	await expect.poll(async () => (await cards(page))[0].point.x).toBe(460);
-	await drag(page, 4, { x: 650, y: 400 });
+	await pair(page, 4, 5);
 	const before = (await cards(page)).map((card) => card.point);
 	expect(before).toHaveLength(2);
 	await page.getByRole("button", { name: "정렬", exact: true }).click();
@@ -238,6 +250,37 @@ test("admin adds and removes private members; author receives roster changes", a
 	expect(await page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(0);
 	await author.close();
 });
+
+test("admin cannot copy a shared team member into a submitted proposal", async ({ page }) => {
+	const server = { proposals: [proposal] };
+	const writes = await setup(page, "admin", { server });
+	await page.evaluate((ids) => {
+		window.proposalTest.session.setState({ boardDrafts: { teams: [{ id: "shared", memberIds: ids, createdMs: 1 }], reservations: [] } });
+	}, [uid(4), uid(5)]);
+	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(1);
+	await page.getByRole("button", { name: "정렬", exact: true }).click();
+	const target = (await cards(page))[0];
+	await drag(page, 4, { x: target.point.x - 35, y: target.point.y + 35 });
+	expect(server.proposals[0].player_ids).toEqual([uid(2), uid(3)]);
+	expect((await cards(page))[0].members.map((member) => member.player.id)).toEqual([uid(2), uid(3)]);
+	expect(await page.evaluate(() => window.proposalTest.board.getState().drafts.get("shared")?.anchorMemberIds)).toEqual([uid(4), uid(5)]);
+	expect(writes.filter((url) => url.includes("edit_match_proposals"))).toEqual([]);
+});
+
+for (const [state, player] of [["resting", 2], ["cock-pending", 3]] as const) {
+	test(`member pairing excludes ${state} ${player === 2 ? "source" : "partner"}`, async ({ page }) => {
+		const writes = await setup(page);
+		await page.evaluate(({ state, id }) => {
+			const session = window.proposalTest.session;
+			if (state === "resting") session.setState({ restingIds: [id] });
+			else session.setState({ cockCheckEnabled: true, sessionPlayers: new Map(session.getState().sessionPlayers)
+				.set(id, { ...session.getState().sessionPlayers.get(id)!, cockChecked: false }) });
+		}, { state, id: uid(player) });
+		await pair(page, 2, 3);
+		expect(await cards(page)).toHaveLength(0);
+		expect(writes).toEqual([]);
+	});
+}
 
 test("admin automatically fills four and starts directly; member keeps cancellation only", async ({ page, context }) => {
 	const server = { proposals: [proposal] };
@@ -381,3 +424,43 @@ test("touch opens search; playing and waiting members remain findable with reduc
 	await page.screenshot({ path: testInfo.outputPath("located-free-dark-mobile.png") });
 	await cdp.detach();
 });
+
+for (const width of [390, 1280]) {
+	test(`member drop into a shared empty slot never creates a singleton proposal at ${width}px`, async ({ page }, testInfo) => {
+		await page.setViewportSize({ width, height: 844 });
+		const writes = await setup(page, "member");
+		await page.evaluate((ids) => {
+			window.proposalTest.session.setState({ boardDrafts: { teams: [{ id: "shared", memberIds: ids, createdMs: 1 }], reservations: [] } });
+		}, [uid(2), uid(3)]);
+		await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(1);
+		await page.getByRole("button", { name: "정렬", exact: true }).click();
+		const target = await page.evaluate(() => {
+			const view = window.proposalTest.scene().entities.find((entity) => entity.kind === "card" && entity.source.kind === "team");
+			if (!view || view.kind !== "card") throw new Error("Missing shared team");
+			return { x: view.point.x - 35, y: view.point.y + 35 };
+		});
+		const before = await page.evaluate((id) => window.proposalTest.board.getState().magnets.get(id), uid(4));
+		await drag(page, 4, target);
+		expect(await cards(page)).toHaveLength(0);
+		expect(await page.evaluate((id) => window.proposalTest.board.getState().magnets.get(id), uid(4))).toEqual(before);
+		expect(await page.evaluate(() => window.proposalTest.board.getState().drafts.get("shared")?.anchorMemberIds)).toEqual([uid(2), uid(3)]);
+		expect(writes).toEqual([]);
+		// Open space only moves the magnet. A new group requires another free magnet.
+		const open = { x: width > 400 ? 450 : 250, y: 550 };
+		await drag(page, 4, open);
+		expect(await cards(page)).toHaveLength(0);
+		expect(await page.evaluate((id) => window.proposalTest.board.getState().magnets.get(id), uid(4))).not.toEqual(before);
+		await pair(page, 4, 5);
+		await expect.poll(async () => (await cards(page))[0]?.appearance.label).toBe("매칭 제안 · 2/4");
+		const local = (await cards(page))[0];
+		await drag(page, 6, { x: local.point.x - 35, y: local.point.y + 35 });
+		await expect.poll(async () => (await cards(page))[0]?.members.length).toBe(3);
+		expect((await cards(page))[0].appearance.label).toBe("매칭 제안 · 3/4");
+		// Shared team members cannot be copied into the private group.
+		await drag(page, 2, { x: local.point.x + 35, y: local.point.y + 35 });
+		expect((await cards(page))[0].members.map((member) => member.player.id)).toEqual([uid(5), uid(4), uid(6)]);
+		expect(await page.evaluate(() => window.proposalTest.board.getState().drafts.get("shared")?.anchorMemberIds)).toEqual([uid(2), uid(3)]);
+		expect(writes).toEqual([]);
+		await page.screenshot({ path: testInfo.outputPath(`proposal-slot-guard-${width}.png`) });
+	});
+}

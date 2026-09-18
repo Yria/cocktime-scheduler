@@ -1,22 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { dropProposalMember, placeProposalAnchors, removeProposalMember, type ProposalGroup } from "./matchProposals";
 import { teamRect } from "./geometry";
+import { PAIR_RADIUS } from "./constants";
 
 const bounds = { width: 800, height: 600 };
 const point = { x: 200, y: 250 };
 const group = (ids: string[]): ProposalGroup => ({ id: "one", playerIds: ids, anchor: point });
 
 describe("private proposal composition", () => {
-	it("allows one member in open space without mutating the input", () => {
+	it("never starts a proposal from one member dropped in open space", () => {
 		const groups: ProposalGroup[] = [];
-		expect(dropProposalMember(groups, "a", point, [], bounds, "new")).toEqual([{ id: "new", playerIds: ["a"], anchor: point }]);
+		expect(dropProposalMember(groups, "a", point, [], bounds, "new")).toEqual([]);
 		expect(groups).toEqual([]);
 	});
 	it("pairs overlapping free magnets and never selects an already grouped partner", () => {
 		const magnets = [{ playerId: "b", x: 210, y: 250, teamId: null }];
 		expect(dropProposalMember([], "a", point, magnets, bounds, "new")[0].playerIds).toEqual(["b", "a"]);
 		const other = { ...group(["b"]), anchor: { x: 600, y: 250 } };
-		expect(dropProposalMember([other], "a", point, magnets, bounds, "new")[1].playerIds).toEqual(["a"]);
+		expect(dropProposalMember([other], "a", point, magnets, bounds, "new")).toEqual([other]);
+	});
+	it("uses the actual team pairing radius and midpoint, excluding shared team members", () => {
+		const partner = { playerId: "b", x: point.x + PAIR_RADIUS - 0.01, y: point.y, teamId: null };
+		expect(dropProposalMember([], "a", point, [partner], bounds, "new")).toEqual([
+			{ id: "new", playerIds: ["b", "a"], anchor: { x: (point.x + partner.x) / 2, y: point.y } },
+		]);
+		expect(dropProposalMember([], "a", point, [{ ...partner, x: partner.x + 1 }], bounds, "new")).toEqual([]);
+		expect(dropProposalMember([], "a", point, [{ ...partner, teamId: "shared" }], bounds, "new")).toEqual([]);
 	});
 	it("enforces four without silently replacing a selected member", () => {
 		const original = [group(["a", "b", "c", "d"])];

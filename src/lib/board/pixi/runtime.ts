@@ -3,10 +3,10 @@ import { useBoardStore } from "../../../store/boardStore";
 import { useDebugStore } from "../../../store/debugStore";
 import { useSessionStore } from "../../../store/sessionStore";
 import type { StagePoint } from "../../../types/board";
-import { EMPTY_SLOT_R, MAGNET_HIT_R, PAIR_RADIUS, TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_W } from "../constants";
+import { EMPTY_SLOT_R, MAGNET_HIT_R, PAIR_RADIUS, PAIR_RADIUS_DETACH, TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_W } from "../constants";
 import { computeSlotOffset, isInDetachZone, isInRestField, isInsideTeamBounds, slotIndexAt } from "../geometry";
 import type { ProposalComposer } from "../matchProposals";
-import { resolveDropTarget } from "../dropResolver";
+import { nearestFreePartner, resolveDropTarget } from "../dropResolver";
 import { cockPendingIds, playingIdsFromCourts } from "../membership";
 import { registerBoardCameraFlush } from "./cameraBridge";
 import { cardControls } from "./cardControls";
@@ -339,7 +339,12 @@ export class BoardRuntime {
 			else {
 				this.skipAnimationPlayer = source.playerId;
 				if (this.callbacks.proposals?.dropSubmitted(source.playerId, point, source.kind === "proposal-member" ? source.groupId : undefined)) { /* Private roster update owns this drop. */ }
-				else if (this.callbacks.proposals?.getSnapshot().enabled) this.callbacks.proposals.drop(source.playerId, point);
+				else if (this.callbacks.proposals?.getSnapshot().enabled) {
+					// Shared team/court slots are not blank space for a new private proposal.
+					const overSharedGroup = this.readScene().entities.some((view) => view.kind === "card"
+						&& view.source.kind !== "proposal" && isInsideTeamBounds(point, this.point(view)));
+					if (!overSharedGroup) this.callbacks.proposals.drop(source.playerId, point);
+				}
 				else if (source.kind === "proposal-member") { /* Composer was disabled while dragging. */ }
 				else if (source.kind === "playing") bs.handlePlayingMagnetDrop(source.playerId, point);
 				else if (source.kind === "ghost") {
@@ -384,6 +389,13 @@ export class BoardRuntime {
 		if (proposals?.enabled) {
 			if (!("playerId" in source)) return;
 			const bs = useBoardStore.getState();
+			if ((source.kind !== "free" && source.kind !== "proposal-member")
+				|| ss.restingIds.includes(source.playerId)
+				|| (ss.cockCheckEnabled && !ss.sessionPlayers.get(source.playerId)?.cockChecked)
+				|| this.presentation.scene.entities.some((view) => view.kind === "card"
+					&& view.source.kind !== "proposal" && isInsideTeamBounds(point, this.point(view)))) {
+				bs.setHoverTarget(null); return;
+			}
 			const group = [...proposals.groups].reverse().find((item) => isInsideTeamBounds(point, item.anchor));
 			if (group) {
 				bs.setHoverTarget(group.playerIds.length < 4 && !proposals.sendingIds.has(group.id)
@@ -391,10 +403,12 @@ export class BoardRuntime {
 				return;
 			}
 			const selected = new Set(proposals.groups.flatMap((item) => item.playerIds));
-			const partner = this.presentation.scene.entities.find((view) => view.kind === "magnet"
-				&& view.source.kind === "free" && view.player.id !== source.playerId && !selected.has(view.player.id)
-				&& Math.hypot(view.point.x - point.x, view.point.y - point.y) <= PAIR_RADIUS);
-			bs.setHoverTarget(partner?.kind === "magnet" ? { kind: "magnet", id: partner.player.id } : null);
+			const candidates = new Map(this.presentation.scene.entities.flatMap((view) => view.kind === "magnet"
+				&& view.source.kind === "free" && !view.cockPending && !view.resting && !selected.has(view.player.id)
+				? [[view.player.id, { playerId: view.player.id, ...view.point, teamId: null }] as const] : []));
+			const partner = nearestFreePartner(source.playerId, point, candidates, new Set(), new Set(), new Set(),
+				selected.has(source.playerId) ? PAIR_RADIUS_DETACH : PAIR_RADIUS);
+			bs.setHoverTarget(partner ? { kind: "magnet", id: partner.id } : null);
 			return;
 		}
 		if (proposals?.isAdmin && ss.isEditor && "playerId" in source) {
@@ -404,7 +418,9 @@ export class BoardRuntime {
 			});
 			if (group) {
 				const slot = slotIndexAt(point, proposals.anchors.get(group.id)!);
-				useBoardStore.getState().setHoverTarget(slot >= 0 && !proposals.resolvingIds.has(group.id)
+				const eligible = source.kind === "proposal-member" || (source.kind === "free"
+					&& !ss.restingIds.includes(source.playerId) && (!ss.cockCheckEnabled || ss.sessionPlayers.get(source.playerId)?.cockChecked));
+				useBoardStore.getState().setHoverTarget(eligible && slot >= 0 && !proposals.resolvingIds.has(group.id)
 					? { kind: "slot", teamId: group.id, slotIndex: slot } : null);
 				return;
 			}

@@ -67,7 +67,9 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 			const next: MagnetView = {
 				kind: "magnet", key, source, point, player, ghost, resting,
 				cockPending: ss.cockCheckEnabled && !ghost && source.kind !== "playing" && !resting && !player.cockChecked,
-				draggable: ss.isEditor || composing || (!ghost && position.teamId == null),
+				draggable: ss.isEditor || (composing
+					? source.kind === "free" || source.kind === "proposal-member"
+					: !ghost && position.teamId == null),
 			};
 			const old = cache.get(key);
 			const value = old?.kind === "magnet" && old.player === player && samePoint(old.point, point)
@@ -180,7 +182,7 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 				kind: "card", key: sourceKey(source), source, point: group.anchor, draggable: true,
 				members, emptySlots: emptySlotIndices(new Set(group.playerIds.map((_, i) => i))), confirmed: false,
 				appearance: {
-					fill: PROPOSAL_BG, stroke: PROPOSAL_STROKE, label: `나만 보는 묶음 · ${group.playerIds.length}/4`,
+					fill: PROPOSAL_BG, stroke: PROPOSAL_STROKE, label: `매칭 제안 · ${group.playerIds.length}/4`,
 					labelColor: PROPOSAL_STROKE, labelBold: true, showVs: false,
 					ctaLabel: sending ? "보내는 중…" : "매칭 제안", ctaColor: sending ? CTA_DISABLED_COLOR : PROPOSAL_CTA,
 					ctaEnabled: !sending && members.length === group.playerIds.length, showUnconfirm: false, showEdit: false, blink: false,

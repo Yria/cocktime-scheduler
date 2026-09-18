@@ -55,7 +55,6 @@ export default function BoardPlayerSearch({ onClose, onSelect }: {
 						className="h-12 w-full rounded-xl border border-gray-300 bg-white pl-10 pr-3 text-base text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-2 focus:outline-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-400" />
 				</div>
 			</form>
-			<p className="mt-3 text-sm text-gray-600 dark:text-gray-300">결과를 누르면 보드에서 반짝여요.</p>
 			<p role="status" className="sr-only">{query.trim() ? `${results.length}명 검색됨` : "이름이나 초성을 입력해 주세요."}</p>
 			<div className="mt-3 max-h-[36dvh] overflow-y-auto overscroll-contain">
 				{!query.trim() ? <p className="py-5 text-center text-sm text-gray-500 dark:text-gray-400">찾을 회원의 이름을 입력해 주세요.</p>

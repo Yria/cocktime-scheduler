@@ -32,6 +32,18 @@ function editable() {
 	return state.enabled && state.scope !== null && state.scope === matchProposalScope();
 }
 
+/** Private proposals can select waiting free magnets, never copy shared team/court membership. */
+function proposalCandidates() {
+	const board = useBoardStore.getState(), session = useSessionStore.getState();
+	const playing = playingIdsFromCourts(session.courts);
+	const reserved = new Set([...board.reservations.values()].map((reservation) => reservation.playerId));
+	const resting = new Set(session.restingIds);
+	const notReady = cockPendingIds(session.sessionPlayers.values(), session.cockCheckEnabled);
+	return [...board.magnets.values()].filter((magnet) => magnet.teamId === null
+		&& session.sessionPlayers.has(magnet.playerId) && !playing.has(magnet.playerId) && !reserved.has(magnet.playerId)
+		&& !resting.has(magnet.playerId) && !notReady.has(magnet.playerId));
+}
+
 /** Keep surrounding magnets reachable without putting private groups into boardStore.drafts. */
 export function settleProposalLayout(rearrange = false) {
 	const state = useMatchProposalStore.getState();
@@ -116,6 +128,7 @@ export const proposalComposer: ProposalComposer = {
 			if (source) void editSubmitted([{ proposal: source, ids: source.player_ids.filter((id) => id !== playerId) }]);
 			return true;
 		}
+		if (!source && !proposalCandidates().some((magnet) => magnet.playerId === playerId)) return true;
 		const slot = slotIndexAt(point, state.anchors.get(target.id)!);
 		if (slot < 0) return true;
 		const ids = [...target.player_ids];
@@ -151,11 +164,15 @@ export const proposalComposer: ProposalComposer = {
 		if (state.groups.some((group) => state.sendingIds.has(group.id) && group.playerIds.includes(playerId))) return;
 		// Freeze a sending group so a pending request and the visible selection cannot diverge.
 		const frozen = state.groups.filter((group) => state.sendingIds.has(group.id));
-		const playing = playingIdsFromCourts(session.courts);
 		const proposedIds = new Set(visibleMatchProposals(state).flatMap((proposal) => proposal.player_ids));
+		const candidates = proposalCandidates().filter((magnet) => !proposedIds.has(magnet.playerId));
+		if (!candidates.some((magnet) => magnet.playerId === playerId)) {
+			// Non-matching free magnets can still be repositioned, with no membership changes.
+			if (!state.groups.some((group) => group.playerIds.includes(playerId)) && !proposedIds.has(playerId)) board.handleDrop(playerId, point);
+			return;
+		}
 		const next = dropProposalMember(state.groups, playerId, point,
-			[...board.magnets.values()].filter((magnet) => magnet.teamId === null
-				&& !playing.has(magnet.playerId) && !proposedIds.has(magnet.playerId)),
+			candidates,
 			{ width: board.stageW, height: board.stageH }, randomId());
 		if (frozen.some((group) => next.find((candidate) => candidate.id === group.id) !== group)) return;
 		state.setGroups(next);
