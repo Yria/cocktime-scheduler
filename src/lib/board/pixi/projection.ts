@@ -53,7 +53,7 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 		const nextCache = new Map<string, BoardEntity>();
 		const entities: BoardEntity[] = [];
 		const playingIds = playingIdsFromCourts(ss.courts);
-		const composing = proposals?.enabled === true;
+		const composing = proposals?.enabled === true && !ss.isEditor;
 		const groups = composing ? proposals.groups : [];
 		const visibleProposals = visibleMatchProposals(proposals);
 		const selected = new Set([...groups.flatMap((group) => group.playerIds), ...visibleProposals.flatMap((proposal) => proposal.player_ids)]);
@@ -213,6 +213,7 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 					&& ![...bs.reservations.values()].some((reservation) => reservation.playerId === id);
 			});
 			const canWithdraw = proposal.created_by === proposals.viewerId;
+			const adminActions = proposals.isAdmin && (ss.isEditor || !canWithdraw);
 			const held = full && ready && coverage?.loaded && leavesNoAdmin(proposal.player_ids, coverageInput);
 			const next = coverage?.loaded && coverage.memberIds.size > 0 && nextTeam?.key === `proposal:${proposal.id}`;
 			const members = proposal.player_ids.map((playerId, index): MagnetView => {
@@ -231,11 +232,11 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 					fill: PROPOSAL_BG, stroke: PROPOSAL_STROKE, dashed: true,
 					label: held ? "운영진 교대 대기" : next ? `다음 경기 · ${proposal.creator_name}` : `매칭 제안 · ${proposal.creator_name}`,
 					labelColor: PROPOSAL_STROKE, labelBold: true, showVs: false,
-					ctaLabel: busy ? "처리 중…" : proposals.isAdmin ? full ? held ? "교대 확인" : "경기시작" : "자동매칭" : "제안 취소",
-					ctaColor: !busy && (proposals.isAdmin ? editable && (!full || (ready && hasEmptyCourt)) : canWithdraw)
-						? proposals.isAdmin && full ? CTA_PLAY_COLOR : PROPOSAL_CTA : CTA_DISABLED_COLOR,
-					ctaEnabled: !busy && (proposals.isAdmin ? editable && (!full || (ready && hasEmptyCourt)) : canWithdraw),
-					showUnconfirm: proposals.isAdmin, showEdit: false, blink: !!next && hasEmptyCourt && proposals.isAdmin,
+					ctaLabel: busy ? "처리 중…" : adminActions ? full ? held ? "교대 확인" : "경기시작" : "자동매칭" : "제안 취소",
+					ctaColor: !busy && (adminActions ? editable && (!full || (ready && hasEmptyCourt)) : canWithdraw)
+						? adminActions && full ? CTA_PLAY_COLOR : PROPOSAL_CTA : CTA_DISABLED_COLOR,
+					ctaEnabled: !busy && (adminActions ? editable && (!full || (ready && hasEmptyCourt)) : canWithdraw),
+					showUnconfirm: adminActions, showEdit: false, blink: !!next && hasEmptyCourt && proposals.isAdmin,
 				},
 			});
 		}

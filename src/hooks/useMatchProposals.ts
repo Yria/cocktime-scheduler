@@ -30,7 +30,7 @@ export function matchProposalScope() {
 
 function editable() {
 	const state = useMatchProposalStore.getState();
-	return state.enabled && state.scope !== null && state.scope === matchProposalScope();
+	return state.enabled && !useSessionStore.getState().isEditor && state.scope !== null && state.scope === matchProposalScope();
 }
 
 /** Private proposals can select waiting free magnets, never copy shared team/court membership. */
@@ -211,7 +211,7 @@ export const proposalComposer: ProposalComposer = {
 		if (!state.scope || state.scope !== matchProposalScope()) return;
 		const proposal = state.proposals.find((item) => item.id === groupId);
 		if (proposal) {
-			if (state.isAdmin) { if (proposal.player_ids.length < 4) autoFillSubmitted(proposal); else void startSubmitted(proposal); }
+			if (canEditSubmitted()) { if (proposal.player_ids.length < 4) autoFillSubmitted(proposal); else void startSubmitted(proposal); }
 			else if (proposal.created_by === state.viewerId) void resolveProposal(groupId, "withdrawn");
 		} else void submitGroup(groupId);
 	},
@@ -378,8 +378,14 @@ export function useMatchProposals() {
 	}, [bounds, drafts, courts, playerIds, proposals]);
 	useEffect(() => {
 		const scope = matchProposalScope();
-		useMatchProposalStore.getState().reset(scope ?? undefined, !isAdmin && participating && !!scope, userId, isAdmin);
+		useMatchProposalStore.getState().reset(scope ?? undefined, participating && !useSessionStore.getState().isEditor && !!scope, userId, isAdmin);
 		if (!sessionId || !scope) return;
+		// Switching the editing lock changes drag behavior without refetching submitted proposals.
+		const unsubscribeEditing = useSessionStore.subscribe((session, previous) => {
+			if (session.isEditor === previous.isEditor) return;
+			useMatchProposalStore.setState((state) => ({ enabled: participating && !session.isEditor,
+				groups: session.isEditor ? [] : state.groups }));
+		});
 		let disposed = false;
 		let request = 0;
 		const refresh = async () => {
@@ -416,6 +422,7 @@ export function useMatchProposals() {
 		window.addEventListener("online", onVisible);
 		return () => {
 			disposed = true; window.clearInterval(timer);
+			unsubscribeEditing();
 			document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("online", onVisible);
 			void supabase.removeChannel(channel);
 			useMatchProposalStore.getState().reset();
