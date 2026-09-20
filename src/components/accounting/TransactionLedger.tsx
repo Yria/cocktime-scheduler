@@ -103,7 +103,7 @@ export default function TransactionLedger({
 	settling: boolean;
 	onDone: () => Promise<void>;
 	onPendingChange: (pending: boolean) => void;
-	/** 항목 칩과 공유하는 필터. 부모가 소유해 두 줄이 같은 값을 본다. */
+	/** 상태·항목 버튼이 공유하는 필터. 부모가 선택 값을 유지한다. */
 	filter: string;
 	onFilter: (key: string) => void;
 	/** 그 달의 항목별 수지. 이 목록을 좁히는 필터 줄로 그린다(SPEC §3.3). */
@@ -148,17 +148,13 @@ export default function TransactionLedger({
 		.sort((a, b) => (sort === "amount" ? b.tx.amount - a.tx.amount : 0));
 	const number = (n: number) => n.toLocaleString("ko-KR");
 	const selectedGroup = data.groups.find((g) => g.id === filter);
-	// 항목이 15개를 넘는 달이 있어 한 줄에 하나씩 놓으면 필터가 목록보다 길어진다.
-	// 가로로 흐르는 칩으로 접되, 대조가 본업이므로 수입·지출을 칩 안에 함께 둔다.
-	//
-	// 순서는 **종류 묶음 + 날짜순**이다(사용자 선택): 대관비(회차 날짜) → 회비(월) →
-	// 수동 묶음(발생일) → 묶음 없는 합성 항목(환불·미분류·이월 …). 같은 종류가 붙어
-	// 있어야 찾는 종류로 바로 스크롤할 수 있다. 금액 순으로 세우면 날짜가 흩어져
-	// '8/16 대관비'를 눈으로 좇을 수 없다.
+	// 상태와 항목 필터는 같은 흐름에 놓고, 항목은 종류별 날짜순을 유지한다.
 	const buckets = useMemo(
 		() => sortLedgerBuckets(lines, data.groups),
 		[lines, data.groups],
 	);
+	const selectedBucket = buckets.find((line) => line.group_id === filter);
+	const ungroupedBuckets = buckets.filter((line) => !line.group_id);
 	return (
 		<section
 			className="ac-sheet ac-transaction-ledger"
@@ -203,7 +199,7 @@ export default function TransactionLedger({
 					</select>
 				</div>
 				<div
-					className="ac-ledger-filters"
+					className="ac-ledger-filters ac-filter-chips"
 					role="group"
 					aria-label="거래 내역 필터"
 				>
@@ -222,7 +218,7 @@ export default function TransactionLedger({
 							{f.label}
 						</button>
 					))}
-					{selectedGroup && (
+					{selectedGroup && !selectedBucket && (
 						<button
 							type="button"
 							className="ac-chip"
@@ -235,66 +231,48 @@ export default function TransactionLedger({
 							<X size={12} aria-hidden="true" />
 						</button>
 					)}
-				</div>
-				{buckets.length > 0 && (
-					<div
-						className="ac-bucket-filters"
-						role="group"
-						aria-label="항목별 수지"
-					>
-						{buckets.map((line, index) => {
-							const picked = !!line.group_id && filter === line.group_id;
+					{buckets
+						.filter((line) => line.group_id)
+						.map((line) => {
+							const picked = filter === line.group_id;
 							const money = `수입 ${won(line.income)} · 지출 ${won(line.expense)}`;
-							const inner = (
-								<>
-									<span className="ac-bucket-name">
-										{shortGroupLabel(line.label)}
-									</span>
-									{/* 두 칸을 항상 채운다. 0 인 쪽을 생략하면 칩마다 수입·지출이
-									    자리를 바꿔 앉아 가로로 훑을 때 열이 서지 않는다 — 표의
-									    `—` 자리표시가 칩에서도 같은 일을 한다. */}
-									<span className="ac-bucket-sums">
-										<strong
-											className={
-												line.income ? "ac-ledger-income" : "ac-bucket-zero"
-											}
-										>
-											{line.income ? number(line.income) : "—"}
-										</strong>
-										<small className={line.expense ? "" : "ac-bucket-zero"}>
-											{line.expense ? `−${number(line.expense)}` : "—"}
-										</small>
-									</span>
-								</>
-							);
-							// 환불·미분류처럼 묶음 ID 가 없는 합성 항목은 좁힐 대상이 없다 —
-							// 눌러도 아무 일이 없는 버튼을 두면 나머지 칩의 클릭도 못 믿게 된다.
-							// 숫자는 읽을 수 있어야 하므로 버튼 대신 같은 모양의 칩으로 남긴다.
-							return line.group_id ? (
+							return (
 								<button
-									key={`${line.group_id}-${index}`}
+									key={line.group_id}
 									type="button"
-									className="ac-bucket-chip"
+									className="ac-chip ac-bucket-chip"
 									aria-pressed={picked}
 									aria-label={`${line.label} ${money}${picked ? " 필터 해제" : " 거래 보기"}`}
+									title={`${line.label} · ${money}`}
 									disabled={settling}
 									onClick={() => {
 										onFilter(picked ? "all" : (line.group_id as string));
 										setExpanded(null);
 									}}
 								>
-									{inner}
+									{shortGroupLabel(line.label)}
 								</button>
-							) : (
-								<span
-									key={`static-${index}`}
-									className="ac-bucket-chip is-static"
-									aria-label={`${line.label} ${money}`}
-								>
-									{inner}
-								</span>
 							);
 						})}
+				</div>
+				{selectedBucket && (
+					<p className="ac-caption" aria-label="선택 항목 수지">
+						{shortGroupLabel(selectedBucket.label)} · 수입{" "}
+						{won(selectedBucket.income)} · 지출 {won(selectedBucket.expense)}
+					</p>
+				)}
+				{ungroupedBuckets.length > 0 && (
+					<div
+						className="ac-ledger-unassigned-totals"
+						role="group"
+						aria-label="기타 항목 수지"
+					>
+						{ungroupedBuckets.map((line, index) => (
+							<span key={`${line.label}-${index}`}>
+								{shortGroupLabel(line.label)} · 수입 {won(line.income)} · 지출{" "}
+								{won(line.expense)}
+							</span>
+						))}
 					</div>
 				)}
 				<div>

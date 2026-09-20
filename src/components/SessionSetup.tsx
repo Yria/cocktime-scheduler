@@ -27,6 +27,7 @@ import {
 } from "./setup/PlayerSelectionList";
 import { SingleWomanSelector } from "./setup/SingleWomanSelector";
 import AppHeader from "./common/AppHeader";
+import Spinner from "./shared/Spinner";
 
 export default function SessionSetup({ onStart }: Props) {
 	const navigate = useNavigate();
@@ -184,6 +185,9 @@ export default function SessionSetup({ onStart }: Props) {
 
 		await runStart(selectedPlayers, settings);
 	}
+
+	if (!ready || !memberLoaded) return <Spinner size={18} />;
+	if (!isAdmin) return null;
 
 	return (
 		<div

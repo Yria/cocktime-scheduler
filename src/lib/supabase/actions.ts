@@ -212,15 +212,18 @@ export async function dbSetPlayerResting(
 	return rows[0] ? rowToSessionPlayer(rows[0]) : null;
 }
 
-export async function dbEndSession(sessionId: number): Promise<void> {
+export async function dbEndSession(sessionId: number): Promise<boolean> {
 	// status='closed'까지 함께 — active 상태로 남으면 일정 목록에서 "진행중"으로 영구 노출된다.
-	const { error } = await supabase
+	const { data, error } = await supabase
 		.from("sessions")
 		.update({
 			is_active: false,
 			status: "closed",
 			ended_at: new Date().toISOString(),
 		})
-		.eq("id", sessionId);
+		.eq("id", sessionId)
+		.select("id")
+		.maybeSingle();
 	if (error) console.error("dbEndSession:", error);
+	return !error && data != null;
 }

@@ -20,7 +20,7 @@ import {
 import { nameMatches } from "../../lib/dues/matching";
 
 // 명예회원(회비 면제) 관리 섹션 — DuesSettingsModal 안에 삽입.
-// 지정/해제는 즉시 반영(RPC): 향후 회비 대상에 반영하며 기존 부과·납부는 유지한다.
+// 지정 시 기존 미납 회비도 면제한다. 납부·부분납부·대관비는 유지하며 해제해도 면제를 되살리지 않는다.
 // 검색은 nameMatches(부분+초성) 재사용. 사유는 지정 시 선택 입력.
 
 function genderYear(m: AdminMemberRow): string {
@@ -140,8 +140,8 @@ export default function HonoraryMembersSection() {
 				className="text-faint"
 				style={{ fontSize: 12.5, marginBottom: 8, lineHeight: 1.5 }}
 			>
-				지정하면 매월 회비 부과에서 제외돼요. 이미 발행한 부과와 납부 기록은
-				유지돼요. 대관비는 별도예요.
+				지정하면 매월 회비 부과에서 제외되고, 납부 내역이 없는 기존 회비도
+				면제돼요. 납부·부분납부한 회비와 대관비는 유지돼요.
 			</p>
 
 			{/* 현재 명예회원 목록 */}

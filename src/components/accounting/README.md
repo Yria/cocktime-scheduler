@@ -44,5 +44,10 @@
 자세한 계약은 `docs/ACCOUNTING_SPEC.md` §3.4·§3.7.
 
 정식 원장 API는 `src/lib/supabase/dues.ts`, 공유 상태는 `src/store/duesStore.ts`를 사용한다.
+부과·납부 확정은 `duesActions.commit`을 거친다. `dues_command`의 성공 응답에
+포함된 변경 행·작업 이력·revision을 함께 병합하며, 정상 성공 후에는 `dues_read`를
+호출하지 않는다. 반영 기준 revision이 다르거나 서버가 변경분 응답을 지원하지 않는 경우에만
+전체를 다시 읽는다. 수동 새로고침·충돌 재확인은 기존 조회 경로를 유지한다.
+서버에 `20260921010000_dues_command_patch.sql`을 적용해야 성공 후 재조회가 생략된다.
 계산·선택·참석 규칙은 `src/lib/dues/`, 설정·계좌·입금 수집은 `src/lib/supabase/duesSettings.ts`에 둔다.
 `DuesSettingsModal`과 `HonoraryMembersSection`은 이 화면군의 공통 설정이며 이전 금융 store를 참조하지 않는다.

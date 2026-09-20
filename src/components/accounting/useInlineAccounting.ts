@@ -5,10 +5,10 @@ import type {
 } from "../../lib/dues/types";
 import {
 	accountingError,
-	commitAccounting,
 	previewAccounting,
 } from "../../lib/supabase/dues";
 import { randomId } from "../../lib/randomId";
+import { duesActions } from "../../store/duesStore";
 
 type Prepared = {
 	payload: AccountingCommand;
@@ -91,8 +91,7 @@ export function useInlineAccounting(
 		setFailure(null);
 		setAttempt(ready);
 		try {
-			await commitAccounting(ready.payload, ready.request, ready.revision);
-			await onDone();
+			await duesActions.commit(ready.payload, ready.request, ready.revision);
 			return true;
 		} catch (e) {
 			if (

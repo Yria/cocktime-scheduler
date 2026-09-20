@@ -32,6 +32,8 @@ import { monthKST } from "../lib/schedule/calendar";
 import { getClientId, getDeviceName } from "../lib/deviceName";
 import { randomId } from "../lib/randomId";
 import { useAuthStore } from "./authStore";
+import { appActions } from "./appStore";
+import { toast } from "./toastStore";
 import {
 	applyDraftsIfNewerImpl,
 	handleMatchCompleted,
@@ -352,8 +354,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		}
 		// sessions.is_active=false → 다른 클라이언트는 meta 채널(postgres watch)로 종료 감지.
 		// 종료를 실행한 클라이언트는 onEnd로 즉시 이탈.
-		await dbEndSession(sessionId);
-		onEnd();
+		const ended = await dbEndSession(sessionId);
+		if (!ended) {
+			toast("세션을 종료하지 못했습니다. 다시 시도해 주세요.", { variant: "error" });
+			return;
+		}
+		if (appActions.clearSession(sessionId)) onEnd();
 	},
 
 	notifySessionRefresh: () => {
@@ -562,7 +568,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				onPresenceSync: (state) => {
 					set(computePresenceList(state));
 				},
-				onEnd,
+				onEnd: () => {
+					if (appActions.clearSession(sessionId)) onEnd();
+				},
 				// sessions row UPDATE → match_assign_count + board_drafts/version catch-up(원인1) + 편집 락(원인2).
 				onSessionRowUpdate: (row) => {
 					if (row.match_assign_count != null) set({ matchAssignCount: row.match_assign_count });

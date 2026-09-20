@@ -822,20 +822,11 @@
 	min-height: 36px;
 	padding-inline: 4px;
 }
-.ac-ledger-page .ac-ledger-filters { gap: 4px; padding: 0; margin: 0; }
-.ac-ledger-page .ac-ledger-filters button {
-	min-height: 36px;
-	min-width: 0;
-	border-radius: 9px;
-	padding: 0 9px;
-	font-size: 12.5px;
-}
 .ac-ledger-transaction-row {
 	display: flex;
 	align-items: center;
 	gap: 8px;
 	padding: 8px 0;
-	border-bottom: 1px solid var(--ac-rule);
 	min-height: 44px;
 }
 .ac-ledger-transaction-body { flex: 1; min-width: 0; }

@@ -152,6 +152,30 @@ export interface OperationResult {
 	outstanding_after: number;
 	member_balance_before: number;
 	member_balance_after: number;
+	patch?: AccountingPatch;
+}
+export type AccountingPatchTable =
+	| "groups"
+	| "charges"
+	| "due"
+	| "positions"
+	| "allocations"
+	| "refunds"
+	| "expenses"
+	| "drafts";
+/** Server-confirmed rows keyed by their primary key; null removes a row. */
+export interface AccountingPatch {
+	version: 1;
+	epoch: string;
+	base_revision: number;
+	tables: {
+		[K in AccountingPatchTable]?: Record<
+			string,
+			AccountingData[K][number] | null
+		>;
+	};
+	prepayments?: AccountingData["prepayments"];
+	operation: Omit<Operation, "result">;
 }
 export const purposeLabel: Record<FundPurpose, string> = {
 	unassigned: "미귀속",

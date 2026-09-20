@@ -1,12 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AccountingData, AccountingMode } from "../lib/dues/types";
-import { accountingMode, readAccounting } from "../lib/supabase/dues";
+import type {
+	AccountingData,
+	AccountingMode,
+	OperationResult,
+} from "../lib/dues/types";
+import {
+	accountingMode,
+	commitAccounting,
+	readAccounting,
+} from "../lib/supabase/dues";
 import { duesActions, useDuesStore } from "./duesStore";
 import { useAuthStore } from "./authStore";
 import { entryAlertActions, useEntryAlertStore } from "./entryAlertStore";
 vi.mock("../lib/supabase/dues", () => ({
 	accountingMode: vi.fn(),
 	readAccounting: vi.fn(),
+	commitAccounting: vi.fn(),
 	accountingError: (e: Error) => e.message,
 }));
 const active: AccountingMode = {
@@ -16,8 +25,44 @@ const active: AccountingMode = {
 	revision: 1,
 	epoch: "test",
 };
-const snapshot = (mode = active) =>
-	({ mode, charges: [] }) as unknown as AccountingData;
+const snapshot = (mode = active): AccountingData => ({
+	mode,
+	charges: [],
+	groups: [],
+	due: [],
+	positions: [],
+	allocations: [],
+	refunds: [],
+	expenses: [],
+	bank: [],
+	members: [],
+	operations: [],
+	drafts: [],
+});
+const result: OperationResult = {
+	operation_id: 10,
+	revision: 2,
+	auto_applied: 0,
+	outstanding_before: 0,
+	outstanding_after: 0,
+	member_balance_before: 0,
+	member_balance_after: 0,
+	patch: {
+		version: 1,
+		epoch: active.epoch,
+		base_revision: 1,
+		tables: { expenses: { "9": { bank_tx_id: 9, group_id: "group" } } },
+		operation: {
+			id: 10,
+			action: "expense",
+			reason: "test",
+			created_at: "2026-09-21",
+			reverted_at: null,
+		},
+	},
+};
+const commit = () =>
+	duesActions.commit({ action: "expense", reason: "test" }, "request", 1);
 function deferred<T>() {
 	let resolve!: (value: T) => void;
 	const promise = new Promise<T>((r) => {
@@ -31,6 +76,80 @@ beforeEach(() => {
 	duesActions.reset();
 });
 describe("accounting identity and rollout state", () => {
+	it("updates confirmed rows and revision without a list read, including the next mode poll", async () => {
+		useDuesStore.setState({ data: snapshot(), owner: "A", mode: active });
+		vi.mocked(commitAccounting).mockResolvedValue(result);
+		await commit();
+		expect(useDuesStore.getState().data?.expenses).toEqual([
+			{ bank_tx_id: 9, group_id: "group" },
+		]);
+		vi.mocked(accountingMode).mockResolvedValue({ ...active, revision: 2 });
+		await duesActions.mode();
+		await duesActions.ensure();
+		await commit(); // retry of a response that the cache already includes
+		expect(readAccounting).not.toHaveBeenCalled();
+		expect(useDuesStore.getState().data?.operations).toHaveLength(1);
+	});
+	it("prevents a read already in flight from overwriting a successful commit", async () => {
+		useDuesStore.setState({ data: snapshot(), owner: "A", mode: active });
+		const pending = deferred<AccountingData>();
+		vi.mocked(readAccounting).mockReturnValueOnce(pending.promise);
+		const loading = duesActions.load();
+		vi.mocked(commitAccounting).mockResolvedValue(result);
+		await commit();
+		pending.resolve(snapshot());
+		await loading;
+		expect(useDuesStore.getState().data?.mode.revision).toBe(2);
+		expect(useDuesStore.getState().loading).toBe(false);
+		expect(readAccounting).toHaveBeenCalledTimes(1);
+	});
+	it("leaves the snapshot untouched when confirmation fails", async () => {
+		const data = snapshot();
+		useDuesStore.setState({ data, owner: "A", mode: active });
+		vi.mocked(commitAccounting).mockRejectedValue(new Error("offline"));
+		await expect(commit()).rejects.toThrow("offline");
+		expect(useDuesStore.getState().data).toBe(data);
+		expect(readAccounting).not.toHaveBeenCalled();
+	});
+	it("discards a commit response after identity changes, even if the same account returns", async () => {
+		useDuesStore.setState({ data: snapshot(), owner: "A", mode: active });
+		const pending = deferred<OperationResult>();
+		vi.mocked(commitAccounting).mockReturnValueOnce(pending.promise);
+		const saving = commit();
+		useAuthStore.setState({ memberId: "B" });
+		useAuthStore.setState({ memberId: "A" });
+		pending.resolve(result);
+		await saving;
+		expect(useDuesStore.getState().data).toBeNull();
+		expect(readAccounting).not.toHaveBeenCalled();
+	});
+	it("falls back to one read for older servers without a patch", async () => {
+		useDuesStore.setState({ data: snapshot(), owner: "A", mode: active });
+		vi.mocked(commitAccounting).mockResolvedValue({
+			...result,
+			patch: undefined,
+		});
+		vi.mocked(readAccounting).mockResolvedValue(
+			snapshot({ ...active, revision: 2 }),
+		);
+		await commit();
+		await duesActions.ensure();
+		expect(readAccounting).toHaveBeenCalledTimes(1);
+	});
+	it("refreshes a newer external revision observed while confirmation was in flight", async () => {
+		useDuesStore.setState({
+			data: snapshot(),
+			owner: "A",
+			mode: { ...active, revision: 3 },
+		});
+		vi.mocked(commitAccounting).mockResolvedValue(result);
+		vi.mocked(readAccounting).mockResolvedValue(
+			snapshot({ ...active, revision: 3 }),
+		);
+		await commit();
+		expect(readAccounting).toHaveBeenCalledTimes(1);
+		expect(useDuesStore.getState().data?.mode.revision).toBe(3);
+	});
 	it("discards a private in-flight response when the account changes", async () => {
 		const pending = deferred<AccountingData>();
 		vi.mocked(readAccounting).mockReturnValueOnce(pending.promise);

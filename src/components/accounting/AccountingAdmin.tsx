@@ -77,7 +77,10 @@ export default function AccountingAdmin() {
 		let disposed = false;
 		void accountingSessions()
 			.then((s) => {
-				if (!disposed) setSessions(s);
+				if (!disposed) {
+					setSessions(s);
+					setSessionsError("");
+				}
 			})
 			.catch((e) => {
 				if (!disposed) setSessionsError(accountingError(e));
@@ -86,8 +89,11 @@ export default function AccountingAdmin() {
 			disposed = true;
 		};
 	}, [page, chargeManagement, sessions, sessionAttempt]);
-	const go = (month: string, tab = page) =>
+	const go = (month: string, tab = page) => {
+		if (tab === "charge" && (page !== "charge" || month !== ym) && !manualDirty && !draft)
+			setChargeManagement(true);
 		navigate(`/dues/${month}${tab === "home" ? "" : `/${tab}`}`);
+	};
 	const candidate = async (
 		kind: "monthly" | "court",
 		sid?: number,
@@ -123,10 +129,16 @@ export default function AccountingAdmin() {
 	const ingest = async () => {
 		setBusy(true);
 		setIssueError("");
+		setSyncedAt(null);
 		try {
 			const result = await ingestBankEmail();
 			if (!result.ok) throw new Error(result.error);
 			await refresh();
+			if (result.data.errors?.length) {
+				throw new Error(
+					`새 거래 ${result.data.inserted}건을 저장했지만 일부 처리를 완료하지 못했습니다. ${result.data.errors.join(" / ")}`,
+				);
+			}
 			setSyncedAt(
 				new Date().toLocaleTimeString("ko-KR", {
 					hour: "2-digit",

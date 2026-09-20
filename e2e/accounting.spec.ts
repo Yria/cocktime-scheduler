@@ -180,6 +180,7 @@ test.beforeEach(async ({ page, context }, testInfo) => {
     await db.exec(readFileSync(new URL("../supabase/migrations/20260911010000_promote_dues.sql", import.meta.url), "utf8"));
 	await db.exec(readFileSync(new URL("../supabase/migrations/20260914010000_restore_reversed_prepayment.sql", import.meta.url), "utf8"));
 	await db.exec(readFileSync(new URL("../supabase/migrations/20260920010000_settle_owned_unassigned_receipts.sql", import.meta.url), "utf8"));
+	await db.exec(readFileSync(new URL("../supabase/migrations/20260921010000_dues_command_patch.sql", import.meta.url), "utf8"));
 	await context.routeWebSocket(
 		/^(?!ws:\/\/(127\.0\.0\.1|localhost))/,
 		(socket) => socket.close(),
@@ -304,6 +305,34 @@ test.beforeEach(async ({ page, context }, testInfo) => {
 });
 test.afterEach(async () => {
 	await db.close();
+});
+
+test("bank import shows resource errors and never marks a partial import complete", async ({ page }) => {
+	const success = { fetched: 1, parsed: 1, inserted: 1, skipped: 0, trashed: 1, deposits: [] };
+	let attempt = 0;
+	await page.route("**/functions/v1/ingest-bank-email", async (route) => {
+		attempt++;
+		await route.fulfill({
+			status: attempt === 2 ? 546 : 200,
+			contentType: "application/json",
+			body: JSON.stringify(attempt === 2
+				? { code: "WORKER_LIMIT", message: "Worker exceeded resource limit" }
+				: attempt === 3
+					? { ...success, errors: ["statement.xlsx: 엑셀 처리 실패"] }
+					: success),
+		});
+	});
+	await navigate(page, "/dues/2026-08/inbox");
+	const button = page.getByRole("button", { name: "내역 가져오기", exact: true });
+	await button.click();
+	await expect(page.getByText(/이번 화면에서 가져오기 완료/)).toBeVisible();
+	await button.click();
+	await expect(page.getByRole("alert")).toContainText("서버 실행 한도를 초과");
+	await expect(page.getByText(/이번 화면에서 가져오기 완료/)).toHaveCount(0);
+	await button.click();
+	await expect(page.getByRole("alert")).toContainText("일부 처리를 완료하지 못했습니다");
+	await expect(page.getByRole("alert")).toContainText("statement.xlsx");
+	await expect(page.getByText(/이번 화면에서 가져오기 완료/)).toHaveCount(0);
 });
 
 for (const partiallyPaid of [false, true]) {
@@ -1391,48 +1420,45 @@ test("ledger restores the compact monthly list and edits saved expenses without 
 	await expect(summary).toContainText("9/6 기준");
 	await expect(summary).toContainText("718,592");
 	await expect(ledger.locator(".ac-transaction")).toHaveCount(0);
-	await page.setViewportSize({ width: 390, height: 844 });
-	for (const theme of ["light", "dark"]) {
-		await page.evaluate(
-			(dark) => document.documentElement.classList.toggle("dark", dark),
-			theme === "dark",
-		);
-		await ledger.screenshot({
-			path: `test-results/accounting-compact-ledger-${theme}.png`,
-			animations: "disabled",
-		});
-		await designEvidence(page, `ledger-${theme}`);
-		expect(
-			await page.evaluate(
-				() => document.documentElement.scrollWidth <= window.innerWidth,
-			),
-		).toBe(true);
-	}
 	const filters = ledger.getByRole("group", { name: "거래 내역 필터" });
+	for (const width of [360, 390, 1280]) {
+		await page.setViewportSize({ width, height: 900 });
+		for (const theme of ["light", "dark"]) {
+			await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), theme === "dark");
+			await designEvidence(page, `ledger-${width}-${theme}`);
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+			expect(await filters.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+			await expect(ledger.locator(".ac-sheet-head")).toHaveCSS("border-bottom-width", "0px");
+			await expect(row9).toHaveCSS("border-bottom-width", "0px");
+			// 상태와 항목은 동일한 줄바꿈 컨테이너와 버튼 모양을 공유한다.
+			const status = filters.getByRole("button", { name: "입금", exact: true });
+			const category = filters.getByRole("button", { name: /^회식 .* 거래 보기$/ });
+			for (const property of ["background-color", "border-radius", "font-size", "min-height"]) {
+				await expect(category).toHaveCSS(property, await status.evaluate((el, key) => getComputedStyle(el).getPropertyValue(key), property));
+			}
+		}
+	}
+	await page.setViewportSize({ width: 390, height: 900 });
 	await filters.getByRole("button", { name: "미정산", exact: true }).click();
 	await expect(
 		ledger.getByRole("button", { name: /^거래 \d+ 상세$/ }),
 	).toHaveCount(2);
 	await filters.getByRole("button", { name: "전체", exact: true }).click();
-	// 항목별 수지는 거래 내역 안의 필터 줄이다 — 누르면 그 항목의 거래만 남고 다시
-	// 누르면 풀린다. 좁힐 대상이 없는 합성 항목(미분류·이월 …)은 버튼이 아니지만
-	// 금액은 읽을 수 있어야 한다.
-	const buckets = ledger.getByRole("group", { name: "항목별 수지" });
-	// 순서는 종류 묶음 + 날짜순 — 묶음이 있는 항목(회식)이 먼저, 묶음 없는 합성
-	// 항목(미분류·이월 입금)이 라벨순으로 뒤에 선다.
-	await expect(buckets.locator(".ac-bucket-name")).toHaveText([
-		"회식",
-		"미분류",
-		"이월 입금",
-	]);
-	await expect(buckets.getByText("미분류", { exact: true })).toBeVisible();
-	await expect(buckets.getByRole("button", { name: /^미분류/ })).toHaveCount(0);
-	await buckets.getByRole("button", { name: /^회식 .* 거래 보기$/ }).click();
+	// 항목 버튼은 상태 버튼에 이어지고, 묶음 없는 수지는 읽기 전용으로 남는다.
+	await expect(filters.locator(".ac-bucket-chip")).toHaveText(["회식"]);
+	const otherTotals = ledger.getByRole("group", { name: "기타 항목 수지" });
+	await expect(otherTotals).toContainText("미분류 · 수입 6,000원 · 지출 117,000원");
+	await expect(otherTotals).toContainText("이월 입금 · 수입 3,000원");
+	await expect(filters.getByRole("button", { name: /^미분류/ })).toHaveCount(0);
+	await filters.getByRole("button", { name: /^회식 .* 거래 보기$/ }).click();
+	await expect(ledger.getByLabel("선택 항목 수지")).toHaveText("회식 · 수입 0원 · 지출 6,000원");
+	await designEvidence(page, "ledger-selected-390-dark");
 	await expect(
 		ledger.getByRole("button", { name: /^거래 \d+ 상세$/ }),
 	).toHaveCount(1);
 	await expect(ledger.getByRole("group", { name: "거래 9 요약" })).toBeVisible();
-	await buckets.getByRole("button", { name: /^회식 .* 필터 해제$/ }).click();
+	await filters.getByRole("button", { name: /^회식 .* 필터 해제$/ }).click();
+	await expect(ledger.getByLabel("선택 항목 수지")).toHaveCount(0);
 	await expect(
 		ledger.getByRole("button", { name: /^거래 \d+ 상세$/ }),
 	).toHaveCount(4);
@@ -1752,7 +1778,7 @@ test("overview retains issued facts when attendance fails and retries without wr
 	).toHaveLength(0);
 });
 
-test("a unique dated receipt fits one card and confirms with no selection RPCs and one refresh", async ({
+test("a unique dated receipt fits one card and confirms without reloading the list", async ({
 	page,
 }) => {
 	const member = "00000000-0000-4000-8000-000000000008";
@@ -1832,14 +1858,17 @@ test("a unique dated receipt fits one card and confirms with no selection RPCs a
 		}
 	}
 	expect(calls.filter((c) => c.name === "dues_read")).toHaveLength(1);
-	// The default management list loads session labels once; the manual preset uses its own paged query.
-	expect(calls.filter((c) => c.name === "dues_sessions")).toHaveLength(1);
+	// The inbox already has its targets; session choices load only in charge management.
+	expect(calls.filter((c) => c.name === "dues_sessions")).toHaveLength(0);
 	expect(calls.filter((c) => c.name === "dues_preview")).toHaveLength(0);
 	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(0);
 	await confirm.click();
 	await expect(card).toHaveCount(0);
-	// A new revision should not trigger another full read after the explicit refresh.
-	expect(calls.filter((c) => c.name === "dues_read")).toHaveLength(2);
+	// Confirmation merges the server delta; the revision change must not reload the list.
+	const modeReads = calls.filter((c) => c.name === "dues_mode").length;
+	await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+	await expect.poll(() => calls.filter((c) => c.name === "dues_mode").length).toBeGreaterThan(modeReads);
+	expect(calls.filter((c) => c.name === "dues_read")).toHaveLength(1);
 	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(1);
 	expect(calls.filter((c) => c.name === "dues_preview")).toHaveLength(0);
 	expect(
@@ -1854,7 +1883,7 @@ test("a unique dated receipt fits one card and confirms with no selection RPCs a
 			selectionPreviews: 0,
 			sessionReads: 0,
 			commits: 1,
-			postCommitReads: 1,
+			postCommitReads: 0,
 			readDelayMs: 300,
 		}),
 	);
@@ -1946,7 +1975,7 @@ test("charge management opens on actions and issued history, keeping financial e
 			for (const button of await page.locator(".ac-charge-management button:visible").all()) {
 				const box = await button.boundingBox();
 				expect(box!.width).toBeGreaterThanOrEqual(44);
-				expect(box!.height).toBeGreaterThanOrEqual(44);
+				expect(box!.height).toBeGreaterThanOrEqual(await button.evaluate((el) => el.closest(".ac-filter-chips") ? 36 : 44));
 			}
 		}
 	}
@@ -1957,6 +1986,8 @@ test("charge management opens on actions and issued history, keeping financial e
 	await page.setViewportSize({ width: 390, height: 900 });
 	await page.evaluate(() => document.documentElement.classList.remove("dark"));
 	await designEvidence(page, "charge-management-readonly-390-light");
+	await expect(history.locator(".ac-sheet-head")).toHaveCSS("border-bottom-width", "0px");
+	await expect(history.locator(".ac-issued-detail")).toHaveCSS("border-top-width", "0px");
 	await expect(history.getByRole("checkbox")).toHaveCount(0);
 	await history.getByRole("button", { name: "부과 변경", exact: true }).click();
 	await expect(history.getByRole("checkbox")).toHaveCount(2);
@@ -1991,7 +2022,8 @@ test("an empty charge month has a clear start and keeps accounting-only groups o
 	await expect(page.getByText("모금 항목", { exact: true })).toBeVisible();
 	await page.getByRole("button", { name: "새 수동 부과", exact: true }).click();
 	await expect(page.getByRole("region", { name: "부과 발행", exact: true })).toBeVisible();
-	await page.getByRole("button", { name: "부과 목록", exact: true }).click();
+	await page.getByRole("button", { name: "현황", exact: true }).click();
+	await page.getByRole("button", { name: "부과", exact: true }).click();
 	await expect(history).toBeVisible();
 	expect(calls.filter((call) => call.name === "dues_command")).toHaveLength(0);
 });
@@ -2076,6 +2108,27 @@ test("manual voucher splits and rounds the total for selected member IDs without
 		{ member_id: B, amount: 5100, due_ym: "2026-09" },
 	]);
 	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(1);
+});
+
+test("consecutive confirmations update a long list without another list request", async ({ page }) => {
+	await db.exec(`update members set name='박민준' where id='${A}';
+		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name)
+		select 100+n,'in',5000,'2026-09-06'::timestamptz,'미정산 '||n from generate_series(1,100) n;
+		insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values
+		(90,'in',2000,'2026-09-21','박민준'),(91,'in',3000,'2026-09-21','박민준');`);
+	await command({ action: "issue", kind: "manual", date: "2026-09-21", label: "연속 확인",
+		lines: [{ member_id: A, amount: 5000, due_ym: "2026-09" }] });
+	await navigate(page, "/dues/2026-09/inbox");
+	for (const id of [90, 91]) {
+		const card = page.getByRole("region", { name: `거래 ${id}`, exact: true });
+		const target = card.getByRole("button", { name: /^연속 확인/ });
+		if (await target.getAttribute("aria-pressed") !== "true") await target.click();
+		await card.getByRole("button", { name: "납부 확인", exact: true }).click();
+		await expect(card).toHaveCount(0);
+	}
+	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(2);
+	expect(calls.filter((c) => c.name === "dues_read")).toHaveLength(1);
+	expect(await scalar("select sum(amount)::int from dues_allocations where bank_tx_id in (90,91)")).toBe(5000);
 });
 
 test("receipt options retain access to another balance split from the same deposit", async ({

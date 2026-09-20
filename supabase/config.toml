@@ -396,3 +396,10 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/ingest-bank-email/deno.json"
 entrypoint = "./functions/ingest-bank-email/index.ts"
+
+# CPU가 큰 엑셀 복호화·파싱을 첨부마다 별도 실행. 호출자 JWT + 내부 is_admin 검사.
+[functions.parse-bank-attachment]
+enabled = true
+verify_jwt = true
+import_map = "./functions/parse-bank-attachment/deno.json"
+entrypoint = "./functions/parse-bank-attachment/index.ts"

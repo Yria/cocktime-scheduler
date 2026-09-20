@@ -1,12 +1,10 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
-import officeCrypto from "officecrypto-tool";
-import * as XLSX from "xlsx";
-import { type Cell, parseToss } from "./toss.ts";
+import { parseAttachment } from "./parseAttachment.ts";
 
 // 회계 §4~5: 은행 입금메일 수집 Edge Function.
 // [현재 = 3단계-a] 프론트(admin JWT) → is_admin 재검 → Apps Script(시크릿) → Gmail → 암호화 xlsx
-//   → 복호화(TOSS_XLSX_PASSWORD) → 토스 파서 → raw_bank_emails/bank_transactions 멱등 적재.
+//   → parse-bank-attachment(첨부별 복호화·파싱) → raw_bank_emails/bank_transactions 멱등 적재.
 //   ※ 회원 매칭 제안(§8)·확정 RPC 연결은 3단계-b. 적재는 "사실 기록"이라 자동확정 아님.
 //
 // 시크릿(Deno.env = supabase secrets set): APPS_SCRIPT_URL, INGEST_SECRET, TOSS_XLSX_PASSWORD.
@@ -16,7 +14,6 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const APPS_SCRIPT_URL = Deno.env.get("APPS_SCRIPT_URL")!;
 const INGEST_SECRET = Deno.env.get("INGEST_SECRET")!;
-const TOSS_PW = Deno.env.get("TOSS_XLSX_PASSWORD") ?? "";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -81,27 +78,6 @@ const fetchFromGmail = (max: number) => callAppsScript({ max });
 // 적재 성공(에러 없음)이 확정된 메일만 휴지통으로. 파싱 실패분은 남긴다(유실 방지). best-effort.
 const trashInGmail = (messageIds: string[]) => callAppsScript({ action: "trash", messageIds });
 
-function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const arr = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-  return arr;
-}
-
-// 암호화 xlsx 바이트 → 복호화 → 첫 시트 행 배열.
-async function decryptToRows(b64: string): Promise<Cell[][]> {
-  const enc = base64ToBytes(b64);
-  const dec = await officeCrypto.decrypt(enc, { password: TOSS_PW });
-  const wb = XLSX.read(new Uint8Array(dec as ArrayBufferLike), { type: "array" });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  return XLSX.utils.sheet_to_json<Cell[]>(ws, {
-    header: 1,
-    blankrows: false,
-    defval: "",
-    raw: true,
-  });
-}
-
 // deno-lint-ignore no-explicit-any
 type Sb = any;
 
@@ -147,18 +123,18 @@ Deno.serve(async (req) => {
             subject: m.subject,
             from_addr: m.from,
             received_at: m.date,
-            parse_status: "parsed",
+            parse_status: "pending",
+            parse_error: null,
           },
           { onConflict: "message_id" },
         )
         .select("id");
-      if (rawErr) { errors.push(`raw(${m.subject}): ${rawErr.message}`); msgOk = false; }
+      if (rawErr) { errors.push(`raw(${m.subject}): ${rawErr.message}`); continue; }
       const rawId = rawRows?.[0]?.id ?? null;
 
       for (const a of m.attachments ?? []) {
         try {
-          const rows = await decryptToRows(a.bytesBase64);
-          const txns = parseToss(rows);
+          const txns = await parseAttachment(SUPABASE_URL, ANON_KEY, authHeader, a.bytesBase64);
           parsed += txns.length;
           if (txns.length === 0) continue;
 
@@ -200,6 +176,11 @@ Deno.serve(async (req) => {
           msgOk = false;
         }
       }
+      const { error: statusErr } = await supa
+        .from("raw_bank_emails")
+        .update({ parse_status: msgOk ? "parsed" : "error" })
+        .eq("id", rawId);
+      if (statusErr) { errors.push(`status: ${statusErr.message}`); msgOk = false; }
       // 이 메일의 원문·거래가 모두 에러 없이 적재됐으면(중복 skip 포함) 휴지통 대상. 하나라도 실패면 보존.
       if (msgOk) trashIds.push(m.messageId);
     }
@@ -218,7 +199,11 @@ Deno.serve(async (req) => {
 
     deposits.sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1));
     return jsonResponse({
-      ok: true,
+      ok: errors.length === 0,
+      // 구 프론트도 error 필드를 읽는다. 일부 실패를 200 성공으로 숨기지 않는다.
+      error: errors.length
+        ? `새 거래 ${inserted}건을 저장했지만 일부 처리를 완료하지 못했습니다. ${errors.join(" / ")}`
+        : undefined,
       fetched: (fetched.messages ?? []).length,
       parsed,
       inserted,
@@ -226,7 +211,7 @@ Deno.serve(async (req) => {
       trashed,
       deposits: deposits.slice(0, 30),
       errors: errors.length ? errors : undefined,
-    });
+    }, errors.length ? 502 : 200);
   } catch (e) {
     return jsonResponse({ error: e instanceof Error ? e.message : String(e) }, 500);
   }

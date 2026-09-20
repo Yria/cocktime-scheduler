@@ -22,7 +22,7 @@ export default function AccountingLedger({
 	});
 	const [bank, setBank] = useState<{
 		ym: string;
-		revision: number;
+		transactions: typeof data.bank;
 		rows: Awaited<ReturnType<typeof readAccountingBankBalances>>;
 		error?: boolean;
 	} | null>(null);
@@ -30,20 +30,21 @@ export default function AccountingLedger({
 		let disposed = false;
 		void readAccountingBankBalances(ym)
 			.then((rows) => {
-				if (!disposed) setBank({ ym, revision: data.mode.revision, rows });
+				if (!disposed) setBank({ ym, transactions: data.bank, rows });
 			})
 			.catch(() => {
 				if (!disposed)
-					setBank({ ym, revision: data.mode.revision, rows: [], error: true });
+					setBank({ ym, transactions: data.bank, rows: [], error: true });
 			});
 		return () => {
 			disposed = true;
 		};
-	}, [ym, data.mode.revision]);
+		// A confirmed allocation changes the ledger, not immutable bank balances.
+	}, [ym, data.bank]);
 	// 통장 잔액 조회는 요약 카드의 '통장잔액' 한 줄에만 쓴다(거래별 잔액 표기는 폐기 —
 	// 행 오른쪽 금액과 나란히 두 숫자가 경쟁했다).
 	const rows =
-		bank?.ym === ym && bank.revision === data.mode.revision ? bank.rows : [];
+		bank?.ym === ym && bank.transactions === data.bank ? bank.rows : [];
 	const latest = rows[0];
 	const unassigned = data.positions.filter(
 		(p) =>

@@ -9497,7 +9497,41 @@ e2e에도 렌더 순서를 박았습니다(`회식 → 미분류 → 이월 입�
 
 **Prompt**: 열 정렬은 그대로 둬
 
-**Answer**: _(응답 대기 중…)_
+**Answer**: 커밋·푸시 완료했습니다.
+
+## ✅ 결과
+
+[코드 블록 생략]
+
+**푸시 = 프로덕션 배포입니다.** `.github/workflows/deploy.yml`이 `main` 푸시에 GitHub Pages로 자동 배포하므로, 지금 ckti.me에 나갑니다. 배포 대상은 프론트엔드뿐이고 DB/Edge Function은 포함되지 않습니다.
+
+## 커밋 전 검증 (전체 트리)
+
+| 항목 | 결과 |
+|---|---|
+| `tsc -b` | 클린 |
+| Vite build | 성공 |
+| 유닛 | **638/638** (46 파일) |
+| e2e | **51/51** (`--trace off`) |
+
+lint 11건이 남지만 전부 이번에 아무도 건드리지 않은 파일(`ds-bundle`, `ModalSheet`, `PlayerCard`, `useSetupPlayers` 등)의 기존 `set-state-in-effect` 경고입니다.
+
+## 커밋 전에 잡은 것 두 가지
+
+1. **`.pnpm-store/`가 gitignore에 없었습니다.** `git add -A`에 pnpm 인덱스 DB 3개가 딸려 들어갈 뻔해 `Tooling artifacts` 절에 추가했습니다.
+2. **e2e 무작위 실패의 정체.** 전체 실행이 매번 다른 1~2건 실패했는데 전부 단언이 아니라 `test-results/.playwright-artifacts/…trace` **ENOENT**였습니다. 다른 세션이 동시에 Playwright를 돌리며 같은 디렉토리를 비우는 충돌입니다. `--trace off`로 51/51 통과를 확인해 코드 회귀가 아님을 실증했습니다.
+
+## ⚠️ 배포에 함께 나간 것 — 확인해 주세요
+
+"전체"라 하셨으므로 세 갈래를 한 커밋으로 묶었습니다:
+
+- **제 작업**: `/dues` 홈 톤 스킨, 거래 카드 통일, 장부 병합
+- **다른 세션 작업**: 회원 내 회비 개편 (`AccountingMember` 437줄, `accounting.css` §11, `AccountCard`, `myDues.ts`)
+- **이전 미커밋 작업**: 이메일 로그인(`EmailPasswordLogin`), `authStore`, `conflict`, `App.css` 삭제
+
+문제는 **다른 세션이 커밋 시점에 턴 진행 중이었다**는 점입니다 — 히스토리 `#284`의 Answer가 `_(응답 대기 중…)_` 상태였습니다. 테스트는 전부 통과했지만, 그쪽 작업이 의도한 완성 상태였는지는 제가 알 수 없습니다.
+
+되돌려야 하면 프론트만 영향이니 `git revert d8bb792` 후 푸시하면 됩니다. 특정 갈래만 빼려면 말씀해 주세요.
 
 ---
 

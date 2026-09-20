@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { MatchEditTestApi } from "./match-edit";
+import { cardControls } from "../src/lib/board/pixi/cardControls";
 
 declare global { interface Window { matchEditTest: MatchEditTestApi } }
 
@@ -19,8 +20,15 @@ for (const mobile of [true, false]) {
 				await expect(page.locator('canvas[data-board-renderer="pixi"]')).toBeVisible();
 				// Wait for the asynchronously initialized canvas scene to commit.
 				await page.evaluate(() => document.fonts.ready);
+				const pressEdit = async () => {
+					const canvas = (await page.locator('canvas[data-board-renderer="pixi"]').boundingBox())!;
+					const edit = cardControls(true).unconfirm!;
+					// The fixture anchors court 1 at (190, 180); editing is now in its footer.
+					await tap(page, canvas.x + (190 + edit.x + edit.width / 2) * scale,
+						canvas.y + (180 + edit.y + edit.height / 2) * scale);
+				};
 				await expect(async () => {
-					if (await page.evaluate(() => window.matchEditTest.opened) === 0) await tap(page, 255 * scale, 95 * scale);
+					if (await page.evaluate(() => window.matchEditTest.opened) === 0) await pressEdit();
 					expect(await page.evaluate(() => window.matchEditTest.opened)).toBe(1);
 				}).toPass();
 				const heading = page.getByRole("heading", { name: "경기 수정 · 1번 코트" });
@@ -36,7 +44,7 @@ for (const mobile of [true, false]) {
 				await expect(heading).toHaveCount(0);
 				expect(await page.evaluate(() => window.matchEditTest)).toEqual({ opened: 1, closed: 1 });
 
-				await tap(page, 255 * scale, 95 * scale);
+				await pressEdit();
 				await expect(heading).toBeVisible();
 				const cancel = page.getByRole("button", { name: "취소", exact: true });
 				if (mobile) await cancel.tap(); else await cancel.click();

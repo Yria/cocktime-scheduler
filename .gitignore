@@ -13,6 +13,13 @@ dist-ssr
 *.local
 scripts/.venv/
 scripts/__pycache__/
+**/__pycache__/
+
+# Local reports can contain member identities, grades, and production snapshots.
+/reports/
+/scripts/team-audit/*
+!/scripts/team-audit/fetch.py
+/tools/team-simulator/input.json
 
 # Tooling artifacts
 .playwright-mcp/

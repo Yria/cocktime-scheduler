@@ -104,22 +104,7 @@
 	color: var(--ac-ask);
 }
 .ac-charge-filters {
-	display: flex;
-	gap: var(--ac-s-1);
 	padding-bottom: var(--ac-s-2);
-}
-.ac-charge-filters button {
-	padding: 0 var(--ac-s-3);
-	color: var(--ac-ink-2);
-	font-weight: 600;
-	border-radius: var(--ac-r-chip);
-}
-.ac-charge-filters button[aria-pressed="true"] {
-	color: var(--ac-act);
-	background: var(--ac-act-soft);
-}
-.ac-issued-group + .ac-issued-group {
-	border-top: 1px solid var(--ac-rule);
 }
 .ac-issued-toggle {
 	display: grid;
@@ -164,7 +149,6 @@
 }
 .ac-issued-detail {
 	padding-bottom: var(--ac-s-3);
-	border-top: 1px solid var(--ac-rule);
 }
 .ac-issued-detail-head {
 	display: flex;
@@ -180,7 +164,6 @@
 	grid-template-columns: minmax(0, 1fr) auto;
 	gap: var(--ac-s-2);
 	padding-block: var(--ac-s-3);
-	border-top: 1px solid var(--ac-rule);
 }
 .ac-issued-member > div {
 	display: grid;

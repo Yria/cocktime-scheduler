@@ -1,4 +1,5 @@
 import { supabase } from "./client";
+import { functionErrorMessage } from "./functionError";
 
 export interface DuesSettings {
 	monthlyFee: number;
@@ -138,17 +139,7 @@ export async function ingestBankEmail(): Promise<
 		body: {},
 	});
 	if (error) {
-		// 비2xx 응답은 FunctionsHttpError → 본문의 error 메시지를 최대한 꺼낸다.
-		let msg = error.message;
-		try {
-			const ctx = (error as { context?: Response }).context;
-			if (ctx && typeof ctx.json === "function") {
-				const b = await ctx.json();
-				if (b?.error) msg = b.error;
-			}
-		} catch {
-			/* noop */
-		}
+		const msg = await functionErrorMessage(error);
 		console.error("ingestBankEmail:", error);
 		return { ok: false, error: msg };
 	}

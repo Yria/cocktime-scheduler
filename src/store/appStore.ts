@@ -11,6 +11,7 @@ import {
 } from "../lib/supabase";
 import type { Player, SessionSettings } from "../types";
 import { useSessionStore } from "./sessionStore";
+import { useAuthStore } from "./authStore";
 
 export interface SessionMeta {
 	sessionId: number;
@@ -31,6 +32,7 @@ interface AppState {
 	fetchPlayersAction: () => Promise<void>;
 	loadSessionAction: (row: SessionRow) => Promise<boolean>;
 	checkActiveSessionAction: () => Promise<boolean>;
+	clearSessionAction: (sessionId?: number) => boolean;
 	startOrUpdateSessionAction: (
 		selected: Player[],
 		settings: SessionSettings,
@@ -45,6 +47,8 @@ interface AppState {
 
 let _loadingPromise: { sessionId: number; promise: Promise<boolean> } | null =
 	null;
+// 종료 전에 시작한 조회가 늦게 도착해 종료된 세션을 복원하지 못하게 한다.
+let sessionGeneration = 0;
 
 export const useAppStore = create<AppState>((set, get) => ({
 	allPlayers: [],
@@ -63,7 +67,17 @@ export const useAppStore = create<AppState>((set, get) => ({
 		set({ allPlayers: players });
 	},
 
+	clearSessionAction: (sessionId) => {
+		if (sessionId != null && get().sessionMeta?.sessionId !== sessionId) return false;
+		sessionGeneration++;
+		_loadingPromise = null;
+		useSessionStore.getState().reset();
+		set({ sessionMeta: null, setupGuests: [], sessionChecked: true });
+		return true;
+	},
+
 	loadSessionAction: async (row: SessionRow) => {
+		if (!row.is_active || row.status !== "active") return false;
 		// 이미 같은 세션이 로드되었으면 스킵
 		if (get().sessionMeta?.sessionId === row.id) {
 			return true;
@@ -73,13 +87,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 			return _loadingPromise.promise;
 		}
 
+		const generation = sessionGeneration;
 		const promise = (async (): Promise<boolean> => {
 			try {
 				const [snapshot, players] = await Promise.all([
 					fetchSessionSnapshot(row.id),
 					fetchMembers().catch(() => [] as Player[]),
 				]);
-				if (!snapshot) return false;
+				if (generation !== sessionGeneration || !snapshot?.session.is_active || snapshot.session.status !== "active") return false;
 
 				// 비동기 대기 중 다른 호출이 먼저 완료했을 수 있음
 				if (get().sessionMeta?.sessionId === row.id) return true;
@@ -109,10 +124,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 				set({
 					sessionMeta: {
 						sessionId: row.id,
-						courtCount: row.court_count,
+						courtCount: snapshot.session.court_count,
 						singleWomanIds,
-						cockCheckEnabled: row.cock_check_enabled ?? true,
-						isScheduled: row.scheduled_at != null,
+						cockCheckEnabled: snapshot.session.cock_check_enabled ?? true,
+						isScheduled: snapshot.session.scheduled_at != null,
 					},
 					setupGuests: guests,
 					sessionChecked: true,
@@ -122,7 +137,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 				console.error("Failed to load session:", e);
 				return false;
 			} finally {
-				_loadingPromise = null;
+				if (generation === sessionGeneration && _loadingPromise?.sessionId === row.id) _loadingPromise = null;
 			}
 		})();
 
@@ -131,8 +146,17 @@ export const useAppStore = create<AppState>((set, get) => ({
 	},
 
 	checkActiveSessionAction: async () => {
-		const row = await fetchActiveSession();
-		if (row?.is_active) {
+		const generation = sessionGeneration;
+		let row: SessionRow | null;
+		try {
+			row = await fetchActiveSession();
+		} catch (error) {
+			console.error("Failed to check active session:", error);
+			set({ sessionChecked: true });
+			return get().sessionMeta != null;
+		}
+		if (generation !== sessionGeneration) return get().sessionMeta != null;
+		if (row?.is_active && row.status === "active") {
 			if (get().sessionMeta?.sessionId === row.id) {
 				set({ sessionChecked: true });
 				return true;
@@ -141,7 +165,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 			set({ sessionChecked: true });
 			return ok;
 		}
-		set({ sessionChecked: true });
+		get().clearSessionAction();
 		return false;
 	},
 
@@ -149,9 +173,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 		selected: Player[],
 		settings: SessionSettings,
 	) => {
+		const auth = useAuthStore.getState();
+		if (!auth.ready || !auth.memberLoaded || !auth.isAdmin) return false;
 		const { sessionMeta } = get();
 
 		if (sessionMeta) {
+			const generation = sessionGeneration;
 			const success = await updateSession(
 				sessionMeta.sessionId,
 				settings.courtCount,
@@ -163,7 +190,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
 			// DB에서 최신 상태를 가져와서 전체 상태를 다시 초기화
 			const snapshot = await fetchSessionSnapshot(sessionMeta.sessionId);
-			if (!snapshot) return false;
+			if (generation !== sessionGeneration || !snapshot?.session.is_active || snapshot.session.status !== "active") return false;
 
 			const clientState = snapshotToClientState(snapshot);
 
@@ -194,6 +221,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 		if (!result) return false;
 
 		const { sessionId, sessionPlayers } = result;
+		sessionGeneration++;
+		_loadingPromise = null;
 		const courts = Array.from({ length: settings.courtCount }, (_, i) => ({
 			id: i + 1,
 			match: null as null,
@@ -279,6 +308,7 @@ export const appActions = {
 	loadSession: (row: SessionRow) =>
 		useAppStore.getState().loadSessionAction(row),
 	checkActiveSession: () => useAppStore.getState().checkActiveSessionAction(),
+	clearSession: (sessionId?: number) => useAppStore.getState().clearSessionAction(sessionId),
 	startOrUpdateSession: (
 		selected: Player[],
 		settings: SessionSettings,

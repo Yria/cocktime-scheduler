@@ -123,7 +123,7 @@ export default function Home({ onStart }: Props) {
 	// 즉석 세션용 회원 명단 로드(로그인 후 백그라운드) + 일정 로드
 	useEffect(() => {
 		if (authUser) {
-			void scheduleActions.load();
+			void scheduleActions.load().then(() => appActions.checkActiveSession());
 			void appActions.fetchPlayers().catch(() => {});
 			// 대기 포인트 잔액 — 헤더 배지와 참석 카드 힌트가 쓴다. 진입 1회만(폴링·구독 없음).
 			void waitPointActions.loadStatus();
@@ -363,7 +363,7 @@ export default function Home({ onStart }: Props) {
 		<>
 		<AppScreen
 			logo
-			onRefresh={() => Promise.all([scheduleActions.load(), appActions.checkActiveSession(), waitPointActions.loadStatus()]).then(() => {})}
+			onRefresh={() => Promise.all([scheduleActions.load().then(() => appActions.checkActiveSession()), waitPointActions.loadStatus()]).then(() => {})}
 			center={
 				// 우선참여권 보유 시에만 뜨는 장식 배지(탭 액션 없음 — 내역은 '내 정보'에서 본다).
 				// 헤더 가운데는 가장 비싼 자리라 "지금 쓸 수 있다"는 단 하나의 사실에만 내준다.

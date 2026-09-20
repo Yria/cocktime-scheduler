@@ -62,8 +62,8 @@ async function closeEndedActiveIfAdmin(
 			Date.parse(s.ends_at) + ACTIVE_CLOSE_GRACE_MS <= nowMs,
 	);
 	if (stale.length === 0) return schedules;
-	await Promise.all(stale.map((s) => dbEndSession(s.id)));
-	const staleIds = new Set(stale.map((s) => s.id));
+	const ended = await Promise.all(stale.map((s) => dbEndSession(s.id)));
+	const staleIds = new Set(stale.filter((_, i) => ended[i]).map((s) => s.id));
 	return schedules.filter((s) => !staleIds.has(s.id));
 }
 

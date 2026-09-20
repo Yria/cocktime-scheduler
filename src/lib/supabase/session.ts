@@ -26,13 +26,15 @@ function playerSaveError(error: { message: string }): Error {
 }
 
 export async function fetchActiveSession(): Promise<SessionRow | null> {
-	const { data } = await supabase
+	const { data, error } = await supabase
 		.from("sessions")
 		.select("*")
 		.eq("is_active", true)
+		.eq("status", "active")
 		.order("started_at", { ascending: false })
 		.limit(1)
 		.maybeSingle();
+	if (error) throw error;
 	return data as SessionRow | null;
 }
 

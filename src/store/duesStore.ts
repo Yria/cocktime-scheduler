@@ -1,9 +1,15 @@
 import { useEffect } from "react";
 import { create } from "zustand";
-import type { AccountingData, AccountingMode } from "../lib/dues/types";
+import type {
+	AccountingCommand,
+	AccountingData,
+	AccountingMode,
+} from "../lib/dues/types";
+import { applyAccountingPatch } from "../lib/dues/accountingPatch";
 import {
 	accountingError,
 	accountingMode,
+	commitAccounting,
 	readAccounting,
 } from "../lib/supabase/dues";
 import { useAuthStore } from "./authStore";
@@ -28,6 +34,7 @@ export const useDuesStore = create<State>(() => ({
 let modeRequest: Promise<void> | null = null;
 let modeSeq = 0;
 let dataSeq = 0;
+let identitySeq = 0;
 let dataRequest: { key: string; promise: Promise<void> } | null = null;
 const dataKey = () => {
 	const mode = useDuesStore.getState().mode;
@@ -35,6 +42,41 @@ const dataKey = () => {
 };
 
 export const duesActions = {
+	async commit(
+		payload: AccountingCommand,
+		requestId: string,
+		revision: number,
+	) {
+		const identity = identitySeq;
+		const epoch = useDuesStore.getState().data?.mode.epoch;
+		const result = await commitAccounting(payload, requestId, revision);
+		const state = useDuesStore.getState();
+		if (identity !== identitySeq || state.data?.mode.epoch !== epoch)
+			return result;
+		const data = state.data && applyAccountingPatch(state.data, result);
+		if (!data) {
+			// Older servers or an intervening snapshot need one authoritative read.
+			await duesActions.load();
+			return result;
+		}
+		if (data !== state.data) {
+			// Discard a read started before the commit; it must not undo this delta.
+			dataSeq++;
+			dataRequest = null;
+			useDuesStore.setState({
+				data,
+				mode:
+					state.mode && state.mode.revision > data.mode.revision
+						? state.mode
+						: { ...data.mode, available: true },
+				loading: false,
+				error: null,
+			});
+			if (state.mode && state.mode.revision > data.mode.revision)
+				await duesActions.ensure();
+		}
+		return result;
+	},
 	async mode() {
 		if (modeRequest) return modeRequest;
 		const member = useAuthStore.getState().memberId;
@@ -107,6 +149,7 @@ export const duesActions = {
 		}
 	},
 	reset() {
+		identitySeq++;
 		dataSeq++;
 		dataRequest = null;
 		modeSeq++;

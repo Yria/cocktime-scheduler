@@ -4,6 +4,7 @@ const client = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }));
 vi.mock("./client", () => ({ supabase: client }));
 
 import { fetchSessionSettingsForConflictCheck, startSession, updateSession } from "./session";
+import { dbEndSession } from "./actions";
 
 function query(data: unknown, error: { message: string } | null = null) {
 	const result = { data, error };
@@ -15,6 +16,7 @@ function query(data: unknown, error: { message: string } | null = null) {
 		upsert: vi.fn().mockReturnThis(),
 		eq: vi.fn().mockReturnThis(),
 		single: vi.fn().mockResolvedValue(result),
+		maybeSingle: vi.fn().mockResolvedValue(result),
 		then: promise.then.bind(promise),
 	};
 }
@@ -53,4 +55,17 @@ describe("세션 설정 저장과 읽기", () => {
 		expect(client.from).toHaveBeenCalledTimes(2);
 	});
 
+});
+
+describe("세션 종료 저장 결과", () => {
+	it("종료한 행이 확인되어야 성공한다", async () => {
+		const update = query({ id: 7 });
+		client.from.mockReturnValueOnce(update);
+		expect(await dbEndSession(7)).toBe(true);
+		expect(update.update).toHaveBeenCalledWith({ is_active: false, status: "closed", ended_at: expect.any(String) });
+	});
+	it("권한 정책으로 갱신된 행이 없으면 종료 실패다", async () => {
+		client.from.mockReturnValueOnce(query(null));
+		expect(await dbEndSession(7)).toBe(false);
+	});
 });

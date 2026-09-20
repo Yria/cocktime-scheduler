@@ -198,7 +198,7 @@ export default function ChargeManagement({
 				</div>
 				{issued.length > 0 && (
 					<div
-						className="ac-charge-filters"
+						className="ac-charge-filters ac-filter-chips"
 						role="group"
 						aria-label="부과 종류"
 					>
@@ -206,6 +206,7 @@ export default function ChargeManagement({
 							<button
 								key={kind}
 								type="button"
+								className="ac-chip"
 								aria-pressed={filter === kind}
 								onClick={() => {
 									setFilter(kind);

@@ -11,7 +11,6 @@ import type {
 import { actionLabel, purposeLabel } from "../../lib/dues/types";
 import {
 	accountingError,
-	commitAccounting,
 	previewAccounting,
 } from "../../lib/supabase/dues";
 import { shiftYm, won } from "../../lib/dues/duesText";
@@ -20,6 +19,7 @@ import { randomId } from "../../lib/randomId";
 import ManualChargeFields from "./ManualChargeFields";
 import ChargeReferencePreset from "./ChargeReferencePreset";
 import { useInlineAccounting } from "./useInlineAccounting";
+import { duesActions } from "../../store/duesStore";
 
 type IssueLine = {
 	member_id: string;
@@ -392,13 +392,12 @@ export default function ChargeVoucher({
 		setAttempted(true);
 		setError("");
 		try {
-			await commitAccounting(
+			await duesActions.commit(
 				pending.payload,
 				pending.request,
 				pending.revision,
 			);
-			await onDone();
-			onClose();
+			onClose(true);
 		} catch (e) {
 			setError(
 				`${accountingError(e)} 같은 확인 버튼으로 결과를 다시 확인할 수 있습니다.`,
