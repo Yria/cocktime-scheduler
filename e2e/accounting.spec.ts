@@ -666,10 +666,8 @@ test("cancel and reissue previews without writing and commits once after recover
 	page,
 }) => {
 	await navigate(page, "/dues/2026-08/charge");
-	await page
-		.getByRole("button", { name: "발행 내역·회비·대관 부과", exact: true })
-		.click();
 	await page.getByRole("button", { name: /^회식 / }).click();
+	await page.getByRole("button", { name: "부과 변경", exact: true }).click();
 	await page.getByRole("checkbox", { name: /000002/ }).uncheck();
 	await page.getByRole("button", { name: "선택한 1건 취소 후 발행" }).click();
 	await page.getByLabel(/000001 부과액/).fill("24000");
@@ -720,9 +718,7 @@ test("one carry form moves partial debt and actual money; member sees both futur
 	});
 	await page.setViewportSize({ width: 390, height: 844 });
 	await navigate(page, "/dues/2026-08/charge");
-	await page
-		.getByRole("button", { name: "발행 내역·회비·대관 부과", exact: true })
-		.click();
+	await page.getByText("이월·회계 항목 관리", { exact: true }).click();
 	await page
 		.getByRole("button", { name: "미납·입금 이월", exact: true })
 		.click();
@@ -896,10 +892,8 @@ test("replacement retains partial carry months and requires the changed amounts 
 		debts: [{ due_id: d, amount: 3000 }],
 	});
 	await navigate(page, "/dues/2026-07/charge");
-	await page
-		.getByRole("button", { name: "발행 내역·회비·대관 부과", exact: true })
-		.click();
 	await page.getByRole("button", { name: /^7월 회비 / }).click();
+	await page.getByRole("button", { name: "부과 변경", exact: true }).click();
 	await page.getByRole("checkbox", { name: /000001/ }).uncheck();
 	await page.getByRole("button", { name: "선택한 1건 취소 후 발행" }).click();
 	await expect(page.getByLabel("납기 1 월")).toHaveValue("2026-07");
@@ -1023,10 +1017,7 @@ test("same-name payer B can receive a missing monthly charge and pay it independ
 	await expect(receipt.getByText("선택한 내역을 반영했습니다.")).toBeVisible();
 	await page.getByRole("button", { name: "부과", exact: true }).click();
 	await page
-		.getByRole("button", { name: "발행 내역·회비·대관 부과", exact: true })
-		.click();
-	await page
-		.getByRole("button", { name: "회비 대상 확인", exact: true })
+		.getByRole("button", { name: "회비 부과", exact: true })
 		.click();
 	// A's August charge is already paid and must not be offered or recreated.
 	await expect(page.getByLabel(/000001 부과액/)).toHaveCount(0);
@@ -1104,9 +1095,7 @@ test("manual charge reference sessions distinguish times and copy each roster by
 		[A, B],
 	);
 	await navigate(page, "/dues/2026-08/charge");
-	await page
-		.getByRole("button", { name: "발행 내역·회비·대관 부과", exact: true })
-		.click();
+	await page.getByRole("button", { name: "대관 부과", exact: true }).click();
 	await expect(
 		page.getByLabel("대관 회차").getByRole("option", {
 			name: "2026-08-22 · 체육관 · 14:00–16:00",
@@ -1696,9 +1685,7 @@ test("overview presents read-only payment progress in both themes, with operatio
 		page.getByRole("heading", { name: /^처리할 내역/ }),
 	).toBeVisible();
 	await page.getByRole("button", { name: "부과", exact: true }).click();
-	await page
-		.getByRole("button", { name: "발행 내역·회비·대관 부과", exact: true })
-		.click();
+	await page.getByText("이월·회계 항목 관리", { exact: true }).click();
 	await expect(
 		page.getByRole("button", { name: "미납·입금 이월", exact: true }),
 	).toBeVisible();
@@ -1845,7 +1832,8 @@ test("a unique dated receipt fits one card and confirms with no selection RPCs a
 		}
 	}
 	expect(calls.filter((c) => c.name === "dues_read")).toHaveLength(1);
-	expect(calls.filter((c) => c.name === "dues_sessions")).toHaveLength(0);
+	// The default management list loads session labels once; the manual preset uses its own paged query.
+	expect(calls.filter((c) => c.name === "dues_sessions")).toHaveLength(1);
 	expect(calls.filter((c) => c.name === "dues_preview")).toHaveLength(0);
 	expect(calls.filter((c) => c.name === "dues_command")).toHaveLength(0);
 	await confirm.click();
@@ -1935,6 +1923,79 @@ test("role revocation refreshes mode and removes admin data without reloading th
     expect(calls.filter((c) => c.name === "dues_read")).toHaveLength(1);
 });
 
+test("charge management opens on actions and issued history, keeping financial edits behind an explicit choice", async ({ page }) => {
+	await command({ action: "draft", source_key: "monthly:2026-09", hold_reason: "new_members", draft: { kind: "monthly", ym: "2026-09", label: "9월 회비", lines: [] } });
+	await navigate(page, "/dues/2026-08/charge");
+	const history = page.getByRole("region", { name: "발행 내역", exact: true });
+	await expect(history).toBeVisible();
+	await expect(page.getByRole("region", { name: "부과 발행", exact: true })).not.toBeVisible();
+	await expect(page.getByRole("button", { name: "회비 부과", exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "대관 부과", exact: true })).toBeVisible();
+	await expect(page.getByRole("region", { name: "발행 대기" })).toContainText("9월 회비");
+	await expect(page.getByRole("button", { name: "미납·입금 이월", exact: true })).not.toBeVisible();
+	await expect(page.getByRole("checkbox")).toHaveCount(0);
+	expect(calls.filter((call) => call.name === "reference_sessions")).toHaveLength(0);
+	for (const width of [360, 390, 1280]) {
+		await page.setViewportSize({ width, height: 900 });
+		for (const theme of ["light", "dark"]) {
+			await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), theme === "dark");
+			await designEvidence(page, `charge-management-${width}-${theme}`);
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+			const start = await page.getByRole("region", { name: "새 부과", exact: true }).boundingBox();
+			expect(start!.y + start!.height).toBeLessThan(500);
+			for (const button of await page.locator(".ac-charge-management button:visible").all()) {
+				const box = await button.boundingBox();
+				expect(box!.width).toBeGreaterThanOrEqual(44);
+				expect(box!.height).toBeGreaterThanOrEqual(44);
+			}
+		}
+	}
+	await page.getByRole("group", { name: "부과 종류" }).getByRole("button", { name: "수동", exact: true }).click();
+	await expect(history.getByRole("button", { name: /^회식 / })).toBeVisible();
+	await expect(history.getByRole("button", { name: /^8월 회비 / })).toHaveCount(0);
+	await history.getByRole("button", { name: /^회식 / }).click();
+	await page.setViewportSize({ width: 390, height: 900 });
+	await page.evaluate(() => document.documentElement.classList.remove("dark"));
+	await designEvidence(page, "charge-management-readonly-390-light");
+	await expect(history.getByRole("checkbox")).toHaveCount(0);
+	await history.getByRole("button", { name: "부과 변경", exact: true }).click();
+	await expect(history.getByRole("checkbox")).toHaveCount(2);
+	await history.getByRole("button", { name: "선택 닫기", exact: true }).click();
+	await expect(history.getByRole("checkbox")).toHaveCount(0);
+	await page.getByRole("button", { name: "이전 달", exact: true }).click();
+	await expect(page.getByRole("group", { name: "부과 종류" }).getByRole("button", { name: "전체", exact: true })).toHaveAttribute("aria-pressed", "true");
+	expect(calls.filter((call) => ["dues_command", "dues_preview", "dues_candidates"].includes(call.name))).toHaveLength(0);
+});
+
+test("court selection recovers a load failure and checks candidates only after the explicit action", async ({ page }) => {
+	await db.exec("insert into places values(1,'체육관',true); update sessions set place_id=1 where id=1");
+	await page.route("**/rpc/dues_sessions", (route) => route.fulfill({ status: 503, json: { message: "연결 실패" } }), { times: 1 });
+	await navigate(page, "/dues/2026-08/charge");
+	await page.getByRole("button", { name: "대관 부과", exact: true }).click();
+	await expect(page.getByRole("alert")).toContainText("회차를 불러오지 못했습니다");
+	await page.getByRole("button", { name: "회차 다시 불러오기", exact: true }).click();
+	await page.getByLabel("대관 회차", { exact: true }).selectOption("1");
+	expect(calls.filter((call) => call.name === "dues_candidates")).toHaveLength(0);
+	await page.getByRole("button", { name: "대관 부과 대상 확인", exact: true }).click();
+	await expect.poll(() => calls.filter((call) => call.name === "dues_candidates").length).toBe(1);
+	expect(calls.filter((call) => call.name === "dues_command")).toHaveLength(0);
+});
+
+test("an empty charge month has a clear start and keeps accounting-only groups out of issued history", async ({ page }) => {
+	await command({ action: "issue", kind: "manual", label: "모금 항목", date: "2026-06-01", lines: [], group_only: true });
+	await navigate(page, "/dues/2026-06/charge");
+	const history = page.getByRole("region", { name: "발행 내역", exact: true });
+	await expect(history).toContainText("아직 발행한 부과가 없습니다.");
+	await expect(history.getByText("모금 항목", { exact: true })).toHaveCount(0);
+	await page.getByText("이월·회계 항목 관리", { exact: true }).click();
+	await expect(page.getByText("모금 항목", { exact: true })).toBeVisible();
+	await page.getByRole("button", { name: "새 수동 부과", exact: true }).click();
+	await expect(page.getByRole("region", { name: "부과 발행", exact: true })).toBeVisible();
+	await page.getByRole("button", { name: "부과 목록", exact: true }).click();
+	await expect(history).toBeVisible();
+	expect(calls.filter((call) => call.name === "dues_command")).toHaveLength(0);
+});
+
 test("manual voucher splits and rounds the total for selected member IDs without writing before confirmation", async ({
 	page,
 }) => {
@@ -1943,6 +2004,7 @@ test("manual voucher splits and rounds the total for selected member IDs without
 	);
 	await page.setViewportSize({ width: 390, height: 844 });
 	await navigate(page, "/dues/2026-08/charge");
+	await page.getByRole("button", { name: "새 수동 부과", exact: true }).click();
 	const voucher = page.getByRole("region", { name: "부과 발행", exact: true });
 	await expect(
 		voucher.getByRole("button", { name: "+ 새 묶음", exact: true }),
@@ -2066,6 +2128,7 @@ test("manual issue keeps its draft across views and retries a lost response with
 	page,
 }) => {
 	await navigate(page, "/dues/2026-09/charge");
+	await page.getByRole("button", { name: "새 수동 부과", exact: true }).click();
 	const voucher = page.getByRole("region", { name: "부과 발행", exact: true });
 	await voucher
 		.getByLabel("부과 이름", { exact: true })
@@ -2084,9 +2147,7 @@ test("manual issue keeps its draft across views and retries a lost response with
 	await expect(voucher.getByLabel("인당 금액", { exact: true })).toHaveValue(
 		"3500",
 	);
-	await page
-		.getByRole("button", { name: "발행 내역·회비·대관 부과", exact: true })
-		.click();
+	await page.getByRole("button", { name: "부과 목록", exact: true }).click();
 	await page.getByRole("button", { name: "새 수동 부과", exact: true }).click();
 	await expect(voucher.getByLabel("인당 금액", { exact: true })).toHaveValue(
 		"3500",
@@ -2157,6 +2218,7 @@ test("the charge design keeps a full roster and its totals together on mobile an
 		);
 	}
 	await navigate(page, "/dues/2026-09/charge");
+	await page.getByRole("button", { name: "새 수동 부과", exact: true }).click();
 	const voucher = page.getByRole("region", { name: "부과 발행", exact: true });
 	await voucher
 		.getByLabel("부과 이름", { exact: true })
@@ -2223,6 +2285,7 @@ test("custom manual issue creates its own group and leaves existing same-name gr
 	const chargesBefore = await db.query("select * from dues_charges order by id");
 	const allocationsBefore = await db.query("select * from dues_allocations order by id");
 	await navigate(page, "/dues/2026-09/charge");
+	await page.getByRole("button", { name: "새 수동 부과", exact: true }).click();
 	const voucher = page.getByRole("region", { name: "부과 발행", exact: true });
 	await expect(voucher.getByRole("group", { name: "회계 묶음", exact: true })).toHaveCount(0);
 	await expect(voucher.getByLabel("부과할 묶음 검색")).toHaveCount(0);
@@ -2279,6 +2342,7 @@ test("charge roster presets replace the draft automatically and load older month
 		[A, B],
 	);
 	await navigate(page, "/dues/2026-09/charge");
+	await page.getByRole("button", { name: "새 수동 부과", exact: true }).click();
 	const voucher = page.getByRole("region", { name: "부과 발행", exact: true });
 	const preset = voucher.getByRole("group", { name: "지난 명단 프리셋" });
 	const source = preset.getByRole("list", { name: "참고 회차", exact: true });
@@ -2286,7 +2350,8 @@ test("charge roster presets replace the draft automatically and load older month
 	await expect(preset.getByRole("combobox")).toHaveCount(0);
 	await expect(source.locator("button[value='21']")).toHaveCount(1);
 	await expect(source.locator("button[value='30']")).toHaveCount(0);
-	expect(calls.filter((c) => c.name === "dues_sessions")).toHaveLength(0);
+	// The default management list loads session labels once; the manual preset uses its own paged query.
+	expect(calls.filter((c) => c.name === "dues_sessions")).toHaveLength(1);
 	expect(calls.filter((c) => c.name === "reference_sessions")).toHaveLength(2);
 	const range = calls.find(
 		(c) => c.name === "reference_sessions" && c.args.start,
@@ -2432,6 +2497,7 @@ test("charge preset fetch failures preserve the draft and allow retry without pr
 		[B],
 	);
 	await navigate(page, "/dues/2026-09/charge");
+	await page.getByRole("button", { name: "새 수동 부과", exact: true }).click();
 	const voucher = page.getByRole("region", { name: "부과 발행", exact: true });
 	const preset = voucher.getByRole("group", { name: "지난 명단 프리셋" });
 	const source = preset.getByRole("list", { name: "참고 회차", exact: true });

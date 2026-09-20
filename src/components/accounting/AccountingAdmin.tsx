@@ -7,7 +7,6 @@ import {
 	X,
 } from "lucide-react";
 import { transactionNeedsSettlement } from "../../lib/dues/quickSettlement";
-import { isReversedPrepayment } from "../../lib/dues/chargeState";
 import "./accounting.css";
 import "./accounting-layout.css";
 // 홈 톤 스킨 — 반드시 accounting-layout.css **뒤**. 모든 규칙이 .ac-layout-v2 스코프이고
@@ -16,15 +15,10 @@ import "./accounting-layout.css";
 import "./accounting-home.css";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import {
-	currentYm,
-	holdReasonLabel,
-	shiftYm,
-	won,
-} from "../../lib/dues/duesText";
+import { currentYm, shiftYm, won } from "../../lib/dues/duesText";
 import { nameMatches } from "../../lib/dues/matching";
 import { sessionChoiceLabels } from "../../lib/dues/selection";
-import { groupSummary, kstMonth, memberLabel } from "../../lib/dues/summary";
+import { kstMonth } from "../../lib/dues/summary";
 import { actionLabel } from "../../lib/dues/types";
 import {
 	accountingCandidates,
@@ -37,6 +31,7 @@ import AppScreen from "../common/AppScreen";
 import AccountingLedger from "./AccountingLedger";
 import AccountingOverview from "./AccountingOverview";
 import ChargeVoucher from "./ChargeVoucher";
+import ChargeManagement from "./ChargeManagement";
 import DuesSettingsModal from "./DuesSettingsModal";
 import type { OperationDraft } from "./OperationDialog";
 import TransactionCard from "./TransactionCard";
@@ -57,12 +52,10 @@ export default function AccountingAdmin() {
 	const { data, error, loading, refresh } = useDuesData();
 	const mode = useDuesStore((s) => s.mode)!;
 	const [draft, setDraft] = useState<OperationDraft | null>(null);
-	const [chargeManagement, setChargeManagement] = useState(false);
+	const [chargeManagement, setChargeManagement] = useState(true);
 	const [manualVersion, setManualVersion] = useState(0);
 	const [manualDirty, setManualDirty] = useState(false);
 	const [chargeNotice, setChargeNotice] = useState("");
-	const [expanded, setExpanded] = useState<string | null>(null);
-	const [selected, setSelected] = useState<string[]>([]);
 	const [settling, setSettling] = useState(false);
 	const [search, setSearch] = useState("");
 	const [issueError, setIssueError] = useState("");
@@ -77,7 +70,8 @@ export default function AccountingAdmin() {
 	const [sessions, setSessions] = useState<Awaited<
 		ReturnType<typeof accountingSessions>
 	> | null>(null);
-	const [sessionId, setSessionId] = useState("");
+	const [sessionsError, setSessionsError] = useState("");
+	const [sessionAttempt, setSessionAttempt] = useState(0);
 	useEffect(() => {
 		if (page !== "charge" || !chargeManagement || sessions !== null) return;
 		let disposed = false;
@@ -86,12 +80,12 @@ export default function AccountingAdmin() {
 				if (!disposed) setSessions(s);
 			})
 			.catch((e) => {
-				if (!disposed) setIssueError(accountingError(e));
+				if (!disposed) setSessionsError(accountingError(e));
 			});
 		return () => {
 			disposed = true;
 		};
-	}, [page, chargeManagement, sessions]);
+	}, [page, chargeManagement, sessions, sessionAttempt]);
 	const go = (month: string, tab = page) =>
 		navigate(`/dues/${month}${tab === "home" ? "" : `/${tab}`}`);
 	const candidate = async (
@@ -101,12 +95,15 @@ export default function AccountingAdmin() {
 	) => {
 		setBusy(true);
 		setIssueError("");
+		setChargeNotice("");
 		try {
 			const result = await accountingCandidates(kind, period, sid ?? null);
-			if (!(result.payload.lines as unknown[]).length)
-				throw new Error(
-					"새로 발행할 대상이 없습니다. 기존 부과 변경은 취소 후 발행에서 처리하세요.",
+			if (!(result.payload.lines as unknown[]).length) {
+				setChargeNotice(
+					"새로 발행할 대상이 없습니다. 발행 내역에서 기존 부과를 확인해 주세요.",
 				);
+				return;
+			}
 			setDraft({
 				type: "issue",
 				candidate: {
@@ -210,9 +207,11 @@ export default function AccountingAdmin() {
 					</button>
 				))}
 			</nav>
-			{!!draft && (
+			{(!!draft || manualDirty) && (
 				<p className="ac-caption">
-					전표를 확정하거나 닫은 뒤에 월을 옮길 수 있습니다.
+					{draft
+						? "전표를 확정하거나 닫은 뒤에 월을 옮길 수 있습니다."
+						: "수동 부과를 작성 중입니다. 발행하거나 초기화한 뒤 월을 옮길 수 있습니다."}
 				</p>
 			)}
 			{mode.paused && (
@@ -242,15 +241,18 @@ export default function AccountingAdmin() {
 			{data && (
 				<>
 					{page === "charge" && !draft && !chargeManagement && (
-						<button
-							type="button"
-							className="btn-tint-blue ac-charge-manage-link"
-							disabled={disabled}
-							onClick={() => setChargeManagement(true)}
-						>
-							<span>발행 내역·회비·대관 부과</span>
-							<ChevronRight size={18} aria-hidden="true" />
-						</button>
+						<div className="ac-charge-editor-nav">
+							<button
+								type="button"
+								className="ac-link"
+								disabled={disabled}
+								onClick={() => setChargeManagement(true)}
+							>
+								<ChevronLeft size={18} aria-hidden="true" />
+								부과 목록
+							</button>
+							<h2>수동 부과</h2>
+						</div>
 					)}
 					{page === "charge" && chargeNotice && (
 						<p className="ac-saved" role="status">
@@ -269,6 +271,7 @@ export default function AccountingAdmin() {
 							onClose={(saved) => {
 								setManualVersion((n) => n + 1);
 								setManualDirty(false);
+								setChargeManagement(true);
 								setChargeNotice(
 									saved
 										? "부과를 발행했습니다. 발행 내역에서 확인할 수 있습니다."
@@ -388,363 +391,46 @@ export default function AccountingAdmin() {
 						</div>
 					) : (
 						<div className="ac-charge">
-							{/* ① 발행 — 대상 계산이 필요한 것부터. 전에는 성격이 다른 버튼
-							    일곱 개가 한 무더기로 쌓여 있었다. */}
 							{!draft && chargeManagement && (
-								<div className="ac-sheet">
-									<div className="ac-sheet-head">
-										<h2>발행</h2>
-										<span>동시에 한 건만</span>
-									</div>
-									<div className="ac-charge-launcher">
-										<button
-											type="button"
-											aria-label="회비 대상 확인"
-											disabled={disabled}
-											onClick={() => void candidate("monthly")}
-										>
-											<span>회비 대상 확인</span>
-											<span>{ym} 대상 계산</span>
-										</button>
-										<div className="ac-charge-session">
-											<label className="ac-label" htmlFor="charge-session">
-												대관 부과
-											</label>
-											<select
-												id="charge-session"
-												aria-label="대관 회차"
-												value={sessionId}
-												disabled={disabled}
-												onChange={(e) => {
-													setSessionId(e.target.value);
-													if (e.target.value)
-														void candidate("court", Number(e.target.value));
-												}}
-											>
-												<option value="">대관 회차 선택</option>
-												{(sessions ?? [])
-													.filter((s) => s.court)
-													.map((s) => (
-														<option key={s.id} value={s.id}>
-															{sessionLabels.get(s.id)}
-														</option>
-													))}
-											</select>
-											<button
-												type="button"
-												className="ac-link"
-												disabled={disabled || !sessionId}
-												onClick={() =>
-													void candidate("court", Number(sessionId))
-												}
-											>
-												대관 부과 대상 확인
-											</button>
-										</div>
-										<button
-											type="button"
-											aria-label="새 수동 부과"
-											disabled={disabled}
-											onClick={() => setChargeManagement(false)}
-										>
-											<span>새 수동 부과</span>
-											<span>이름·발생일 직접 입력</span>
-										</button>
-										<button
-											type="button"
-											aria-label="부과 없이 모금·지출 항목 만들기"
-											disabled={disabled}
-											onClick={() =>
-												setDraft({
-													type: "issue",
-													candidate: {
-														action: "issue",
-														reason: "",
-														kind: "manual",
-														label: "",
-														date: `${ym}-01`,
-														ym,
-														lines: [],
-														group_only: true,
-													},
-												})
-											}
-										>
-											<span>부과 없이 모금·지출 항목 만들기</span>
-											<span>부과 0건</span>
-										</button>
-									</div>
-								</div>
+								<ChargeManagement
+									key={ym}
+									data={data}
+									ym={ym}
+									sessions={sessions}
+									sessionsError={sessionsError}
+									onRetrySessions={() => {
+										setSessionsError("");
+										setSessionAttempt((n) => n + 1);
+									}}
+									disabled={disabled}
+									manualDirty={manualDirty}
+									onManual={() => {
+										setChargeNotice("");
+										setIssueError("");
+										setChargeManagement(false);
+									}}
+									onDraft={(next) => {
+										setChargeNotice("");
+										setIssueError("");
+										setDraft(next);
+									}}
+									onCandidate={candidate}
+								/>
 							)}
-							{/* ② 전표 — 모달이 아니라 이 자리에서 열리고 이 자리에서 끝난다. */}
 							{draft && (
 								<ChargeVoucher
 									key={JSON.stringify(draft)}
 									draft={draft}
 									data={data}
 									viewYm={ym}
-									onClose={() => setDraft(null)}
+									onClose={(saved) => {
+										setDraft(null);
+										setChargeManagement(true);
+										setChargeNotice(saved ? "처리한 내용을 반영했습니다." : "");
+									}}
 									onDone={refresh}
 									onPendingChange={setSettling}
 								/>
-							)}
-							{/* ③ 발행 대기 — 서버가 보류한 이유(hold_reason)를 처음으로 보여 준다. */}
-							{(chargeManagement || !!draft) && data.drafts?.length > 0 && (
-								<div className="ac-sheet">
-									<div className="ac-sheet-head">
-										<h2>발행 대기</h2>
-										<span>{data.drafts.length}건</span>
-									</div>
-									<div className="ac-drafts">
-										{data.drafts.map((d) => (
-											<button
-												key={d.source_key}
-												type="button"
-												className="ac-draft-row"
-												aria-label={`${String(d.payload.label)} 대상 다시 확인`}
-												disabled={disabled}
-												onClick={() =>
-													void candidate(
-														d.payload.kind as "monthly" | "court",
-														d.payload.session_id as number | undefined,
-														String(d.payload.ym),
-													)
-												}
-											>
-												<span aria-hidden="true">?</span>
-												<span>
-													<strong>{String(d.payload.label)}</strong>
-													{d.hold_reason && (
-														<em>
-															{holdReasonLabel[d.hold_reason] ?? d.hold_reason}
-														</em>
-													)}
-												</span>
-												<span className="ac-link">대상 다시 확인</span>
-											</button>
-										))}
-									</div>
-								</div>
-							)}
-							{/* ④ 이 달 발행된 묶음 */}
-							{(chargeManagement || !!draft) && (
-								<>
-									<div className="ac-sheet">
-										<div className="ac-sheet-head">
-											<h2>이 달 발행된 묶음</h2>
-											<span>
-												{
-													data.groups.filter((g) =>
-														g.occurred_on.startsWith(ym),
-													).length
-												}
-												건
-											</span>
-										</div>
-										{data.groups
-											.filter((g) => g.occurred_on.startsWith(ym))
-											.sort((a, b) =>
-												b.occurred_on.localeCompare(a.occurred_on),
-											)
-											.map((g) => {
-												const s = groupSummary(data, g),
-													live = s.charges.filter((c) => c.state === "live");
-												const open = expanded === g.id;
-												return (
-													<div key={g.id} className="ac-group">
-														<button
-															type="button"
-															className="ac-group-toggle"
-															aria-expanded={open}
-															onClick={() => {
-																setExpanded(open ? null : g.id);
-																setSelected(live.map((c) => c.id));
-															}}
-														>
-															<span className="ac-section-heading">
-																<strong>
-																	{g.session_id
-																		? (sessionLabels.get(g.session_id) ??
-																			g.label)
-																		: g.label}
-																</strong>
-																<span
-																	className={`ac-badge ${s.outstanding > 0 ? "is-amber" : "is-green"}`}
-																>
-																	{s.outstanding > 0
-																		? "미납 있음"
-																		: "미납 없음"}
-																</span>
-															</span>
-															<span className="ac-group-total">
-																<span>납부액</span>
-																<strong className="ac-number">
-																	{won(s.paid)}
-																</strong>
-																<ChevronRight
-																	size={16}
-																	aria-hidden="true"
-																	className={open ? "ac-expanded" : ""}
-																/>
-															</span>
-															<span className="ac-group-facts">
-																<span>
-																	남은 미납 <b>{won(s.outstanding)}</b>
-																</span>
-																<span>
-																	현재 순액 <b>{won(s.net)}</b>
-																</span>
-															</span>
-															{(s.direct > 0 || s.spent > 0) && (
-																<span className="ac-group-facts">
-																	<span>
-																		직접 수입 <b>{won(s.direct)}</b>
-																	</span>
-																	<span>
-																		지출 <b>{won(s.spent)}</b>
-																	</span>
-																</span>
-															)}
-														</button>
-														{open && (
-															<div className="ac-group-members">
-																{s.charges.map((c) => {
-																	const due = data.due.filter(
-																		(d) => d.charge_id === c.id,
-																	);
-																	const state = isReversedPrepayment(c)
-																		? "선납 취소"
-																		: c.state === "cancelled"
-																			? "취소"
-																			: c.state === "waived"
-																				? "면제"
-																				: due.some((d) => d.remaining > 0)
-																					? "미납/부분납"
-																					: "완납";
-																	const dead = c.state !== "live";
-																	return (
-																		<div key={c.id} className="ac-row">
-																			<span
-																				className={`ac-row-gutter ${dead ? "" : state === "완납" ? "is-ok" : "is-ask"}`}
-																				aria-hidden="true"
-																			>
-																				{dead
-																					? "—"
-																					: state === "완납"
-																						? "✓"
-																						: "?"}
-																			</span>
-																			<span className="ac-row-body">
-																				<label>
-																					<input
-																						type="checkbox"
-																						disabled={dead}
-																						checked={selected.includes(c.id)}
-																						onChange={(e) =>
-																							setSelected(
-																								e.target.checked
-																									? [...selected, c.id]
-																									: selected.filter(
-																											(id) => id !== c.id,
-																										),
-																							)
-																						}
-																					/>{" "}
-																					{memberLabel(data, c.member_id)} ·{" "}
-																					{won(c.amount)} · {state}
-																				</label>
-																				{due
-																					.filter((d) => d.remaining > 0)
-																					.map((d) => (
-																						<span
-																							className="ac-row-note"
-																							key={d.id}
-																						>
-																							{d.due_ym} 납기 ·{" "}
-																							{won(d.remaining)} 남음
-																						</span>
-																					))}
-																				{c.previous_id && (
-																					<span className="ac-row-note">
-																						기존 부과 취소 후 발행
-																					</span>
-																				)}
-																			</span>
-																			<span className="ac-amount">
-																				{won(c.amount)}
-																			</span>
-																		</div>
-																	);
-																})}
-																{/* 파괴적 동작 — 결과를 먼저 예고하고 형태로 구분한다. */}
-																<div className="ac-undo-block">
-																	<strong>취소 후 발행</strong>
-																	<span>
-																		선택한 {selected.length}건의 부과를 취소하고
-																		새 금액으로 다시 발행합니다. 이미 받은 돈은
-																		잔액으로 돌아갑니다.
-																	</span>
-																	<button
-																		type="button"
-																		className="ac-btn-undo"
-																		disabled={disabled || !selected.length}
-																		onClick={() =>
-																			setDraft({
-																				type: "replace",
-																				chargeIds: selected,
-																			})
-																		}
-																	>
-																		선택한 {selected.length}건 취소 후 발행
-																	</button>
-																</div>
-															</div>
-														)}
-													</div>
-												);
-											})}
-										{!data.groups.some((g) => g.occurred_on.startsWith(ym)) && (
-											<p className="ac-empty">
-												이 달에 발행된 묶음이 없습니다.
-											</p>
-										)}
-									</div>
-									{/* ⑤ 돈 옮기기 — 부과가 아니므로 따로 둔다. */}
-									<div className="ac-sheet">
-										<div className="ac-sheet-head">
-											<h2>돈 옮기기</h2>
-											<span>부과가 아님</span>
-										</div>
-										<div className="ac-charge-launcher">
-											<button
-												type="button"
-												aria-label="미납·입금 이월"
-												disabled={disabled}
-												onClick={() => setDraft({ type: "carry" })}
-											>
-												<span>미납·입금 이월</span>
-												<span>다음 달로 넘기기</span>
-											</button>
-											<button
-												type="button"
-												aria-label="이월금 적용"
-												disabled={disabled}
-												onClick={() =>
-													setDraft({
-														type: "simple",
-														command: {
-															action: "apply",
-															reason: "납기가 도래한 이월 입금 사용",
-														},
-													})
-												}
-											>
-												<span>이월금 적용</span>
-												<span>납기가 도래한 이월 입금 사용</span>
-											</button>
-										</div>
-									</div>
-								</>
 							)}
 						</div>
 					)}
