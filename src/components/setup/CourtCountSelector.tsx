@@ -3,10 +3,7 @@ interface Props {
 	onChange: (n: number) => void;
 }
 
-export function CourtCountSelector({
-	courtCount,
-	onChange,
-}: Props) {
+export function CourtCountSelector({ courtCount, onChange }: Props) {
 	return (
 		<div
 			className="card-lq"
@@ -21,7 +18,7 @@ export function CourtCountSelector({
 			<p
 				className="text-muted"
 				style={{
-					fontSize: 11,
+					fontSize: 12,
 					fontWeight: 600,
 					textTransform: "uppercase",
 					letterSpacing: "0.06em",
@@ -32,27 +29,30 @@ export function CourtCountSelector({
 				코트 수
 			</p>
 			<div
-				className="bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.08)]"
+				className="grid grid-cols-4 sm:grid-cols-8 bg-[rgba(241,245,249,1)] dark:bg-[rgba(255,255,255,0.08)]"
+				role="group"
+				aria-label="코트 수"
 				style={{
-					display: "flex",
 					gap: 4,
 					borderRadius: 10,
 					padding: 4,
 					flex: 1,
+					minWidth: 0,
 				}}
 			>
-				{[1, 2, 3, 4, 5, 6].map((n) => (
+				{[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
 					<button
 						type="button"
 						key={n}
+						aria-pressed={courtCount === n}
 						onClick={() => onChange(n)}
 						className={
 							courtCount === n
-								? "bg-white dark:bg-[#2c2c2e] text-[#0b84ff]"
-								: "bg-transparent text-faint"
+								? "bg-white dark:bg-[#2c2c2e] text-[#096cd1] dark:text-[#60a5fa]"
+								: "bg-transparent text-[#55627a] dark:text-muted"
 						}
 						style={{
-							flex: 1,
+							minHeight: 44,
 							padding: "8px 0",
 							borderRadius: 7,
 							fontSize: 14,
