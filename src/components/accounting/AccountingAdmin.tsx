@@ -241,6 +241,17 @@ export default function AccountingAdmin() {
 			{/* 다른 탭을 확인하거나 발행 내역을 열어도 입력 중인 전표는 유지한다. */}
 			{data && (
 				<>
+					{page === "charge" && !draft && !chargeManagement && (
+						<button
+							type="button"
+							className="btn-tint-blue ac-charge-manage-link"
+							disabled={disabled}
+							onClick={() => setChargeManagement(true)}
+						>
+							<span>발행 내역·회비·대관 부과</span>
+							<ChevronRight size={18} aria-hidden="true" />
+						</button>
+					)}
 					{page === "charge" && chargeNotice && (
 						<p className="ac-saved" role="status">
 							{chargeNotice}
@@ -377,16 +388,6 @@ export default function AccountingAdmin() {
 						</div>
 					) : (
 						<div className="ac-charge">
-							{!draft && !chargeManagement && (
-								<button
-									type="button"
-									className="ac-link ac-charge-manage-link"
-									disabled={disabled}
-									onClick={() => setChargeManagement(true)}
-								>
-									발행 내역·회비·대관 부과
-								</button>
-							)}
 							{/* ① 발행 — 대상 계산이 필요한 것부터. 전에는 성격이 다른 버튼
 							    일곱 개가 한 무더기로 쌓여 있었다. */}
 							{!draft && chargeManagement && (

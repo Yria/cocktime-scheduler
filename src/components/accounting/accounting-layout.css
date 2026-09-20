@@ -756,8 +756,13 @@
 	gap: var(--ac-s-2);
 }
 .ac-charge-manage-link {
-	align-self: flex-end;
-	font-size: var(--ac-fs-meta);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--ac-s-2);
+	width: 100%;
+	min-height: 44px;
+	text-align: left;
 }
 @media (max-width: 360px) {
 	.ac-issue-slip .ac-voucher-identity {

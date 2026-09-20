@@ -179,6 +179,7 @@ test.beforeEach(async ({ page, context }, testInfo) => {
 	await db.exec("alter table sessions add column is_active boolean default true, add column is_overridden boolean default false");
     await db.exec(readFileSync(new URL("../supabase/migrations/20260911010000_promote_dues.sql", import.meta.url), "utf8"));
 	await db.exec(readFileSync(new URL("../supabase/migrations/20260914010000_restore_reversed_prepayment.sql", import.meta.url), "utf8"));
+	await db.exec(readFileSync(new URL("../supabase/migrations/20260920010000_settle_owned_unassigned_receipts.sql", import.meta.url), "utf8"));
 	await context.routeWebSocket(
 		/^(?!ws:\/\/(127\.0\.0\.1|localhost))/,
 		(socket) => socket.close(),
@@ -1065,6 +1066,31 @@ test("same-name payer B can receive a missing monthly charge and pay it independ
 			"select owner_id from dues_allocations where bank_tx_id=90",
 		),
 	).toBe(B);
+});
+
+test("a partly settled receipt can pay newly issued monthly dues after its balance returns from direct income to unassigned", async ({ page }) => {
+	await db.query("insert into bank_transactions(id,direction,amount,occurred_at,counterparty_name) values(90,'in',11000,'2026-09-20','김지훈0920')");
+	await command({ action: "issue", kind: "manual", label: "합성 대관", date: "2026-09-20", lines: [{ member_id: A, amount: 6000, due_ym: "2026-09" }] });
+	const courtDue = await scalar<string>("select d.id from dues_due d join dues_charges c on c.id=d.charge_id join dues_groups g on g.id=c.group_id where g.label='합성 대관'");
+	let position = await scalar<string>("select id from dues_positions where bank_tx_id=90 and amount>0");
+	await command({ action: "pay", owner_id: A, confirm_owner: true, lines: [{ position_id: position, due_id: courtDue, amount: 6000 }] });
+	const courtPayment = await scalar("select to_jsonb(a) from dues_allocations a where bank_tx_id=90");
+	const group = await scalar<string>("select id from dues_groups where source_key='monthly:2026-09'");
+	await command({ action: "position", position_id: position, owner_id: A, purpose: "club", group_id: group, amount: 5000 });
+	position = await scalar<string>("select id from dues_positions where bank_tx_id=90 and amount>0");
+	await command({ action: "position", position_id: position, owner_id: A, purpose: "unassigned", amount: 5000 });
+	await command({ action: "issue", kind: "monthly", group_id: group, label: "9월 회비", date: "2026-09-01", ym: "2026-09", lines: [{ member_id: A, amount: 5000, due_ym: "2026-09" }] });
+	await navigate(page, "/dues/2026-09/inbox");
+	const receipt = page.getByRole("region", { name: "거래 90", exact: true });
+	await receipt.getByRole("button", { name: /^9월 회비/ }).click();
+	await receipt.getByRole("button", { name: "납부 확인", exact: true }).click();
+	await expect(receipt).toHaveCount(0);
+	expect(await scalar("select sum(amount)::int from dues_positions where bank_tx_id=90")).toBe(0);
+	expect(await scalar("select jsonb_agg(amount order by amount) from dues_allocations where bank_tx_id=90")).toEqual([5000, 6000]);
+	expect(await scalar("select to_jsonb(a) from dues_allocations a where bank_tx_id=90 and amount=6000")).toEqual(courtPayment);
+	expect(await scalar("select remaining from dues_due d join dues_charges c on c.id=d.charge_id where c.group_id=$1 and c.member_id=$2", [group, A])).toBe(0);
+	expect(calls.filter((call) => call.name === "dues_command")).toHaveLength(1);
+	await db.exec("select dues_assert()");
 });
 
 test("manual charge reference sessions distinguish times and copy each roster by ID", async ({
