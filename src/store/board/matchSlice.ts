@@ -21,7 +21,7 @@ import {
 	resolveFreedReservations,
 } from "../../lib/board/draftMutations";
 import { pairPlayers } from "../../lib/teamSelection";
-import { acquireAdminCoverage, coverageRosterKey, releaseAdminCoverage } from "../../lib/board/adminCoverageGate";
+import { acquireAdminCoverage, releaseAdminCoverage } from "../../lib/board/adminCoverageGate";
 import { useSessionStore } from "../sessionStore";
 import { useAppStore } from "../appStore";
 import { toast } from "../toastStore";
@@ -156,7 +156,7 @@ export const createMatchSlice: StateCreator<
 		});
 	},
 
-	startMatch: async (teamId, adminAbsenceConsent) => {
+	startMatch: async (teamId) => {
 		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
 		const { drafts, reservations, magnets, assigningTeamIds } = get();
 		if (assigningTeamIds.has(teamId)) return;
@@ -179,7 +179,7 @@ export const createMatchSlice: StateCreator<
 		if (four.length !== 4) return;
 		const ids = four.map(p => p.id);
 		const coverageKey = `team:${teamId}`;
-		if (!acquireAdminCoverage(coverageKey, ids, consent => { void get().startMatch(teamId, consent); }, adminAbsenceConsent)) return;
+		if (!acquireAdminCoverage(coverageKey, ids)) return;
 
 		// 경기시작 시 새 코트 카드가 좌상단 기본 위치로 튀지 않도록, 만들어진 그룹의 자리를 그대로 물려준다.
 		const ta = drafts.get(teamId)?.anchor;
@@ -196,7 +196,7 @@ export const createMatchSlice: StateCreator<
 			s.assigningTeamIds.add(teamId);
 		});
 		try {
-			await session.handleAssign(gen, empty.id, adminAbsenceConsent === coverageRosterKey(ids));
+			await session.handleAssign(gen, empty.id);
 			// 성공 판정: 해당 코트의 match가 "우리 4명"으로 채워졌는지 확인(낙관적 dissolve 금지 + race 오판 방지)
 			const court = useSessionStore.getState().courts.find((c) => c.id === empty.id);
 			const ourIds = new Set(members.map((m) => m.playerId));
@@ -241,6 +241,8 @@ export const createMatchSlice: StateCreator<
 		const newIds = matchPlayerIds({ teamA, teamB });
 		const removed = oldIds.filter((id) => !newIds.includes(id));
 		await useSessionStore.getState().handleSetMatchRoster(courtId, teamA, teamB);
+		const savedIds = matchPlayerIdsFromCourt(useSessionStore.getState().courts.find(c => c.id === courtId));
+		if (savedIds.length !== newIds.length || savedIds.some(id => !newIds.includes(id))) return;
 		// 빠진 선수가 다른 팀 예약(ghost)이었으면 그 팀 정식 멤버로 승격(completeMatch와 동일 처리), 그 외엔 흩어뜨림.
 		if (removed.length > 0) {
 			set((s) => resolveFreedReservations(s, removed));

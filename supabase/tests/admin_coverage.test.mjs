@@ -11,7 +11,7 @@ create function auth.uid() returns uuid language sql stable as $$ select nullif(
 create table public.sessions(id bigint primary key, is_active boolean default true, status text default 'active', board_drafts jsonb, court_count int default 2, cock_check_enabled boolean default false, editor_client_id text default 'editor', editor_name text, editor_lease_until timestamptz, match_assign_count int default 0, match_state_version int default 0);
 create table public.members(id uuid primary key, auth_user_id uuid, name text, is_active boolean default true);
 create table public.user_roles(member_id uuid, role text);
-create table public.session_players(id uuid primary key, session_id bigint, member_id uuid, name text, status text default 'waiting', cock_checked boolean default true);
+create table public.session_players(id uuid primary key, session_id bigint, member_id uuid, name text, status text default 'waiting', cock_checked boolean default true, wait_since timestamptz);
 create table public.matches(id uuid primary key, session_id bigint, court_id int, game_type text, team_a_p1 uuid, team_a_p2 uuid, team_b_p1 uuid, team_b_p2 uuid, status text, assigned_by text);
 create unique index on public.matches(session_id,court_id) where status='playing';
 create function public.is_admin() returns boolean language sql stable security definer set search_path = '' as $$
@@ -30,11 +30,15 @@ await db.exec(lockSql.slice(lockSql.indexOf('CREATE OR REPLACE FUNCTION board_as
 const assignSql = readFileSync(new URL('../migrations/20260817020000_advisor_function_search_path.sql', import.meta.url), 'utf8');
 const assignStart = assignSql.indexOf('create or replace function public.assign_match(');
 await db.exec(assignSql.slice(assignStart, assignSql.indexOf('$function$;', assignStart) + '$function$;'.length));
+const rosterStart = assignSql.indexOf('create or replace function public.set_match_roster(');
+await db.exec(assignSql.slice(rosterStart, assignSql.indexOf('$function$;', rosterStart) + '$function$;'.length));
 const startSql = readFileSync(new URL('../migrations/20260918030000_edit_and_start_match_proposals.sql', import.meta.url), 'utf8');
 await db.exec(startSql); await db.exec(startSql);
 
 const coverageSql = readFileSync(new URL('../migrations/20260918040000_admin_coverage_start_guard.sql', import.meta.url), 'utf8');
 await db.exec(coverageSql); await db.exec(coverageSql);
+const requiredSql = readFileSync(new URL('../migrations/20260920020000_require_admin_match_coverage.sql', import.meta.url), 'utf8');
+await db.exec(requiredSql); await db.exec(requiredSql);
 
 const uid = n => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
 await db.exec("insert into public.sessions(id, court_count, board_drafts) values(1,4,'{\"teams\":[],\"reservations\":[]}')");
@@ -57,7 +61,26 @@ assert.equal((await db.query('select match_assign_count n from sessions where id
 assert.equal((await db.query('select status from session_players where id=$1',[uid(5)])).rows[0].status, 'waiting');
 await db.exec('set role authenticated');
 await start(103, 3, [9,10,11,12]); // Ordinary team can use the empty court.
-await start(102, 2, [5,6,7,8], true); // Explicit exception only.
+await assert.rejects(start(102, 2, [5,6,7,8], true), /admin coverage required/); // Cached clients cannot override.
+const legacyStart = (match, court, ids) => db.query("select public.assign_match($1,1,$2,'남복',$3,$4,$5,$6,'editor','운영진')", [uid(match),court,...ids.map(uid)]);
+await assert.rejects(legacyStart(102,2,[5,6,7,8]), /admin coverage required/);
+const roster = (match, ids, removed=[], added=[]) => db.query("select * from public.set_match_roster($1,1,$2,$3,$4,$5,$6::uuid[],$7::uuid[],'editor','운영진')",[uid(match),...ids.map(uid),removed.map(uid),added.map(uid)]);
+await assert.rejects(roster(103,[5,10,11,12],[9],[5]), /admin coverage required/);
+await db.exec('reset role');
+const before = (await db.query('select match_state_version from sessions where id=1')).rows[0].match_state_version;
+await assert.rejects(db.query('update matches set team_a_p1=$1 where id=$2',[uid(5),uid(103)]), /admin coverage required/);
+assert.equal((await db.query('select team_a_p1 from matches where id=$1',[uid(103)])).rows[0].team_a_p1,uid(9));
+assert.equal((await db.query('select match_state_version from sessions where id=1')).rows[0].match_state_version,before);
+await db.exec('set role authenticated');
+// Staff may exchange places: the outgoing administrator restores coverage.
+await roster(101,[5,2,3,4],[1],[5]);
+await assert.rejects(roster(103,[1,10,11,12],[9],[1]), /admin coverage required/);
+await roster(101,[2,5,4,3]); // Rearranging the same players remains valid.
+await db.exec('reset role');
+assert.equal((await db.query('select status from session_players where id=$1',[uid(1)])).rows[0].status,'waiting');
+assert.equal((await db.query('select status from session_players where id=$1',[uid(5)])).rows[0].status,'playing');
+await db.query("update matches set status='completed' where id=$1",[uid(101)]); // Ending a match is never blocked.
+await db.exec('set role authenticated');
 await db.exec('reset role');
 await db.exec("delete from matches; update session_players set status='waiting'");
 await db.exec('set role authenticated');
@@ -76,7 +99,14 @@ await db.exec('update session_players set cock_checked=true');
 await db.query('delete from session_players where id=$1', [uid(5)]);
 await db.exec('set role authenticated');
 await assert.rejects(start(107, 1, [1,2,3,4]), /admin coverage required/); // Sole present administrator.
-await start(107, 1, [1,2,3,4], true);
+await assert.rejects(start(107, 1, [1,2,3,4], true), /admin coverage required/);
+await db.exec('reset role');
+await db.query('update session_players set cock_checked=false where id=$1',[uid(1)]);
+await db.exec('set role authenticated');
+await assert.rejects(legacyStart(107,1,[1,2,3,4]), /admin coverage required/); // Entering a game proves presence even via an old unchecked path.
+await db.exec('reset role');
+await db.exec('update session_players set cock_checked=true');
+await db.exec('set role authenticated');
 await db.exec('reset role');
 await db.exec("delete from matches; update session_players set status='waiting'");
 await db.query("select set_config('request.jwt.claim.sub',$1,false)", [uid(2)]);
@@ -89,8 +119,15 @@ await db.exec('reset role');
 await db.query("select set_config('request.jwt.claim.sub',$1,false)", [uid(1)]);
 await db.exec('set role authenticated');
 await assert.rejects(proposeStart(false), /admin coverage required/);
-assert.equal((await proposeStart(true)).rows[0].p.status, 'started');
+await assert.rejects(proposeStart(true), /admin coverage required/);
+await assert.rejects(db.query("select public.start_match_proposal($1,$2,$3,1,'남복',$4::uuid[],$5::uuid[],'editor','운영진')",[proposal.id,proposal.updated_at,uid(201),[1,2].map(uid),[3,4].map(uid)]), /admin coverage required/);
+assert.equal((await db.query('select status from match_proposals where id=$1',[proposal.id])).rows[0].status,'pending');
+await db.exec('reset role');
+await db.query('insert into session_players(id,session_id,member_id,name) values($1,1,$1,$2)',[uid(5),'복귀한 운영진']);
+await db.exec('set role authenticated');
+assert.equal((await proposeStart(false)).rows[0].p.status, 'started');
 assert.equal((await proposeStart(false)).rows[0].p.match_id, uid(201)); // Retry remains idempotent.
 await assert.rejects(db.query('select public.assert_match_admin_coverage(1,$1::uuid[],true)', [[1,2,3,4].map(uid)]));
+await assert.rejects(db.query('select public.assert_match_admin_coverage_for_roster(1,$1::uuid[],null)', [[1,2,3,4].map(uid)]));
 await db.close();
-console.log('Admin coverage SQL passed: remaining staff, consecutive starts, rollback, explicit exception, attendance, resting staff, proposal start, permissions and retry.');
+console.log('Admin coverage SQL passed: remaining staff, consecutive starts, rollback, no override, legacy/direct-write guards, roster rollback/relay, attendance, resting staff, proposal start, permissions and retry.');

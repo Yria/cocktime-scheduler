@@ -25,15 +25,15 @@ export interface CoverageInputs {
 
 /** A resting administrator can still operate the board. Unchecked registrations
  * are not evidence of arrival when cock checking is enabled. Courts are authoritative. */
-export function availableAdminIds(input: CoverageInputs): string[] {
+export function availableAdminIds(input: CoverageInputs, enteringIds: readonly string[] = []): string[] {
 	const playing = playingIdsFromCourts(input.courts);
 	return [...input.sessionPlayers.values()].filter(p => p.memberId && input.adminMemberIds.has(p.memberId)
-		&& (!input.cockCheckEnabled || p.cockChecked || playing.has(p.id)))
+		&& (!input.cockCheckEnabled || p.cockChecked || playing.has(p.id) || enteringIds.includes(p.id)))
 		.map(p => p.id).filter(id => !playing.has(id) && !input.startingIds?.has(id));
 }
 
 export function leavesNoAdmin(ids: readonly string[], input: CoverageInputs): boolean {
-	const outside = availableAdminIds(input);
+	const outside = availableAdminIds(input, ids);
 	// No available administrator already: holding ordinary members cannot fix that.
 	return outside.length > 0 && outside.every(id => ids.includes(id));
 }

@@ -17,7 +17,6 @@ export async function dbAssignMatch(
 	courtId: number,
 	clientId: string | null,
 	name: string | null,
-	allowAdminAbsence = false,
 ): Promise<boolean> {
 	// 단일 트랜잭션으로 (편집 락 가드 +) matches INSERT + session_players UPDATE 실행
 	const { error } = await supabase.rpc("assign_match_with_admin_coverage", {
@@ -31,11 +30,11 @@ export async function dbAssignMatch(
 		p_team_b_p2: team.teamB[1],
 		p_client_id: clientId,
 		p_name: name,
-		p_allow_admin_absence: allowAdminAbsence,
+		p_allow_admin_absence: false,
 	});
 	if (error) {
 		if (error.message?.includes("admin coverage required")) {
-			toast("운영진의 경기 상태가 바뀌었어요. 동기화 후 다시 시작해 주세요.", { variant: "error" });
+			toast("운영진이 최소 한 명은 경기 밖에 남아 있어야 해요. 교대 후 다시 시작해 주세요.", { variant: "error" });
 			return false;
 		}
 		// 다른 기기가 먼저 같은 코트를 배정한 경우(부분 유니크 인덱스 충돌)
@@ -142,6 +141,10 @@ export async function dbSetMatchRoster(
 		p_name: name,
 	});
 	if (error) {
+		if (error.message?.includes("admin coverage required")) {
+			toast("운영진이 최소 한 명은 경기 밖에 남아 있어야 해요. 선수 교체를 적용하지 않았어요.", { variant: "error" });
+			return null;
+		}
 		if (error.message?.includes("not editor")) {
 			console.warn("dbSetMatchRoster: rejected — not the editor");
 			return null;

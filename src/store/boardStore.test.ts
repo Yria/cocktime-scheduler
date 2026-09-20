@@ -7,6 +7,7 @@ import { DEFAULT_VIEWPORT } from "../lib/board/geometry";
 const h = vi.hoisted(() => ({
 	handleAssign: vi.fn(),
 	handleComplete: vi.fn(),
+	handleSetMatchRoster: vi.fn(),
 	courts: [] as Court[],
 	players: new Map<string, SessionPlayer>(),
 	singleWomanIds: [] as string[],
@@ -25,6 +26,7 @@ vi.mock("./sessionStore", () => ({
 			sessionPlayers: h.players,
 			handleAssign: h.handleAssign,
 			handleComplete: h.handleComplete,
+			handleSetMatchRoster: h.handleSetMatchRoster,
 			groupHistory: h.groupHistory,
 			lastGameType: h.lastGameType,
 			matchAssignCount: h.matchAssignCount,
@@ -117,24 +119,35 @@ describe("운영진 교대 — 실제 경기 시작 가드", () => {
 		expect(useAdminCoverageStore.getState().prompt?.alternative?.key).toBe("team:B");
 		expect(useBoardStore.getState().drafts.get("A")!.confirmedMs).toBe(10);
 	});
-	it("대체 팀이 없을 때 명시적으로 선택한 이번 경기만 예외 시작한다", async () => {
+	it("대체 팀이 없어도 마지막 운영진은 예외 없이 대기한다", async () => {
 		setup(false);
 		await useBoardStore.getState().startMatch("A");
-		expect(h.handleAssign).not.toHaveBeenCalled();
 		expect(useAdminCoverageStore.getState().prompt?.alternative).toBeUndefined();
-		useAdminCoverageStore.getState().prompt!.start();
-		expect(h.handleAssign).toHaveBeenCalledWith(expect.anything(), 1, true);
-		await Promise.resolve();
+		expect(useAdminCoverageStore.getState().prompt).not.toHaveProperty("start");
+		useAdminCoverageStore.setState({ prompt: null });
+		await useBoardStore.getState().startMatch("A");
+		expect(h.handleAssign).not.toHaveBeenCalled();
 		expect(useAdminCoverageStore.getState().starting.size).toBe(0);
+		expect(useBoardStore.getState().drafts.get("A")!.confirmedMs).toBe(10);
 	});
-	it("확인창을 연 뒤 대체 팀이 생기면 기존 예외 승인을 재사용하지 않는다", async () => {
+	it("다른 운영진이 돌아오면 원래 대기 팀을 시작할 수 있다", async () => {
 		setup(false);
 		await useBoardStore.getState().startMatch("A");
-		const consent = useAdminCoverageStore.getState().prompt!.start;
-		useBoardStore.setState(s => ({ drafts: new Map(s.drafts).set("B", draft("B", ["e", "f", "g", "h"])) }));
-		consent();
-		expect(h.handleAssign).not.toHaveBeenCalled();
-		expect(useAdminCoverageStore.getState().prompt?.alternative?.key).toBe("team:B");
+		h.players.get("e")!.memberId = "admin2";
+		useAdminCoverageStore.setState({ memberIds: new Set(["admin", "admin2"]) });
+		await useBoardStore.getState().startMatch("A");
+		expect(h.handleAssign).toHaveBeenCalledWith(expect.anything(), 1);
+	});
+	it("선수 교체가 거부되면 기존 경기와 예약을 그대로 유지한다", async () => {
+		setup();
+		h.courts = [{ id: 1, match: { id: "live", courtId: 1, gameType: "남복", teamA: ["a", "b"], teamB: ["c", "d"], startedAt: "" } }];
+		seed({ drafts: [draft("B", ["f", "g", "h"])], reservations: [res("pending-a", "a", "B")], magnets: [mag("a", null, 120, 220)] });
+		const before = useBoardStore.getState();
+		await useBoardStore.getState().setMatchRoster(1, ["e", "b"], ["c", "d"]);
+		expect(h.handleSetMatchRoster).toHaveBeenCalled();
+		expect(useBoardStore.getState().reservations).toEqual(before.reservations);
+		expect(useBoardStore.getState().drafts).toEqual(before.drafts);
+		expect(useBoardStore.getState().magnets).toEqual(before.magnets);
 	});
 	it("아직 서버 응답이 없는 첫 운영진의 출전도 반영해 두 번째 출전을 막는다", async () => {
 		setup(); h.players.get("e")!.memberId = "admin2";

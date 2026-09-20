@@ -187,7 +187,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 
 	// ── DB Actions ──────────────────────────────────────────
-	handleAssign: async (team: GeneratedTeam, courtId: number, allowAdminAbsence = false) => {
+	handleAssign: async (team: GeneratedTeam, courtId: number) => {
 		const { courts, _channel, isEditor, _clientId, _myName } = get();
 		if (!_channel || !isEditor) { return; } // 보기 전용 차단
 
@@ -204,7 +204,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			courtId,
 			_clientId,
 			_myName ?? "기기",
-			allowAdminAbsence,
 		);
 
 		if (ok) {

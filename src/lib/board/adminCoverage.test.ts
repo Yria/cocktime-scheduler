@@ -25,7 +25,7 @@ describe("administrator relay in the start queue", () => {
 		expect(coverageQueue(s).find(t => !leavesNoAdmin(t.ids, s))?.key).toBe("team:first");
 		expect([...s.drafts.values()].map(t => t.confirmedMs)).toEqual(before);
 	});
-	it("offers an explicit exception when there is no alternative (including a sole administrator)", () => {
+	it("holds the last administrator even without an alternative (including a sole administrator)", () => {
 		const s = fixture(); s.drafts = new Map([["first", s.drafts.get("first")!]]); s.adminMemberIds = new Set(["m0"]);
 		expect(adminCoverageDecision(["0", "1", "2", "3"], s)).toEqual({ held: true, alternative: undefined });
 	});
@@ -45,6 +45,11 @@ describe("administrator relay in the start queue", () => {
 		expect(leavesNoAdmin(["0", "1", "2", "3"], s)).toBe(true);
 		s.cockCheckEnabled = false;
 		expect(leavesNoAdmin(["0", "1", "2", "3"], s)).toBe(false);
+	});
+	it("an unchecked administrator entering a game cannot bypass coverage", () => {
+		const s = fixture(); s.adminMemberIds = new Set(["m0"]);
+		s.sessionPlayers.get("0")!.cockChecked = false;
+		expect(leavesNoAdmin(["0", "1", "2", "3"], s)).toBe(true);
 	});
 	it("uses courts and in-flight starts instead of stale player status", () => {
 		const s = fixture(); s.courts = []; s.startingIds = new Set(["8", "9", "10", "11"]);

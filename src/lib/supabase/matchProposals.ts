@@ -32,10 +32,10 @@ export async function editMatchProposals(updates: ProposalRosterUpdate[], client
 }
 
 export async function startMatchProposal(proposal: MatchProposal, matchId: string, courtId: number,
-	team: GeneratedTeam, clientId: string, name: string, allowAdminAbsence = false): Promise<MatchProposal> {
+	team: GeneratedTeam, clientId: string, name: string): Promise<MatchProposal> {
 	const { data, error } = await supabase.rpc("start_match_proposal_with_admin_coverage", { p_id: proposal.id, p_updated_at: proposal.updated_at,
 		p_match_id: matchId, p_court_id: courtId, p_game_type: team.gameType, p_team_a: team.teamA, p_team_b: team.teamB,
-		p_client_id: clientId, p_name: name, p_allow_admin_absence: allowAdminAbsence });
+		p_client_id: clientId, p_name: name, p_allow_admin_absence: false });
 	if (error) throw error;
 	return data as MatchProposal;
 }

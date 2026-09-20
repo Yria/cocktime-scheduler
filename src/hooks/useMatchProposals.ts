@@ -17,7 +17,7 @@ import type { SessionPlayer } from "../types";
 import { randomId } from "../lib/randomId";
 import { settleFreeMagnets } from "../lib/board/settle";
 import type { DraftTeam } from "../types/board";
-import { acquireAdminCoverage, coverageRosterKey, releaseAdminCoverage } from "../lib/board/adminCoverageGate";
+import { acquireAdminCoverage, releaseAdminCoverage } from "../lib/board/adminCoverageGate";
 
 const EMPTY: ProposalComposerSnapshot = { enabled: false, groups: [], sendingIds: new Set(),
 	proposals: [], anchors: new Map(), resolvingIds: new Set(), viewerId: null, isAdmin: false };
@@ -99,7 +99,7 @@ export function settleProposalLayout(rearrange = false) {
 
 function errorMessage(error: unknown, fallback: string) {
 	const message = error && typeof error === "object" && "message" in error ? String(error.message) : "";
-	if (message.includes("admin coverage required")) return "운영진의 경기 상태가 바뀌었어요. 동기화 후 다시 시작해 주세요.";
+	if (message.includes("admin coverage required")) return "운영진이 최소 한 명은 경기 밖에 남아 있어야 해요. 교대 후 다시 시작해 주세요.";
 	if (message.includes("session closed")) return "종료된 세션에는 제안할 수 없어요.";
 	if (message.includes("player left session")) return "세션을 나간 회원이 있어요. 제안할 회원을 다시 골라주세요.";
 	if (message.includes("not participant")) return "이 세션에 참여한 회원만 제안할 수 있어요.";
@@ -258,7 +258,7 @@ function autoFillSubmitted(proposal: MatchProposal) {
 	void editSubmitted([{ proposal, ids: [...proposal.player_ids, ...picks.map((player) => player.id)] }]);
 }
 
-async function startSubmitted(proposal: MatchProposal, adminAbsenceConsent?: string) {
+async function startSubmitted(proposal: MatchProposal) {
 	if (!canEditSubmitted()) return;
 	const state = useMatchProposalStore.getState(), session = useSessionStore.getState();
 	if (!session._clientId || state.resolvingIds.has(proposal.id)) return;
@@ -267,15 +267,12 @@ async function startSubmitted(proposal: MatchProposal, adminAbsenceConsent?: str
 	const four = proposal.player_ids.map((id) => session.sessionPlayers.get(id)).filter((player): player is SessionPlayer => !!player);
 	if (four.length !== 4) return;
 	const coverageKey = `proposal:${proposal.id}`;
-	if (!acquireAdminCoverage(coverageKey, proposal.player_ids, consent => {
-		const latest = useMatchProposalStore.getState().proposals.find(p => p.id === proposal.id);
-		if (latest && isActiveMatchProposal(latest)) void startSubmitted(latest, consent);
-	}, adminAbsenceConsent)) return;
+	if (!acquireAdminCoverage(coverageKey, proposal.player_ids)) return;
 	const team = pairPlayers(four as [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer], useAppStore.getState().sessionMeta?.singleWomanIds ?? [], "회원 매칭 제안");
 	const scope = state.scope, anchor = state.anchors.get(proposal.id);
 	useMatchProposalStore.setState({ resolvingIds: new Set([...state.resolvingIds, proposal.id]) });
 	try {
-		const row = await startMatchProposal(proposal, randomId(), empty.id, team, session._clientId, session._myName ?? "운영진", adminAbsenceConsent === coverageRosterKey(proposal.player_ids));
+		const row = await startMatchProposal(proposal, randomId(), empty.id, team, session._clientId, session._myName ?? "운영진");
 		if (scope !== matchProposalScope()) return;
 		applyProposals([row]);
 		await useSessionStore.getState().resyncFromServer();

@@ -5,7 +5,6 @@ export interface CoveragePrompt {
 	key: string;
 	names: string;
 	alternative?: { key: string; label: string };
-	start: () => void;
 }
 interface AdminCoverageState {
 	memberIds: ReadonlySet<string>;

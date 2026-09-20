@@ -425,18 +425,27 @@ test("admin automatically fills four and starts directly; member keeps cancellat
 	expect(await page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(0);
 });
 
-test("a proposal containing the last administrator requires an explicit start exception", async ({ page }) => {
+test("a proposal containing the last administrator cannot start without a replacement", async ({ page }) => {
 	const server = { proposals: [{ ...proposal, player_ids: [1, 2, 3, 4].map(uid), player_names: ["운영진", "민수", "지수", "현우"] }] };
-	const writes = await setup(page, "admin", { server, adminIds: [uid(1)] });
+	const adminIds = [uid(1)];
+	const writes = await setup(page, "admin", { server, adminIds });
 	await expect.poll(async () => (await cards(page))[0]?.appearance.ctaLabel).toBe("교대 확인");
 	await pressFooter(page);
 	await expect(page.getByRole("button", { name: "교대까지 대기" })).toBeVisible();
 	expect(writes.some(url => url.includes("start_match_proposal"))).toBe(false);
 	await page.getByRole("button", { name: "교대까지 대기" }).click();
 	await pressFooter(page);
+	await expect(page.getByRole("button", { name: "이번 경기 시작" })).toHaveCount(0);
+	expect(writes.some(url => url.includes("start_match_proposal"))).toBe(false);
+	expect(server.proposals[0].status).toBe("pending");
+	await page.getByRole("button", { name: "교대까지 대기" }).click();
+	// Another administrator becomes available; the original proposal can start.
+	adminIds.push(uid(6));
+	await page.evaluate(() => window.dispatchEvent(new Event("online")));
+	await expect.poll(async () => (await cards(page))[0]?.appearance.ctaLabel).toBe("경기시작");
 	const request = page.waitForRequest(r => r.url().includes("start_match_proposal_with_admin_coverage"));
-	await page.getByRole("button", { name: "이번 경기 시작" }).click();
-	expect((await request).postDataJSON().p_allow_admin_absence).toBe(true);
+	await pressFooter(page);
+	expect((await request).postDataJSON().p_allow_admin_absence).toBe(false);
 	await expect.poll(async () => (await cards(page)).length).toBe(0);
 });
 
