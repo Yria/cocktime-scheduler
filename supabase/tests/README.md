@@ -1,5 +1,14 @@
 # SQL 검증
 
+## 정원별 운영진 프리패스
+
+`node_modules/.bin/vitest run src/lib/supabase/operatorFreepass.test.ts`는 로컬 PGlite에
+`20260921000000_scale_operator_freepass.sql`을 두 번 적용하고 실제 참석 RPC를 실행한다.
+최소 2명과 정원 24·28명→3명, 32명→4명 경계, 정원 안 운영진 포함,
+신청·승급·늦참 복귀·정원 변경·티켓 안내의 일치, 대관비 게이트, 정원 외 자리 보존을 검사한다.
+포인트 원장·신규 자격·게스트 상한 헬퍼는 테스트 값으로 대체한다.
+운영 DB와 별도 연결 간 잠금 경합은 검사하지 않는다.
+
 ## 운영진 교대
 
 `node supabase/tests/admin_coverage.test.mjs`는 실제 편집 잠금·경기 배정·회원 제안 RPC와
