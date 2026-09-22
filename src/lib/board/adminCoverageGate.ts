@@ -11,8 +11,8 @@ export function currentCoverageInputs(): CoverageInputs {
 		startingIds: new Set([...coverage.starting.values()].flat()), proposals: useMatchProposalStore.getState().proposals };
 }
 
-/** Rechecked at every attempt; no start may consume the last available administrator. */
-export function acquireAdminCoverage(key: string, ids: string[]): boolean {
+/** Confirmation applies only to the roster the editor saw; every retry rechecks current state. */
+export function acquireAdminCoverage(key: string, ids: string[], onConfirm: () => Promise<void>, approvedIds?: readonly string[]): boolean {
 	const state = useAdminCoverageStore.getState();
 	if (state.starting.has(key)) return false;
 	if ([...state.starting.values()].some(group => group.some(id => ids.includes(id)))) {
@@ -20,9 +20,10 @@ export function acquireAdminCoverage(key: string, ids: string[]): boolean {
 	}
 	if (!state.loaded) { toast("운영진 정보를 확인하고 있어요. 잠시 후 다시 눌러주세요.", { variant: "error" }); return false; }
 	const { held, alternative } = adminCoverageDecision(ids, currentCoverageInputs());
-	if (held) {
+	const approved = approvedIds?.length === ids.length && ids.every(id => approvedIds.includes(id));
+	if (held && !approved) {
 		useAdminCoverageStore.setState({ prompt: {
-			key, names: ids.map(id => useSessionStore.getState().sessionPlayers.get(id)?.name ?? "").join(" · "), alternative,
+			key, names: ids.map(id => useSessionStore.getState().sessionPlayers.get(id)?.name ?? "").join(" · "), alternative, onConfirm,
 		} });
 		return false;
 	}

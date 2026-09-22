@@ -129,5 +129,45 @@ assert.equal((await proposeStart(false)).rows[0].p.status, 'started');
 assert.equal((await proposeStart(false)).rows[0].p.match_id, uid(201)); // Retry remains idempotent.
 await assert.rejects(db.query('select public.assert_match_admin_coverage(1,$1::uuid[],true)', [[1,2,3,4].map(uid)]));
 await assert.rejects(db.query('select public.assert_match_admin_coverage_for_roster(1,$1::uuid[],null)', [[1,2,3,4].map(uid)]));
+
+// The latest policy requires an explicit confirmation instead of a blanket ban.
+await db.exec('reset role');
+const confirmationSql = readFileSync(new URL('../migrations/20260922030000_confirm_admin_absence.sql', import.meta.url), 'utf8');
+await db.exec(confirmationSql); await db.exec(confirmationSql);
+await db.exec("delete from matches; update session_players set status='waiting'");
+await db.exec('set role authenticated');
+await assert.rejects(start(301, 1, [1,5,2,3]), /admin coverage required/);
+await db.exec('begin');
+await start(301, 1, [1,5,2,3], true);
+await db.exec('reset role');
+assert.equal((await db.query('select count(*)::int n from matches')).rows[0].n, 1);
+assert.equal((await db.query("select coalesce(current_setting('cocktime.admin_absence_approval',true),'') v")).rows[0].v, '');
+await db.exec('commit');
+await db.exec("delete from matches; update session_players set status='waiting'");
+await db.exec('set role authenticated');
+await assert.rejects(legacyStart(302,1,[1,5,2,3]), /admin coverage required/);
+await assert.rejects(start(302,1,[1,5,2,3]), /admin coverage required/); // No approval is carried to the next start.
+await db.exec('reset role');
+await db.query("select set_config('request.jwt.claim.sub',$1,false)", [uid(2)]);
+await db.exec('set role authenticated');
+await assert.rejects(start(303,1,[1,5,2,3],true), /not editor/);
+await db.exec('reset role');
+await db.query("select set_config('request.jwt.claim.sub',$1,false)", [uid(1)]);
+await db.query("update sessions set editor_client_id='another-editor' where id=1");
+await db.exec('set role authenticated');
+await assert.rejects(start(303,1,[1,5,2,3],true), /not editor/);
+await db.exec('reset role');
+await db.exec("update sessions set editor_client_id='editor'; delete from session_players where id='00000000-0000-0000-0000-000000000005'; delete from match_proposals");
+await db.query("select set_config('request.jwt.claim.sub',$1,false)", [uid(2)]);
+await db.exec('set role authenticated');
+const confirmedProposal = (await db.query('select public.create_match_proposal(1,$1,$2::uuid[]) p', [uid(400), [1,2,3,4].map(uid)])).rows[0].p;
+await db.exec('reset role');
+await db.query("select set_config('request.jwt.claim.sub',$1,false)", [uid(1)]);
+await db.exec('set role authenticated');
+const confirmProposalStart = allow => db.query("select public.start_match_proposal_with_admin_coverage($1,$2,$3,1,'남복',$4::uuid[],$5::uuid[],'editor','운영진',$6) p",
+ [confirmedProposal.id, confirmedProposal.updated_at, uid(401), [1,2].map(uid), [3,4].map(uid), allow]);
+await assert.rejects(confirmProposalStart(false), /admin coverage required/);
+assert.equal((await confirmProposalStart(true)).rows[0].p.status, 'started');
+assert.equal((await confirmProposalStart(true)).rows[0].p.match_id, uid(401));
 await db.close();
-console.log('Admin coverage SQL passed: remaining staff, consecutive starts, rollback, no override, legacy/direct-write guards, roster rollback/relay, attendance, resting staff, proposal start, permissions and retry.');
+console.log('Admin coverage SQL passed: historical guards and latest explicit confirmation, one-match scope, editor authorization, proposal retry.');

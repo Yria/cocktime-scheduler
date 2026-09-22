@@ -89,7 +89,7 @@ export function reconcileMembership(
 		if (effectiveCount < 2 && team.courtId == null) continue;
 		for (const id of memberIds) assignedAnchor.add(id);
 		const anchor = oldAnchors.get(team.id) ?? (team.courtId != null
-			? initialCourtAnchor(team.courtId - 1, vw) : centroidAnchor(memberIds, magnets));
+			? initialCourtAnchor(team.courtId - 1) : centroidAnchor(memberIds, magnets));
 		// 슬롯 위치 — 자석이 살아있는 멤버 것만 유지(스테일 키는 teamMembers가 무시하므로 안전).
 		const slots = team.slots
 			? Object.fromEntries(Object.entries(team.slots).filter(([pid]) => magnets.has(pid)))

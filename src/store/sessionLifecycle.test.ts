@@ -9,6 +9,8 @@ vi.mock("../lib/supabase", async (importOriginal) => ({
 	startSession: vi.fn(),
 	updateSession: vi.fn(),
 	dbEndSession: vi.fn(),
+	dbLoadSessionState: vi.fn(),
+	dbLoadCompletedMatchTeams: vi.fn().mockResolvedValue([]),
 	dbBoardSaveDrafts: vi.fn(),
 	dbBoardReleaseEditor: vi.fn().mockResolvedValue(undefined),
 }));
@@ -22,7 +24,7 @@ vi.mock("./sessionEditorLock", async (importOriginal) => ({
 	installLockLifecycle: vi.fn(),
 }));
 
-import { dbBoardReleaseEditor, dbBoardSaveDrafts, dbEndSession, fetchActiveSession, fetchSessionSnapshot, startSession, updateSession } from "../lib/supabase";
+import { dbBoardReleaseEditor, dbBoardSaveDrafts, dbEndSession, dbLoadSessionState, fetchActiveSession, fetchSessionSnapshot, startSession, updateSession } from "../lib/supabase";
 import { flushBoardDrafts, pushDraftsToRemote } from "./board/draftsSync";
 import { createSessionChannels } from "../lib/supabase/sessionChannels";
 import { appActions, useAppStore, type SessionMeta } from "./appStore";
@@ -105,6 +107,18 @@ describe("즉석 세션 권한", () => {
 		expect(await appActions.startOrUpdateSession([], settings)).toBe(true);
 		expect(updateSession).toHaveBeenCalledWith(7, 2, [], [], true);
 		expect(useAppStore.getState().sessionMeta).toEqual(meta);
+	});
+});
+
+describe("코트 수 변경 동기화", () => {
+	it.each([3, 6])("빈 코트만 %s개로 바뀌어도 새 경기 버전으로 조회 기기에 반영한다", async courtCount => {
+		useSessionStore.setState({ courts: [1, 2, 3, 4, 5].map(id => ({ id, match: null })), matchStateVersion: 10 });
+		vi.mocked(dbLoadSessionState).mockResolvedValueOnce({ drafts: { teams: [], reservations: [] }, version: 1,
+			matchStateVersion: 11, syncVersion: 20, courtCount, players: [], matches: [],
+			editorClientId: null, editorName: null, editorLeaseUntil: null });
+		await useSessionStore.getState().resyncFromServer({ skipLock: true });
+		expect(useSessionStore.getState().courts.map(court => court.id)).toEqual(Array.from({ length: courtCount }, (_, i) => i + 1));
+		expect(useSessionStore.getState().matchStateVersion).toBe(11);
 	});
 });
 

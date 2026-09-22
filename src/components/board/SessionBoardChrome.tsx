@@ -1,6 +1,6 @@
 import { ZOOM_STEP } from "../../store/boardStore";
 import { TOOLBAR_H, COURT_BAR_H } from "../../lib/board/constants";
-import { Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import Spinner from "../shared/Spinner";
 
 // SessionBoard의 DOM 크롬(플로팅 버튼·배지) 프레젠테이셔널 컴포넌트 묶음.
@@ -53,14 +53,14 @@ export function BoardSyncingBadge() {
 	);
 }
 
-// 줌 컨트롤(우상단) — 0.4~1배 축소(편집/보기 공통)
+// 줌 컨트롤 — 정렬 버튼 위에 두어 모바일의 세 번째 코트를 가리지 않는다.
 export function ZoomControls({ setScale }: { setScale: (v: number | ((prev: number) => number)) => void }) {
 	return (
 		<div
 			style={{
 				position: "absolute",
 				right: 16,
-				top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top) + 12px)`,
+				bottom: `calc(${COURT_BAR_H + 76}px + env(safe-area-inset-bottom, 0px))`,
 				display: "flex",
 				flexDirection: "column",
 				gap: 6,
@@ -83,6 +83,18 @@ export function SearchFab({ onClick }: { onClick: () => void }) {
 			background: "var(--ios-blue)", color: "#fff", boxShadow: "0 6px 16px rgba(0, 122, 255, 0.4)",
 			cursor: "pointer", zIndex: 20 }}>
 		<Search size={22} strokeWidth={2.4} aria-hidden="true" />
+	</button>;
+}
+
+export function NewGroupFab({ onClick }: { onClick: () => void }) {
+	return <button type="button" onClick={onClick} aria-label="미리 그룹 만들기"
+		style={{ position: "absolute", left: 72,
+			bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px) + 16px)`,
+			display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5,
+			height: 44, padding: "0 12px", borderRadius: 22, border: "none",
+			background: "var(--ios-blue)", color: "#fff", fontSize: 13, fontWeight: 600,
+			boxShadow: "0 6px 16px rgba(0, 122, 255, 0.4)", cursor: "pointer", zIndex: 20 }}>
+		<Plus size={18} aria-hidden="true" />미리 그룹
 	</button>;
 }
 

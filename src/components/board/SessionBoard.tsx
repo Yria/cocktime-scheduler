@@ -26,7 +26,7 @@ import EditorTakenNotice from "./EditorTakenNotice";
 import DebugMatchModal from "./DebugMatchModal";
 import AdminCoverageNotice from "./AdminCoverageNotice";
 import ProposalCourtDialog from "./ProposalCourtDialog";
-import { ArrangeFab, BoardSyncingBadge, SearchFab, ZoomControls } from "./SessionBoardChrome";
+import { ArrangeFab, BoardSyncingBadge, NewGroupFab, SearchFab, ZoomControls } from "./SessionBoardChrome";
 import type { RecommendTarget } from "../../hooks/useTeammateRecommendations";
 
 // 보드 캔버스 좌우 안전 거터(화면 px). 모바일 브라우저 탭에서 화면 좌/우 가장자리는 OS의 '뒤로/앞으로'
@@ -142,9 +142,10 @@ export default function SessionBoard() {
 					onMagnetClick={onMagnetClick} onCockCheck={onCockCheck} onSlotClick={openTeamRecommend} onEditMatch={onEditMatch} proposals={proposals} onEmptyDoubleTap={openSearch} locate={locate} />
 			</div>
 			<RestBar />
-			{/* 줌 컨트롤(우상단) — 0.4~1배 축소(편집/보기 공통) */}
+			{/* 줌 컨트롤 — 0.4~1배 축소(편집/보기 공통) */}
 			<ZoomControls setScale={setScale} />
 			<SearchFab onClick={openSearch} />
+			{isEditor && <NewGroupFab onClick={() => setRecommendTarget({ newTeam: true })} />}
 			{/* 우하단 플로팅 정렬 버튼 */}
 			<ArrangeFab onClick={() => { arrangeAtCurrentScale(); settleProposalLayout(); }} />
 			{searchOpen && <BoardPlayerSearch onClose={() => setSearchOpen(false)} onSelect={(playerId, name) => {

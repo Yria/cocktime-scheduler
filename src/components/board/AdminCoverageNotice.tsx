@@ -27,10 +27,10 @@ export default function AdminCoverageNotice({ sync = true }: { sync?: boolean })
 	}, [isEditor]);
 	if (!prompt || !isEditor) return null;
 	const close = () => useAdminCoverageStore.setState({ prompt: null });
-	return <ConfirmDialog title="운영진 교대 대기" maxWidth="sm"
-		message="운영진이 최소 한 명은 경기 밖에 남아 있어야 해요. 교대할 운영진이 돌아올 때까지 이 팀은 시작할 수 없어요."
-		confirmLabel={prompt.alternative ? "대기 유지" : "교대까지 대기"}
-		hideCancel onConfirm={close} onCancel={close} onDismiss={close}>
+	return <ConfirmDialog title="운영진 전원 출전" maxWidth="sm"
+		message="이 경기를 시작하면 경기 밖에 남는 운영진이 없어요. 그래도 시작할까요?"
+		confirmLabel="이번 경기 시작" cancelLabel="취소"
+		onConfirm={() => { close(); void prompt.onConfirm(); }} onCancel={close} onDismiss={close}>
 		<div className="rounded-xl bg-gray-100 p-3 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-100 break-keep">
 			<p className="font-semibold">{prompt.names}</p>
 			{prompt.alternative && <p className="mt-2">먼저 출전 가능: {prompt.alternative.label}</p>}

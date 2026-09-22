@@ -89,6 +89,21 @@ export function useBoardStageLayout(stageW: number, stageH: number, cw: number, 
 	const courtSig = useCourtSig();
 	// 자석 수 — 자동정렬 가드/트리거(원격 드래프트 적용 effect의 magnetCount와 별도 구독, zustand 셀렉터라 무해).
 	const magnetCount = useBoardStore((s) => s.magnets.size);
+	const previousGroupIds = useRef(new Set<string>());
+	useEffect(() => {
+		const bs = useBoardStore.getState();
+		const added = [...bs.drafts.keys()].some(id => !previousGroupIds.current.has(id));
+		previousGroupIds.current = new Set(bs.drafts.keys());
+		if (!added || !bs.manualLayout || cw <= 0 || ch <= 0) return;
+		// 정렬 후 새 행이 생겨도 그룹을 화면 밖에 숨기지 않는다. 기존 좌표는 유지하고 카메라만 축소한다.
+		const groups = [...bs.drafts.values()];
+		const width = Math.max(1, ...groups.map(team => team.anchor.x + TEAM_W / 2 + 12));
+		const height = Math.max(1, ...groups.map(team => team.anchor.y + TEAM_BOX_BELOW + 12));
+		const scale = clampScale(Math.floor(Math.min(bs.scale, stageW / width, stageH / height) * 100) / 100);
+		if (scale >= bs.scale) return;
+		flushBoardCamera();
+		bs.commitBoardView({ scale, cssWidth: stageW, cssHeight: stageH });
+	}, [membershipSig, cw, ch, stageW, stageH]);
 
 	// 자동 스케일 + 정렬 — 렌더 없이 "다 들어가는 최대 배율"을 계산해 적용한 뒤 그 배율의 뷰로 정렬한다.
 	// (자석이 화면을 넘치면 자동 축소, 여유 있으면 1배까지 키움 — "최대가 베스트"). 자동정렬 effect와 정렬 버튼 공용.
@@ -125,13 +140,20 @@ export function useBoardStageLayout(stageW: number, stageH: number, cw: number, 
 		rearrangeAll(stageW / target, stageH / target);
 	}, [stageW, stageH, cw, ch, rearrangeAll]);
 
-	// 정렬 버튼(수동): 현재 줌은 그대로 두고 지금 보이는 화면 크기(viewW×viewH = stage/scale) 기준으로만 정렬한다.
-	// fitAndArrange처럼 줌을 '다 들어가는 최대 배율'로 바꾸지 않으므로, 축소해 둔 상태에서 정렬해도 확대되지 않는다.
+	// 정렬 버튼은 수동 줌을 초기화하고 3열 기본 배율로 정렬한다. 세로로 넘칠 때만 추가 축소한다.
 	const arrangeAtCurrentScale = useCallback(() => {
 		if (stageW <= 0 || stageH <= 0) return;
 		flushBoardCamera();
-		const currentScale = useBoardStore.getState().scale;
-		rearrangeAll(stageW / currentScale, stageH / currentScale, true);
+		const bs = useBoardStore.getState();
+		const ss = useSessionStore.getState();
+		const playing = playingIdsFromCourts(ss.courts);
+		const freeCount = [...bs.magnets.values()].filter(m => m.teamId === null && !playing.has(m.playerId)).length;
+		const groupCount = bs.drafts.size + ss.courts.filter(c => c.match && ![...bs.drafts.values()].some(t => t.courtId === c.id)).length;
+		const scale = computeFitScale(stageW, stageH, groupCount, freeCount, {
+			min: ZOOM_MIN, max: initialBoardScale(stageW), step: 0.01,
+		});
+		bs.commitBoardView({ scale, cssWidth: stageW, cssHeight: stageH, userChanged: true });
+		rearrangeAll(stageW / scale, stageH / scale, true);
 	}, [stageW, stageH, rearrangeAll]);
 
 	useEffect(() => {

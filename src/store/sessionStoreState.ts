@@ -79,7 +79,7 @@ export interface SessionState {
 	reset: () => void;
 
 	// DB Actions
-	handleAssign: (team: GeneratedTeam, courtId: number) => Promise<void>;
+	handleAssign: (team: GeneratedTeam, courtId: number, allowAdminAbsence?: boolean) => Promise<void>;
 	handleComplete: (courtId: number) => Promise<void>;
 	/** 휴식 토글. resting=true 휴식 진입 / false 복귀(평균 판수 보정). player_updated 브로드캐스트. */
 	setResting: (playerId: string, resting: boolean) => Promise<void>;

@@ -2,7 +2,7 @@
  * arrange.ts
  *
  * 보드 전체 자동 정렬(rearrangeAll) 순수 로직.
- * 그룹(경기중 코트 → 4명 팀 → 나머지 팀)을 격자로 배치하고, 자유 자석을 그 아래에 배치한 뒤 겹침 정리.
+ * 코트 번호 → 예비 그룹 생성 순서로 3열 격자에 배치하고, 자유 자석은 그 아래에 둔다.
  * 전달된 Map(immer draft)들을 in-place로 변경한다.
  */
 import type { Court, SessionPlayer } from "../../types";
@@ -13,17 +13,14 @@ import type {
 	StagePoint,
 } from "../../types/board";
 import { MAGNET_SIZE, TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_W } from "./constants";
-import { teamMemberCount } from "./membership";
+import { GROUP_COLUMNS, groupGridAnchor, GROUP_ROW_HEIGHT } from "./groupGrid";
 import { settleFreeMagnets } from "./settle";
 
 // 레이아웃 상수 — arrangeBoard 배치와 requiredBoardHeight(fit 계산)가 공유한다. 반드시 동기 유지.
-const PAD_X = 12; // 좌우 패딩
-const GAP_X = 16; // 그룹 가로 간격
-const GAP_Y = 16; // 그룹 세로 간격
 const GROUP_TOP = 10; // 그룹 격자 상단 시작 y
 const MAG_GAP = 10; // 자유 자석 간격
 const FREE_TOP_PAD = 8; // 그룹 영역 아래 자유 자석 시작 여백
-const GROUP_ROW_H = TEAM_BOX_ABOVE + TEAM_BOX_BELOW + GAP_Y;
+const GROUP_ROW_H = GROUP_ROW_HEIGHT;
 
 export interface ArrangeInput {
 	magnets: Map<string, MagnetPosition>;
@@ -43,7 +40,6 @@ export function arrangeBoard(input: ArrangeInput): void {
 	const {
 		magnets,
 		drafts,
-		reservations,
 		courtAnchors,
 		courts,
 		sessionPlayers,
@@ -56,42 +52,28 @@ export function arrangeBoard(input: ArrangeInput): void {
 
 	const halfW = TEAM_W / 2;
 
-	const cols = Math.max(1, Math.floor((viewW - PAD_X * 2 + GAP_X) / (TEAM_W + GAP_X)));
-	const rowH = GROUP_ROW_H;
-	// 그룹(코트 카드·팀) 박스는 anchor 기준 위 TEAM_BOX_ABOVE / 아래 TEAM_BOX_BELOW,
-	// 좌우 halfW 만큼 뻗는다. 격자 좌표를 화면 경계 안으로 클램프해 어떤 그룹도 밖으로 넘지 않게 한다.
+	const cols = GROUP_COLUMNS;
 	const maxAnchorY = Math.max(TEAM_BOX_ABOVE, viewH - TEAM_BOX_BELOW);
-	const gridAnchor = (idx: number, top: number) => {
-		const col = idx % cols;
-		const row = Math.floor(idx / cols);
-		return {
-			x: Math.max(halfW, Math.min(viewW - halfW, PAD_X + halfW + col * (TEAM_W + GAP_X))),
-			y: Math.min(maxAnchorY, top + TEAM_BOX_ABOVE + row * rowH),
-		};
+	const gridAnchor = (index: number) => {
+		const point = groupGridAnchor(index);
+		return { x: Math.max(halfW, Math.min(viewW - halfW, point.x)), y: Math.min(maxAnchorY, point.y) };
 	};
 
-	// 1) 그룹을 하나의 연속 격자에 종류 순서대로 이어서 배치(같은 줄 공유).
-	//    순서: 경기중(코트) → 4명 찬 팀 → 그 외 팀(멤버 많은 순)
+	// 코트 번호 순서 → 예비 그룹 생성 순서. 같은 3열 격자의 빈칸을 이어 채운다.
 	const permanent = [...drafts.values()].filter(team => team.courtId != null);
-	const occupied = courts.filter(c => c.match && !permanent.some(team => team.courtId === c.id));
-	const teams = [...drafts.values()].filter(team => team.courtId == null).sort((a, b) => {
-		const ca = teamMemberCount(a.id, drafts, reservations);
-		const cb = teamMemberCount(b.id, drafts, reservations);
-		const fa = ca === 4 ? 1 : 0;
-		const fb = cb === 4 ? 1 : 0;
-		if (fa !== fb) return fb - fa; // 4명 찬 그룹 먼저
-		if (cb !== ca) return cb - ca; // 그 외: 멤버 많은 순
-		return a.createdAt - b.createdAt;
-	});
-	let gi = 0;
-	for (const team of permanent) courtAnchors.set(team.courtId!, { ...team.anchor });
-	const permanentBottom = Math.max(0, ...permanent.map(team => team.anchor.y + TEAM_BOX_BELOW + GAP_Y));
-	for (const c of occupied) courtAnchors.set(c.id, gridAnchor(gi++, Math.max(GROUP_TOP, permanentBottom)));
-	for (const t of teams) t.anchor = gridAnchor(gi++, Math.max(GROUP_TOP, permanentBottom));
-	const groupCount = occupied.length + teams.length;
-	const groupRows = groupCount > 0 ? Math.ceil(groupCount / cols) : 0;
-	// 그룹이 없으면 상단 공백 없이 맨 위부터(코트 전용 영역 개념 없음)
-	const groupAreaBottom = Math.max(GROUP_TOP, permanentBottom) + groupRows * rowH;
+	const courtIds = [...new Set([...permanent.map(team => team.courtId!), ...courts.filter(c => c.match).map(c => c.id)])].sort((a, b) => a - b);
+	const teams = [...drafts.values()].filter(team => team.courtId == null)
+		.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+	let index = 0;
+	for (const courtId of courtIds) {
+		const anchor = gridAnchor(index++);
+		courtAnchors.set(courtId, anchor);
+		const team = permanent.find(team => team.courtId === courtId);
+		if (team) team.anchor = { ...anchor };
+	}
+	for (const team of teams) team.anchor = gridAnchor(index++);
+	const groupRows = Math.ceil(index / cols);
+	const groupAreaBottom = GROUP_TOP + groupRows * GROUP_ROW_H;
 
 	// 2) 나머지 자유 자석을 그룹 영역 아래에 격자 배치 — 매칭 대기가 앞, 콕 미제출자 뒤, 휴식자 맨 뒤.
 	//    그 안에서 경기수 적은 사람 먼저.
@@ -135,10 +117,10 @@ const FIT_BOTTOM_MARGIN = 6;
  * 그룹 격자 + 그 아래 자유 자석 격자의 최하단(자연 배치, settle 클램프 전 기준).
  * @param groupCount 경기중 코트 + 팀(draft) 수 (arrangeBoard의 그룹 격자 항목 수와 동일)
  * @param freeCount  자유 자석 수 (teamId=null·비경기중 — 휴식자 포함, arrangeBoard freeMagnets와 동일 기준)
- * @param viewW      보이는 논리 가로(=stageW/scale) — 줄바꿈 열 수를 결정
+ * @param viewW      보이는 논리 가로(=stageW/scale) — 자유 자석의 열 수를 결정(그룹은 항상 3열)
  */
 export function requiredBoardHeight(groupCount: number, freeCount: number, viewW: number): number {
-	const cols = Math.max(1, Math.floor((viewW - PAD_X * 2 + GAP_X) / (TEAM_W + GAP_X)));
+	const cols = GROUP_COLUMNS;
 	const groupRows = groupCount > 0 ? Math.ceil(groupCount / cols) : 0;
 	// 마지막 그룹 줄의 박스 하단 = 상단 시작 + 위여백 + (줄−1)·행높이 + 아래여백
 	const groupExtent =

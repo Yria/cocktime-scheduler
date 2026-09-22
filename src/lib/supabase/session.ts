@@ -185,6 +185,8 @@ export async function updateSession(
 		.eq("id", sessionId);
 
 	if (sessionErr) {
+		if (sessionErr.message.includes("not enough empty courts"))
+			throw new Error("빈 코트가 부족해 코트 수를 줄일 수 없습니다. 경기를 완료한 뒤 다시 시도해 주세요.");
 		console.error("updateSession error:", sessionErr);
 		return false;
 	}

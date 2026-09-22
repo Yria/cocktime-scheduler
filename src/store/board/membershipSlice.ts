@@ -18,6 +18,7 @@ import {
 	clearConfirmIfBelowFull,
 	detachAnchor,
 	dissolveIfUnderTwo,
+	dissolveDraft,
 	newId,
 	nowMs,
 } from "../../lib/board/draftMutations";
@@ -29,7 +30,7 @@ import type { BoardState, DragSource } from "./types";
 import { clampToStage, placeArranged, replaceAtSlot, runSettle } from "./layoutHelpers";
 import { claimEdit, currentEditorName, syncState } from "./draftsSync";
 import { reconcileCourtGroups } from "../../lib/board/courtGroups";
-import { DEFAULT_VIEWPORT } from "../../lib/board/geometry";
+import { nextGroupAnchor } from "../../lib/board/groupGrid";
 
 /** 멤버십 슬라이스 — 자석/예비팀/예약(ghost) 등 공유 멤버십의 편집 액션. */
 export type MembershipSlice = Pick<
@@ -70,7 +71,7 @@ export const createMembershipSlice: StateCreator<
 	ensureCourtGroups: () => {
 		const courts = useSessionStore.getState().courts;
 		if (!courts.length) return;
-		set(s => reconcileCourtGroups(s, courts, s.stageW || DEFAULT_VIEWPORT.vw));
+		set(s => reconcileCourtGroups(s, courts));
 	},
 	autoFillEmptyCourts: (courtId) => {
 		if (!claimEdit()) return;
@@ -79,6 +80,27 @@ export const createMembershipSlice: StateCreator<
 			if (team.courtId == null || (courtId != null && courtId !== team.courtId)
 				|| !ss.courts.some(court => court.id === team.courtId && !court.match)
 				|| get().assigningTeamIds.has(team.id) || teamMemberCount(team.id, get().drafts, get().reservations) >= 4) continue;
+			// 빈 코트에는 준비된 예비 그룹부터 생성 순서대로 옮긴다. 미완성/경기중 예약은 보존한다.
+			if (teamMemberCount(team.id, get().drafts, get().reservations) === 0) {
+				const state = get();
+				const playing = playingIdsFromCourts(ss.courts);
+				const queued = [...state.drafts.values()].filter(candidate => candidate.courtId == null
+					&& !state.assigningTeamIds.has(candidate.id)
+					&& isTeamStartable(candidate.id, state.drafts, state.reservations, state.magnets, playing)
+					&& teamMembers(candidate.id, state.drafts, state.reservations).every(member => {
+						const player = ss.sessionPlayers.get(member.playerId);
+						return player && player.status !== "resting" && (!ss.cockCheckEnabled || player.cockChecked);
+					}))
+					.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))[0];
+				if (queued) {
+					set(s => {
+						const members = teamMembers(queued.id, s.drafts, s.reservations);
+						dissolveDraft(s, queued.id);
+						for (const member of members) attachAnchor(s, member.playerId, team.id, member.slot, queued.createdBy);
+					});
+					continue;
+				}
+			}
 			const data = buildRecommendData({ teamId: team.id }, [], { ...get(), ...ss }, { excludePlaying: true, excludeReserved: true });
 			if (!data || data.confirmed.some(player => data.playingIds.has(player.id) || player.status === "resting"
 				|| (ss.cockCheckEnabled && !player.cockChecked))) continue;
@@ -283,7 +305,7 @@ export const createMembershipSlice: StateCreator<
 		set((s) => {
 			let teamId = target.teamId ?? null;
 			const courtGroups = [...s.drafts.values()].filter(d => d.courtId != null);
-			if (!teamId && courtGroups.length) {
+			if (!teamId && !target.newTeam && courtGroups.length) {
 				teamId = courtGroups.find(d => !useSessionStore.getState().courts.some(c => c.id === d.courtId && c.match)
 					&& teamMemberCount(d.id, s.drafts, s.reservations) === 0)?.id ?? null;
 				if (!teamId) { toast("빈 코트 그룹에 자리가 없어요"); return; }
@@ -317,8 +339,8 @@ export const createMembershipSlice: StateCreator<
 				s.drafts.set(teamId, {
 					id: teamId,
 					anchorMemberIds: [anchorId],
-					anchor: clampToStage(s, { x: am.x, y: am.y }),
-					createdAt: nowMs(),
+					anchor: nextGroupAnchor([...s.drafts.values()].map(team => team.anchor)),
+					createdAt: Math.max(nowMs(), ...[...s.drafts.values()].map(team => team.createdAt + 1)),
 					createdBy: currentEditorName(),
 				});
 				am.teamId = teamId;

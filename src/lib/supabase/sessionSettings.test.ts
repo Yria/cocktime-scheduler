@@ -45,6 +45,10 @@ describe("세션 설정 저장과 읽기", () => {
 		expect((await fetchSessionSettingsForConflictCheck(7))?.cockCheckEnabled).toBe(true);
 		expect(read.select).toHaveBeenCalledWith("court_count, cock_check_enabled");
 	});
+	it("경기 중인 코트를 없애려 하면 경기를 완료한 뒤 줄이도록 안내한다", async () => {
+		client.from.mockReturnValueOnce(query([])).mockReturnValueOnce(query(null, { message: "not enough empty courts" }));
+		await expect(updateSession(7, 1, [], [], true)).rejects.toThrow("빈 코트가 부족해 코트 수를 줄일 수 없습니다");
+	});
 
 	it("게스트 등록 실패를 성공으로 처리하거나 기존 참가자 삭제를 계속하지 않는다", async () => {
 		const existing = [{ id: "saved-row", player_id: "old-member", status: "waiting" }];

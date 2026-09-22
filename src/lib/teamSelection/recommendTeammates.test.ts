@@ -181,3 +181,24 @@ describe("개인별 실력대 교류 보정", () => {
 		expect(ids(a)).toEqual(ids(b));
 	});
 });
+
+// 2026-09-22 조사: 현재 동작을 기록한다. 재출전 우선순위 변경은 별도 정책 결정 대상이다.
+describe("경기 완료 직후 재편성 재현 — 알고리즘 변경 없음", () => {
+	it("기존 대기 4명이 한 번 함께 경기했으면 방금 끝난 선수 2명을 다시 고른다", () => {
+		vi.spyOn(Date, "now").mockReturnValue(epoch);
+		try {
+			const waiting = ["a", "b", "c", "d"].map(id => player(id, {
+				gameCount: 1, waitSince: new Date(epoch - 20 * 60000).toISOString(),
+			}));
+			const ended = ["e", "f", "g", "h"].map(id => player(id, {
+				gameCount: 2, waitSince: new Date(epoch).toISOString(),
+			}));
+			const ctx = context({ groupHistory: [group("waiting-old", ids(waiting), -20), group("just-ended", ids(ended))] });
+			const selected = fill([...waiting, ...ended], ctx);
+			expect(selected.filter(p => ended.includes(p))).toHaveLength(2);
+			expect(selected.filter(p => waiting.includes(p))).toHaveLength(2);
+			// 대조군: 반복 이력만 빼면 판수/대기시간 점수에 따라 기존 대기 4명 모두 선택된다.
+			expect(ids(fill([...waiting, ...ended], context()))).toEqual(ids(waiting));
+		} finally { vi.restoreAllMocks(); }
+	});
+});

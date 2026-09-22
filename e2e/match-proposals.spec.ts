@@ -388,7 +388,7 @@ test("admin cannot copy a shared team member into a submitted proposal", async (
 	await page.evaluate((ids) => {
 		window.proposalTest.session.setState({ boardDrafts: { teams: [{ id: "shared", memberIds: ids, createdMs: 1 }], reservations: [] } });
 	}, [uid(4), uid(5)]);
-	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(2);
+	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(3);
 	await page.getByRole("button", { name: "정렬", exact: true }).click();
 	const target = (await cards(page))[0];
 	await drag(page, 4, { x: target.point.x - 35, y: target.point.y + 35 });
@@ -653,10 +653,10 @@ for (const width of [390, 1280]) {
 		await page.evaluate((ids) => {
 			window.proposalTest.session.setState({ boardDrafts: { teams: [{ id: "shared", memberIds: ids, createdMs: 1 }], reservations: [] } });
 		}, [uid(2), uid(3)]);
-		await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(2);
+		await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(3);
 		await page.getByRole("button", { name: "정렬", exact: true }).click();
 		const target = await page.evaluate(() => {
-			const view = window.proposalTest.scene().entities.find((entity) => entity.kind === "card" && entity.source.kind === "team");
+			const view = window.proposalTest.scene().entities.find((entity) => entity.kind === "card" && entity.key === "team:shared");
 			if (!view || view.kind !== "card") throw new Error("Missing shared team");
 			return { x: view.point.x - 35, y: view.point.y + 35 };
 		});

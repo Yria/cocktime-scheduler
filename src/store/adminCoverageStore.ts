@@ -5,6 +5,7 @@ export interface CoveragePrompt {
 	key: string;
 	names: string;
 	alternative?: { key: string; label: string };
+	onConfirm: () => Promise<void>;
 }
 interface AdminCoverageState {
 	memberIds: ReadonlySet<string>;

@@ -104,6 +104,8 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 			entities.push(next);
 		};
 
+		const queued = [...bs.drafts.values()].filter(team => team.courtId == null)
+			.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
 		// Map 순서는 기존 화면의 기본 시각 순서다. 드롭 판정의 후보 순서를 바꾸지 않는다.
 		for (const team of bs.drafts.values()) {
 			if (team.courtId != null && ss.courts.some(court => court.id === team.courtId && court.match)) continue;
@@ -116,13 +118,14 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 			const held = canStart && coverage?.loaded && leavesNoAdmin(membership.map(m => m.playerId), coverageInput);
 			const next = coverage?.loaded && coverage.memberIds.size > 0 && nextTeam?.key === `team:${team.id}`;
 			const busy = bs.assigningTeamIds?.has(team.id) === true;
-			const ctaEnabled = ss.isEditor && !busy && (!full || (canStart && hasEmptyCourt));
+			const availableCourt = ss.courts.some(court => !court.match && (team.courtId != null ? court.id === team.courtId
+				: ![...bs.drafts.values()].some(other => other.courtId === court.id && teamMembers(other.id, bs.drafts, bs.reservations).length > 0)));
+			const ctaEnabled = ss.isEditor && !busy && (!full || (canStart && availableCourt));
 			const labelColor = startable ? TEAM_READY_STROKE
 				: full ? TEAM_RESERVED_STROKE : TEXT_SECONDARY;
 			const baseLabel = team.courtId != null
 				? `${team.courtId}번 코트 · ${!full ? `편성 중 ${count}/4` : held ? "교대 대기" : canStart ? "시작 대기" : "합류 대기"}`
-				: !full ? `팀 구성 중 · ${count}/4`
-				: held ? "운영진 교대 대기" : canStart ? next ? "다음 경기 · 4/4" : "팀 완성 · 4/4" : "4/4 · 예약 포함(경기중)";
+				: `예비 ${queued.indexOf(team) + 1} · ${!full ? `${count}/4` : held ? "교대 대기" : canStart ? "배정 대기" : "예약 대기"}`;
 			const members: MagnetView[] = [];
 			for (const member of membership) {
 				let source: BoardSource & { playerId: string };
@@ -145,7 +148,7 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 					stroke: startable ? TEAM_READY_STROKE : full ? TEAM_RESERVED_STROKE : TEAM_FORMING_STROKE,
 					label: team.createdBy && team.courtId == null ? `${baseLabel} · by ${team.createdBy}` : baseLabel,
 					labelColor, labelBold: full, showVs: full,
-					ctaLabel: busy ? "시작 중…" : canStart ? hasEmptyCourt ? held ? "교대 확인" : "경기시작" : "코트 대기" : full ? "예약 대기" : "자동매칭",
+					ctaLabel: busy ? "시작 중…" : canStart ? availableCourt ? held ? "교대 확인" : "경기시작" : "코트 대기" : full ? "예약 대기" : "자동매칭",
 					ctaColor: !ctaEnabled ? CTA_DISABLED_COLOR : canStart ? CTA_PLAY_COLOR : CTA_START_COLOR,
 					ctaEnabled, showUnconfirm: ss.isEditor && count > 0 && !busy, showEdit: false, blink: !!next && hasEmptyCourt,
 				},

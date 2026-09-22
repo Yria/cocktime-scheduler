@@ -162,7 +162,7 @@ export const createMatchSlice: StateCreator<
 		});
 	},
 
-	startMatch: async (teamId) => {
+	startMatch: async (teamId, approvedAdminRoster) => {
 		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
 		const { drafts, reservations, magnets, assigningTeamIds } = get();
 		if (assigningTeamIds.has(teamId)) return;
@@ -174,7 +174,8 @@ export const createMatchSlice: StateCreator<
 			return;
 		}
 		const linkedCourtId = drafts.get(teamId)?.courtId;
-		const empty = session.courts.find(c => !c.match && (linkedCourtId == null || c.id === linkedCourtId));
+		const empty = session.courts.find(c => !c.match && (linkedCourtId != null ? c.id === linkedCourtId
+			: ![...drafts.values()].some(team => team.courtId === c.id && teamMembers(team.id, drafts, reservations).length > 0)));
 		if (!empty) {
 			toast("빈 코트가 없어요", { variant: "error" });
 			return;
@@ -186,10 +187,13 @@ export const createMatchSlice: StateCreator<
 		if (four.length !== 4) return;
 		const ids = four.map(p => p.id);
 		const coverageKey = `team:${teamId}`;
-		if (!acquireAdminCoverage(coverageKey, ids)) return;
+		if (!acquireAdminCoverage(coverageKey, ids, async () => {
+			if (useSessionStore.getState().isEditor) await get().startMatch(teamId, ids);
+		}, approvedAdminRoster)) return;
+		const allowAdminAbsence = approvedAdminRoster?.length === ids.length && ids.every(id => approvedAdminRoster.includes(id));
 
 		// 경기시작 시 새 코트 카드가 좌상단 기본 위치로 튀지 않도록, 만들어진 그룹의 자리를 그대로 물려준다.
-		const ta = drafts.get(teamId)?.anchor;
+		const ta = [...drafts.values()].find(team => team.courtId === empty.id)?.anchor ?? drafts.get(teamId)?.anchor;
 		const teamAnchor = ta ? { x: ta.x, y: ta.y } : null;
 
 		const singleWomanIds = useAppStore.getState().sessionMeta?.singleWomanIds ?? [];
@@ -203,7 +207,7 @@ export const createMatchSlice: StateCreator<
 			s.assigningTeamIds.add(teamId);
 		});
 		try {
-			await session.handleAssign(gen, empty.id);
+			await session.handleAssign(gen, empty.id, allowAdminAbsence);
 			// 성공 판정: 해당 코트의 match가 "우리 4명"으로 채워졌는지 확인(낙관적 dissolve 금지 + race 오판 방지)
 			const court = useSessionStore.getState().courts.find((c) => c.id === empty.id);
 			const ourIds = new Set(members.map((m) => m.playerId));

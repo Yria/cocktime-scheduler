@@ -2,7 +2,6 @@ import type { StateCreator } from "zustand";
 import type { MagnetPosition } from "../../types/board";
 import { DEFAULT_VIEWPORT } from "../../lib/board/geometry";
 import { MAGNET_SIZE, TEAM_BOX_BELOW } from "../../lib/board/constants";
-import { alignCourtGroups } from "../../lib/board/courtGroups";
 import { arrangeBoard } from "../../lib/board/arrange";
 import { scatterFromSource } from "../../lib/board/scatter";
 import { settleFreeMagnets } from "../../lib/board/settle";
@@ -264,7 +263,6 @@ export const createViewSlice: StateCreator<
 		set((s) => {
 			// 정렬 버튼(markManual)로 편집자가 명시 배치하면 자동 fit 중단 — 축소해 둔 비율·정렬 결과를 이후 멤버십/코트 변화가 덮어쓰지 않게.
 			if (markManual && editing) s.manualLayout = true;
-			if (markManual) alignCourtGroups([...s.drafts.values()].filter(team => team.courtId != null));
 			arrangeBoard({
 				magnets: s.magnets,
 				drafts: s.drafts,
