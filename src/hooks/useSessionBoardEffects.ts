@@ -1,21 +1,25 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../store/appStore";
 import { useBoardStore } from "../store/boardStore";
 import { useSessionStore } from "../store/sessionStore";
 import { useBoardPlayerPool } from "./useBoardPlayerPool";
 import { useCourtSig } from "./useBoardStageLayout";
+import { hasPendingDraftSave } from "../store/board/draftsSync";
 
 // SessionBoard의 세션 동기화/편집권 부수효과 묶음(반환값 없음) — 풀 초기화, 원격 보드 멤버십 적용,
 // 세션 Realtime 구독, 자동 편집권 점유, 불변식 I2 자가치유. 스토어 값은 훅 내부에서 직접 구독한다.
 export function useSessionBoardEffects() {
+	const sessionId = useAppStore((s) => s.sessionMeta?.sessionId) ?? 0;
+	const bindSession = useBoardStore(s => s.bindSession);
+	useLayoutEffect(() => { bindSession(sessionId); }, [sessionId, bindSession]);
 	const pool = useBoardPlayerPool();
 	const init = useBoardStore((s) => s.initializeFromPool);
 	useEffect(() => {
 		init(pool);
 	}, [pool, init]);
 
-	// 공유된 보드 멤버십(스냅샷/원격) → 로컬 적용(위치는 로컬).
+	// 공유된 보드 명단·배치(스냅샷/원격)를 복원한다.
 	const boardDrafts = useSessionStore((s) => s.boardDrafts);
 	const applyRemoteDrafts = useBoardStore((s) => s.applyRemoteDrafts);
 	const isEditor = useSessionStore((s) => s.isEditor);
@@ -30,19 +34,23 @@ export function useSessionBoardEffects() {
 	// 그대로 돌리면 방금 만든 팀이 STALE boardDrafts로 원복된다(데이터 손실). 그래서 "boardDrafts가 실제로 바뀐
 	// 경우"(로드/원격 수신)는 모두에게 적용하되, "magnetCount만 바뀐 수렴 재적용"은 관전자에게만 한다.
 	const magnetCount = useBoardStore((s) => s.magnets.size);
+	const ensureCourtGroups = useBoardStore((s) => s.ensureCourtGroups);
 	const lastAppliedDraftsRef = useRef<typeof boardDrafts | null>(null);
+	useLayoutEffect(() => { lastAppliedDraftsRef.current = null; }, [sessionId]);
 	useEffect(() => {
-		if (magnetCount === 0) return; // 자석 준비 전이면 보류 — 자석 로드 시 magnetCount 변화로 재실행되어 적용됨
+		if (useBoardStore.getState().magnets.size === 0 && pool.length > 0) return;
+		// 저장 중 돌아온 경우도 이전 응답으로 마지막 드롭을 되돌리지 않는다.
+		if (hasPendingDraftSave() && (lastAppliedDraftsRef.current !== null || useBoardStore.getState().manualLayout)) return;
 		const draftsChanged = lastAppliedDraftsRef.current !== boardDrafts;
 		if (!draftsChanged && isEditor) return; // 편집자: 멤버십 미수신 + magnetCount만 변한 재적용은 STALE 원복 위험 → 스킵
 		lastAppliedDraftsRef.current = boardDrafts;
 		applyRemoteDrafts(boardDrafts);
-	}, [boardDrafts, applyRemoteDrafts, magnetCount, isEditor]);
+		ensureCourtGroups();
+	}, [boardDrafts, applyRemoteDrafts, magnetCount, isEditor, ensureCourtGroups, pool.length]);
 
 	// 세션 Realtime 채널 구독 — 보드는 SessionMain 없이 단독 마운트되므로 직접 구독해야
 	// handleAssign/handleComplete가 동작한다(_channel 필요). 없으면 경기시작/완료가 무반응.
 	const navigate = useNavigate();
-	const sessionId = useAppStore((s) => s.sessionMeta?.sessionId) ?? 0;
 	const subscribe = useSessionStore((s) => s.subscribe);
 	const unsubscribe = useSessionStore((s) => s.unsubscribe);
 	useEffect(() => {
@@ -84,4 +92,9 @@ export function useSessionBoardEffects() {
 	useEffect(() => {
 		healPlayingAnchors();
 	}, [courtSig, healPlayingAnchors]);
+	const availability = pool.map(player => `${player.id}:${player.status}:${player.cockChecked}`).join("|");
+	useEffect(() => {
+		ensureCourtGroups();
+		if (isEditor && lockSynced) useBoardStore.getState().autoFillEmptyCourts();
+	}, [courtSig, availability, isEditor, lockSynced, ensureCourtGroups]);
 }

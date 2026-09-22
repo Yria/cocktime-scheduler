@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>콕타임 · 코트 배치와 자동 편성 기획안</title>
+  <style>
+    :root{--paper:#f7f8f5;--surface:#fff;--ink:#172b29;--muted:#5c6d67;--line:#dbe2dc;--green:#11634c;--green-dark:#174f40;--mint:#e9f4ed;--lime:#d9ef98;--orange:#8b4c19;--orange-bg:#fff0df;--blue:#275da2;--blue-bg:#eaf1fc;--grid:#e6ebe5;--shadow:0 16px 50px #17342a0d;--radius:20px;--body:16px;--small:13px}
+    *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:88px}body{margin:0;background:var(--paper);color:var(--ink);font:var(--body)/1.65 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;word-break:keep-all}button,input,select{font:inherit}button,a,input,select{-webkit-tap-highlight-color:transparent}button{cursor:pointer;touch-action:manipulation}button:disabled{cursor:default;opacity:.55}button,a,input,select{outline-offset:4px}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--blue)}a{color:inherit}h1,h2,h3,p{margin:0}h1,h2,h3{line-height:1.3;letter-spacing:-.055em}h2{font-size:34px}h3{font-size:20px}button{transition:background .15s,box-shadow .15s,opacity .15s}button:active:not(:disabled){filter:brightness(.95)}.mono{font-variant-numeric:tabular-nums;letter-spacing:.04em}.muted{color:var(--muted)}.small{font-size:var(--small)}.eyebrow{font-size:12px;font-weight:750;letter-spacing:.15em;text-transform:uppercase;color:var(--green)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.skip{position:absolute;top:-100px;background:var(--surface);padding:12px;z-index:100}.skip:focus{top:4px}.topbar{height:72px;border-bottom:1px solid var(--line);background:#f7f8f5f5;backdrop-filter:blur(12px);position:sticky;top:0;z-index:30}.nav{max-width:1200px;margin:auto;padding:0 24px;height:100%;display:flex;align-items:center;gap:24px}.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:800;font-size:21px;letter-spacing:-.05em}.brand-mark{display:grid;place-items:center;width:31px;height:31px;border-radius:10px;background:var(--green);color:#fff}.brand-mark svg{width:23px;height:23px}.nav-title{border-left:1px solid var(--line);padding-left:24px;font-size:13px;color:var(--muted)}.navlinks{display:flex;gap:22px;margin-left:auto;font-size:13px}.navlinks a{display:flex;align-items:center;min-height:44px;text-decoration:none}.navlinks a:hover{color:var(--green)}.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border:1px solid var(--line);border-radius:10px;padding:9px 16px;background:var(--surface);color:var(--ink);font-size:14px;font-weight:650;line-height:1.4;text-decoration:none}.btn:hover{background:var(--mint)}.btn.primary{background:var(--green);border-color:var(--green);color:#fff}.btn.primary:hover{background:var(--green-dark)}.btn.soft{background:var(--mint);border-color:transparent;color:var(--green)}.btn.small-btn{font-size:13px;padding:8px 12px}.btn svg{width:16px;height:16px}.topbar .btn{font-size:12px;padding:8px 13px}.document{max-width:1200px;margin:auto;padding:0 24px}.sheet{padding:76px 0;border-bottom:1px solid var(--line);scroll-margin-top:76px}.sheet-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:30px}.sheet-head h2{margin:9px 0 10px}.sheet-head p{color:var(--muted);max-width:660px}.section-no{font-size:55px;line-height:1;color:#c1cdc2;font-weight:300;letter-spacing:-.05em}.tag{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);padding:4px 10px;border-radius:99px;font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}.tag.green{background:var(--mint);border-color:#c6dece;color:var(--green)}.tag.orange{background:var(--orange-bg);border-color:#efd7bf;color:var(--orange)}.tag.blue{background:var(--blue-bg);border-color:#cadcf5;color:var(--blue)}.dot{width:6px;height:6px;background:currentColor;border-radius:50%;display:inline-block}.cover{padding-top:56px}.cover-meta{display:flex;gap:10px;align-items:center;margin-bottom:30px}.cover-grid{display:grid;grid-template-columns:1fr 1fr;gap:50px;align-items:center}.cover h1{font-size:54px;font-weight:800;line-height:1.26}.cover h1 span{color:var(--green)}.cover-description{color:var(--muted);margin-top:24px;max-width:450px;font-size:18px;line-height:1.8}.cover-actions{display:flex;gap:10px;margin-top:28px;flex-wrap:wrap}.hero-picture{background:#eaf0e8;border-radius:24px;min-height:370px;position:relative;overflow:hidden;padding:25px 35px}.hero-picture::before{content:"";position:absolute;inset:0;background-image:linear-gradient(#bccdb925 1px,transparent 1px),linear-gradient(90deg,#bccdb925 1px,transparent 1px);background-size:24px 24px}.hero-label{position:relative;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--green);font-weight:650}.hero-grid{position:relative;margin:20px auto 0;display:grid;grid-template-columns:repeat(2,130px);gap:18px 24px;justify-content:center}.hero-court{height:138px;border-radius:9px;padding:8px;position:relative;background:var(--green-dark);border:3px solid transparent;color:#fff}.hero-court.selected{border-color:var(--lime);box-shadow:0 0 0 3px var(--green);background:var(--green)}.hero-court .court-lines{inset:28px 8px 12px;opacity:.5}.hero-court strong{position:relative;font-size:12px}.hero-court .hero-dots{position:absolute;inset:47px 27px 30px;display:grid;grid-template-columns:1fr 1fr;justify-items:center;align-items:center;gap:12px}.hero-dots i{display:block;width:18px;height:18px;border-radius:50%;border:2px solid #ffffffb3;background:#dcebdd}.hero-court.selected .hero-dots i{background:var(--lime);border-color:var(--lime)}.hero-bubble{position:absolute;right:-56px;bottom:14px;background:#fff;border:1px solid var(--line);box-shadow:0 5px 15px #143e231a;border-radius:9px;padding:9px 11px;color:var(--green);font-size:12px;font-weight:700;z-index:2}.hero-caption{position:relative;margin-top:21px;font-size:12px;text-align:center;color:var(--muted)}.three-principles{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:44px}.principle{display:flex;gap:14px;padding-top:20px;border-top:2px solid var(--line)}.principle b{color:var(--green);font-size:12px;margin-top:3px}.principle h3{font-size:17px;margin-bottom:5px}.principle p{font-size:14px;color:var(--muted)}.editor-layout{display:grid;grid-template-columns:minmax(0,1fr) 265px;gap:24px;align-items:start}.app-frame{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}.frame-top{padding:17px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}.frame-top strong{font-size:16px}.frame-top .tag{margin-left:auto}.frame-top .window-dot{width:7px;height:7px;border-radius:50%;background:#c3cec7}.editor-tools{display:flex;align-items:center;gap:8px;padding:14px 18px;flex-wrap:wrap}.field-label{font-size:12px;color:var(--muted);font-weight:600}.select-wrap{display:flex;gap:9px;align-items:center;flex:1}.select-wrap select{width:100%;min-width:150px;min-height:44px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);padding:8px 10px;font-size:14px}.editor-tools .btn{padding:8px 12px;font-size:13px}.segmented{display:flex;border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px;background:var(--paper)}.segmented button{border:0;min-height:38px;border-radius:7px;padding:5px 13px;font-size:13px;background:transparent;color:var(--muted);font-weight:600}.segmented button[aria-pressed=true]{background:var(--surface);color:var(--green);box-shadow:0 1px 4px #183b2314}.editor-board{height:440px;margin:0 18px;background-color:#f0f3ed;background-image:radial-gradient(#c8d4c5 1px,transparent 1px);background-size:18px 18px;border:1px solid var(--line);border-radius:12px;position:relative;overflow:hidden;isolation:isolate}.board-caption{position:absolute;left:12px;top:10px;color:var(--muted);font-size:11px;pointer-events:none;z-index:2}.layout-world{position:absolute;transform-origin:0 0}.entrance{position:absolute;left:50%;transform:translateX(-50%);top:0;color:var(--muted);font-size:15px;font-weight:650;letter-spacing:.12em;pointer-events:none}.layout-court{position:absolute;width:158px;height:218px;padding:0;border:2px solid #cfdbce;border-radius:12px;background:var(--surface);color:var(--ink);display:block;text-align:left;touch-action:none;user-select:none;overflow:visible}.layout-court.is-selected{border:3px solid var(--green);box-shadow:0 0 0 4px #16644d15}.layout-court.is-inactive{background:#e5eae3;border-style:dashed;color:var(--muted)}.layout-court.dragging{box-shadow:0 10px 20px #152d3026;z-index:5;cursor:grabbing}.layout-court.invalid{border-color:#b83c37;background:#fdeeed}.court-title{position:absolute;left:11px;right:11px;top:9px;display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:750;pointer-events:none}.grip{opacity:.5;letter-spacing:2px;font-size:15px}.court-lines{position:absolute;inset:43px 12px 31px;border:1px solid currentColor;color:#abc5b3;pointer-events:none}.court-lines::before{content:"";position:absolute;inset:15% 10%;border:1px solid currentColor}.court-lines::after{content:"";position:absolute;top:50%;left:-5%;right:-5%;border-top:2px dashed currentColor}.center-line{position:absolute;top:0;bottom:0;left:50%;border-left:1px solid currentColor}.court-places{position:absolute;inset:68px 29px 59px;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:14px 12px;align-items:center;justify-items:center;pointer-events:none}.court-places span{width:25px;height:25px;border-radius:50%;background:var(--mint);border:1px solid #b4d2bd;color:var(--green);display:grid;place-items:center;font-size:10px;font-weight:700}.court-bottom{position:absolute;bottom:9px;left:12px;right:12px;text-align:center;font-size:12px;color:var(--muted);pointer-events:none}.layout-court.is-inactive .court-places{opacity:.3}.layout-court.rotated .court-places{inset:50px 44px 35px;gap:4px 33px}.layout-court.rotated .court-lines{inset:39px 12px 26px}.layout-court.rotated .court-lines::after{top:-4%;bottom:-4%;left:50%;right:auto;border-top:0;border-left:2px dashed currentColor}.layout-court.rotated .center-line{top:50%;bottom:auto;left:0;right:0;border-left:0;border-top:1px solid currentColor}.layout-court.rotated .court-title{font-size:14px}.editor-bottom{display:flex;justify-content:space-between;align-items:center;padding:12px 19px;font-size:12px;color:var(--muted);gap:12px}.editor-bottom button{border:0;background:none;padding:0 6px;min-height:44px;font-size:12px;color:var(--green);font-weight:650}.inspector{display:flex;flex-direction:column;gap:18px}.inspector-card{background:var(--surface);border:1px solid var(--line);padding:20px;border-radius:16px}.inspector-card h3{font-size:16px;margin:6px 0 15px}.inspector-controls{display:flex;gap:8px;flex-wrap:wrap}.inspector-controls .btn{flex:1;padding:8px;font-size:13px}.checkbox-row{display:flex;align-items:center;gap:9px;min-height:44px;font-size:14px;margin:9px 0 0;cursor:pointer}.checkbox-row input{accent-color:var(--green);width:18px;height:18px}.nudge{display:flex;gap:7px;margin:10px 0 3px}.nudge button{min-height:44px;min-width:44px;padding:0;background:var(--paper);border:1px solid var(--line);border-radius:8px;font-size:17px;color:var(--ink)}.help{font-size:12px;color:var(--muted);margin-top:9px}.scope{display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;margin:8px 0;min-height:36px}.scope input{accent-color:var(--green);margin-top:6px}.wide{width:100%}.inspector .btn.wide{margin-top:10px}.note{padding:0 5px;font-size:13px;color:var(--muted)}.note strong{display:block;color:var(--ink);margin-bottom:5px;font-size:14px}.callout-number{display:inline-grid;place-items:center;background:var(--green);color:#fff;width:21px;height:21px;border-radius:50%;font-size:11px;margin-right:5px}.flow-caption{margin-top:18px;border-left:3px solid var(--green);padding:3px 0 3px 14px;font-size:14px;color:var(--muted)}.operation-grid{display:grid;grid-template-columns:400px 1fr;gap:70px;align-items:center}.phone{width:100%;max-width:400px;border:1px solid #cfd8d0;background:var(--surface);padding:10px;border-radius:31px;box-shadow:0 22px 55px #16352812;margin:auto}.phone-screen{border-radius:23px;background:var(--paper);overflow:hidden;border:1px solid var(--line)}.phone-status{padding:10px 18px 4px;display:flex;justify-content:space-between;font-size:11px;font-weight:750}.phone-top{display:flex;align-items:center;justify-content:space-between;padding:9px 18px;font-size:17px;font-weight:750}.phone-top span:first-child{font-size:24px;font-weight:400}.phone-top .small{font-size:12px;font-weight:500}.phone-stats{display:flex;gap:7px;padding:3px 16px 12px;justify-content:center}.phone-stats .tag{font-size:11px;padding:3px 9px;background:#fff}.operation-board{height:255px;margin:0 12px;position:relative;background:#eaf0e8;border:1px solid #d7e2d5;border-radius:12px;overflow:hidden}.operation-board .entrance{font-size:15px}.operation-court{position:absolute;border:2px solid transparent;border-radius:10px;background:var(--green-dark);color:#fff;padding:0;text-align:left;width:158px;height:218px}.operation-court .court-lines{color:#b4d0bc;opacity:.75;inset:51px 13px 34px}.operation-court .court-title{font-size:24px;top:8px;left:13px;right:13px;white-space:nowrap}.operation-court .court-bottom{color:#fff;font-size:18px;bottom:4px;white-space:nowrap}.operation-court .court-places{inset:78px 35px 63px}.operation-court .court-places span{width:19px;height:19px;border:0;background:#d6e7da}.operation-court.is-selected{box-shadow:0 0 0 5px var(--green);border-color:var(--lime);background:var(--green)}.operation-court.ready{background:#dfefa6;color:#273c13;border-color:#87a34c}.operation-court.ready .court-bottom{color:#273c13}.operation-court.ready .court-lines{color:#6f8747}.operation-court.ready .court-places span{background:#486b27}.operation-court.waiting,.operation-court.paused{background:#e0e6dc;color:var(--muted);border:2px dashed #95a38b}.operation-court.waiting .court-bottom,.operation-court.paused .court-bottom{color:var(--muted)}.operation-court.waiting .court-places,.operation-court.paused .court-places{display:none}.operation-court.loading{background:#dbe8e0;color:var(--green)}.operation-court.loading .court-bottom{color:var(--green)}.operation-court.rotated .court-title{font-size:21px}.operation-court.rotated .court-bottom{font-size:16px;bottom:3px}.operation-court.rotated .court-lines{inset:43px 12px 30px}.operation-court.rotated .court-places{inset:54px 43px 47px}.court-selector{display:flex;gap:6px;justify-content:center;margin:10px 12px 0;flex-wrap:wrap}.court-selector button{min-width:44px;min-height:44px;padding:0 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--muted);font-size:12px}.court-selector button[aria-pressed=true]{background:var(--green);color:#fff;border-color:var(--green)}.match-detail{margin:11px 12px 12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px}.detail-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.detail-top strong{font-size:16px}.detail-top .tag{font-size:11px;padding:3px 8px}.teams{display:flex;justify-content:center;align-items:center;gap:13px;padding:19px 0 15px;font-size:15px;font-weight:650}.team-side{display:flex;align-items:center;gap:7px}.avatar{display:inline-grid;place-items:center;background:var(--mint);color:var(--green);width:26px;height:26px;border-radius:50%;font-size:11px;flex-shrink:0}.versus{font-size:11px;color:var(--muted);font-weight:500}.detail-action{display:flex;gap:8px}.detail-action .btn{flex:1;font-size:13px}.detail-action .main-action{flex:1.5}.phone-footer{border-top:1px solid var(--line);display:flex;justify-content:center;gap:25px;padding:12px 8px;font-size:12px;background:#fff}.home-indicator{height:4px;width:90px;background:#b6c4b9;border-radius:3px;margin:7px auto 9px}.operation-text{align-self:center}.demo-hint{display:flex;gap:8px;align-items:center;background:var(--mint);color:var(--green);font-weight:650;font-size:14px;border-radius:11px;padding:12px 16px;margin-bottom:26px}.flow-list{margin:0;padding:0;list-style:none}.flow-step{display:flex;gap:17px;position:relative;padding:0 0 29px}.flow-step:not(:last-child)::after{content:"";position:absolute;left:17px;top:40px;bottom:9px;border-left:1px solid var(--line)}.step-badge{display:grid;place-items:center;background:var(--surface);border:1px solid var(--line);color:var(--green);width:35px;height:35px;border-radius:50%;font-size:13px;flex-shrink:0;font-weight:700}.flow-step.active .step-badge{background:var(--green);border-color:var(--green);color:#fff}.flow-step h3{font-size:20px;margin:4px 0 6px}.flow-step p{color:var(--muted);font-size:14px}.flow-step .tag{margin-top:10px}.event-log{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:13px 16px;font-size:13px;min-height:69px}.event-log strong{color:var(--green);display:block;font-size:11px;margin-bottom:3px;letter-spacing:.03em}.operation-options{display:flex;gap:8px;flex-wrap:wrap;margin-top:15px}.operation-options .btn{font-size:12px}.demo-footnote{font-size:12px;color:var(--muted);margin-top:13px}.scenario-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}.scenario{background:var(--surface);border:1px solid var(--line);border-radius:17px;padding:24px}.scenario h3{font-size:18px;margin:17px 0 9px}.scenario p{color:var(--muted);font-size:14px}.mini-people{display:flex;align-items:center;justify-content:center;gap:9px;margin:23px 0}.mini-people span{width:42px;height:42px;border-radius:50%;background:var(--mint);color:var(--green);display:grid;place-items:center;font-size:13px;font-weight:650}.mini-people .empty{background:var(--paper);border:1px dashed #9ba99e;color:var(--muted)}.state-demo{display:flex;align-items:center;justify-content:space-between;background:var(--paper);border-radius:9px;padding:12px;font-size:13px;margin:20px 0}.tiny-court{height:90px;width:61px;border:2px solid #688d77;position:relative;background:var(--mint);border-radius:5px}.tiny-court::after{content:"";position:absolute;top:50%;width:100%;border-top:1px dashed #688d77}.layout-mini{display:flex;align-items:center;justify-content:center;gap:20px;margin:21px 0}.tiny-court.inactive{border-style:dashed;border-color:#b8c4b9;background:var(--paper)}.policy-row{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-top:33px}.policy{border-top:1px solid var(--line);padding-top:20px}.policy h3{font-size:17px;margin-bottom:10px}.policy p{font-size:14px;color:var(--muted)}.delivery{margin-top:27px;padding:18px 22px;background:var(--green-dark);color:#fff;border-radius:13px;display:flex;gap:22px;align-items:center}.delivery strong{white-space:nowrap;font-size:14px}.delivery p{font-size:13px;color:#e1ebe4}.footer{padding:24px 0 36px;display:flex;justify-content:space-between;font-size:12px;color:var(--muted);gap:20px}.toast{position:fixed;bottom:24px;left:50%;transform:translate(-50%,10px);opacity:0;pointer-events:none;background:var(--green-dark);color:#fff;border-radius:12px;padding:13px 20px;font-size:14px;box-shadow:0 8px 30px #0002;z-index:100;transition:opacity .2s,transform .2s;max-width:calc(100% - 32px);text-align:center}.toast.visible{opacity:1;transform:translate(-50%,0)}.print-only{display:none}.inline-message{font-size:13px;color:var(--muted);text-align:center;padding:20px 0}.rename-form{display:flex;gap:8px;margin-top:10px}.rename-form input{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:16px}.rename-form .btn{flex-shrink:0;padding:8px 11px}.summary-strip{display:flex;gap:12px;align-items:center;margin-top:18px;font-size:12px;color:var(--muted)}
+    [hidden]{display:none!important}.court-picker{width:100%;min-height:44px;margin-bottom:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:14px;padding:8px;color:var(--ink)}.scope{min-height:44px}.brand{min-height:44px}
+    @media(max-width:1000px){.cover h1{font-size:43px}.cover-grid{gap:30px}.hero-picture{padding:22px}.hero-bubble{right:-28px}.editor-layout{grid-template-columns:minmax(0,1fr) 235px;gap:18px}.inspector-card{padding:16px}.operation-grid{grid-template-columns:360px 1fr;gap:36px}.nav-title{display:none}.scenario{padding:20px}.editor-board{height:390px}}
+    @media(max-width:760px){html{scroll-padding-top:72px}.nav{padding:0 18px;gap:12px}.topbar{height:64px}.brand{font-size:19px}.navlinks{gap:14px;font-size:12px}.navlinks a:nth-child(3){display:none}.nav .btn{display:none}.document{padding:0 20px}.sheet{padding:44px 0}.cover-meta{flex-wrap:wrap;margin-bottom:24px}.cover-grid{grid-template-columns:1fr;gap:28px}.cover h1{font-size:39px}.cover-description{font-size:16px;margin-top:18px}.cover-actions{margin-top:21px}.hero-picture{min-height:350px}.hero-grid{gap:16px;grid-template-columns:repeat(2,120px)}.hero-court{height:129px}.hero-bubble{right:-18px;font-size:11px}.three-principles{grid-template-columns:1fr;gap:17px;margin-top:27px}.principle{padding-top:14px}.sheet-head{margin-bottom:22px;align-items:flex-start;gap:10px}.sheet-head h2{font-size:27px}.sheet-head p{font-size:14px}.section-no{font-size:40px}.editor-layout{grid-template-columns:1fr}.frame-top{padding:14px}.frame-top .tag{font-size:10px}.editor-tools{padding:12px;gap:6px}.select-wrap{flex-basis:100%}.editor-tools .btn{padding:8px 9px;font-size:12px}.editor-board{margin:0 10px;height:355px}.editor-bottom{padding:7px 12px}.inspector{display:grid;grid-template-columns:1fr 1fr;gap:12px}.inspector-card{padding:14px}.inspector-card .eyebrow{font-size:10px}.inspector-card h3{font-size:15px}.inspector-controls .btn{font-size:12px;min-width:62px}.nudge{gap:4px;flex-wrap:wrap}.nudge button{min-width:44px}.scope{font-size:12px}.inspector .note{grid-column:1/-1;padding:8px 2px}.checkbox-row{font-size:12px}.help{font-size:11px}.operation-grid{grid-template-columns:1fr;gap:28px}.phone{max-width:380px}.operation-text{width:100%}.demo-hint{font-size:13px;margin-bottom:22px}.flow-step{padding-bottom:24px}.flow-step h3{font-size:18px}.scenario-grid{grid-template-columns:1fr;gap:14px}.scenario{padding:21px}.scenario h3{margin-top:12px}.mini-people,.layout-mini{margin:17px 0}.policy-row{grid-template-columns:1fr;gap:21px}.delivery{display:block;padding:18px}.delivery strong{display:block;margin-bottom:7px}.footer{display:block;padding:22px 0}.footer span{display:block;margin:5px 0}.rename-form{flex-wrap:wrap}.rename-form input{width:80px}.flow-caption{font-size:13px}.operation-board{height:245px}.teams{gap:10px;font-size:14px}}
+    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important;animation:none!important}}
+    @page{size:A4 landscape;margin:12mm}
+    @media print{html{scroll-behavior:auto}body{background:#fff;font-size:13px;-webkit-print-color-adjust:exact;print-color-adjust:exact}.topbar,.cover-actions,.toast,.no-print,.footer{display:none!important}.document{max-width:none;padding:0}.sheet{padding:0;border:0;break-after:page;page-break-after:always}.sheet:last-of-type{break-after:auto}.sheet-head{margin-bottom:18px}.sheet-head h2{font-size:27px;margin:5px 0 7px}.sheet-head p{font-size:13px}.eyebrow{font-size:10px}.section-no{font-size:44px}.cover{padding-top:15px}.cover-meta{margin-bottom:28px}.cover-grid{gap:44px;grid-template-columns:1fr 1fr}.cover h1{font-size:44px}.cover-description{font-size:16px}.hero-picture{min-height:350px}.three-principles{margin-top:28px;gap:22px}.principle h3{font-size:15px}.principle p{font-size:12px}.editor-layout{grid-template-columns:minmax(0,1fr) 240px;gap:20px}.editor-board{height:330px}.editor-tools{padding:9px 14px}.frame-top{padding:11px 16px}.editor-bottom{padding:3px 15px}.inspector{gap:12px}.inspector-card{padding:14px}.inspector-card h3{margin-bottom:9px}.inspector-card .btn{min-height:34px}.scope{min-height:28px}.help,.note{font-size:11px}.nudge{display:none}.flow-caption{font-size:12px;margin-top:12px}.operation-grid{grid-template-columns:320px 1fr;gap:60px}.phone{max-width:320px;border-radius:25px;padding:7px;box-shadow:none}.phone-status{padding:7px 14px 1px}.phone-top{padding:5px 14px;font-size:15px}.phone-stats{padding-bottom:8px}.phone-stats .tag{font-size:10px;padding:2px 6px}.operation-board{height:215px}.court-selector{margin-top:6px;gap:4px}.court-selector button{min-height:30px;min-width:35px;font-size:10px}.match-detail{padding:12px;margin:8px 10px}.teams{font-size:12px;padding:12px 0;gap:8px}.avatar{width:20px;height:20px;font-size:10px}.team-side{gap:4px}.detail-action .btn{min-height:35px;font-size:11px}.detail-top strong{font-size:14px}.detail-top .tag{font-size:10px}.phone-footer{padding:8px;font-size:10px}.home-indicator{margin:5px auto}.demo-hint{font-size:12px;padding:10px 13px;margin-bottom:22px}.flow-step{padding-bottom:24px}.flow-step h3{font-size:19px}.flow-step p{font-size:13px}.demo-footnote{font-size:11px}.print-only{display:block}.print-caption{margin-top:17px;color:var(--muted);font-size:11px}.scenario-grid{gap:17px}.scenario{padding:20px}.scenario h3{font-size:17px}.scenario p{font-size:12px}.policy-row{margin-top:24px;gap:30px}.policy p{font-size:12px}.delivery{margin-top:21px;padding:16px}.delivery p{font-size:12px}.app-frame{box-shadow:none}}
+    @media print{.scope{min-height:26px;margin:4px 0}.checkbox-row{min-height:30px;margin:6px 0 0}.inspector-card{padding:12px}.inspector-card h3{font-size:15px}.inspector-card .help{display:none}.inspector-card .wide{margin-top:6px}.inspector .note{font-size:11px}.inspector-card .eyebrow{font-size:10px}}
+  </style>
+</head>
+<body>
+  <a class="skip" href="#overview">본문으로 이동</a>
+  <header class="topbar"><nav class="nav" aria-label="기획서 목차">
+    <a class="brand" href="#overview"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m6 4 3 12h6l3-12M10 4l1 12m3-12-1 12M6 4h12M9 16a3 3 0 0 0 6 0M8 10h8"/></svg></span>콕타임</a>
+    <span class="nav-title">코트 운영 UI 기획안</span>
+    <div class="navlinks"><a href="#layout">배치 편집</a><a href="#operation">경기 운영</a><a href="#rules">운영 규칙</a></div>
+    <button class="btn" id="print-button" type="button">PDF로 저장 <span aria-hidden="true">↗</span></button>
+  </nav></header>
+  <main class="document" id="main">
+    <section class="sheet cover" id="overview" aria-labelledby="cover-title">
+      <div class="cover-meta"><span class="eyebrow">COCKTIME · PRODUCT DESIGN</span><span class="tag">기획 제안 v1.1</span><span class="small muted mono">2026.09.21</span></div>
+      <div class="cover-grid"><div>
+        <h1 id="cover-title">코트는 제자리에.<br><span>다음 경기는 자동으로.</span></h1>
+        <p class="cover-description">체육관의 배치를 화면에 그대로.<br>끝난 코트를 찾고, 완료를 누르면<br>그 자리에 다음 그룹이 준비됩니다.</p>
+        <div class="cover-actions"><a class="btn primary" href="#layout">배치 직접 만들어 보기 <span aria-hidden="true">↓</span></a><a class="btn" href="#operation">경기 전환 체험</a></div>
+      </div><div class="hero-picture" aria-label="2열로 배치된 네 코트 중 3번에 다음 그룹이 준비된 예시">
+        <div class="hero-label"><span>한빛체육관 · 배치 예시</span><span>입구 ↓</span></div>
+        <div class="hero-grid">
+          <div class="hero-court"><strong>1번 · 경기 중</strong><div class="court-lines"><i class="center-line"></i></div><div class="hero-dots"><i></i><i></i><i></i><i></i></div></div>
+          <div class="hero-court"><strong>2번 · 경기 중</strong><div class="court-lines"><i class="center-line"></i></div><div class="hero-dots"><i></i><i></i><i></i><i></i></div></div>
+          <div class="hero-court selected"><strong>3번 · 시작 대기</strong><div class="court-lines"><i class="center-line"></i></div><div class="hero-dots"><i></i><i></i><i></i><i></i></div><div class="hero-bubble">다음 그룹 준비 완료</div></div>
+          <div class="hero-court"><strong>4번 · 경기 중</strong><div class="court-lines"><i class="center-line"></i></div><div class="hero-dots"><i></i><i></i><i></i><i></i></div></div>
+        </div><p class="hero-caption">위치는 유지하고, 선수만 바뀝니다.</p>
+      </div></div>
+      <div class="three-principles">
+        <div class="principle"><b class="mono">01</b><div><h3>그룹 자리는 항상 표시</h3><p>좌하단 + 없이 코트 수만큼<br>빈 그룹 자리를 미리 만듭니다.</p></div></div>
+        <div class="principle"><b class="mono">02</b><div><h3>장소마다 배치를 기억</h3><p>코트를 끌어 위치를 정하고,<br>다음 모임에도 그대로 불러옵니다.</p></div></div>
+        <div class="principle"><b class="mono">03</b><div><h3>완료 다음에는 시작만</h3><p>빈 코트에 다음 4명을 준비하고,<br>운영진이 시작하면 진행됩니다.</p></div></div>
+      </div><p class="print-only print-caption">인터랙티브 원본: court-board-proposal.html · 이 문서의 장소와 선수는 기획 설명용 예시입니다.</p>
+    </section>
+
+    <section class="sheet" id="layout" aria-labelledby="layout-title">
+      <div class="sheet-head"><div><span class="eyebrow">01 / PLACE & LAYOUT</span><h2 id="layout-title">우리 체육관을 화면에 옮겨 놓기</h2><p>기본 그룹 정도 크기의 코트를 드래그하세요. 아래 운영 화면에도 같은 배치가 반영됩니다.</p></div><span class="section-no" aria-hidden="true">01</span></div>
+      <div class="editor-layout">
+        <div class="app-frame"><div class="frame-top"><span class="window-dot" aria-hidden="true"></span><strong>코트 배치 설정</strong><span class="tag green">직접 조작할 수 있어요</span></div>
+          <div class="editor-tools"><div class="select-wrap"><label class="field-label" for="venue">장소</label><select id="venue"><option value="hanbit">한빛체육관 · 4면</option><option value="neulbom">늘봄체육관 · 6면</option></select></div><button class="btn" id="preset-grid" type="button">두 줄 배치</button><button class="btn" id="preset-row" type="button">한 줄 배치</button><button class="btn" id="undo-layout" type="button" disabled>되돌리기</button></div>
+          <div class="editor-board" id="editor-board" role="group" aria-label="코트 배치 편집 영역. 코트를 드래그하거나 선택 후 화살표 키로 이동하세요."><span class="board-caption">코트 번호를 잡고 이동 · 방향키로 미세 조정</span><div class="layout-world" id="editor-world"></div></div>
+          <div class="editor-bottom"><span id="layout-summary">등록 4면 · 오늘 사용 4면</span><button type="button" id="restore-layout">장소 기본 불러오기</button></div>
+        </div>
+        <aside class="inspector" aria-label="선택 코트 설정">
+          <div class="inspector-card"><span class="eyebrow">SELECTED COURT</span><h3 id="selected-court-label">3번 코트</h3><select id="edit-court-picker" class="court-picker" aria-label="편집할 코트 선택" hidden></select><div class="inspector-controls"><button class="btn" id="rename-court" type="button">번호 변경</button><button class="btn" id="rotate-court" type="button">90° 회전</button></div><form class="rename-form" id="rename-form" hidden><label class="sr-only" for="court-number">코트 번호</label><input id="court-number" type="number" min="1" max="99" inputmode="numeric"><button class="btn" type="submit">적용</button></form><label class="checkbox-row"><input type="checkbox" id="court-active" checked>오늘 사용할 코트</label><div class="nudge" aria-label="선택 코트 위치 조정"><button type="button" data-nudge="left" aria-label="선택 코트를 왼쪽으로 이동">←</button><button type="button" data-nudge="up" aria-label="선택 코트를 위로 이동">↑</button><button type="button" data-nudge="down" aria-label="선택 코트를 아래로 이동">↓</button><button type="button" data-nudge="right" aria-label="선택 코트를 오른쪽으로 이동">→</button></div><p class="help">사용하지 않는 코트도 옅은 윤곽으로 위치를 알려줍니다.</p></div>
+          <div class="inspector-card"><span class="eyebrow">SAVE LAYOUT</span><h3>어디에 적용할까요?</h3><label class="scope"><input type="radio" name="save-scope" value="session" checked><span>이번 모임에만</span></label><label class="scope"><input type="radio" name="save-scope" value="venue"><span>장소 기본 + 이번 모임</span></label><button class="btn primary wide" id="save-layout" type="button">배치 저장</button><a class="btn wide" href="#operation">운영 화면 미리보기 <span aria-hidden="true">↓</span></a><p class="help" id="save-note">예시 배치는 이 브라우저에 저장됩니다.</p></div>
+          <p class="note"><strong><span class="callout-number">1</span>한 번 배치하고, 다시 사용</strong>장소별 기본 배치를 기억합니다. 당일 변경은 이번 모임에만 적용할 수 있습니다.</p>
+        </aside>
+      </div><p class="flow-caption">모임을 열 때는 <strong>장소 선택 → 저장된 배치 확인 → 오늘 사용할 코트 선택</strong>으로 준비를 마칩니다.</p>
+    </section>
+
+    <section class="sheet" id="operation" aria-labelledby="operation-title">
+      <div class="sheet-head"><div><span class="eyebrow">02 / LIVE COURT BOARD</span><h2 id="operation-title">3번 코트가 끝났다면, 그 자리에서 다음 경기</h2><p>운영 화면에서는 배치를 고정합니다. 완료한 코트의 선수와 상태만 바뀝니다.</p></div><span class="section-no" aria-hidden="true">02</span></div>
+      <div class="operation-grid">
+        <div class="phone"><div class="phone-screen"><div class="phone-status"><span class="mono">19:41</span><span aria-hidden="true">▰ ▰</span></div><div class="phone-top"><span aria-hidden="true">‹</span><span id="operation-venue">한빛체육관</span><span class="small">코트 현황</span></div><div class="phone-stats" id="phone-stats"></div><div class="operation-board" id="operation-board" role="group" aria-label="현재 코트 배치"><div class="layout-world" id="operation-world"></div></div><div class="court-selector" id="court-selector" aria-label="운영할 코트 선택"></div><div class="match-detail" id="match-detail"></div><div class="phone-footer"><span id="waiting-count">대기 8명</span><span id="resting-count">휴식 2명</span><span>예약·제안</span></div><div class="home-indicator" aria-hidden="true"></div></div></div>
+        <div class="operation-text"><div class="demo-hint"><span aria-hidden="true">↙</span><span id="demo-hint-text">3번 코트의 ‘완료’를 눌러 보세요.</span></div>
+          <ol class="flow-list"><li class="flow-step active" id="flow-1"><span class="step-badge">1</span><div><h3>끝난 코트에서 완료</h3><p>실제 위치와 같은 코트를 찾습니다.<br>경기 기록을 남기고 선수들을 대기로 돌립니다.</p></div></li><li class="flow-step" id="flow-2"><span class="step-badge">2</span><div><h3>같은 자리에 다음 4명</h3><p>출전 가능한 선수로 다음 그룹을 준비합니다.<br>다른 코트의 위치와 준비된 팀은 유지합니다.</p><span class="tag green">그룹 생성 조작 0회</span></div></li><li class="flow-step" id="flow-3"><span class="step-badge">3</span><div><h3>선수를 확인하고 시작</h3><p>미리 표시된 A/B팀 그대로 진행합니다.<br>코트 선택과 매칭확정을 다시 하지 않습니다.</p></div></li></ol>
+          <div class="event-log" role="status" aria-live="polite"><strong>DEMO LOG</strong><span id="event-message">3번 코트에서 경기가 진행 중입니다.</span></div>
+          <div class="operation-options no-print"><button class="btn" id="demo-reset" type="button">경기 예시 초기화</button><button class="btn" id="demo-shortage" type="button">인원 부족 상황 보기</button></div><p class="demo-footnote">기획용 동작 예시입니다. 선수는 가명이며 실제 모임에 영향을 주지 않습니다.<br>자동 편성 알고리즘 대신 미리 준비한 예시 명단을 사용합니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="sheet" id="rules" aria-labelledby="rules-title">
+      <div class="sheet-head"><div><span class="eyebrow">03 / STATES & PRINCIPLES</span><h2 id="rules-title">빈자리와 예외도, 같은 위치에서 안내</h2><p>자동 편성으로 조작을 줄이면서 운영진이 현장 상황을 조정할 수 있게 합니다.</p></div><span class="section-no" aria-hidden="true">03</span></div>
+      <div class="scenario-grid">
+        <article class="scenario"><span class="tag">인원 대기</span><div class="mini-people" aria-hidden="true"><span>민</span><span>서</span><span>준</span><span class="empty">—</span></div><h3>4명이 안 모였을 때</h3><p>코트의 빈 틀을 유지하고<br>‘출전 가능 3명 · 1명 더 필요’를 표시합니다. 가능한 4명이 모이면 자동으로 채웁니다.</p></article>
+        <article class="scenario"><span class="tag orange">예약 대기</span><div class="state-demo"><span>약속한 그룹 4명</span><span class="tag orange">1명 경기 중</span></div><h3>먼저 약속한 그룹이 있다면</h3><p>예약은 별도 영역에서 기다립니다.<br>전원 준비되면 다음 빈 코트에 먼저 배정하고, 이미 준비된 팀은 유지합니다.</p></article>
+        <article class="scenario"><span class="tag blue">코트 일시 정지</span><div class="layout-mini" aria-hidden="true"><div class="tiny-court"></div><div class="tiny-court inactive"></div><div class="tiny-court"></div></div><h3>이 코트는 잠깐 쉬어갈 때</h3><p>위치는 그대로 두고 자동 편성을 멈춥니다. 경기 중이면 완료 후 멈추고, ‘재개’하면 다시 채웁니다.</p></article>
+      </div>
+      <div class="policy-row"><div class="policy"><h3><span class="callout-number">2</span>휴대폰이 작아도 위치는 그대로</h3><p>가로로 놓인 코트를 임의로 두 줄로 바꾸지 않습니다. 지도에는 번호와 상태를, 아래에는 선택한 코트의 이름과 큰 버튼을 표시합니다.</p></div><div class="policy"><h3><span class="callout-number">3</span>완료 기록과 다음 편성을 구분</h3><p>완료 저장이 실패하면 현재 경기를 유지합니다. 완료 후 편성만 실패하면 기록은 보존하고 해당 코트에 ‘다시 준비’를 표시합니다.</p></div></div>
+      <div class="delivery"><strong>1차 구현 범위</strong><p>장소별 배치 저장 · 코트 드래그 편집 · 미리보기 · 빈 코트 자동 편성 · 코트 지정 시작 · 예약 연결 · 재접속 복원</p></div>
+      <div class="summary-strip"><span class="tag">후속 검토</span><span>벽·통로 그리기 / 코트 크기 개별 조절 / 안전한 완료 취소 / 서버 상시 자동 편성</span></div>
+      <p class="print-only print-caption">세부 동작·권한·동시 조작 규칙은 COURT_BOARD_REDESIGN.md에 정리되어 있습니다. 자동 편성은 1차에 편집권을 가진 기기에서 실행합니다.</p>
+    </section>
+    <footer class="footer"><span>콕타임 · 코트 운영 UI 기획안 · 2026.09.21</span><span>HTML에서 배치 편집과 경기 전환을 직접 체험할 수 있습니다.</span></footer>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script>
+  (() => {
+    'use strict';
+    const $ = id => document.getElementById(id);
+    const clone = value => JSON.parse(JSON.stringify(value));
+    const storageKey = 'cocktime-court-proposal-v1';
+    const venueNames = {hanbit:'한빛체육관', neulbom:'늘봄체육관'};
+    const names = ['민수','지훈','서연','유진','도윤','수빈','지우','태현','준호','하린','서준','예린','현우','소연','은우','나연','건우','지민','수호','다은','우진','채원','시우','유나','도현','예원','하준','서현','성민','은서','정우','지원','민재','수아','지호','가은','승우','예진','윤호','지안'];
+    function makeLayout(count, pattern='grid') {
+      const cols = pattern === 'row' ? count : Math.ceil(count / 2);
+      const width = pattern === 'row' ? Math.max(760, cols * 202 + 44) : 760;
+      const spacing = pattern === 'row' ? 202 : 228;
+      const startX = (width - ((cols - 1) * spacing + 158)) / 2;
+      return {width, height:pattern === 'row' ? 318 : 550, courts:Array.from({length:count}, (_,i)=>({
+        id:`court-${i+1}`, label:i+1, x:startX+(i%cols)*spacing, y:52+Math.floor(i/cols)*252, rotated:false, active:true
+      }))};
+    }
+    const initial = {hanbit:makeLayout(4), neulbom:makeLayout(6)};
+    let saved = {version:1, venues:clone(initial), sessions:clone(initial)};
+    const valid = value => value && Number.isFinite(value.width) && value.width >= 300 && value.width <= 4096
+      && Number.isFinite(value.height) && value.height >= 250 && value.height <= 4096
+      && Array.isArray(value.courts) && value.courts.length >= 1 && value.courts.length <= 8
+      && new Set(value.courts.map(c=>c.label)).size === value.courts.length
+      && new Set(value.courts.map(c=>c.id)).size === value.courts.length
+      && value.courts.every(c=>/^court-[1-8]$/.test(c.id) && Number.isInteger(c.label) && c.label >= 1 && c.label <= 99
+        && Number.isFinite(c.x) && Number.isFinite(c.y) && c.x >= 0 && c.y >= 0 && c.x <= 4096 && c.y <= 4096
+        && typeof c.active === 'boolean' && typeof c.rotated === 'boolean');
+    try {
+      const previous = JSON.parse(localStorage.getItem(storageKey));
+      if(previous?.version===1) for(const key of Object.keys(initial)) {
+        if(valid(previous.venues?.[key])) saved.venues[key] = previous.venues[key];
+        if(valid(previous.sessions?.[key])) saved.sessions[key] = previous.sessions[key];
+      }
+    } catch { /* A private or file browser can disable storage; the demo remains usable. */ }
+    let venue = 'hanbit', layout = clone(saved.sessions.hanbit), selected = 'court-3', operationSelected = 'court-3';
+    let undo = [], matches = {}, waiting = [], unavailable = [], resting = 2, generation = 0;
+    let toastTimer, completionTimer, drag = null;
+    const dimensions = court => court.rotated ? {w:218,h:158} : {w:158,h:218};
+    const selectedCourt = () => layout.courts.find(c=>c.id===selected) || layout.courts[0];
+    function announce(message) {
+      $('toast').textContent=message; $('toast').classList.add('visible');
+      clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),3500);
+    }
+    function log(message) { $('event-message').textContent=message; }
+    function remember() { undo.push(clone(layout)); if(undo.length>20)undo.shift(); }
+    function overlaps(court, courts=layout.courts) {
+      const {w,h}=dimensions(court);
+      return courts.some(other=>{
+        if(other.id===court.id)return false;
+        const o=dimensions(other);
+        return court.x<other.x+o.w+8 && court.x+w+8>other.x && court.y<other.y+o.h+8 && court.y+h+8>other.y;
+      });
+    }
+    function bound(court) {
+      const {w,h}=dimensions(court);
+      court.x=Math.max(12,Math.min(layout.width-w-12,court.x));
+      court.y=Math.max(40,Math.min(layout.height-h-12,court.y));
+    }
+    function position(element,court) {
+      const {w,h}=dimensions(court);
+      Object.assign(element.style,{left:`${court.x}px`,top:`${court.y}px`,width:`${w}px`,height:`${h}px`});
+    }
+    function fitBoard(boardId,worldId) {
+      const board=$(boardId), world=$(worldId);
+      const padding=boardId==='editor-board'?36:16;
+      const scale=Math.min((board.clientWidth-24)/layout.width,(board.clientHeight-padding)/layout.height);
+      world.style.width=`${layout.width}px`;world.style.height=`${layout.height}px`;
+      world.style.left=`calc(50% - ${layout.width*scale/2}px)`;
+      world.style.top=`calc(50% - ${layout.height*scale/2}px)`;
+      world.style.transform=`scale(${scale})`;
+      world.dataset.scale=String(scale);
+      world.querySelectorAll('[data-court-id]').forEach(el=>{
+        const court=layout.courts.find(c=>c.id===el.dataset.courtId),d=dimensions(court),small=Math.min(d.w,d.h)*scale<44;
+        const title=el.querySelector('.court-title'),bottom=el.querySelector('.court-bottom');
+        title.style.fontSize=`${Math.max(boardId==='editor-board'?16:24,12/scale)}px`;
+        bottom.style.fontSize=`${Math.max(12,11/scale)}px`;
+        if(boardId==='editor-board') {
+          title.querySelector('span').textContent=d.w*scale<110?`${court.label}번`:`${court.label}번 코트`;
+          title.querySelector('.grip').hidden=d.w*scale<100;
+          bottom.textContent=court.active?(d.w*scale<100?'사용':'오늘 사용'):'미사용';
+        } else if(matches[court.id]) bottom.textContent=d.w*scale<85?({playing:'진행',loading:'편성',ready:'준비',waiting:'대기',paused:'미사용'}[matches[court.id].status]):statusText[matches[court.id].status];
+        el.tabIndex=small?-1:0;el.style.pointerEvents=small?'none':'';el.setAttribute('aria-hidden',String(small));
+        if(small){title.style.fontSize='24px';bottom.hidden=true;}else bottom.hidden=false;
+      });
+      if(boardId==='editor-board')$('edit-court-picker').hidden=!layout.courts.some(c=>Math.min(dimensions(c).w,dimensions(c).h)*scale<44);
+    }
+    function fit() { fitBoard('editor-board','editor-world');fitBoard('operation-board','operation-world'); }
+    const lines = '<div class="court-lines" aria-hidden="true"><i class="center-line"></i></div>';
+    const places = '<div class="court-places" aria-hidden="true"><span>A</span><span>A</span><span>B</span><span>B</span></div>';
+    function renderEditor() {
+      $('editor-world').replaceChildren();
+      const entrance=document.createElement('span');entrance.className='entrance';entrance.textContent='입구 ↓';$('editor-world').append(entrance);
+      for(const court of layout.courts) {
+        const el=document.createElement('button');el.type='button';el.dataset.courtId=court.id;
+        el.className=`layout-court ${court.id===selected?'is-selected':''} ${court.active?'':'is-inactive'} ${court.rotated?'rotated':''}`;
+        el.setAttribute('aria-label',`${court.label}번 코트, ${court.active?'오늘 사용':'미사용'}. 드래그 또는 방향키로 이동`);
+        el.setAttribute('aria-pressed',String(court.id===selected));
+        el.innerHTML=`<span class="court-title"><span>${court.label}번 코트</span><span class="grip" aria-hidden="true">⠿</span></span>${lines}${places}<span class="court-bottom">${court.active?'오늘 사용':'미사용'}</span>`;
+        position(el,court);$('editor-world').append(el);
+        el.addEventListener('pointerdown',event=>beginDrag(event,court,el));
+        el.addEventListener('pointermove',event=>moveDrag(event,el));
+        el.addEventListener('pointerup',event=>endDrag(event,el,false));
+        el.addEventListener('pointercancel',event=>endDrag(event,el,true));
+        el.addEventListener('click',()=>{if(selected!==court.id){selected=court.id;operationSelected=court.id;renderAll();focusCourt(court.id);}});
+        el.addEventListener('keydown',event=>{
+          const dir={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down'}[event.key];
+          if(dir){event.preventDefault();selected=court.id;operationSelected=court.id;nudge(dir);focusCourt(court.id);}
+        });
+      }
+      $('layout-summary').textContent=`등록 ${layout.courts.length}면 · 오늘 사용 ${layout.courts.filter(c=>c.active).length}면`;
+      $('undo-layout').disabled=!undo.length;fitBoard('editor-board','editor-world');
+    }
+    function focusCourt(id){document.querySelector(`#editor-world [data-court-id="${id}"]`)?.focus({preventScroll:true});}
+    function renderInspector() {
+      const c=selectedCourt();$('selected-court-label').textContent=`${c.label}번 코트`;$('court-active').checked=c.active;
+      $('court-number').value=String(c.label);
+      $('edit-court-picker').replaceChildren(...layout.courts.map(court=>{const option=document.createElement('option');option.value=court.id;option.textContent=`${court.label}번 코트`;return option;}));$('edit-court-picker').value=selected;
+    }
+    function beginDrag(event,court,el) {
+      if(event.button!==0)return;
+      selected=court.id;operationSelected=court.id;renderInspector();renderOperation();
+      document.querySelectorAll('.layout-court').forEach(e=>{e.classList.toggle('is-selected',e===el);e.setAttribute('aria-pressed',String(e===el));});
+      drag={pointerId:event.pointerId,id:court.id,clientX:event.clientX,clientY:event.clientY,x:court.x,y:court.y,before:clone(layout),moved:false};
+      el.setPointerCapture(event.pointerId);el.classList.add('dragging');
+    }
+    function moveDrag(event,el) {
+      if(!drag||drag.pointerId!==event.pointerId)return;
+      const dx=event.clientX-drag.clientX,dy=event.clientY-drag.clientY;
+      if(!drag.moved&&Math.hypot(dx,dy)<5)return;
+      drag.moved=true;const c=selectedCourt(),scale=Number($('editor-world').dataset.scale)||1;
+      c.x=Math.round((drag.x+dx/scale)/8)*8;c.y=Math.round((drag.y+dy/scale)/8)*8;bound(c);position(el,c);
+      el.classList.toggle('invalid',overlaps(c));
+    }
+    function endDrag(event,el,cancelled) {
+      if(!drag||drag.pointerId!==event.pointerId)return;
+      const original=drag;drag=null;
+      if(el.hasPointerCapture(event.pointerId))el.releasePointerCapture(event.pointerId);
+      if(cancelled||overlaps(selectedCourt())){layout=original.before;if(!cancelled&&original.moved)announce('코트가 겹쳐 이전 위치로 돌아갔어요.');}
+      else if(original.moved){undo.push(original.before);if(undo.length>20)undo.shift();}
+      renderAll();focusCourt(original.id);
+    }
+    function nudge(direction) {
+      const c=selectedCourt(),old=clone(c),[dx,dy]={left:[-16,0],right:[16,0],up:[0,-16],down:[0,16]}[direction];
+      remember();c.x+=dx;c.y+=dy;bound(c);
+      if(overlaps(c)){Object.assign(c,old);undo.pop();announce('옆 코트와 겹치는 위치예요.');}
+      renderAll();
+    }
+    function resetOperation() {
+      generation++;clearTimeout(completionTimer);matches={};let used=0;
+      for(const c of layout.courts) {
+        matches[c.id]={status:c.active?'playing':'paused',players:c.active?names.slice(used,used+4):[],round:0};
+        if(c.active)used+=4;
+      }
+      waiting=names.slice(used,used+8);unavailable=names.slice(used+8);resting=2;
+      if(!layout.courts.some(c=>c.id===operationSelected))operationSelected=layout.courts[0].id;
+      log(`${layout.courts.find(c=>c.id===operationSelected).label}번 코트에서 경기가 진행 중입니다.`);
+      renderOperation();
+    }
+    const statusText = {playing:'경기 중',loading:'편성 중',ready:'시작 대기',waiting:'인원 대기',paused:'미사용'};
+    function renderOperation() {
+      $('operation-venue').textContent=venueNames[venue];
+      const playing=Object.values(matches).filter(m=>m.status==='playing').length;
+      const ready=Object.values(matches).filter(m=>m.status==='ready').length;
+      $('phone-stats').innerHTML=`<span class="tag">경기 중 ${playing}</span><span class="tag green">시작 대기 ${ready}</span><span class="tag">대기 ${waiting.length}</span>`;
+      $('operation-world').replaceChildren();$('court-selector').replaceChildren();
+      const entrance=document.createElement('span');entrance.className='entrance';entrance.textContent='입구 ↓';$('operation-world').append(entrance);
+      for(const c of layout.courts) {
+        const m=matches[c.id]||{status:'paused',players:[]};
+        const el=document.createElement('button');el.type='button';el.dataset.courtId=c.id;el.className=`operation-court ${m.status} ${c.rotated?'rotated':''} ${c.id===operationSelected?'is-selected':''}`;
+        el.setAttribute('aria-label',`${c.label}번 코트 ${statusText[m.status]}`);el.setAttribute('aria-pressed',String(c.id===operationSelected));
+        el.innerHTML=`<span class="court-title">${c.label}번</span>${lines}${places}<span class="court-bottom">${statusText[m.status]}</span>`;
+        position(el,c);el.addEventListener('click',()=>{operationSelected=c.id;renderOperation();});$('operation-world').append(el);
+        const choice=document.createElement('button');choice.type='button';choice.textContent=`${c.label}번`;choice.setAttribute('aria-label',`${c.label}번 코트 선택`);choice.setAttribute('aria-pressed',String(c.id===operationSelected));
+        choice.addEventListener('click',()=>{operationSelected=c.id;renderOperation();document.querySelector(`#court-selector button[aria-pressed="true"]`)?.focus({preventScroll:true});});$('court-selector').append(choice);
+      }
+      const court=layout.courts.find(c=>c.id===operationSelected)||layout.courts[0],match=matches[court.id];
+      const tone=match.status==='playing'?'orange':match.status==='ready'?'green':'';
+      let content='';
+      if(match.players.length===4)content=`<div class="teams"><div class="team-side"><span class="avatar">A</span><span>${match.players[0]}<br>${match.players[1]}</span></div><span class="versus">VS</span><div class="team-side"><span class="avatar">B</span><span>${match.players[2]}<br>${match.players[3]}</span></div></div>`;
+      else content=`<p class="inline-message">${match.status==='loading'?'다음 그룹을 준비하고 있어요.':match.status==='paused'?'오늘 사용하지 않는 코트예요.':`출전 가능 ${waiting.length}명 · ${Math.max(0,4-waiting.length)}명 더 필요`}</p>`;
+      const actionLabel={playing:'완료',ready:'시작',loading:'편성 중…',waiting:'1명 복귀 예시',paused:'배치 설정에서 사용 선택'}[match.status];
+      $('match-detail').innerHTML=`<div class="detail-top"><strong>${court.label}번 코트</strong><span class="tag ${tone}">${statusText[match.status]}</span></div>${content}<div class="detail-action"><button class="btn" id="change-player" type="button" ${match.players.length!==4||!waiting.length?'disabled':''}>선수 변경</button><button class="btn primary main-action" id="match-action" type="button" ${['loading','paused'].includes(match.status)?'disabled':''}>${actionLabel}</button></div>`;
+      $('match-action').addEventListener('click',advanceMatch);$('change-player').addEventListener('click',changePlayer);
+      $('waiting-count').textContent=`대기 ${waiting.length}명`;$('resting-count').textContent=`휴식 ${resting}명`;
+      const step=match.status==='ready'||match.status==='loading'?2:match.status==='playing'&&match.round>0?3:1;
+      [1,2,3].forEach(i=>$(`flow-${i}`).classList.toggle('active',step===i));
+      $('demo-hint-text').textContent=match.status==='playing'?`${court.label}번 코트의 ‘완료’를 눌러 보세요.`:match.status==='ready'?'다음 그룹이 준비됐어요. ‘시작’을 눌러 보세요.':match.status==='loading'?'완료한 위치에서 다음 그룹을 준비합니다.':match.status==='waiting'?'빈 틀을 유지합니다. ‘1명 복귀 예시’를 눌러 보세요.':'위 배치 설정에서 오늘 사용할 코트를 선택하세요.';
+      fitBoard('operation-board','operation-world');
+      // Tiny map cells are visual only; the 44px numbered controls remain accessible.
+      const scale=Number($('operation-world').dataset.scale);
+      document.querySelectorAll('.operation-court').forEach(el=>{const c=layout.courts.find(c=>c.id===el.dataset.courtId),d=dimensions(c);const small=Math.min(d.w,d.h)*scale<44;el.tabIndex=small?-1:0;el.style.pointerEvents=small?'none':'';el.setAttribute('aria-hidden',String(small));});
+    }
+    function advanceMatch() {
+      const id=operationSelected,c=layout.courts.find(c=>c.id===id),m=matches[id];
+      if(m.status==='playing') {
+        const ended=[...m.players];m.status='loading';m.players=[];waiting.push(...ended);const token=generation;
+        log(`${c.label}번 경기 완료. 같은 코트에 다음 그룹을 준비합니다.`);renderOperation();
+        completionTimer=setTimeout(()=>{
+          if(generation!==token||matches[id]!==m)return;
+          if(waiting.length>=4){m.players=waiting.splice(0,4);m.status='ready';log(`${c.label}번 다음 그룹 준비 완료 · ${m.players.join(' · ')}`);}
+          else{m.status='waiting';log(`${c.label}번 코트는 출전 가능한 인원을 기다립니다.`);}
+          renderOperation();
+        },650);
+      } else if(m.status==='ready') {
+        m.status='playing';m.round++;log(`${c.label}번 새 경기 시작. 표시된 A/B팀 그대로 진행합니다.`);renderOperation();announce(`${c.label}번 경기를 시작했어요.`);
+      } else if(m.status==='waiting') {
+        const used=new Set([...waiting,...Object.values(matches).flatMap(item=>item.players)]);
+        const newcomer=unavailable.find(name=>!used.has(name))||names.find(name=>!used.has(name));
+        if(newcomer){waiting.push(newcomer);unavailable=unavailable.filter(n=>n!==newcomer);resting=Math.max(0,resting-1);}
+        if(waiting.length>=4){m.players=waiting.splice(0,4);m.status='ready';log(`한 명이 복귀해 ${c.label}번 코트의 그룹이 자동으로 준비됐어요.`);}renderOperation();
+      }
+    }
+    function changePlayer() {
+      const m=matches[operationSelected];if(m.players.length!==4||!waiting.length)return;
+      const old=m.players[3],replacement=waiting.shift();m.players[3]=replacement;waiting.push(old);
+      log(`선수 변경 예시 · ${old} → ${replacement}. 다른 코트는 유지합니다.`);renderOperation();
+    }
+    function renderAll(){renderEditor();renderInspector();renderOperation();}
+    $('venue').addEventListener('change',event=>{
+      venue=event.target.value;layout=clone(saved.sessions[venue]||saved.venues[venue]);undo=[];selected=layout.courts[Math.min(2,layout.courts.length-1)].id;operationSelected=selected;
+      $('rename-form').hidden=true;$('save-note').textContent='예시 배치는 이 브라우저에 저장됩니다.';resetOperation();renderAll();announce(`${venueNames[venue]}의 배치를 불러왔어요.`);
+    });
+    $('edit-court-picker').addEventListener('change',event=>{selected=event.target.value;operationSelected=selected;renderAll();});
+    for(const [id,pattern] of [['preset-grid','grid'],['preset-row','row']])$(id).addEventListener('click',()=>{
+      remember();const old=layout.courts;layout=makeLayout(old.length,pattern);layout.courts.forEach((c,i)=>Object.assign(c,{id:old[i].id,label:old[i].label,active:old[i].active}));renderAll();announce(pattern==='row'?'한 줄 배치로 맞췄어요.':'두 줄 배치로 맞췄어요.');
+    });
+    $('undo-layout').addEventListener('click',()=>{if(!undo.length)return;const previous=undo.pop();const activeChanged=previous.courts.some(c=>c.active!==layout.courts.find(n=>n.id===c.id)?.active);layout=previous;if(activeChanged)resetOperation();renderAll();announce('이전 배치로 되돌렸어요.');});
+    document.querySelectorAll('[data-nudge]').forEach(el=>el.addEventListener('click',()=>nudge(el.dataset.nudge)));
+    $('rotate-court').addEventListener('click',()=>{const c=selectedCourt(),before=clone(c),d=dimensions(c);remember();c.rotated=!c.rotated;const after=dimensions(c);c.x+=(d.w-after.w)/2;c.y+=(d.h-after.h)/2;bound(c);if(overlaps(c)){Object.assign(c,before);undo.pop();announce('회전할 공간이 부족해요. 코트를 옮겨 주세요.');}renderAll();});
+    $('court-active').addEventListener('change',event=>{remember();selectedCourt().active=event.target.checked;resetOperation();renderAll();announce(event.target.checked?'오늘 사용할 코트에 포함했어요.':'미사용 코트는 윤곽만 유지해요.');});
+    $('rename-court').addEventListener('click',()=>{$('rename-form').hidden=!$('rename-form').hidden;if(!$('rename-form').hidden){$('court-number').value=String(selectedCourt().label);$('court-number').focus();}});
+    $('rename-form').addEventListener('submit',event=>{event.preventDefault();const number=Number($('court-number').value);if(!Number.isInteger(number)||number<1||number>99){announce('1~99 사이의 코트 번호를 입력해 주세요.');return;}if(layout.courts.some(c=>c.id!==selected&&c.label===number)){announce('이미 사용 중인 코트 번호예요.');return;}remember();selectedCourt().label=number;$('rename-form').hidden=true;renderAll();announce(`${number}번 코트로 변경했어요.`);});
+    $('restore-layout').addEventListener('click',()=>{remember();layout=clone(saved.venues[venue]);resetOperation();renderAll();announce('저장된 장소 기본 배치를 불러왔어요.');});
+    $('save-layout').addEventListener('click',()=>{
+      const scope=document.querySelector('input[name="save-scope"]:checked').value;
+      const next=clone(saved);next.sessions[venue]=clone(layout);if(scope==='venue')next.venues[venue]=clone(layout);
+      try{localStorage.setItem(storageKey,JSON.stringify(next));saved=next;$('save-note').textContent=scope==='venue'?'장소 기본과 이번 모임 예시를 저장했어요.':'이번 모임 예시를 저장했어요. 장소 기본은 유지돼요.';announce('배치를 저장했어요.');}
+      catch{$('save-note').textContent='이 브라우저에서는 저장을 사용할 수 없어요. 현재 미리보기는 유지됩니다.';announce('저장을 사용할 수 없는 브라우저예요.');}
+    });
+    $('demo-reset').addEventListener('click',()=>{resetOperation();announce('경기 예시를 처음으로 돌렸어요.');});
+    $('demo-shortage').addEventListener('click',()=>{
+      resetOperation();const c=layout.courts.find(c=>c.id===operationSelected),m=matches[c.id];
+      if(!c.active){announce('오늘 사용하는 코트를 먼저 선택해 주세요.');return;}
+      unavailable.push(...m.players,...waiting.slice(3));m.players=[];m.status='waiting';waiting=waiting.slice(0,3);resting=unavailable.length;
+      log('인원 부족 예시 · 출전 가능 3명. 4명이 모일 때까지 빈 틀을 유지합니다.');renderOperation();
+    });
+    $('print-button').addEventListener('click',()=>window.print());
+    const observer=new ResizeObserver(()=>fit());observer.observe($('editor-board'));observer.observe($('operation-board'));
+    window.addEventListener('beforeprint',fit);window.addEventListener('afterprint',fit);
+    resetOperation();renderAll();
+    window.courtProposal={fit,getState:()=>clone({venue,layout,matches,waiting,selected,operationSelected})};
+  })();
+  </script>
+</body>
+</html>

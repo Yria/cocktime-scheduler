@@ -1,5 +1,6 @@
 import { supabase } from "./client";
 import type { GeneratedTeam } from "../../types";
+import type { BoardDraftsPayload } from "../../types/board";
 
 export interface MatchProposal {
 	id: string;
@@ -8,10 +9,18 @@ export interface MatchProposal {
 	creator_name: string;
 	player_ids: string[];
 	player_names: string[];
-	status: "pending" | "reviewed" | "withdrawn" | "rejected" | "started";
+	status: "pending" | "reviewed" | "withdrawn" | "rejected" | "started" | "applied";
 	created_at: string;
 	updated_at: string;
 	match_id?: string | null;
+}
+
+export async function applyMatchProposalToGroup(proposal: MatchProposal, teamId: string,
+	version: number, clientId: string, name: string): Promise<{ proposal: MatchProposal; drafts: BoardDraftsPayload; version: number }> {
+	const { data, error } = await supabase.rpc("apply_match_proposal_to_group", { p_id: proposal.id,
+		p_updated_at: proposal.updated_at, p_team_id: teamId, p_base_version: version, p_client_id: clientId, p_name: name });
+	if (error) throw error;
+	return data;
 }
 
 export async function fetchMatchProposals(sessionId: number): Promise<MatchProposal[]> {

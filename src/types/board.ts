@@ -13,10 +13,12 @@ export type MagnetPosition = {
 
 /**
  * 예비팀(보드 로컬). "경기중/대기" 상태는 보드가 소유하지 않고 sessionStore.courts에서 derive한다.
- * 따라서 DraftTeam에는 playing/queued/courtId/matchId가 없다.
+ * courtId가 있으면 해당 코트에 고정된 그룹이며, 경기 상태와 경기 ID는 sessionStore에서 파생한다.
  */
 export interface DraftTeam {
 	id: string;
+	/** 코트에 고정된 그룹. 명단이 비거나 경기를 시작해도 유지한다. */
+	courtId?: number;
 	anchorMemberIds: string[]; // 이 팀을 원본 소속으로 가진 멤버 (magnet.teamId === this.id)
 	anchor: StagePoint;
 	createdAt: number;
@@ -46,14 +48,19 @@ export interface Reservation {
 	createdAt: number;
 }
 
-/**
- * 보드 drafts/reservations의 "멤버십"만 직렬화한 형태(위치 제외).
- * DB(sessions.board_drafts) 저장 + Realtime 브로드캐스트로 클라이언트 간 공유한다.
- * 위치(anchor x/y)는 각 클라이언트 로컬이므로 포함하지 않는다.
- */
+/** 편집자가 확정한 보드 논리 좌표. 배율은 화면마다 다르므로 이 저장에 포함하지 않는다. */
+export interface BoardLayoutPayload {
+	version: 1;
+	teams: Record<string, StagePoint>;
+	courts: Record<string, StagePoint>;
+	magnets: Record<string, StagePoint>;
+}
+
+/** 팀 명단·예약·배치를 sessions.board_drafts에 함께 저장한다. 구버전에는 layout이 없다. */
 export interface BoardDraftsPayload {
-	teams: { id: string; memberIds: string[]; createdMs: number; slots?: Record<string, number>; createdBy?: string; confirmedMs?: number }[];
+	teams: { id: string; courtId?: number; memberIds: string[]; createdMs: number; slots?: Record<string, number>; createdBy?: string; confirmedMs?: number }[];
 	reservations: { id: string; playerId: string; teamId: string; createdMs: number }[];
+	layout?: BoardLayoutPayload;
 }
 
 /** 선수 상태(파생). playing=코트 배치 / anchored=예비팀 원본 소속 / free=자유. */

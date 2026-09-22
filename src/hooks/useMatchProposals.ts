@@ -6,18 +6,17 @@ import { useSessionStore } from "../store/sessionStore";
 import { useMatchProposalStore } from "../store/matchProposalStore";
 import { toast } from "../store/toastStore";
 import { supabase } from "../lib/supabase/client";
-import { editMatchProposals, fetchMatchProposals, sendMatchProposal, startMatchProposal, updateMatchProposal, type MatchProposal } from "../lib/supabase/matchProposals";
+import { editMatchProposals, fetchMatchProposals, sendMatchProposal, applyMatchProposalToGroup, updateMatchProposal, type MatchProposal } from "../lib/supabase/matchProposals";
 import { dropProposalMember, isActiveMatchProposal, visibleMatchProposals, placeProposalAnchors, removeProposalMember, type ProposalComposer, type ProposalComposerSnapshot } from "../lib/board/matchProposals";
 import { clampAnchor, isInsideTeamBounds, slotIndexAt } from "../lib/board/geometry";
 import { cockPendingIds, playingIdsFromCourts } from "../lib/board/membership";
 import { arrangeBoard } from "../lib/board/arrange";
 import { buildRecommendData } from "../lib/board/recommendPool";
-import { autoFillTeammates, pairPlayers } from "../lib/teamSelection";
-import type { SessionPlayer } from "../types";
+import { autoFillTeammates } from "../lib/teamSelection";
 import { randomId } from "../lib/randomId";
 import { settleFreeMagnets } from "../lib/board/settle";
 import type { DraftTeam } from "../types/board";
-import { acquireAdminCoverage, releaseAdminCoverage } from "../lib/board/adminCoverageGate";
+import { flushBoardDrafts, syncState } from "../store/board/draftsSync";
 
 const EMPTY: ProposalComposerSnapshot = { enabled: false, groups: [], sendingIds: new Set(),
 	proposals: [], anchors: new Map(), resolvingIds: new Set(), viewerId: null, isAdmin: false };
@@ -104,6 +103,7 @@ function errorMessage(error: unknown, fallback: string) {
 	if (message.includes("player left session")) return "세션을 나간 회원이 있어요. 제안할 회원을 다시 골라주세요.";
 	if (message.includes("not participant")) return "이 세션에 참여한 회원만 제안할 수 있어요.";
 	if (message.includes("not editor")) return "현재 보드 편집 권한이 필요해요.";
+	if (message.includes("board changed")) return "코트 명단이 바뀌었어요. 최신 상태에서 다시 넣어 주세요.";
 	if (message.includes("proposal changed")) return "제안이 변경됐어요. 최신 명단을 확인해 주세요.";
 	if (message.includes("proposal already closed")) return "이미 처리된 제안이에요.";
 	if (message.includes("players already grouped")) return "다른 팀에 포함된 회원이 있어요.";
@@ -186,6 +186,12 @@ export const proposalComposer: ProposalComposer = {
 		const board = useBoardStore.getState();
 		const state = useMatchProposalStore.getState();
 		if (!state.scope || state.scope !== matchProposalScope()) return;
+		const proposal = state.proposals.find(item => item.id === groupId && isActiveMatchProposal(item));
+		if (proposal && state.resolvingIds.has(groupId)) return;
+		if (proposal && canEditSubmitted()) {
+			const target = [...board.drafts.values()].reverse().find(team => team.courtId != null && isInsideTeamBounds(point, team.anchor));
+			if (target) { void applySubmittedProposal(proposal.id, target.id); return; }
+		}
 		const anchor = clampAnchor(point, board.stageW, board.stageH);
 		if (state.proposals.some((proposal) => proposal.id === groupId && isActiveMatchProposal(proposal)
 			&& (state.isAdmin || proposal.created_by === state.viewerId))) {
@@ -211,7 +217,7 @@ export const proposalComposer: ProposalComposer = {
 		if (!state.scope || state.scope !== matchProposalScope()) return;
 		const proposal = state.proposals.find((item) => item.id === groupId);
 		if (proposal) {
-			if (canEditSubmitted()) { if (proposal.player_ids.length < 4) autoFillSubmitted(proposal); else void startSubmitted(proposal); }
+			if (canEditSubmitted()) { if (proposal.player_ids.length < 4) autoFillSubmitted(proposal); else useMatchProposalStore.setState({ targetProposalId: proposal.id }); }
 			else if (proposal.created_by === state.viewerId) void resolveProposal(groupId, "withdrawn");
 		} else void submitGroup(groupId);
 	},
@@ -258,39 +264,44 @@ function autoFillSubmitted(proposal: MatchProposal) {
 	void editSubmitted([{ proposal, ids: [...proposal.player_ids, ...picks.map((player) => player.id)] }]);
 }
 
-async function startSubmitted(proposal: MatchProposal) {
-	if (!canEditSubmitted()) return;
+export async function applySubmittedProposal(proposalId: string, teamId: string) {
+	if (!canEditSubmitted() || syncState.exclusiveDraftEdit) return;
 	const state = useMatchProposalStore.getState(), session = useSessionStore.getState();
-	if (!session._clientId || state.resolvingIds.has(proposal.id)) return;
-	const empty = session.courts.find((court) => !court.match);
-	if (!empty) { toast("빈 코트가 없어요", { variant: "error" }); return; }
-	const four = proposal.player_ids.map((id) => session.sessionPlayers.get(id)).filter((player): player is SessionPlayer => !!player);
-	if (four.length !== 4) return;
-	const coverageKey = `proposal:${proposal.id}`;
-	if (!acquireAdminCoverage(coverageKey, proposal.player_ids)) return;
-	const team = pairPlayers(four as [SessionPlayer, SessionPlayer, SessionPlayer, SessionPlayer], useAppStore.getState().sessionMeta?.singleWomanIds ?? [], "회원 매칭 제안");
-	const scope = state.scope, anchor = state.anchors.get(proposal.id);
-	useMatchProposalStore.setState({ resolvingIds: new Set([...state.resolvingIds, proposal.id]) });
+	const board = useBoardStore.getState();
+	const proposal = state.proposals.find(item => item.id === proposalId && isActiveMatchProposal(item));
+	const target = board.drafts.get(teamId);
+	if (!proposal || !session._clientId || state.resolvingIds.has(proposalId) || !target || target.courtId == null) return;
+	if (session.courts.some(court => court.id === target.courtId && court.match) || board.assigningTeamIds.has(teamId)) {
+		toast("경기 시작 전인 코트 그룹에만 제안을 넣을 수 있어요", { variant: "error" }); return;
+	}
+	const scope = state.scope;
+	const released = [...target.anchorMemberIds];
+	syncState.exclusiveDraftEdit = true;
+	useMatchProposalStore.setState({ resolvingIds: new Set([...state.resolvingIds, proposalId]), targetProposalId: null });
+	useBoardStore.setState(current => ({ assigningTeamIds: new Set([...current.assigningTeamIds, teamId]) }));
 	try {
-		const row = await startMatchProposal(proposal, randomId(), empty.id, team, session._clientId, session._myName ?? "운영진");
+		await flushBoardDrafts();
+		if (scope !== matchProposalScope() || !useSessionStore.getState().isEditor) return;
+		const result = await applyMatchProposalToGroup(proposal, teamId, useSessionStore.getState().boardDraftsVersion,
+			session._clientId, session._myName ?? "운영진");
 		if (scope !== matchProposalScope()) return;
-		applyProposals([row]);
-		await useSessionStore.getState().resyncFromServer();
-		if (scope !== matchProposalScope()) return;
-		const court = useSessionStore.getState().courts.find((item) => item.match?.id === row.match_id);
-		if (court && anchor) useBoardStore.getState().setCourtAnchor(court.id, anchor.x, anchor.y);
-		toast("경기를 시작했어요", { variant: "success" });
+		applyProposals([result.proposal]);
+		useSessionStore.getState().applyDraftsIfNewer(result.drafts, result.version);
+		useBoardStore.getState().applyRemoteDrafts(result.drafts);
+		useBoardStore.getState().scatterMagnets(released);
+		toast(`${target.courtId}번 코트 명단을 편성제안으로 교체했어요`, { variant: "success" });
 	} catch (error) {
 		if (scope === matchProposalScope()) {
-			toast(errorMessage(error, "경기를 시작하지 못했어요. 다시 시도해 주세요."), { variant: "error" });
-			void useSessionStore.getState().resyncFromServer();
+			toast(errorMessage(error, "제안을 넣지 못했어요. 최신 명단을 확인해 주세요."), { variant: "error" });
+			await useSessionStore.getState().resyncFromServer({ force: true });
 			window.dispatchEvent(new Event("online"));
 		}
 	} finally {
-		releaseAdminCoverage(coverageKey);
-		if (scope === matchProposalScope()) useMatchProposalStore.setState((current) => {
-			const resolvingIds = new Set(current.resolvingIds); resolvingIds.delete(proposal.id); return { resolvingIds };
-		});
+		syncState.exclusiveDraftEdit = false;
+		if (scope === matchProposalScope()) {
+			useMatchProposalStore.setState(current => ({ resolvingIds: new Set([...current.resolvingIds].filter(id => id !== proposalId)) }));
+			useBoardStore.setState(current => ({ assigningTeamIds: new Set([...current.assigningTeamIds].filter(id => id !== teamId)) }));
+		}
 	}
 }
 
@@ -387,12 +398,14 @@ export function useMatchProposals() {
 	}, [bounds, drafts, courts, playerIds, proposals]);
 	useEffect(() => {
 		const scope = matchProposalScope();
-		useMatchProposalStore.getState().reset(scope ?? undefined, participating && !useSessionStore.getState().isEditor && !!scope, userId, isAdmin);
+		// 운영만 하는 비참가 운영진도 보기 모드에서 제안할 수 있다. 일반 회원은 참가자여야 한다.
+		const canPropose = isAdmin || participating;
+		useMatchProposalStore.getState().reset(scope ?? undefined, canPropose && !useSessionStore.getState().isEditor && !!scope, userId, isAdmin);
 		if (!sessionId || !scope) return;
 		// Switching the editing lock changes drag behavior without refetching submitted proposals.
 		const unsubscribeEditing = useSessionStore.subscribe((session, previous) => {
 			if (session.isEditor === previous.isEditor) return;
-			useMatchProposalStore.setState((state) => ({ enabled: participating && !session.isEditor,
+			useMatchProposalStore.setState((state) => ({ enabled: canPropose && !session.isEditor,
 				groups: session.isEditor ? [] : state.groups }));
 		});
 		let disposed = false;

@@ -4,6 +4,8 @@ import { dbBoardSaveDrafts } from "../../lib/supabase";
 import { useSessionStore } from "../sessionStore";
 import { useAppStore } from "../appStore";
 import { toast } from "../toastStore";
+import { serializeBoardLayout } from "../../lib/board/savedLayout";
+import type { BoardState } from "./types";
 
 /** draft 팀 createdBy 스탬프용 — 현재 편집자 표시 이름(sessionStore._myName). 미설정 시 폴백. */
 export function currentEditorName(): string {
@@ -16,16 +18,19 @@ export function currentEditorName(): string {
 export const syncState = {
 	/** 원격 멤버십 적용 중에는 자체 브로드캐스트/저장을 막기 위한 플래그. */
 	applyingRemoteDrafts: false,
-	/** 마지막으로 동기화한 멤버십 JSON — 위치만 바뀐 변경(정렬 등)은 재브로드캐스트하지 않기 위함. */
+	/** 마지막으로 동기화한 명단·배치 JSON. 동일 상태의 재저장을 막는다. */
 	lastSyncedDraftsJson: "",
+	exclusiveDraftEdit: false,
 };
 
-/** drafts/reservations 멤버십(+createdBy 생성자·confirmedMs 매칭확정)만 직렬화(위치 제외). */
+/** 명단·예약과 편집자가 확정한 배치를 동일한 버전으로 저장한다. */
 export function serializeBoardDrafts(s: {
 	drafts: Map<string, DraftTeam>;
 	reservations: Map<string, Reservation>;
-}): BoardDraftsPayload {
+} & Pick<BoardState, "magnets" | "courtAnchors" | "manualLayout">): BoardDraftsPayload {
+	const layout = serializeBoardLayout(s);
 	return {
+		...(layout ? { layout } : {}),
 		teams: [...s.drafts.values()].map((t) => {
 			const memberIds = new Set(teamMembers(t.id, s.drafts, s.reservations).map((m) => m.playerId));
 			// 슬롯은 현재 멤버(anchor+ghost) 것만 동기화 — 취소된 예약 등 스테일 키 제거.
@@ -36,6 +41,7 @@ export function serializeBoardDrafts(s: {
 			}
 			return {
 				id: t.id,
+				...(t.courtId != null ? { courtId: t.courtId } : {}),
 				memberIds: [...t.anchorMemberIds],
 				createdMs: t.createdAt,
 				...(slots ? { slots } : {}),
@@ -58,52 +64,66 @@ export function serializeBoardDrafts(s: {
  * 이래야 편집자가 나가 락이 free가 돼도 관전자가 드래그만으로 편집자가 되지 않는다.
  */
 export function claimEdit(): boolean {
-	return useSessionStore.getState().isEditor;
+	return useSessionStore.getState().isEditor && !syncState.exclusiveDraftEdit;
 }
 
-// board_drafts 저장 직렬화 — CAS(version) 자기충돌 방지. 진행 중이면 최신 payload만 큐잉(trailing).
-let draftsSaveInFlight = false;
-let pendingDraftsPayload: BoardDraftsPayload | null = null;
+// 요청 시점의 세션/편집자를 보관한다. 화면 이탈로 _clientId가 지워져도 마지막 드롭을 저장하며,
+// 다른 세션으로 이동한 뒤 도착한 응답은 새 세션의 명단이나 버전을 건드리지 않는다.
+type DraftSave = { sessionId: number; clientId: string; name: string; payload: BoardDraftsPayload; base: number };
+const pendingSaves: DraftSave[] = [];
+let inFlight: DraftSave | null = null;
+let savePromise: Promise<void> | null = null;
+const sameScope = (a: DraftSave, b: DraftSave) => a.sessionId === b.sessionId && a.clientId === b.clientId;
+export function hasPendingDraftSave() {
+	const sessionId = useAppStore.getState().sessionMeta?.sessionId;
+	return inFlight?.sessionId === sessionId || pendingSaves.some(request => request.sessionId === sessionId);
+}
 
-/**
- * 로컬 멤버십 변경을 board_save_drafts(낙관적 버전 CAS + self-claim)로 저장하고 broadcast.
- * - 성공: 새 version으로 sessionStore 갱신(연속 편집 base) + broadcast로 즉시성 제공.
- * - 충돌(null: version 불일치/락 상실): 서버 최신으로 resync(내 변경 폐기). 단일 편집자에선 드묾.
- * 원격 적용 중에는 호출 자체가 일어나지 않음(subscribe에서 applyingRemoteDrafts 가드).
- */
+/** 제안 승인 RPC는 앞서 수정한 명단의 저장이 끝난 버전에서만 실행한다. */
+export async function flushBoardDrafts(): Promise<void> {
+	while (savePromise) await savePromise;
+}
+
+async function drainSaves() {
+	while (pendingSaves.length) {
+		const request = pendingSaves.shift()!;
+		inFlight = request;
+		const version = await dbBoardSaveDrafts(request.sessionId, request.clientId, request.name, request.payload, request.base).catch(() => null);
+		const session = useSessionStore.getState();
+		const stillHere = useAppStore.getState().sessionMeta?.sessionId === request.sessionId
+			&& (session._clientId === request.clientId || session._clientId == null);
+		if (version == null) {
+			for (let i = pendingSaves.length - 1; i >= 0; i--) if (sameScope(pendingSaves[i], request)) pendingSaves.splice(i, 1);
+			if (stillHere) {
+				await session.resyncFromServer({ force: true });
+				toast("보드 변경을 저장하지 못해 서버의 최신 상태로 동기화했어요", { variant: "error" });
+			}
+		} else {
+			for (const pending of pendingSaves) if (sameScope(pending, request)) pending.base = version;
+			if (stillHere) session.applyDraftsIfNewer(request.payload, version);
+		}
+		inFlight = null;
+	}
+}
+
+function startSaving() {
+	savePromise = drainSaves().finally(() => {
+		inFlight = null;
+		savePromise = null;
+		if (pendingSaves.length) startSaving();
+	});
+}
+
+/** 명단·배치를 기존 board_save_drafts CAS로 저장. 연속 드롭은 진행 중인 요청 뒤에 최신 상태만 큐잉한다. */
 export function pushDraftsToRemote(payload: BoardDraftsPayload) {
 	const ss = useSessionStore.getState();
 	if (!ss.isEditor) return; // 보기 전용은 보드 드래프트를 공유하지 않음
 	const sessionId = useAppStore.getState().sessionMeta?.sessionId;
 	const clientId = ss._clientId;
 	if (!sessionId || !clientId) return;
-	if (draftsSaveInFlight) {
-		pendingDraftsPayload = payload; // 진행 중 — 최신만 보관(이전 base가 stale해 자기충돌하는 것 방지)
-		return;
-	}
-	draftsSaveInFlight = true;
-	const name = ss._myName ?? "기기";
-	const base = ss.boardDraftsVersion;
-	void dbBoardSaveDrafts(sessionId, clientId, name, payload, base).then((newVersion) => {
-		draftsSaveInFlight = false;
-		const sess = useSessionStore.getState();
-		if (newVersion == null) {
-			// 충돌(version 불일치/락 상실) — 서버 권위로 수렴(미저장 로컬 변경은 되돌려짐).
-			// force: resyncFromServer는 기본이 단조 게이팅(로컬 최신이면 안 덮음)이라, 롤백은 반드시 강제로
-			// 서버값을 덮어야 한다(내 미저장 편집을 서버 최신으로 원복). 단일 편집자 모델에선 드물지만
-			// (핸드오프/lease 만료 레이스) 조용한 유실 방지 위해 알린다.
-			pendingDraftsPayload = null;
-			void sess.resyncFromServer({ force: true });
-			toast("편집 권한 충돌로 마지막 변경이 취소되고 최신 상태로 동기화했어요", { variant: "error" });
-			return;
-		}
-		sess.applyDraftsIfNewer(payload, newVersion); // 내 버전 즉시 갱신(다음 저장 base)
-		// board_drafts_updated broadcast 제거(Realtime 감축): 뷰어는 sessions-row UPDATE(postgres_changes,
-		// board_drafts+version 동승)로 수렴 — broadcast는 그 권위 경로와 같은 버전 리듀서로 들어가던 중복 전송이었다.
-		if (pendingDraftsPayload) {
-			const next = pendingDraftsPayload;
-			pendingDraftsPayload = null;
-			pushDraftsToRemote(next); // 큐잉된 최신 변경을 새 base로 이어 저장
-		}
-	});
+	const request: DraftSave = { sessionId, clientId, name: ss._myName ?? "기기", payload, base: ss.boardDraftsVersion };
+	const pending = pendingSaves.find(item => sameScope(item, request));
+	if (pending) pending.payload = payload;
+	else pendingSaves.push(request);
+	if (!savePromise) startSaving();
 }

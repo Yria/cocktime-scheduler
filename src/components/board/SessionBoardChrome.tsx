@@ -53,42 +53,8 @@ export function BoardSyncingBadge() {
 	);
 }
 
-// 좌하단 + 버튼 — 빈 추천 모달을 열어 새 팀을 만든다(편집자만, 정렬 버튼과 대칭·동일 크기)
-export function NewTeamFab({ onClick }: { onClick: () => void }) {
-	return (
-		<button
-			type="button"
-			onClick={onClick}
-			aria-label="새 팀"
-			style={{
-				position: "absolute",
-				left: 16,
-				bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px) + 16px)`,
-				display: "inline-flex",
-				alignItems: "center",
-				justifyContent: "center",
-				width: 44,
-				height: 44,
-				padding: 0,
-				borderRadius: 22,
-				border: "none",
-				background: "var(--ios-green)",
-				color: "#fff",
-				boxShadow: "0 6px 16px rgba(52, 199, 89, 0.4)",
-				cursor: "pointer",
-				zIndex: 20,
-			}}
-		>
-			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-				<line x1="12" y1="5" x2="12" y2="19" />
-				<line x1="5" y1="12" x2="19" y2="12" />
-			</svg>
-		</button>
-	);
-}
-
-// 줌 컨트롤(우상단) — 0.5~1배 축소(편집/보기 공통)
-export function ZoomControls({ setScale, onSearch }: { setScale: (v: number | ((prev: number) => number)) => void; onSearch?: () => void }) {
+// 줌 컨트롤(우상단) — 0.4~1배 축소(편집/보기 공통)
+export function ZoomControls({ setScale }: { setScale: (v: number | ((prev: number) => number)) => void }) {
 	return (
 		<div
 			style={{
@@ -103,10 +69,21 @@ export function ZoomControls({ setScale, onSearch }: { setScale: (v: number | ((
 		>
 			<button type="button" onClick={() => setScale((s) => s + ZOOM_STEP)} aria-label="확대" style={zoomBtnStyle}>＋</button>
 			<button type="button" onClick={() => setScale((s) => s - ZOOM_STEP)} aria-label="축소" style={zoomBtnStyle}>－</button>
-			{onSearch && <button type="button" onClick={onSearch} aria-label="회원 찾기" title="회원 찾기 · 빈 공간 두 번 탭"
-				style={{ ...zoomBtnStyle, width: 44, height: 44, marginLeft: -4, marginTop: 2 }}><Search size={20} aria-hidden="true" /></button>}
 		</div>
 	);
+}
+
+// 기존 새 팀 버튼의 크기·위치·모양을 유지하고 검색 동작으로 사용한다.
+export function SearchFab({ onClick }: { onClick: () => void }) {
+	return <button type="button" onClick={onClick} aria-label="회원 찾기" title="회원 찾기 · 빈 공간 두 번 탭"
+		style={{ position: "absolute", left: 16,
+			bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px) + 16px)`,
+			display: "inline-flex", alignItems: "center", justifyContent: "center",
+			width: 44, height: 44, padding: 0, borderRadius: 22, border: "none",
+			background: "var(--ios-blue)", color: "#fff", boxShadow: "0 6px 16px rgba(0, 122, 255, 0.4)",
+			cursor: "pointer", zIndex: 20 }}>
+		<Search size={22} strokeWidth={2.4} aria-hidden="true" />
+	</button>;
 }
 
 // 우하단 플로팅 정렬 버튼 — 휴식 패널 열림 시 숨김(겹침 방지)

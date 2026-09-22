@@ -107,7 +107,7 @@ export function resolveDropTarget(
 			restingIds,
 			PAIR_RADIUS_DETACH,
 		);
-		if (partner) {
+		if (partner && ![...drafts.values()].some(team => team.courtId != null)) {
 			return {
 				kind: "createPair",
 				partnerId: partner.id,
@@ -135,7 +135,7 @@ export function resolveDropTarget(
 	if (insideAnyTeam) return { kind: "none" }; // 박스 안이지만 슬롯 아님 → 원위치
 	// 2) 다른 자유 자석 근접 → 신규 팀
 	const partner = nearestFreePartner(playerId, drop, magnets, playingIds, notReadyIds, restingIds);
-	if (partner) {
+	if (partner && ![...drafts.values()].some(team => team.courtId != null)) {
 		return {
 			kind: "createPair",
 			partnerId: partner.id,

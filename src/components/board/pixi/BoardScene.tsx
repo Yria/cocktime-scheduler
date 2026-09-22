@@ -51,10 +51,11 @@ function CardContents({ runtime, view, presentation, preview = false }: {
 }) {
 	const flash = useFlash(view.appearance.blink);
 	const hover = presentation.hover;
+	const replacing = hover?.kind === "slot" && hover.slotIndex === -1 && view.source.kind === "team" && hover.teamId === view.source.teamId;
 	useLayoutEffect(() => { runtime.scheduler.invalidate(); });
 	return <>
-		<CardVisual appearance={view.appearance} dragging={presentation.playerDragging} flash={flash} />
-		{hover?.kind === "slot" && ((view.source.kind === "team" && hover.teamId === view.source.teamId)
+		<CardVisual appearance={replacing ? { ...view.appearance, label: "놓으면 명단 교체", stroke: "#34d399", labelColor: "#34d399" } : view.appearance} dragging={presentation.playerDragging} flash={flash} />
+		{hover?.kind === "slot" && hover.slotIndex >= 0 && ((view.source.kind === "team" && hover.teamId === view.source.teamId)
 			|| (view.source.kind === "proposal" && hover.teamId === view.source.groupId)) && (
 			<pixiContainer x={computeSlotOffset(hover.slotIndex).x} y={computeSlotOffset(hover.slotIndex).y}><SlotHoverVisual /></pixiContainer>
 		)}

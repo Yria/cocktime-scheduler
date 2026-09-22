@@ -13,6 +13,9 @@ export type SettleState = {
 };
 
 export interface BoardState {
+	/** 배치가 속한 세션. 다른 세션의 좌표가 넘어가지 않도록 진입 시 연결한다. */
+	sessionId: number | null;
+	bindSession: (sessionId: number) => void;
 	magnets: Map<string, MagnetPosition>;
 	drafts: Map<string, DraftTeam>;
 	reservations: Map<string, Reservation>;
@@ -20,8 +23,8 @@ export interface BoardState {
 	courtAnchors: Map<number, StagePoint>;
 	/**
 	 * 편집자가 직접 드래그로 자석/팀/코트를 배치했는지. true가 되면 자동 정렬을 멈춘다(수동 배치가 진실).
-	 * false인 동안에는 뷰어와 동일하게 입력(자석 수·멤버십·뷰포트) 변화마다 재정렬 → 첫 접근 시 "정렬 버튼"
-	 * 결과로 수렴한다. 세션 진입마다 reset(false). 추천 다이얼로그 편성(commitTeammates)은 위치 선택이 아니라
+	 * false인 동안에는 입력(자석 수·멤버십·뷰포트) 변화마다 재정렬한다. 서버 배치를 복원하면
+	 * 뷰어도 true로 유지해 자동 정렬이 저장된 배치를 덮지 않는다. 추천 다이얼로그 편성(commitTeammates)은 위치 선택이 아니라
 	 * 멤버십 변경이므로 manual로 치지 않는다(새 팀도 자동 정렬에 맡겨 그리드로 정돈).
 	 */
 	manualLayout: boolean;
@@ -44,6 +47,8 @@ export interface BoardState {
 	detachHot: boolean;
 
 	initializeFromPool: (players: SessionPlayer[]) => void;
+	ensureCourtGroups: () => void;
+	autoFillEmptyCourts: (courtId?: number) => void;
 	handleDrop: (playerId: string, drop: StagePoint) => void;
 	handleGhostDrop: (resId: string, drop: StagePoint) => void;
 	handlePlayingMagnetDrop: (playerId: string, drop: StagePoint) => void;
@@ -78,7 +83,7 @@ export interface BoardState {
 	commitBoardView: (view: { scale: number; cssWidth: number; cssHeight: number; userChanged?: boolean }) => void;
 	/** 편집자의 카드 드래그 시작 시 자동 배치를 중단(좌표는 드롭 때 확정). */
 	markManualLayout: () => void;
-	/** 보드 줌 배율(0.5~1). 수동 줌·자동 fit 공용. */
+	/** 보드 줌 배율(0.4~1). 수동 줌·자동 fit 공용. */
 	scale: number;
 	/**
 	 * 사용자가 직접 맞춘 배율(없으면 null). 자동 fit 의 **상한**으로만 쓴다 — 확대는 하지 않고,
@@ -91,7 +96,7 @@ export interface BoardState {
 	setAutoScale: (v: number) => void;
 	/** 드래그-엔드 후 소스(팀/코트)에서 겹친 자유 자석을 흩어지게 */
 	settleBoard: (source: DragSource) => void;
-	/** 공유된 보드 멤버십(payload)을 로컬에 적용(위치는 로컬에서 결정). 스냅샷/브로드캐스트 수신용. */
+	/** 공유된 명단과 저장된 좌표를 로컬에 적용. 좌표가 없는 구버전은 기존 배치 규칙으로 복원. */
 	applyRemoteDrafts: (payload: BoardDraftsPayload) => void;
 	/**
 	 * 불변식 I2 자가 치유(편집자 전용) — 경기중이 된 anchor를 모든 예비팀에서 제거하고, 그 결과 인원이

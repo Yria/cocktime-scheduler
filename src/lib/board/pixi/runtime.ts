@@ -209,7 +209,7 @@ export class BoardRuntime {
 	private allViews(scene = this.presentation.scene): BoardEntity[] {
 		return scene.entities.flatMap((e) => e.kind === "card" ? [e, ...e.members] : [e]);
 	}
-	private find(source: BoardSource, scene = this.presentation.scene) { return this.allViews(scene).find((v) => v.key === sourceKey(source)); }
+	private find(source: BoardSource, scene = this.presentation.scene) { return this.allViews(scene).find((v) => sourceKey(v.source) === sourceKey(source)); }
 	private isValid(source: BoardSource, scene = this.readScene()) {
 		const view = this.find(source, scene);
 		return !!view && JSON.stringify(view.source) === JSON.stringify(source);
@@ -427,13 +427,25 @@ export class BoardRuntime {
 			}
 		}
 		if (source.kind === "proposal-member") { useBoardStore.getState().setHoverTarget(null); return; }
-		if (source.kind === "proposal") return;
+		if (source.kind === "proposal") {
+			const bs = useBoardStore.getState();
+			const target = proposals?.isAdmin && ss.isEditor
+				? [...bs.drafts.values()].reverse().find(team => team.courtId != null
+					&& !ss.courts.some(court => court.id === team.courtId && court.match)
+					&& !bs.assigningTeamIds.has(team.id) && isInsideTeamBounds(point, team.anchor)) : undefined;
+			bs.setHoverTarget(target ? { kind: "slot", teamId: target.id, slotIndex: -1 } : null);
+			return;
+		}
 		if (!ss.isEditor || source.kind === "team" || source.kind === "court" || source.kind === "playing") return;
 		const bs = useBoardStore.getState();
 		const rest = isInRestField(point, this.height / this.scale);
 		const detach = !rest && (source.kind === "anchor" || source.kind === "ghost") && isInDetachZone(point);
 		bs.setRestFieldHot(rest); bs.setDetachHot(detach);
 		if (rest || detach) { bs.setHoverTarget(null); return; }
+		if ([...bs.drafts.values()].some(team => team.courtId != null
+			&& ss.courts.some(court => court.id === team.courtId && court.match) && isInsideTeamBounds(point, team.anchor))) {
+			bs.setHoverTarget(null); return;
+		}
 		let e = this.eligibility;
 		if (!e || e.players !== ss.sessionPlayers || e.courts !== ss.courts || e.resting !== ss.restingIds || e.cock !== ss.cockCheckEnabled) {
 			e = this.eligibility = { players: ss.sessionPlayers, courts: ss.courts, resting: ss.restingIds, cock: ss.cockCheckEnabled,

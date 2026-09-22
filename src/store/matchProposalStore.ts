@@ -9,12 +9,13 @@ interface MatchProposalState extends ProposalComposerSnapshot {
 	loading: boolean;
 	error: string | null;
 	revision: number;
+	targetProposalId: string | null;
 	setGroups: (groups: ProposalGroup[]) => void;
 	reset: (scope?: string, enabled?: boolean, viewerId?: string, isAdmin?: boolean) => void;
 }
 
 const empty = () => ({ groups: [], proposals: [], anchors: new Map<string, StagePoint>(), sendingIds: new Set<string>(),
-	resolvingIds: new Set<string>(), viewerId: null, isAdmin: false, loading: false, error: null, revision: 0 });
+	resolvingIds: new Set<string>(), viewerId: null, isAdmin: false, loading: false, error: null, revision: 0, targetProposalId: null });
 
 /** Deliberately separate from boardStore and its shared-draft persistence subscription. */
 export const useMatchProposalStore = create<MatchProposalState>((set) => ({

@@ -1,7 +1,10 @@
-// ── 보드 줌(축소 전용) 0.5~1배 ─────────────────────────
+import { TEAM_W } from "../../lib/board/constants";
+
+// ── 보드 줌(축소 전용) 0.4~1배 ─────────────────────────
 // 수동 줌(±·핀치)과 자동 fit 스케일이 공유하는 단일 상태. 이펙트에서 React setState 없이 store로 set하기 위해
 // scale을 store에 둔다(자동정렬 이펙트의 set-state-in-effect 회피). SessionBoard가 읽고/조절한다.
-export const ZOOM_MIN = 0.5;
+// 320px 화면에서도 좌우 거터를 제외한 보드에 코트 4개와 간격이 들어간다.
+export const ZOOM_MIN = 0.4;
 export const ZOOM_MAX = 1;
 export const ZOOM_STEP = 0.1;
 export const SCALE_KEY = "cocktime-board-scale";
@@ -13,6 +16,12 @@ export const SCALE_KEY = "cocktime-board-scale";
  */
 export const SCALE_LOCK_KEY = "cocktime-board-scale-lock";
 export const clampScale = (v: number) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(v * 100) / 100));
+
+/** 좌우 여백 12px + 코트 네 개 + 사이 간격 16px. 올림하면 마지막 코트가 잘리므로 내림한다. */
+export function initialBoardScale(boardWidth: number): number {
+	const fourCourtsWidth = 12 * 2 + TEAM_W * 4 + 16 * 3;
+	return clampScale(Math.floor(boardWidth / fourCourtsWidth * 100) / 100);
+}
 export function loadScale(): number {
 	try {
 		const v = parseFloat(localStorage.getItem(SCALE_KEY) ?? "");

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { usePreventScroll } from "@react-aria/overlays";
 import SheetHeader from "./SheetHeader";
@@ -19,8 +19,26 @@ interface ModalSheetProps {
 	maxWidth?: "xs" | "sm";
 	/** Escape 키로 닫기(onClose 호출). 기본 false — 기존 사용처 동작 불변 */
 	closeOnEscape?: boolean;
+	/** 키보드를 제외한 실제 보이는 화면 안에 시트와 내부 스크롤을 제한한다. */
+	keyboardAware?: boolean;
 	children: React.ReactNode;
 }
+
+function subscribeViewport(onChange: () => void) {
+	const viewport = window.visualViewport;
+	viewport?.addEventListener("resize", onChange);
+	viewport?.addEventListener("scroll", onChange);
+	window.addEventListener("resize", onChange);
+	return () => {
+		viewport?.removeEventListener("resize", onChange);
+		viewport?.removeEventListener("scroll", onChange);
+		window.removeEventListener("resize", onChange);
+	};
+}
+const noViewportSubscription = () => () => {};
+const viewportSnapshot = () => `${window.visualViewport?.offsetTop ?? 0}:${window.visualViewport?.height ?? window.innerHeight}`;
+const serverViewportSnapshot = () => "0:0";
+const serverDocHeight = () => 0;
 
 // 백드롭(blur+dim)이 덮을 문서 전체 높이. iOS 26 Safari 는 position:fixed 를 inner viewport 로
 // 클리핑해 하단 세이프에어리어/주소창 영역까지 못 그린다. 그래서 백드롭은 fixed 가 아니라
@@ -45,30 +63,24 @@ export default function ModalSheet({
 	zIndex = 50,
 	maxWidth = "sm",
 	closeOnEscape = false,
+	keyboardAware = false,
 	children,
 }: ModalSheetProps) {
 	const sheetRef = useRef<HTMLDivElement>(null);
 	// 캔버스 pointerup으로 모달이 열린 뒤 같은 터치의 click이 배경에 도달할 수 있다.
 	// 배경에서 새로 시작한 입력만 닫기로 인정한다(열기 터치는 이 pointerdown이 없음).
 	const backdropPress = useRef(false);
-	const [docHeight, setDocHeight] = useState(0);
+	const docHeight = useSyncExternalStore(subscribeViewport, measureDocHeight, serverDocHeight);
+	const viewport = useSyncExternalStore(keyboardAware ? subscribeViewport : noViewportSubscription, viewportSnapshot, serverViewportSnapshot);
+	const [viewportTop, viewportHeight] = viewport.split(":").map(Number);
+	const fitViewport = keyboardAware && viewportHeight > 0;
+	const shortViewport = fitViewport && viewportHeight < 300;
+	const viewportPadding = shortViewport ? 4 : 12;
 
 	// 배경 스크롤 잠금 — react-aria usePreventScroll. iOS 는 html overflow:hidden + touchmove 차단 +
 	// overscroll @layer 주입 + 입력 포커스 스크롤 억제까지 처리(문서를 들어내지 않아 absolute 백드롭 안전).
 	// 모달이 열릴 때만 마운트되므로 무조건 호출로 잠그고, 내부 참조 카운트로 중첩 모달도 안전.
 	usePreventScroll();
-
-	// 백드롭 높이 측정 — useLayoutEffect 로 페인트 전에 잡아 첫 프레임 깜빡임을 막는다.
-	useLayoutEffect(() => {
-		setDocHeight(measureDocHeight());
-		const onResize = () => setDocHeight(measureDocHeight());
-		window.addEventListener("resize", onResize);
-		window.visualViewport?.addEventListener("resize", onResize);
-		return () => {
-			window.removeEventListener("resize", onResize);
-			window.visualViewport?.removeEventListener("resize", onResize);
-		};
-	}, []);
 
 	// Escape 닫기 — opt-in(closeOnEscape). 시트 내부에 포커스가 없어도 동작하도록 window 리스너 사용.
 	useEffect(() => {
@@ -111,13 +123,16 @@ export default function ModalSheet({
 			{/* 시트 컨테이너: visual viewport 안에 시트를 배치(시트는 세이프에어리어 위에 위치, 스트립엔
 			    백드롭 blur 만 보인다). pointer-events:none 으로 딤 영역 클릭은 아래 백드롭으로 통과. */}
 			<div
-				className={`fixed inset-0 flex ${posClass}`}
-				style={{ zIndex: zIndex + 1, pointerEvents: "none" }}
+				className={`group/modal-viewport fixed inset-0 flex ${posClass}`}
+				data-short-viewport={shortViewport || undefined}
+				style={{ zIndex: zIndex + 1, pointerEvents: "none", ...(fitViewport ? {
+					top: viewportTop, bottom: "auto", height: viewportHeight, paddingTop: viewportPadding, paddingBottom: viewportPadding,
+				} : {}) }}
 			>
 				<div
 					ref={sheetRef}
 					className={`lq-sheet w-full ${widthClass} rounded-3xl overflow-y-auto overscroll-contain no-sb ${className}`}
-					style={{ maxHeight: "90dvh", pointerEvents: "auto" }}
+					style={{ maxHeight: fitViewport ? Math.max(0, viewportHeight - viewportPadding * 2) : "90dvh", pointerEvents: "auto" }}
 					onPointerDownCapture={() => { backdropPress.current = false; }}
 					onClick={(e) => e.stopPropagation()}
 				>

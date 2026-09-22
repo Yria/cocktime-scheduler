@@ -30,14 +30,17 @@ export const useBoardStore = create<BoardState>()(
 	),
 );
 
-// 로컬 멤버십(drafts/reservations) 변경 시 DB 저장 + 브로드캐스트로 공유.
-// 위치(자석/anchor) 변경은 무시(로컬). 원격 적용 중에는 생략(피드백 루프 방지).
+// 드롭·정렬로 확정한 좌표도 명단과 함께 저장한다. 드래그 중 프레임은 Pixi 로컬이므로 저장하지 않는다.
+// 원격 복원·reset은 저장을 억제해 초기 배치로 서버를 덮지 않는다.
 useBoardStore.subscribe((state, prev) => {
 	if (syncState.applyingRemoteDrafts) return;
-	if (state.drafts === prev.drafts && state.reservations === prev.reservations) return;
+	if (state.drafts === prev.drafts && state.reservations === prev.reservations) {
+		// 첫 선수 풀 로딩/자동 배치는 서버 명단을 빈 값으로 덮어쓰면 안 된다.
+		if (!state.manualLayout || (state.magnets === prev.magnets && state.courtAnchors === prev.courtAnchors)) return;
+	}
 	const payload = serializeBoardDrafts(state);
 	const json = JSON.stringify(payload);
-	if (json === syncState.lastSyncedDraftsJson) return; // 멤버십 동일(위치만 변경) → 생략
+	if (json === syncState.lastSyncedDraftsJson) return;
 	syncState.lastSyncedDraftsJson = json;
 	pushDraftsToRemote(payload);
 });

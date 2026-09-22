@@ -27,12 +27,16 @@ import { useSessionStore } from "../sessionStore";
 import { toast } from "../toastStore";
 import type { BoardState, DragSource } from "./types";
 import { clampToStage, placeArranged, replaceAtSlot, runSettle } from "./layoutHelpers";
-import { claimEdit, currentEditorName } from "./draftsSync";
+import { claimEdit, currentEditorName, syncState } from "./draftsSync";
+import { reconcileCourtGroups } from "../../lib/board/courtGroups";
+import { DEFAULT_VIEWPORT } from "../../lib/board/geometry";
 
 /** 멤버십 슬라이스 — 자석/예비팀/예약(ghost) 등 공유 멤버십의 편집 액션. */
 export type MembershipSlice = Pick<
 	BoardState,
 	| "magnets"
+	| "ensureCourtGroups"
+	| "autoFillEmptyCourts"
 	| "drafts"
 	| "reservations"
 	| "assigningTeamIds"
@@ -63,8 +67,28 @@ export const createMembershipSlice: StateCreator<
 	reservations: new Map<string, Reservation>(),
 	assigningTeamIds: new Set<string>(),
 	courtAnchors: new Map<number, StagePoint>(),
+	ensureCourtGroups: () => {
+		const courts = useSessionStore.getState().courts;
+		if (!courts.length) return;
+		set(s => reconcileCourtGroups(s, courts, s.stageW || DEFAULT_VIEWPORT.vw));
+	},
+	autoFillEmptyCourts: (courtId) => {
+		if (!claimEdit()) return;
+		for (const team of get().drafts.values()) {
+			const ss = useSessionStore.getState();
+			if (team.courtId == null || (courtId != null && courtId !== team.courtId)
+				|| !ss.courts.some(court => court.id === team.courtId && !court.match)
+				|| get().assigningTeamIds.has(team.id) || teamMemberCount(team.id, get().drafts, get().reservations) >= 4) continue;
+			const data = buildRecommendData({ teamId: team.id }, [], { ...get(), ...ss }, { excludePlaying: true, excludeReserved: true });
+			if (!data || data.confirmed.some(player => data.playingIds.has(player.id) || player.status === "resting"
+				|| (ss.cockCheckEnabled && !player.cockChecked))) continue;
+			const picks = autoFillTeammates(data.confirmed, data.pool, data.ctx, 4 - data.confirmed.length);
+			if (picks.length + data.confirmed.length === 4 && allowedGameType([...data.confirmed, ...picks])) get().commitTeammates({ teamId: team.id }, picks.map(player => player.id));
+		}
+	},
 
 	handleDrop: (playerId, drop) => {
+		if (syncState.exclusiveDraftEdit) return;
 		// 보기 전용(읽기 모드): 공유 멤버십(팀/예약)은 못 바꾸지만, 자유 자석의 로컬 위치 이동은 허용(위치는 로컬 상태·미동기화).
 		// 멤버(anchor)는 슬롯 고정이라 스냅백, 팀 합류/페어 등 공유 변경은 일어나지 않는다.
 		// (혼자뿐이면 자동 점유로 isEditor=true가 되고, 첫 편집 액션에서도 자유면 자동 점유한다 → 여기 분기는 '남이 편집 중인' 읽기 모드 사용자만 탄다.)
@@ -85,6 +109,7 @@ export const createMembershipSlice: StateCreator<
 		const restingIds = new Set(ss.restingIds); // 휴식 자석은 페어 대상에서 제외(빈 자리 유령 그룹 방지)
 		set((s) => {
 			s.manualLayout = true; // 편집자가 직접 드래그로 배치/편성 → 이후 자동 정렬 중단(수동이 진실)
+			if ([...s.drafts.values()].some(d => d.courtId != null && ss.courts.some(c => c.id === d.courtId && c.match) && isInsideTeamBounds(drop, d.anchor))) return;
 			const target = resolveDropTarget(playerId, drop, s.magnets, s.drafts, s.reservations, playingIds, notReadyIds, restingIds);
 			let source: DragSource | null = null;
 			switch (target.kind) {
@@ -151,6 +176,10 @@ export const createMembershipSlice: StateCreator<
 			// 다른 예비팀 위 → 예약 대상 변경(reReserve). 옮길 수 없으면 no-op(스냅백, 예약 유지).
 			let done = false;
 			for (const d of s.drafts.values()) {
+				if (d.courtId != null && useSessionStore.getState().courts.some(c => c.id === d.courtId && c.match)) {
+					if (isInsideTeamBounds(drop, d.anchor)) return;
+					continue;
+				}
 				if (d.id === fromTeamId) continue;
 				if (!isInsideTeamBounds(drop, d.anchor)) continue;
 				if (
@@ -195,6 +224,7 @@ export const createMembershipSlice: StateCreator<
 			let done = false;
 			for (const d of s.drafts.values()) {
 				if (!isInsideTeamBounds(drop, d.anchor)) continue;
+				if (d.courtId != null && ss.courts.some(c => c.id === d.courtId && c.match)) return;
 				done = true; // 박스 안이면 새 팀 생성(2단계)으로 넘어가지 않음
 				if (isMemberOf(playerId, d.id, s.drafts, s.reservations)) break;
 				const slotIdx = slotIndexAt(drop, d.anchor);
@@ -213,7 +243,7 @@ export const createMembershipSlice: StateCreator<
 			//    반경은 좁은 쪽(PAIR_RADIUS_DETACH) — 대기 자석 격자(중심거리 74)의 빈틈에 놓았을 때 옆 사람과
 			//    엉뚱한 팀이 생기던 문제를 막는다(운영진 신고). 코트에서 끌어낸 자석은 여기서 no-op 이면
 			//    슬롯으로 복귀하므로, 좁힌 만큼 "취소" 좌표가 생긴다.
-			if (!done) {
+			if (!done && ![...s.drafts.values()].some(d => d.courtId != null)) {
 				const partner = nearestFreePartner(
 					playerId,
 					drop,
@@ -252,6 +282,15 @@ export const createMembershipSlice: StateCreator<
 		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 		set((s) => {
 			let teamId = target.teamId ?? null;
+			const courtGroups = [...s.drafts.values()].filter(d => d.courtId != null);
+			if (!teamId && courtGroups.length) {
+				teamId = courtGroups.find(d => !useSessionStore.getState().courts.some(c => c.id === d.courtId && c.match)
+					&& teamMemberCount(d.id, s.drafts, s.reservations) === 0)?.id ?? null;
+				if (!teamId) { toast("빈 코트 그룹에 자리가 없어요"); return; }
+				if (target.seedId) attachAnchor(s, target.seedId, teamId, undefined, currentEditorName());
+			}
+			const courtId = teamId ? s.drafts.get(teamId)?.courtId : undefined;
+			if (courtId != null && useSessionStore.getState().courts.some(c => c.id === courtId && c.match)) return;
 			// 시드 모드: 자유 자석을 첫 멤버로 새 팀 생성
 			if (!teamId && target.seedId) {
 				const seed = s.magnets.get(target.seedId);

@@ -4,6 +4,7 @@ import type { StagePoint } from "../../types/board";
 import { DEFAULT_VIEWPORT } from "../../lib/board/geometry";
 import { MAGNET_SIZE, TEAM_BOX_BELOW } from "../../lib/board/constants";
 import { canonicalizeDrafts, reconcileMembership } from "../../lib/board/remoteDrafts";
+import { applyBoardLayout, readBoardLayout, serializeBoardLayout } from "../../lib/board/savedLayout";
 import { scatterFromSource } from "../../lib/board/scatter";
 import { settleFreeMagnets } from "../../lib/board/settle";
 import {
@@ -47,9 +48,10 @@ export const createMatchSlice: StateCreator<
 		get().scatterMagnets(ids);
 	},
 	applyRemoteDrafts: (payload) => {
-		// 멤버십이 실제로 안 바뀐 재수신/스냅샷(applyDraftsIfNewer는 동일 멤버십도 매번 새 객체 set)이면
-		// 자석 위치를 전혀 만지지 않는다 — 자유 자석 위치는 로컬 전용이므로 보존되어야 한다.
-		if (canonicalizeDrafts(payload) === canonicalizeDrafts(serializeBoardDrafts(get()))) return;
+		const layout = readBoardLayout(payload.layout);
+		// 명단이 같아도 위치만 바뀐 서버 스냅샷은 적용한다. 좌표가 없는 구버전은 로컬 위치를 유지한다.
+		if (canonicalizeDrafts(payload) === canonicalizeDrafts(serializeBoardDrafts(get()))
+			&& (!layout || JSON.stringify(layout) === JSON.stringify(serializeBoardLayout(get())))) return;
 		// 불변식 I2(경기중 anchor 제거)·I1(중복 제거) 강제를 위해 reconcile에 넘긴다.
 		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 		syncState.applyingRemoteDrafts = true;
@@ -70,6 +72,10 @@ export const createMatchSlice: StateCreator<
 				const { drafts, reservations } = reconcileMembership(payload, s.magnets, oldAnchors, vw, vh, playingIds);
 				s.drafts = drafts;
 				s.reservations = reservations;
+				if (layout) {
+					applyBoardLayout(s, layout);
+					return; // 서버에서 확정된 좌표를 로컬 settle로 다시 옮기지 않는다.
+				}
 
 				// 원격 변경으로 "새로 필드에 들어온" 자석(팀/예약 → 자유): 내가 드래그하지 않았어도
 				// 드롭과 동일하게 흩어짐을 적용 — 각 자석을 소스로 BFS 방사형으로 주변을 밀어낸다.
@@ -110,7 +116,7 @@ export const createMatchSlice: StateCreator<
 				}
 				settleFreeMagnets(s.magnets, s.drafts, vw, vh, settleExclude, courtBottom, fixedIds);
 			});
-			// 방금 적용한 멤버십을 기준선으로 — 이후 위치만 바뀌면 재브로드캐스트 안 함
+			// 방금 복원한 명단·배치를 기준선으로 삼아 echo 저장을 막는다.
 			syncState.lastSyncedDraftsJson = JSON.stringify(serializeBoardDrafts(get()));
 		} finally {
 			syncState.applyingRemoteDrafts = false;
@@ -167,7 +173,8 @@ export const createMatchSlice: StateCreator<
 			toast("아직 경기를 시작할 수 없어요", { variant: "error" });
 			return;
 		}
-		const empty = session.courts.find((c) => !c.match);
+		const linkedCourtId = drafts.get(teamId)?.courtId;
+		const empty = session.courts.find(c => !c.match && (linkedCourtId == null || c.id === linkedCourtId));
 		if (!empty) {
 			toast("빈 코트가 없어요", { variant: "error" });
 			return;
@@ -221,17 +228,24 @@ export const createMatchSlice: StateCreator<
 
 	completeMatch: async (courtId) => {
 		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
-		// 완료 처리 전에 끝난 4명 id를 확보(이후 court.match는 null이 됨)
 		const court = useSessionStore.getState().courts.find((c) => c.id === courtId);
 		const endedIds = matchPlayerIdsFromCourt(court);
-		await useSessionStore.getState().handleComplete(courtId);
-		// 경기 끝나 자유가 된 선수가 다른 팀에 예약(ghost)으로 잡혀 있었으면 → 그 팀의 정식 멤버(anchor)로 승격.
-		// (예: 경기중인 4번을 abc 팀에 끌어 abc4 예약·고정 → 4번 경기 끝나면 abc4가 4명 정식 팀이 되어 매칭확정 가능.)
-		set((s) => resolveFreedReservations(s, endedIds));
-		// 완료 후 '정렬' 버튼과 동일하게 보드 전체 재정렬(끝난 선수만 흩뜨리지 않고 자유 풀 전체를 그리드로 정돈).
-		// store.stageW/stageH 는 이미 view 좌표(setStageSize(viewW,viewH))라 rearrangeAll 인자로 그대로 쓴다.
-		// markManual=false: 1회 정렬만 하고 수동 모드로 고정하지 않는다(뷰어는 courtSig 변화로 자동 정렬도 병행).
-		get().rearrangeAll(get().stageW, get().stageH);
+		const endedMatchId = court?.match?.id;
+		const groupId = [...get().drafts.values()].find(team => team.courtId === courtId)?.id ?? `complete:${courtId}`;
+		if (!endedMatchId || get().assigningTeamIds.has(groupId)) return;
+		set(s => { s.assigningTeamIds.add(groupId); });
+		try {
+			await useSessionStore.getState().handleComplete(courtId);
+			if (useSessionStore.getState().courts.find(c => c.id === courtId)?.match) return;
+			set(s => {
+				resolveFreedReservations(s, endedIds);
+				s.assigningTeamIds.delete(groupId);
+			});
+			get().autoFillEmptyCourts(courtId);
+			get().scatterMagnets(endedIds);
+		} finally {
+			set(s => { s.assigningTeamIds.delete(groupId); });
+		}
 	},
 
 	setMatchRoster: async (courtId, teamA, teamB) => {

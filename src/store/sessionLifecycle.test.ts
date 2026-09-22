@@ -9,6 +9,8 @@ vi.mock("../lib/supabase", async (importOriginal) => ({
 	startSession: vi.fn(),
 	updateSession: vi.fn(),
 	dbEndSession: vi.fn(),
+	dbBoardSaveDrafts: vi.fn(),
+	dbBoardReleaseEditor: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../lib/supabase/members", () => ({ fetchMembers: vi.fn().mockResolvedValue([]) }));
 vi.mock("../lib/supabase/clubSettings", () => ({ fetchGroupSettings: vi.fn().mockResolvedValue(null) }));
@@ -20,7 +22,8 @@ vi.mock("./sessionEditorLock", async (importOriginal) => ({
 	installLockLifecycle: vi.fn(),
 }));
 
-import { dbEndSession, fetchActiveSession, fetchSessionSnapshot, startSession, updateSession } from "../lib/supabase";
+import { dbBoardReleaseEditor, dbBoardSaveDrafts, dbEndSession, fetchActiveSession, fetchSessionSnapshot, startSession, updateSession } from "../lib/supabase";
+import { flushBoardDrafts, pushDraftsToRemote } from "./board/draftsSync";
 import { createSessionChannels } from "../lib/supabase/sessionChannels";
 import { appActions, useAppStore, type SessionMeta } from "./appStore";
 import { useAuthStore } from "./authStore";
@@ -49,6 +52,33 @@ beforeEach(() => {
 	vi.mocked(dbEndSession).mockResolvedValue(true);
 });
 afterEach(() => { appActions.clearSession(); });
+
+describe("leaving a board during a position save", () => {
+	it("finishes queued drops before releasing the original session's lock", async () => {
+		const pending = deferred<number | null>();
+		vi.mocked(dbBoardSaveDrafts).mockReturnValueOnce(pending.promise).mockResolvedValue(2);
+		useSessionStore.setState({ isEditor: true, _clientId: "editor", _myName: "운영진", boardDraftsVersion: 0 });
+		pushDraftsToRemote({ teams: [], reservations: [], layout: { version: 1, teams: {}, courts: { "1": { x: 200, y: 300 } }, magnets: {} } });
+		pushDraftsToRemote({ teams: [], reservations: [], layout: { version: 1, teams: {}, courts: { "1": { x: 400, y: 300 } }, magnets: {} } });
+		useSessionStore.getState().unsubscribe();
+		expect(dbBoardReleaseEditor).not.toHaveBeenCalled();
+		useAppStore.setState({ sessionMeta: { ...meta, sessionId: 8 } });
+		pending.resolve(1); await flushBoardDrafts();
+		await vi.waitFor(() => expect(dbBoardReleaseEditor).toHaveBeenCalledWith(7, "editor"));
+		expect(dbBoardSaveDrafts).toHaveBeenCalledTimes(2);
+		expect(vi.mocked(dbBoardSaveDrafts).mock.calls[1][4]).toBe(1);
+	});
+	it("does not release ownership if the same device returns while saving", async () => {
+		const pending = deferred<number | null>();
+		vi.mocked(dbBoardSaveDrafts).mockReturnValueOnce(pending.promise);
+		useSessionStore.setState({ isEditor: true, _clientId: "editor", boardDraftsVersion: 0 });
+		pushDraftsToRemote({ teams: [], reservations: [] });
+		useSessionStore.getState().unsubscribe();
+		useSessionStore.setState({ _clientId: "editor" });
+		pending.resolve(1); await flushBoardDrafts();
+		expect(dbBoardReleaseEditor).not.toHaveBeenCalled();
+	});
+});
 
 describe("즉석 세션 권한", () => {
 	it.each([null, meta])("일반 회원은 세션 생성과 설정 변경을 저장할 수 없다 (%j)", async (sessionMeta) => {

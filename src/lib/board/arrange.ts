@@ -72,8 +72,9 @@ export function arrangeBoard(input: ArrangeInput): void {
 
 	// 1) 그룹을 하나의 연속 격자에 종류 순서대로 이어서 배치(같은 줄 공유).
 	//    순서: 경기중(코트) → 4명 찬 팀 → 그 외 팀(멤버 많은 순)
-	const occupied = courts.filter((c) => c.match);
-	const teams = [...drafts.values()].sort((a, b) => {
+	const permanent = [...drafts.values()].filter(team => team.courtId != null);
+	const occupied = courts.filter(c => c.match && !permanent.some(team => team.courtId === c.id));
+	const teams = [...drafts.values()].filter(team => team.courtId == null).sort((a, b) => {
 		const ca = teamMemberCount(a.id, drafts, reservations);
 		const cb = teamMemberCount(b.id, drafts, reservations);
 		const fa = ca === 4 ? 1 : 0;
@@ -83,12 +84,14 @@ export function arrangeBoard(input: ArrangeInput): void {
 		return a.createdAt - b.createdAt;
 	});
 	let gi = 0;
-	for (const c of occupied) courtAnchors.set(c.id, gridAnchor(gi++, GROUP_TOP));
-	for (const t of teams) t.anchor = gridAnchor(gi++, GROUP_TOP);
+	for (const team of permanent) courtAnchors.set(team.courtId!, { ...team.anchor });
+	const permanentBottom = Math.max(0, ...permanent.map(team => team.anchor.y + TEAM_BOX_BELOW + GAP_Y));
+	for (const c of occupied) courtAnchors.set(c.id, gridAnchor(gi++, Math.max(GROUP_TOP, permanentBottom)));
+	for (const t of teams) t.anchor = gridAnchor(gi++, Math.max(GROUP_TOP, permanentBottom));
 	const groupCount = occupied.length + teams.length;
 	const groupRows = groupCount > 0 ? Math.ceil(groupCount / cols) : 0;
 	// 그룹이 없으면 상단 공백 없이 맨 위부터(코트 전용 영역 개념 없음)
-	const groupAreaBottom = groupRows > 0 ? GROUP_TOP + groupRows * rowH : GROUP_TOP;
+	const groupAreaBottom = Math.max(GROUP_TOP, permanentBottom) + groupRows * rowH;
 
 	// 2) 나머지 자유 자석을 그룹 영역 아래에 격자 배치 — 매칭 대기가 앞, 콕 미제출자 뒤, 휴식자 맨 뒤.
 	//    그 안에서 경기수 적은 사람 먼저.
@@ -150,7 +153,7 @@ export function requiredBoardHeight(groupCount: number, freeCount: number, viewW
 }
 
 /**
- * 렌더 없이 "모든 자석이 다 들어가는 가장 큰 배율"을 계산한다(min~max, 보통 0.5~1.0).
+ * 렌더 없이 "모든 자석이 다 들어가는 가장 큰 배율"을 계산한다(min~max, 보통 0.4~1.0).
  * scale↓ → 보이는 영역(view=stage/scale)↑ → 더 잘 들어간다. 큰 배율부터 step씩 내려가며
  * requiredBoardHeight ≤ viewH(하단 여백 보정)인 첫(=가장 큰) 배율을 반환. 끝까지 안 들어가면 min.
  */

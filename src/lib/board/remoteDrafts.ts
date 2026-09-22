@@ -12,6 +12,7 @@ import type {
 	StagePoint,
 } from "../../types/board";
 import { centroidAnchor, clampAnchor } from "./geometry";
+import { initialCourtAnchor } from "./courtGroups";
 
 /** drafts/reservations를 멤버십만으로 정규화한 비교용 문자열(위치·순서 무시). createdBy(멤버 추가 시 갱신)·confirmedMs(매칭확정)도 포함해 그 변경만 있어도 동기되게 한다. */
 export function canonicalizeDrafts(p: BoardDraftsPayload): string {
@@ -19,6 +20,7 @@ export function canonicalizeDrafts(p: BoardDraftsPayload): string {
 		teams: [...p.teams]
 			.map((t) => ({
 				id: t.id,
+				courtId: t.courtId ?? null,
 				memberIds: [...t.memberIds].sort(),
 				createdMs: t.createdMs,
 				slots: Object.entries(t.slots ?? {}).sort(([a], [b]) => a.localeCompare(b)),
@@ -67,7 +69,7 @@ export function reconcileMembership(
 		const memberIds = team.memberIds.filter(
 			(id) => magnets.has(id) && !assignedAnchor.has(id) && !playingIds.has(id), // I1 + I2
 		);
-		if (memberIds.length === 0) continue;
+		if (memberIds.length === 0 && team.courtId == null) continue;
 		// 이 팀에 예약(ghost)된 선수 — 유효 인원 판정과 아래 매칭확정 유지에 쓴다.
 		// 아래 예약 루프가 실제로 살려두는 것과 **같은 조건**으로 센다 — anchor 로 확정된 선수는 ghost 가 될 수
 		// 없어(anchor xor ghost) 버려지므로, 그런 ghost 로 인원을 채워 I3 를 통과시키면 최종적으로 anchor 1명만
@@ -84,9 +86,10 @@ export function reconcileMembership(
 		//     여기서 드롭하면 멤버 자석은 teamId=null 로 남아(위에서 초기화) 자유 자석으로 정상 표시된다.
 		const effectiveCount =
 			memberIds.length + new Set(ghostIds.filter((id) => !memberIds.includes(id))).size;
-		if (effectiveCount < 2) continue;
+		if (effectiveCount < 2 && team.courtId == null) continue;
 		for (const id of memberIds) assignedAnchor.add(id);
-		const anchor = oldAnchors.get(team.id) ?? centroidAnchor(memberIds, magnets);
+		const anchor = oldAnchors.get(team.id) ?? (team.courtId != null
+			? initialCourtAnchor(team.courtId - 1, vw) : centroidAnchor(memberIds, magnets));
 		// 슬롯 위치 — 자석이 살아있는 멤버 것만 유지(스테일 키는 teamMembers가 무시하므로 안전).
 		const slots = team.slots
 			? Object.fromEntries(Object.entries(team.slots).filter(([pid]) => magnets.has(pid)))
@@ -96,8 +99,9 @@ export function reconcileMembership(
 		const memberCount = effectiveCount;
 		drafts.set(team.id, {
 			id: team.id,
+			...(team.courtId != null ? { courtId: team.courtId } : {}),
 			anchorMemberIds: memberIds,
-			anchor: clampAnchor(anchor, vw, vh),
+			anchor: team.courtId != null ? anchor : clampAnchor(anchor, vw, vh),
 			createdAt: team.createdMs,
 			...(slots && Object.keys(slots).length ? { slots } : {}),
 			...(team.createdBy ? { createdBy: team.createdBy } : {}),

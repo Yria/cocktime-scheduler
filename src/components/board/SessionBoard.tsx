@@ -25,7 +25,8 @@ import ViewerLockOverlay from "./ViewerLockOverlay";
 import EditorTakenNotice from "./EditorTakenNotice";
 import DebugMatchModal from "./DebugMatchModal";
 import AdminCoverageNotice from "./AdminCoverageNotice";
-import { ArrangeFab, BoardSyncingBadge, NewTeamFab, ZoomControls } from "./SessionBoardChrome";
+import ProposalCourtDialog from "./ProposalCourtDialog";
+import { ArrangeFab, BoardSyncingBadge, SearchFab, ZoomControls } from "./SessionBoardChrome";
 import type { RecommendTarget } from "../../hooks/useTeammateRecommendations";
 
 // 보드 캔버스 좌우 안전 거터(화면 px). 모바일 브라우저 탭에서 화면 좌/우 가장자리는 OS의 '뒤로/앞으로'
@@ -140,13 +141,12 @@ export default function SessionBoard() {
 				<SessionBoardRenderer width={stageW} height={stageH}
 					onMagnetClick={onMagnetClick} onCockCheck={onCockCheck} onSlotClick={openTeamRecommend} onEditMatch={onEditMatch} proposals={proposals} onEmptyDoubleTap={openSearch} locate={locate} />
 			</div>
-			{/* 좌하단 + 버튼 — 빈 추천 모달을 열어 새 팀을 만든다(편집자만, 정렬 버튼과 대칭·동일 크기) */}
-			{isEditor && <NewTeamFab onClick={() => setRecommendTarget({ newTeam: true })} />}
 			<RestBar />
-			{/* 줌 컨트롤(우상단) — 0.5~1배 축소(편집/보기 공통) */}
-			<ZoomControls setScale={setScale} onSearch={openSearch} />
+			{/* 줌 컨트롤(우상단) — 0.4~1배 축소(편집/보기 공통) */}
+			<ZoomControls setScale={setScale} />
+			<SearchFab onClick={openSearch} />
 			{/* 우하단 플로팅 정렬 버튼 */}
-			<ArrangeFab onClick={() => { arrangeAtCurrentScale(); settleProposalLayout(true); }} />
+			<ArrangeFab onClick={() => { arrangeAtCurrentScale(); settleProposalLayout(); }} />
 			{searchOpen && <BoardPlayerSearch onClose={() => setSearchOpen(false)} onSelect={(playerId, name) => {
 				setSearchOpen(false); setLocate({ playerId, name });
 			}} />}
@@ -168,6 +168,7 @@ export default function SessionBoard() {
 			<ViewerLockOverlay />
 			<EditorTakenNotice />
 			<AdminCoverageNotice />
+			<ProposalCourtDialog />
 			<DebugMatchModal />
 		</div>
 	);

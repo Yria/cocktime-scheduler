@@ -41,6 +41,7 @@ export function clearConfirmIfBelowFull(s: Draft, teamId: string) {
  * 경기중 anchor 때문에 유효 인원이 줄어드는 경우는 healPlayingAnchors 가 playingIds 로 판정해 담당한다.
  */
 export function dissolveIfUnderTwo(s: Draft, teamId: string): boolean {
+	if (s.drafts.get(teamId)?.courtId != null) return false;
 	if (!s.drafts.has(teamId)) return false;
 	if (teamMemberCount(teamId, s.drafts, s.reservations) >= 2) return false;
 	dissolveDraft(s, teamId);
@@ -59,7 +60,12 @@ export function dissolveDraft(s: Draft, teamId: string) {
 			}
 		}
 	}
-	s.drafts.delete(teamId);
+	if (team?.courtId != null) {
+		team.anchorMemberIds = [];
+		delete team.slots;
+		delete team.confirmedMs;
+		delete team.createdBy;
+	} else s.drafts.delete(teamId);
 	// 이 팀을 가리키던 모든 예약(ghost) cascade 삭제
 	for (const [rid, r] of [...s.reservations]) {
 		if (r.teamId === teamId) s.reservations.delete(rid);
@@ -83,7 +89,12 @@ export function dissolveDraftAfterAssign(s: Draft, teamId: string) {
 			m.y = team.anchor.y + off.y;
 		}
 	}
-	s.drafts.delete(teamId);
+	if (team?.courtId != null) {
+		team.anchorMemberIds = [];
+		delete team.slots;
+		delete team.confirmedMs;
+		delete team.createdBy;
+	} else s.drafts.delete(teamId);
 	for (const [rid, r] of [...s.reservations]) {
 		if (r.teamId === teamId) s.reservations.delete(rid);
 	}
@@ -100,7 +111,7 @@ export function detachAnchor(s: Draft, playerId: string) {
 	// 슬롯 매핑에서도 제거 → 그 칸이 빈 슬롯으로 (다시 넣으면 새로 배치)
 	if (team.slots && playerId in team.slots) delete team.slots[playerId];
 	// 남은 인원이 너무 적으면(원본 0명 또는 총 2명 미만) 팀 해체
-	if (team.anchorMemberIds.length === 0) {
+	if (team.anchorMemberIds.length === 0 && team.courtId == null) {
 		dissolveDraft(s, teamId);
 		return;
 	}

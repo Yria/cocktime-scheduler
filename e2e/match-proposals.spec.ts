@@ -6,6 +6,16 @@ import { cardControls } from "../src/lib/board/pixi/cardControls";
 declare global { interface Window { proposalTest: ProposalTestApi } }
 const uid = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
 
+async function keyboardViewport(page: Page, viewport: { height: number; top: number }) {
+	// iOS keyboards resize/pan the visual viewport while the layout viewport stays full height.
+	await page.evaluate(({ height, top }) => {
+		Object.defineProperty(window.visualViewport, "height", { configurable: true, value: height });
+		Object.defineProperty(window.visualViewport, "offsetTop", { configurable: true, value: top });
+		window.visualViewport!.dispatchEvent(new Event("resize"));
+		window.visualViewport!.dispatchEvent(new Event("scroll"));
+	}, viewport);
+}
+
 async function setup(page: Page, role = "member", options: { failSend?: boolean; cancelSend?: boolean; failResolve?: boolean; adminIds?: string[]; server?: { proposals: MatchProposal[] } } = {}) {
 	const writes: string[] = [];
 	const server = options.server ?? { proposals: [] };
@@ -58,6 +68,8 @@ async function setup(page: Page, role = "member", options: { failSend?: boolean;
 	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().magnets.size)).toBe(10);
 	await expect.poll(() => page.evaluate(() => window.proposalTest.proposals.getState().scope)).not.toBeNull();
 	await expect.poll(() => page.evaluate(() => window.proposalTest.proposals.getState().loading)).toBe(false);
+	await page.evaluate(() => window.proposalTest.flushDrafts());
+	writes.length = 0;
 	return writes;
 }
 
@@ -130,17 +142,23 @@ test("member starts with a pair, grows to four and sees the sent dashed group at
 	expect(after.point).toEqual(before.point);
 	expect(after.members).toHaveLength(4);
 	expect(after.appearance.ctaLabel).toBe("제안 취소");
-	expect(await page.evaluate(() => ({ drafts: window.proposalTest.board.getState().drafts.size, reservations: window.proposalTest.board.getState().reservations.size }))).toEqual({ drafts: 0, reservations: 0 });
+	expect(await page.evaluate(() => ({ drafts: window.proposalTest.board.getState().drafts.size, reservations: window.proposalTest.board.getState().reservations.size }))).toEqual({ drafts: 2, reservations: 0 });
 	expect(errors).toEqual([]);
 	await pressFooter(page);
 	await expect.poll(async () => (await cards(page)).length).toBe(0);
 });
 
-for (const width of [390, 1280]) {
-	test(`read-only administrator submits and withdraws a private proposal at ${width}px`, async ({ page, context }, testInfo) => {
+for (const width of [390, 1280]) for (const participating of [true, false]) {
+	test(`read-only administrator (${participating ? "participating" : "staff only"}) submits and withdraws a private proposal at ${width}px`, async ({ page, context }, testInfo) => {
 		await page.setViewportSize({ width, height: 844 });
 		const server = { proposals: [] as MatchProposal[] };
 		const writes = await setup(page, "admin-viewer", { server });
+		if (!participating) await page.evaluate(id => {
+			const session = window.proposalTest.session;
+			const players = new Map(session.getState().sessionPlayers); players.delete(id);
+			session.setState({ sessionPlayers: players });
+		}, uid(1));
+		await expect.poll(() => page.evaluate(() => window.proposalTest.proposals.getState().enabled)).toBe(true);
 		await expect(page.getByRole("button", { name: "보기 전용", exact: true })).toBeVisible();
 		await pair(page, 2, 3);
 		for (const id of [4, 5, 6]) await drag(page, id, (await cards(page))[0].point);
@@ -153,7 +171,7 @@ for (const width of [390, 1280]) {
 		expect((await cards(page))[0].appearance).toMatchObject({ ctaLabel: "제안 취소", ctaEnabled: true, showUnconfirm: false });
 		expect(await page.evaluate(() => ({ editor: window.proposalTest.session.getState().isEditor,
 			drafts: window.proposalTest.board.getState().drafts.size, reservations: window.proposalTest.board.getState().reservations.size })))
-			.toEqual({ editor: false, drafts: 0, reservations: 0 });
+			.toEqual({ editor: false, drafts: 2, reservations: 0 });
 		await page.screenshot({ path: testInfo.outputPath(`admin-viewer-${width}-proposal.png`) });
 
 		const viewer = await context.newPage();
@@ -162,7 +180,7 @@ for (const width of [390, 1280]) {
 		await viewer.close();
 		const editor = await context.newPage();
 		await setup(editor, "admin", { server });
-		expect((await cards(editor))[0].appearance).toMatchObject({ ctaLabel: "경기시작", ctaEnabled: true });
+		expect((await cards(editor))[0].appearance).toMatchObject({ ctaLabel: "코트 선택", ctaEnabled: true });
 		await editor.close();
 		await page.bringToFront();
 		await pressFooter(page);
@@ -172,9 +190,14 @@ for (const width of [390, 1280]) {
 	});
 }
 
-test("administrator switches between private proposals and shared editing without losing submitted proposals", async ({ page }) => {
+test("staff-only administrator switches between private proposals and shared editing without losing submitted proposals", async ({ page }) => {
 	const server = { proposals: [] as MatchProposal[] };
 	const writes = await setup(page, "admin-viewer", { server });
+	await page.evaluate(id => {
+		const session = window.proposalTest.session;
+		const players = new Map(session.getState().sessionPlayers); players.delete(id);
+		session.setState({ sessionPlayers: players });
+	}, uid(1));
 	await pair(page, 2, 3);
 	await pressFooter(page);
 	await expect.poll(async () => (await cards(page))[0]?.appearance.dashed).toBe(true);
@@ -184,7 +207,7 @@ test("administrator switches between private proposals and shared editing withou
 	await expect.poll(async () => (await cards(page)).length).toBe(1);
 	expect((await cards(page))[0].appearance).toMatchObject({ ctaLabel: "자동매칭", ctaEnabled: true });
 	await pair(page, 4, 5);
-	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(1);
+	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(2);
 	await page.evaluate(() => window.proposalTest.session.setState({ isEditor: false }));
 	await expect.poll(async () => (await cards(page))[0]?.appearance.ctaLabel).toBe("제안 취소");
 	await pair(page, 6, 7);
@@ -193,43 +216,27 @@ test("administrator switches between private proposals and shared editing withou
 	expect(writes.filter(url => url.includes("create_match_proposal"))).toHaveLength(1);
 });
 
-test("starting one overlapping proposal cancels the others for administrators and authors", async ({ page, context }, testInfo) => {
+test("nonparticipating ordinary members cannot compose proposals", async ({ page }) => {
+	const writes = await setup(page, "member");
+	await page.evaluate(id => {
+		const session = window.proposalTest.session;
+		const players = new Map(session.getState().sessionPlayers); players.delete(id);
+		session.setState({ sessionPlayers: players });
+	}, uid(2));
+	await expect.poll(() => page.evaluate(() => window.proposalTest.proposals.getState().enabled)).toBe(false);
+	await pair(page, 3, 4);
+	expect(await cards(page)).toHaveLength(0);
+	expect(writes).toEqual([]);
+});
+
+test("full proposals choose a court without starting a match directly", async ({ page }) => {
 	const first = { ...proposal, player_ids: [2, 3, 4, 5].map(uid), player_names: ["민수", "지수", "현우", "수빈"] };
-	const second = { ...proposal, id: uid(201), created_by: uid(3), creator_name: "지수",
-		player_ids: [2, 6, 7, 8].map(uid), player_names: ["민수", "지훈", "서연", "민재"] };
-	const unrelated = { ...proposal, id: uid(202), created_by: uid(9), player_ids: [9, 10].map(uid) };
-	const server = { proposals: [first, second, unrelated] };
-	const writes = await setup(page, "admin", { server });
-	const author = await context.newPage();
-	await setup(author, "other", { server });
-	expect(await cards(author)).toHaveLength(1);
-	await page.bringToFront();
-	await page.getByRole("button", { name: "정렬", exact: true }).click();
-	const groups = await cards(page);
-	const magnets = groups.flatMap(group => group.members).filter(member => member.player.id === uid(2));
-	expect(magnets).toHaveLength(2);
-	expect(new Set(magnets.map(member => member.key)).size).toBe(2);
-	expect(await page.evaluate(id => window.proposalTest.scene().entities.some(view => view.kind === "magnet" && view.player.id === id), uid(2))).toBe(false);
-	await page.screenshot({ path: testInfo.outputPath("overlapping-proposals.png") });
-	const firstIndex = groups.findIndex(group => group.source.kind === "proposal" && group.source.groupId === first.id);
-	await pressFooter(page, firstIndex);
-	await expect.poll(() => server.proposals.find(item => item.id === first.id)?.status).toBe("started");
-	expect(server.proposals.find(item => item.id === second.id)?.status).toBe("rejected");
-	await page.evaluate(ids => window.proposalTest.session.setState({ courts: [
-		{ id: 1, match: { id: "started-proposal", courtId: 1, gameType: "혼합", teamA: [ids[0], ids[1]], teamB: [ids[2], ids[3]], startedAt: new Date().toISOString() } },
-		{ id: 2, match: null },
-	] }), first.player_ids);
-	await expect.poll(async () => (await cards(page)).length).toBe(1);
-	expect((await cards(page))[0].source).toEqual({ kind: "proposal", groupId: unrelated.id });
-	expect(writes.filter(url => url.includes("start_match_proposal"))).toHaveLength(1);
-	await page.screenshot({ path: testInfo.outputPath("overlapping-proposals-cancelled.png") });
-	await author.bringToFront();
-	await author.evaluate(() => window.dispatchEvent(new Event("online")));
-	await expect.poll(async () => (await cards(author)).length).toBe(0);
-	await author.reload();
-	await expect.poll(() => author.evaluate(() => window.proposalTest.proposals.getState().loading)).toBe(false);
-	expect(await cards(author)).toHaveLength(0);
-	await author.close();
+	const writes = await setup(page, "admin", { server: { proposals: [first] } });
+	await pressFooter(page);
+	await expect(page.getByText("편성제안을 넣을 코트", { exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "1번 코트 빈 그룹" })).toBeEnabled();
+	expect(writes).toEqual([]);
+	expect(await page.evaluate(() => window.proposalTest.session.getState().courts.every(court => !court.match))).toBe(true);
 });
 
 test("starting a member's match cancels their whole unsent proposal without a server write", async ({ page }) => {
@@ -293,7 +300,7 @@ test("other members never see proposal groups even from stale data", async ({ pa
 	expect(await cards(page)).toEqual([]);
 });
 
-test("arrange repositions both draft and sent proposals locally", async ({ page }) => {
+test("arrange preserves private proposal locations and fixed courts", async ({ page }) => {
 	const writes = await setup(page, "member", { server: { proposals: [proposal] } });
 	await expect.poll(async () => (await cards(page)).length).toBe(1);
 	const canvas = (await page.locator("canvas").boundingBox())!;
@@ -303,17 +310,14 @@ test("arrange repositions both draft and sent proposals locally", async ({ page 
 	await page.mouse.down();
 	await page.mouse.move(canvas.x + 460 * scale, canvas.y + 330 * scale, { steps: 8 });
 	await page.mouse.up();
-	await expect.poll(async () => (await cards(page))[0].point.x).toBe(460);
+	await expect.poll(async () => (await cards(page))[0].point.x).toBeCloseTo(460, 3);
 	await pair(page, 4, 5);
 	const before = (await cards(page)).map((card) => card.point);
 	expect(before).toHaveLength(2);
 	await page.getByRole("button", { name: "정렬", exact: true }).click();
-	await expect.poll(async () => (await cards(page)).map((card) => card.point)).not.toEqual(before);
-	const after = await cards(page);
-	expect(after[0].point.y).toBe(after[1].point.y);
-	expect(Math.abs(after[0].point.x - after[1].point.x)).toBeGreaterThan(158);
+	await expect.poll(async () => (await cards(page)).map((card) => card.point)).toEqual(before);
 	expect(writes).toEqual([]);
-	expect(await page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(0);
+	expect(await page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(2);
 });
 
 for (const [role, width, height] of [["member", 390, 844], ["admin", 390, 844], ["admin", 1280, 800]] as const) {
@@ -327,7 +331,7 @@ for (const [role, width, height] of [["member", 390, 844], ["admin", 390, 844], 
 		await expect.poll(() => page.evaluate(() => {
 			const scene = window.proposalTest.scene();
 			const group = scene.entities.find((view) => view.kind === "card" && view.source.kind === "proposal")!;
-			return scene.entities.filter((view) => view.kind === "magnet").every((view) => view.point.y > group.point.y + 149);
+			return scene.entities.filter(view => view.kind === "magnet").every(view => Math.abs(view.point.x - group.point.x) >= 110 || Math.abs(view.point.y - group.point.y) >= 132);
 		})).toBe(true);
 		await page.evaluate(() => new Promise<void>((resolve) => {
 			let frames = 0;
@@ -342,7 +346,7 @@ for (const [role, width, height] of [["member", 390, 844], ["admin", 390, 844], 
 }
 
 test("admin adds and removes private members; author receives roster changes", async ({ page, context }) => {
-	const sharedPayloads: unknown[] = [];
+	const sharedPayloads: { teams: { courtId?: number; memberIds: string[] }[]; reservations: unknown[] }[] = [];
 	page.on("request", (request) => {
 		if (request.url().includes("/rpc/board_save_drafts")) sharedPayloads.push(request.postDataJSON().p_payload);
 	});
@@ -370,8 +374,11 @@ test("admin adds and removes private members; author receives roster changes", a
 	await expect.poll(async () => (await cards(author))[0]?.members.map((item) => item.player.id)).toEqual([uid(3), uid(4)]);
 	expect((await cards(author))[0].members.every((item) => !item.draggable)).toBe(true);
 	expect(writes.filter((url) => url.includes("edit_match_proposals"))).toHaveLength(2);
-	for (const payload of sharedPayloads) expect(payload).toMatchObject({ teams: [], reservations: [] });
-	expect(await page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(0);
+	for (const payload of sharedPayloads) {
+		expect(payload.reservations).toEqual([]);
+		expect(payload.teams.every(team => team.courtId != null && team.memberIds.length === 0)).toBe(true);
+	}
+	expect(await page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(2);
 	await author.close();
 });
 
@@ -381,7 +388,7 @@ test("admin cannot copy a shared team member into a submitted proposal", async (
 	await page.evaluate((ids) => {
 		window.proposalTest.session.setState({ boardDrafts: { teams: [{ id: "shared", memberIds: ids, createdMs: 1 }], reservations: [] } });
 	}, [uid(4), uid(5)]);
-	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(1);
+	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(2);
 	await page.getByRole("button", { name: "정렬", exact: true }).click();
 	const target = (await cards(page))[0];
 	await drag(page, 4, { x: target.point.x - 35, y: target.point.y + 35 });
@@ -406,47 +413,20 @@ for (const [state, player] of [["resting", 2], ["cock-pending", 3]] as const) {
 	});
 }
 
-test("admin automatically fills four and starts directly; member keeps cancellation only", async ({ page, context }) => {
+test("admin fills a proposal and opens court selection; author keeps cancellation only", async ({ page, context }) => {
 	const server = { proposals: [proposal] };
 	const writes = await setup(page, "admin", { server });
-	expect((await cards(page))[0].appearance.ctaLabel).toBe("자동매칭");
 	await pressFooter(page);
 	await expect.poll(async () => (await cards(page))[0]?.members.length).toBe(4);
-	await expect.poll(async () => (await cards(page))[0]?.appearance.ctaLabel).toBe("경기시작");
+	await expect.poll(async () => (await cards(page))[0]?.appearance.ctaLabel).toBe("코트 선택");
 	const author = await context.newPage();
 	await setup(author, "member", { server });
 	expect((await cards(author))[0].appearance.ctaLabel).toBe("제안 취소");
-	await author.close();
-	await page.bringToFront();
+	await author.close(); await page.bringToFront();
 	await pressFooter(page);
-	await expect.poll(async () => (await cards(page)).length).toBe(0);
-	expect(writes.filter((url) => url.includes("start_match_proposal"))).toHaveLength(1);
-	expect(server.proposals[0].status).toBe("started");
-	expect(await page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(0);
-});
-
-test("a proposal containing the last administrator cannot start without a replacement", async ({ page }) => {
-	const server = { proposals: [{ ...proposal, player_ids: [1, 2, 3, 4].map(uid), player_names: ["운영진", "민수", "지수", "현우"] }] };
-	const adminIds = [uid(1)];
-	const writes = await setup(page, "admin", { server, adminIds });
-	await expect.poll(async () => (await cards(page))[0]?.appearance.ctaLabel).toBe("교대 확인");
-	await pressFooter(page);
-	await expect(page.getByRole("button", { name: "교대까지 대기" })).toBeVisible();
-	expect(writes.some(url => url.includes("start_match_proposal"))).toBe(false);
-	await page.getByRole("button", { name: "교대까지 대기" }).click();
-	await pressFooter(page);
-	await expect(page.getByRole("button", { name: "이번 경기 시작" })).toHaveCount(0);
-	expect(writes.some(url => url.includes("start_match_proposal"))).toBe(false);
+	await expect(page.getByText("편성제안을 넣을 코트", { exact: true })).toBeVisible();
+	expect(writes.filter(url => url.includes("start_match_proposal"))).toHaveLength(0);
 	expect(server.proposals[0].status).toBe("pending");
-	await page.getByRole("button", { name: "교대까지 대기" }).click();
-	// Another administrator becomes available; the original proposal can start.
-	adminIds.push(uid(6));
-	await page.evaluate(() => window.dispatchEvent(new Event("online")));
-	await expect.poll(async () => (await cards(page))[0]?.appearance.ctaLabel).toBe("경기시작");
-	const request = page.waitForRequest(r => r.url().includes("start_match_proposal_with_admin_coverage"));
-	await pressFooter(page);
-	expect((await request).postDataJSON().p_allow_admin_absence).toBe(false);
-	await expect.poll(async () => (await cards(page)).length).toBe(0);
 });
 
 test("admin without editor permission can reject but cannot edit or start", async ({ page }) => {
@@ -541,6 +521,99 @@ for (const [role, width, height] of [["member", 390, 844], ["admin", 1280, 800]]
 	});
 }
 
+for (const width of [320, 390]) test(`search stays above the keyboard and its FAB matches the former add button at ${width}px`, async ({ page }, testInfo) => {
+	await page.setViewportSize({ width, height: 844 });
+	await setup(page, "member");
+	const search = page.getByRole("button", { name: "회원 찾기", exact: true });
+	const fab = (await search.boundingBox())!;
+	expect(fab).toMatchObject({ x: 16, y: 748, width: 44, height: 44 });
+	await expect(search).toHaveCSS("border-radius", "22px");
+	await expect(search).toHaveCSS("background-color", "rgb(0, 122, 255)");
+	await search.click();
+	const dialog = page.getByRole("dialog", { name: "회원 찾기" });
+	const input = page.getByRole("searchbox", { name: "이름 또는 초성" });
+	await expect(input).toBeFocused();
+	await input.fill("ㅅ");
+	const list = dialog.getByLabel("회원 검색 결과");
+	for (const viewport of [{ height: 360, top: 0 }, { height: 280, top: 80 }]) {
+		await keyboardViewport(page, viewport);
+		await expect.poll(async () => {
+			const bounds = (await dialog.boundingBox())!;
+			return bounds.y >= viewport.top && bounds.y + bounds.height <= viewport.top + viewport.height;
+		}).toBe(true);
+		await expect(input).toBeFocused();
+		const inputBounds = (await input.boundingBox())!;
+		expect(inputBounds.y + inputBounds.height).toBeLessThan(viewport.top + viewport.height);
+		const size = await list.evaluate(element => ({ height: element.clientHeight, content: element.scrollHeight }));
+		expect(size.height).toBeGreaterThanOrEqual(56);
+		expect(size.content).toBeGreaterThan(size.height);
+		await list.evaluate(element => { element.scrollTop = element.scrollHeight; });
+		expect(await list.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+	}
+	await page.screenshot({ path: testInfo.outputPath(`search-keyboard-${width}.png`), clip: { x: 0, y: 80, width, height: 280 } });
+	await list.getByRole("button").last().click();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.getByRole("status").filter({ hasText: "위치를 보드에 표시" })).toBeVisible();
+});
+
+for (const [width, height] of [[320, 844], [844, 390]]) test(`search remains usable with only 124px above a keyboard at ${width}px`, async ({ page }, testInfo) => {
+	const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+	await page.setViewportSize({ width, height });
+	await setup(page, "member");
+	await page.getByRole("button", { name: "회원 찾기", exact: true }).click();
+	const dialog = page.getByRole("dialog", { name: "회원 찾기" });
+	const input = dialog.getByRole("searchbox", { name: "이름 또는 초성" });
+	const close = dialog.getByRole("button", { name: "검색 닫기" });
+	const list = dialog.getByLabel("회원 검색 결과");
+	await input.fill("ㅅ");
+	for (const viewport of [{ height: 160, top: 0 }, { height: 132, top: 40 }, { height: 124, top: 60 }]) {
+		await keyboardViewport(page, viewport);
+		await expect.poll(async () => {
+			const bounds = (await dialog.boundingBox())!;
+			return bounds.y >= viewport.top && bounds.y + bounds.height <= viewport.top + viewport.height;
+		}).toBe(true);
+		await expect(input).toBeFocused();
+		const inputBounds = (await input.boundingBox())!, closeBounds = (await close.boundingBox())!;
+		expect(inputBounds.y).toBeGreaterThanOrEqual(viewport.top);
+		expect(inputBounds.y + inputBounds.height).toBeLessThan(viewport.top + viewport.height);
+		expect(inputBounds.height).toBeGreaterThanOrEqual(44);
+		expect(closeBounds.height).toBeGreaterThanOrEqual(44);
+		expect(Math.abs(inputBounds.y - closeBounds.y)).toBeLessThanOrEqual(2);
+		expect(closeBounds.x).toBeGreaterThan(inputBounds.x + inputBounds.width);
+		await expect(input).toHaveCSS("font-size", "16px");
+		await list.evaluate(element => { element.scrollTop = 0; });
+		const row = (await list.getByRole("button").first().boundingBox())!;
+		expect(row.y).toBeGreaterThanOrEqual(inputBounds.y + inputBounds.height);
+		expect(row.y + row.height).toBeLessThanOrEqual(viewport.top + viewport.height);
+		expect(await list.evaluate(element => element.clientHeight)).toBeGreaterThanOrEqual(44);
+		await list.hover(); await page.mouse.wheel(0, 500);
+		await expect.poll(() => list.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+	}
+	await page.screenshot({ path: testInfo.outputPath(`search-short-keyboard-${width}.png`), clip: { x: 0, y: 60, width, height: 124 } });
+	await input.fill("없는회원");
+	await expect(list.getByText("일치하는 회원이 없어요.")).toBeInViewport({ ratio: 1 });
+	await input.fill("");
+	await expect(list.getByText("찾을 회원의 이름을 입력해 주세요.")).toBeInViewport({ ratio: 1 });
+	await input.fill("ㅅ");
+	// Keyboard dismissal restores the existing full header without remounting/clearing the input.
+	await keyboardViewport(page, { height, top: 0 });
+	await expect.poll(async () => (await dialog.getByRole("heading", { name: "회원 찾기" }).boundingBox())!.height).toBeGreaterThan(20);
+	await expect(input).toHaveValue("ㅅ"); await expect(input).toBeFocused();
+	// Even less space than one input + result remains reachable via the sheet's scroll fallback.
+	await keyboardViewport(page, { height: 96, top: 40 });
+	const sheet = dialog.locator("..");
+	await expect.poll(() => sheet.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+	await sheet.evaluate(element => { element.scrollTop = element.scrollHeight; });
+	await list.getByRole("button").last().click();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.getByRole("status").filter({ hasText: "위치를 보드에 표시" })).toBeVisible();
+	await page.getByRole("button", { name: "회원 찾기", exact: true }).click();
+	await keyboardViewport(page, { height: 124, top: 60 });
+	await close.click(); await expect(dialog).toHaveCount(0);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+	expect(errors).toEqual([]);
+});
+
 test("touch opens search; playing and waiting members remain findable with reduced motion", async ({ page }, testInfo) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "dark" });
@@ -580,7 +653,7 @@ for (const width of [390, 1280]) {
 		await page.evaluate((ids) => {
 			window.proposalTest.session.setState({ boardDrafts: { teams: [{ id: "shared", memberIds: ids, createdMs: 1 }], reservations: [] } });
 		}, [uid(2), uid(3)]);
-		await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(1);
+		await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(2);
 		await page.getByRole("button", { name: "정렬", exact: true }).click();
 		const target = await page.evaluate(() => {
 			const view = window.proposalTest.scene().entities.find((entity) => entity.kind === "card" && entity.source.kind === "team");
@@ -594,7 +667,16 @@ for (const width of [390, 1280]) {
 		expect(await page.evaluate(() => window.proposalTest.board.getState().drafts.get("shared")?.anchorMemberIds)).toEqual([uid(2), uid(3)]);
 		expect(writes).toEqual([]);
 		// Open space only moves the magnet. A new group requires another free magnet.
-		const open = { x: width > 400 ? 450 : 250, y: 550 };
+		const open = await page.evaluate(id => {
+			const board = window.proposalTest.board.getState();
+			const entities = window.proposalTest.scene().entities;
+			for (let y = board.stageH - 80; y > 180; y -= 40) for (let x = 80; x < board.stageW - 60; x += 40) {
+				if (entities.every(item => item.kind === "card"
+					? Math.abs(item.point.x - x) > 110 || Math.abs(item.point.y - y) > 145
+					: item.player.id === id || Math.hypot(item.point.x - x, item.point.y - y) > 85)) return { x, y };
+			}
+			throw new Error("No open floor position");
+		}, uid(4));
 		await drag(page, 4, open);
 		expect(await cards(page)).toHaveLength(0);
 		expect(await page.evaluate((id) => window.proposalTest.board.getState().magnets.get(id), uid(4))).not.toEqual(before);

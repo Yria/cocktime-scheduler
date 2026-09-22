@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { SessionPlayer, Court, GroupHistory, GameType } from "../types";
-import type { DraftTeam, MagnetPosition, Reservation } from "../types/board";
+import type { BoardDraftsPayload, DraftTeam, MagnetPosition, Reservation } from "../types/board";
 import { DEFAULT_VIEWPORT } from "../lib/board/geometry";
 
 // ── sessionStore / appStore 모킹 (Supabase 미로드) ───────────
@@ -42,6 +42,7 @@ vi.mock("./appStore", () => ({
 }));
 
 import { useBoardStore } from "./boardStore";
+import { serializeBoardDrafts } from "./board/draftsSync";
 import { useAdminCoverageStore } from "./adminCoverageStore";
 import { teamMembers } from "../lib/board/membership";
 import { TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_W, MAGNET_SIZE } from "../lib/board/constants";
@@ -100,6 +101,76 @@ beforeEach(() => {
 	h.restingIds = [];
 	h.setResting.mockReset();
 	useBoardStore.getState().reset();
+});
+
+describe("코트에 고정된 그룹", () => {
+	function setup(ids = ["a", "b", "c", "d", "e", "f", "g", "h"]) {
+		h.players = new Map(ids.map(id => [id, player(id)]));
+		h.courts = [{ id: 1, match: null }, { id: 2, match: null }];
+		useBoardStore.getState().setStageSize(800, 900);
+		useBoardStore.getState().initializeFromPool([...h.players.values()]);
+		useBoardStore.getState().ensureCourtGroups();
+	}
+	it("선수가 없어도 코트 수만큼 생성하고 마지막 선수를 빼도 그룹을 유지한다", () => {
+		setup([]);
+		expect([...useBoardStore.getState().drafts.values()].map(t => t.courtId)).toEqual([1, 2]);
+		useBoardStore.getState().initializeFromPool([player("a")]);
+		useBoardStore.getState().commitTeammates({ teamId: "court-1" }, ["a"]);
+		useBoardStore.getState().detachMember("a", { x: 500, y: 700 });
+		expect(useBoardStore.getState().drafts.get("court-1")?.anchorMemberIds).toEqual([]);
+		expect(useBoardStore.getState().drafts.size).toBe(2);
+	});
+	it("정해진 코트에서 시작하고 완료 후 동일한 그룹/위치에 다음 팀을 채운다", async () => {
+		setup();
+		useBoardStore.getState().setTeamAnchor("court-2", 550, 330);
+		useBoardStore.getState().commitTeammates({ teamId: "court-2" }, ["a", "b", "c", "d"]);
+		h.handleAssign.mockImplementation(async (gen, courtId) => {
+			h.courts.find(c => c.id === courtId)!.match = { id: "match", courtId, gameType: gen.gameType, teamA: gen.teamA, teamB: gen.teamB, startedAt: "" };
+		});
+		await useBoardStore.getState().startMatch("court-2");
+		expect(h.handleAssign).toHaveBeenCalledWith(expect.anything(), 2);
+		expect(useBoardStore.getState().drafts.get("court-2")).toMatchObject({ courtId: 2, anchor: { x: 550, y: 330 }, anchorMemberIds: [] });
+		h.handleComplete.mockImplementation(async () => {
+			h.courts[1].match = null;
+			for (const id of ["a", "b", "c", "d"]) h.players.get(id)!.gameCount = 5;
+		});
+		await useBoardStore.getState().completeMatch(2);
+		expect(useBoardStore.getState().drafts.get("court-2")).toMatchObject({ anchor: { x: 550, y: 330 } });
+		expect([...useBoardStore.getState().drafts.get("court-2")!.anchorMemberIds].sort()).toEqual(["e", "f", "g", "h"]);
+		expect(useBoardStore.getState().drafts.get("court-1")!.anchorMemberIds).toEqual([]);
+		expect(h.handleAssign).toHaveBeenCalledTimes(1);
+	});
+	it("완료 실패 시 명단을 다시 편성하지 않으며 경기 중 그룹에 드롭할 수 없다", async () => {
+		setup();
+		h.courts[0].match = { id: "live", courtId: 1, gameType: "남복", teamA: ["a", "b"], teamB: ["c", "d"], startedAt: "" };
+		const anchor = useBoardStore.getState().drafts.get("court-1")!.anchor;
+		useBoardStore.getState().handleDrop("e", { x: anchor.x - 35, y: anchor.y - 35 });
+		await useBoardStore.getState().completeMatch(1);
+		expect(useBoardStore.getState().drafts.get("court-1")!.anchorMemberIds).toEqual([]);
+		expect(useBoardStore.getState().magnets.get("e")!.teamId).toBeNull();
+	});
+	it("중복 편성 없이 빈 그룹을 채우고 네 명을 완성하지 못하면 빈칸을 유지한다", () => {
+		setup(["a", "b", "c", "d", "e", "f"]);
+		useBoardStore.getState().autoFillEmptyCourts();
+		const teams = [...useBoardStore.getState().drafts.values()];
+		expect(teams.map(t => t.anchorMemberIds.length)).toEqual([4, 0]);
+		useBoardStore.getState().autoFillEmptyCourts();
+		expect(new Set([...useBoardStore.getState().drafts.values()].flatMap(t => t.anchorMemberIds)).size).toBe(4);
+	});
+	it("정렬/원격 수신/명단 초기화 후에도 코트 그룹의 자리와 번호가 유지된다", () => {
+		setup();
+		useBoardStore.getState().setTeamAnchor("court-1", 550, 450);
+		useBoardStore.getState().setTeamAnchor("court-2", 150, 440);
+		useBoardStore.getState().rearrangeAll(800, 900, true);
+		expect([...useBoardStore.getState().drafts.values()].map(t => t.anchor)).toEqual([{ x: 550, y: 445 }, { x: 150, y: 445 }]);
+		useBoardStore.getState().applyRemoteDrafts({ teams: [
+			{ id: "court-1", courtId: 1, memberIds: ["a"], createdMs: 1 },
+			{ id: "court-2", courtId: 2, memberIds: [], createdMs: 2 },
+		], reservations: [] });
+		useBoardStore.getState().dismissTeam("court-1");
+		expect(useBoardStore.getState().drafts.get("court-1")).toMatchObject({ courtId: 1, anchor: { x: 550, y: 445 }, anchorMemberIds: [] });
+		expect(useBoardStore.getState().drafts.get("court-2")?.anchorMemberIds).toEqual([]);
+	});
 });
 
 // ── 요구1: 자유 자석 드래그로 팀 생성 ──────────────────────
@@ -1128,7 +1199,54 @@ describe("예약(ghost) 구조 정합 — anchor xor ghost / 중복 / 동기화 
 });
 
 // ── 공유 멤버십 적용(applyRemoteDrafts) ─────────────────────
-describe("applyRemoteDrafts — 공유된 보드 멤버십을 로컬에 반영(위치는 로컬)", () => {
+describe("saved board layout", () => {
+	it("restores courts and free players after reset, without clamping coordinates to a smaller viewport", () => {
+		h.courts = [{ id: 1, match: null }, { id: 2, match: null }];
+		const board = useBoardStore.getState();
+		board.bindSession(1);
+		board.initializeFromPool([player("a"), player("b")]);
+		board.setStageSize(1000, 900);
+		board.ensureCourtGroups();
+		board.setTeamAnchor("court-1", 620, 220);
+		board.setCourtAnchor(2, 220, 550);
+		board.handleDrop("a", { x: 810, y: 710 });
+		const saved = serializeBoardDrafts(useBoardStore.getState());
+		expect(saved.layout?.teams["court-1"]).toEqual({ x: 620, y: 220 });
+		expect(saved.layout?.magnets.a).toEqual({ x: 810, y: 710 });
+		board.reset();
+		board.bindSession(1);
+		board.initializeFromPool([player("a"), player("b")]);
+		board.setStageSize(320, 600);
+		board.applyRemoteDrafts(JSON.parse(JSON.stringify(saved)));
+		board.ensureCourtGroups();
+		expect(serializeBoardDrafts(useBoardStore.getState())).toEqual(saved);
+		expect(useBoardStore.getState().manualLayout).toBe(true);
+		board.bindSession(2);
+		expect(useBoardStore.getState().drafts.size).toBe(0);
+		expect(useBoardStore.getState().manualLayout).toBe(false);
+	});
+
+	it("applies a coordinates-only snapshot and ignores invalid coordinate entries", () => {
+		h.courts = [{ id: 1, match: null }];
+		const board = useBoardStore.getState();
+		board.initializeFromPool([player("a")]);
+		board.ensureCourtGroups();
+		const payload: BoardDraftsPayload = { ...serializeBoardDrafts(useBoardStore.getState()), layout: {
+			version: 1, teams: { "court-1": { x: 280, y: 410 } }, courts: { "1": { x: 280, y: 410 } },
+			magnets: { a: { x: 700, y: 610 }, absent: { x: 2, y: 3 } },
+		} };
+		board.applyRemoteDrafts(payload);
+		expect(useBoardStore.getState().drafts.get("court-1")?.anchor).toEqual({ x: 280, y: 410 });
+		expect(useBoardStore.getState().magnets.get("a")).toMatchObject({ x: 700, y: 610 });
+		expect(useBoardStore.getState().magnets.has("absent")).toBe(false);
+		board.applyRemoteDrafts({ ...payload, layout: { ...payload.layout!, teams: { "court-1": { x: NaN, y: -1 } },
+			courts: {}, magnets: { a: { x: Infinity, y: 100 } } } });
+		expect(useBoardStore.getState().drafts.get("court-1")?.anchor).toEqual({ x: 280, y: 410 });
+		expect(useBoardStore.getState().magnets.get("a")).toMatchObject({ x: 700, y: 610 });
+	});
+});
+
+describe("applyRemoteDrafts — 좌표 없는 구버전 명단은 로컬 위치를 유지", () => {
 	it("대기 1명과 경기중 예약 3명으로 구성된 팀도 동기화 후 유지한다", () => {
 		h.players = new Map(["a", "b", "c", "d"].map(id => [id, player(id)]));
 		h.courts = [{ id: 1, match: { teamA: ["b", "c"], teamB: ["d", "z"] } } as Court];

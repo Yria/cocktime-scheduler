@@ -2,6 +2,7 @@ import type { StateCreator } from "zustand";
 import type { MagnetPosition } from "../../types/board";
 import { DEFAULT_VIEWPORT } from "../../lib/board/geometry";
 import { MAGNET_SIZE, TEAM_BOX_BELOW } from "../../lib/board/constants";
+import { alignCourtGroups } from "../../lib/board/courtGroups";
 import { arrangeBoard } from "../../lib/board/arrange";
 import { scatterFromSource } from "../../lib/board/scatter";
 import { settleFreeMagnets } from "../../lib/board/settle";
@@ -15,10 +16,13 @@ import { useSessionStore } from "../sessionStore";
 import type { BoardState } from "./types";
 import { clampScale, loadScale, loadUserScale, SCALE_KEY, SCALE_LOCK_KEY } from "./zoom";
 import { clampToStage, gridPos, runSettle } from "./layoutHelpers";
+import { syncState } from "./draftsSync";
 
 /** 뷰/레이아웃 슬라이스 — 줌·스테이지 크기·드래그 하이라이트·정렬/흩어짐·풀 초기화·리셋. */
 export type ViewSlice = Pick<
 	BoardState,
+	| "sessionId"
+	| "bindSession"
 	| "manualLayout"
 	| "stageW"
 	| "stageH"
@@ -56,6 +60,12 @@ export const createViewSlice: StateCreator<
 	[],
 	ViewSlice
 > = (set, get) => ({
+	sessionId: null,
+	bindSession: (sessionId) => {
+		if (get().sessionId === sessionId) return;
+		get().reset();
+		set(s => { s.sessionId = sessionId; });
+	},
 	manualLayout: false,
 	stageW: 0,
 	stageH: 0,
@@ -109,7 +119,7 @@ export const createViewSlice: StateCreator<
 		set((s) => {
 			if (editing) s.manualLayout = true; // 편집자가 팀을 직접 옮기면 자동 정렬 중단(뷰어 로컬 이동은 자동 유지)
 			const t = s.drafts.get(teamId);
-			if (t) t.anchor = clampToStage(s, { x, y }); // 화면 안 어디든(코트 레인 제한 없음), 화면 밖만 방지
+			if (t) { t.anchor = clampToStage(s, { x, y }); if (t.courtId != null) s.courtAnchors.set(t.courtId, { ...t.anchor }); } // 화면 안 어디든(코트 레인 제한 없음), 화면 밖만 방지
 		});
 	},
 
@@ -117,7 +127,9 @@ export const createViewSlice: StateCreator<
 		const editing = useSessionStore.getState().isEditor;
 		set((s) => {
 			if (editing) s.manualLayout = true; // 편집자가 코트 카드를 직접 옮기면 자동 정렬 중단
-			s.courtAnchors.set(courtId, clampToStage(s, { x, y })); // 코트 카드도 화면 안 어디든
+			s.courtAnchors.set(courtId, clampToStage(s, { x, y }));
+			const team = [...s.drafts.values()].find(t => t.courtId === courtId);
+			if (team) team.anchor = { ...s.courtAnchors.get(courtId)! }; // 코트 카드도 화면 안 어디든
 		});
 	},
 
@@ -252,6 +264,7 @@ export const createViewSlice: StateCreator<
 		set((s) => {
 			// 정렬 버튼(markManual)로 편집자가 명시 배치하면 자동 fit 중단 — 축소해 둔 비율·정렬 결과를 이후 멤버십/코트 변화가 덮어쓰지 않게.
 			if (markManual && editing) s.manualLayout = true;
+			if (markManual) alignCourtGroups([...s.drafts.values()].filter(team => team.courtId != null));
 			arrangeBoard({
 				magnets: s.magnets,
 				drafts: s.drafts,
@@ -316,20 +329,28 @@ export const createViewSlice: StateCreator<
 	},
 
 	reset: () => {
-		set((s) => {
-			s.magnets = new Map();
-			s.drafts = new Map();
-			s.reservations = new Map();
-			s.assigningTeamIds = new Set();
-			s.courtAnchors = new Map();
-			s.manualLayout = false;
-			s.stageW = 0;
-			s.stageH = 0;
-			s.restFieldHot = false;
-			s.presenceModalOpen = false;
-			s.dragInfo = null;
-			s.hoverTarget = null;
-			s.detachHot = false;
-		});
+		const wasApplying = syncState.applyingRemoteDrafts;
+		syncState.applyingRemoteDrafts = true;
+		try {
+			set((s) => {
+				s.sessionId = null;
+				s.magnets = new Map();
+				s.drafts = new Map();
+				s.reservations = new Map();
+				s.assigningTeamIds = new Set();
+				s.courtAnchors = new Map();
+				s.manualLayout = false;
+				s.stageW = 0;
+				s.stageH = 0;
+				s.restFieldHot = false;
+				s.presenceModalOpen = false;
+				s.dragInfo = null;
+				s.hoverTarget = null;
+				s.detachHot = false;
+			});
+			syncState.lastSyncedDraftsJson = "";
+		} finally {
+			syncState.applyingRemoteDrafts = wasApplying;
+		}
 	},
 });

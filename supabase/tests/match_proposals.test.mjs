@@ -8,7 +8,7 @@ create role anon; create role authenticated;
 create schema auth;
 create table auth.users(id uuid primary key);
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-create table public.sessions(id bigint primary key, is_active boolean default true, status text default 'active', board_drafts jsonb, court_count int default 2, cock_check_enabled boolean default false, editor_client_id text default 'editor', editor_name text, editor_lease_until timestamptz, match_assign_count int default 0, match_state_version int default 0);
+create table public.sessions(id bigint primary key, is_active boolean default true, status text default 'active', board_drafts jsonb, board_drafts_version bigint default 0, court_count int default 2, cock_check_enabled boolean default false, editor_client_id text default 'editor', editor_name text, editor_lease_until timestamptz, match_assign_count int default 0, match_state_version int default 0);
 create table public.members(id uuid primary key, auth_user_id uuid, name text, is_active boolean default true);
 create table public.user_roles(member_id uuid, role text);
 create table public.session_players(id uuid primary key, session_id bigint, member_id uuid, name text, status text default 'waiting', cock_checked boolean default true);
@@ -23,9 +23,12 @@ grant execute on function auth.uid(), public.is_admin() to authenticated;
 `);
 const sql = readFileSync(new URL('../migrations/20260918010000_private_match_proposals.sql', import.meta.url), 'utf8');
 await db.exec(sql); await db.exec(sql);
+const staffProposalSql = readFileSync(new URL('../migrations/20260922020000_admin_viewer_match_proposals.sql', import.meta.url), 'utf8');
+await db.exec(staffProposalSql); await db.exec(staffProposalSql);
 const rejectionSql = readFileSync(new URL('../migrations/20260918020000_reject_match_proposals.sql', import.meta.url), 'utf8');
 await db.exec(rejectionSql); await db.exec(rejectionSql);
 const lockSql = readFileSync(new URL('../migrations/20260717000000_lock_sticky_no_heartbeat.sql', import.meta.url), 'utf8');
+await db.exec(lockSql.slice(lockSql.indexOf('CREATE OR REPLACE FUNCTION board_save_drafts('), lockSql.indexOf('CREATE OR REPLACE FUNCTION board_assert_editor(')));
 await db.exec(lockSql.slice(lockSql.indexOf('CREATE OR REPLACE FUNCTION board_assert_editor(')));
 const assignSql = readFileSync(new URL('../migrations/20260817020000_advisor_function_search_path.sql', import.meta.url), 'utf8');
 const assignStart = assignSql.indexOf('create or replace function public.assign_match(');
@@ -148,5 +151,88 @@ assert.equal((await db.query("select count(*)::int n from public.session_players
 assert.equal((await db.query('select match_assign_count from public.sessions where id=1')).rows[0].match_assign_count,1);
 await db.exec("update public.sessions set status='closed' where id=1");
 await as(2); await assert.rejects(send(206,[2]));
+// Permanent court proposal replacement is atomic and does not create a match.
+const applySql = readFileSync(new URL('../migrations/20260922010000_apply_proposal_to_court_group.sql', import.meta.url), 'utf8');
+await db.exec('reset role');
+await db.exec(applySql); await db.exec(applySql);
+await db.exec("update public.sessions set status='active',editor_client_id='editor' where id=1; delete from public.matches; update public.session_players set status='waiting'");
+await as(2);
+const replacement = await send(700,[2,3,5,6]);
+const apply = async (p, team='court-1', version=0, client='editor') => (await db.query(
+ 'select public.apply_match_proposal_to_group($1,$2,$3,$4,$5,$6) result',
+ [p.id,p.updated_at,team,version,client,'운영진'])).rows[0].result;
+const draftPayload = { teams: [
+ {id:'court-1',courtId:1,memberIds:[1,2,3,4].map(uid),createdMs:1,slots:{[uid(2)]:3},confirmedMs:123,createdBy:'old'},
+ {id:'court-2',courtId:2,memberIds:[],createdMs:2}],
+ reservations:[{id:'reservation-1',playerId:uid(6),teamId:'court-1',createdMs:2},
+ {id:'reservation-2',playerId:uid(1),teamId:'court-2',createdMs:3}],
+ layout: {version:1,teams:{'court-1':{x:620,y:250},'court-2':{x:220,y:450}},courts:{'1':{x:620,y:250},'2':{x:220,y:450}},magnets:{[uid(6)]:{x:410,y:700}}} };
+await db.exec('reset role');
+await db.query('update public.sessions set board_drafts=$1 where id=1',[draftPayload]);
+await as(2); await assert.rejects(apply(replacement), /not editor/);
+await as(1);
+await assert.rejects(apply(replacement,'court-1',0,'other'), /not editor/);
+await assert.rejects(apply(replacement,'court-1',0,null), /not editor/);
+await assert.rejects(apply(replacement,'court-1',99), /board changed/);
+await assert.rejects(apply({...replacement,updated_at:'2000-01-01'}), /proposal changed/);
+await assert.rejects(apply(replacement,'missing'), /court group not found/);
+await db.exec('reset role');
+await db.query("insert into public.matches(id,session_id,court_id,status) values($1,1,1,'playing')",[uid(701)]);
+await as(1); await assert.rejects(apply(replacement), /court already assigned/);
+await db.exec('reset role');
+assert.deepEqual((await db.query('select board_drafts from public.sessions where id=1')).rows[0].board_drafts,draftPayload);
+await db.exec('delete from public.matches');
+await db.query("update public.sessions set board_drafts=jsonb_set(board_drafts,'{teams,1,memberIds}',$1) where id=1",[JSON.stringify([uid(5)])]);
+await as(1); await assert.rejects(apply(replacement), /players already grouped/);
+await db.exec('reset role');
+await db.query('update public.sessions set board_drafts=$1 where id=1',[draftPayload]);
+await db.query("update public.session_players set status='resting' where id=$1",[uid(5)]);
+await as(1); await assert.rejects(apply(replacement), /players not ready/);
+await db.exec('reset role'); await db.exec("update public.session_players set status='waiting'");
+await as(1);
+const applied = await apply(replacement);
+assert.equal(applied.proposal.status,'applied');
+assert.equal(applied.proposal.applied_team_id,'court-1');
+assert.equal(applied.version,1);
+assert.deepEqual(applied.drafts.teams[0],{id:'court-1',courtId:1,memberIds:[2,3,5,6].map(uid),createdMs:1,createdBy:'회원2'});
+assert.deepEqual(applied.drafts.teams[1],draftPayload.teams[1]);
+assert.deepEqual(applied.drafts.reservations,[draftPayload.reservations[1]]);
+assert.deepEqual(applied.drafts.layout,draftPayload.layout); // Approval replaces the roster without losing saved coordinates.
+assert.equal((await apply(replacement)).version,1); // Lost response retry does not overwrite again.
+await assert.rejects(apply(replacement,'court-2',1), /proposal already closed/);
+await assert.rejects(resolve(700,'reviewed'), /proposal already closed/);
+await db.exec('reset role');
+assert.equal((await db.query('select count(*)::int n from public.matches')).rows[0].n,0);
+await as(2); assert.equal((await list()).find(p=>p.id===uid(700)).status,'applied');
+console.log('Court proposal replacement: full roster reset, reservation cleanup, stable identity, editor/version/playing guards, atomic rejection, retry, no automatic start passed.');
+const saveBoard = async (data, base=1, client='editor') => (await db.query(
+ 'select public.board_save_drafts(1,$1,$2,$3,$4) version',[client,'운영진',data,base])).rows[0].version;
+assert.equal(await saveBoard(applied.drafts),null); // Members cannot persist local moves.
+await as(1);
+assert.equal(await saveBoard(applied.drafts,1,'other'),null);
+assert.equal(await saveBoard(applied.drafts,0),null); // Stale coordinates cannot overwrite a newer layout.
+assert.equal(Number(await saveBoard(applied.drafts)),2);
+await db.exec('reset role');
+assert.deepEqual((await db.query('select board_drafts from public.sessions where id=1')).rows[0].board_drafts,applied.drafts);
+console.log('Board layout SQL: existing CAS stores coordinates, rejects viewers/stale editors, and proposal approval preserves the layout.');
+await as(8); // Administrator 8 has no session_players row and owns no editing lock.
+const staffProposal = await send(800,[2,3]);
+assert.equal(staffProposal.created_by,uid(8));
+assert.equal(staffProposal.creator_name,'회원8');
+assert.equal(staffProposal.status,'pending');
+assert.equal((await send(800,[2,3])).id,staffProposal.id);
+await assert.rejects(send(801,[100]), /player left session/);
+await as(2); assert.equal((await list()).some(p=>p.id===uid(800)),false);
+await as(1); assert.equal((await list()).some(p=>p.id===uid(800)),true);
+await as(8); await resolve(800,'withdrawn');
+await db.exec('reset role');
+const unchangedBoard = (await db.query('select board_drafts,board_drafts_version,editor_client_id from public.sessions where id=1')).rows[0];
+assert.deepEqual(unchangedBoard.board_drafts,applied.drafts);
+assert.equal(Number(unchangedBoard.board_drafts_version),2);
+assert.equal(unchangedBoard.editor_client_id,'editor');
+assert.equal((await db.query('select count(*)::int n from public.matches')).rows[0].n,0);
+await db.query('delete from public.user_roles where member_id=$1',[uid(8)]);
+await as(8); await assert.rejects(send(802,[2,3]), /not participant/);
+console.log('Staff-only proposals: nonparticipant administrators can submit/withdraw, RLS and shared-board authority remain unchanged, revoked roles are rejected.');
 await db.close();
 console.log('Private match proposal SQL: RLS, roles, 1–4 members, idempotency, rejection lifecycle, private roster editing, atomic direct start, editor guards, retries and shared-board isolation passed.');

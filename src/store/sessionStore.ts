@@ -34,6 +34,7 @@ import { randomId } from "../lib/randomId";
 import { useAuthStore } from "./authStore";
 import { appActions } from "./appStore";
 import { toast } from "./toastStore";
+import { flushBoardDrafts } from "./board/draftsSync";
 import {
 	applyDraftsIfNewerImpl,
 	handleMatchCompleted,
@@ -650,7 +651,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	unsubscribe: () => {
 		const { _channel, _metaChannel, _clientId, isEditor } = get();
 		// 편집 보유자면 명시 해제(best-effort). 실패(crash 등)해도 "편집 권한 가져오기"(takeover)로 회수.
-		if (isEditor && _clientId) void dbBoardReleaseEditor(getSessionId(), _clientId);
+		if (isEditor && _clientId) {
+			const sessionId = getSessionId();
+			// 마지막 드롭이 저장되기 전에 락을 해제하면 trailing 저장이 유실되거나 락을 재점유한다.
+			void flushBoardDrafts().finally(() => {
+				// 저장 중 같은 보드로 돌아왔다면 새 구독의 편집권을 뒤늦게 해제하지 않는다.
+				if (getSessionId() === sessionId && get()._clientId === _clientId) return;
+				return dbBoardReleaseEditor(sessionId, _clientId);
+			});
+		}
 		teardownLockLifecycle();
 		clearSyncPull();
 		resetEditorCache();

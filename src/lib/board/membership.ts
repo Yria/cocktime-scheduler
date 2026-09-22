@@ -117,6 +117,7 @@ export function wouldDissolveByPlaying(
 	reservations: ResMap,
 	playingIds: ReadonlySet<string>,
 ): boolean {
+	if (team.courtId != null) return false;
 	const liveAnchors = team.anchorMemberIds.filter((id) => !playingIds.has(id));
 	if (liveAnchors.length === 0) return true; // 모든 anchor가 경기중 → 해체
 	const anchorSet = new Set(team.anchorMemberIds);

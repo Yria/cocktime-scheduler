@@ -42,6 +42,25 @@ function card(snapshot: BoardSnapshot, key: string): CardView {
 }
 
 describe("Pixi board projection", () => {
+	it("keeps the same court card key and anchor through empty, ready, playing and empty again", () => {
+		const { bs, ss } = fixture();
+		const project = createBoardProjection();
+		team(bs, "fixed", [], { courtId: 1 });
+		const empty = card(project(bs, ss), "team:fixed");
+		expect(empty.appearance.label).toBe("1번 코트 · 편성 중 0/4");
+		expect(empty.emptySlots).toHaveLength(4);
+		bs.drafts = new Map(bs.drafts);
+		team(bs, "fixed", ["a", "b", "c", "d"], { courtId: 1 });
+		expect(card(project(bs, ss), "team:fixed").appearance.label).toBe("1번 코트 · 시작 대기");
+		ss.courts = [court(1, ["a", "b", "c", "d"])];
+		const playing = project(bs, ss);
+		expect(playing.entities.filter(e => e.kind === "card")).toHaveLength(1);
+		expect(card(playing, "team:fixed")).toMatchObject({ point: empty.point, source: { kind: "court", courtId: 1 } });
+		ss.courts = [{ id: 1, match: null }];
+		bs.drafts = new Map(bs.drafts);
+		team(bs, "fixed", [], { courtId: 1 });
+		expect(card(project(bs, ss), "team:fixed").point).toEqual(empty.point);
+	});
 	it("lets composing members drag only free and local proposal magnets", () => {
 		const { bs, ss } = fixture();
 		ss.isEditor = false;

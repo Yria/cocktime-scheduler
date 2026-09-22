@@ -25,8 +25,11 @@ export default function BoardPlayerSearch({ onClose, onSelect }: {
 		input.current?.focus({ preventScroll: true });
 		return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true }); };
 	}, []);
-	return <ModalSheet onClose={onClose} closeOnEscape position="center">
-		<div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="board-search-title" className="p-5"
+	return <ModalSheet onClose={onClose} closeOnEscape position="center" keyboardAware className="flex min-h-0 flex-col">
+		{/* 가로 화면의 키보드 위에는 제목/라벨 대신 입력창과 닫기를 한 줄에 둔다.
+		    116px보다도 좁으면 시트 전체를 스크롤해 입력과 결과에 모두 접근할 수 있다. */}
+		<div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="board-search-title"
+			className="relative flex min-h-0 flex-col p-5 group-data-[short-viewport=true]/modal-viewport:min-h-[116px] group-data-[short-viewport=true]/modal-viewport:p-2"
 			onKeyDown={(event) => {
 				if (event.key !== "Tab") return;
 				const controls = dialog.current?.querySelectorAll<HTMLElement>("button, input");
@@ -35,18 +38,18 @@ export default function BoardPlayerSearch({ onClose, onSelect }: {
 				if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
 				else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
 			}}>
-			<div className="mb-4 flex items-center justify-between gap-3">
-				<h2 id="board-search-title" className="text-lg font-bold text-gray-900 dark:text-white">회원 찾기</h2>
+			<div className="mb-4 flex shrink-0 items-center justify-between gap-3 group-data-[short-viewport=true]/modal-viewport:contents">
+				<h2 id="board-search-title" className="text-lg font-bold text-gray-900 dark:text-white group-data-[short-viewport=true]/modal-viewport:sr-only">회원 찾기</h2>
 				<button type="button" aria-label="검색 닫기" onClick={onClose}
-					className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300 focus-visible:outline-2 focus-visible:outline-blue-500">
+					className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300 focus-visible:outline-2 focus-visible:outline-blue-500 group-data-[short-viewport=true]/modal-viewport:absolute group-data-[short-viewport=true]/modal-viewport:right-2 group-data-[short-viewport=true]/modal-viewport:top-2.5">
 					<X size={20} aria-hidden="true" />
 				</button>
 			</div>
-			<form onSubmit={(event) => {
+			<form className="shrink-0 group-data-[short-viewport=true]/modal-viewport:pr-13" onSubmit={(event) => {
 				event.preventDefault();
 				if (results[0]) onSelect(results[0].player.id, results[0].player.name);
 			}}>
-				<label htmlFor="board-player-query" className="mb-2 block text-sm font-semibold text-gray-700 dark:text-gray-200">이름 또는 초성</label>
+				<label htmlFor="board-player-query" className="mb-2 block text-sm font-semibold text-gray-700 dark:text-gray-200 group-data-[short-viewport=true]/modal-viewport:sr-only">이름 또는 초성</label>
 				<div className="relative">
 					<Search size={18} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400" />
 					<input ref={input} id="board-player-query" type="search" value={query} onChange={(event) => setQuery(event.target.value)}
@@ -56,14 +59,14 @@ export default function BoardPlayerSearch({ onClose, onSelect }: {
 				</div>
 			</form>
 			<p role="status" className="sr-only">{query.trim() ? `${results.length}명 검색됨` : "이름이나 초성을 입력해 주세요."}</p>
-			<div className="mt-3 max-h-[36dvh] overflow-y-auto overscroll-contain">
-				{!query.trim() ? <p className="py-5 text-center text-sm text-gray-500 dark:text-gray-400">찾을 회원의 이름을 입력해 주세요.</p>
-					: !results.length ? <p className="py-5 text-center text-sm text-gray-500 dark:text-gray-400">일치하는 회원이 없어요.</p>
+			<div className="mt-3 min-h-0 max-h-[36dvh] overflow-y-auto overscroll-contain group-data-[short-viewport=true]/modal-viewport:mt-2 group-data-[short-viewport=true]/modal-viewport:max-h-none" aria-label="회원 검색 결과">
+				{!query.trim() ? <p className="py-5 text-center text-sm text-gray-500 dark:text-gray-400 group-data-[short-viewport=true]/modal-viewport:py-3">찾을 회원의 이름을 입력해 주세요.</p>
+					: !results.length ? <p className="py-5 text-center text-sm text-gray-500 dark:text-gray-400 group-data-[short-viewport=true]/modal-viewport:py-3">일치하는 회원이 없어요.</p>
 					: <ul className="space-y-2">{results.map(({ player, locations }) => <li key={player.id}>
 						<button type="button" onClick={() => onSelect(player.id, player.name)}
-							className="flex min-h-14 w-full items-center gap-3 rounded-xl bg-gray-100 px-4 py-3 text-left active:bg-blue-100 focus-visible:outline-2 focus-visible:outline-blue-500 dark:bg-gray-800 dark:active:bg-gray-700">
-							<span className="min-w-0 flex-1"><span className="block break-words font-semibold text-gray-900 dark:text-white">{player.name}</span>
-								<span className="mt-0.5 block text-xs text-gray-600 dark:text-gray-300">{locations.join(" · ")}</span></span>
+							className="flex min-h-14 w-full items-center gap-3 rounded-xl bg-gray-100 px-4 py-3 text-left active:bg-blue-100 focus-visible:outline-2 focus-visible:outline-blue-500 dark:bg-gray-800 dark:active:bg-gray-700 group-data-[short-viewport=true]/modal-viewport:min-h-11 group-data-[short-viewport=true]/modal-viewport:px-3 group-data-[short-viewport=true]/modal-viewport:py-2">
+							<span className="min-w-0 flex-1 group-data-[short-viewport=true]/modal-viewport:flex group-data-[short-viewport=true]/modal-viewport:flex-wrap group-data-[short-viewport=true]/modal-viewport:items-center group-data-[short-viewport=true]/modal-viewport:gap-x-2"><span className="block break-words font-semibold text-gray-900 dark:text-white">{player.name}</span>
+								<span className="mt-0.5 block text-xs text-gray-600 dark:text-gray-300 group-data-[short-viewport=true]/modal-viewport:mt-0">{locations.join(" · ")}</span></span>
 							<Crosshair size={20} aria-hidden="true" className="shrink-0 text-blue-600 dark:text-blue-400" />
 						</button>
 					</li>)}</ul>}
