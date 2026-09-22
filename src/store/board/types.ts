@@ -79,20 +79,15 @@ export interface BoardState {
 	setCourtAnchor: (courtId: number, x: number, y: number) => void;
 	/** 실제 stage 크기 등록(흩어짐 바운더리용) */
 	setStageSize: (w: number, h: number) => void;
-	/** Pixi 카메라 확정: 배율과 논리 영역을 한 번에 반영. userChanged는 controller가 검증한 제스처 중 유효 변경 여부. */
-	commitBoardView: (view: { scale: number; cssWidth: number; cssHeight: number; userChanged?: boolean }) => void;
+	/** Pixi 카메라 확정: 현재 배율과 논리 영역을 한 번에 반영한다. */
+	commitBoardView: (view: { scale: number; cssWidth: number; cssHeight: number }) => void;
 	/** 편집자의 카드 드래그 시작 시 자동 배치를 중단(좌표는 드롭 때 확정). */
 	markManualLayout: () => void;
 	/** 보드 줌 배율(0.4~1). 수동 줌·자동 fit 공용. */
 	scale: number;
-	/**
-	 * 사용자가 직접 맞춘 배율(없으면 null). 자동 fit 의 **상한**으로만 쓴다 — 확대는 하지 않고,
-	 * 내용이 화면을 넘치면 축소는 허용한다(고정하면 자유 자석이 화면 밖으로 밀려 안 보인다).
-	 */
-	userScale: number | null;
-	/** 수동 줌 배율 설정(클램프 + localStorage 영속 + userScale 갱신). 함수형 업데이트 지원. */
+	/** 현재 보드의 수동 줌 배율 설정. 함수형 업데이트 지원. */
 	setScale: (v: number | ((prev: number) => number)) => void;
-	/** 자동 fit 배율 설정 — 저장·userScale 갱신 없이 실제 배율만 바꾼다. */
+	/** 자동 fit 배율 설정. */
 	setAutoScale: (v: number) => void;
 	/** 드래그-엔드 후 소스(팀/코트)에서 겹친 자유 자석을 흩어지게 */
 	settleBoard: (source: DragSource) => void;

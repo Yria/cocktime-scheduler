@@ -133,19 +133,19 @@ describe("Pixi board projection", () => {
 		const { bs, ss } = fixture();
 		team(bs, "T", ["a", "b"], { createdBy: "운영자" });
 		expect(card(createBoardProjection()(bs, ss), "team:T").appearance).toMatchObject({
-			label: "예비 1 · 2/4 · by 운영자", ctaLabel: "자동매칭", ctaColor: CTA_START_COLOR, labelBold: false, showVs: false,
+			label: "다음 팀 1 · 2/4 · by 운영자", ctaLabel: "자동매칭", ctaColor: CTA_START_COLOR, labelBold: false, showVs: false,
 		});
 		team(bs, "T", ["a", "b", "c", "d"]);
 		expect(card(createBoardProjection()(bs, ss), "team:T").appearance).toMatchObject({ fill: TEAM_READY_BG, ctaLabel: "경기시작", ctaColor: CTA_PLAY_COLOR, ctaEnabled: true });
 		team(bs, "T", ["a", "b", "c", "d"], { confirmedMs: 5 });
-		expect(card(createBoardProjection()(bs, ss), "team:T").appearance).toMatchObject({ fill: TEAM_READY_BG, label: "예비 1 · 배정 대기", ctaLabel: "경기시작", ctaColor: CTA_PLAY_COLOR, blink: false, showUnconfirm: true });
+		expect(card(createBoardProjection()(bs, ss), "team:T").appearance).toMatchObject({ fill: TEAM_READY_BG, label: "다음 팀 1 · 배정 대기", ctaLabel: "경기시작", ctaColor: CTA_PLAY_COLOR, blink: false, showUnconfirm: true });
 		team(bs, "T", ["a", "b", "c"], { confirmedMs: 5 });
 		bs.magnets.set("d", { ...bs.magnets.get("d")!, teamId: null });
 		bs.reservations.set("r", { id: "r", playerId: "d", teamId: "T", createdAt: 1 });
 		ss.courts = [court(1, ["d", "e", "f", "g"])];
 		const reserved = card(createBoardProjection()(bs, ss), "team:T");
 		expect(reserved.confirmed).toBe(false);
-		expect(reserved.appearance).toMatchObject({ fill: TEAM_RESERVED_BG, label: "예비 1 · 예약 대기", ctaLabel: "예약 대기", ctaEnabled: false, blink: false });
+		expect(reserved.appearance).toMatchObject({ fill: TEAM_RESERVED_BG, label: "다음 팀 1 · 예약 대기", ctaLabel: "예약 대기", ctaEnabled: false, blink: false });
 	});
 
 	it("ignores legacy confirmation order and disables starting without a court or editor", () => {
@@ -153,7 +153,7 @@ describe("Pixi board projection", () => {
 		team(bs, "later", ["a", "b", "c", "d"], { confirmedMs: 20 });
 		team(bs, "first", ["e", "f", "g", "h"], { confirmedMs: 10 });
 		let snapshot = createBoardProjection()(bs, ss);
-		expect(card(snapshot, "team:later").appearance).toMatchObject({ label: "예비 2 · 배정 대기", blink: false });
+		expect(card(snapshot, "team:later").appearance).toMatchObject({ label: "다음 팀 2 · 배정 대기", blink: false });
 		expect(card(snapshot, "team:first").appearance.blink).toBe(false);
 		ss.courts = [court(1, ["i", "j", "k", "l"])];
 		snapshot = createBoardProjection()(bs, ss);

@@ -39,8 +39,6 @@ useSessionStore.setState({ sessionPlayers: new Map(players.map((p) => [p.id, p])
 	subscribe: () => {}, unsubscribe: () => {}, claimEditingIfFree: () => {}, resyncFromServer: async () => {},
 });
 useBoardStore.getState().reset();
-// Private proposal tests keep the waiting pool available; lifecycle tests opt into automatic filling.
-if (params.get("autofill") !== "true") useBoardStore.setState({ autoFillEmptyCourts: () => {} });
 const project = createBoardProjection();
 const scene = () => project(useBoardStore.getState(), useSessionStore.getState(), proposalComposer.getSnapshot(), useAdminCoverageStore.getState());
 Object.assign(window, { proposalTest: { board: useBoardStore, session: useSessionStore, auth: useAuthStore, proposals: useMatchProposalStore, scene, flushDrafts: flushBoardDrafts } });

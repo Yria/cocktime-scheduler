@@ -174,8 +174,8 @@ export const createMembershipSlice: StateCreator<
 					s.drafts.set(id, {
 						id,
 						anchorMemberIds: [playerId, target.partnerId],
-						anchor: clampToStage(s, target.anchor),
-						createdAt: nowMs(),
+						anchor: nextGroupAnchor([...s.drafts.values()].map(team => team.anchor)),
+						createdAt: Math.max(nowMs(), ...[...s.drafts.values()].map(team => team.createdAt + 1)),
 						createdBy: currentEditorName(),
 					});
 					a.teamId = id;
@@ -265,7 +265,7 @@ export const createMembershipSlice: StateCreator<
 			//    반경은 좁은 쪽(PAIR_RADIUS_DETACH) — 대기 자석 격자(중심거리 74)의 빈틈에 놓았을 때 옆 사람과
 			//    엉뚱한 팀이 생기던 문제를 막는다(운영진 신고). 코트에서 끌어낸 자석은 여기서 no-op 이면
 			//    슬롯으로 복귀하므로, 좁힌 만큼 "취소" 좌표가 생긴다.
-			if (!done && ![...s.drafts.values()].some(d => d.courtId != null)) {
+			if (!done) {
 				const partner = nearestFreePartner(
 					playerId,
 					drop,
@@ -282,8 +282,8 @@ export const createMembershipSlice: StateCreator<
 						s.drafts.set(id, {
 							id,
 							anchorMemberIds: [partner.id],
-							anchor: clampToStage(s, { x: (drop.x + partner.pos.x) / 2, y: (drop.y + partner.pos.y) / 2 }),
-							createdAt: nowMs(),
+							anchor: nextGroupAnchor([...s.drafts.values()].map(team => team.anchor)),
+							createdAt: Math.max(nowMs(), ...[...s.drafts.values()].map(team => team.createdAt + 1)),
 							createdBy: currentEditorName(),
 						});
 						pm.teamId = id;
@@ -304,13 +304,6 @@ export const createMembershipSlice: StateCreator<
 		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 		set((s) => {
 			let teamId = target.teamId ?? null;
-			const courtGroups = [...s.drafts.values()].filter(d => d.courtId != null);
-			if (!teamId && !target.newTeam && courtGroups.length) {
-				teamId = courtGroups.find(d => !useSessionStore.getState().courts.some(c => c.id === d.courtId && c.match)
-					&& teamMemberCount(d.id, s.drafts, s.reservations) === 0)?.id ?? null;
-				if (!teamId) { toast("빈 코트 그룹에 자리가 없어요"); return; }
-				if (target.seedId) attachAnchor(s, target.seedId, teamId, undefined, currentEditorName());
-			}
 			const courtId = teamId ? s.drafts.get(teamId)?.courtId : undefined;
 			if (courtId != null && useSessionStore.getState().courts.some(c => c.id === courtId && c.match)) return;
 			// 시드 모드: 자유 자석을 첫 멤버로 새 팀 생성
@@ -321,8 +314,8 @@ export const createMembershipSlice: StateCreator<
 				s.drafts.set(teamId, {
 					id: teamId,
 					anchorMemberIds: [target.seedId],
-					anchor: clampToStage(s, { x: seed.x, y: seed.y }),
-					createdAt: nowMs(),
+					anchor: nextGroupAnchor([...s.drafts.values()].map(team => team.anchor)),
+					createdAt: Math.max(nowMs(), ...[...s.drafts.values()].map(team => team.createdAt + 1)),
 					createdBy: currentEditorName(),
 				});
 				seed.teamId = teamId;
@@ -387,7 +380,15 @@ export const createMembershipSlice: StateCreator<
 		});
 	},
 
-	autoFillTeam: (teamId) => get().autoFillTarget({ teamId }, []),
+	autoFillTeam: (teamId) => {
+		const team = get().drafts.get(teamId);
+		if (team?.courtId != null && teamMemberCount(teamId, get().drafts, get().reservations) === 0) {
+			// 빈 코트의 매칭 버튼을 눌렀을 때만 다음 팀 대기열을 소비한다.
+			get().autoFillEmptyCourts(team.courtId);
+			return;
+		}
+		get().autoFillTarget({ teamId }, []);
+	},
 
 	// 추천 모달의 "자동편성" 버튼 공용 — 팀/시드/새팀 어디서나 나머지 슬롯을 추천순으로 채워 commit.
 	// extraIds = 모달에서 사용자가 직접 고른 선수(먼저 포함하고 나머지를 자동 채움).

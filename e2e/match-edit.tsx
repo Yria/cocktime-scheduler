@@ -28,7 +28,7 @@ useSessionStore.setState({
 useBoardStore.setState({
 	magnets: new Map(players.map((p, i) => [p.id, { playerId: p.id, teamId: null, x: 70 + (i % 4) * 80, y: 420 }])),
 	drafts: new Map(), reservations: new Map(), courtAnchors: new Map([[1, { x: 190, y: 180 }]]),
-	stageW: width / scale, stageH: height / scale, scale, userScale: scale, manualLayout: false,
+	stageW: width / scale, stageH: height / scale, scale, manualLayout: false,
 });
 const events = { opened: 0, closed: 0 };
 Object.assign(window, { matchEditTest: events });

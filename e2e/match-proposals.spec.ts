@@ -74,6 +74,8 @@ async function setup(page: Page, role = "member", options: { failSend?: boolean;
 }
 
 async function drag(page: Page, player: number, target?: { x: number; y: number }) {
+	// Scene coordinates are the destination; pointer input must wait for the 220 ms position tween.
+	await page.waitForTimeout(250);
 	const canvas = (await page.locator("canvas").boundingBox())!;
 	const state = await page.evaluate((id) => {
 		const s = window.proposalTest.board.getState();
@@ -93,8 +95,8 @@ async function drag(page: Page, player: number, target?: { x: number; y: number 
 	await page.mouse.move(canvas.x + destination.x * state.scale, canvas.y + destination.y * state.scale, { steps: 8 });
 	await page.mouse.up();
 	await page.evaluate(() => new Promise<void>((resolve) => {
-		let frames = 0;
-		const next = () => { if (++frames >= 8) resolve(); else requestAnimationFrame(next); };
+		const started = performance.now();
+		const next = (time: number) => { if (time - started >= 250) resolve(); else requestAnimationFrame(next); };
 		requestAnimationFrame(next);
 	}));
 }
@@ -207,7 +209,8 @@ test("staff-only administrator switches between private proposals and shared edi
 	await expect.poll(async () => (await cards(page)).length).toBe(1);
 	expect((await cards(page))[0].appearance).toMatchObject({ ctaLabel: "자동매칭", ctaEnabled: true });
 	await pair(page, 4, 5);
-	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(2);
+	await expect.poll(() => page.evaluate(() => [...window.proposalTest.board.getState().drafts.values()]
+		.filter(team => team.courtId == null).map(team => [...team.anchorMemberIds].sort()))).toEqual([[uid(4), uid(5)]]);
 	await page.evaluate(() => window.proposalTest.session.setState({ isEditor: false }));
 	await expect.poll(async () => (await cards(page))[0]?.appearance.ctaLabel).toBe("제안 취소");
 	await pair(page, 6, 7);

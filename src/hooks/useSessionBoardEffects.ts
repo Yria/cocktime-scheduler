@@ -92,9 +92,7 @@ export function useSessionBoardEffects() {
 	useEffect(() => {
 		healPlayingAnchors();
 	}, [courtSig, healPlayingAnchors]);
-	const availability = pool.map(player => `${player.id}:${player.status}:${player.cockChecked}`).join("|");
 	useEffect(() => {
 		ensureCourtGroups();
-		if (isEditor && lockSynced) useBoardStore.getState().autoFillEmptyCourts();
-	}, [courtSig, availability, isEditor, lockSynced, ensureCourtGroups]);
+	}, [courtSig, ensureCourtGroups]);
 }

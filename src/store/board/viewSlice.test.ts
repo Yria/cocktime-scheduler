@@ -9,7 +9,6 @@ const session = vi.hoisted(() => ({ isEditor: true }));
 vi.mock("../sessionStore", () => ({ useSessionStore: { getState: () => session } }));
 
 import { createViewSlice } from "./viewSlice";
-import { SCALE_KEY, SCALE_LOCK_KEY } from "./zoom";
 
 enableMapSet();
 
@@ -26,56 +25,55 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("committed board camera", () => {
-	it("publishes scale, user preference and logical bounds in one transaction", () => {
+	it("publishes scale and logical bounds in one transaction without saving a preference", () => {
 		const store = makeStore();
-		const snapshots: { scale: number; userScale: number | null; width: number; height: number }[] = [];
-		store.subscribe((state) => snapshots.push({ scale: state.scale, userScale: state.userScale, width: state.stageW, height: state.stageH }));
-		store.getState().commitBoardView({ scale: 0.751, cssWidth: 390, cssHeight: 600, userChanged: true });
-		expect(snapshots).toEqual([{ scale: 0.75, userScale: 0.75, width: 520, height: 800 }]);
-		expect(localStorage.setItem).toHaveBeenCalledTimes(2);
-		expect(localStorage.setItem).toHaveBeenCalledWith(SCALE_KEY, "0.75");
-		expect(localStorage.setItem).toHaveBeenCalledWith(SCALE_LOCK_KEY, "1");
+		const snapshots: { scale: number; width: number; height: number }[] = [];
+		store.subscribe((state) => snapshots.push({ scale: state.scale, width: state.stageW, height: state.stageH }));
+		store.getState().commitBoardView({ scale: 0.751, cssWidth: 390, cssHeight: 600 });
+		expect(snapshots).toEqual([{ scale: 0.75, width: 520, height: 800 }]);
+		expect(localStorage.setItem).not.toHaveBeenCalled();
 	});
 
-	it("does not claim a manual preference when the controller reports no effective change", () => {
+	it("clamps zoom and skips notifications when the camera does not change", () => {
 		const store = makeStore();
-		store.getState().commitBoardView({ scale: 1.1, cssWidth: 390, cssHeight: 600, userChanged: false });
-		expect(store.getState()).toMatchObject({ scale: 1, userScale: null, stageW: 390, stageH: 600 });
+		store.getState().commitBoardView({ scale: 1.1, cssWidth: 390, cssHeight: 600 });
+		expect(store.getState()).toMatchObject({ scale: 1, stageW: 390, stageH: 600 });
 		expect(localStorage.setItem).not.toHaveBeenCalled();
 		const listener = vi.fn();
 		store.subscribe(listener);
-		store.getState().commitBoardView({ scale: 1, cssWidth: 390, cssHeight: 600, userChanged: false });
+		store.getState().commitBoardView({ scale: 1, cssWidth: 390, cssHeight: 600 });
 		expect(listener).not.toHaveBeenCalled();
 	});
 
-	it("persists a gesture that changed scale and returned to its committed starting value", () => {
+	it("ignores the old saved scale on creation and resets zoom when entering another session", () => {
+		vi.mocked(localStorage.getItem).mockReturnValue("0.4");
 		const store = makeStore();
+		expect(store.getState().scale).toBe(1);
+		store.getState().bindSession(1);
 		store.getState().commitBoardView({ scale: 0.8, cssWidth: 400, cssHeight: 640 });
-		expect(store.getState().userScale).toBeNull();
-		store.getState().commitBoardView({ scale: 0.8, cssWidth: 400, cssHeight: 640, userChanged: true });
-		expect(store.getState()).toMatchObject({ scale: 0.8, userScale: 0.8 });
-		expect(localStorage.setItem).toHaveBeenCalledWith(SCALE_KEY, "0.8");
-		expect(localStorage.setItem).toHaveBeenCalledWith(SCALE_LOCK_KEY, "1");
+		store.getState().bindSession(2);
+		expect(store.getState()).toMatchObject({ sessionId: 2, scale: 1, stageW: 0, stageH: 0 });
+		expect(localStorage.getItem).not.toHaveBeenCalled();
+		expect(localStorage.setItem).not.toHaveBeenCalled();
 	});
 
-	it("automatic fit and resize preserve the user's saved upper bound", () => {
+	it("automatic fit and resize update only the current camera", () => {
 		const store = makeStore();
-		store.getState().commitBoardView({ scale: 0.8, cssWidth: 400, cssHeight: 640, userChanged: true });
-		vi.mocked(localStorage.setItem).mockClear();
+		store.getState().commitBoardView({ scale: 0.8, cssWidth: 400, cssHeight: 640 });
 		store.getState().commitBoardView({ scale: 0.5, cssWidth: 300, cssHeight: 600 });
-		expect(store.getState()).toMatchObject({ scale: 0.5, userScale: 0.8, stageW: 600, stageH: 1200 });
+		expect(store.getState()).toMatchObject({ scale: 0.5, stageW: 600, stageH: 1200 });
 		expect(localStorage.setItem).not.toHaveBeenCalled();
 	});
 
 	it("ignores incomplete viewport observations and survives unavailable storage", () => {
 		const store = makeStore();
 		const previous = store.getState();
-		previous.commitBoardView({ scale: 0.8, cssWidth: 0, cssHeight: 600, userChanged: true });
-		previous.commitBoardView({ scale: Number.NaN, cssWidth: 390, cssHeight: 600, userChanged: true });
+		previous.commitBoardView({ scale: 0.8, cssWidth: 0, cssHeight: 600 });
+		previous.commitBoardView({ scale: Number.NaN, cssWidth: 390, cssHeight: 600 });
 		expect(store.getState()).toBe(previous);
 		vi.mocked(localStorage.setItem).mockImplementation(() => { throw new Error("Storage unavailable"); });
-		previous.commitBoardView({ scale: 0.5, cssWidth: 390, cssHeight: 600, userChanged: true });
-		expect(store.getState()).toMatchObject({ scale: 0.5, userScale: 0.5, stageW: 780, stageH: 1200 });
+		previous.commitBoardView({ scale: 0.5, cssWidth: 390, cssHeight: 600 });
+		expect(store.getState()).toMatchObject({ scale: 0.5, stageW: 780, stageH: 1200 });
 	});
 });
 

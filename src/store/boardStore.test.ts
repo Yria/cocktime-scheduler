@@ -121,7 +121,7 @@ describe("코트에 고정된 그룹", () => {
 		expect(useBoardStore.getState().drafts.get("court-1")?.anchorMemberIds).toEqual([]);
 		expect(useBoardStore.getState().drafts.size).toBe(2);
 	});
-	it("정해진 코트에서 시작하고 완료 후 동일한 그룹/위치에 다음 팀을 채운다", async () => {
+	it("완료 후 코트와 위치는 비워 두고 매칭을 눌러야 다음 팀을 채운다", async () => {
 		setup();
 		useBoardStore.getState().setTeamAnchor("court-2", 550, 330);
 		useBoardStore.getState().commitTeammates({ teamId: "court-2" }, ["a", "b", "c", "d"]);
@@ -136,7 +136,8 @@ describe("코트에 고정된 그룹", () => {
 			for (const id of ["a", "b", "c", "d"]) h.players.get(id)!.gameCount = 5;
 		});
 		await useBoardStore.getState().completeMatch(2);
-		expect(useBoardStore.getState().drafts.get("court-2")).toMatchObject({ anchor: { x: 550, y: 330 } });
+		expect(useBoardStore.getState().drafts.get("court-2")).toMatchObject({ anchor: { x: 550, y: 330 }, anchorMemberIds: [] });
+		useBoardStore.getState().autoFillTeam("court-2");
 		expect([...useBoardStore.getState().drafts.get("court-2")!.anchorMemberIds].sort()).toEqual(["e", "f", "g", "h"]);
 		expect(useBoardStore.getState().drafts.get("court-1")!.anchorMemberIds).toEqual([]);
 		expect(h.handleAssign).toHaveBeenCalledTimes(1);
@@ -279,9 +280,9 @@ describe("요구1 — 자유 자석 두 개로 팀 생성(createPair)", () => {
 // ── 그룹 생성 시 겹치는 자석 흩어짐 + 화면 바운더리 ──────────
 describe("그룹 생성 — 겹치는 자유 자석을 화면 안에서 흩어지게", () => {
 	it("createPair로 팀이 생기면 팀 박스와 겹치던 자유 자석이 이동하고 바운더리 안에 머문다", () => {
-		// a,b는 팀이 되고, c는 그 팀 위치에 겹쳐 있다 → 흩어져야 함
+		// a,b는 팀이 되고, c는 새 팀의 첫 격자 칸에 겹쳐 있다 → 흩어져야 함
 		seed({
-			magnets: [mag("a", null, 100, 400), mag("b", null, 138, 400), mag("c", null, 120, 400)],
+			magnets: [mag("a", null, 100, 400), mag("b", null, 138, 400), mag("c", null, groupGridAnchor(0).x, groupGridAnchor(0).y)],
 		});
 		useBoardStore.getState().handleDrop("a", { x: 136, y: 400 });
 
@@ -290,7 +291,7 @@ describe("그룹 생성 — 겹치는 자유 자석을 화면 안에서 흩어�
 
 		const c = useBoardStore.getState().magnets.get("c")!;
 		// 겹쳐 있던 c는 밀려나 위치가 바뀜
-		expect(c.x === 120 && c.y === 400).toBe(false);
+		expect(c.x === groupGridAnchor(0).x && c.y === groupGridAnchor(0).y).toBe(false);
 		// 화면 바운더리 바깥으로 나가지 않음 — stage 미설정 시 store의 기본 뷰포트(DEFAULT_VIEWPORT) 기준
 		expect(c.x).toBeGreaterThanOrEqual(0);
 		expect(c.x).toBeLessThanOrEqual(DEFAULT_VIEWPORT.vw);
@@ -1088,31 +1089,29 @@ describe("1인 팀 금지 — ghost가 빠지는 로컬 경로", () => {
 	});
 });
 
-// ── 보드 배율 — 수동 조정만 기억하고, 넘칠 때 자동 축소는 막지 않는다 ──────────
-// 잠금을 "배율 고정"으로 구현하면 로스터가 커진 세션에서 자유 자석이 그룹 밴드 아래로 밀려 화면 밖으로
-// 나가 통째로 안 보인다(실측 y=744 > stageH=700). 그래서 userScale 은 자동 fit 의 **상한**으로만 쓴다.
-describe("보드 배율(userScale) — 수동 조정 기억 vs 자동 축소", () => {
+describe("보드 배율 — 현재 화면에만 적용", () => {
 	beforeEach(() => {
-		useBoardStore.setState({ scale: 1, userScale: null }); // reset()은 기기 설정인 배율을 건드리지 않으므로 명시 초기화
+		useBoardStore.setState({ scale: 1 });
 	});
 
-	it("수동 setScale 은 사용자 배율로 기억된다", () => {
+	it("수동 배율은 보드를 초기화하면 기본값으로 돌아간다", () => {
 		useBoardStore.getState().setScale(0.7);
 		expect(useBoardStore.getState().scale).toBe(0.7);
-		expect(useBoardStore.getState().userScale).toBe(0.7);
+		useBoardStore.getState().reset();
+		expect(useBoardStore.getState().scale).toBe(1);
 	});
 
-	it("값이 안 바뀌는 조작(최대에서 ＋)은 잠그지 않는다", () => {
+	it("최대 배율에서 확대해도 범위를 넘지 않는다", () => {
 		useBoardStore.getState().setScale((s) => s + 0.1); // ZOOM_MAX=1 클램프 → no-op
 		expect(useBoardStore.getState().scale).toBe(1);
-		expect(useBoardStore.getState().userScale).toBeNull(); // 아무 변화도 없었으므로 자동 fit 유지
 	});
 
-	it("자동 fit(setAutoScale)은 사용자 배율을 덮지 않는다 — 여유가 생기면 복귀할 수 있어야 한다", () => {
+	it("자동 fit은 이전 수동 배율에 제한되지 않는다", () => {
 		useBoardStore.getState().setScale(0.9);
 		useBoardStore.getState().setAutoScale(0.6); // 내용이 넘쳐 축소된 상황
 		expect(useBoardStore.getState().scale).toBe(0.6);
-		expect(useBoardStore.getState().userScale).toBe(0.9);
+		useBoardStore.getState().setAutoScale(1);
+		expect(useBoardStore.getState().scale).toBe(1);
 	});
 });
 
@@ -1818,6 +1817,33 @@ describe("미리 만든 그룹의 코트 배정", () => {
 		h.handleComplete.mockImplementation(async (courtId: number) => { h.courts.find(c => c.id === courtId)!.match = null; });
 		return { board, ids, queued: () => [...useBoardStore.getState().drafts.values()].filter(t => t.courtId == null) };
 	}
+	it("자석을 겹친 다음 팀은 완료 후에도 유지하고 빈 코트에서 매칭을 누르면 배정한다", async () => {
+		const { board, ids, queued } = setup();
+		useBoardStore.setState(s => ({ magnets: new Map([...s.magnets].map(([id, m], i) => [id, { ...m, x: 100 + i % 8 * 80, y: 600 + Math.floor(i / 8) * 80 }])) }));
+		const partner = useBoardStore.getState().magnets.get(ids[9])!;
+		board.handleDrop(ids[8], { x: partner.x, y: partner.y });
+		expect(queued()).toHaveLength(1);
+		const team = queued()[0];
+		expect(team.anchorMemberIds).toEqual(ids.slice(8, 10));
+		expect(team.anchor).toEqual(groupGridAnchor(2));
+		board.commitTeammates({ teamId: team.id }, ids.slice(10, 12));
+		await board.completeMatch(1);
+		expect(useBoardStore.getState().drafts.get("court-1")?.anchorMemberIds).toEqual([]);
+		expect(queued()[0].anchorMemberIds).toEqual(ids.slice(8, 12));
+		board.autoFillTeam("court-1");
+		expect(useBoardStore.getState().drafts.get("court-1")?.anchorMemberIds).toEqual(ids.slice(8, 12));
+		expect(useBoardStore.getState().drafts.has(team.id)).toBe(false);
+	});
+	it("고정 코트가 있어도 경기 중 자석을 대기자에 겹쳐 다음 팀에 예약한다", () => {
+		const { board, ids, queued } = setup();
+		useBoardStore.setState(s => ({ magnets: new Map([...s.magnets].map(([id, m], i) => [id, { ...m, x: 100 + i % 8 * 80, y: 600 + Math.floor(i / 8) * 80 }])) }));
+		const partner = useBoardStore.getState().magnets.get(ids[8])!;
+		board.handlePlayingMagnetDrop(ids[0], { x: partner.x, y: partner.y });
+		expect(queued()).toHaveLength(1);
+		expect(queued()[0].anchorMemberIds).toEqual([ids[8]]);
+		expect([...useBoardStore.getState().reservations.values()]).toMatchObject([{ playerId: ids[0], teamId: queued()[0].id }]);
+		expect(h.courts[0].match?.teamA).toContain(ids[0]);
+	});
 	it("모든 코트가 경기중이어도 예비 그룹을 만들고 저장/복원한다", () => {
 		const { board, ids, queued } = setup();
 		board.commitTeammates({ newTeam: true }, ids.slice(8, 12));
@@ -1828,7 +1854,7 @@ describe("미리 만든 그룹의 코트 배정", () => {
 		board.applyRemoteDrafts(payload); board.ensureCourtGroups();
 		expect(queued().map(t => t.anchorMemberIds)).toEqual([ids.slice(8, 12), ids.slice(12)]);
 	});
-	it("완료 순서와 무관하게 먼저 만든 예비 그룹부터 옮기고, 그룹만 해제한다", async () => {
+	it("완료 후 매칭을 누른 코트로 먼저 만든 다음 팀부터 옮기고, 그룹만 해제한다", async () => {
 		const { board, ids, queued } = setup();
 		board.commitTeammates({ newTeam: true }, ids.slice(8, 12));
 		board.commitTeammates({ newTeam: true }, ids.slice(12));
@@ -1836,12 +1862,16 @@ describe("미리 만든 그룹의 코트 배정", () => {
 		// Map/확정 순서는 배정 순서에 영향을 주지 않는다.
 		useBoardStore.setState(s => ({ drafts: new Map([...s.drafts].reverse()) }));
 		await board.completeMatch(2);
+		expect(queued()).toHaveLength(2);
+		expect(useBoardStore.getState().drafts.get("court-2")?.anchorMemberIds).toEqual([]);
+		board.autoFillTeam("court-2");
 		let current = useBoardStore.getState();
 		expect(current.drafts.get("court-2")?.anchorMemberIds).toEqual(ids.slice(8, 12));
 		expect(current.drafts.get("court-2")?.anchor).toEqual(groupGridAnchor(1));
 		expect(current.drafts.has(before[0].id)).toBe(false);
 		expect(queued()).toHaveLength(1);
 		await board.completeMatch(1);
+		board.autoFillTeam("court-1");
 		current = useBoardStore.getState();
 		expect(current.drafts.get("court-1")?.anchorMemberIds).toEqual(ids.slice(12));
 		expect(queued()).toHaveLength(0);
@@ -1854,9 +1884,11 @@ describe("미리 만든 그룹의 코트 배정", () => {
 		board.commitTeammates({ newTeam: true }, ids.slice(12));
 		const first = queued()[0];
 		await board.completeMatch(1);
+		board.autoFillTeam("court-1");
 		expect(useBoardStore.getState().drafts.get("court-1")?.anchorMemberIds).toEqual(ids.slice(12));
 		expect(queued().map(t => t.id)).toEqual([first.id]);
 		await board.completeMatch(2);
+		board.autoFillTeam("court-2");
 		expect(useBoardStore.getState().drafts.get("court-2")?.anchorMemberIds).toEqual([...ids.slice(8, 11), ids[4]]);
 		expect(queued()).toHaveLength(0);
 		expect(useBoardStore.getState().reservations.size).toBe(0);

@@ -4,6 +4,7 @@ import type { MatchProposal } from "../src/lib/supabase/matchProposals";
 import type { BoardDraftsPayload } from "../src/types/board";
 import { groupGridAnchor } from "../src/lib/board/groupGrid";
 import { cardControls } from "../src/lib/board/pixi/cardControls";
+import { TEAM_READY_BG, TEAM_READY_STROKE } from "../src/lib/board/constants";
 
 declare global { interface Window { proposalTest: ProposalTestApi } }
 const uid = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
@@ -37,8 +38,12 @@ async function setup(page: Page) {
 		}
 		return route.abort();
 	});
-	await page.goto("/e2e/match-proposals.html?role=admin&autofill=true");
+	await page.goto("/e2e/match-proposals.html?role=admin");
 	await expect(page.locator("canvas")).toHaveCount(1);
+	await expect.poll(() => page.evaluate(() => [...window.proposalTest.board.getState().drafts.values()].map(team => team.anchorMemberIds.length))).toEqual([0, 0]);
+	await page.waitForTimeout(300);
+	await pressCourt(page, 1);
+	await pressCourt(page, 2);
 	await expect.poll(() => page.evaluate(() => [...window.proposalTest.board.getState().drafts.values()].map(team => team.anchorMemberIds.length))).toEqual([4, 4]);
 	await expect.poll(() => page.evaluate(() => window.proposalTest.proposals.getState().loading)).toBe(false);
 	return { errors, applications: () => applications, setProposals: (items: MatchProposal[]) => { proposals = items; } };
@@ -58,21 +63,80 @@ async function moveCard(page: Page, key: string, to: { x: number; y: number }) {
 	await page.waitForTimeout(350);
 }
 
-async function pressCourt(page: Page, court: number) {
+async function pressCard(page: Page, key: string) {
 	const canvas = (await page.locator("canvas").boundingBox())!;
-	const { point, appearance, scale } = await page.evaluate(id => {
-		const card = window.proposalTest.scene().entities.find(item => item.key === `team:court-${id}`);
+	const { point, appearance, scale } = await page.evaluate(key => {
+		const card = window.proposalTest.scene().entities.find(item => item.key === key);
 		if (!card || card.kind !== "card") throw new Error("Missing court");
 		return { point: card.point, appearance: card.appearance, scale: window.proposalTest.board.getState().scale };
-	}, court);
+	}, key);
 	const rect = cardControls(appearance.showUnconfirm || appearance.showEdit).main;
 	await page.mouse.click(canvas.x + (point.x + rect.x + rect.width / 2) * scale, canvas.y + (point.y + rect.y + rect.height / 2) * scale);
 }
 
+const pressCourt = (page: Page, court: number) => pressCard(page, `team:court-${court}`);
+
+for (const width of [390, 1280]) test(`overlapping magnets prepares a green next team at ${width}px`, async ({ page }, testInfo) => {
+	await page.setViewportSize({ width, height: 900 });
+	const transport = await setup(page);
+	await page.evaluate(() => {
+		const api = window.proposalTest;
+		const original = [...api.session.getState().sessionPlayers.values()][0];
+		const players = Array.from({ length: 16 }, (_, i) => ({ ...original, id: `next${i}`, playerId: `next${i}`, memberId: null,
+			name: `선수${i + 1}`, gender: "M" as const, gameCount: 0 }));
+		api.session.setState({ sessionPlayers: new Map(players.map(p => [p.id, p])),
+			courts: [1, 2].map((id, i) => ({ id, match: { id: `live${id}`, courtId: id, gameType: "남복" as const,
+				teamA: [`next${i * 4}`, `next${i * 4 + 1}`], teamB: [`next${i * 4 + 2}`, `next${i * 4 + 3}`], startedAt: new Date().toISOString() } })),
+			handleComplete: async id => api.session.setState(s => ({ courts: s.courts.map(c => c.id === id ? { ...c, match: null } : c) })) });
+	});
+	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().magnets.size)).toBe(16);
+	await page.getByRole("button", { name: "정렬", exact: true }).click();
+	const search = (await page.getByRole("button", { name: "회원 찾기", exact: true }).boundingBox())!;
+	const create = page.getByRole("button", { name: "다음 팀 미리 매칭", exact: true });
+	const plus = (await create.boundingBox())!;
+	expect(plus.x).toBe(search.x);
+	expect(plus.y + plus.height).toBeLessThan(search.y);
+	expect(plus.width).toBe(44);
+	await expect(create).toHaveText("");
+	const points = await page.evaluate(() => {
+		const bs = window.proposalTest.board.getState();
+		const canvas = document.querySelector("canvas")!.getBoundingClientRect();
+		return ["next8", "next9"].map(id => { const m = bs.magnets.get(id)!;
+			return { x: canvas.x + m.x * bs.scale, y: canvas.y + m.y * bs.scale }; });
+	});
+	await page.mouse.move(points[0].x, points[0].y);
+	await page.mouse.down();
+	await page.mouse.move(points[1].x, points[1].y, { steps: 12 });
+	await page.mouse.up();
+	const queued = () => page.evaluate(() => [...window.proposalTest.board.getState().drafts.values()].filter(t => t.courtId == null));
+	await expect.poll(async () => (await queued()).map(t => t.anchorMemberIds)).toEqual([["next8", "next9"]]);
+	const first = (await queued())[0];
+	expect(first.anchor).toEqual(groupGridAnchor(2));
+	await pressCard(page, `team:${first.id}`); // Existing automatic matching completes the dragged pair.
+	await expect.poll(async () => (await queued())[0]?.anchorMemberIds.length).toBe(4);
+	const prepared = (await queued())[0];
+	expect(prepared.anchor).toEqual(first.anchor);
+	expect(await page.evaluate(id => {
+		const card = window.proposalTest.scene().entities.find(entity => entity.key === `team:${id}`);
+		return card?.kind === "card" ? card.appearance : null;
+	}, first.id)).toMatchObject({ fill: TEAM_READY_BG, stroke: TEAM_READY_STROKE, label: expect.stringContaining("다음 팀 1") });
+	await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+	await page.screenshot({ path: testInfo.outputPath(`green-next-team-${width}.png`) });
+	await pressCourt(page, 1);
+	await expect.poll(() => page.evaluate(() => window.proposalTest.session.getState().courts[0].match)).toBeNull();
+	await page.waitForTimeout(300);
+	expect(await page.evaluate(() => window.proposalTest.board.getState().drafts.get("court-1")?.anchorMemberIds)).toEqual([]);
+	expect((await queued())[0].anchorMemberIds).toEqual(prepared.anchorMemberIds);
+	await pressCourt(page, 1); // Explicit matching consumes the oldest prepared team.
+	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.get("court-1")?.anchorMemberIds)).toEqual(prepared.anchorMemberIds);
+	expect(await page.evaluate(id => window.proposalTest.board.getState().drafts.has(id), first.id)).toBe(false);
+	expect(transport.errors).toEqual([]);
+});
+
 for (const width of [390, 1280]) test(`persistent court groups and proposal overwrite at ${width}px`, async ({ page }, testInfo) => {
 	await page.setViewportSize({ width, height: 900 });
 	const transport = await setup(page);
-	await expect(page.getByRole("button", { name: "미리 그룹 만들기", exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "다음 팀 미리 매칭", exact: true })).toBeVisible();
 	transport.setProposals([{ id: uid(200), session_id: 1, created_by: uid(2), creator_name: "민수",
 		player_ids: [1, 2, 9, 10].map(uid), player_names: ["운영진", "민수", "하늘", "예진"],
 		status: "pending", created_at: "2026-09-21T00:00:00Z", updated_at: "2026-09-21T00:00:00Z" }]);
@@ -124,6 +188,10 @@ for (const width of [390, 1280]) test(`persistent court groups and proposal over
 	await page.evaluate(() => window.proposalTest.proposals.setState({ proposals: [] }));
 	await pressCourt(page, 1);
 	await expect.poll(() => page.evaluate(() => window.proposalTest.session.getState().courts[0].match)).toBeNull();
+	await page.waitForTimeout(300);
+	expect(await page.evaluate(() => window.proposalTest.board.getState().drafts.get("court-1")!.anchorMemberIds)).toEqual([]);
+	await page.screenshot({ path: testInfo.outputPath(`courts-${width}-completed-empty.png`) });
+	await pressCourt(page, 1);
 	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.get("court-1")!.anchorMemberIds.length)).toBe(4);
 	expect(await page.evaluate(() => [...window.proposalTest.board.getState().drafts.values()].map(team => ({ id: team.id, anchor: team.anchor })))).toEqual(before);
 	await page.screenshot({ path: testInfo.outputPath(`courts-${width}-next-team.png`) });
@@ -183,7 +251,7 @@ test("removing empty court 3 keeps matches from courts 4 and 5 under their new n
 	expect(transport.errors).toEqual([]);
 });
 
-for (const width of [320, 390, 1280]) test(`prepared groups fill a three-column grid and move to the finished court at ${width}px`, async ({ page }, testInfo) => {
+for (const width of [320, 390, 1280]) test(`prepared groups fill a three-column grid and move when matching is pressed at ${width}px`, async ({ page }, testInfo) => {
 	await page.setViewportSize({ width, height: 900 });
 	const transport = await setup(page);
 	if (width === 1280) await page.setViewportSize({ width, height: 700 });
@@ -200,7 +268,7 @@ for (const width of [320, 390, 1280]) test(`prepared groups fill a three-column 
 	});
 	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().magnets.size)).toBe(36);
 	// Exercise the restored button and the existing picker instead of injecting the first draft.
-	await page.getByRole("button", { name: "미리 그룹 만들기", exact: true }).click();
+	await page.getByRole("button", { name: "다음 팀 미리 매칭", exact: true }).click();
 	await expect(page.getByRole("heading", { name: "추천 팀원" })).toBeVisible();
 	await page.screenshot({ path: testInfo.outputPath(`prepare-picker-${width}.png`) });
 	await page.getByRole("button", { name: "자동편성", exact: true }).click();
@@ -219,6 +287,11 @@ for (const width of [320, 390, 1280]) test(`prepared groups fill a three-column 
 		return [...board.drafts.values()].every(team => (team.anchor.x + 79) * board.scale <= rect.width && (team.anchor.y + 117) * board.scale <= rect.height);
 	})).toBe(true);
 	await page.screenshot({ path: testInfo.outputPath(`grid-${width}.png`) });
+	await pressCourt(page, 2);
+	await expect.poll(() => page.evaluate(() => window.proposalTest.session.getState().courts[1].match)).toBeNull();
+	await page.waitForTimeout(300);
+	expect(await page.evaluate(() => window.proposalTest.board.getState().drafts.get("court-2")?.anchorMemberIds)).toEqual([]);
+	expect(await page.evaluate(id => window.proposalTest.board.getState().drafts.has(id), first.id)).toBe(true);
 	await pressCourt(page, 2);
 	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.get("court-2")?.anchorMemberIds)).toEqual(first.anchorMemberIds);
 	expect(await page.evaluate(id => window.proposalTest.board.getState().drafts.has(id), first.id)).toBe(false);

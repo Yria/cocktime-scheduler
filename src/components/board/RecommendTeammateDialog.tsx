@@ -107,7 +107,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 	const headerNote = teamId
 		? `${filledCount}/4명 · 추천에서 골라 팀을 채우세요`
 		: newTeam
-			? `${filledCount}/4명 · 경기 완료 시 준비된 그룹부터 만든 순서대로 배정돼요`
+			? `${filledCount}/4명 · 빈 코트에서 매칭을 누르면 만든 순서대로 배정돼요`
 			: `${members[0]?.name ?? ""} 선수와 함께할 팀원을 골라 팀을 만듭니다`;
 
 	return (

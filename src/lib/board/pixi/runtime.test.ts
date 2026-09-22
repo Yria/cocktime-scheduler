@@ -66,7 +66,7 @@ function setup({ editor = true, scale = 1 } = {}) {
 	stores.board = createStore<BoardState>()(() => ({
 		magnets: new Map(ids.map((id, index) => [id, { playerId: id, x: 100 + index * 74, y: 400, teamId: null as string | null }])),
 		drafts: new Map(), reservations: new Map(), courtAnchors: new Map(), assigningTeamIds: new Set(),
-		scale, userScale: null, stageW: 390 / scale, stageH: 600 / scale, manualLayout: false,
+		scale, stageW: 390 / scale, stageH: 600 / scale, manualLayout: false,
 		dragInfo: null, hoverTarget: null, restFieldHot: false, detachHot: false,
 		setDragInfo: vi.fn((dragInfo) => update({ dragInfo })),
 		clearDrag: vi.fn(() => update({ dragInfo: null, hoverTarget: null, detachHot: false })),
@@ -76,10 +76,9 @@ function setup({ editor = true, scale = 1 } = {}) {
 			if (JSON.stringify(hoverTarget) !== JSON.stringify(stores.board.getState().hoverTarget)) update({ hoverTarget });
 		}),
 		markManualLayout: vi.fn(() => { if (stores.session.getState().isEditor) update({ manualLayout: true }); }),
-		commitBoardView: vi.fn(({ scale: value, cssWidth, cssHeight, userChanged }) => {
+		commitBoardView: vi.fn(({ scale: value, cssWidth, cssHeight }) => {
 			const next = clampScale(value);
-			update({ scale: next, stageW: cssWidth / next, stageH: cssHeight / next,
-				...(userChanged ? { userScale: next } : {}) });
+			update({ scale: next, stageW: cssWidth / next, stageH: cssHeight / next });
 		}),
 		handleDrop: vi.fn((id, point) => {
 			const magnets = new Map(stores.board.getState().magnets);
@@ -346,7 +345,7 @@ describe("BoardRuntime input and scene integration", () => {
 		runtime.committed(); frame();
 		expect(world.scale.set).toHaveBeenLastCalledWith(0.9);
 		runtime.controller.flushZoom();
-		expect(board.getState().commitBoardView).toHaveBeenCalledExactlyOnceWith({ scale: 0.9, cssWidth: 390, cssHeight: 600, userChanged: true });
+		expect(board.getState().commitBoardView).toHaveBeenCalledExactlyOnceWith({ scale: 0.9, cssWidth: 390, cssHeight: 600 });
 	});
 
 	it("redraws an externally committed scale while the scene is otherwise idle", () => {

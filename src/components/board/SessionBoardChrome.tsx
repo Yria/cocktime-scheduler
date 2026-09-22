@@ -87,14 +87,14 @@ export function SearchFab({ onClick }: { onClick: () => void }) {
 }
 
 export function NewGroupFab({ onClick }: { onClick: () => void }) {
-	return <button type="button" onClick={onClick} aria-label="미리 그룹 만들기"
-		style={{ position: "absolute", left: 72,
-			bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px) + 16px)`,
-			display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5,
-			height: 44, padding: "0 12px", borderRadius: 22, border: "none",
-			background: "var(--ios-blue)", color: "#fff", fontSize: 13, fontWeight: 600,
+	return <button type="button" onClick={onClick} aria-label="다음 팀 미리 매칭" title="다음 팀 미리 매칭"
+		style={{ position: "absolute", left: 16,
+			bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px) + 72px)`,
+			display: "inline-flex", alignItems: "center", justifyContent: "center",
+			width: 44, height: 44, padding: 0, borderRadius: 22, border: "none",
+			background: "var(--ios-blue)", color: "#fff",
 			boxShadow: "0 6px 16px rgba(0, 122, 255, 0.4)", cursor: "pointer", zIndex: 20 }}>
-		<Plus size={18} aria-hidden="true" />미리 그룹
+		<Plus size={22} strokeWidth={2.4} aria-hidden="true" />
 	</button>;
 }
 

@@ -26,7 +26,7 @@ async function touchInput(page: Page) {
 }
 
 async function setScale(page: Page, scale: number) {
-	await page.evaluate((next) => window.boardTest.board.setState({ scale: next, userScale: null, stageW: 800 / next, stageH: 600 / next }), scale);
+	await page.evaluate((next) => window.boardTest.board.setState({ scale: next, stageW: 800 / next, stageH: 600 / next }), scale);
 	await frame(page);
 }
 
@@ -51,7 +51,7 @@ async function groupedFixture(page: Page) {
 	await frame(page);
 }
 
-test("real two-finger pinch round trip commits manual zoom intent only at gesture end", async ({ page }) => {
+test("real two-finger pinch commits its final scale without saving a preference", async ({ page }) => {
 	const errors: string[] = [];
 	page.on("pageerror", (error) => errors.push(error.message));
 	await setScale(page, 0.8);
@@ -61,10 +61,11 @@ test("real two-finger pinch round trip commits manual zoom intent only at gestur
 	await touch("touchMove", [{ id: 1, x: 300, y: 400 }, { id: 2, x: 412.5, y: 400 }]);
 	await frame(page);
 	await expect.poll(() => page.evaluate(() => window.boardTest.renders)).toBeGreaterThan(frames);
-	expect(await page.evaluate(() => ({ scale: window.boardTest.board.getState().scale, userScale: window.boardTest.board.getState().userScale }))).toEqual({ scale: 0.8, userScale: null });
+	expect(await page.evaluate(() => window.boardTest.board.getState().scale)).toBe(0.8);
 	await touch("touchMove", [{ id: 1, x: 300, y: 400 }, { id: 2, x: 400, y: 400 }]);
 	await touch("touchEnd");
-	await expect.poll(() => page.evaluate(() => window.boardTest.board.getState().userScale)).toBe(0.8);
+	await frame(page);
+	expect(await page.evaluate(() => [localStorage.getItem("cocktime-board-scale"), localStorage.getItem("cocktime-board-scale-lock")])).toEqual([null, null]);
 	expect(await page.evaluate(() => window.boardTest.board.getState().scale)).toBe(0.8);
 	expect(await page.evaluate(() => window.boardTest.clicks)).toEqual([]);
 	expect(errors).toEqual([]);
@@ -83,8 +84,8 @@ test("second finger cancels a drag and touchcancel restores uncommitted zoom", a
 	await touch("touchCancel");
 	expect(await page.evaluate(() => {
 		const state = window.boardTest.board.getState();
-		return { point: state.magnets.get("p0"), scale: state.scale, userScale: state.userScale, hover: state.hoverTarget, drag: state.dragInfo };
-	})).toEqual({ point: { playerId: "p0", teamId: null, x: 90, y: 100 }, scale: 0.8, userScale: null, hover: null, drag: null });
+		return { point: state.magnets.get("p0"), scale: state.scale, hover: state.hoverTarget, drag: state.dragInfo };
+	})).toEqual({ point: { playerId: "p0", teamId: null, x: 90, y: 100 }, scale: 0.8, hover: null, drag: null });
 	// The next drag probes the restored *runtime* scale, not just store.scale.
 	await page.mouse.move(72, 80);
 	await page.mouse.down();

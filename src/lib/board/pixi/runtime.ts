@@ -78,8 +78,8 @@ export class BoardRuntime {
 			pick: (p) => this.pick(p),
 			getScale: () => this.scale,
 			onZoom: (scale) => { this.scale = scale; this.scheduler.invalidate(); },
-			commitZoom: (changed) => {
-				useBoardStore.getState().commitBoardView({ scale: this.scale, cssWidth: this.width, cssHeight: this.height, userChanged: changed });
+			commitZoom: () => {
+				useBoardStore.getState().commitBoardView({ scale: this.scale, cssWidth: this.width, cssHeight: this.height });
 			},
 			onDragStart: (target) => this.beginDrag(target),
 			onDragMove: (_target, point) => {

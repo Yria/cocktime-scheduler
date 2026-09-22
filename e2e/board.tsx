@@ -17,7 +17,7 @@ const players = Array.from({ length: 12 }, (_, i) => ({
 useSessionStore.setState({ sessionPlayers: new Map(players.map((p) => [p.id, p])), isEditor: true,
 	courts: [], restingIds: ["p11"], cockCheckEnabled: false, _clientId: null });
 useBoardStore.setState({ magnets: new Map(players.map((p, i) => [p.id, { playerId: p.id, teamId: null, x: 90 + i % 6 * 110, y: 100 + Math.floor(i / 6) * 110 }])),
-	drafts: new Map(), reservations: new Map(), courtAnchors: new Map(), stageW: 800, stageH: 600, scale: 1, userScale: null, manualLayout: false });
+	drafts: new Map(), reservations: new Map(), courtAnchors: new Map(), stageW: 800, stageH: 600, scale: 1, manualLayout: false });
 let renders = 0;
 const originalRender = Application.prototype.render;
 Application.prototype.render = function () { renders++; return originalRender.call(this); };

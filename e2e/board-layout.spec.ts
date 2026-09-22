@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { ProposalTestApi } from "./match-proposals";
 import type { BoardDraftsPayload } from "../src/types/board";
+import { initialBoardScale } from "../src/store/board/zoom";
 
 declare global { interface Window { proposalTest: ProposalTestApi } }
 
@@ -18,6 +19,10 @@ for (const width of [390, 1280]) test(`server restores dragged courts and player
 	async function connect(target: Page, role: string) {
 		target.on("pageerror", error => errors.push(error.message));
 		await target.setViewportSize({ width, height: 900 });
+		await target.addInitScript(() => {
+			localStorage.setItem("cocktime-board-scale", "0.4");
+			localStorage.setItem("cocktime-board-scale-lock", "1");
+		});
 		await target.routeWebSocket("wss://**", socket => socket.close());
 		await target.route("https://**/*", async route => {
 			const url = route.request().url();
@@ -40,9 +45,11 @@ for (const width of [390, 1280]) test(`server restores dragged courts and player
 		await rendered(target);
 	}
 	await connect(page, "admin");
+	expect(await page.evaluate(() => window.proposalTest.board.getState().scale)).toBe(initialBoardScale(width - 32));
+	await page.getByRole("button", { name: "정렬", exact: true }).click();
 	await page.evaluate(async () => {
 		const board = window.proposalTest.board.getState();
-		board.commitBoardView({ scale: 0.4, cssWidth: innerWidth - 32, cssHeight: 800, userChanged: true });
+		board.commitBoardView({ scale: 0.4, cssWidth: innerWidth - 32, cssHeight: 800 });
 		board.setTeamAnchor("court-1", 210, 240);
 		board.setTeamAnchor("court-2", 600, 250);
 		await window.proposalTest.flushDrafts();
@@ -71,6 +78,7 @@ for (const width of [390, 1280]) test(`server restores dragged courts and player
 			magnets: Object.fromEntries([...state.magnets].map(([id, player]) => [id, { x: player.x, y: player.y }])) };
 	});
 	await expect.poll(() => positions(page)).toEqual({ teams: saved!.teams, courts: saved!.courts, magnets: saved!.magnets });
+	expect(await page.evaluate(() => window.proposalTest.board.getState().scale)).toBeGreaterThan(0.4);
 	await page.evaluate(() => window.proposalTest.flushDrafts());
 	expect(writes).toBe(writesBeforeReload); // Initial pool/auto-fit/reset must not overwrite the server layout.
 	await page.screenshot({ path: testInfo.outputPath(`restored-board-${width}.png`) });
@@ -88,6 +96,46 @@ for (const width of [390, 1280]) test(`server restores dragged courts and player
 		})).toBe(true);
 		expect(writes).toBe(writesBeforeReload);
 	} finally { await otherContext.close(); }
+	const restoredScale = await page.evaluate(() => window.proposalTest.board.getState().scale);
+	for (const viewport of [{ width: 900, height: 390 }, { width: 390, height: 900 }]) {
+		await page.setViewportSize(viewport);
+		await rendered(page);
+		expect(await page.evaluate(() => window.proposalTest.board.getState().scale)).toBe(restoredScale);
+		expect(await positions(page)).toEqual({ teams: saved!.teams, courts: saved!.courts, magnets: saved!.magnets });
+	}
 	expect(reads).toBe(3);
 	expect(errors).toEqual([]);
+});
+
+test("rotating a fresh or arranged board preserves current zoom and every position", async ({ page }, testInfo) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.routeWebSocket("wss://**", socket => socket.close());
+	await page.route("https://**/*", route => route.fulfill({ json: [] }));
+	await page.goto("/e2e/match-proposals.html?role=member");
+	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().magnets.size)).toBe(10);
+	await page.waitForTimeout(300);
+	expect(await page.evaluate(() => window.proposalTest.board.getState().manualLayout)).toBe(false);
+	const snapshot = () => page.evaluate(() => {
+		const board = window.proposalTest.board.getState();
+		return { scale: board.scale, teams: [...board.drafts.values()], magnets: [...board.magnets.values()] };
+	});
+	for (const mode of ["fresh", "arranged"]) {
+		if (mode === "arranged") await page.getByRole("button", { name: "정렬", exact: true }).click();
+		await page.evaluate(() => {
+			const canvas = document.querySelector("canvas")!.getBoundingClientRect();
+			window.proposalTest.board.getState().commitBoardView({ scale: 0.73, cssWidth: canvas.width, cssHeight: canvas.height });
+		});
+		const before = await snapshot();
+		for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 844 }]) {
+			await page.setViewportSize(viewport);
+			await page.waitForTimeout(300);
+			expect(await snapshot()).toEqual(before);
+			expect(await page.evaluate(() => {
+				const board = window.proposalTest.board.getState();
+				const canvas = document.querySelector("canvas")!.getBoundingClientRect();
+				return Math.abs(board.stageW * board.scale - canvas.width) < 1 && Math.abs(board.stageH * board.scale - canvas.height) < 1;
+			})).toBe(true);
+		}
+	}
+	await page.screenshot({ path: testInfo.outputPath("portrait-zoom-preserved.png") });
 });

@@ -245,7 +245,6 @@ export const createMatchSlice: StateCreator<
 				resolveFreedReservations(s, endedIds);
 				s.assigningTeamIds.delete(groupId);
 			});
-			get().autoFillEmptyCourts(courtId);
 			get().scatterMagnets(endedIds);
 		} finally {
 			set(s => { s.assigningTeamIds.delete(groupId); });

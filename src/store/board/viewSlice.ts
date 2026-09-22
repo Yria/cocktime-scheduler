@@ -13,7 +13,7 @@ import {
 } from "../../lib/board/draftMutations";
 import { useSessionStore } from "../sessionStore";
 import type { BoardState } from "./types";
-import { clampScale, loadScale, loadUserScale, SCALE_KEY, SCALE_LOCK_KEY } from "./zoom";
+import { clampScale } from "./zoom";
 import { clampToStage, gridPos, runSettle } from "./layoutHelpers";
 import { syncState } from "./draftsSync";
 
@@ -37,7 +37,6 @@ export type ViewSlice = Pick<
 	| "setStageSize"
 	| "commitBoardView"
 	| "markManualLayout"
-	| "userScale"
 	| "setScale"
 	| "setAutoScale"
 	| "settleBoard"
@@ -68,9 +67,7 @@ export const createViewSlice: StateCreator<
 	manualLayout: false,
 	stageW: 0,
 	stageH: 0,
-	scale: loadScale(),
-	// 사용자가 직접 맞춘 배율(없으면 null) — 자동 fit 의 상한. 확대는 막고, 넘칠 때 축소는 허용한다.
-	userScale: loadUserScale(),
+	scale: 1,
 	restFieldHot: false,
 	presenceModalOpen: false,
 	dragInfo: null,
@@ -139,25 +136,14 @@ export const createViewSlice: StateCreator<
 		});
 	},
 
-	commitBoardView: ({ scale, cssWidth, cssHeight, userChanged = false }) => {
+	commitBoardView: ({ scale, cssWidth, cssHeight }) => {
 		if (!Number.isFinite(scale) || !Number.isFinite(cssWidth) || !Number.isFinite(cssHeight) || cssWidth <= 0 || cssHeight <= 0) return;
 		const next = clampScale(scale);
-		// controller가 제스처 전체의 유효 변경을 추적한다. 시작 배율로 돌아온 왕복도 수동 의도다.
-		const savePreference = userChanged;
 		set((s) => {
 			s.scale = next;
 			s.stageW = cssWidth / next;
 			s.stageH = cssHeight / next;
-			if (savePreference) s.userScale = next;
 		});
-		if (savePreference) {
-			try {
-				localStorage.setItem(SCALE_KEY, String(next));
-				localStorage.setItem(SCALE_LOCK_KEY, "1");
-			} catch {
-				// 카메라는 저장소 사용 가능 여부와 관계없이 반영한다.
-			}
-		}
 	},
 
 	markManualLayout: () => {
@@ -165,27 +151,16 @@ export const createViewSlice: StateCreator<
 		set((s) => { s.manualLayout = true; });
 	},
 
-	// 수동 줌(±버튼·휠·핀치) — 이 기기가 원하는 배율(userScale)로 기억·영속한다. 이후 자동 fit 은 이 값을
-	// **상한**으로만 써서 확대하지 않는다(useBoardStageLayout.fitAndArrange) → 다음 진입에도 맞춰둔 배율로 열린다.
+	// 수동 줌은 현재 보드에서만 사용한다. 다음 진입에는 화면 기준 기본 배율로 시작한다.
 	setScale: (v) => {
 		const next = clampScale(typeof v === "function" ? v(get().scale) : v);
-		// 값이 안 바뀌는 조작(최대에서 ＋, 최소에서 －, 라운딩에 먹힌 핀치 한 틱)은 사용자 의도로 보지 않는다.
-		// 여기서 잠금을 확정하면 "아무 변화도 못 봤는데 자동 fit 이 영구 비활성"이 된다.
 		if (next === get().scale) return;
 		set((s) => {
 			s.scale = next;
-			s.userScale = next;
 		});
-		try {
-			localStorage.setItem(SCALE_KEY, String(next));
-			localStorage.setItem(SCALE_LOCK_KEY, "1"); // 수동 조정 표식(자동 fit 은 이 키를 쓰지 않는다)
-		} catch {
-			// localStorage 불가(시크릿 등) — 영속 생략
-		}
 	},
 
-	// 자동 fit 전용 — 배율만 맞추고 저장·userScale 갱신은 하지 않는다(사용자가 맞춘 값과 구분).
-	// 내용이 넘쳐 축소된 뒤에도 userScale 은 그대로 남아, 여유가 생기면 그 배율로 복귀한다.
+	// 자동 fit도 현재 화면의 배율만 바꾼다.
 	setAutoScale: (v) => {
 		const next = clampScale(v);
 		if (next === get().scale) return;
@@ -340,6 +315,7 @@ export const createViewSlice: StateCreator<
 				s.manualLayout = false;
 				s.stageW = 0;
 				s.stageH = 0;
+				s.scale = 1;
 				s.restFieldHot = false;
 				s.presenceModalOpen = false;
 				s.dragInfo = null;

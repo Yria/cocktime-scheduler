@@ -125,7 +125,7 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 				: full ? TEAM_RESERVED_STROKE : TEXT_SECONDARY;
 			const baseLabel = team.courtId != null
 				? `${team.courtId}번 코트 · ${!full ? `편성 중 ${count}/4` : held ? "교대 대기" : canStart ? "시작 대기" : "합류 대기"}`
-				: `예비 ${queued.indexOf(team) + 1} · ${!full ? `${count}/4` : held ? "교대 대기" : canStart ? "배정 대기" : "예약 대기"}`;
+				: `다음 팀 ${queued.indexOf(team) + 1} · ${!full ? `${count}/4` : held ? "교대 대기" : canStart ? "배정 대기" : "예약 대기"}`;
 			const members: MagnetView[] = [];
 			for (const member of membership) {
 				let source: BoardSource & { playerId: string };
