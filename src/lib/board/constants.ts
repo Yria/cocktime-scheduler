@@ -82,6 +82,9 @@ export const TEAM_FORMING_BG = "#1E293B";
 export const TEAM_FORMING_STROKE = "#334155";
 export const TEAM_READY_BG = "#052E16";
 export const TEAM_READY_STROKE = "#22C55E";
+// 코트에 배정되어 시작을 기다리는 팀 — 다음 팀의 배정 대기(초록)와 구분.
+export const COURT_READY_BG = "#172554";
+export const COURT_READY_STROKE = "#60A5FA";
 export const TEAM_PLAYING_BG = "#451A03";
 export const TEAM_PLAYING_STROKE = "#F59E0B";
 // 4명이지만 예약자가 아직 경기중이라 대기 중인 팀 박스("예약 포함(경기중)") — 실제 경기중 코트(주황)와

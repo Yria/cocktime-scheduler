@@ -6,6 +6,7 @@ import { visibleMatchProposals, type ProposalComposerSnapshot } from "../matchPr
 import { currentMatchEdit, rosterSaveKey } from "../matchRosterEdit";
 import {
 	CTA_DISABLED_COLOR, CTA_FINISH_COLOR, CTA_PLAY_COLOR, CTA_START_COLOR,
+	COURT_READY_BG, COURT_READY_STROKE,
 	TEAM_BOX_ABOVE,
 	TEAM_FORMING_BG, TEAM_FORMING_STROKE, TEAM_PLAYING_BG, TEAM_PLAYING_STROKE,
 	TEAM_READY_BG, TEAM_READY_STROKE, TEAM_RESERVED_BG, TEAM_RESERVED_STROKE,
@@ -125,7 +126,9 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 			const availableCourt = ss.courts.some(court => !court.match && (team.courtId != null ? court.id === team.courtId
 				: ![...bs.drafts.values()].some(other => other.courtId === court.id && teamMembers(other.id, bs.drafts, bs.reservations).length > 0)));
 			const ctaEnabled = ss.isEditor && !busy && (!full || (canStart && availableCourt));
-			const labelColor = startable ? TEAM_READY_STROKE
+			const readyFill = team.courtId != null ? COURT_READY_BG : TEAM_READY_BG;
+			const readyStroke = team.courtId != null ? COURT_READY_STROKE : TEAM_READY_STROKE;
+			const labelColor = startable ? readyStroke
 				: full ? TEAM_RESERVED_STROKE : TEXT_SECONDARY;
 			const baseLabel = team.courtId != null
 				? `${team.courtId}번 코트 · ${!full ? `편성 중 ${count}/4` : held ? "교대 대기" : canStart ? "시작 대기" : "합류 대기"}`
@@ -149,8 +152,8 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 				kind: "card", key: sourceKey(source), source, point: team.anchor, draggable: !busy, members, confirmed: false,
 				emptySlots: emptySlotIndices(new Set(membership.filter((member) => member.playerId !== draggedPlayerId).map((member) => member.slot))),
 				appearance: {
-					fill: startable ? TEAM_READY_BG : full ? TEAM_RESERVED_BG : TEAM_FORMING_BG,
-					stroke: startable ? TEAM_READY_STROKE : full ? TEAM_RESERVED_STROKE : TEAM_FORMING_STROKE,
+					fill: startable ? readyFill : full ? TEAM_RESERVED_BG : TEAM_FORMING_BG,
+					stroke: startable ? readyStroke : full ? TEAM_RESERVED_STROKE : TEAM_FORMING_STROKE,
 					label: team.createdBy && team.courtId == null ? `${baseLabel} · by ${team.createdBy}` : baseLabel,
 					labelColor, labelBold: full, showVs: full,
 					ctaLabel: editing ? "선수 변경 중" : busy ? "시작 중…" : canStart ? availableCourt ? held ? "교대 확인" : "경기시작" : "코트 대기" : full ? "예약 대기" : "자동매칭",
