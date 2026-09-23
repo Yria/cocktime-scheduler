@@ -62,7 +62,7 @@ function runtimeDouble(): RuntimeDouble {
 function props(): PixiBoardProps {
 	return {
 		width: 390, height: 700, onError: vi.fn(),
-		onMagnetClick: vi.fn(), onCockCheck: vi.fn(), onSlotClick: vi.fn(), onEditMatch: vi.fn(),
+		onMagnetClick: vi.fn(), onCockCheck: vi.fn(), onSlotClick: vi.fn(),
 	};
 }
 

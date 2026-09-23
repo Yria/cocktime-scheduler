@@ -14,7 +14,7 @@ enableMapSet();
 
 function makeStore() {
 	return createStore<BoardState>()(devtools(immer((...args) => ({
-		...createViewSlice(...args), magnets: new Map(), drafts: new Map(), reservations: new Map(), courtAnchors: new Map(), assigningTeamIds: new Set(),
+		...createViewSlice(...args), magnets: new Map(), drafts: new Map(), reservations: new Map(), courtAnchors: new Map(), assigningTeamIds: new Set(), matchEdits: new Map(),
 	} as BoardState)), { enabled: false }));
 }
 

@@ -92,6 +92,7 @@ beforeEach(() => {
 	useAdminCoverageStore.setState({ loaded: true, memberIds: new Set(), starting: new Map(), prompt: null });
 	h.handleAssign.mockReset();
 	h.handleComplete.mockReset();
+	h.handleSetMatchRoster.mockReset();
 	h.courts = [];
 	h.players = new Map();
 	h.singleWomanIds = [];
@@ -1801,6 +1802,100 @@ describe("휴식 진입/복귀 — 자석은 보드에 남고 멤버십만 정�
 		const ya = s.magnets.get("a")!.y;
 		expect(ya).toBeGreaterThan(s.magnets.get("b")!.y);
 		expect(ya).toBeGreaterThan(s.magnets.get("c")!.y);
+	});
+});
+
+describe("코트 안에서 선수 변경", () => {
+	function setup() {
+		h.players = new Map(["a", "b", "c", "d", "e", "f", "g", "h"].map(id => [id, player(id)]));
+		h.courts = [{ id: 1, match: { id: "live", courtId: 1, gameType: "남복", teamA: ["a", "b"], teamB: ["c", "d"], startedAt: "" } }];
+		const board = useBoardStore.getState();
+		board.initializeFromPool([...h.players.values()]); board.ensureCourtGroups();
+		return board;
+	}
+	function save() {
+		h.handleSetMatchRoster.mockImplementation(async (courtId, teamA, teamB) => {
+			h.courts = h.courts.map(c => c.id === courtId ? { ...c, match: { ...c.match!, teamA, teamB } } : c);
+		});
+	}
+	it("교체는 로컬 미리보기만 바꾸고 취소하면 명단과 공유 배치가 그대로다", () => {
+		const board = setup();
+		const before = serializeBoardDrafts(useBoardStore.getState());
+		board.stageMatchPlayer(1, 0, "e");
+		board.stageMatchPlayer(1, 2, "f");
+		expect(useBoardStore.getState().matchEdits.get(1)?.roster).toEqual(["e", "b", "f", "d"]);
+		expect(h.courts[0].match?.teamA).toEqual(["a", "b"]);
+		expect(serializeBoardDrafts(useBoardStore.getState())).toEqual(before);
+		expect(h.handleSetMatchRoster).not.toHaveBeenCalled();
+		board.cancelMatchEdit(1);
+		expect(useBoardStore.getState().matchEdits.size).toBe(0);
+		expect(serializeBoardDrafts(useBoardStore.getState())).toEqual(before);
+	});
+	it("한 팀 안에서 위치를 바꿀 수 있고 원래 위치로 되돌리면 변경 상태가 해제된다", () => {
+		const board = setup();
+		board.stageMatchPlayer(1, 2, "a");
+		expect(useBoardStore.getState().matchEdits.get(1)?.roster).toEqual(["c", "b", "a", "d"]);
+		board.stageMatchPlayer(1, 0, "a");
+		expect(useBoardStore.getState().matchEdits.size).toBe(0);
+	});
+	it("확정 시에만 서버 명단과 다른 그룹의 멤버십을 바꾸고 경기 완료는 하지 않는다", async () => {
+		const board = setup(); save();
+		board.commitTeammates({ newTeam: true }, ["e", "f", "g", "h"]);
+		const groupId = useBoardStore.getState().magnets.get("e")!.teamId!;
+		board.stageMatchPlayer(1, 0, "e");
+		expect(useBoardStore.getState().drafts.get(groupId)?.anchorMemberIds).toContain("e");
+		await board.completeMatch(1);
+		expect(h.handleComplete).not.toHaveBeenCalled();
+		await board.applyMatchEdit(1);
+		expect(h.handleSetMatchRoster).toHaveBeenCalledExactlyOnceWith(1, ["e", "b"], ["c", "d"]);
+		expect(useBoardStore.getState().matchEdits.size).toBe(0);
+		expect(useBoardStore.getState().drafts.get(groupId)?.anchorMemberIds).not.toContain("e");
+		expect(h.courts[0].match?.id).toBe("live");
+	});
+	it("저장 실패는 수정한 명단을 남기고 재시도할 수 있다", async () => {
+		const board = setup();
+		board.stageMatchPlayer(1, 0, "e");
+		h.handleSetMatchRoster.mockRejectedValueOnce(new Error("offline"));
+		await board.applyMatchEdit(1);
+		expect(useBoardStore.getState().matchEdits.get(1)?.roster).toEqual(["e", "b", "c", "d"]);
+		expect(useBoardStore.getState().assigningTeamIds.size).toBe(0);
+		save(); await board.applyMatchEdit(1);
+		expect(useBoardStore.getState().matchEdits.size).toBe(0);
+	});
+	it("저장 중 중복 저장·취소·재교체를 막는다", async () => {
+		const board = setup();
+		board.stageMatchPlayer(1, 0, "e");
+		let resolve!: () => void;
+		h.handleSetMatchRoster.mockImplementation(() => new Promise<void>(done => { resolve = done; }));
+		const pending = board.applyMatchEdit(1);
+		board.cancelMatchEdit(1); board.stageMatchPlayer(1, 0, "f");
+		await board.applyMatchEdit(1);
+		expect(h.handleSetMatchRoster).toHaveBeenCalledTimes(1);
+		expect(useBoardStore.getState().matchEdits.get(1)?.roster[0]).toBe("e");
+		resolve(); await pending;
+	});
+	it("경기/명단이 원격으로 바뀌면 이전 미리보기를 새 경기에 저장하지 않는다", async () => {
+		const board = setup();
+		board.stageMatchPlayer(1, 0, "e");
+		h.courts[0].match = { ...h.courts[0].match!, id: "replacement-match" };
+		await board.applyMatchEdit(1);
+		expect(h.handleSetMatchRoster).not.toHaveBeenCalled();
+		expect(useBoardStore.getState().matchEdits.size).toBe(0);
+		board.stageMatchPlayer(1, 0, "f");
+		h.courts[0].match.teamA = ["h", "b"];
+		board.reconcileMatchEdits();
+		expect(useBoardStore.getState().matchEdits.size).toBe(0);
+	});
+	it("다른 코트 경기중/휴식자는 교체할 수 없고 편집권 해제 시 미리보기가 사라진다", () => {
+		const board = setup();
+		h.courts.push({ id: 2, match: { id: "other", courtId: 2, gameType: "남복", teamA: ["e", "f"], teamB: ["g", "h"], startedAt: "" } });
+		board.stageMatchPlayer(1, 0, "e");
+		expect(useBoardStore.getState().matchEdits.size).toBe(0);
+		h.courts.pop(); h.restingIds = ["e"];
+		board.stageMatchPlayer(1, 0, "e");
+		expect(useBoardStore.getState().matchEdits.size).toBe(0);
+		board.stageMatchPlayer(1, 0, "f"); board.cancelEditActions();
+		expect(useBoardStore.getState().matchEdits.size).toBe(0);
 	});
 });
 

@@ -25,7 +25,7 @@ const root = createRoot(document.getElementById("root")!);
 const clicks: string[] = [];
 const props = { width: 800, height: 600,
 	onMagnetClick: (id: string) => clicks.push(id), onCockCheck: (id: string) => clicks.push(`cock:${id}`),
-	onSlotClick: (id: string) => clicks.push(`team:${id}`), onEditMatch: () => {} };
+	onSlotClick: (id: string) => clicks.push(`team:${id}`) };
 const mount = () => root.render(<StrictMode><SessionBoardRenderer {...props} /></StrictMode>);
 const api = { board: useBoardStore, session: useSessionStore, mount, unmount: () => root.render(null), clicks, get renders() { return renders; } };
 export type BoardTestApi = typeof api;

@@ -26,6 +26,7 @@ import { acquireAdminCoverage, releaseAdminCoverage } from "../../lib/board/admi
 import { useSessionStore } from "../sessionStore";
 import { useAppStore } from "../appStore";
 import { toast } from "../toastStore";
+import { rosterSaveKey } from "../../lib/board/matchRosterEdit";
 import type { BoardState } from "./types";
 import { claimEdit, pushDraftsToRemote, serializeBoardDrafts, syncState } from "./draftsSync";
 
@@ -232,6 +233,7 @@ export const createMatchSlice: StateCreator<
 
 	completeMatch: async (courtId) => {
 		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
+		if (get().matchEdits.has(courtId) || get().assigningTeamIds.has(rosterSaveKey(courtId))) return;
 		const court = useSessionStore.getState().courts.find((c) => c.id === courtId);
 		const endedIds = matchPlayerIdsFromCourt(court);
 		const endedMatchId = court?.match?.id;

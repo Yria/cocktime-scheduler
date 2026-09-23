@@ -323,7 +323,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const newIds = matchPlayerIds({ teamA, teamB });
 		const removed = oldIds.filter((id) => !newIds.includes(id));
 		const added = newIds.filter((id) => !oldIds.includes(id));
-		if (removed.length === 0) return; // 변경 없음
+		if (oldIds.every((id, index) => id === newIds[index])) return; // 팀 내 자리 교환도 저장한다.
 
 		const sessionId = getSessionId();
 		// set_match_roster RPC: (편집 락 가드 +) 로스터 교체 + 선수 상태 + match_state_version++ 를 단일 트랜잭션 원자 처리.

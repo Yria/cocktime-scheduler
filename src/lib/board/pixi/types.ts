@@ -6,6 +6,7 @@ export type BoardSource =
 	| { kind: "anchor"; playerId: string; teamId: string }
 	| { kind: "ghost"; playerId: string; teamId: string; reservationId: string }
 	| { kind: "playing"; playerId: string; courtId: number; matchId: string }
+	| { kind: "roster"; playerId: string; courtId: number; matchId: string }
 	| { kind: "proposal-member"; playerId: string; groupId: string }
 	| { kind: "proposal"; groupId: string }
 	| { kind: "team"; teamId: string }
@@ -30,7 +31,6 @@ export interface CardAppearance {
 	ctaColor: string;
 	ctaEnabled: boolean;
 	showUnconfirm: boolean;
-	showEdit: boolean;
 	blink: boolean;
 }
 
@@ -67,6 +67,7 @@ export function sourceKey(source: BoardSource): string {
 		case "anchor": return `anchor:${source.teamId}:${source.playerId}`;
 		case "ghost": return `ghost:${source.reservationId}`;
 		case "playing": return `playing:${source.courtId}:${source.matchId}:${source.playerId}`;
+		case "roster": return `roster:${source.courtId}:${source.matchId}:${source.playerId}`;
 		case "team": return `team:${source.teamId}`;
 		case "court": return `court:${source.courtId}:${source.matchId}`;
 		case "proposal": return `proposal:${source.groupId}`;

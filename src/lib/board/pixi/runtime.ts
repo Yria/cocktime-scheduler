@@ -14,6 +14,7 @@ import { createFrameScheduler } from "./frameScheduler";
 import { createBoardInteractionController, type BoardInteractionTarget } from "./interactionController";
 import { createBoardProjection } from "./projection";
 import { useAdminCoverageStore } from "../../../store/adminCoverageStore";
+import { canUseMatchPlayer } from "../matchRosterEdit";
 import type { BoardEntity, BoardSnapshot, BoardSource, CardView, MagnetView } from "./types";
 import { sourceKey } from "./types";
 
@@ -21,7 +22,6 @@ export interface BoardCallbacks {
 	onMagnetClick: (id: string) => void;
 	onCockCheck: (id: string) => void;
 	onSlotClick: (id: string) => void;
-	onEditMatch: (id: number) => void;
 	proposals?: ProposalComposer;
 	onEmptyDoubleTap?: () => void;
 	locate?: { playerId: string } | null;
@@ -268,7 +268,7 @@ export class BoardRuntime {
 			const button = (key: string, action: () => void): BoardInteractionTarget => ({ key: `${view.key}:${key}`, point: center, draggable: false, onTap: () => {
 				if (this.isValid(view.source) && useSessionStore.getState().isEditor) action();
 			} });
-			const controls = cardControls(view.appearance.showUnconfirm || view.appearance.showEdit);
+			const controls = cardControls(view.appearance.showUnconfirm);
 			const controlPaddingY = view.source.kind === "proposal" ? 6 : 0;
 			const inControl = (rect: typeof controls.main | null) => rect !== null
 				&& x >= rect.x && x <= rect.x + rect.width && y >= rect.y - controlPaddingY && y <= rect.y + rect.height + controlPaddingY;
@@ -285,11 +285,20 @@ export class BoardRuntime {
 				const id = view.source.teamId;
 				return button("dismiss", () => useBoardStore.getState().dismissTeam(id));
 			}
-			if (view.source.kind === "court" && view.appearance.showEdit && inControl(controls.unconfirm)) {
-				const id = view.source.courtId; return button("edit", () => this.callbacks.onEditMatch(id));
+			if (view.source.kind === "court" && view.appearance.showUnconfirm && inControl(controls.unconfirm)) {
+				const id = view.source.courtId; return button("cancel-roster", () => useBoardStore.getState().cancelMatchEdit(id));
 			}
 			if (view.source.kind !== "proposal" && inControl(controls.main)) {
-				if (view.source.kind === "court") { const id = view.source.courtId; return button("complete", () => { void useBoardStore.getState().completeMatch(id); }); }
+				if (view.source.kind === "court") {
+					const id = view.source.courtId;
+					const editing = view.appearance.showUnconfirm;
+					return button(editing ? "apply-roster" : "complete", () => {
+						if (!view.appearance.ctaEnabled) return;
+						const board = useBoardStore.getState();
+						if (editing) void board.applyMatchEdit(id);
+						else void board.completeMatch(id);
+					});
+				}
 				const id = view.source.teamId;
 				if (view.appearance.ctaEnabled) return button("cta", () => {
 					if (view.members.length < 4) useBoardStore.getState().autoFillTeam(id);
@@ -322,7 +331,7 @@ export class BoardRuntime {
 		const binding = this.bindings.get(view.key); if (binding) binding.animation = undefined;
 		const bs = useBoardStore.getState();
 		if (view.kind === "card") { if (view.source.kind !== "proposal") bs.markManualLayout(); }
-		else bs.setDragInfo({ playerId: view.player.id, detachable: !this.callbacks.proposals?.getSnapshot().enabled && (view.source.kind === "anchor" || view.source.kind === "proposal-member" || view.ghost), restable: useSessionStore.getState().isEditor && !view.ghost && view.source.kind !== "playing" && view.source.kind !== "proposal-member" });
+		else bs.setDragInfo({ playerId: view.player.id, detachable: !this.callbacks.proposals?.getSnapshot().enabled && (view.source.kind === "anchor" || view.source.kind === "proposal-member" || view.ghost), restable: useSessionStore.getState().isEditor && !view.ghost && view.source.kind !== "playing" && view.source.kind !== "roster" && view.source.kind !== "proposal-member" });
 		this.committing = false; this.publish();
 	}
 
@@ -339,7 +348,11 @@ export class BoardRuntime {
 			else if (source.kind === "court") { bs.setCourtAnchor(source.courtId, point.x, point.y); bs.settleBoard({ courtId: source.courtId }); }
 			else {
 				this.skipAnimationPlayer = source.playerId;
-				if (this.callbacks.proposals?.dropSubmitted(source.playerId, point, source.kind === "proposal-member" ? source.groupId : undefined)) { /* Private roster update owns this drop. */ }
+				const court = useSessionStore.getState().isEditor && source.kind !== "proposal-member" ? this.rosterTarget(point) : undefined;
+				if (court?.source.kind === "court") {
+					bs.stageMatchPlayer(court.source.courtId, slotIndexAt(point, this.point(court)), source.playerId);
+				} else if (source.kind === "roster") { /* A staged player stays in this preview until save/cancel. */ }
+				else if (this.callbacks.proposals?.dropSubmitted(source.playerId, point, source.kind === "proposal-member" ? source.groupId : undefined)) { /* Private roster update owns this drop. */ }
 				else if (this.callbacks.proposals?.getSnapshot().enabled) {
 					// Shared team/court slots are not blank space for a new private proposal.
 					const overSharedGroup = this.readScene().entities.some((view) => view.kind === "card"
@@ -386,6 +399,18 @@ export class BoardRuntime {
 
 	private updateHover(source: BoardSource, point: StagePoint) {
 		const ss = useSessionStore.getState();
+		if (ss.isEditor && "playerId" in source && source.kind !== "proposal-member") {
+			const court = this.rosterTarget(point);
+			if (court?.source.kind === "court") {
+				const board = useBoardStore.getState();
+				const slot = slotIndexAt(point, this.point(court));
+				board.setRestFieldHot(false); board.setDetachHot(false);
+				board.setHoverTarget(slot >= 0 && court.appearance.ctaEnabled && canUseMatchPlayer(source.playerId, court.source.courtId, ss, board.matchEdits ?? new Map())
+					? { kind: "slot", teamId: court.key, slotIndex: slot } : null);
+				return;
+			}
+			if (source.kind === "roster") { useBoardStore.getState().setHoverTarget(null); return; }
+		}
 		const proposals = this.callbacks.proposals?.getSnapshot();
 		if (proposals?.enabled) {
 			if (!("playerId" in source)) return;
@@ -456,6 +481,11 @@ export class BoardRuntime {
 		else if (target.kind === "replace") bs.setHoverTarget({ kind: "slot", teamId: target.teamId, slotIndex: target.slot });
 		else if (target.kind === "createPair") bs.setHoverTarget({ kind: "magnet", id: target.partnerId });
 		else bs.setHoverTarget(null);
+	}
+
+	private rosterTarget(point: StagePoint) {
+		return [...this.readScene().entities].reverse().find((view): view is CardView => view.kind === "card"
+			&& view.source.kind === "court" && isInsideTeamBounds(point, this.point(view)));
 	}
 
 	private attachInput(canvas: HTMLCanvasElement) {

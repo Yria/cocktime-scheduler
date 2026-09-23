@@ -3,6 +3,7 @@ import type { useSessionStore } from "../../../store/sessionStore";
 import type { StagePoint } from "../../../types/board";
 import { coverageQueue, leavesNoAdmin } from "../adminCoverage";
 import { visibleMatchProposals, type ProposalComposerSnapshot } from "../matchProposals";
+import { currentMatchEdit, rosterSaveKey } from "../matchRosterEdit";
 import {
 	CTA_DISABLED_COLOR, CTA_FINISH_COLOR, CTA_PLAY_COLOR, CTA_START_COLOR,
 	TEAM_BOX_ABOVE,
@@ -43,7 +44,7 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 
 	return (bs, ss, proposals, coverage) => {
 		const draggedPlayerId = bs.dragInfo?.playerId ?? null;
-		const inputs = [bs.magnets, bs.drafts, bs.reservations, bs.courtAnchors, draggedPlayerId,
+		const inputs = [bs.magnets, bs.drafts, bs.reservations, bs.courtAnchors, bs.matchEdits, draggedPlayerId,
 			ss.sessionPlayers, ss.courts, ss.restingIds, ss.cockCheckEnabled, ss.isEditor, bs.assigningTeamIds,
 			proposals?.enabled, proposals?.groups, proposals?.sendingIds, proposals?.proposals,
 			proposals?.anchors, proposals?.resolvingIds, proposals?.viewerId, proposals?.isAdmin, coverage?.memberIds, coverage?.loaded, coverage?.starting];
@@ -58,6 +59,8 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 		const visibleProposals = visibleMatchProposals(proposals);
 		const selected = new Set([...groups.flatMap((group) => group.playerIds), ...visibleProposals.flatMap((proposal) => proposal.player_ids)]);
 		const restingIds = new Set(ss.restingIds);
+		const edits = new Map(ss.isEditor ? [...(bs.matchEdits ?? [])].filter(([id, edit]) => currentMatchEdit(edit, ss.courts.find(c => c.id === id))) : []);
+		const editingPlayers = new Set([...edits.values()].flatMap(edit => edit.roster));
 		const hasEmptyCourt = ss.courts.some((court) => !court.match);
 		const coverageInput = { ...bs, ...ss, adminMemberIds: coverage?.memberIds ?? new Set<string>(),
 			startingIds: new Set([...(coverage?.starting.values() ?? [])].flat()), proposals: visibleProposals };
@@ -117,7 +120,8 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 			const canStart = full && startable;
 			const held = canStart && coverage?.loaded && leavesNoAdmin(membership.map(m => m.playerId), coverageInput);
 			const next = coverage?.loaded && coverage.memberIds.size > 0 && nextTeam?.key === `team:${team.id}`;
-			const busy = bs.assigningTeamIds?.has(team.id) === true;
+			const editing = membership.some(member => editingPlayers.has(member.playerId));
+			const busy = bs.assigningTeamIds?.has(team.id) === true || editing;
 			const availableCourt = ss.courts.some(court => !court.match && (team.courtId != null ? court.id === team.courtId
 				: ![...bs.drafts.values()].some(other => other.courtId === court.id && teamMembers(other.id, bs.drafts, bs.reservations).length > 0)));
 			const ctaEnabled = ss.isEditor && !busy && (!full || (canStart && availableCourt));
@@ -128,6 +132,7 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 				: `다음 팀 ${queued.indexOf(team) + 1} · ${!full ? `${count}/4` : held ? "교대 대기" : canStart ? "배정 대기" : "예약 대기"}`;
 			const members: MagnetView[] = [];
 			for (const member of membership) {
+				if (editingPlayers.has(member.playerId)) continue;
 				let source: BoardSource & { playerId: string };
 				if (member.kind === "ghost") {
 					const reservation = findReservation(member.playerId, team.id, bs.reservations);
@@ -148,15 +153,15 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 					stroke: startable ? TEAM_READY_STROKE : full ? TEAM_RESERVED_STROKE : TEAM_FORMING_STROKE,
 					label: team.createdBy && team.courtId == null ? `${baseLabel} · by ${team.createdBy}` : baseLabel,
 					labelColor, labelBold: full, showVs: full,
-					ctaLabel: busy ? "시작 중…" : canStart ? availableCourt ? held ? "교대 확인" : "경기시작" : "코트 대기" : full ? "예약 대기" : "자동매칭",
+					ctaLabel: editing ? "선수 변경 중" : busy ? "시작 중…" : canStart ? availableCourt ? held ? "교대 확인" : "경기시작" : "코트 대기" : full ? "예약 대기" : "자동매칭",
 					ctaColor: !ctaEnabled ? CTA_DISABLED_COLOR : canStart ? CTA_PLAY_COLOR : CTA_START_COLOR,
-					ctaEnabled, showUnconfirm: ss.isEditor && count > 0 && !busy, showEdit: false, blink: !!next && hasEmptyCourt,
+					ctaEnabled, showUnconfirm: ss.isEditor && count > 0 && !busy, blink: !!next && hasEmptyCourt,
 				},
 			});
 		}
 
 		for (const position of bs.magnets.values()) {
-			if (position.teamId !== null || playingIds.has(position.playerId) || selected.has(position.playerId)) continue;
+			if (position.teamId !== null || playingIds.has(position.playerId) || selected.has(position.playerId) || editingPlayers.has(position.playerId)) continue;
 			const view = magnet({ kind: "free", playerId: position.playerId }, { x: position.x, y: position.y }, restingIds.has(position.playerId));
 			if (view) entities.push(view);
 		}
@@ -166,22 +171,24 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 			const match = court.match;
 			if (!match) continue;
 			const linked = [...bs.drafts.values()].find(team => team.courtId === court.id);
-			const busy = bs.assigningTeamIds?.has(linked?.id ?? `complete:${court.id}`) === true;
+			const edit = edits.get(court.id);
+			const saving = bs.assigningTeamIds?.has(rosterSaveKey(court.id)) === true;
+			const busy = saving || bs.assigningTeamIds?.has(linked?.id ?? `complete:${court.id}`) === true;
 			const point = linked?.anchor ?? bs.courtAnchors.get(court.id) ?? { x: TEAM_W / 2 + 12 + occupiedIndex * (TEAM_W + 20), y: TEAM_BOX_ABOVE + 8 };
 			occupiedIndex++;
 			const members: MagnetView[] = [];
-			matchPlayerIds(match).forEach((playerId, index) => {
-				const view = magnet({ kind: "playing", playerId, courtId: court.id, matchId: match.id }, computeSlotOffset(index));
-				if (view) members.push(view);
+			(edit?.roster ?? matchPlayerIds(match)).forEach((playerId, index) => {
+				const view = magnet({ kind: edit ? "roster" : "playing", playerId, courtId: court.id, matchId: match.id }, computeSlotOffset(index));
+				if (view) members.push(busy ? { ...view, draggable: false } : view);
 			});
 			const source: CardView["source"] = { kind: "court", courtId: court.id, matchId: match.id };
 			card({
 				kind: "card", key: linked ? `team:${linked.id}` : sourceKey(source), source, point, draggable: ss.isEditor && !busy, members, emptySlots: [], confirmed: false,
 				appearance: {
 					fill: TEAM_PLAYING_BG, stroke: TEAM_PLAYING_STROKE,
-					label: `${court.id}번 코트 · 경기중`, labelColor: TEAM_PLAYING_STROKE, labelBold: true, showVs: true,
-					ctaLabel: busy ? "완료 중…" : ss.isEditor ? "경기완료" : composing ? "경기 진행 중" : "보기 전용", ctaColor: ss.isEditor && !busy ? CTA_FINISH_COLOR : CTA_DISABLED_COLOR,
-					ctaEnabled: ss.isEditor && !busy, showUnconfirm: false, showEdit: ss.isEditor && !busy, blink: false,
+					label: `${court.id}번 코트 · ${edit ? "선수 변경 중" : "경기중"}`, labelColor: TEAM_PLAYING_STROKE, labelBold: true, showVs: true,
+					ctaLabel: saving ? "변경 중…" : busy ? "완료 중…" : ss.isEditor ? edit ? "선수변경" : "경기완료" : composing ? "경기 진행 중" : "보기 전용", ctaColor: ss.isEditor && !busy ? CTA_FINISH_COLOR : CTA_DISABLED_COLOR,
+					ctaEnabled: ss.isEditor && !busy, showUnconfirm: !!edit && !busy, blink: false,
 				},
 			});
 		}
@@ -201,7 +208,7 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 					fill: PROPOSAL_BG, stroke: PROPOSAL_STROKE, label: `매칭 제안 · ${group.playerIds.length}/4`,
 					labelColor: PROPOSAL_STROKE, labelBold: true, showVs: false,
 					ctaLabel: sending ? "보내는 중…" : "매칭 제안", ctaColor: sending ? CTA_DISABLED_COLOR : PROPOSAL_CTA,
-					ctaEnabled: !sending && members.length === group.playerIds.length, showUnconfirm: false, showEdit: false, blink: false,
+					ctaEnabled: !sending && members.length === group.playerIds.length, showUnconfirm: false, blink: false,
 				},
 			});
 		}
@@ -237,7 +244,7 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 					ctaColor: !busy && (adminActions ? editable && (!full || hasEmptyCourt) : canWithdraw)
 						? adminActions && full ? CTA_PLAY_COLOR : PROPOSAL_CTA : CTA_DISABLED_COLOR,
 					ctaEnabled: !busy && (adminActions ? editable && (!full || hasEmptyCourt) : canWithdraw),
-					showUnconfirm: adminActions, showEdit: false, blink: false,
+					showUnconfirm: adminActions, blink: false,
 				},
 			});
 		}

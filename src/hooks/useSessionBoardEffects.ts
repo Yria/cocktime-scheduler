@@ -88,6 +88,11 @@ export function useSessionBoardEffects() {
 	// 뷰어도 호출 — '매칭 확정' 직후 match_started(코트)는 왔지만 board_drafts 해체가 아직 안 온 창에서
 	// '코트+유령 팀'이 동시에 보이는 잔상을 없앤다(뷰어는 로컬 화면 정제만, 편집자는 추가로 영속화).
 	const healPlayingAnchors = useBoardStore((s) => s.healPlayingAnchors);
+	const reconcileMatchEdits = useBoardStore(s => s.reconcileMatchEdits);
+	const sessionPlayers = useSessionStore(s => s.sessionPlayers);
+	const courts = useSessionStore(s => s.courts);
+	const restingIds = useSessionStore(s => s.restingIds);
+	const cockCheckEnabled = useSessionStore(s => s.cockCheckEnabled);
 	const courtSig = useCourtSig();
 	useEffect(() => {
 		healPlayingAnchors();
@@ -95,4 +100,7 @@ export function useSessionBoardEffects() {
 	useEffect(() => {
 		ensureCourtGroups();
 	}, [courtSig, ensureCourtGroups]);
+	useEffect(() => {
+		reconcileMatchEdits();
+	}, [courts, sessionPlayers, restingIds, cockCheckEnabled, isEditor, reconcileMatchEdits]);
 }

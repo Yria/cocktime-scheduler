@@ -384,7 +384,7 @@ function paintCard(context: CanvasRenderingContext2D, appearance: CardAppearance
 }
 
 function paintCardControls(context: CanvasRenderingContext2D, appearance: CardAppearance, flash: boolean) {
-	const { main, unconfirm } = cardControls(appearance.showUnconfirm || appearance.showEdit);
+	const { main, unconfirm } = cardControls(appearance.showUnconfirm);
 	if (unconfirm) {
 		const { x, y, width, height } = unconfirm;
 		roundedRect(context, x, y, width, height, 8);
@@ -394,19 +394,12 @@ function paintCardControls(context: CanvasRenderingContext2D, appearance: CardAp
 		context.strokeStyle = "#CBD5E1";
 		context.lineWidth = 2;
 		context.lineCap = "round";
-		if (appearance.showEdit) {
-			context.translate(x + (width - 18) / 2, y + (height - 18) / 2);
-			context.scale(0.75, 0.75);
-			context.lineJoin = "round";
-			context.stroke(new Path2D("M12 20h9 M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"));
-		} else {
-			context.beginPath();
-			context.moveTo(x + width / 2 - 5, y + height / 2 - 5);
-			context.lineTo(x + width / 2 + 5, y + height / 2 + 5);
-			context.moveTo(x + width / 2 + 5, y + height / 2 - 5);
-			context.lineTo(x + width / 2 - 5, y + height / 2 + 5);
-			context.stroke();
-		}
+		context.beginPath();
+		context.moveTo(x + width / 2 - 5, y + height / 2 - 5);
+		context.lineTo(x + width / 2 + 5, y + height / 2 + 5);
+		context.moveTo(x + width / 2 + 5, y + height / 2 - 5);
+		context.lineTo(x + width / 2 - 5, y + height / 2 + 5);
+		context.stroke();
 		context.restore();
 	}
 	const { x, y, width, height } = main;
@@ -427,7 +420,7 @@ export const CardVisual = memo(function CardVisual({ appearance, dragging }: {
 	appearance: CardAppearance; dragging: boolean; flash: boolean;
 }) {
 	const key = JSON.stringify(["card", appearance.fill, appearance.stroke, appearance.label,
-		appearance.labelColor, appearance.labelBold, appearance.showVs, appearance.showEdit, appearance.dashed]);
+		appearance.labelColor, appearance.labelBold, appearance.showVs, appearance.dashed]);
 	const raster = useRaster(key, CARD_BOUNDS, (context) => paintCard(context, appearance));
 	return <>
 		{!dragging && <CachedSprite cacheKey="card-shadow"
@@ -446,12 +439,12 @@ export const CardVisual = memo(function CardVisual({ appearance, dragging }: {
 export const CardControlsVisual = memo(function CardControlsVisual({ appearance, dragging, flash }: {
 	appearance: CardAppearance; dragging: boolean; flash: boolean;
 }) {
-	const key = JSON.stringify(["card-controls", appearance.ctaLabel, appearance.ctaColor, appearance.showUnconfirm, appearance.showEdit, appearance.blink]);
+	const key = JSON.stringify(["card-controls", appearance.ctaLabel, appearance.ctaColor, appearance.showUnconfirm, appearance.blink]);
 	const bounds = { x: -TEAM_W / 2, y: CTA_Y - 2, width: TEAM_W, height: TEAM_CTA_H + 4 };
 	const normal = useRaster(`${key}:normal`, bounds, (context) => paintCardControls(context, appearance, false));
 	const highlighted = useRaster(`${key}:${appearance.blink ? "flash" : "normal"}`, bounds,
 		(context) => paintCardControls(context, appearance, true));
-	const { main } = cardControls(appearance.showUnconfirm || appearance.showEdit);
+	const { main } = cardControls(appearance.showUnconfirm);
 	return <>
 		{appearance.blink && flash && !dragging && <CachedSprite cacheKey={`cta-glow:${main.x}`}
 			bounds={{ x: -TEAM_W / 2 - 22, y: CTA_Y - 30, width: TEAM_W + 44, height: TEAM_CTA_H + 60 }}

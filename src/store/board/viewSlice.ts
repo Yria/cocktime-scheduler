@@ -177,6 +177,7 @@ export const createViewSlice: StateCreator<
 
 	cancelEditActions: () => {
 		set((s) => {
+			s.matchEdits.clear();
 			s.dragInfo = null;
 			s.hoverTarget = null;
 			s.detachHot = false;
@@ -307,6 +308,7 @@ export const createViewSlice: StateCreator<
 		try {
 			set((s) => {
 				s.sessionId = null;
+				s.matchEdits.clear();
 				s.magnets = new Map();
 				s.drafts = new Map();
 				s.reservations = new Map();

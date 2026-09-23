@@ -444,7 +444,7 @@ test("admin without editor permission can reject but cannot edit or start", asyn
 });
 
 
-test("playing court has footer editing left of completion on mobile", async ({ page }, testInfo) => {
+test("playing court shows completion without a modal edit button on mobile", async ({ page }, testInfo) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await setup(page, "admin");
 	await page.evaluate((ids) => {
@@ -456,13 +456,9 @@ test("playing court has footer editing left of completion on mobile", async ({ p
 	}));
 	const group = await page.evaluate(() => window.proposalTest.scene().entities.find((view) => view.kind === "card" && view.source.kind === "court"));
 	if (!group || group.kind !== "card") throw new Error("Missing court");
-	expect(group.appearance).toMatchObject({ showEdit: true, ctaLabel: "경기완료" });
+	expect(group.appearance).toMatchObject({ showUnconfirm: false, ctaLabel: "경기완료" });
 	await page.screenshot({ path: testInfo.outputPath("court-footer-mobile.png") });
-	const canvas = (await page.locator("canvas").boundingBox())!;
-	const scale = await page.evaluate(() => window.proposalTest.board.getState().scale);
-	const rect = cardControls(true).unconfirm!;
-	await page.mouse.click(canvas.x + (group.point.x + rect.x + rect.width / 2) * scale, canvas.y + (group.point.y + rect.y + rect.height / 2) * scale);
-	await expect(page.getByText("경기 수정 · 1번 코트", { exact: true })).toBeVisible();
+	await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 

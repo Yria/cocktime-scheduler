@@ -65,7 +65,8 @@ function setup({ editor = true, scale = 1 } = {}) {
 	};
 	stores.board = createStore<BoardState>()(() => ({
 		magnets: new Map(ids.map((id, index) => [id, { playerId: id, x: 100 + index * 74, y: 400, teamId: null as string | null }])),
-		drafts: new Map(), reservations: new Map(), courtAnchors: new Map(), assigningTeamIds: new Set(),
+		drafts: new Map(), reservations: new Map(), courtAnchors: new Map(), assigningTeamIds: new Set(), matchEdits: new Map(),
+		stageMatchPlayer: vi.fn(), cancelMatchEdit: vi.fn(), applyMatchEdit: vi.fn(),
 		scale, stageW: 390 / scale, stageH: 600 / scale, manualLayout: false,
 		dragInfo: null, hoverTarget: null, restFieldHot: false, detachHot: false,
 		setDragInfo: vi.fn((dragInfo) => update({ dragInfo })),
@@ -101,7 +102,7 @@ function setup({ editor = true, scale = 1 } = {}) {
 	const canvas = new TestCanvas();
 	const renderer = { screen: { width: 390, height: 600 }, resize: vi.fn((width: number, height: number) => { renderer.screen = { width, height }; }) };
 	const app = { canvas, renderer, render: vi.fn() };
-	const callbacks: BoardCallbacks = { onMagnetClick: vi.fn(), onCockCheck: vi.fn(), onSlotClick: vi.fn(), onEditMatch: vi.fn() };
+	const callbacks: BoardCallbacks = { onMagnetClick: vi.fn(), onCockCheck: vi.fn(), onSlotClick: vi.fn() };
 	const runtime = new BoardRuntime(app as unknown as Application, 390, 600, callbacks);
 	runtimes.push(runtime);
 	const world = node();
@@ -162,19 +163,26 @@ describe("BoardRuntime input and scene integration", () => {
 		expect(board.getState().startMatch).not.toHaveBeenCalled();
 	});
 
-	it("places court editing left of completion and removes the old top-right hit target", () => {
-		const { runtime, callbacks, board } = setup();
+	it("shows completion normally and routes staged roster controls to cancel or save", () => {
+		const { runtime, board } = setup();
 		board.setState({ courtAnchors: new Map([[1, { x: 200, y: 180 }]]) });
 		stores.session.setState({ courts: [{ id: 1, match: { id: "M", courtId: 1, gameType: "남복", teamA: ["a", "b"], teamB: ["c", "d"], startedAt: "2026-09-18" } }] });
-		const tap = (x: number, y: number) => {
-			runtime.controller.pointerDown({ id: 1, x, y }); runtime.controller.pointerUp({ id: 1, x, y });
+		const tap = (x: number) => {
+			runtime.controller.pointerDown({ id: 1, x, y: 269 }); runtime.controller.pointerUp({ id: 1, x, y: 269 });
 		};
-		tap(260, 97);
-		expect(callbacks.onEditMatch).not.toHaveBeenCalled();
-		tap(147, 269);
-		expect(callbacks.onEditMatch).toHaveBeenCalledExactlyOnceWith(1);
-		tap(200, 269);
+		tap(200);
 		expect(board.getState().completeMatch).toHaveBeenCalledExactlyOnceWith(1);
+		board.setState({ matchEdits: new Map([[1, { matchId: "M", original: ["a", "b", "c", "d"], roster: ["e", "b", "c", "d"] }]]) });
+		tap(147);
+		expect(board.getState().cancelMatchEdit).toHaveBeenCalledExactlyOnceWith(1);
+		tap(200);
+		expect(board.getState().applyMatchEdit).toHaveBeenCalledExactlyOnceWith(1);
+		expect(board.getState().completeMatch).toHaveBeenCalledTimes(1);
+		// A remote cancellation between down/up must never turn a Save tap into Complete.
+		runtime.controller.pointerDown({ id: 1, x: 200, y: 269 });
+		board.setState({ matchEdits: new Map() });
+		runtime.controller.pointerUp({ id: 1, x: 200, y: 269 });
+		expect(board.getState().completeMatch).toHaveBeenCalledTimes(1);
 	});
 
 	it("draws on invalidation and leaves no continuous idle frame loop", () => {

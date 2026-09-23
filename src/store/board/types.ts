@@ -1,4 +1,5 @@
 import type { SessionPlayer } from "../../types";
+import type { MatchRosterEdit } from "../../lib/board/matchRosterEdit";
 import type { BoardDraftsPayload, DraftTeam, MagnetPosition, Reservation, StagePoint } from "../../types/board";
 
 /** 드래그-엔드 소스: 무엇을 놓았는지(자석/팀/코트). 흩어짐의 시작점이 된다. */
@@ -20,6 +21,11 @@ export interface BoardState {
 	drafts: Map<string, DraftTeam>;
 	reservations: Map<string, Reservation>;
 	assigningTeamIds: Set<string>;
+	matchEdits: Map<number, MatchRosterEdit>;
+	stageMatchPlayer: (courtId: number, slot: number, playerId: string) => void;
+	cancelMatchEdit: (courtId: number) => void;
+	applyMatchEdit: (courtId: number) => Promise<void>;
+	reconcileMatchEdits: () => void;
 	courtAnchors: Map<number, StagePoint>;
 	/**
 	 * 편집자가 직접 드래그로 자석/팀/코트를 배치했는지. true가 되면 자동 정렬을 멈춘다(수동 배치가 진실).

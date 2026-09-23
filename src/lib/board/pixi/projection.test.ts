@@ -125,7 +125,7 @@ describe("Pixi board projection", () => {
 		const second = card(snapshot, "court:3:match-3");
 		expect(first.point).toEqual({ x: TEAM_W / 2 + 12, y: TEAM_BOX_ABOVE + 8 });
 		expect(second.point.x).toBe(TEAM_W / 2 + 12 + TEAM_W + 20);
-		expect(first).toMatchObject({ draggable: false, appearance: { label: "2번 코트 · 경기중", ctaLabel: "보기 전용", ctaEnabled: false, showEdit: false } });
+		expect(first).toMatchObject({ draggable: false, appearance: { label: "2번 코트 · 경기중", ctaLabel: "보기 전용", ctaEnabled: false, showUnconfirm: false } });
 		expect(first.members.every((member) => member.draggable && !member.cockPending)).toBe(true);
 	});
 

@@ -20,7 +20,6 @@ import DetachZoneOverlay from "./DetachZoneOverlay";
 import RestDropOverlay from "./RestDropOverlay";
 import RecommendTeammateDialog from "./RecommendTeammateDialog";
 import CockCheckModal from "./CockCheckModal";
-import MatchEditModal from "./MatchEditModal";
 import ViewerLockOverlay from "./ViewerLockOverlay";
 import EditorTakenNotice from "./EditorTakenNotice";
 import DebugMatchModal from "./DebugMatchModal";
@@ -71,15 +70,6 @@ export default function SessionBoard() {
 
 	// 추천 팀원 다이얼로그 대상: 빈 슬롯(+) → {teamId}, 자유 자석 탭 → {seedId}
 	const [recommendTarget, setRecommendTarget] = useState<RecommendTarget | null>(null);
-	// 경기 수정(선수 교체) 모달 대상 코트
-	const [editMatchCourtId, setEditMatchCourtId] = useState<number | null>(null);
-	const onEditMatch = useCallback(
-		(courtId: number) => {
-			if (!isEditor) return; // 보기 전용
-			setEditMatchCourtId(courtId);
-		},
-		[isEditor],
-	);
 
 	const openTeamRecommend = useCallback(
 		(teamId: string) => {
@@ -109,7 +99,7 @@ export default function SessionBoard() {
 	);
 
 	// ── 편집→보기 전환 시 진행 중 편집 액션 일괄 취소 ──────────────
-	// 편집 권한을 잃으면(양도/탈취/lease 만료로 isEditor true→false) 띄워둔 편집 모달(추천/경기수정/콕확인)과
+	// 편집 권한을 잃으면(양도/탈취/lease 만료로 isEditor true→false) 띄워둔 편집 모달(추천/콕확인)과
 	// 드래그·배정중 부수상태를 모두 닫는다. prevIsEditor ref로 true→false 전이에서만 실행(마운트 false→false 무시).
 	// (접속자 모달은 뷰어도 쓰는 보기용이라 유지.)
 	const cancelEditActions = useBoardStore((s) => s.cancelEditActions);
@@ -117,7 +107,6 @@ export default function SessionBoard() {
 	useEffect(() => {
 		if (prevIsEditor.current && !isEditor) {
 			setRecommendTarget(null);
-			setEditMatchCourtId(null);
 			setCockTarget(null);
 			cancelEditActions();
 		}
@@ -139,7 +128,7 @@ export default function SessionBoard() {
 			{showRest && <RestDropOverlay />}
 			<div ref={stageContainerRef} style={{ position: "absolute", top: `calc(${TOOLBAR_H}px + env(safe-area-inset-top))`, left: `max(${EDGE_GUTTER}px, env(safe-area-inset-left))`, right: `max(${EDGE_GUTTER}px, env(safe-area-inset-right))`, bottom: `calc(${COURT_BAR_H}px + env(safe-area-inset-bottom, 0px))`, touchAction: "none" }}>
 				<SessionBoardRenderer width={stageW} height={stageH}
-					onMagnetClick={onMagnetClick} onCockCheck={onCockCheck} onSlotClick={openTeamRecommend} onEditMatch={onEditMatch} proposals={proposals} onEmptyDoubleTap={openSearch} locate={locate} />
+					onMagnetClick={onMagnetClick} onCockCheck={onCockCheck} onSlotClick={openTeamRecommend} proposals={proposals} onEmptyDoubleTap={openSearch} locate={locate} />
 			</div>
 			<RestBar />
 			{/* 줌 컨트롤 — 0.4~1배 축소(편집/보기 공통) */}
@@ -159,9 +148,6 @@ export default function SessionBoard() {
 					newTeam={recommendTarget.newTeam}
 					onClose={() => setRecommendTarget(null)}
 				/>
-			)}
-			{editMatchCourtId !== null && (
-				<MatchEditModal courtId={editMatchCourtId} onClose={() => setEditMatchCourtId(null)} />
 			)}
 			{cockTarget && (
 				<CockCheckModal playerId={cockTarget} onClose={() => setCockTarget(null)} />

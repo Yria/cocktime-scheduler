@@ -70,7 +70,7 @@ async function pressCard(page: Page, key: string) {
 		if (!card || card.kind !== "card") throw new Error("Missing court");
 		return { point: card.point, appearance: card.appearance, scale: window.proposalTest.board.getState().scale };
 	}, key);
-	const rect = cardControls(appearance.showUnconfirm || appearance.showEdit).main;
+	const rect = cardControls(appearance.showUnconfirm).main;
 	await page.mouse.click(canvas.x + (point.x + rect.x + rect.width / 2) * scale, canvas.y + (point.y + rect.y + rect.height / 2) * scale);
 }
 

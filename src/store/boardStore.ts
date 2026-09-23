@@ -7,6 +7,7 @@ import type { BoardState } from "./board/types";
 import { createViewSlice } from "./board/viewSlice";
 import { createMembershipSlice } from "./board/membershipSlice";
 import { createMatchSlice } from "./board/matchSlice";
+import { createRosterEditSlice } from "./board/rosterEditSlice";
 import { pushDraftsToRemote, serializeBoardDrafts, syncState } from "./board/draftsSync";
 
 // 원본 경로 공개 API 유지 — importer(SessionBoard 등)는 계속 이 모듈에서 가져온다.
@@ -25,6 +26,7 @@ export const useBoardStore = create<BoardState>()(
 			...createViewSlice(...a),
 			...createMembershipSlice(...a),
 			...createMatchSlice(...a),
+			...createRosterEditSlice(...a),
 		})),
 		{ name: "boardStore", enabled: import.meta.env.DEV },
 	),
