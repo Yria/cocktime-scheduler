@@ -198,23 +198,30 @@ for (const width of [390, 1280]) test(`persistent court groups and proposal over
 	expect(transport.errors).toEqual([]);
 });
 
-test("empty courts remain visible and arrange resets to three columns", async ({ page }) => {
-	await setup(page);
-	await page.evaluate(() => {
-		const api = window.proposalTest;
-		api.session.setState({ sessionPlayers: new Map(), courts: [1, 2, 3, 4].map(id => ({ id, match: null })) });
-	});
-	await expect.poll(() => page.evaluate(() => window.proposalTest.scene().entities.filter(item => item.kind === "card").length)).toBe(4);
-	await page.evaluate(() => {
-		const board = window.proposalTest.board.getState();
-		board.setTeamAnchor("court-1", 610, 150); board.setTeamAnchor("court-2", 170, 162);
-		board.setTeamAnchor("court-3", 610, 430); board.setTeamAnchor("court-4", 170, 422);
-	});
-	await page.getByRole("button", { name: "정렬", exact: true }).click();
-	const anchors = () => page.evaluate(() => [...window.proposalTest.board.getState().drafts.values()].map(team => team.anchor));
-	expect(await anchors()).toEqual([0, 1, 2, 3].map(groupGridAnchor));
-	await page.getByRole("button", { name: "정렬", exact: true }).click();
-	expect(await anchors()).toEqual([0, 1, 2, 3].map(groupGridAnchor));
+for (const [width, height] of [[390, 900], [1280, 900], [844, 390]]) test(`court-count arrangement uses fixed grid cells at ${width}px`, async ({ page }, testInfo) => {
+	await page.setViewportSize({ width, height });
+	const transport = await setup(page);
+	for (const slots of [[0, 1], [0, 1, 3], [0, 1, 3, 4], [0, 1, 2, 3, 4], [0, 1, 2, 3, 4, 5]]) {
+		await page.evaluate(count => {
+			window.proposalTest.session.setState({ sessionPlayers: new Map(), courts: Array.from({ length: count }, (_, i) => ({ id: i + 1, match: null })) });
+		}, slots.length);
+		await expect.poll(() => page.evaluate(() => window.proposalTest.scene().entities.filter(item => item.kind === "card").length)).toBe(slots.length);
+		await page.evaluate(() => {
+			const board = window.proposalTest.board.getState();
+			for (const team of board.drafts.values()) board.setTeamAnchor(team.id, 210, 150);
+		});
+		const anchors = () => page.evaluate(() => [...window.proposalTest.board.getState().drafts.values()].sort((a, b) => a.courtId! - b.courtId!).map(team => team.anchor));
+		for (let i = 0; i < 2; i++) {
+			await page.getByRole("button", { name: "정렬", exact: true }).click();
+			expect(await anchors()).toEqual(slots.map(groupGridAnchor));
+		}
+		expect(await page.evaluate(() => {
+			const bs = window.proposalTest.board.getState();
+			return [...bs.drafts.values()].every(team => team.anchor.y + 117 <= bs.stageH && team.anchor.x + 79 <= bs.stageW);
+		})).toBe(true);
+		await page.screenshot({ path: testInfo.outputPath(`courts-${slots.length}-${width}.png`) });
+	}
+	expect(transport.errors).toEqual([]);
 });
 
 test("removing empty court 3 keeps matches from courts 4 and 5 under their new numbers", async ({ page }, testInfo) => {
@@ -278,9 +285,9 @@ for (const width of [320, 390, 1280]) test(`prepared groups fill a three-column 
 	for (let i = 0; i < 5; i++) await page.evaluate(() => window.proposalTest.board.getState().autoFillTarget({ newTeam: true }));
 	await expect.poll(() => page.evaluate(() => window.proposalTest.board.getState().drafts.size)).toBe(9);
 	const positions = () => page.evaluate(() => [...window.proposalTest.board.getState().drafts.values()].map(team => team.anchor));
-	expect(await positions()).toEqual(Array.from({ length: 9 }, (_, i) => groupGridAnchor(i)));
+	expect(await positions()).toEqual([0, 1, 3, 2, 4, 5, 6, 7, 8].map(groupGridAnchor));
 	await page.getByRole("button", { name: "정렬", exact: true }).click();
-	expect(await positions()).toEqual(Array.from({ length: 9 }, (_, i) => groupGridAnchor(i)));
+	expect(await positions()).toEqual([0, 1, 3, 2, 4, 5, 6, 7, 8].map(groupGridAnchor));
 	await expect.poll(() => page.evaluate(() => {
 		const board = window.proposalTest.board.getState();
 		const rect = document.querySelector("canvas")!.getBoundingClientRect();

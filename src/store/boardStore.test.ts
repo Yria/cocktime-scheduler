@@ -641,7 +641,7 @@ describe("정렬(rearrangeAll) — 팀이 많아도 화면 바운더리 안에 �
 	});
 
 	it("코트 카드(경기중)도 정렬 시 격자로 줄바꿈되어 화면 밖으로 넘지 않는다", () => {
-		// 코트 4개 경기중 — 세 칸씩 채우고 네 번째부터 다음 행
+		// 코트 4개 경기중 — 왼쪽 두 열을 채우고 세 번째부터 다음 행
 		h.courts = [1, 2, 3, 4].map((id) => ({
 			id,
 			match: { id: `m${id}`, courtId: id, gameType: "남복", teamA: ["a", "b"], teamB: ["c", "d"], startedAt: "" },
@@ -661,10 +661,11 @@ describe("정렬(rearrangeAll) — 팀이 많아도 화면 바운더리 안에 �
 			expect(a.y - TEAM_BOX_ABOVE).toBeGreaterThanOrEqual(0);
 			expect(a.y + TEAM_BOX_BELOW).toBeLessThanOrEqual(viewH);
 		}
-		// 4번 코트부터 둘째 줄
+		// 3번 코트부터 둘째 줄
 		const ys = [...anchors.values()].map((a) => a.y).sort((p, q) => p - q);
-		expect(ys[2]).toBe(ys[0]);
-		expect(ys[3]).toBeGreaterThan(ys[0]);
+		expect(ys[1]).toBe(ys[0]);
+		expect(ys[2]).toBeGreaterThan(ys[0]);
+		expect(ys[3]).toBe(ys[2]);
 	});
 });
 

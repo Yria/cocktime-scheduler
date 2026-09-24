@@ -11,6 +11,18 @@ export function groupGridAnchor(index: number): StagePoint {
 		y: 10 + TEAM_BOX_ABOVE + Math.floor(index / GROUP_COLUMNS) * GROUP_ROW_HEIGHT };
 }
 
+/** 코트 1~4개는 왼쪽 두 열, 5개부터는 세 열을 사용한다. 칸 번호는 항상 3열 기준. */
+export function courtGridIndex(index: number, courtCount: number): number {
+	const columns = courtCount <= 4 ? 2 : GROUP_COLUMNS;
+	return Math.floor(index / columns) * GROUP_COLUMNS + index % columns;
+}
+
+/** 다음 팀은 코트 사이 빈칸부터 채우므로 마지막 코트와 전체 그룹 수 중 더 긴 쪽을 쓴다. */
+export function groupGridRows(groupCount: number, courtCount = 0): number {
+	const courtExtent = courtCount > 0 ? courtGridIndex(courtCount - 1, courtCount) + 1 : 0;
+	return Math.ceil(Math.max(groupCount, courtExtent) / GROUP_COLUMNS);
+}
+
 export function nextGroupAnchor(occupied: Iterable<StagePoint>): StagePoint {
 	const points = [...occupied];
 	for (let index = 0; ; index++) {

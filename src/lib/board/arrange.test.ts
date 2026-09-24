@@ -1,9 +1,59 @@
 import { describe, it, expect } from "vitest";
-import { requiredBoardHeight, computeFitScale, arrangeBoard } from "./arrange";
+import { requiredBoardHeight, computeFitScale, arrangeBoard, type ArrangeInput } from "./arrange";
 import type { DraftTeam, MagnetPosition } from "../../types/board";
 import type { SessionPlayer } from "../../types";
+import { groupGridAnchor } from "./groupGrid";
+import { MAGNET_SIZE, TEAM_BOX_BELOW } from "./constants";
 
 const FIT = { min: 0.5, max: 1, step: 0.05 };
+
+describe("코트 수별 정렬", () => {
+	function board(count: number): ArrangeInput {
+		const courts = Array.from({ length: count }, (_, i) => ({ id: i + 1, match: null }));
+		return { courts, drafts: new Map([...courts].reverse().map(court => [String(court.id), {
+			id: String(court.id), courtId: court.id, anchorMemberIds: [], anchor: { x: 500, y: 700 }, createdAt: 1,
+		}])), courtAnchors: new Map(), magnets: new Map(), reservations: new Map(), sessionPlayers: new Map(),
+			playingIds: new Set(), restingIds: new Set(), cockPendingIds: new Set(), viewW: 800, viewH: 1200 };
+	}
+
+	it.each([
+		[1, [1]], [2, [1, 2]], [3, [1, 2, 4]], [4, [1, 2, 4, 5]],
+		[5, [1, 2, 3, 4, 5]], [6, [1, 2, 3, 4, 5, 6]], [9, [1, 2, 3, 4, 5, 6, 7, 8, 9]],
+	] as const)("%i코트는 번호순으로 지정된 격자 칸을 사용한다", (count, slots) => {
+		const input = board(count);
+		arrangeBoard(input);
+		const expected = slots.map(slot => groupGridAnchor(slot - 1));
+		expect(input.courts.map(court => input.courtAnchors.get(court.id))).toEqual(expected);
+		expect(input.courts.map(court => input.drafts.get(String(court.id))!.anchor)).toEqual(expected);
+		arrangeBoard(input);
+		expect(input.courts.map(court => input.courtAnchors.get(court.id))).toEqual(expected);
+	});
+
+	it("다음 팀이 늘어도 3코트 위치를 유지하며 생성 순서대로 빈칸을 채운다", () => {
+		const input = board(3);
+		for (const createdAt of [3, 1, 2]) input.drafts.set(`next-${createdAt}`, {
+			id: `next-${createdAt}`, createdAt, anchor: { x: 10, y: 10 }, anchorMemberIds: [],
+		});
+		arrangeBoard(input);
+		expect(input.courts.map(court => input.courtAnchors.get(court.id))).toEqual([0, 1, 3].map(groupGridAnchor));
+		expect([1, 2, 3].map(i => input.drafts.get(`next-${i}`)!.anchor)).toEqual([2, 4, 5].map(groupGridAnchor));
+	});
+
+	it("낮은 화면도 3코트의 두 번째 줄과 자유 자석을 함께 수용하도록 축소한다", () => {
+		const input = board(3);
+		input.magnets.set("free", { playerId: "free", teamId: null, x: 0, y: 0 });
+		const scale = computeFitScale(800, 300, 3, 1, { min: 0.4, max: 1, step: 0.01, courtCount: 3 });
+		expect(scale).toBeLessThan(1);
+		input.viewW = 800 / scale;
+		input.viewH = 300 / scale;
+		arrangeBoard(input);
+		const bottom = input.courtAnchors.get(3)!.y + TEAM_BOX_BELOW;
+		const free = input.magnets.get("free")!;
+		expect(free.y - MAGNET_SIZE / 2).toBeGreaterThan(bottom);
+		expect((free.y + MAGNET_SIZE / 2) * scale).toBeLessThanOrEqual(300);
+		expect(requiredBoardHeight(3, 1, input.viewW, 3)).toBeLessThanOrEqual(input.viewH);
+	});
+});
 
 describe("requiredBoardHeight", () => {
 	it("자석이 하나도 없으면 0", () => {

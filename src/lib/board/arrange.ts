@@ -2,7 +2,7 @@
  * arrange.ts
  *
  * 보드 전체 자동 정렬(rearrangeAll) 순수 로직.
- * 코트 번호 → 예비 그룹 생성 순서로 3열 격자에 배치하고, 자유 자석은 그 아래에 둔다.
+ * 코트 수에 맞춰 3열 격자에 배치하고, 예비 그룹은 빈칸에, 자유 자석은 그 아래에 둔다.
  * 전달된 Map(immer draft)들을 in-place로 변경한다.
  */
 import type { Court, SessionPlayer } from "../../types";
@@ -13,7 +13,7 @@ import type {
 	StagePoint,
 } from "../../types/board";
 import { MAGNET_SIZE, TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_W } from "./constants";
-import { GROUP_COLUMNS, groupGridAnchor, GROUP_ROW_HEIGHT } from "./groupGrid";
+import { courtGridIndex, groupGridAnchor, groupGridRows, GROUP_ROW_HEIGHT } from "./groupGrid";
 import { settleFreeMagnets } from "./settle";
 
 // 레이아웃 상수 — arrangeBoard 배치와 requiredBoardHeight(fit 계산)가 공유한다. 반드시 동기 유지.
@@ -36,6 +36,12 @@ export interface ArrangeInput {
 	viewH: number;
 }
 
+/** 고정 코트 그룹과 아직 고정 그룹이 없는 경기 중 코트를 중복 없이 센다. */
+export function arrangedCourtIds(drafts: Iterable<DraftTeam>, courts: Court[]): number[] {
+	return [...new Set([...drafts].filter(team => team.courtId != null).map(team => team.courtId!)
+		.concat(courts.filter(court => court.match).map(court => court.id)))].sort((a, b) => a - b);
+}
+
 export function arrangeBoard(input: ArrangeInput): void {
 	const {
 		magnets,
@@ -52,27 +58,32 @@ export function arrangeBoard(input: ArrangeInput): void {
 
 	const halfW = TEAM_W / 2;
 
-	const cols = GROUP_COLUMNS;
 	const maxAnchorY = Math.max(TEAM_BOX_ABOVE, viewH - TEAM_BOX_BELOW);
 	const gridAnchor = (index: number) => {
 		const point = groupGridAnchor(index);
 		return { x: Math.max(halfW, Math.min(viewW - halfW, point.x)), y: Math.min(maxAnchorY, point.y) };
 	};
 
-	// 코트 번호 순서 → 예비 그룹 생성 순서. 같은 3열 격자의 빈칸을 이어 채운다.
+	// 코트 번호 순서로 먼저 배치하고, 예비 그룹은 생성 순서로 남은 격자 칸을 채운다.
 	const permanent = [...drafts.values()].filter(team => team.courtId != null);
-	const courtIds = [...new Set([...permanent.map(team => team.courtId!), ...courts.filter(c => c.match).map(c => c.id)])].sort((a, b) => a - b);
+	const courtIds = arrangedCourtIds(permanent, courts);
 	const teams = [...drafts.values()].filter(team => team.courtId == null)
 		.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
-	let index = 0;
-	for (const courtId of courtIds) {
-		const anchor = gridAnchor(index++);
+	const occupied = new Set<number>();
+	for (const [index, courtId] of courtIds.entries()) {
+		const slot = courtGridIndex(index, courtIds.length);
+		occupied.add(slot);
+		const anchor = gridAnchor(slot);
 		courtAnchors.set(courtId, anchor);
 		const team = permanent.find(team => team.courtId === courtId);
 		if (team) team.anchor = { ...anchor };
 	}
-	for (const team of teams) team.anchor = gridAnchor(index++);
-	const groupRows = Math.ceil(index / cols);
+	let index = 0;
+	for (const team of teams) {
+		while (occupied.has(index)) index++;
+		team.anchor = gridAnchor(index++);
+	}
+	const groupRows = groupGridRows(courtIds.length + teams.length, courtIds.length);
 	const groupAreaBottom = GROUP_TOP + groupRows * GROUP_ROW_H;
 
 	// 2) 나머지 자유 자석을 그룹 영역 아래에 격자 배치 — 매칭 대기가 앞, 콕 미제출자 뒤, 휴식자 맨 뒤.
@@ -118,10 +129,10 @@ const FIT_BOTTOM_MARGIN = 6;
  * @param groupCount 경기중 코트 + 팀(draft) 수 (arrangeBoard의 그룹 격자 항목 수와 동일)
  * @param freeCount  자유 자석 수 (teamId=null·비경기중 — 휴식자 포함, arrangeBoard freeMagnets와 동일 기준)
  * @param viewW      보이는 논리 가로(=stageW/scale) — 자유 자석의 열 수를 결정(그룹은 항상 3열)
+ * @param courtCount 전체 그룹 중 코트 수 — 3코트도 두 줄을 사용함을 fit 계산에 반영
  */
-export function requiredBoardHeight(groupCount: number, freeCount: number, viewW: number): number {
-	const cols = GROUP_COLUMNS;
-	const groupRows = groupCount > 0 ? Math.ceil(groupCount / cols) : 0;
+export function requiredBoardHeight(groupCount: number, freeCount: number, viewW: number, courtCount = 0): number {
+	const groupRows = groupGridRows(groupCount, courtCount);
 	// 마지막 그룹 줄의 박스 하단 = 상단 시작 + 위여백 + (줄−1)·행높이 + 아래여백
 	const groupExtent =
 		groupRows > 0 ? GROUP_TOP + TEAM_BOX_ABOVE + (groupRows - 1) * GROUP_ROW_H + TEAM_BOX_BELOW : 0;
@@ -144,14 +155,14 @@ export function computeFitScale(
 	stageH: number,
 	groupCount: number,
 	freeCount: number,
-	opts: { min: number; max: number; step?: number },
+	opts: { min: number; max: number; step?: number; courtCount?: number },
 ): number {
 	const step = opts.step ?? 0.05;
 	for (let s = opts.max; s >= opts.min - 1e-9; s -= step) {
 		const scale = Math.round(s * 100) / 100;
 		const viewW = stageW / scale;
 		const viewH = stageH / scale;
-		if (requiredBoardHeight(groupCount, freeCount, viewW) <= viewH - FIT_BOTTOM_MARGIN) return scale;
+		if (requiredBoardHeight(groupCount, freeCount, viewW, opts.courtCount) <= viewH - FIT_BOTTOM_MARGIN) return scale;
 	}
 	return opts.min;
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useBoardStore, ZOOM_MIN } from "../store/boardStore";
 import { useSessionStore } from "../store/sessionStore";
 import { playingIdsFromCourts } from "../lib/board/membership";
-import { computeFitScale } from "../lib/board/arrange";
+import { arrangedCourtIds, computeFitScale } from "../lib/board/arrange";
 import { TEAM_W, TEAM_BOX_BELOW, MAGNET_SIZE } from "../lib/board/constants";
 import { flushBoardCamera } from "../lib/board/pixi/cameraBridge";
 import { clampScale, initialBoardScale } from "../store/board/zoom";
@@ -122,8 +122,10 @@ export function useBoardStageLayout(stageW: number, stageH: number, cw: number, 
 		for (const m of bs.magnets.values()) {
 			if (m.teamId === null && !playing.has(m.playerId)) freeCount++;
 		}
-		const groupCount = ss.courts.filter(c => c.match && ![...bs.drafts.values()].some(t => t.courtId === c.id)).length + bs.drafts.size;
+		const courtCount = arrangedCourtIds(bs.drafts.values(), ss.courts).length;
+		const groupCount = courtCount + [...bs.drafts.values()].filter(team => team.courtId == null).length;
 		const fit = computeFitScale(stageW, stageH, groupCount, freeCount, {
+			courtCount,
 			min: ZOOM_MIN,
 			max: initialBoardScale(stageW),
 			step: 0.01,
@@ -140,9 +142,10 @@ export function useBoardStageLayout(stageW: number, stageH: number, cw: number, 
 		const ss = useSessionStore.getState();
 		const playing = playingIdsFromCourts(ss.courts);
 		const freeCount = [...bs.magnets.values()].filter(m => m.teamId === null && !playing.has(m.playerId)).length;
-		const groupCount = bs.drafts.size + ss.courts.filter(c => c.match && ![...bs.drafts.values()].some(t => t.courtId === c.id)).length;
+		const courtCount = arrangedCourtIds(bs.drafts.values(), ss.courts).length;
+		const groupCount = courtCount + [...bs.drafts.values()].filter(team => team.courtId == null).length;
 		const scale = computeFitScale(stageW, stageH, groupCount, freeCount, {
-			min: ZOOM_MIN, max: initialBoardScale(stageW), step: 0.01,
+			courtCount, min: ZOOM_MIN, max: initialBoardScale(stageW), step: 0.01,
 		});
 		bs.commitBoardView({ scale, cssWidth: stageW, cssHeight: stageH });
 		rearrangeAll(stageW / scale, stageH / scale, true);
