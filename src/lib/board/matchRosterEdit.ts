@@ -8,6 +8,8 @@ export interface MatchRosterEdit {
 }
 
 export const rosterSaveKey = (courtId: number) => `roster:${courtId}`;
+/** 다른 코트의 '선수 변경' 명단에 올라간 선수 — 화면에서 숨겨져 있으므로 어떤 추천·자동 채움에도 쓰지 않는다. */
+export const editingRosterIds = (edits: ReadonlyMap<number, MatchRosterEdit>) => new Set([...edits.values()].flatMap(edit => edit.roster));
 export const sameRoster = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((id, i) => id === b[i]);
 
 export function currentMatchEdit(edit: MatchRosterEdit | undefined, court: Court | undefined) {

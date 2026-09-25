@@ -233,6 +233,7 @@ export const createMatchSlice: StateCreator<
 
 	completeMatch: async (courtId) => {
 		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
+		const sessionId = get().sessionId;
 		if (get().matchEdits.has(courtId) || get().assigningTeamIds.has(rosterSaveKey(courtId))) return;
 		const court = useSessionStore.getState().courts.find((c) => c.id === courtId);
 		const endedIds = matchPlayerIdsFromCourt(court);
@@ -242,14 +243,16 @@ export const createMatchSlice: StateCreator<
 		set(s => { s.assigningTeamIds.add(groupId); });
 		try {
 			await useSessionStore.getState().handleComplete(courtId);
+			if (get().sessionId !== sessionId) return;
 			if (useSessionStore.getState().courts.find(c => c.id === courtId)?.match) return;
 			set(s => {
 				resolveFreedReservations(s, endedIds);
 				s.assigningTeamIds.delete(groupId);
 			});
+			get().fillWaitingTeams();
 			get().scatterMagnets(endedIds);
 		} finally {
-			set(s => { s.assigningTeamIds.delete(groupId); });
+			if (get().sessionId === sessionId) set(s => { s.assigningTeamIds.delete(groupId); });
 		}
 	},
 

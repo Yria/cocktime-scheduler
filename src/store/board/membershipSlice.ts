@@ -23,7 +23,7 @@ import {
 	nowMs,
 } from "../../lib/board/draftMutations";
 import { autoFillTeammates } from "../../lib/teamSelection";
-import { allowedGameType } from "../../lib/teamSelection/groupPolicy";
+import { allowedGameType, canCompleteComposition } from "../../lib/teamSelection/groupPolicy";
 import { useSessionStore } from "../sessionStore";
 import { toast } from "../toastStore";
 import type { BoardState, DragSource } from "./types";
@@ -31,6 +31,9 @@ import { clampToStage, placeArranged, replaceAtSlot, runSettle } from "./layoutH
 import { claimEdit, currentEditorName, syncState } from "./draftsSync";
 import { reconcileCourtGroups } from "../../lib/board/courtGroups";
 import { nextGroupAnchor } from "../../lib/board/groupGrid";
+import { prefersWaitingDraft } from "../../lib/board/waitingDrafts";
+import { planWaitingTeamFills } from "../../lib/teamSelection/fillWaitingTeams";
+import { editingRosterIds } from "../../lib/board/matchRosterEdit";
 
 /** 멤버십 슬라이스 — 자석/예비팀/예약(ghost) 등 공유 멤버십의 편집 액션. */
 export type MembershipSlice = Pick<
@@ -38,6 +41,7 @@ export type MembershipSlice = Pick<
 	| "magnets"
 	| "ensureCourtGroups"
 	| "autoFillEmptyCourts"
+	| "fillWaitingTeams"
 	| "drafts"
 	| "reservations"
 	| "assigningTeamIds"
@@ -73,6 +77,8 @@ export const createMembershipSlice: StateCreator<
 		if (!courts.length) return;
 		set(s => reconcileCourtGroups(s, courts));
 	},
+	// 합류 대기팀은 여기서 채우지 않는다(경기 완료 때만, completeMatch). 코트 버튼에서 먼저 채우면
+	// 빈 코트가 쓸 자유 대기자를 대기팀이 가져가고, 방금 만든 대기팀이 곧바로 같은 사람들로 완성된다.
 	autoFillEmptyCourts: (courtId) => {
 		if (!claimEdit()) return;
 		for (const team of get().drafts.values()) {
@@ -84,12 +90,13 @@ export const createMembershipSlice: StateCreator<
 			if (teamMemberCount(team.id, get().drafts, get().reservations) === 0) {
 				const state = get();
 				const playing = playingIdsFromCourts(ss.courts);
+				const busy = editingRosterIds(state.matchEdits);
 				const queued = [...state.drafts.values()].filter(candidate => candidate.courtId == null
 					&& !state.assigningTeamIds.has(candidate.id)
 					&& isTeamStartable(candidate.id, state.drafts, state.reservations, state.magnets, playing)
 					&& teamMembers(candidate.id, state.drafts, state.reservations).every(member => {
 						const player = ss.sessionPlayers.get(member.playerId);
-						return player && player.status !== "resting" && (!ss.cockCheckEnabled || player.cockChecked);
+						return player && !busy.has(member.playerId) && player.status !== "resting" && (!ss.cockCheckEnabled || player.cockChecked);
 					}))
 					.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))[0];
 				if (queued) {
@@ -102,11 +109,54 @@ export const createMembershipSlice: StateCreator<
 				}
 			}
 			const data = buildRecommendData({ teamId: team.id }, [], { ...get(), ...ss }, { excludePlaying: true, excludeReserved: true });
+			const editing = editingRosterIds(get().matchEdits);
 			if (!data || data.confirmed.some(player => data.playingIds.has(player.id) || player.status === "resting"
-				|| (ss.cockCheckEnabled && !player.cockChecked))) continue;
-			const picks = autoFillTeammates(data.confirmed, data.pool, data.ctx, 4 - data.confirmed.length);
+				|| editing.has(player.id) || (ss.cockCheckEnabled && !player.cockChecked))) continue;
+			let picks = autoFillTeammates(data.confirmed, data.pool.filter(p => !editing.has(p.id)), data.ctx, 4 - data.confirmed.length);
+			if (picks.length + data.confirmed.length < 4) {
+				const flexible = buildRecommendData({ teamId: team.id }, [], { ...get(), ...ss },
+					{ excludePlaying: true, excludeReserved: true, includeWaitingDrafts: true });
+				if (flexible) {
+					const pool = flexible.pool.filter(p => !editing.has(p.id) && !get().assigningTeamIds.has(get().magnets.get(p.id)?.teamId ?? ""));
+					picks = autoFillTeammates(flexible.confirmed, pool, flexible.ctx, 4 - flexible.confirmed.length);
+				}
+			}
 			if (picks.length + data.confirmed.length === 4 && allowedGameType([...data.confirmed, ...picks])) get().commitTeammates({ teamId: team.id }, picks.map(player => player.id));
 		}
+	},
+
+	// 경기 완료 직후에만 부른다 — 끝난 선수가 여러 대기팀으로 흩어지는 것이 이 모드의 목적이다.
+	fillWaitingTeams: () => {
+		if (!claimEdit()) return;
+		const state = get(), ss = useSessionStore.getState();
+		const editing = editingRosterIds(state.matchEdits);
+		const teams = [...state.drafts.values()]
+			.filter(team => team.waitForCompletion && team.courtId == null && !state.assigningTeamIds.has(team.id))
+			.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+			.map(team => ({ id: team.id, members: teamMembers(team.id, state.drafts, state.reservations)
+				.map(member => ss.sessionPlayers.get(member.playerId)) }))
+			.filter(team => team.members.every(p => p && !editing.has(p.id)))
+			.map(team => ({ id: team.id, members: team.members.filter((p): p is NonNullable<typeof p> => !!p) }));
+		if (!teams.length) return;
+		const data = buildRecommendData({ newTeam: true }, [], { ...state, ...ss }, { excludePlaying: true, excludeReserved: true });
+		if (!data) return;
+		const pool = data.pool.filter(p => !editing.has(p.id));
+		// 빈 코트에 1~3명만 올라간 그룹이 완성할 사람을 먼저 남긴다. 그 그룹은 코트 버튼으로 채운다.
+		const partialCourts = [...state.drafts.values()]
+			.filter(team => team.courtId != null && !state.assigningTeamIds.has(team.id) && ss.courts.some(court => court.id === team.courtId && !court.match))
+			.sort((a, b) => (a.courtId ?? 0) - (b.courtId ?? 0))
+			.map(team => ({ id: team.id, members: teamMembers(team.id, state.drafts, state.reservations).map(member => ss.sessionPlayers.get(member.playerId)) }))
+			.filter(team => team.members.length > 0 && team.members.every(p => p && !editing.has(p.id)))
+			.map(team => ({ id: team.id, members: team.members.filter((p): p is NonNullable<typeof p> => !!p) }));
+		const courtIds = new Set(partialCourts.map(team => team.id));
+		const plan = new Map([...planWaitingTeamFills([...partialCourts, ...teams], pool, data.ctx, partialCourts.length)].filter(([id]) => !courtIds.has(id)));
+		if (!plan.size) return;
+		set(s => {
+			for (const [teamId, picks] of plan) {
+				for (const p of picks) attachAnchor(s, p.id, teamId);
+				runSettle(s, { teamId });
+			}
+		});
 	},
 
 	handleDrop: (playerId, drop) => {
@@ -298,9 +348,9 @@ export const createMembershipSlice: StateCreator<
 		});
 	},
 
-	commitTeammates: (target, playerIds) => {
+	commitTeammates: (target, playerIds, options = {}) => {
 		if (!claimEdit()) return; // 보기 전용 차단(자유면 자동 점유)
-		if (playerIds.length === 0) return;
+		if (playerIds.length === 0 && !target.teamId) return;
 		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 		set((s) => {
 			let teamId = target.teamId ?? null;
@@ -354,6 +404,11 @@ export const createMembershipSlice: StateCreator<
 				toast("혼자서는 그룹이 안 돼요 — 2명 이상 골라 주세요", { variant: "error" });
 				return;
 			}
+			const team = s.drafts.get(teamId)!;
+			if (options.waitForCompletion != null) {
+				if (options.waitForCompletion && team.courtId == null && teamMemberCount(teamId, s.drafts, s.reservations) < 4) team.waitForCompletion = true;
+				else delete team.waitForCompletion;
+			}
 			// 그룹 생성/채움 후 겹친 자유 자석 흩어짐
 			runSettle(s, { teamId });
 		});
@@ -382,20 +437,33 @@ export const createMembershipSlice: StateCreator<
 
 	autoFillTeam: (teamId) => {
 		const team = get().drafts.get(teamId);
-		if (team?.courtId != null && teamMemberCount(teamId, get().drafts, get().reservations) === 0) {
-			// 빈 코트의 매칭 버튼을 눌렀을 때만 다음 팀 대기열을 소비한다.
-			get().autoFillEmptyCourts(team.courtId);
+		if (team?.waitForCompletion) {
+			// 합류 대기팀은 한 번에 채우지 않는다(카드 버튼도 비활성). 지금 채우려면 빈자리를 눌러 직접 고르거나 대기를 끈다.
+			toast("합류 대기팀은 경기가 끝나면 채워져요. 지금 채우려면 빈자리를 눌러 대기를 끄고 자동편성하세요");
 			return;
 		}
-		get().autoFillTarget({ teamId }, []);
+		if (team?.courtId != null) {
+			// 빈 코트: 준비된 다음 팀 → 자유 대기자 → 합류 대기팀 재조합 순으로 채운다.
+			const courtId = team.courtId;
+			get().autoFillEmptyCourts(courtId);
+			// 이미 1~3명이 있는 그룹은 그래도 못 채우면 경기중 선수를 예약해 완성한다(기존 동작).
+			// 예약(ghost)이 섞인 그룹도 autoFillEmptyCourts가 건너뛰므로 여기서 채운다.
+			const count = teamMemberCount(teamId, get().drafts, get().reservations);
+			const empty = useSessionStore.getState().courts.some(court => court.id === courtId && !court.match);
+			if (count > 0 && count < 4 && empty) get().autoFillTarget({ teamId }, []);
+			else if (count === 0 && empty && claimEdit()) toast("준비된 다음 팀이나 대기 선수가 부족해 코트를 채우지 못했어요");
+			return;
+		}
+		// 이미 있는 일반 예비팀의 버튼은 지금 네 명을 채운다(필요하면 경기중 예약). 합류 대기 기본값은 새 팀에만 쓴다.
+		get().autoFillTarget({ teamId }, [], { waitForCompletion: false });
 	},
 
 	// 추천 모달의 "자동편성" 버튼 공용 — 팀/시드/새팀 어디서나 나머지 슬롯을 추천순으로 채워 commit.
 	// extraIds = 모달에서 사용자가 직접 고른 선수(먼저 포함하고 나머지를 자동 채움).
 	// 대기자로 허용 팀을 완성할 수 없을 때만 필요한 최소 인원을 경기중에서 예약하며,
 	// commitTeammates가 예약으로 처리한다. 다른 팀에 이미 예약된 선수는 풀에서 제외한다.
-	autoFillTarget: (target, extraIds = []) => {
-		if (!claimEdit()) return; // 보기 전용 차단
+	autoFillTarget: (target, extraIds = [], options = {}) => {
+		if (!claimEdit()) return false; // 보기 전용 차단
 		const { drafts, reservations, magnets } = get();
 		const ss = useSessionStore.getState();
 		const data = buildRecommendData(
@@ -413,13 +481,43 @@ export const createMembershipSlice: StateCreator<
 			},
 			{ excludeReserved: true }, // 다른 팀과 이중 예약 방지
 		);
-		if (!data) return;
+		if (!data) return false;
+		const editing = editingRosterIds(get().matchEdits);
+		if (data.confirmed.some(p => editing.has(p.id))) {
+			toast("선수 변경 중인 선수가 있어 채울 수 없어요", { variant: "error" });
+			return false;
+		}
+		const pool = data.pool.filter(p => !editing.has(p.id));
+		// commitTeammates는 2명 미만이면 팀을 만들지 않고 알린다 — 실제로 바뀌었는지로 성공을 판정한다.
+		const commit = (ids: string[], waitForCompletion: boolean) => {
+			const count = () => target.teamId ? teamMemberCount(target.teamId, get().drafts, get().reservations) : get().drafts.size;
+			const flag = () => !!target.teamId && get().drafts.get(target.teamId)?.waitForCompletion === true;
+			const [countBefore, flagBefore] = [count(), flag()];
+			get().commitTeammates(target, ids, { waitForCompletion });
+			return count() > countBefore || flag() !== flagBefore;
+		};
+		const explicit = options.waitForCompletion;
+		const waiting = (explicit ?? prefersWaitingDraft(target, { ...get(), ...ss }, extraIds, editing))
+			&& (target.teamId == null || drafts.get(target.teamId)?.courtId == null) && data.confirmed.length < 4;
+		if (waiting) {
+			const valid = canCompleteComposition(data.confirmed) && !data.confirmed.some(p => p.status === "resting" || (ss.cockCheckEnabled && !p.cockChecked));
+			const targetSize = Math.max(2, data.confirmed.length);
+			const picks = valid ? autoFillTeammates(data.confirmed, pool, data.ctx, targetSize - data.confirmed.length, undefined, { targetSize }) : [];
+			if (valid && data.confirmed.length + picks.length >= 2 && [...data.confirmed, ...picks].some(p => !data.playingIds.has(p.id))) {
+				return commit([...extraIds, ...picks.map(p => p.id)], true);
+			}
+			// 기본값이 대기일 때 예약 팀으로 대신 만들지 않는다 — 세션 324 재생에서 같은 4명 연속과 최장 대기가 늘었다.
+			toast(!valid ? "현재 선택으로 합류 대기팀을 만들 수 없어요"
+				: explicit ? "합류 대기팀에는 대기 선수를 포함해 2명 이상이 필요해요"
+				: "대기 선수가 부족해 지금은 새 팀을 만들 수 없어요. 대기를 끄면 경기 중 선수를 예약해 만들어요", { variant: "error" });
+			return false;
+		}
 		const slotsToFill = 4 - data.confirmed.length; // confirmed = 기존 멤버 + extraIds
 		if (slotsToFill <= 0) {
-			if (extraIds.length === 0) return;
+			if (extraIds.length === 0) return false;
 			if (!allowedGameType(data.confirmed)) {
 				toast("현재 선택과 참가 인원으로 편성 가능한 조합이 없어요", { variant: "error" });
-				return;
+				return false;
 			}
 		}
 		// 보드의 새 팀 생성에는 자유 대기 선수(anchor) 한 명이 필요하다.
@@ -427,29 +525,30 @@ export const createMembershipSlice: StateCreator<
 		const needsAnchor = target.newTeam && !data.confirmed.some(p => !data.playingIds.has(p.id));
 		const picks =
 			slotsToFill > 0
-				? autoFillTeammates(data.confirmed, data.pool, data.ctx, slotsToFill, undefined, {
+				? autoFillTeammates(data.confirmed, pool, data.ctx, slotsToFill, undefined, {
 						maxPlaying: Math.max(0, slotsToFill - (needsAnchor ? 1 : 0)),
 					})
 				: [];
 		if (slotsToFill > 0 && picks.length === 0) {
 			toast("현재 선택과 참가 인원으로 편성 가능한 조합이 없어요", { variant: "error" });
-			return;
+			return false;
 		}
 		const ids = [...extraIds, ...picks.map((p) => p.id)];
 		if (ids.length === 0) {
 			toast("현재 선택과 참가 인원으로 편성 가능한 조합이 없어요", { variant: "error" });
-			return;
+			return false;
 		}
 		// 새 팀 모드는 anchor(비경기중 1명)가 필수 — 전원 경기중이면 commitTeammates가 조용히
 		// no-op하므로 거짓 부분성공 토스트 대신 정직하게 실패를 알린다.
 		if (target.newTeam && ids.every((id) => data.playingIds.has(id))) {
 			toast("경기중이 아닌 선수가 1명은 필요해요", { variant: "error" });
-			return;
+			return false;
 		}
-		get().commitTeammates(target, ids);
-		if (picks.length < slotsToFill) {
+		const committed = commit(ids, false);
+		if (committed && picks.length < slotsToFill) {
 			toast(`선수가 부족해 ${picks.length + extraIds.length}명만 채웠어요`);
 		}
+		return committed;
 	},
 
 	detachMember: (playerId) => {

@@ -4,6 +4,7 @@ import { useSessionStore } from "../store/sessionStore";
 import { useBoardStore } from "../store/boardStore";
 import { buildRecommendData } from "../lib/board/recommendPool";
 import { recommendTeammates } from "../lib/teamSelection";
+import { editingRosterIds } from "../lib/board/matchRosterEdit";
 import type { RankedCandidate } from "../lib/teamSelection";
 
 export type { RankedCandidate };
@@ -43,6 +44,7 @@ export function useTeammateRecommendations(
 	const drafts = useBoardStore((s) => s.drafts);
 	const reservations = useBoardStore((s) => s.reservations);
 	const magnets = useBoardStore((s) => s.magnets);
+	const matchEdits = useBoardStore((s) => s.matchEdits);
 
 	const sessionPlayers = useSessionStore((s) => s.sessionPlayers);
 	const courts = useSessionStore((s) => s.courts);
@@ -64,10 +66,13 @@ export function useTeammateRecommendations(
 			{ excludeReserved: true },
 		);
 		if (!data) return empty;
-		const { confirmed, members, pool, ctx, playingIds } = data;
+		const { confirmed, members, ctx, playingIds } = data;
+		// 다른 코트의 선수 변경 명단에 있는 선수는 보드에서 숨겨져 있어 후보에서도 뺀다(자동 채움과 같은 기준).
+		const editing = editingRosterIds(matchEdits);
+		const pool = data.pool.filter(p => !editing.has(p.id));
 
 		const ranked = recommendTeammates(confirmed, pool, ctx);
 
 		return { ranked, members, playingIds };
-	}, [teamId, seedId, newTeam, selectedIds, drafts, reservations, magnets, sessionPlayers, courts, groupHistory, lastGameType, cockCheckEnabled]);
+	}, [teamId, seedId, newTeam, selectedIds, drafts, reservations, magnets, matchEdits, sessionPlayers, courts, groupHistory, lastGameType, cockCheckEnabled]);
 }

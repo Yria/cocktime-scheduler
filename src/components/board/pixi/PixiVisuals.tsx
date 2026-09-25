@@ -18,6 +18,7 @@ import {
 	RESERVATION_STROKE, RESTING_BADGE_BG, RESTING_OPACITY, RING_BG_COLOR, RING_FG_COLOR,
 	STROKE_DEFAULT, TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_CORNER_R, TEAM_CTA_H,
 	TEAM_PAD, TEAM_VS_H, TEAM_W,
+	WAITING_SLOT_BG, WAITING_SLOT_STROKE,
 } from "../../../lib/board/constants";
 
 extend({ Sprite });
@@ -462,7 +463,24 @@ export const CardControlsVisual = memo(function CardControlsVisual({ appearance,
 	</>;
 });
 
-export const EmptySlotVisual = memo(function EmptySlotVisual() {
+export const EmptySlotVisual = memo(function EmptySlotVisual({ waiting = false }: { waiting?: boolean }) {
+	if (waiting) return <CachedSprite cacheKey="waiting-slot"
+		bounds={{ x: -32, y: -32, width: 64, height: 64 }}
+		paint={(context) => {
+			circle(context, 28);
+			context.fillStyle = WAITING_SLOT_BG;
+			context.fill();
+			context.strokeStyle = WAITING_SLOT_STROKE;
+			context.lineWidth = 1.5;
+			context.setLineDash([4, 3]);
+			context.stroke();
+			context.setLineDash([]);
+			context.beginPath();
+			context.arc(0, -9, 8, 0, Math.PI * 2);
+			context.moveTo(0, -14); context.lineTo(0, -9); context.lineTo(4, -7);
+			context.stroke();
+			text(context, "합류 대기", -30, 5, 60, 11, WAITING_SLOT_STROKE, true);
+		}} />;
 	return <CachedSprite cacheKey="empty-slot"
 		bounds={{ x: -EMPTY_SLOT_R - 2, y: -EMPTY_SLOT_R - 2, width: EMPTY_SLOT_R * 2 + 4, height: EMPTY_SLOT_R * 2 + 4 }}
 		paint={(context) => {

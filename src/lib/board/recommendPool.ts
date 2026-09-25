@@ -57,7 +57,7 @@ export function buildRecommendData(
 	target: RecommendPoolTarget,
 	extraConfirmedIds: string[],
 	inputs: RecommendPoolInputs,
-	options: { excludePlaying?: boolean; excludeReserved?: boolean } = {},
+	options: { excludePlaying?: boolean; excludeReserved?: boolean; includeWaitingDrafts?: boolean } = {},
 ): RecommendData | null {
 	const { drafts, reservations, magnets, sessionPlayers, courts, groupHistory, lastGameType, cockCheckEnabled } = inputs;
 	const teamId = target.teamId ?? null;
@@ -119,7 +119,14 @@ export function buildRecommendData(
 		const mag = magnets.get(p.id);
 		if (!mag) continue;
 		// 다른 보드 팀에 anchor로 묶인 선수는 제외(경기중 선수는 magnet.teamId=null이라 포함됨)
-		if (mag.teamId && mag.teamId !== teamId) continue;
+		if (mag.teamId && mag.teamId !== teamId) {
+			const team = drafts.get(mag.teamId);
+			// An empty court may combine flexible waiting drafts instead of leaving
+			// four available people stranded in two unfinished groups.
+			if (!options.includeWaitingDrafts || !team?.waitForCompletion || team.courtId != null
+				|| teamMembers(team.id, drafts, reservations).length >= 4
+				|| teamMembers(team.id, drafts, reservations).some(member => member.kind === "ghost")) continue;
+		}
 		pool.push(p);
 	}
 

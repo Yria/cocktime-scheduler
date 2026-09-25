@@ -6,6 +6,7 @@ import { useBoardStore } from "../src/store/boardStore";
 import { useSessionStore } from "../src/store/sessionStore";
 import { useAppStore } from "../src/store/appStore";
 import type { SessionPlayer } from "../src/types";
+import { createBoardProjection } from "../src/lib/board/pixi/projection";
 
 // This fixture does not mount session effects or connect to any backend.
 useAppStore.setState({ sessionMeta: null });
@@ -23,11 +24,14 @@ const originalRender = Application.prototype.render;
 Application.prototype.render = function () { renders++; return originalRender.call(this); };
 const root = createRoot(document.getElementById("root")!);
 const clicks: string[] = [];
-const props = { width: 800, height: 600,
+const responsive = new URLSearchParams(location.search).has("responsive");
+const props = { width: responsive ? innerWidth : 800, height: responsive ? innerHeight : 600,
 	onMagnetClick: (id: string) => clicks.push(id), onCockCheck: (id: string) => clicks.push(`cock:${id}`),
 	onSlotClick: (id: string) => clicks.push(`team:${id}`) };
 const mount = () => root.render(<StrictMode><SessionBoardRenderer {...props} /></StrictMode>);
-const api = { board: useBoardStore, session: useSessionStore, mount, unmount: () => root.render(null), clicks, get renders() { return renders; } };
+const project = createBoardProjection();
+const api = { board: useBoardStore, session: useSessionStore, mount, unmount: () => root.render(null), clicks,
+	scene: () => project(useBoardStore.getState(), useSessionStore.getState()), get renders() { return renders; } };
 export type BoardTestApi = typeof api;
 Object.assign(window, { boardTest: api });
 mount();

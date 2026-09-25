@@ -47,6 +47,7 @@ export function serializeBoardDrafts(s: {
 				...(slots ? { slots } : {}),
 				...(t.createdBy ? { createdBy: t.createdBy } : {}),
 				...(t.confirmedMs != null ? { confirmedMs: t.confirmedMs } : {}),
+				...(t.waitForCompletion && t.courtId == null && memberIds.size >= 2 && memberIds.size < 4 ? { waitForCompletion: true } : {}),
 			};
 		}),
 		reservations: [...s.reservations.values()].filter((r) => s.drafts.has(r.teamId)).map((r) => ({

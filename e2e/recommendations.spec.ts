@@ -35,3 +35,21 @@ test("fixed seed and a manual pick stay selected during automatic completion", a
 	await page.getByRole("button", { name: "자동편성", exact: true }).click();
 	expect(await page.evaluate(() => [...window.recommendationTest.board.getState().drafts.values()][0].anchorMemberIds)).toEqual(["p0", "p1", "p2", "p3"]);
 });
+
+for (const width of [320, 390, 1440]) test(`explicit completion waiting leaves two labelled places at ${width}px`, async ({ page }, testInfo) => {
+	const height = width === 320 ? 700 : 900;
+	await page.setViewportSize({ width, height });
+	await page.goto("/e2e/recommendations.html");
+	await page.getByRole("checkbox", { name: "경기 완료 후 빈자리 채우기" }).check();
+	await expect(page.getByText("합류 대기", { exact: true })).toHaveCount(2);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+	const button = await page.getByRole("button", { name: "자동편성", exact: true }).boundingBox();
+	expect(button!.y + button!.height).toBeLessThanOrEqual(height);
+	await page.screenshot({ path: testInfo.outputPath(`waiting-picker-${width}.png`) });
+	await page.getByRole("button", { name: "자동편성", exact: true }).click();
+	const result = await page.evaluate(() => {
+		const s = window.recommendationTest.board.getState();
+		return { teams: [...s.drafts.values()].map(t => ({ size: t.anchorMemberIds.length, waiting: t.waitForCompletion })), reservations: s.reservations.size };
+	});
+	expect(result).toEqual({ teams: [{ size: 2, waiting: true }], reservations: 0 });
+});

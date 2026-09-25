@@ -62,7 +62,7 @@ function CardContents({ runtime, view, presentation, preview = false }: {
 		)}
 		{view.emptySlots.map((slot) => {
 			const p = computeSlotOffset(slot);
-			return <pixiContainer key={slot} x={p.x} y={p.y}><EmptySlotVisual /></pixiContainer>;
+			return <pixiContainer key={slot} x={p.x} y={p.y}><EmptySlotVisual waiting={view.waitingSlots?.includes(slot)} /></pixiContainer>;
 		})}
 		{view.members.map((member) => preview
 			? <pixiContainer key={member.key} x={member.point.x} y={member.point.y}><MagnetVisual appearance={member} dragging={presentation.playerDragging} hovered={false} /></pixiContainer>

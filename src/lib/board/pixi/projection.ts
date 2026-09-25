@@ -11,6 +11,7 @@ import {
 	TEAM_FORMING_BG, TEAM_FORMING_STROKE, TEAM_PLAYING_BG, TEAM_PLAYING_STROKE,
 	TEAM_READY_BG, TEAM_READY_STROKE, TEAM_RESERVED_BG, TEAM_RESERVED_STROKE,
 	TEAM_W, TEXT_SECONDARY, PROPOSAL_BG, PROPOSAL_STROKE, PROPOSAL_CTA,
+	WAITING_SLOT_STROKE,
 } from "../constants";
 import { computeSlotOffset, emptySlotIndices } from "../geometry";
 import {
@@ -96,9 +97,10 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 			if (old?.kind === "card") {
 				if (sameArray(old.members, next.members)) next.members = old.members;
 				if (sameArray(old.emptySlots, next.emptySlots)) next.emptySlots = old.emptySlots;
+				if (sameArray(old.waitingSlots ?? [], next.waitingSlots ?? [])) next.waitingSlots = old.waitingSlots;
 				if (sameAppearance(old.appearance, next.appearance)) next.appearance = old.appearance;
 				if (sourceKey(old.source) === sourceKey(next.source) && samePoint(old.point, next.point) && old.draggable === next.draggable && old.confirmed === next.confirmed
-					&& old.members === next.members && old.emptySlots === next.emptySlots && old.appearance === next.appearance) {
+					&& old.members === next.members && old.emptySlots === next.emptySlots && old.waitingSlots === next.waitingSlots && old.appearance === next.appearance) {
 					nextCache.set(next.key, old);
 					entities.push(old);
 					return;
@@ -117,6 +119,7 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 			const membership = teamMembers(team.id, bs.drafts, bs.reservations);
 			const count = membership.length;
 			const full = count === 4;
+			const waiting = team.waitForCompletion === true && team.courtId == null && count >= 2 && !full;
 			const startable = isTeamStartable(team.id, bs.drafts, bs.reservations, bs.magnets, playingIds);
 			const canStart = full && startable;
 			const held = canStart && coverage?.loaded && leavesNoAdmin(membership.map(m => m.playerId), coverageInput);
@@ -125,14 +128,15 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 			const busy = bs.assigningTeamIds?.has(team.id) === true || editing;
 			const availableCourt = ss.courts.some(court => !court.match && (team.courtId != null ? court.id === team.courtId
 				: ![...bs.drafts.values()].some(other => other.courtId === court.id && teamMembers(other.id, bs.drafts, bs.reservations).length > 0)));
-			const ctaEnabled = ss.isEditor && !busy && (!full || (canStart && availableCourt));
+			// 합류 대기팀은 경기 완료 때만 채운다 — 버튼은 상태 표시(비활성), 빈자리 탭은 추천 창을 연다.
+			const ctaEnabled = ss.isEditor && !busy && !waiting && (!full || (canStart && availableCourt));
 			const readyFill = team.courtId != null ? COURT_READY_BG : TEAM_READY_BG;
 			const readyStroke = team.courtId != null ? COURT_READY_STROKE : TEAM_READY_STROKE;
 			const labelColor = startable ? readyStroke
-				: full ? TEAM_RESERVED_STROKE : TEXT_SECONDARY;
+				: full ? TEAM_RESERVED_STROKE : waiting ? WAITING_SLOT_STROKE : TEXT_SECONDARY;
 			const baseLabel = team.courtId != null
-				? `${team.courtId}번 코트 · ${!full ? `편성 중 ${count}/4` : held ? "교대 대기" : canStart ? "시작 대기" : "합류 대기"}`
-				: `다음 팀 ${queued.indexOf(team) + 1} · ${!full ? `${count}/4` : held ? "교대 대기" : canStart ? "배정 대기" : "예약 대기"}`;
+				? `${team.courtId}번 코트 · ${!full ? `편성 중 ${count}/4` : held ? "교대 대기" : canStart ? "시작 대기" : "예약 대기"}`
+					: `다음 팀 ${queued.indexOf(team) + 1} · ${!full ? waiting ? `합류 대기 ${count}/4` : `${count}/4` : held ? "교대 대기" : canStart ? "배정 대기" : "예약 대기"}`;
 			const members: MagnetView[] = [];
 			for (const member of membership) {
 				if (editingPlayers.has(member.playerId)) continue;
@@ -151,12 +155,13 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 			card({
 				kind: "card", key: sourceKey(source), source, point: team.anchor, draggable: !busy, members, confirmed: false,
 				emptySlots: emptySlotIndices(new Set(membership.filter((member) => member.playerId !== draggedPlayerId).map((member) => member.slot))),
+				waitingSlots: waiting ? emptySlotIndices(new Set(membership.map(member => member.slot))) : undefined,
 				appearance: {
 					fill: startable ? readyFill : full ? TEAM_RESERVED_BG : TEAM_FORMING_BG,
 					stroke: startable ? readyStroke : full ? TEAM_RESERVED_STROKE : TEAM_FORMING_STROKE,
-					label: team.createdBy && team.courtId == null ? `${baseLabel} · by ${team.createdBy}` : baseLabel,
+					label: team.createdBy && team.courtId == null && !waiting ? `${baseLabel} · by ${team.createdBy}` : baseLabel,
 					labelColor, labelBold: full, showVs: full,
-					ctaLabel: editing ? "선수 변경 중" : busy ? "시작 중…" : canStart ? availableCourt ? held ? "교대 확인" : "경기시작" : "코트 대기" : full ? "예약 대기" : "자동매칭",
+					ctaLabel: editing ? "선수 변경 중" : busy ? "시작 중…" : canStart ? availableCourt ? held ? "교대 확인" : "경기시작" : "코트 대기" : full ? "예약 대기" : waiting ? "완료 후 채움" : "자동매칭",
 					ctaColor: !ctaEnabled ? CTA_DISABLED_COLOR : canStart ? CTA_PLAY_COLOR : CTA_START_COLOR,
 					ctaEnabled, showUnconfirm: ss.isEditor && count > 0 && !busy, blink: !!next && hasEmptyCourt,
 				},

@@ -26,6 +26,7 @@ export function canonicalizeDrafts(p: BoardDraftsPayload): string {
 				slots: Object.entries(t.slots ?? {}).sort(([a], [b]) => a.localeCompare(b)),
 				createdBy: t.createdBy ?? null,
 				confirmedMs: t.confirmedMs ?? null,
+				waitForCompletion: t.waitForCompletion === true,
 			}))
 			.sort((a, b) => a.id.localeCompare(b.id)),
 		reservations: [...p.reservations]
@@ -106,6 +107,7 @@ export function reconcileMembership(
 			...(slots && Object.keys(slots).length ? { slots } : {}),
 			...(team.createdBy ? { createdBy: team.createdBy } : {}),
 			...(team.confirmedMs != null && memberCount >= 4 ? { confirmedMs: team.confirmedMs } : {}),
+			...(team.waitForCompletion === true && team.courtId == null && memberCount >= 2 && memberCount < 4 ? { waitForCompletion: true } : {}),
 		});
 		for (const id of memberIds) {
 			const m = magnets.get(id);

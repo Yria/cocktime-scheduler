@@ -80,6 +80,9 @@ export const STROKE_DEFAULT = "#334155";
 // Team status colors
 export const TEAM_FORMING_BG = "#1E293B";
 export const TEAM_FORMING_STROKE = "#334155";
+// 이름이 정해지지 않은 합류 대기 자리 — 일반 빈칸·선수 예약(보라)과 구분.
+export const WAITING_SLOT_BG = "#172554";
+export const WAITING_SLOT_STROKE = "#93C5FD";
 export const TEAM_READY_BG = "#052E16";
 export const TEAM_READY_STROKE = "#22C55E";
 // 코트에 배정되어 시작을 기다리는 팀 — 다음 팀의 배정 대기(초록)와 구분.

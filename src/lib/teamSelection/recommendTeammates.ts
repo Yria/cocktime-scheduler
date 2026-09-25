@@ -39,6 +39,14 @@ export interface RankedTeammate { player: SessionPlayer; priority: GroupScore }
 interface GroupChoice { picks: SessionPlayer[]; priority: GroupScore }
 interface SearchResult { best?: GroupChoice; ranked: RankedTeammate[] }
 
+interface FillOptions {
+	maxPlaying?: number;
+	/** Deliberately leave the rest open in a waiting draft. */
+	targetSize?: number;
+	/** Preserve feasible completions for the other waiting drafts. */
+	acceptCompletion?: (picks: readonly SessionPlayer[]) => boolean;
+}
+
 export function compareGroupScores(a: GroupScore, b: GroupScore): number {
 	return a.playing - b.playing || b.remainingCapacity - a.remainingCapacity || a.overplay - b.overplay
 		|| a.maximumOverlap - b.maximumOverlap || a.repeatedPairs - b.repeatedPairs
@@ -51,7 +59,7 @@ function unique(players: readonly SessionPlayer[]) {
 
 function searchGroups(
 	confirmed: SessionPlayer[], pool: SessionPlayer[], ctx: RecommendContext, weights: RecommendWeights,
-	maxPlaying: number,
+	maxPlaying: number, options: FillOptions = {},
 ): SearchResult {
 	const empty: SearchResult = { ranked: [] };
 	confirmed = unique(confirmed);
@@ -61,7 +69,8 @@ function searchGroups(
 	const fixedIds = new Set(confirmed.map(p => p.id));
 	pool = unique(pool).filter(p => !fixedIds.has(p.id) && eligible(p) && (maxPlaying > 0 || !ctx.playingIds.has(p.id)));
 	if (!pool.length) return empty;
-	const slots = 4 - confirmed.length;
+	const slots = (options.targetSize ?? 4) - confirmed.length;
+	if (slots <= 0) return empty;
 	// A short pool can still form a partial draft. When four are available, an
 	// illegal foursome must fail rather than disguising itself as a partial success.
 	const size = Math.min(slots, pool.length);
@@ -96,6 +105,7 @@ function searchGroups(
 	const byCandidate = new Map<string, GroupScore>();
 
 	function consider(picks: SessionPlayer[]) {
+		if (options.acceptCompletion && !options.acceptCompletion(picks)) return;
 		const members = [...confirmed, ...picks];
 		const playing = members.filter(p => ctx.playingIds.has(p.id)).length;
 		if (playing === members.length) return; // A draft requires a waiting anchor.
@@ -166,8 +176,9 @@ export function recommendTeammates(
 /** Select the whole completion at once; fixed manual members are never replaced. */
 export function autoFillTeammates(
 	confirmed: SessionPlayer[], pool: SessionPlayer[], ctx: RecommendContext, count: number,
-	weights: RecommendWeights = RECOMMEND_WEIGHTS, opts: { maxPlaying?: number } = {},
+	weights: RecommendWeights = RECOMMEND_WEIGHTS, opts: FillOptions = {},
 ): SessionPlayer[] {
 	if (!Number.isInteger(count) || count <= 0) return [];
-	return searchGroups(confirmed, pool, ctx, weights, Math.max(0, opts.maxPlaying ?? 0)).best?.picks.slice(0, count) ?? [];
+	if (opts.targetSize != null && (!Number.isInteger(opts.targetSize) || opts.targetSize < 2 || opts.targetSize > 4)) return [];
+	return searchGroups(confirmed, pool, ctx, weights, Math.max(0, opts.maxPlaying ?? 0), opts).best?.picks.slice(0, count) ?? [];
 }

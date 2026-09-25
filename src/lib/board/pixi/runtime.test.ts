@@ -5,6 +5,7 @@ import type { BoardState } from "../../../store/board/types";
 import type { SessionState } from "../../../store/sessionStoreState";
 import type { SessionPlayer } from "../../../types";
 import { clampScale } from "../../../store/board/zoom";
+import { computeSlotOffset } from "../geometry";
 
 const stores = vi.hoisted(() => ({
 	board: undefined as unknown as StoreApi<BoardState>,
@@ -161,6 +162,21 @@ describe("BoardRuntime input and scene integration", () => {
 		expect(board.getState().autoFillTeam).toHaveBeenCalledExactlyOnceWith("T");
 		expect(board.getState().confirmTeam).not.toHaveBeenCalled();
 		expect(board.getState().startMatch).not.toHaveBeenCalled();
+	});
+
+	it("keeps a completion-waiting group's button inert while its places still open the picker", () => {
+		const { runtime, board, callbacks } = setup();
+		addTeam();
+		board.setState({ drafts: new Map([["T", { ...board.getState().drafts.get("T")!, waitForCompletion: true }]]) });
+		const tap = (x: number, y: number) => {
+			runtime.controller.pointerDown({ id: 1, x, y }); runtime.controller.pointerUp({ id: 1, x, y });
+		};
+		tap(200, 269);
+		expect(board.getState().autoFillTeam).not.toHaveBeenCalled();
+		expect(board.getState().startMatch).not.toHaveBeenCalled();
+		const slot = computeSlotOffset(2);
+		tap(200 + slot.x, 180 + slot.y);
+		expect(callbacks.onSlotClick).toHaveBeenCalledExactlyOnceWith("T");
 	});
 
 	it("shows completion normally and routes staged roster controls to cancel or save", () => {

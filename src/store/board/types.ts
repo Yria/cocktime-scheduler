@@ -55,6 +55,8 @@ export interface BoardState {
 	initializeFromPool: (players: SessionPlayer[]) => void;
 	ensureCourtGroups: () => void;
 	autoFillEmptyCourts: (courtId?: number) => void;
+	/** 합류 대기팀의 빈자리를 채운다. 경기 완료 성공 직후(completeMatch)에만 호출한다. */
+	fillWaitingTeams: () => void;
 	handleDrop: (playerId: string, drop: StagePoint) => void;
 	handleGhostDrop: (resId: string, drop: StagePoint) => void;
 	handlePlayingMagnetDrop: (playerId: string, drop: StagePoint) => void;
@@ -63,17 +65,18 @@ export interface BoardState {
 	 * target.teamId가 있으면 그 팀에, target.seedId만 있으면 시드를 첫 멤버로 새 팀을 만들어 추가.
 	 * 경기중 선수는 예약(ghost), 그 외는 정식 멤버(anchor).
 	 */
-	commitTeammates: (target: { teamId?: string; seedId?: string; newTeam?: boolean }, playerIds: string[]) => void;
+	commitTeammates: (target: { teamId?: string; seedId?: string; newTeam?: boolean }, playerIds: string[], options?: { waitForCompletion?: boolean }) => void;
 	/**
-	 * 자동편성 — 구성 중 팀(teamId)의 빈 슬롯을 추천도 높은순으로 채운다(대기 선수만, 4명 상한).
-	 * 한 명 추가할 때마다 알고리즘을 다시 돌려 다음 추천 1명을 뽑는 greedy 방식.
+	 * 카드 버튼 자동편성 — 네 명의 조합을 비교한다. 코트 그룹은 다음 팀·자유 대기자·대기팀 재조합 순,
+	 * 1~3명이 있으면 경기중 예약까지 쓴다. 합류 대기팀은 채우지 않는다(경기 완료 때 채움).
 	 */
 	autoFillTeam: (teamId: string) => void;
 	/** 추천 모달의 "자동편성" — 팀/시드/새팀 대상의 나머지를 대기 선수로 채워 commit. extraIds=사용자 직접 선택분. */
 	autoFillTarget: (
 		target: { teamId?: string; seedId?: string; newTeam?: boolean },
 		extraIds?: string[],
-	) => void;
+		options?: { waitForCompletion?: boolean },
+	) => boolean;
 	/**
 	 * 매칭확정(1단계) — 4명 완성·시작 가능한 팀을 "확정"으로 표시하고 확정 시각(confirmedMs)을 기록.
 	 * 확정 순서가 대기열이 되어, 코트가 비면 가장 먼저 확정한 팀의 경기시작 버튼이 반짝인다.

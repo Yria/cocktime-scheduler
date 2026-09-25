@@ -51,6 +51,8 @@ export interface CardView {
 	appearance: CardAppearance;
 	members: MagnetView[];
 	emptySlots: number[];
+	/** Empty places that fill automatically after a match completes. */
+	waitingSlots?: number[];
 	confirmed: boolean;
 }
 

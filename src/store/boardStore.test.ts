@@ -42,9 +42,11 @@ vi.mock("./appStore", () => ({
 }));
 
 import { useBoardStore } from "./boardStore";
-import { serializeBoardDrafts } from "./board/draftsSync";
+import { serializeBoardDrafts, syncState } from "./board/draftsSync";
 import { useAdminCoverageStore } from "./adminCoverageStore";
+import { useToastStore } from "./toastStore";
 import { teamMembers } from "../lib/board/membership";
+import { prefersWaitingDraft } from "../lib/board/waitingDrafts";
 import { groupGridAnchor } from "../lib/board/groupGrid";
 import { TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_W, MAGNET_SIZE } from "../lib/board/constants";
 
@@ -103,6 +105,346 @@ beforeEach(() => {
 	h.restingIds = [];
 	h.setResting.mockReset();
 	useBoardStore.getState().reset();
+});
+
+describe("합류 대기 자리와 경기 완료 자동 채움", () => {
+	function setup() {
+		const ids = [..."abcdefghijkl"];
+		h.players = new Map(ids.map(id => [id, player(id)]));
+		h.courts = [{ id: 1, match: { id: "playing", courtId: 1, gameType: "남복", teamA: ["a", "b"], teamB: ["c", "d"], startedAt: "" } }];
+		const board = useBoardStore.getState();
+		board.setStageSize(900, 1000);
+		board.initializeFromPool([...h.players.values()]);
+		board.ensureCourtGroups();
+		h.handleComplete.mockImplementation(async () => {
+			h.courts = [{ id: 1, match: null }];
+			h.groupHistory = [...h.groupHistory, { matchId: "playing", members: [..."abcd"] }];
+			for (const id of "abcd") h.players.get(id)!.gameCount++;
+		});
+		return board;
+	}
+	const queued = () => [...useBoardStore.getState().drafts.values()].filter(t => t.courtId == null);
+	it("바로 나갈 첫 팀은 4명, 뒤 팀은 2명과 합류 대기 자리로 만들고 완료 후 분산 채운다", async () => {
+		const board = setup();
+		board.autoFillTarget({ newTeam: true });
+		expect(queued()[0].anchorMemberIds).toHaveLength(4);
+		expect(queued()[0].waitForCompletion).toBeUndefined();
+		const firstIds = [...queued()[0].anchorMemberIds];
+		board.autoFillTarget({ newTeam: true });
+		board.autoFillTarget({ newTeam: true });
+		expect(queued().map(t => t.anchorMemberIds.length)).toEqual([4, 2, 2]);
+		expect(queued().slice(1).every(t => t.waitForCompletion)).toBe(true);
+		expect(useBoardStore.getState().reservations.size).toBe(0);
+		await board.completeMatch(1);
+		expect(queued().map(t => t.anchorMemberIds.length)).toEqual([4, 4, 4]);
+		expect(queued()[0].anchorMemberIds).toEqual(firstIds);
+		expect(queued().slice(1).map(t => t.anchorMemberIds.filter(id => "abcd".includes(id)).length)).toEqual([2, 2]);
+		expect(queued().every(t => !t.waitForCompletion)).toBe(true);
+		expect(new Set(queued().flatMap(t => t.anchorMemberIds)).size).toBe(12);
+		expect(useBoardStore.getState().drafts.get("court-1")!.anchorMemberIds).toEqual([]);
+		expect(h.handleAssign).not.toHaveBeenCalled();
+		await board.completeMatch(1);
+		expect(h.handleComplete).toHaveBeenCalledTimes(1);
+	});
+	it("빈 코트보다 준비된 팀이 부족하면 대기 모드로 남기지 않는다", () => {
+		const board = setup();
+		h.courts.push({ id: 2, match: null }, { id: 3, match: null });
+		board.commitTeammates({ newTeam: true }, [..."efgh"]);
+		board.autoFillTarget({ newTeam: true });
+		expect(queued().map(t => t.anchorMemberIds.length)).toEqual([4, 4]);
+	});
+	it("사용자가 대기 모드를 끄면 나머지 인원을 바로 편성한다", () => {
+		const board = setup();
+		board.commitTeammates({ newTeam: true }, [..."efgh"]);
+		board.autoFillTarget({ newTeam: true }, [], { waitForCompletion: false });
+		expect(queued().map(t => t.anchorMemberIds.length)).toEqual([4, 4]);
+	});
+	it("명시적 3명 선택과 빈자리 표시를 저장·복원하고 일반 빈칸은 자동 채우지 않는다", async () => {
+		const board = setup();
+		board.commitTeammates({ newTeam: true }, [..."efg"], { waitForCompletion: true });
+		board.commitTeammates({ newTeam: true }, [..."hi"]);
+		const ids = queued().map(t => t.id);
+		const payload = serializeBoardDrafts(useBoardStore.getState());
+		expect(payload.teams.find(t => t.id === ids[0])!.waitForCompletion).toBe(true);
+		board.reset();
+		board.initializeFromPool([...h.players.values()]);
+		board.applyRemoteDrafts(payload);
+		expect(useBoardStore.getState().drafts.get(ids[0])!.waitForCompletion).toBe(true);
+		await board.completeMatch(1);
+		expect(useBoardStore.getState().drafts.get(ids[0])!.anchorMemberIds).toHaveLength(4);
+		expect(useBoardStore.getState().drafts.get(ids[1])!.anchorMemberIds).toEqual([..."hi"]);
+	});
+	it("완료 실패·진행 중 중복 클릭·세션 변경 후에는 빈자리를 채우지 않는다", async () => {
+		const board = setup();
+		board.commitTeammates({ newTeam: true }, [..."ef"], { waitForCompletion: true });
+		h.handleComplete.mockImplementation(async () => {});
+		await board.completeMatch(1);
+		expect(queued()[0].anchorMemberIds).toHaveLength(2);
+		let finish!: () => void;
+		h.handleComplete.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+		const pending = board.completeMatch(1);
+		await board.completeMatch(1);
+		expect(h.handleComplete).toHaveBeenCalledTimes(2);
+		useBoardStore.setState({ sessionId: 999 });
+		h.courts = [{ id: 1, match: null }];
+		finish(); await pending;
+		expect(queued()[0].anchorMemberIds).toHaveLength(2);
+	});
+	it("대기자 4명이 두 대기팀에 갇혀도 빈 코트 매칭으로 재조합해 코트를 채운다", () => {
+		const board = setup();
+		// The other four people are resting, so only the two waiting drafts can play.
+		for (const id of "ijkl") h.players.get(id)!.status = "resting";
+		h.courts.push({ id: 2, match: null }); board.ensureCourtGroups();
+		board.commitTeammates({ newTeam: true }, [..."ef"], { waitForCompletion: true });
+		board.commitTeammates({ newTeam: true }, [..."gh"], { waitForCompletion: true });
+		board.autoFillTeam("court-2");
+		expect([...useBoardStore.getState().drafts.get("court-2")!.anchorMemberIds].sort()).toEqual([..."efgh"]);
+		expect(queued()).toHaveLength(0);
+		expect(h.handleAssign).not.toHaveBeenCalled();
+	});
+	it("빈 코트에 이미 2명이 있어도 대기팀의 2명과 합쳐 완성한다", () => {
+		const board = setup();
+		for (const id of "ijkl") h.players.get(id)!.status = "resting";
+		h.courts.push({ id: 2, match: null }); board.ensureCourtGroups();
+		board.commitTeammates({ teamId: "court-2" }, [..."ef"]);
+		board.commitTeammates({ newTeam: true }, [..."gh"], { waitForCompletion: true });
+		board.autoFillTeam("court-2");
+		expect([...useBoardStore.getState().drafts.get("court-2")!.anchorMemberIds].sort()).toEqual([..."efgh"]);
+	});
+	it("재조합은 일반 수동 팀과 경기 중 선수의 예약을 빼앗지 않는다", () => {
+		const board = setup();
+		for (const id of "ijkl") h.players.get(id)!.status = "resting";
+		h.courts.push({ id: 2, match: null }); board.ensureCourtGroups();
+		board.commitTeammates({ newTeam: true }, [..."ef"], { waitForCompletion: true });
+		board.commitTeammates({ newTeam: true }, [..."gh"]);
+		board.autoFillTeam("court-2");
+		expect(useBoardStore.getState().drafts.get("court-2")!.anchorMemberIds).toEqual([]);
+		expect(queued().map(t => t.anchorMemberIds)).toEqual([[..."ef"], [..."gh"]]);
+		board.commitTeammates({ teamId: queued()[1].id }, ["a"], { waitForCompletion: true });
+		board.autoFillTeam("court-2");
+		expect(useBoardStore.getState().drafts.get("court-2")!.anchorMemberIds).toEqual([]);
+		expect([...useBoardStore.getState().reservations.values()].map(r => r.playerId)).toEqual(["a"]);
+	});
+	const toasts = () => useToastStore.getState().items.map(t => t.message);
+	it("코트 버튼은 자유 대기자로 코트를 먼저 완성하고 합류 대기팀은 완료 때까지 그대로 둔다", () => {
+		const board = setup();
+		for (const id of "kl") h.players.get(id)!.status = "resting";
+		h.courts.push({ id: 2, match: null }); board.ensureCourtGroups();
+		board.commitTeammates({ teamId: "court-2" }, [..."ef"]);
+		board.commitTeammates({ newTeam: true }, [..."gh"], { waitForCompletion: true });
+		board.autoFillTeam("court-2");
+		expect([...useBoardStore.getState().drafts.get("court-2")!.anchorMemberIds].sort()).toEqual([..."efij"]);
+		expect(queued().map(t => [t.anchorMemberIds, t.waitForCompletion])).toEqual([[[..."gh"], true]]);
+	});
+	it("1~3명이 있는 코트 그룹은 대기자가 없으면 경기 중 선수를 예약해 완성한다", () => {
+		const board = setup();
+		for (const id of "ghijkl") h.players.get(id)!.status = "resting";
+		h.courts.push({ id: 2, match: null }); board.ensureCourtGroups();
+		board.commitTeammates({ teamId: "court-2" }, [..."ef"]);
+		board.autoFillTeam("court-2");
+		const s = useBoardStore.getState();
+		expect(s.drafts.get("court-2")!.anchorMemberIds).toEqual([..."ef"]);
+		expect(teamMembers("court-2", s.drafts, s.reservations)).toHaveLength(4);
+		expect([...s.reservations.values()].every(r => r.teamId === "court-2" && "abcd".includes(r.playerId))).toBe(true);
+	});
+	it("예약이 섞인 코트 그룹도 코트 버튼으로 나머지를 대기자로 채운다", () => {
+		const board = setup();
+		h.courts.push({ id: 2, match: null }); board.ensureCourtGroups();
+		board.commitTeammates({ teamId: "court-2" }, ["e", "a"]);
+		board.autoFillTeam("court-2");
+		const s = useBoardStore.getState();
+		expect(teamMembers("court-2", s.drafts, s.reservations)).toHaveLength(4);
+		expect(s.drafts.get("court-2")!.anchorMemberIds).toHaveLength(3);
+		expect([...s.reservations.values()].map(r => r.playerId)).toEqual(["a"]);
+	});
+	it("합류 대기팀의 카드 버튼은 즉시 채우지 않고 안내만 한다", () => {
+		const board = setup();
+		board.commitTeammates({ newTeam: true }, [..."ef"], { waitForCompletion: true });
+		const id = queued()[0].id;
+		useToastStore.getState().clear();
+		board.autoFillTeam(id);
+		expect(useBoardStore.getState().drafts.get(id)).toMatchObject({ anchorMemberIds: [..."ef"], waitForCompletion: true });
+		expect(toasts()).toEqual([expect.stringContaining("경기가 끝나면")]);
+	});
+	it("빈 코트가 있을 때 새로 만든 합류 대기팀을 코트 버튼이 남은 대기자로 채우지 않는다", () => {
+		const board = setup();
+		h.courts.push({ id: 2, match: null }); board.ensureCourtGroups();
+		board.commitTeammates({ newTeam: true }, [..."efgh"]);
+		board.autoFillTarget({ newTeam: true });
+		const waiting = queued()[1];
+		expect(waiting).toMatchObject({ waitForCompletion: true, anchorMemberIds: [expect.any(String), expect.any(String)] });
+		board.autoFillTeam("court-2");
+		expect([...useBoardStore.getState().drafts.get("court-2")!.anchorMemberIds].sort()).toEqual([..."efgh"]);
+		expect(queued()).toEqual([expect.objectContaining({ id: waiting.id, anchorMemberIds: waiting.anchorMemberIds, waitForCompletion: true })]);
+		expect([..."ijkl"].filter(id => useBoardStore.getState().magnets.get(id)!.teamId === null)).toHaveLength(2);
+	});
+	it("일반 예비팀의 자동매칭은 대기 기본값과 상관없이 지금 네 명을 채운다", () => {
+		const board = setup();
+		board.commitTeammates({ newTeam: true }, [..."efgh"]);
+		board.commitTeammates({ newTeam: true }, [..."ij"]);
+		const id = queued()[1].id;
+		board.autoFillTeam(id);
+		const team = useBoardStore.getState().drafts.get(id)!;
+		expect([...team.anchorMemberIds].sort()).toEqual([..."ijkl"]);
+		expect(team.waitForCompletion).toBeUndefined();
+	});
+	it("코트 그룹의 예약 대체 경로도 다른 코트의 선수 변경 명단에 있는 선수를 쓰지 않는다", () => {
+		const board = setup();
+		h.courts.push({ id: 2, match: { id: "other", courtId: 2, gameType: "남복", teamA: ["g", "h"], teamB: ["i", "j"], startedAt: "" } }, { id: 3, match: null });
+		board.ensureCourtGroups();
+		board.commitTeammates({ teamId: "court-3" }, [..."ef"]);
+		useBoardStore.setState({ matchEdits: new Map([[2, { matchId: "other", roster: [..."klij"], original: [..."ghij"] }]]) });
+		board.autoFillTeam("court-3");
+		const s = useBoardStore.getState();
+		const ids = teamMembers("court-3", s.drafts, s.reservations).map(m => m.playerId);
+		expect(ids).toHaveLength(4);
+		expect(ids.filter(id => "klij".includes(id))).toEqual([]);
+		expect(s.magnets.get("k")!.teamId).toBeNull();
+		expect(s.magnets.get("l")!.teamId).toBeNull();
+	});
+	it("경기 완료 때 1~3명만 있는 빈 코트 그룹이 쓸 사람을 남기고 합류 대기팀을 채운다", async () => {
+		const board = setup();
+		for (const id of "kl") h.players.get(id)!.status = "resting";
+		h.courts.push({ id: 2, match: null }); board.ensureCourtGroups();
+		h.handleComplete.mockImplementation(async () => {
+			h.courts = h.courts.map(c => c.id === 1 ? { ...c, match: null } : c);
+			h.groupHistory = [...h.groupHistory, { matchId: "playing", members: [..."abcd"] }];
+		});
+		board.commitTeammates({ teamId: "court-2" }, [..."ef"]);
+		board.commitTeammates({ newTeam: true }, [..."gh"], { waitForCompletion: true });
+		board.commitTeammates({ newTeam: true }, [..."ij"], { waitForCompletion: true });
+		await board.completeMatch(1);
+		expect(queued().map(t => [t.anchorMemberIds.length, t.waitForCompletion ?? false])).toEqual([[4, false], [2, true]]);
+		expect([..."abcd"].filter(id => useBoardStore.getState().magnets.get(id)!.teamId === null)).toHaveLength(2);
+		board.autoFillTeam("court-2");
+		expect(useBoardStore.getState().drafts.get("court-2")!.anchorMemberIds).toHaveLength(4);
+	});
+	it("대기자만으로 네 명이 안 되면 경기 중 선수를 지정 예약하지 않고 합류 대기 자리로 남긴다", () => {
+		const board = setup();
+		for (const id of "ghijkl") h.players.get(id)!.status = "resting";
+		board.autoFillTarget({ newTeam: true });
+		expect(queued().map(t => [[...t.anchorMemberIds].sort(), t.waitForCompletion])).toEqual([[[..."ef"], true]]);
+		expect(useBoardStore.getState().reservations.size).toBe(0);
+	});
+	it("대기 모드를 끄면 기존처럼 경기 중 선수를 예약해 네 명을 만든다", () => {
+		const board = setup();
+		for (const id of "ghijkl") h.players.get(id)!.status = "resting";
+		board.autoFillTarget({ newTeam: true }, [], { waitForCompletion: false });
+		const s = useBoardStore.getState();
+		expect(teamMembers(queued()[0].id, s.drafts, s.reservations)).toHaveLength(4);
+		expect(s.reservations.size).toBe(2);
+		expect(queued()[0].waitForCompletion).toBeUndefined();
+	});
+	it("기본값이 대기 모드인데 대기 선수가 한 명뿐이면 예약 팀을 대신 만들지 않고 안내한다", () => {
+		const board = setup();
+		for (const id of "jkl") h.players.get(id)!.status = "resting";
+		board.commitTeammates({ newTeam: true }, [..."efgh"]);
+		useToastStore.getState().clear();
+		board.autoFillTarget({ newTeam: true });
+		expect(queued()).toHaveLength(1);
+		expect(useBoardStore.getState().reservations.size).toBe(0);
+		expect(toasts()).toEqual([expect.stringContaining("대기를 끄면")]);
+		board.autoFillTarget({ newTeam: true }, [], { waitForCompletion: false });
+		expect(useBoardStore.getState().reservations.size).toBe(3);
+	});
+	it("완료를 기다리는 사이 편집이 잠겨도 끝난 선수의 예약은 기존처럼 멤버로 바꾼다", async () => {
+		const board = setup();
+		board.commitTeammates({ newTeam: true }, ["e", "f", "g", "a"], { waitForCompletion: false });
+		const id = queued()[0].id;
+		expect(useBoardStore.getState().reservations.size).toBe(1);
+		h.handleComplete.mockImplementation(async () => { h.courts = [{ id: 1, match: null }]; syncState.exclusiveDraftEdit = true; });
+		try {
+			await board.completeMatch(1);
+		} finally { syncState.exclusiveDraftEdit = false; }
+		expect(useBoardStore.getState().reservations.size).toBe(0);
+		expect(useBoardStore.getState().drafts.get(id)!.anchorMemberIds).toContain("a");
+	});
+	it("경기 완료 때 빈 코트 그룹과 합류 대기팀을 함께 완성할 수 있으면 둘 다 채울 사람을 나눈다", async () => {
+		const grade = (id: string, gender: "M" | "F", g: number) => ({ ...player(id, gender), skills: { grade: g } });
+		h.players = new Map([player("a"), player("b"), grade("c", "F", 5), player("d"), player("e"), player("f"), player("g"),
+			grade("x", "F", 3), grade("y", "F", 3)].map(p => [p.id, p]));
+		h.courts = [{ id: 1, match: { id: "m1", courtId: 1, gameType: "혼합", teamA: ["a", "b"], teamB: ["c", "d"], startedAt: "" } }, { id: 2, match: null }];
+		h.lastGameType = { e: "혼복", f: "혼복", g: "혼복" };
+		const board = useBoardStore.getState();
+		board.setStageSize(900, 1000);
+		board.initializeFromPool([...h.players.values()]);
+		board.ensureCourtGroups();
+		board.commitTeammates({ teamId: "court-2" }, [..."efg"]);
+		board.commitTeammates({ newTeam: true }, [..."xy"], { waitForCompletion: true });
+		h.handleComplete.mockImplementation(async () => {
+			h.courts = h.courts.map(c => c.id === 1 ? { ...c, match: null } : c);
+			h.players.get("d")!.status = "resting";
+		});
+		await board.completeMatch(1);
+		board.autoFillTeam("court-2");
+		expect(queued()[0].anchorMemberIds).toHaveLength(4);
+		expect(useBoardStore.getState().drafts.get("court-2")!.anchorMemberIds).toHaveLength(4);
+	});
+	it("이미 있는 일반 예비팀의 추천 창 기본값은 대기가 아니다", () => {
+		const board = setup();
+		for (const id of "ghijkl") h.players.get(id)!.status = "resting";
+		board.commitTeammates({ newTeam: true }, [..."ef"]);
+		const id = queued()[0].id;
+		const inputs = () => ({ ...useBoardStore.getState(), sessionPlayers: h.players, courts: h.courts, groupHistory: h.groupHistory, lastGameType: h.lastGameType, cockCheckEnabled: false });
+		expect(prefersWaitingDraft({ teamId: id }, inputs())).toBe(false);
+		board.commitTeammates({ teamId: id }, [], { waitForCompletion: true });
+		expect(prefersWaitingDraft({ teamId: id }, inputs())).toBe(true);
+	});
+	it("빈 코트는 선수 변경 명단에 있는 선수가 든 예비팀을 옮기지 않고 다음 준비된 팀을 옮긴다", () => {
+		const board = setup();
+		h.courts.push({ id: 2, match: { id: "m2", courtId: 2, gameType: "남복", teamA: ["e", "f"], teamB: ["g", "h"], startedAt: "" } }, { id: 3, match: null });
+		board.ensureCourtGroups();
+		board.commitTeammates({ newTeam: true }, [..."ijkl"]);
+		useBoardStore.setState({ matchEdits: new Map([[2, { matchId: "m2", original: [..."efgh"], roster: ["i", "f", "g", "h"] }]]) });
+		board.autoFillTeam("court-3");
+		expect(useBoardStore.getState().drafts.get("court-3")!.anchorMemberIds).toEqual([]);
+		expect(queued()[0].anchorMemberIds).toEqual([..."ijkl"]);
+	});
+	it("대기 판단도 선수 변경 명단의 선수를 대기자로 세지 않아 경기 중 선수를 지정 예약하지 않는다", () => {
+		const board = setup();
+		for (const id of "hijl") h.players.get(id)!.status = "resting";
+		h.courts.push({ id: 2, match: { id: "m2", courtId: 2, gameType: "남복", teamA: ["m", "n"], teamB: ["o", "p"], startedAt: "" } });
+		useBoardStore.setState({ matchEdits: new Map([[2, { matchId: "m2", original: [..."mnop"], roster: ["k", "n", "o", "p"] }]]) });
+		board.autoFillTarget({ newTeam: true });
+		expect(queued()).toHaveLength(1);
+		expect(queued()[0].waitForCompletion).toBe(true);
+		expect(useBoardStore.getState().reservations.size).toBe(0);
+		expect(queued()[0].anchorMemberIds).not.toContain("k");
+	});
+	it("자동편성은 실제로 팀을 만들었을 때만 성공을 돌려주고, 해체된 팀에 부분 채움 안내를 붙이지 않는다", () => {
+		const board = setup();
+		for (const id of "jkl") h.players.get(id)!.status = "resting";
+		board.commitTeammates({ newTeam: true }, [..."efgh"]);
+		expect(board.autoFillTarget({ newTeam: true })).toBe(false);
+		expect(board.autoFillTarget({ newTeam: true }, [], { waitForCompletion: false })).toBe(true);
+		for (const id of "abcd") h.players.get(id)!.status = "resting";
+		h.courts = [{ id: 1, match: null }];
+		useToastStore.getState().clear();
+		expect(board.autoFillTarget({ teamId: queued()[0].id }, [], { waitForCompletion: false })).toBe(false);
+		expect(toasts().filter(t => t.includes("명만 채웠어요"))).toEqual([]);
+	});
+	it("빈 코트 그룹을 아무것으로도 채우지 못하면 조용히 끝내지 않고 안내한다", () => {
+		const board = setup();
+		for (const id of "ghijkl") h.players.get(id)!.status = "resting";
+		board.commitTeammates({ newTeam: true }, [..."ef"]);
+		h.courts.push({ id: 2, match: null }); board.ensureCourtGroups();
+		for (const id of "ef") h.players.get(id)!.status = "resting";
+		useToastStore.getState().clear();
+		board.autoFillTeam("court-2");
+		expect(toasts()).toEqual([expect.stringContaining("코트를 채우지 못했어요")]);
+	});
+	it("진행 중인 선수 변경에 쓰인 자유 선수를 완료 후 자동 채움으로 가져가지 않는다", async () => {
+		const board = setup();
+		h.courts.push({ id: 2, match: { id: "other", courtId: 2, gameType: "남복", teamA: ["g", "h"], teamB: ["i", "j"], startedAt: "" } });
+		board.commitTeammates({ newTeam: true }, [..."ef"], { waitForCompletion: true });
+		useBoardStore.setState({ matchEdits: new Map([[2, { matchId: "other", roster: [..."klij"], original: [..."ghij"] }]]) });
+		h.handleComplete.mockImplementation(async () => { h.courts[0].match = null; });
+		await board.completeMatch(1);
+		expect(queued()[0].anchorMemberIds).toHaveLength(4);
+		expect(queued()[0].anchorMemberIds).not.toEqual(expect.arrayContaining(["k", "l"]));
+		expect(useBoardStore.getState().magnets.get("k")!.teamId).toBeNull();
+		expect(useBoardStore.getState().magnets.get("l")!.teamId).toBeNull();
+	});
 });
 
 describe("코트에 고정된 그룹", () => {

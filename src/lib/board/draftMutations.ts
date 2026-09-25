@@ -157,6 +157,7 @@ export function attachAnchor(s: Draft, playerId: string, teamId: string, slot?: 
 	team.anchorMemberIds.push(playerId);
 	mag.teamId = teamId;
 	setSlot();
+	if (teamMemberCount(teamId, s.drafts, s.reservations) === 4) delete team.waitForCompletion;
 	if (by && !wasMember) team.createdBy = by; // 새 인원을 넣은 편집자로 갱신
 }
 
@@ -168,6 +169,7 @@ export function addReservation(s: Draft, playerId: string, teamId: string, by?: 
 	if (teamMemberCount(teamId, s.drafts, s.reservations) >= 4) return;
 	const id = newId();
 	s.reservations.set(id, { id, playerId, teamId, createdAt: nowMs() });
+	if (teamMemberCount(teamId, s.drafts, s.reservations) === 4) delete team.waitForCompletion;
 	if (by) team.createdBy = by;
 }
 

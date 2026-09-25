@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ListOrdered } from "lucide-react";
+import { Clock3, ListOrdered } from "lucide-react";
 import type { SessionPlayer } from "../../types";
 import { useSessionStore } from "../../store/sessionStore";
 import { useBoardStore } from "../../store/boardStore";
@@ -11,6 +11,8 @@ import { skillScore } from "../../lib/teamSelection";
 import ModalSheet from "../common/ModalSheet";
 import PlayerCard from "../shared/PlayerCard";
 import PlayerPickerList, { type PlayerPickerItem, type PlayerPickerSortOption } from "../shared/PlayerPickerList";
+import { prefersWaitingDraft } from "../../lib/board/waitingDrafts";
+import { editingRosterIds } from "../../lib/board/matchRosterEdit";
 
 type Props = {
 	onClose: () => void;
@@ -30,6 +32,13 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 	const autoFillTarget = useBoardStore((s) => s.autoFillTarget);
 	const removeMemberFromBoard = useBoardStore((s) => s.removeMemberFromBoard);
 	const sessionPlayers = useSessionStore((s) => s.sessionPlayers);
+	const courts = useSessionStore(s => s.courts);
+	const drafts = useBoardStore(s => s.drafts);
+	const reservations = useBoardStore(s => s.reservations);
+	const magnets = useBoardStore(s => s.magnets);
+	const matchEdits = useBoardStore(s => s.matchEdits);
+	const cockCheckEnabled = useSessionStore(s => s.cockCheckEnabled);
+	const [waitingChoice, setWaitingChoice] = useState<boolean | null>(null);
 
 	// 진행 중 다중선택
 	const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -49,6 +58,12 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 	const filledCount = members.length + selectedIds.length;
 	const canAddMore = filledCount < TEAM_SIZE;
 	const emptyCount = Math.max(0, TEAM_SIZE - filledCount);
+	const canWait = filledCount < 4 && (!teamId || drafts.get(teamId)?.courtId == null);
+	const waitForCompletion = canWait && (waitingChoice ?? prefersWaitingDraft({ teamId, seedId, newTeam }, {
+		...useSessionStore.getState(), courts, sessionPlayers, cockCheckEnabled, drafts, reservations, magnets,
+	}, selectedIds, editingRosterIds(matchEdits)));
+	// 대기 중인 기존 팀에 새로 고른 사람이 없으면 대기 모드 자동편성은 더할 사람이 없다.
+	const nothingToWaitFor = !!teamId && waitForCompletion && selectedIds.length === 0 && filledCount >= 2;
 
 	// "실력순" 정렬 기준 밴드 — 알고리즘 skillDiff(스프레드 증가분)와 동일 의미론. 미등급(0)은 제외.
 	const skillBand = useMemo(() => {
@@ -93,21 +108,22 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 	);
 
 	const handleConfirm = () => {
-		if (selectedIds.length === 0) return;
-		commitTeammates({ teamId: teamId ?? undefined, seedId: seedId ?? undefined, newTeam }, selectedIds);
+		if (selectedIds.length === 0 && !teamId) return;
+		commitTeammates({ teamId: teamId ?? undefined, seedId: seedId ?? undefined, newTeam }, selectedIds, { waitForCompletion });
 		onClose();
 	};
 
 	// 자동편성 — 직접 고른 선수(selectedIds)는 그대로 두고 나머지 빈 자리를 추천 대기 선수로 채워 commit.
 	const handleAutoFill = () => {
-		autoFillTarget({ teamId: teamId ?? undefined, seedId: seedId ?? undefined, newTeam }, selectedIds);
-		onClose();
+		// 체크박스를 건드리지 않았으면 기본값 판단을 스토어에 맡긴다(같은 prefersWaitingDraft, 안내 문구만 다르다).
+		// 편성하지 못하면(안내 토스트) 창을 닫지 않아 대기 체크를 끄고 다시 시도할 수 있다.
+		if (autoFillTarget({ teamId: teamId ?? undefined, seedId: seedId ?? undefined, newTeam }, selectedIds, { waitForCompletion: waitingChoice ?? undefined })) onClose();
 	};
 
 	const headerNote = teamId
 		? `${filledCount}/4명 · 추천에서 골라 팀을 채우세요`
 		: newTeam
-			? `${filledCount}/4명 · 빈 코트에서 매칭을 누르면 만든 순서대로 배정돼요`
+			? `${filledCount}/4명 · 빈 코트에서 매칭하면 순서대로 배정돼요`
 			: `${members[0]?.name ?? ""} 선수와 함께할 팀원을 골라 팀을 만듭니다`;
 
 	return (
@@ -129,7 +145,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 				<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{headerNote}</p>
 
 				{/* 현재 팀(확정 멤버 + 선택분) — 자석(원형) 형태, 가운데 정렬 */}
-				<div className="flex justify-center items-start gap-2 mt-3">
+				<div className="-mx-3 flex justify-center items-start gap-0 min-[375px]:gap-2 mt-3">
 					{members.map((p) => (
 						<div
 							key={p.id}
@@ -160,7 +176,13 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 							<PlayerCard name={p.name} gender={p.gender} photoId={p.memberId ?? undefined} skillScore={skillScore(p)} size="sm" selected />
 						</div>
 					))}
-					{Array.from({ length: emptyCount }).map((_, i) => (
+					{Array.from({ length: emptyCount }).map((_, i) => waitForCompletion && i >= Math.max(0, 2 - filledCount) ? (
+						<div key={`waiting-${i}`} className="flex w-[68px] shrink-0 justify-center">
+							<div className="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-full border-2 border-dashed border-blue-500 bg-blue-50 text-blue-800 dark:border-blue-300 dark:bg-blue-950 dark:text-blue-200">
+								<Clock3 size={17} aria-hidden="true" /><span className="text-[11px] font-semibold">합류 대기</span>
+							</div>
+						</div>
+					) : (
 						<div key={`empty-${i}`} style={{ width: 68, display: "flex", justifyContent: "center" }}>
 							<div
 								style={{
@@ -180,9 +202,18 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 						</div>
 					))}
 				</div>
+				{canWait && <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl bg-blue-50 p-3 text-blue-950 dark:bg-blue-950/60 dark:text-blue-100">
+					<input type="checkbox" className="mt-1 h-5 w-5 shrink-0 accent-blue-600" checked={waitForCompletion}
+						onChange={event => setWaitingChoice(event.target.checked)} aria-describedby="waiting-team-help" />
+					<span><span className="text-sm font-semibold">경기 완료 후 빈자리 채우기</span>
+						<span id="waiting-team-help" className="mt-1 block text-xs leading-relaxed text-blue-800 dark:text-blue-200">
+							2~3명으로 대기하다가 경기가 끝나면 가능한 조합으로 4명을 채워요. 빈 코트 매칭 시 대기팀끼리 합쳐질 수 있어요. 지금 채우려면 체크를 끄고 자동편성을 누르세요.
+						</span>
+					</span>
+				</label>}
 			</div>
 
-			<div className="shrink-0 px-5 py-2">
+			<div className="min-h-0 overflow-y-auto px-5 py-2">
 				<PlayerPickerList
 					players={pickerPlayers}
 					onSelect={(p) => toggle(p.id)}
@@ -193,7 +224,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 					showGenderFilter
 					showStatusFilter={false}
 					sortOptions={SORT_OPTIONS}
-					maxHeight={debug ? "26vh" : "34vh"}
+					maxHeight={debug || canWait ? "26vh" : "34vh"}
 					emptyMessage="추천 가능한 선수가 없습니다"
 					noResultMessage="검색 결과가 없습니다"
 				/>
@@ -222,7 +253,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 				<button
 					type="button"
 					onClick={handleAutoFill}
-					disabled={!canAddMore || ranked.length === 0}
+					disabled={!canAddMore || nothingToWaitFor || (ranked.length === 0 && !(waitForCompletion && filledCount >= 2))}
 					className="btn-lq-ghost flex-1 disabled:opacity-40"
 				>
 					자동편성
@@ -230,7 +261,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 				<button
 					type="button"
 					onClick={handleConfirm}
-					disabled={selectedIds.length === 0}
+					disabled={(selectedIds.length === 0 && !(teamId && waitingChoice != null && members.length >= 2)) || (waitForCompletion && filledCount < 2)}
 					className="btn-lq-primary flex-1 disabled:opacity-40"
 				>
 					확인{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}

@@ -38,6 +38,8 @@ export interface DraftTeam {
 	 * 4명 미만으로 줄어들면 해제(clearConfirmIfBelowFull). 멤버 교체(스왑 등)로 4명이 유지되면 순번 보존.
 	 */
 	confirmedMs?: number;
+	/** 빈 슬롯을 경기 완료 후 자동으로 채우는 예비팀. 특정 선수 예약과 별개다. */
+	waitForCompletion?: boolean;
 }
 
 /** 예약(ghost) — "이 선수를 이 예비팀에 빌려줌". 한 선수가 여러 개 가질 수 있다. */
@@ -58,7 +60,7 @@ export interface BoardLayoutPayload {
 
 /** 팀 명단·예약·배치를 sessions.board_drafts에 함께 저장한다. 구버전에는 layout이 없다. */
 export interface BoardDraftsPayload {
-	teams: { id: string; courtId?: number; memberIds: string[]; createdMs: number; slots?: Record<string, number>; createdBy?: string; confirmedMs?: number }[];
+	teams: { id: string; courtId?: number; memberIds: string[]; createdMs: number; slots?: Record<string, number>; createdBy?: string; confirmedMs?: number; waitForCompletion?: boolean }[];
 	reservations: { id: string; playerId: string; teamId: string; createdMs: number }[];
 	layout?: BoardLayoutPayload;
 }

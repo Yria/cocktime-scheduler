@@ -9560,3 +9560,436 @@ lint 11건이 남지만 전부 이번에 아무도 건드리지 않은 파일(`d
 - 세 곳에 복붙돼 있던 행 마크업을 SettledList·SettledRow·SettledWho 로 접고, 자리마다 다른 부분은 슬롯 prop 이 아니라 children 합성으로 받게 정리
 
 ---
+
+## #286
+
+**Prompt**: 오늘 두경기 했는데 오후경기 부과가 없네
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #287
+
+**Prompt**: 팀매칭관련해서 코드변경한게 있는데 일단 그게 뭔지부터 이해해봐.
+
+**Answer**: 테스트는 23개 파일, 405개 전부 통과했고 `tsc`도 에러가 없습니다. 교차 검증 워크플로우는 세 방향으로 돌고 있습니다. 플래그가 언제 켜지고 꺼지는지, 버튼별로 어떤 흐름을 타는지, 문서와 코드가 맞는지를 보고, 의심 항목은 반박 검증까지 합니다. 결과가 오면 합쳐서 정리하겠습니다.
+
+지금까지 diff에서 읽은 뼈대는 이렇습니다.
+
+- **목적:** 경기가 진행 중일 때 뒤쪽 예비팀을 2명만으로 먼저 세워 둡니다. 나머지 빈칸은 이름 없는 **"합류 대기" 자리**로 두고, 경기 완료 때 끝난 선수로 채웁니다.
+- **핵심 플래그:** `DraftTeam.waitForCompletion`
+- **새 알고리즘:** `planWaitingTeamFills`. 선수를 남자 / 여자 하 / 여자 상 세 부류로 나눈 뒤, 동적 계획법으로 "완성할 수 있는 팀 수"가 가장 많아지게 배분합니다. 수가 같으면 먼저 만든 팀부터 채웁니다.
+- **빈 코트 공백 방지:** 빈 코트에서 매칭을 누르면, 선수 예약이 없는 미완성 합류 대기팀끼리 다시 섞어 네 명을 만듭니다.
+
+워크플로우 결과를 받으면 이어서 설명하겠습니다.
+
+---
+
+## #288
+
+**Prompt**: <task-notification>
+<task-id>wlfk8e2pl</task-id>
+<tool-use-id>toolu_01BbKvuxCjamnJvBd4Xjfdpb</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/tasks/wlfk8e2pl.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Map the uncommitted "합류 대기 자리" team-matching change from three angles and adversarially check any suspected gaps" completed</summary>
+<result>[{"lens":"lifecycle","summary":"DraftTeam.waitForCompletion은 commitTeammates 한 곳에서만 켜지거나 꺼진다. 켜는 조건은 courtId==null이면서 4명 미만일 때다. 원격 복원(reconcileMembership)과 직렬화(serializeBoardDrafts)도 같은 조건(유효 인원 2~3명, 코트 비고정)으로 걸러 저장·복원 왕복은 일관된다. 4명이 되면 attachAnchor와 addReservation이 플래그를 지워서 드롭 attach, 추천 commit, fillWaitingTeams, 경기완료 ghost 승격, ghost 점유 슬롯 교체 경로가 모두 이 규칙을 따른다. 인원이 2명 밑으로 떨어지는 모든 경로는 dissolveIfUnderTwo/dissolveDraft로 draft 자체를 지워 플래그도 함께 사라진다. 기존 draft에 courtId가 붙는 경로가 없어서 코트 그룹이 플래그를 갖는 일도 없다. 구체적인 결함은 하나다. handleGhostDrop의 재예약이 addReservation을 거치지 않고 r.teamId만 바꿔서, 대기팀이 4명이 돼도 플래그가 남는다. 이 상태에서 ghost 승격 전에 한 명이 빠지면 편집자 기기에서만 합류 대기가 되살아나 경기 완료 후 자동 채움 대상이 된다. 나머지는 의도된 동작이거나 가려져서 해가 없는 값이고, 알아둘 사항(note)으로 정리했다.","points":[{"claim":"플래그를 켜고 끄는 곳은 commitTeammates 한 곳뿐이다. 켤 때는 courtId==null이면서 유효 인원 4명 미만이어야 하고, 아니면 지운다. 호출하는 곳은 세 군데다: autoFillTarget의 대기 분기(true), 일반 분기(false), 추천 창(체크박스 값을 전달). autoFillEmptyCourts의 코트 commit은 options를 넘기지 않아 플래그를 건드리지 않는다.","evidence":"src/store/board/membershipSlice.ts:395-399, :478, :513, :122; src/components/board/RecommendTeammateDialog.tsx:59-62, :108, :114","status":"confirmed","severity":"low"},{"claim":"4명이 되면 해제하는 규칙은 attachAnchor와 addReservation 끝에서 처리된다. 드롭 attach, commitTeammates, fillWaitingTeams, 경기완료 resolveFreedReservations의 ghost 승격(예약을 먼저 지운 뒤 다시 4명이 됨), ghost 점유 슬롯 교체, 경기중 자석을 빈 슬롯에 드롭하는 경로가 모두 이 두 함수를 거친다.","evidence":"src/lib/board/draftMutations.ts:160, :172, :194; src/store/board/membershipSlice.ts:144, :188, :295, :384-385; src/store/board/layoutHelpers.ts:160-165","status":"confirmed","severity":"low"},{"claim":"handleGhostDrop의 재예약은 addReservation을 거치지 않고 r.teamId = d.id만 바꾼다. 그래서 3명짜리 대기팀에 ghost를 옮겨 4명이 돼도 waitForCompletion이 남는다. 4명인 동안은 가려진다: projection !full, serialize size&lt;4, planWaitingTeamFills members&lt;4, 풀 조건 &gt;=4, CTA는 4명 미만일 때만 autoFillTeam 호출. 하지만 ghost가 승격되기 전에 detachMember, cancelReservation, removeMemberFromBoard, restPlayer, healPlayingAnchors 중 하나로 3명이 되면 플래그가 되살아난다. 그러면 합류 대기 표시가 뜨고, 다음 경기 완료 때 자동으로 채워지고, CTA는 fillWaitingTeams로 가고, 빈 코트 재조합 풀에도 들어간다. addReservation으로 4명이 된 팀은 같은 상황에서 일반 팀이 되므로 경로에 따라 결과가 갈린다. 문서의 '4명이 되면 해제한다'와도 어긋난다. 게다가 4명 상태의 payload에는 플래그가 빠지고, 자기 echo는 canonical이 같아 적용되지 않는다. 그래서 편집자 로컬에만 남고, 뷰어나 편집권을 넘겨받은 사람에게는 없다.","evidence":"src/store/board/membershipSlice.ts:245-253, :519-584, :428-431; src/store/board/matchSlice.ts:54, :145-160, :252; src/lib/board/pixi/projection.ts:122; src/store/board/draftsSync.ts:50; src/lib/board/remoteDrafts.ts:110; src/lib/board/recommendPool.ts:126-128; docs/TEAM_GENERATION_RULES.md (합류 대기 자리 2번째 항목)","status":"gap","severity":"low"},{"claim":"인원이 2명 미만이 되는 경로(anchor 0명 포함)는 모두 draft를 통째로 지워 플래그도 같이 사라진다. 해당 경로: detachAnchor, dissolveIfUnderTwo, handleGhostDrop 원래 팀, attachAnchor가 ghost를 회수당한 팀, cancelReservation, removeMemberFromBoard, restPlayer, initializeFromPool, healPlayingAnchors(wouldDissolveByPlaying). 2~3명으로 줄면 플래그가 유지되고, 빈자리가 늘어난 대기팀으로 남는 것이 의도된 동작이다.","evidence":"src/lib/board/draftMutations.ts:43-49, :51-68, :114-119, :142-144; src/store/board/membershipSlice.ts:252, :264, :537, :551, :569-579; src/store/board/viewSlice.ts:93-109; src/store/board/matchSlice.ts:155-160; src/lib/board/membership.ts:115-129","status":"confirmed","severity":"low"},{"claim":"플래그가 붙은 팀이 코트로 옮겨지면서 courtId를 받는 경로는 없다. courtId는 코트 그룹을 만들 때만 붙고 이후에는 delete만 된다. 팀 드래그는 anchor 좌표만 옮긴다. 빈 코트에 다음 팀을 보낼 때도, 경기 시작 시 dissolveDraftAfterAssign도 기존 draft를 지운다. 플래그를 켜는 모든 곳에 courtId==null 가드가 있다. dissolveDraft와 dissolveDraftAfterAssign의 코트 분기는 slots, confirmedMs, createdBy만 지우고 waitForCompletion은 지우지 않는다. 다만 코트 그룹이 이 플래그를 가질 방법이 없어서 지금은 해가 없다.","evidence":"src/lib/board/courtGroups.ts:24, :31-35; src/lib/board/pixi/runtime.ts:347; src/store/board/viewSlice.ts:113-119; src/store/board/membershipSlice.ts:100-105, :397; src/lib/board/draftMutations.ts:63-67, :92-97; src/lib/board/remoteDrafts.ts:110; src/store/board/draftsSync.ts:50","status":"confirmed","severity":"low"},{"claim":"replaceAtSlot의 교체 경로는 세 갈래 모두 두 팀 인원을 바꾸지 않는다: 팀 안 슬롯 스왑, 다른 팀과의 맞교환, 자유 자석으로 점유자 교체. 따라서 4번째 인원이 끼어들지 않고, 플래그는 사람이 아니라 팀에 붙은 채로 남는다. 179, 182, 203행의 else push는 이미 어긋난 상태를 위한 방어 코드일 뿐이다.","evidence":"src/store/board/layoutHelpers.ts:153-158, :170-196, :198-210","status":"confirmed","severity":"low"},{"claim":"대기팀에 경기중 선수의 ghost가 붙어도(4명 미만) 플래그는 유지된다. planWaitingTeamFills는 멤버 중 경기중인 사람이 있으면 그 팀을 대상에서 빼고, 코트 재조합 풀도 ghost가 있는 팀은 제외한다. 경기가 끝나면 resolveFreedReservations가 ghost를 승격한 뒤 fillWaitingTeams가 돌기 때문에 순서는 맞다. 그 전에 누르는 '지금 채우기'는 '아직 4명을 완성할 수 없어요' 토스트만 띄운다.","evidence":"src/lib/teamSelection/fillWaitingTeams.ts:22, :25; src/lib/board/recommendPool.ts:128; src/store/board/matchSlice.ts:248-252; src/store/board/membershipSlice.ts:428-431","status":"note","severity":"low"},{"claim":"원격 왕복은 일관된다. serialize와 reconcile 모두 anchor와 ghost를 합친 유효 인원 2~3명이면서 courtId==null일 때만 플래그를 싣는다. canonicalize가 값을 boolean으로 맞추므로 echo 비교가 안정적이고, 필드가 없는 구버전 payload는 false로 읽힌다.","evidence":"src/store/board/draftsSync.ts:35, :50; src/lib/board/remoteDrafts.ts:29, :88-90, :100-110; src/store/board/matchSlice.ts:54, :121, :129-133","status":"confirmed","severity":"low"},{"claim":"버전이 섞이는 과도기 위험이 있다. 이 필드를 모르는 구버전 클라이언트가 편집권을 잡으면 자기 reconcile과 serialize에서 필드가 빠져 서버의 모든 플래그가 지워진다. 신버전 클라이언트는 canonical이 달라 그 payload를 적용하게 되고, 합류 대기팀이 조용히 일반 미완성 팀으로 돌아간다.","evidence":"src/lib/board/remoteDrafts.ts:29, :110; src/store/board/draftsSync.ts:50","status":"note","severity":"low"},{"claim":"사용자가 고르지 않아도 플래그가 켜질 수 있다. 일반 2~3명 예비팀에서 CTA '자동매칭'을 누르면 autoFillTeam이 autoFillTarget(options {})를 부르고, prefersWaitingDraft가 참이면 targetSize=max(2, 현재 인원)이 된다. 그러면 0명을 뽑은 채 waitForCompletion:true로 commit되어, 한 명도 추가되지 않고 토스트 없이 '합류 대기'로 바뀐다. 문서에 적힌 의도된 동작이지만 사용자는 놀랄 수 있다.","evidence":"src/store/board/membershipSlice.ts:438, :465-479; src/lib/board/waitingDrafts.ts:5-19","status":"note","severity":"low"},{"claim":"자동 채움은 세 곳에서만 시작된다: 경기 완료, autoFillEmptyCourts 시작 시점, 대기팀 CTA. setMatchRoster로 선수가 풀려날 때, 휴식 해제, 콕 확인, 새 선수 합류 때는 돌지 않는다. 또 빈 코트 재조합이 대기팀을 2명으로 줄이면(플래그 유지) fillWaitingTeams가 이미 그 앞에서 돌았기 때문에 다음 계기가 올 때까지 채워지지 않는다. 대기팀 CTA도 전체 대상 fillWaitingTeams를 부르므로 오래된 다른 팀이 먼저 채워지고, 누른 팀에는 토스트만 뜰 수 있다.","evidence":"src/store/board/matchSlice.ts:252, :269-272; src/store/board/membershipSlice.ts:82, :114-121, :428-431, :589-599","status":"note","severity":"low"},{"claim":"completeMatch는 이제 await 뒤에 편집권(claimEdit)을 잃었으면 resolveFreedReservations 전에 반환한다. 예전에는 로컬에서 ghost를 승격했지만, 지금은 원본이 풀려난 ghost가 ghost로 남는다. 플래그 자체의 결함은 아니다. 그런 ghost 선수는 경기중이 아니므로 그 대기팀은 이후 planWaitingTeamFills 대상이 될 수 있다.","evidence":"src/store/board/matchSlice.ts:246-251; src/lib/teamSelection/fillWaitingTeams.ts:22, :25","status":"note","severity":"low"},{"claim":"새로 추가된 테스트는 생성, 완료 채움, 재조합, 저장·복원을 다룬다. 하지만 handleGhostDrop 재예약, detach·rest·healPlayingAnchors로 인원이 줄 때의 플래그, 4명이 됐다가 다시 3명이 되는 경우는 테스트하지 않는다.","evidence":"src/store/boardStore.test.ts (describe '합류 대기 자리와 경기 완료 자동 채움'); src/lib/teamSelection/fillWaitingTeams.test.ts:15-61; e2e/waiting-teams.spec.ts:7","status":"note","severity":"low"}],"verified":[{"claim":"handleGhostDrop의 재예약은 addReservation을 거치지 않고 r.teamId = d.id만 바꾼다. 그래서 3명짜리 대기팀에 ghost를 옮겨 4명이 돼도 waitForCompletion이 남는다. 4명인 동안은 가려진다: projection !full, serialize size&lt;4, planWaitingTeamFills members&lt;4, 풀 조건 &gt;=4, CTA는 4명 미만일 때만 autoFillTeam 호출. 하지만 ghost가 승격되기 전에 detachMember, cancelReservation, removeMemberFromBoard, restPlayer, healPlayingAnchors 중 하나로 3명이 되면 플래그가 되살아난다. 그러면 합류 대기 표시가 뜨고, 다음 경기 완료 때 자동으로 채워지고, CTA는 fillWaitingTeams로 가고, 빈 코트 재조합 풀에도 들어간다. addReservation으로 4명이 된 팀은 같은 상황에서 일반 팀이 되므로 경로에 따라 결과가 갈린다. 문서의 '4명이 되면 해제한다'와도 어긋난다. 게다가 4명 상태의 payload에는 플래그가 빠지고, 자기 echo는 canonical이 같아 적용되지 않는다. 그래서 편집자 로컬에만 남고, 뷰어나 편집권을 넘겨받은 사람에게는 없다.","evidence":"src/store/board/membershipSlice.ts:245-253, :519-584, :428-431; src/store/board/matchSlice.ts:54, :145-160, :252; src/lib/board/pixi/projection.ts:122; src/store/board/draftsSync.ts:50; src/lib/board/remoteDrafts.ts:110; src/lib/board/recommendPool.ts:126-128; docs/TEAM_GENERATIO
+... (truncated 32412 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/tasks/wlfk8e2pl.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/subagents/workflows/wf_7175bc45-f50/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/workflows/scripts/understand-waiting-teams-change-wf_7175bc45-f50.js', resumeFromRunId: 'wf_7175bc45-f50'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>10</agent_count><agents_done>10</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>1448226</subagent_tokens><tool_uses>293</tool_uses><duration_ms>823924</duration_ms></usage>
+</task-notification>
+
+**Answer**: # 팀매칭 변경: "합류 대기 자리"
+
+요약하면, 경기가 진행 중일 때 뒤쪽 예비팀을 2명만으로 먼저 세워 둡니다. 나머지 두 칸은 특정 선수를 지정하지 않은 "합류 대기" 자리로 두고, 경기가 끝나면 코트에서 나온 선수와 자유 대기자로 채웁니다.
+
+단위 테스트 405개가 모두 통과했고 `tsc`도 에러가 없습니다. 다만 교차 검증에서 **기존 동작이 달라진 곳 2건을 재현**했습니다. 저장소 파일은 건드리지 않았고, 재현용 테스트는 스크래치 폴더에서만 돌렸습니다.
+
+## 무엇이 바뀌었나
+
+**예전에는** 뒤 예비팀도 무조건 4명을 채우려 했습니다. 자유 대기자가 모자라면 경기 중인 특정 선수를 예약(ghost)으로 잡았습니다.
+
+**이제는** 새 테스트의 시나리오처럼 동작합니다.
+- a~d가 경기 중이고, 첫 예비팀은 4명(efgh)입니다.
+- 뒤 두 팀은 2명씩(ij, kl)만 두고 나머지를 "합류 대기"로 남깁니다. 이때 예약은 0건입니다.
+- 경기가 끝나면 a~d가 2명씩 나뉘어 들어가 세 팀 모두 4명이 됩니다. 경기는 자동으로 시작하지 않습니다.
+
+## 구성 요소
+
+| 부분 | 내용 |
+|---|---|
+| 데이터 | `DraftTeam.waitForCompletion` 플래그 하나입니다. 저장·복원·원격 비교에 모두 포함되고, 코트에 없는 2~3명 팀에서만 유지됩니다. 4명이 되면 해제됩니다 (`draftMutations.ts`). |
+| 대기 모드 기본값 | `prefersWaitingDraft`가 정합니다. 경기가 진행 중이고, 바로 나갈 수 있는 팀 수가 `max(1, 빈 코트 수)` 이상이면 그 뒤 팀은 대기 모드가 됩니다. 추천 창의 체크박스 "경기 완료 후 빈자리 채우기"로 켜고 끌 수 있고, 코트에 고정된 그룹에는 적용되지 않습니다. |
+| 채움 알고리즘 | `planWaitingTeamFills`입니다. 아래에 따로 설명합니다. |
+| 채움이 실행되는 시점 | ① 경기 완료가 성공한 직후(기존 예약 해소 → 대기팀 채움 → 자석 흩기 순서) ② 빈 코트 매칭을 누를 때(`autoFillEmptyCourts` 맨 앞에서) ③ 대기팀 카드의 새 버튼 "지금 채우기" |
+| 빈 코트 공백 방지 | `buildRecommendData`에 `includeWaitingDrafts` 옵션이 생겼습니다. 자유 대기자만으로 코트를 채우지 못하면, 예약이 없는 미완성 대기팀의 인원까지 다시 섞어서 코트를 채웁니다. |
+| 추천 함수 | `autoFillTeammates`에 `targetSize`(2명까지만 고르기)와 `acceptCompletion`(조합 필터) 옵션이 추가됐습니다. 가중치는 바뀌지 않았습니다. |
+| 화면 | 파란 점선에 시계 아이콘과 "합류 대기" 글자가 있는 자리가 생깁니다. 카드 라벨은 `합류 대기 n/4`, 버튼은 "지금 채우기"입니다. |
+
+**`planWaitingTeamFills` 동작 순서**
+1. 선수를 남자 / 여자 4급 미만 / 여자 4급 이상, 세 부류로 셉니다. 혼복 허용 여부가 여자 선수의 실력에 따라 달라지기 때문입니다.
+2. 각 팀의 빈칸에 들어갈 수 있는 부류 조합을 전부 나열합니다.
+3. 동적 계획법으로 "이번 팀부터 최대 몇 팀을 완성할 수 있는지"를 구합니다.
+4. 오래된 팀부터 차례로, 채워도 이 최대치가 줄지 않는 조합만 허용합니다. 그 안에서는 기존 추천 순위(출전 수·같은 사람 반복·실력)로 고릅니다.
+5. 4명을 만들 수 없는 팀은 일부만 채우지 않고 그대로 둡니다.
+
+결과적으로 완성되는 팀 수가 최대가 되고, 수가 같으면 먼저 만든 팀이 먼저 채워집니다. 문서의 설명과 실제 동작이 일치하는 것도 확인했습니다.
+
+## 교차 검증에서 재현된 문제
+
+1. **[높음·기존 동작 변화] 코트 그룹에 1~3명이 있으면 코트가 덜 찬 채 멈춥니다.**
+   - 재현: 코트2에 [e,f], 합류 대기팀 [g,h], 자유 대기자 i,j가 있을 때 코트2 매칭을 누르면, 먼저 도는 대기팀 채움이 i,j를 가져갑니다. 코트2는 2/4로 남고 안내도 없습니다.
+   - HEAD에서는 같은 상황에서 코트가 efij로 채워집니다.
+   - 문서의 "코트 공백 방지"와 반대이고, 새 테스트는 나머지 선수를 모두 휴식으로 두어서 이 경우를 잡지 못합니다.
+2. **[중간·기존 동작 변화] 인원이 있는 코트 그룹이 더 이상 경기 중 선수를 예약하지 않습니다.**
+   - `autoFillTeam`에서 `teamMemberCount === 0` 조건이 빠지면서, 모든 코트 그룹이 경기 중 선수를 빼는 경로로 갑니다.
+   - 자유 대기자가 없으면 아무 안내 없이 끝나고, 예약이 섞인 코트 그룹은 아예 건너뜁니다.
+3. **[중간·사용성] 일반 2~3명 예비팀의 "자동매칭" 버튼이 헛클릭이 됩니다.**
+   - 대기 모드 기본값이 켜진 상황이면 한 명도 추가하지 않고 플래그만 켭니다.
+   - 한 번 더 누르면("지금 채우기") 그제야 채워집니다.
+4. **[낮음] 예약(ghost)을 드래그로 옮겨 4명이 돼도 플래그가 남습니다.**
+   - `handleGhostDrop`이 `addReservation`을 거치지 않기 때문입니다.
+   - 이후 인원이 3명으로 줄면 편집자 기기에서만 합류 대기가 다시 살아납니다.
+5. **[낮음·미검증]** `completeMatch`에 새로 들어간 편집권 재확인이 대기팀 채움뿐 아니라 기존 예약 해소까지 건너뜁니다.
+6. **참고 사항**
+   - "지금 채우기"는 누른 팀이 아니라 가장 오래된 팀부터 채웁니다.
+   - "합류 대기"라는 말이 이미 다른 뜻으로 쓰이고 있습니다. 예약한 선수를 기다리는 4/4 코트 그룹 라벨도 "합류 대기"라서 두 상태가 헷갈립니다.
+7. **문서가 CLAUDE.md 규칙을 일부만 지켰습니다.**
+   - 새 섹션은 추가했습니다.
+   - 하지만 §8의 `autoFillTeammates` 시그니처는 여전히 `{ maxPlaying }`만 적혀 있습니다.
+   - §7에 `includeWaitingDrafts` 설명이 없고, 함수 표는 아직 "greedy"로 설명합니다.
+   - "지금 채우기" 버튼과 채움 시점 3곳도 문서에 없습니다.
+
+다음으로 1·2번 회귀부터 고칠지, 아니면 설계 의도를 먼저 확인할지 정해 주세요. 예를 들어 코트 그룹 매칭에서 대기팀 채움을 코트 채움 뒤로 미룰지 같은 결정입니다.
+
+---
+
+## #289
+
+**Prompt**: 프로젝트 폴더안에 보면 팀매칭 시뮬레이터가 있는데 해당 기능을 적용해서 기존 매칭 vs 바꾼 매칭 비교해줘. 데이터는 오늘 오전경기를 기반으로 해
+
+**Answer**: 시드 100개로 돌린 비교 결과가 나왔고, 지금은 발표 전 반박 검토가 돌고 있습니다. 끝나면 지적 사항을 반영해서 최종 비교를 정리하겠습니다.
+
+지금까지 확인된 사실입니다.
+
+- **동등성:** 시뮬레이터의 "기존" 모드는 HEAD 커밋 코드와 경기 편성 순서가 606회 실행 전부에서 같았습니다. 지표도 Python으로 따로 다시 계산해서 하네스 값과 맞췄습니다.
+- **다음 팀을 1팀만 미리 준비할 때:** 두 방식의 결과가 완전히 같습니다. 오늘 실제 운영 지표가 이 조건과 가장 비슷했습니다.
+- **2팀 이상 미리 준비할 때:** 차이가 크게 벌어집니다. 수치는 검토 결과까지 반영해서 드리겠습니다.
+
+---
+
+## #290
+
+**Prompt**: <task-notification>
+<task-id>wfhwdaw8g</task-id>
+<tool-use-id>toolu_014tVaZkfRYmJvV2xPB3hHpM</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/b0522bf4-7238-44f5-a651-1542277f36d4/tasks/wfhwdaw8g.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "2026-09-24 오후 회차(332) 대관비 부과 누락의 근본원인·재발범위·복구경로 규명" completed</summary>
+<result>{"final":"# 오후 회차(#332) 대관비 미부과 — 조사 결과\n\n## 1. 무슨 일이 일어났나\n\n**근본원인 단정 가능.** 오후 회차(세션 332, 09/24 13:00 에이트민턴)는 **앱 보드에서 경기를 한 판도 배정하지 않아 `matches` 행이 0건**이었고, 회차 종료 시 자동 부과 함수 `dues_auto_issue`의 대관비 자격 게이트 마지막 조건 `exists(select 1 from public.matches where session_id = s.id)` 에서 탈락해 **아무 로그도 초안도 남기지 않고 `return 0`** 했다.\n\n게이트의 나머지 조건은 전부 통과한다(장소 유료 ✓, status=closed ✓, 총액 65,000&gt;0 ✓). 프로덕션에서 `matches` 절만 `true`로 바꾼 통제 실험(전부 rollback)에서 정확히 10명 × 6,500원 = 65,000원이 정상 발행됐다. 한 절만 뒤집어 결과가 뒤집히므로 이 한 줄이 필요충분 차단점이다.\n\n경기 기록이 생겼다가 지워진 게 아니다. `match_assign_count=0`, `match_state_version=0`, `board_drafts`는 컬럼 기본값 그대로, `session_players` 10행 전부 `status='waiting'`·`game_count=0`이고 삽입 이후 UPDATE된 적이 없다. matches를 DELETE하는 DB 함수는 0개이고 클라이언트는 matches를 SELECT만 한다.\n\n이 게이트는 2026-07-13 \"인원 미달로 무산된 날에 유령 부과가 나가는 것을 막자\"는 의도로 들어왔다. **`matches` 존재는 목적이 아니라 \"모임이 실제로 열렸나\"의 대리 지표였고, 332는 그 대리 지표가 깨진 위양성이다** — 10명이 2시간 실제로 쳤고 대관비 65,000원도 실제로 나갔는데 편성 버튼만 안 눌렀다.\n\n**운영진 화면에 경고는 하나도 뜨지 않았다.** 게이트가 후보 계산 *이전에* 빠지므로 `dues_drafts`도 `hold_reason`도 `dues_operations` 행도 남지 않는다. 그리고 회계 현황의 회차 카드·'미발행 N명' 배지는 전부 `dues_groups` 행이 있어야 렌더되는데 그 그룹 자체가 없다.\n\n## 2. 왜 오전은 되고 오후는 안 됐나\n\n| | 세션 324 (오전) | 세션 332 (오후) |\n|---|---|---|\n| 장소 / 유료 | 에이트민턴 ✓ | 에이트민턴 ✓ |\n| status | closed | closed |\n| 총액 | 156,000 | 65,000 |\n| **matches** | **52건** | **0건** |\n| 보드 사용 | `board_save_drafts` 576회, `assign_match` 54회, `complete_match` 50회 | `board_claim_editor` → **2초 뒤** `board_release_editor`. 이후 보드 쓰기 0건 |\n| 결과 | 그룹 1 / 부과 26건 / 156,000 (6,000×26) | 그룹 0 / 부과 0 / 초안 0 |\n\n차이는 **오직 경기 배정 여부** 하나다. 두 회차 모두 종료 트리거는 정상 발화했다(324 부과 발행 시각 13:00:22가 `ops_audit`의 324 종료 시각과 초 단위로 일치, 332도 17:01:50에 active→closed 감사행이 남아 있음). 트리거가 안 돈 게 아니라 **함수가 게이트에서 0을 반환**했다.\n\n332 타임라인(KST): 14:52:59 세션 시작(보드에 10명 시드) → 14:53:00 보드 진입 → **14:53:02 보드 이탈** → 16:09 대관비 65,000 입력 → 17:01 종료(게이트 차단) → 18:15 총액 재입력(무동작).\n\n## 3. 지금 당장 어떻게 부과하나\n\n**코드 배포 없이 운영진이 UI에서 바로 할 수 있다.** 수동 발행 경로(`dues_candidates` → `dues_execute`)에는 `matches` 게이트가 없다 (배포본 함수 정의에 `'matches'` 문자열이 0회 등장).\n\n경로: **회계 → 부과 관리 → [새 부과] → 대관 → 회차 `09/24 13:00 에이트민턴 #332` 선택 → [대관 부과 대상 확인] → 전표 [발행]**\n\n실측한 후보 payload (읽기 전용 재확인 완료):\n\n```\nhold_reason : null            ← 발행 대기로 안 빠지고 즉시 발행\nbasis       : {head:10, total:65000, per_head:6500, rounding:10, rule:\"court\"}\nlabel       : \"09/24 13:00 에이트민턴 #332\"\nlines       : 10건 × 6,500원 = 65,000원, due_ym 2026-09\n```\n\n대상 10명: 김지훈 · 남필립 · 안서현 · 유성종 · 이지인 · 전준형 · 정성균 · 정현민 · 진명현 · 최양회\n(운영진 4명 포함이 맞다 — 엔빵 모드에서는 운영진도 낸다. 심유진은 확정 4초 뒤 취소라 당일취소 과금 대상이 아니고 후보에서 정확히 제외됐다.)\n\n발행 전/후 전체 스냅샷 md5 대조(rollback) 결과, 변하는 값은 정확히 6개뿐이다: 332 부과 0→10건/65,000, 그룹 29→30, revision 305→306, 미수금 112,000→177,000. **324의 26건/156,000원, 기존 배분 613건, 통장 2,393건, 두 세션의 `sync_version`(=Realtime 브로드캐스트) 전부 불변.**\n\n### 발행 전에 확인해야 할 것 (되돌릴 수 없음)\n\n- **총액 65,000원이 맞는지.** 발행 후에는 `dues_set_session_fee`가 \"발행 이력이 있는 회차입니다\"로 잠기고, 클라이언트는 일반 PATCH에서 `courtFee`를 빼고 RPC로만 보내므로 **UI로는 `sessions.court_fee`를 다시 못 바꾼다.** 부과 금액은 [부과 변경](replace)으로 고칠 수 있지만 회차 총액은 65,000에 고착돼 대조 불일치가 남는다.\n  - 근거는 있다: 통장 출금에 `09-24 13:01 최광준 65,000 \"09/24 에이트민턴 2코트*2시간+1코트*1시간\"` 이 실재한다. (오전은 14:48 156,000 \"4코트\")\n- **발행 전에 참석 명단이 바뀌면 안 된다.** head가 11이 되면 per_head가 `ceil(65000/11/10)*10 = 5,910`으로 올림돼 65,010원(총액 초과 징수)이 된다. head=10에서만 정확히 떨어진다.\n\n### 드롭다운 지뢰 (중요)\n\n이 드롭다운에는 **경기·날짜 필터가 전혀 없다.** 그룹이 없는 유료 회차 전체를 후보 함수에 돌려본 결과(rollback), 운영진 화면은 지금 **8개 회차 · 합계 263,000원**을 `hold_reason=null`(즉시 발행 가능)로 노출한다:\n\n| 세션 | 일시 | 인원 | 금액 | 실제 |\n|---|---|---|---|---|\n| **332** | 09-24 13:00 에이트민턴 | 10 | **65,000** | **발행해야 함** |\n| 215 | **09-27 15:00 에이트민턴 (아직 열리지도 않음)** | 19 | 114,000 | 절대 누르면 안 됨 |\n| 308 | 09-11 21:00 에이트민턴 | 5 | 30,000 | 무산 회차 (확정 1명 + 당일취소 4명) |\n| 321 | 09-19 10:00 에이트민턴 | 4 | 24,000 | 무산 추정 |\n| 305 / 189 / 163 / 325 | — | 2/1/1/1 | 12,000 / 6,000 / 6,000 / 6,000 | 무산·미래 회차 |\n\n**#332 하나만 정확히 고를 것.** 나머지 7건 198,000원은 허위 부과다.\n\n### 하지 말 것\n\n- **일정 관리에서 회차 총액 재저장** — `dues_set_session_fee`는 `sessions.court_fee` UPDATE + revision 증가가 전부이고 재발행을 하지 않는다. `sessions`의 트리거 8개 중 `court_fee`를 보는 것은 하나도 없다. 실증상 부과 0건 생성. (문서 §4.4의 \"총액 저장·재발행 → 부과 전부 삭제 후 재생성\" 서술은 **배포본과 정반대**다.)\n- **더미 `matches` 행 삽입** — 게이트는 뚫리지만 `sessions.sync_version` 상승 → 전 회원 Realtime 브로드캐스트로 유령 경기가 실제 화면에 뜬다. 경기 통계·팀 편성 입력도 오염된다.\n- **`dues_generate_session_court(332, true)` 직접 호출** — 게이트가 그 아래 `dues_auto_issue` 안에 있어 **0을 반환**한다. 실증함.\n\n## 4. 재발 범위\n\n**돈이 실제로 새어나간 건은 332 한 건, 65,000원뿐이다.**\n\n전 이력 143개 active/closed 회차를 `종료시각(ended_at)` × `경기기록` 두 축으로 분류하면:\n\n| 분류 | 건수 | 세션 |\n|---|---|---|\n| 종료 O · 경기 O (정상) | 128 | — |\n| **종료 O · 경기 X (실제로 열렸는데 보드 미사용)** | **5** | 158, 149, **332**, 202, 320 |\n| 종료 X · 경기 X (자정 sync가 닫은 무산 회차) | 10 | 84, 102, 146, 163, 189, 196, 198, 305, 308, 321 |\n\n\"보드를 안 쓰고 그냥 논다\"는 운영 패턴은 처음이 아니다(158: 07-20 산성 8명, 149: 08-24 성남 11명 — 332와 지문이 동일). **다만 이 패턴이 유료 장소와 겹친 게 오늘이 처음이다.** 158/149는 무료 장소, 202/320은 장소 미지정이라 돈이 안 걸렸다.\n\n자동 생성기 가동은 09-07부터(17일차)이고, 그 기간에 사람이 실제로 시작(active)한 유료 회차는 191·201·324·332 4건 — 그중 332만 누락이다. 그 이전 회차의 `dues_groups`는 전부 legacy import다.\n\n**자동 복구는 없다.** pg_cron은 2개뿐이고(`0 9 * * 0 sync_schedule_occurrences`, `*/5 * * * * dues_run_scheduled`) 후자는 월회비 + 이월금 적용만 한다(정의에 `'court'` 문자열 0회). 방치하면 332는 영구 미부과다.\n\n### 조사 중 발견한 별개 구멍 2개\n\n1. **`place_id IS NULL` 세션 58건** (2026-02~09-21, 그중 56건은 경기 기록 보유, 최근 09-16/18/21에도 존재). court 게이트는 `join places`로 시작하므로 **어떤 게이트 수정으로도 부과 대상이 될 수 없다.** 유료 장소에서 장소 미지정으로 보드를 열면 영구 무부과.\n2. **선납(prepayment) 경로는 게이트를 안 탄다.** `court:191` 그룹과 부과 4건은 세션(09-13)보다 3일 앞선 09-10에 이미 존재했고 `basis.prepayment=true`이며 `dues_operations` 행이 없다. 즉 \"그룹이 없다 = 게이트에 막혔다\"는 등식이 항상 성립하지는 않는다. **선납자만 있는 회차는 그룹이 생겨 '발행된 것처럼' 보이면서 나머지 인원은 게이트에 막히는 무음 과소부과**가 가능하다. 332는 선납자가 0명이었던 게 우연이었다.\n\n## 5. 근본 수정 제안 (아직 코드는 안 고침)\n\n### 게이트 조건식\n\n`dues_auto_issue`의 court 자격 마지막 줄을 바꾼다. 조사 과정에서 두 안이 나왔고, **결합안을 권한다**:\n\n```sql\n-- 현행\nand exists (select 1 from public.matches m where m.session_id = s.id)\n\n-- 제안\nand ( exists (select 1 from public.matches m where m.session_id = s.id)\n   or ( s.ended_at is not null\n        and exists (select 1 from public.session_players sp\n                     where sp.session_id = s.id and sp.member_id is not null) ) )\n```\n\n근거:\n- `ended_at is not null`(= 사람이 세션을 시작하고 종료를 눌렀다)은 **과거 143회차 전체에서 위양성 0·위음성 0**으로 332를 잡고 무산 회차 10건을 전부 배제한다. `session_players` 단독보다 판별력이 높다.\n- `session_players` AND 조건은 \"보드에 회원이 실제로 올라갔다\"는 두 번째 증거. `member_id is not null`은 필수 — 회원 ID 없는 셋업 게스트만 있는 보드는 증거로 치지 않는다.\n- 과거 데이터 재평가(rollback 실증): **새로 잡히는 회차는 332 단 1건**, 무산 회차 102·146·163·189·305·308·321은 전부 계속 제외. 게이트를 통째로 삭제했다면 5개 세션 13건 = 78,000원의 허위 부과가 생긴다.\n\n### 건드리면 위험한 지점\n\n- **`set search_path to ''` + 모든 참조 `public.` 한정을 반드시 유지할 것.** 이걸 어기면 sessions 트리거 전체가 롤백돼 회차가 '예정'에 고착되는 알려진 사고 패턴이다(2026-07-26 `complete_session_playing_matches`).\n- **(e)만 배포해도 332는 자동 복구되지 않는다.** `dues_generate_session_court`의 유일한 호출자는 `trg_session_court_on_close`(status 전이 시에만 발화)이고 332는 이미 closed다. 복구는 §3의 수동 발행으로 따로 해야 한다. 순서는 무관하고 이중 발행도 없다(같은 트랜잭션에서 검증).\n- **총액 미입력(정액 6,000) 회차에는 `amount_out_of_range` 안전망이 작동하지 않는다.** 정액 모드는 항상 `per_head = flat`이므로 hold 조건(`per_head &gt; flat*5/2`)이 절대 참이 되지 않는다. 종료를 누른 회차에 보드에 1명만 있어도 6,000원이 즉시 발행된다. 정액 의미상 \"보드에 있었으면 뛴 것\"이 맞다고 보지만 정책 판단이 필요하다.\n- **`ended_at` 의존의 장래 리스크**: 운영진이 종료 버튼을 안 눌러 자정 sync가 닫는 회차가 늘면 이 지표도 깨진다(위음성). 지금까지는 그런 회차가 전부 실제 무산이었다.\n\n### 동반 수정 (같은 커밋)\n\n- `docs/ACCOUNTING_SPEC.md:328` (§4.3) — \"대관 장소 + active/closed + **시작 시각 있음** + 경기 기록 있음\" 에서:\n  - **\"시작 시각 있음\"은 배포본에 존재하지 않는 조건이다.** `dues_auto_issue`·`dues_candidates_internal` 어디에도 `started_at` 문자열이 0회 등장하고, 실제로 세션 208건 **전부** `started_at`이 non-null이라(draft 53건 포함) 조건으로서 공허하다. 삭제할 것.\n  - \"경기 기록 있음\" → \"경기 기록, 또는 종료 시각 + 보드 등록 회원 있음\"으로 수정.\n- `docs/ACCOUNTING_SPEC.md` §4.4 \"회차 총액 저장·재발행\" 행 — 배포본과 정반대. 실제로는 부과가 하나라도 있으면 `dues_set_session_fee`가 P0001로 **거부**한다(관리자 권한 실호출 확인).\n- §4.1 — 경기 게이트 언급 누락. 경기 0건이면 후보 계산 *이전에* 빠져 초안 정리도 hold_reason도 없이 완전 무음이라는 점 명시.\n- 클라 미러는 **변경 불필요**. 
+... (truncated 1966 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/b0522bf4-7238-44f5-a651-1542277f36d4/tasks/wfhwdaw8g.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/d15b4dfa/projects/-Users-sam-Projects-cocktime-scheduler/b0522bf4-7238-44f5-a651-1542277f36d4/subagents/workflows/wf_4c22bf52-1d6/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/d15b4dfa/projects/-Users-sam-Projects-cocktime-scheduler/b0522bf4-7238-44f5-a651-1542277f36d4/workflows/scripts/afternoon-court-charge-missing-wf_4c22bf52-1d6.js', resumeFromRunId: 'wf_4c22bf52-1d6'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>8</agent_count><agents_done>8</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>1182601</subagent_tokens><tool_uses>320</tool_uses><duration_ms>1949934</duration_ms></usage>
+</task-notification>
+
+**Answer**: # 오후 회차 부과 누락 — 원인 확정
+
+## 원인
+
+오후 회차(**세션 332**, 09/24 13:00 에이트민턴)는 **앱 보드에서 경기를 한 판도 배정하지 않아 `matches` 행이 0건**입니다. 대관비 자동발행 함수 `dues_auto_issue`의 자격 조건 마지막 줄이 —
+
+[코드 블록 생략]
+
+— 이라서 여기서 탈락하고 **초안도 hold 사유도 로그도 없이 `return 0`** 했습니다. 프로덕션에서 이 절만 참으로 바꾼 통제 실험(전부 rollback)에서 정확히 10명 × 6,500원 = 65,000원이 정상 발행됐습니다. 한 절만 뒤집어 결과가 뒤집히므로 이 한 줄이 차단점입니다.
+
+경기 기록이 지워진 게 아닙니다. `match_assign_count=0`, `match_state_version=0`, `board_drafts` 기본값 그대로, 보드 10명 전부 `game_count=0`. 14:52:59 세션 시작 → 14:53:00 보드 진입 → **14:53:02 보드 이탈**, 그 뒤 보드 쓰기 0건입니다.
+
+이 게이트는 2026-07-13에 "인원 미달로 무산된 날의 유령 부과 방지"로 들어왔습니다. `matches` 존재는 목적이 아니라 **"모임이 실제로 열렸나"의 대리 지표**였고, 332는 그 지표가 깨진 위양성입니다.
+
+## 오전은 되고 오후는 안 된 이유
+
+| | 324 (오전) | 332 (오후) |
+|---|---|---|
+| 장소·유료·closed·총액 | ✓ 156,000 | ✓ 65,000 |
+| **matches** | **52건** | **0건** |
+| 보드 사용 | 편성 54회·완료 50회 | 진입 2초 후 이탈 |
+| 결과 | 부과 26건 156,000 | **0건** |
+
+종료 트리거는 둘 다 정상 발화했습니다. 트리거가 안 돈 게 아니라 함수가 게이트에서 0을 반환한 겁니다. 오늘 09:49 배포는 무관합니다 — 그 뒤로도 오전에 37경기가 정상 기록됐습니다.
+
+## 지금 부과하는 법 (코드 배포 불필요)
+
+수동 발행 경로(`dues_candidates` → `dues_execute`)에는 이 게이트가 **없습니다**.
+
+**회계 → 부과 관리 → [새 부과] → 대관 → `09/24 13:00 에이트민턴 #332` → [대관 부과 대상 확인] → [발행]**
+
+실측 결과: `hold_reason=null`(즉시 발행), 10명 × 6,500원 = 65,000원. 대상은 김지훈·남필립·안서현·유성종·이지인·전준형·정성균·정현민·진명현·최양회 (엔빵이라 운영진 4명 포함이 맞고, 확정 4초 뒤 취소한 심유진은 정확히 제외됨). rollback 스냅샷 대조상 324의 26건·기존 배분 613건·`sync_version` 전부 불변입니다.
+
+**⚠️ 드롭다운 지뢰** — 이 목록에는 날짜·경기 필터가 없어서, 지금 **8개 회차 263,000원**이 전부 즉시 발행 가능 상태로 보입니다. 그중 **#332만 진짜**이고 나머지 7건 198,000원은 허위입니다 (특히 **#215는 09-27, 아직 열리지도 않은 회차 114,000원**). 반드시 #332 하나만 고르세요.
+
+**발행 전 확정할 것**: 발행하면 `dues_set_session_fee`가 잠겨 UI로 총액을 못 고칩니다. 통장에 `09-24 13:01 최광준 65,000 "09/24 에이트민턴 2코트*2시간+1코트*1시간"` 출금이 실재하니 금액 근거는 있습니다.
+
+**하지 말 것**: 일정에서 총액 재저장(재발행 안 됨, 실증), 더미 `matches` 삽입(전 회원에게 유령 경기 브로드캐스트), `dues_generate_session_court` 직접 호출(게이트가 그 아래라 0 반환).
+
+## 재발 범위
+
+**실제로 돈이 샌 건 332 한 건, 65,000원뿐입니다.** 전 이력 143회차를 종료시각 × 경기기록으로 분류하면 "종료했는데 경기 0건"은 5건(158·149·332·202·320)인데, 332를 뺀 나머지는 무료 장소이거나 장소 미지정이라 돈이 안 걸렸습니다. 보드 안 쓰고 노는 패턴 자체는 처음이 아니고, 유료 장소와 겹친 게 오늘이 처음입니다. 자동 복구 경로는 없으니 방치하면 영구 미부과입니다.
+
+## 근본 수정 제안 (코드는 아직 안 고쳤습니다)
+
+[코드 블록 생략]
+
+과거 143회차 재평가(rollback 실증)에서 **새로 잡히는 건 332 하나뿐**, 무산 회차 10건은 전부 계속 제외됩니다. 게이트를 통째로 지우면 78,000원 허위 부과가 생기니 삭제는 안 됩니다. `set search_path=''` + `public.` 한정은 반드시 유지해야 합니다.
+
+같은 커밋에 `docs/ACCOUNTING_SPEC.md` 수정이 따라와야 합니다 — §4.3의 "시작 시각 있음"은 배포본에 없는 조건이고, §4.4의 "총액 저장·재발행 → 부과 전부 삭제 후 재생성"은 배포본과 **정반대**입니다(실제로는 P0001로 거부). 클라 미러(`src/lib/dues/sessionSettle.ts`)는 이 게이트를 미러하지 않아 변경 불필요합니다.
+
+## 확인 필요
+
+1. **오후에 앱 보드로 경기를 돌리셨나요?** DB에는 10명이 쳤다는 증거가 0입니다 — "쳤다"의 근거는 구두 보고 + 65,000원 출금뿐입니다.
+2. 65,000원이 영수증 금액 맞나요? (발행하면 잠깁니다)
+3. **09-19 10:00 에이트민턴(#321, 확정 5명)** 은 진행됐나요? 대관비 출금이 없어 무산으로 봤습니다.
+4. 09-20 15:15 최광준 **600,000원 무메모 출금**이 에이트민턴 선납이면 3번 판단이 바뀝니다.
+
+---
+
+게이트 수정 마이그레이션과 문서 수정을 진행할까요? 부과 발행 자체는 위 UI 경로로 직접 하시는 게 안전합니다.
+
+---
+
+## #291
+
+**Prompt**: <task-notification>
+<task-id>wm5ua695u</task-id>
+<tool-use-id>toolu_01TeWNUEojE9GYZn9yvt4pGP</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/tasks/wm5ua695u.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Adversarially review the new prepared-queue simulator (fidelity, conclusions, code) before reporting" completed</summary>
+<result>[{"lens":"fidelity","verdict":"서버 경계 목(mock)은 실제 앱과 거의 같다. complete_match의 status·wait_since·game_count·mixed_count, groupHistory, lastGameType가 모두 맞고, 시계도 Date.now 기반이라 제대로 흘러간다. 하지만 헤드라인의 Q2 개선폭(3명 재회 86.5→1.9%)은 두 가지 모델링 선택에 크게 기대고 있다. (1) 레거시 Q2는 25−16−8=1이라는 구조 때문에 거의 강제로 나오는 결과이고, 오늘 실제 운영은 Q0~Q1 수준이었다. Q0~Q1에서는 두 모드가 똑같이 동작한다. (2) 시뮬레이터 운영자는 합류 대기가 가장 유리해지는 순서, 즉 코트 CTA를 먼저 누른 뒤 다음 팀을 만드는 순서만 쓰고 '지금 채우기'는 누르지 않는다. 다음 팀을 먼저 만드는 순서(코트가 빈 상태에서 다음 팀을 만들면 앱이 합류 대기를 기본으로 켠다)나 '지금 채우기' 탭 하나만으로 Q2 이득이 거의 사라진다(79.7~80.0%). 더 정직한 결론은 \"오늘처럼 운영하면 결과가 동일하고, 2팀 이상 미리 준비하는 운영자가 순서를 지킬 때만 레거시 Q1 수준의 품질을 유지한다\"이다. 코트 빈 시간 개선은 이탈자 처리 방식에서 생긴 부산물이다.","findings":[{"title":"합류 대기 이득이 운영 순서에 따라 달라진다: 코트 CTA나 '지금 채우기'를 누르면 빈자리가 즉시 채워진다","detail":"fillWaitingTeams는 경기 완료 때만 도는 게 아니다. 코트 CTA(autoFillTeam('court-N') → autoFillEmptyCourts, src/store/board/membershipSlice.ts:82)에서도 돌고, 대기팀 카드 자체의 CTA '지금 채우기'(src/lib/board/pixi/runtime.ts:304 → autoFillTeam → membershipSlice.ts:428-431)에서도 돈다. 대기팀을 만든 뒤 다음 완료 전까지 이 둘 중 하나라도 불리면 빈 2자리가 얇은 풀(자유 선수 약 3명)에서 곧바로 채워진다. 그러면 결과가 레거시 Q2와 같아진다. queue.test.ts:134-162의 운영자는 항상 코트 CTA→경기시작을 먼저 하고 그 뒤에 대기팀을 만들며, '지금 채우기'는 한 번도 누르지 않는다. 즉 합류 대기에 가장 유리한 순서만 모델링한다. 게다가 prefersWaitingDraft(src/lib/board/waitingDrafts.ts)는 '빈 코트 있음 + 준비된 팀 수 ≥ 빈 코트 수'인 상태에서 합류 대기를 기본으로 켠다. 경기종료 직후 코트 CTA보다 먼저 다음 팀 대화상자를 여는 순서가 바로 이 기본값을 켜는 경우이고, 이어서 코트 CTA를 누르면 즉시 채워진다. 스크래치로 실측했다(100시드, 이탈 현실화+짧은 팀 보수 적용, scratchpad/fid/fid.test.ts, v5~v7.json). W2 CTA 먼저: 3명 재회 1.08%, 만난 사람 18.0, 3명↑ 겹침 0.08%. W2 다음 팀 먼저(queueFirst): 79.66%, 10.30, 4.85%. 대기팀 44개 중 42.3개가 경기 완료가 아니라 코트 CTA에서 채워졌다(ctaFills 42.28, completionFills 2.25). W2에서 '지금 채우기'를 매번 누를 때: 79.96%, 10.25. 30%쯤 누를 때: 26.7%. 참고로 L2는 86.50%, 9.35다. Q1도 순서를 바꾸면 두 모드가 더 이상 같지 않다(W1 qFirst 1.86% vs L1 2.88%, 최장 대기 18.6 vs 20.2분). W3는 이 효과를 거의 받지 않았다(5.74%).","severity":"high","biasDirection":"waiting 유리 (헤드라인 Q2 개선은 최선의 운영 순서를 가정한 값)","fix":"하네스에 운영 순서 변형(queueFirst)과 '지금 채우기' 탭 확률을 넣고, 결과를 범위로 보고한다. 결론에는 'Q2 이득은 코트 CTA를 먼저 누르고, 다음 완료 전에 지금 채우기를 누르지 않을 때만 유지된다'는 조건을 붙인다. 앱 쪽 선택지(참고용): 완료 이벤트가 아닌 fillWaitingTeams 호출에서는 방금 끝난 4명이 없는 얇은 풀일 때 채우지 않기. 또는 prefersWaitingDraft가 빈 코트 상태에서 기본값을 켜지 않게 하기."},{"title":"레거시 Q2 기준선은 구조적으로 강제된 결과이고, 공정한 비교는 레거시 Q1(=오늘 실제 운영) 대 합류 대기 Q2다","detail":"25명·4코트에서 레거시 Q2는 경기 16명 + 대기팀 8명이라 남는 사람이 1명뿐이다(25−16−8=1). 완료 뒤 새 팀은 '방금 같이 뛴 4명 + 1명' 중에서 4명을 뽑아야 하므로, 경기중 선수를 예약하지 않는 한 3명 재회를 피할 수 없다. 팀을 만들 때 자유 선수 수 평균이 L2 4.78명, L1 8.66명이다. 레거시에서는 풀이 완료 이벤트 사이에 바뀌지 않으므로, 다음 팀을 늦게 만들거나 코트가 비기 직전에 만들어도 결과는 같다. autoFillTarget은 조합이 불가능할 때만 예약하므로 앱으로는 회피할 수 없다. 오늘 실제 기록(3명 재회 4%, 3명↑ 겹침 0.65%, 만난 사람 16.9)은 L0(0.90%/0.06%/20.5)이나 L1(2.92%/0.17%/18.2)에 가깝고, L2(86.5%/5.46%/9.35)와는 거리가 멀다. Q0~Q1에서는 두 모드의 결과가 같다(L1 = W1 동일 수치). 공정한 기준 비교(현실화 모델, 100시드) L1 → W2: 3명 재회 2.92→1.08%, 같은 4명 연속 0.64→0.08%, 만난 사람 18.21→18.00, 판수 표준편차 0.58→0.61, 최장 대기 20.19→16.72분, 대기 90% 10.76→10.67분, 코트 빈 시간 0.22→0.51 코트·분. 개선은 3명 재회 약간과 최장 대기 3.5분 정도이고 나머지는 비슷하다. 대기열에 묶인 인원은 W2 5.5명으로 L1 3.7명과 L2 7.4명의 중간이다. 사실상 Q1.5에 해당한다.","severity":"high","biasDirection":"waiting 유리 (개선폭 과대 표시)","fix":"헤드라인을 'Q2 레거시 대 Q2 합류 대기'에서 '오늘 운영(Q0~Q1): 차이 없음'과 'Q2 합류 대기 ≈ Q1 레거시 품질 + 최장 대기 −3.5분'으로 바꾼다. 레거시 Q2의 86%는 '25명에서 2팀을 미리 만들면 생기는 구조적 한계'로 따로 설명한다."},{"title":"이탈자 때문에 생긴 짧은 대기팀을 운영자가 보수하지 않아 '코트 빈 시간' 개선이 부풀려졌다","detail":"하네스는 이탈 시각에 restPlayer를 부른다(queue.test.ts:184, 192). restPlayer(membershipSlice.ts:565)의 detachAnchor는 대기팀을 3/4명짜리로 남긴다. 채워진 대기팀은 attachAnchor(draftMutations.ts:160)가 4명이 된 순간 waitForCompletion을 지웠기 때문에 fillWaitingTeams도 이 팀을 다시 채우지 않는다. autoFillEmptyCourts는 시작 가능한 대기팀만 코트로 가져간다. 레거시 Q3에서는 이탈자의 예약이 완료 시점에 resolveFreedReservations로 정식 멤버로 승격된 직후 빠지기도 한다. 시뮬레이터 운영자는 이런 팀을 '자동매칭'으로 보수하지 않으므로, 3명이 끝까지 묶이고 대기열 한 칸도 막힌다. 막힌 팀 누적(팀·분): L1 8.6, L2 17.0 vs W2 9.5, L3 25.6 vs W3 14.9. 레거시 쪽이 더 많이 당한다. 짧은 팀을 보수하는 변형(레거시는 HEAD와 같게 autoFillTarget({teamId},[],{waitForCompletion:false}))에서 코트 빈 시간은 Q2 1.47/0.68 → 0.43/0.51(방향이 뒤집힘), Q3 4.02/2.46 → 1.14/0.52가 됐다. results.json의 departures=false에서도 Q2 코트 빈 시간은 0.00/0.00이다. 즉 빈 시간 차이는 전부 이탈 처리에서 나온다. 품질 지표는 거의 변하지 않았다(L2 86.52→86.50, W2 1.88→1.08).","severity":"medium","biasDirection":"waiting 유리 (코트 빈 시간 지표)","fix":"operate()에서 대기팀이 4명 미만이고 waitForCompletion이 아니면, 레거시는 autoFillTarget({teamId},[],{waitForCompletion:false})로, 합류 대기 모드는 autoFillTeam(teamId)로 보수하는 단계를 추가한다. 아니면 코트 빈 시간은 departures=false 결과로만 보고한다."},{"title":"(확인 결과 영향 작음) 이탈자 오라클·목 경계·가상 시계","detail":"(a) 목 complete(queue.test.ts:108-109)는 이탈자를 fillWaitingTeams 전에 'resting'으로 바꾼다. 실제 complete_match는 'waiting'으로 되돌리고, 휴식 처리는 운영자가 나중에 누른다. 현실 순서로 바꿔 보니 합류 대기가 이탈자를 집는 경우는 실행당 0.23~0.37회였고, W2 3명 재회 1.88→2.07%, W3 코트 빈 시간 2.46→2.70 수준이라 영향이 작다. (b) 목 complete는 supabase complete_match(20260817020000_advisor_function_search_path.sql:205-255)와 handleMatchCompleted(sessionBroadcastHandlers.ts:80-117)에 맞다. 다만 실제 앱은 경기 시작 때도 lastGameType을 갱신하는데(sessionBroadcastHandlers.ts:75) 목 assign은 그러지 않는다. 시작 시 갱신을 넣어 봐도 L3 61.88→61.88%, 코트 빈 시간 1.14→1.49, W2·W3는 변화가 없어 무시할 만하다. (c) rankCandidates.ts:158과 recommendTeammates.ts:77이 Date.now를 쓰므로 가상 시계가 대기 분 계산에 제대로 들어가고, 1ms 틱은 분 단위에서 무시된다. (d) 대화상자는 autoFillTarget에 prefersWaitingDraft 결과를 명시적으로 넘기는데(RecommendTeammateDialog.tsx), 이는 하네스가 undefined를 넘길 때와 같은 결과다. 운영진 커버리지 보류 비활성화는 두 모드에 똑같이 적용되므로 편향 근거를 찾지 못했다.","severity":"low","biasDirection":"n/a (waiting 쪽으로 아주 약간)","fix":"필요하면 목 complete가 전원을 'waiting'으로 되돌린 뒤 completeMatch가 끝나고 나서 restPlayer를 부르도록 바꾼다(실제 순서). 나머지는 수정할 필요 없다."}]},{"lens":"skeptic","verdict":"계산 자체는 믿을 수 있습니다. traces로 다시 계산한 6개 지표가 12개 설정 모두에서 소수 둘째 자리까지 일치했고, 재실행 결과도 1212/1212 trace가 같았으며 HEAD 대비 606/606, Q1 legacy==waiting 202/202도 확인했습니다. 다만 헤드라인의 비교 기준인 legacy Q2/Q3는 오늘 실제 운영에서 쓰이지 않은 방식입니다. 오늘처럼 한 팀만 미리 짜 두는 운영(≈Q1)에서는 바뀐 매칭과 기존 매칭의 결과가 완전히 같습니다. 또 86.5→1.9 같은 극적인 차이는 25명·4코트에서 벤치가 9명뿐이라 생기는 임계 효과입니다. '미리 짜는 팀이 2개 이상이면 합류 대기가 재회 붕괴를 막는다'는 방향은 견고하지만, 코트 빈 시간 개선은 운영자 모델이 만든 착시이고 최장 대기 증가는 실제로 있는 트레이드오프입니다.","findings":[{"title":"헤드라인의 비교 기준(legacy Q2)은 오늘 운영과 다르고, 효과 크기는 인원수에 따른 임계 효과","severity":"high","biasDirection":"waiting 쪽 효과를 부풀림","detail":"오늘 실제 운영에 가까운 Q1에서는 두 모드의 trace가 202/202로 같습니다(results.json Dl1==Dw1, nl1==nw1). prefersWaitingDraft(src/lib/board/waitingDrafts.ts:19)는 준비된 팀이 이미 1개 이상 있어야 켜지기 때문입니다. 즉 운영 방식이 그대로면 기존과 바뀐 매칭의 차이는 0입니다.\n\nlegacy Q2가 무너지는 이유는 구조적입니다. 25명 중 16명이 코트에 있으면 벤치는 9명인데, 완성된 대기팀 2개가 8명을 묶으면 경기가 끝날 때 후보가 방금 끝난 4명과 남은 1명뿐입니다. 실측으로도 선발 지연이 평균 0.52분으로, 거의 즉시 그대로 뽑힙니다.\n\n인원을 바꿔 보면 크기가 크게 달라집니다(40 seeds, 이탈 반영, 스크래치 실험).\n- 28명: Q2 직전 경기 3명 재회 legacy 1.70% vs waiting 0.65%. 대신 Q3 legacy가 83.8%로 무너짐(waiting 1.05%).\n- 30명: Q2 0.65 vs 0.30, Q3 25.6 vs 0.35.\n\n따라서 '86.5→1.9'는 25명·4코트·Q2에만 해당하는 숫자입니다. 일반화할 수 있는 결론은 '미리 짜는 인원(4×Q)이 벤치 인원에 가까워지면 legacy는 무너지고 waiting은 버틴다'입니다.","fix":"보고서 헤드라인을 '현행 운영(Q1) vs 합류 대기 Q2'로 바꾸고, legacy Q2는 'HEAD에서 버튼을 두 번 누르면 생기는 일'로 따로 표기합니다. 인원수(25/28/30) 민감도 표를 덧붙입니다."},{"title":"'코트 빈 시간 1.5→0.7'은 운영자 모델이 만든 착시","severity":"high","biasDirection":"Q2에서 waiting 쪽 이득을 잘못 만들어냄(동시에 미리 짜는 것의 진짜 가치는 측정 못 함)","detail":"이탈을 끄면 모든 설정에서 코트 빈 시간이 0.00입니다.\n\n이탈을 켠 경우 idleLog로 분해해 보면:\n- 빈 시간은 전부 110분 이후에만 생깁니다.\n- 그 순간 모두 readyCapacity&gt;0입니다. 즉 대기 선수로 4인을 짤 수 있었는데 코트가 비어 있었습니다.\n- 대기 큐 모양은 [3,3], [2,3], [3,4]였습니다. 이탈자가 빠져 3명이 된 완성팀을 하네스 운영자가 다시 채우지 않았다는 뜻입니다.\n\n원인은 하네스 코드에 있습니다.\n- queue.test.ts:152는 queued().length&lt;depth일 때만 새 팀을 만듭니다.\n- :142의 코트 CTA는 이미 팀에 들어간 선수를 쓰지 못합니다.\n- fillWaitingTeams(membershipSlice.ts:126)는 waitForCompletion 팀만 채웁니다.\n\n운영자가 깨진 대기팀을 채우도록 바꾼 변형(스크래치 queue3)의 결과는 이렇습니다.\n- Q2: legacy 1.47→0.31, waiting 0.68→0.30. seed별로 waiting이 적은 경우 40, 많은 경우 32로 사실상 동률입니다.\n- Q3: 4.02→1.11 vs 2.46→0.47.\n\n원래 결과로 봐도 Q1은 0.12로 Q2w(0.68)보다 낫습니다.\n\n시뮬레이터는 교대 시간을 0으로 두기 때문에 Q1만으로도 가동률이 약 100%입니다. 실제 기록에서는 교대 간격이 평균 0.39분, 합계 18.2 코트·분이었습니다. 이 구조에서는 미리 짜 두는 것의 이득이 원천적으로 측정되지 않습니다.","fix":"코트 빈 시간 지표는 헤드라인에서 빼거나 '이탈 후 대기팀 보충' 운영을 넣은 결과로 교체합니다. 미리 짜는 것의 가치를 보려면 교대 지연을 모델링해야 합니다(예: 준비 안 된 팀은 N분 지연)."},{"title":"최장 대기 14.6→17.0분 증가는 실재하지만, 섞임과 맞바꾸는 트레이드오프이고 Q1보다는 오히려 개선","severity":"medium","biasDirection":"n/a 
+... (truncated 9345 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/tasks/wm5ua695u.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/subagents/workflows/wf_5c357e7a-708/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/workflows/scripts/verify-queue-sim-wf_5c357e7a-708.js', resumeFromRunId: 'wf_5c357e7a-708'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>3</agent_count><agents_done>3</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>570423</subagent_tokens><tool_uses>136</tool_uses><duration_ms>1060391</duration_ms></usage>
+</task-notification>
+
+**Answer**: # 오늘 오전 경기(세션 324) 기준 기존 vs 바뀐 매칭 비교
+
+오늘처럼 다음 팀을 **1팀만 미리 짜 두는 운영이면 두 매칭은 결과가 완전히 같습니다.** 101회 중 101회 경기 편성이 같았습니다. 차이는 2팀 이상 미리 짜 둘 때만 생기고, 그 경우엔 바뀐 매칭이 훨씬 낫습니다. 다만 "지금 채우기" 버튼을 바로 누르면 그 이득이 사라집니다.
+
+## 어떻게 비교했나
+- **시뮬레이터를 새로 추가했습니다.** 기존 시뮬레이터는 코트가 빌 때마다 네 명을 새로 뽑는 방식이라, 다음 팀을 미리 짜 두는 대기열을 다루지 못합니다. 그래서 실제 보드 스토어 코드를 가상 시계로 돌리는 `tools/team-simulator/queue.test.ts`를 만들었습니다. 운영진이 누르는 순서대로 코트 버튼 → 경기시작 → 경기 완료 → 새 팀 자동편성을 재현합니다.
+- **"기존 매칭"이 커밋된 코드와 같은지 확인했습니다.** 기존 모드는 HEAD 커밋 코드로 돌린 결과와 경기 순서가 1,212회 모두 같았습니다.
+- **입력은 오늘 오전 기록입니다.** 25명(남 21·여 4), 코트 4면, 정상 경기 50판을 썼습니다. 늦게 온 1명과 먼저 간 13명, 실제 경기 시간을 반영했고 경기 시간 순서를 바꿔 100번 돌렸습니다.
+- **오늘 실제 운영은 "1팀 준비"와 가장 비슷했습니다.** 직전 경기 멤버 3명이 다시 만난 경기 비율이 실제 4%, 1팀 준비 시뮬 1.2%, 기존 방식 2팀 준비 시뮬 87%였습니다.
+
+## 결과 (100회 평균)
+
+| 지표 | 기존 1팀 | 변경 1팀 | **기존 2팀** | **변경 2팀** | 기존 3팀 | 변경 3팀 |
+|---|---:|---:|---:|---:|---:|---:|
+| 직전 경기 멤버 3명 이상이 다시 만난 경기 | 1.2% | 1.2% | **86.6%** | **0.6%** | 61.6% | 5.2% |
+| 같은 4명이 연달아 경기 | 0.2% | 0.2% | **25.6%** | **0%** | 30.5% | 0.3% |
+| 1인당 같이 뛰어 본 사람 수 | 18.5 | 18.5 | **9.4** | **18.1** | 11.6 | 14.8 |
+| 판수 표준편차 | 0.65 | 0.65 | 0.71 | 0.69 | 0.96 | 0.74 |
+| 최장 대기 (분) | 19.8 | 19.8 | 15.0 | 16.4 | 15.4 | 14.7 |
+| 경기 중 선수 예약 (건) | 0.1 | 0.1 | 1.3 | 0.2 | **44.9** | 0.4 |
+
+- **기존 방식으로 2팀을 미리 짜면 구조적으로 망가집니다.** 16명이 경기 중이고 8명이 예비팀 두 개에 묶이면, 경기가 끝났을 때 새 팀은 "방금 같이 뛴 4명 + 남은 1명"에서 뽑을 수밖에 없습니다.
+- **바뀐 매칭은 2팀을 준비해도 1팀 준비 때와 같은 품질을 유지합니다.** 대신 최장 대기가 1.4분 늘었습니다. 1팀 준비 때보다는 오히려 짧습니다.
+- **3팀 준비는 두 방식 모두 1팀보다 섞임이 나쁩니다.** 이 인원이면 2팀까지가 상한입니다.
+
+## 주의할 점
+- **"지금 채우기"를 바로 누르면 효과가 사라집니다.** 새 합류 대기팀을 만들자마자 누르면 2팀 준비에서도 3명 재회가 79.5%로 기존 방식과 비슷해집니다. 3팀 준비에서는 코트 버튼보다 새 팀을 먼저 만들기만 해도 77%로 무너집니다. 원인은 코트 버튼과 "지금 채우기"가 도는 전역 `fillWaitingTeams`입니다. 방금 끝난 사람 몇 명뿐인 얇은 풀로 빈자리를 먼저 채워 버립니다. 지난번에 찾은 회귀 1번과 같은 원인입니다.
+- **이번 데이터로 확인하지 못한 것이 두 가지입니다.**
+  - 여유 인원이 9명이라 코트 빈 시간은 양쪽 모두 0.4코트·분 이하였습니다. 모형에 교대 시간이 0이라 미리 짜 두는 것 자체의 가동 이득도 잴 수 없습니다.
+  - 빈 코트 재조합 기능은 한 번도 실행되지 않았습니다. 인원이 빠듯한 세션으로 따로 봐야 합니다.
+- **범위가 좁습니다.** 세션 1회, 명단 1개 기준입니다.
+
+## 검증
+- 결과를 내기 전에 반박 검토를 한 번 거쳤습니다. 거기서 하네스 결함 세 가지가 나와서 고친 뒤 다시 돌렸습니다: 귀가로 깨진 예비팀을 방치한 점, 끝내 못 뛴 사람의 대기를 빠뜨린 점, 늦게 온 선수의 판수 보정을 빠뜨린 점.
+- 지표는 기록된 경기 순서로부터 따로 다시 계산해서 하네스 값과 일치하는 것을 확인했습니다.
+- 시뮬레이터 테스트는 47개 중 46개 통과했고, 1개는 실데이터 입력이 필요해 건너뛰었습니다. `tsc`도 통과합니다.
+
+## 바뀐 파일 (커밋 안 함)
+- 새 파일: `tools/team-simulator/queue.test.ts`, `tools/team-simulator/fetch-queue-input.py`
+- 수정: `tools/team-simulator/README.md`(사용법·결과 절 추가), `tools/team-simulator/tsconfig.json`(`vite/client` 타입 추가)
+- 입력과 결과는 git에서 제외되는 `reports/team-simulator-queue-20260924-s324/`에만 있어서, 회원 이름은 커밋되지 않습니다.
+
+다음으로 할 만한 일은 두 가지입니다. 하나는 코트 버튼과 "지금 채우기"가 대기팀을 일찍 채우는 문제를 고치는 것이고, 다른 하나는 인원이 빠듯한 세션으로 빈 코트 재조합을 검증하는 것입니다. 이 비교를 표와 그래프가 있는 공유용 페이지로 만들어 드릴 수도 있습니다.
+
+---
+
+## #292
+
+**Prompt**: 두가지를 어떻게 해야할까
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #293
+
+**Prompt**: 두가지를 어떻게 해야할까
+
+**Answer**: ①·② 검증이 아직 돌고 있습니다. 저장소 파일은 건드리지 않고 스크래치 복사본에서만 작업합니다.
+
+**① 일찍 채워지는 문제:** 권고 방향은 "합류 대기팀은 경기 완료 때만 채운다"입니다. 시제품에 넣은 수정은 네 가지입니다.
+- **원인 제거:** 코트 버튼(`autoFillEmptyCourts`) 맨 앞의 전역 `fillWaitingTeams()` 호출을 뺍니다. 코트가 비었는데 사람이 모자란 경우는 기존 재조합 경로가 이미 맡고 있어서 이 호출이 필요 없습니다. 이 호출은 회귀 1번(코트가 2/4에서 멈춤)과 "다음 팀 먼저 만들기" 순서에서 효과가 사라지는 문제의 공통 원인입니다.
+- **"지금 채우기" 버튼 제거:** 시뮬레이션에서 이 버튼을 누르면 효과가 사라졌고, 코트가 비는 경우는 코트 버튼이 처리하니 한 번에 누르는 버튼이 필요한 상황이 없습니다. 비활성 상태 표시("완료 후 채움")로 바꾸고, 직접 채우고 싶으면 빈칸을 눌러 추천 창에서 고르게 합니다.
+- **함께 고치는 회귀 2번:** 1~3명이 있는 코트 그룹이 더 이상 경기 중 선수를 예약하지 않는 문제입니다. 같은 함수라서 같이 넣고, 코트 버튼으로 못 채우면 HEAD 방식(예약 포함)으로 넘어가게 합니다.
+- **안내 문구:** 일반 예비팀의 "자동매칭"이 0명을 추가하고 합류 대기로만 바뀔 때 알림을 띄웁니다.
+
+**② 빈 코트 재조합 검증:** 오늘 명단은 여유 인원이 9명이라 이 경로가 한 번도 실행되지 않았습니다. 그래서 여유 인원이 1~4명이었던 실제 세션 4개(175·209·156·192)로 다시 봅니다. 현재 기본값은 준비된 팀이 있어야 합류 대기가 켜지므로, 이런 세션에서는 대기팀이 거의 안 생길 수 있습니다. 그래서 운영진이 체크박스를 직접 켜는 경우도 따로 넣어 재조합이 실제로 코트 공백을 막는지 확인합니다.
+
+결과가 나오면 수치와 함께 최종 권고를 드리고, 적용할지 여쭤보겠습니다.
+
+---
+
+## #294
+
+**Prompt**: <task-notification>
+<task-id>w5p88if3f</task-id>
+<tool-use-id>toolu_01PMEfqZ7t6cnLyxcCdPpCWs</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/21ca0470-2752-4b3d-a283-e7f443532b1a/tasks/w5p88if3f.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Prototype the early-fill fix in a scratch copy and validate empty-court regroup on tight real sessions (HEAD vs current vs fix)" completed</summary>
+<result>{"built":{"summary":"네 가지 문제를 fixtree(현재 워킹트리 사본)에서 고쳤고, 전체 검증과 세션 324 재생(100시드)을 돌렸습니다. 원 저장소 소스는 수정하지 않았고 패치는 현재 워킹트리에 git apply --check 기준으로 깨끗이 적용됩니다.\n\nP1 근본 원인은 코트 버튼(autoFillEmptyCourts) 맨 앞에서 get().fillWaitingTeams()를 부르던 것이었습니다. 이 호출과, 그 호출 때문에 추가됐던 빈 코트 선검사를 지웠습니다. 이제 대기팀을 채우는 곳은 completeMatch 성공 직후 한 곳뿐입니다(grep 결과 호출처는 matchSlice.ts:252 하나). 추천 창의 직접 선택과 대기 모드 끄기, 드래그는 운영진이 명시적으로 하는 경로라 그대로 뒀습니다. 코트가 비는 문제는 기존 includeWaitingDrafts 재조합이 계속 막습니다. 재조합 순서는 자유 대기자 먼저, 그다음 예약 없는 대기팀입니다. 기존 굶주림 테스트 3개와 e2e 굶주림 케이스도 통과합니다.\n\nP2(1~3명 코트 그룹): autoFillTeam의 코트 분기는 autoFillEmptyCourts를 먼저 부릅니다. 그 뒤에도 코트가 비어 있고 그룹이 1~3명이면 HEAD처럼 autoFillTarget({teamId},[])으로 넘어가 경기 중 선수 예약까지 씁니다. 예약이 섞인 그룹도 이 경로로 채워집니다. 0명 그룹의 동작(다음 팀 소비, 자유 대기자, 재조합)은 바꾸지 않았습니다.\n\n'지금 채우기'는 없앴습니다. 대기팀 카드 버튼은 이제 비활성 '완료 후 채움' 표시입니다. 빈자리를 누르면 추천 창은 그대로 열립니다(runtime 테스트와 390px 스크린샷으로 확인). store의 autoFillTeam에 대기팀 id가 들어오면 채우지 않고 안내 토스트만 띄웁니다.\n\nP3: 일반 예비팀의 '자동매칭'이 아무도 추가하지 않고 합류 대기로 바뀌면 \"합류 대기팀으로 바꿨어요. 다음 경기가 끝나면 빈자리를 채워요\" 토스트를 띄웁니다. 동작 자체는 그대로입니다.\n\n재생 결과(세션 324):\n- 1팀(depth 1)과 legacy는 모든 시나리오에서 수정 전과 경기 순서가 같습니다(101/101). P2 대체 경로는 이 재생에서 한 번도 실행되지 않았습니다.\n- queue-first 3팀: 3명 재회 77.4% → 5.2%로 기본 순서와 거의 같아졌습니다(100/101회 동일).\n- tap-fill: 2팀 79.5% → 0.6%, 3팀 79.9% → 5.2%이고, 이제 기본 순서와 모든 depth에서 101/101 동일합니다.\n- 대가: 최장 대기(못 뛴 대기 포함)가 tap-fill 2팀에서 13.2분 → 16.4분으로 기본 순서 수준까지 늘어납니다.\n- 실행 로그상 이상은 없었습니다. stalled 0, 빈 코트 재조합은 평균 0~0.02회로 사실상 실행되지 않았습니다.\n\n회귀 테스트 추가: store 6개, runtime 1개, 시뮬레이터 합성 가드 1개입니다. 8개 모두 수정 전 코드에서는 실패하고 수정 후에는 통과하는 것을 확인했습니다. 문서는 TEAM_GENERATION_RULES(합류 대기 절, 함수표, 7절 includeWaitingDrafts, 8절 시그니처와 CTA 문구), TEAM_SELECTION_POLICY, 시뮬레이터 README를 고쳤습니다.\n\n주의할 부작용이 하나 있습니다. 처음에 지시대로 node_modules를 통째로 심볼릭 링크했더니 tsc -b가 원 저장소의 node_modules/.tmp/tsconfig.{app,node}.tsbuildinfo를 덮어썼고, vitest가 node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/results.json을 갱신했습니다. 둘 다 gitignore 대상 캐시입니다. tsbuildinfo는 현재 워킹트리를 깨끗이 검사했을 때 나오는 파일과 바이트 단위로 같아서 해는 없습니다. 발견 즉시 fixtree/node_modules를 항목별 링크(.vite와 .tmp 제외)로 바꿔 이후에는 원 저장소에 쓰지 않았습니다.","patchPath":"/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/scratchpad/fixtree.patch","filesChanged":["/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/scratchpad/fixtree/src/store/board/membershipSlice.ts — autoFillEmptyCourts의 fillWaitingTeams 호출과 빈 코트 선검사 제거, autoFillTeam: 대기팀은 채우지 않고 토스트만, 코트 그룹 1~3명이면 autoFillTarget 대체 경로(P2), 일반 팀이 합류 대기로 바뀌면 토스트(P3)","/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/scratchpad/fixtree/src/store/board/types.ts — fillWaitingTeams와 autoFillTeam 주석 갱신","/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/scratchpad/fixtree/src/lib/board/pixi/projection.ts — 대기팀 CTA를 '완료 후 채움'으로, ctaEnabled에 !waiting 추가","/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/scratchpad/fixtree/src/lib/board/pixi/projection.test.ts — 기대값 변경(라벨 '완료 후 채움', ctaEnabled false)","/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/scratchpad/fixtree/src/lib/board/pixi/runtime.test.ts — 대기팀 CTA 탭은 autoFillTeam을 부르지 않고 빈자리 탭은 onSlotClick을 부르는 테스트 추가","/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/scratchpad/fixtree/src/store/boardStore.test.ts — 회귀 테스트 6개 추가: (a) 코트 [e,f] + 대기 [g,h] + 자유 i,j에서 코트가 efij로 완성되고 대기팀은 gh 유지, (b) 1~3명 코트 그룹의 경기 중 선수 예약, 예약이 섞인 코트 그룹, (c) 대기팀 CTA가 채우지 않음과 토스트, (d) 빈 코트가 있을 때 새로 만든 대기팀을 채우지 않음, P3 토스트","/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/scratchpad/fixtree/e2e/waiting-teams.spec.ts — 대기 카드 CTA가 ['완료 후 채움', false]인지 검증","/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/scratchpad/fixtree/tools/team-simulator/queue.test.ts — tapFill 주석 갱신, 합성 명단 가드 테스트 추가(tapFill·queue-first 2~3팀에서 rematchTripleRate &lt; 30)","/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/scratchpad/fixtree/tools/team-simulator/README.md — tapFill 설명과 조작 순서 결과를 수정 후 수치로 갱신","/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/scratchpad/fixtree/docs/TEAM_GENERATION_RULES.md — 합류 대기 절(채움 시점, CTA, 코트 대체 경로, P3), 함수표에 planWaitingTeamFills·prefersWaitingDraft, 7절 includeWaitingDrafts, 8절 시그니처(targetSize, acceptCompletion)와 CTA 문구","/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/scratchpad/fixtree/docs/TEAM_SELECTION_POLICY.md — 합류 대기 문단(완료 때만 채움, 비활성 CTA, 1~3명 코트 그룹 예약)"],"tests":"단위(fixtree 전체, node vitest.mjs run --root fixtree): 63개 파일, 870개 전부 통과. 수정 전 기준은 863개이고, 추가한 7개(store 6, runtime 1)와 기대값을 바꾼 projection 테스트 1개는 수정 전 코드에서 8개 모두 실패하는 것을 확인했습니다.\ntsc -b: exit 0 (수정 전 기준도 exit 0).\n시뮬레이터 tsc -p tools/team-simulator/tsconfig.json: exit 0.\n시뮬레이터 스위트(--config tools/team-simulator/vitest.config.ts tools/team-simulator/): 3개 파일, 47개 통과, 1개 skip(recorded, 입력 환경변수 없음). 새 가드 테스트는 수정 전 코드에서 실패합니다.\nrecorded 실행(SIM_QUEUE_SEEDS=100, TRACE=1): 테스트 4개 통과, 195.7초.\neslint: 이번에 바꾼 src와 e2e 파일은 오류 0개. tools/team-simulator/queue.test.ts에는 원래 있던 오류 5개(vi.hoisted 기본값의 안 쓰는 _team·_courtId·_id·_resting 인자)가 남아 있고, 저장소 전체 eslint .는 원래부터 24 errors / 2 warnings라 손대지 않았습니다.\nPlaywright(chromium 설치됨, CI=1): 먼저 waiting-teams와 recommendations를 돌려 8/8 통과했고, 이어서 전체 e2e 135/135 통과(1.9분). 390px 스크린샷에서 대기 카드 버튼이 회색 '완료 후 채움'으로 보이는 것을 눈으로 확인했습니다.","harnessTable":"세션 324, 100시드 평균, 셀 표기는 '현재 워킹트리→fix'이고 값이 같으면 하나만 적었습니다.\n열: triple%=rematchTripleRate, same4%=immediateRematchRate, 만남=peers, 반복%=repeatRate, 편차=gameStd, 최장대기=maxWaitAll, 공백=courtIdleMinutes, 예약=reservations, 완료채움=completionFills, 재조합=courtRegroups.\n끝의 숫자는 수정 전후 경기 순서가 같은 회수(replay + 100시드 = 101회)입니다.\n\n| 시나리오 | depth | mode | triple% | same4% | 만남 | 반복% | 편차 | 최장대기 | 공백 | 예약 | 완료채움 | 재조합 | 동일 |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n| base | 1 | legacy | 1.2 | 0.2 | 18.5 | 6.0 | 0.65 | 19.8 | 0.1 | 0.1 | 0 | 0 | 101/101 |\n| base | 1 | waiting | 1.2 | 0.2 | 18.5 | 6.0 | 0.65 | 19.8 | 0.1 | 0.1 | 0 | 0 | 101/101 |\n| base | 2 | legacy | 86.6 | 25.6 | 9.4 | 13.4 | 0.71 | 15.0 | 0.4 | 1.3 | 0 | 0 | 101/101 |\n| base | 2 | waiting | 0.6 | 0.0 | 18.1 | 6.7 | 0.69 | 16.4 | 0.3 | 0.2 | 41.2 | 0 | 101/101 |\n| base | 3 | legacy | 61.6 | 30.5 | 11.6 | 9.7 | 0.96 | 15.4 | 1.6 | 44.9 | 0 | 0 | 101/101 |\n| base | 3 | waiting | 5.2 | 0.3 | 14.8 | 11.1 | 0.74 | 14.7 | 0.3 | 0.4 | 44.8 | 0.02 | 101/101 |\n| queue-first | 1 | legacy | 1.2 | 0.2 | 18.5 | 6.0 | 0.65 | 19.8 | 0.1 | 0.1 | 0 | 0 | 101/101 |\n| queue-first | 1 | waiting | 1.2 | 0.2 | 18.5 | 6.0 | 0.65 | 19.8 | 0.1 | 0.1 | 0 | 0 | 101/101 |\n| queue-first | 2 | legacy | 86.7 | 25.6 | 9.4 | 13.3 | 0.71 | 15.0 | 0.4 | 1.3 | 0 | 0 | 101/101 |\n| queue-first | 2 | waiting | 0.6 | 0.0 | 18.1 | 6.7 | 0.68 | 16.4 | 0.1 | 0.1 | 41.3 | 0 | 101/101 |\n| queue-first | 3 | legacy | 61.6 | 30.5 | 11.6 | 9.7 | 0.95 | 15.4 | 1.4 | 44.8 | 0 | 0 | 101/101 |\n| queue-first | 3 | waiting | 77.4→5.2 | 18.7→0.3 | 10.6→14.8 | 12.3→11.1 | 0.73→0.74 | 13.6→14.6 | 0.2 | 0.2→0.4 | 6.7→44.8 | 0→0.02 | 0/101 |\n| tap-fill | 1 | legacy | 1.2 | 0.2 | 18.5 | 6.0 | 0.65 | 19.8 | 0.1 | 0.1 | 0 | 0 | 101/101 |\n| tap-fill | 1 | waiting | 1.2 | 0.2 | 18.5 | 6.0 | 0.65 | 19.8 | 0.1 | 0.1 | 0 | 0 | 101/101 |\n| tap-fill | 2 | legacy | 86.6 | 25.6 | 9.4 | 13.4 | 0.71 | 15.0 | 0.4 | 1.3 | 0 | 0 | 101/101 |\n| tap-fill | 2 | waiting | 79.5→0.6 | 20.4→0.0 | 10.4→18.1 | 12.2→6.7 | 0.72→0.69 | 13.2→16.4 | 0.3 | 0.2 | 2.3→41.2 | 0 | 0/101 |\n| tap-fill | 3 | legacy | 61.6 | 30.5 | 11.6 | 9.7 | 0.96 | 15.4 | 1.6 | 44.9 | 0 | 0 | 101/101 |\n| tap-fill | 3 | waiting | 79.9→5.2 | 20.6→0.3 | 10.3→14.8 | 12.3→11.1 | 0.72→0.74 | 13.2→14.7 | 0.1→0.3 | 0.2→0.4 | 4.4→4
+... (truncated 50236 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/21ca0470-2752-4b3d-a283-e7f443532b1a/tasks/w5p88if3f.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/subagents/workflows/wf_8f93b57d-425/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/workflows/scripts/waiting-slot-fixes-wf_8f93b57d-425.js', resumeFromRunId: 'wf_8f93b57d-425'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>4</agent_count><agents_done>4</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>1092047</subagent_tokens><tool_uses>284</tool_uses><duration_ms>3768782</duration_ms></usage>
+</task-notification>
+
+**Answer**: # 두 가지 처리 방안
+
+①은 준비된 수정 패치를 몇 가지 보완해서 적용하기를 권합니다. ②는 검증을 끝냈고, 재조합 자체는 정상 동작합니다. 다만 인원이 빠듯한 모임에서는 기본값 때문에 합류 대기팀이 거의 생기지 않아서, 다음에 정해야 할 정책 문제가 하나 남았습니다.
+
+## ① 합류 대기팀이 일찍 채워지는 문제 → 패치 적용 권장
+
+**패치 내용** (스크래치 복사본에 만들었고, 현재 작업 트리에 충돌 없이 적용됩니다. 저장소는 아직 건드리지 않았습니다)
+- **원인 제거:** 코트 버튼의 `fillWaitingTeams()` 호출을 지웠습니다. 이제 합류 대기팀은 경기 완료 때만 채워집니다. 코트가 비었는데 사람이 모자라면 기존 재조합이 계속 막아 줍니다.
+- **"지금 채우기" 제거:** 버튼을 회색 "완료 후 채움" 표시로 바꿨습니다. 빈칸을 누르면 추천 창은 그대로 열립니다.
+- **회귀 2번 수정:** 코트 그룹에 1~3명이 있고 코트 버튼으로 못 채우면, HEAD 방식(경기 중 선수 예약)으로 넘어갑니다.
+
+**검증 결과**
+- **오늘 오전 재생:**
+  - 운영 순서만 바꿔도 효과가 사라지던 경우가 모두 해결됐습니다. 3팀에서 새 팀을 먼저 만들면 3명 재회가 77.4%에서 5.2%로, 2팀에서 "지금 채우기"를 누르면 79.5%에서 0.6%로 내려갑니다.
+  - 1팀 준비와 기본 순서는 101/101회 수정 전과 같습니다.
+- **테스트:** 단위 테스트 870개와 e2e 135개가 모두 통과하고 `tsc`도 통과합니다. 새로 넣은 회귀 테스트 8개는 수정 전 코드에서는 모두 실패합니다.
+- **빠듯한 세션 4개:** 부분 편성된 코트가 멈추는 경우가 현재 코드에서는 모임당 0.9~5.5회였는데 패치 후 0회입니다. 1~3명 코트 그룹 처리는 HEAD와 51/51회 같습니다.
+- **대가:** 채우는 시점이 늦어진 만큼 최장 대기가 13.2분에서 16.4분으로 늘어납니다. 기본 운영 순서와 같은 수준입니다.
+
+**적용 전에 넣을 보완 3개** (패치 검토에서 나왔습니다)
+1. **[중간] 숨겨진 선수가 코트 그룹에 붙습니다.** 새로 넣은 폴백 경로(`autoFillTarget`)가 다른 코트의 "선수 변경" 명단에 있는 선수를 거르지 않습니다. 그래서 화면에 보이지 않는 선수가 코트 그룹에 들어갑니다. 코트 버튼과 같은 제외 규칙을 넣으면 됩니다.
+2. **[중간] 카드에서 팀을 채울 방법이 없어집니다.** 일반 예비팀의 "자동매칭"은 아무도 추가하지 않고 합류 대기로만 바뀌는데, "지금 채우기"가 없어지면 카드에서 다시 채울 수 없습니다. 추천 창의 "자동편성"도 체크가 켜져 있으면 조용히 아무것도 하지 않습니다.
+   - 권장: 기존 팀의 "자동매칭"은 HEAD처럼 4명을 채우고, 합류 대기 기본값은 새 팀을 만들 때만 적용합니다. 측정해 보니 재회율 차이는 0.2%p 이내, 최장 대기는 0.4분 늘었습니다.
+   - 추천 창에서는 이미 2명 이상인 대기팀이면 "자동편성"을 비활성화하고, 지금 채우려면 체크를 끄라는 안내를 붙입니다.
+3. **[낮음] 경기 완료 때도 코트가 2/4에 멈출 수 있습니다.** 완료 순간에 대기팀이 먼저 사람을 가져가면 부분 편성된 코트 그룹이 채워지지 않습니다. 현재 코드도 같습니다. 완료 처리 때 그런 코트 그룹부터 채우도록 바꾸면 됩니다.
+
+## ② 빠듯한 모임에서 빈 코트 재조합 → 동작은 정상, 기본값이 거의 안 켜짐
+
+여유 인원이 1~4명이었던 세션 4개(175·209·156·192)를 HEAD·현재 코드·패치 세 가지로 돌렸습니다.
+
+- **재조합은 정상입니다.** 쉬는 선수와 대기팀 인원으로 4명을 만들 수 있는데 코트가 빈 경우가 패치 코드에서 0건이었습니다.
+- **하지만 기본값으로는 합류 대기팀이 거의 생기지 않습니다.** 빠듯한 모임에서는 예비팀에 항상 경기 중 선수 예약이 끼어 있어서 바로 시작할 수 있는 팀이 없습니다. 그러면 `prefersWaitingDraft` 조건이 성립하지 않습니다. 그래서 세션 175·209·156은 모든 준비 팀 수에서 HEAD와 결과가 같았습니다.
+- **코트가 노는 원인은 예약 낀 예비팀입니다.** 코트가 노는 시간(모임당 27~84분)은 전부 예약이 낀 일반 예비팀에 선수가 묶여서 생겼고, 재조합은 이 팀을 건드리지 않습니다. HEAD도 같습니다.
+- **운영진이 매번 체크박스를 켜면 달라집니다.**
+  - 2~3팀 준비에서 코트 빈 시간이 13~30분 줄었습니다. 시드 50개 중 39~49개에서 HEAD보다 나았습니다.
+  - 3명 재회도 크게 줄었습니다. 세션 156은 58.8%에서 35.5%로, 세션 209는 47.2%에서 25.9%로 내려갔습니다.
+  - 대신 세션 175에서는 최장 대기가 16.1분에서 22.5분으로 늘었습니다.
+
+그래서 ②에서 정할 것은 이것입니다. **대기 선수만으로 4명이 안 될 때 경기 중 선수를 예약하는 대신 합류 대기 자리를 기본으로 쓸지**입니다. 효과는 크지만 현재 편성 정책("대기자만으로 안 되면 경기 중 선수를 최소로 예약")을 바꾸는 일이라, ①을 반영한 뒤 별도 작업으로 하기를 권합니다.
+
+**이번 검증의 한계**
+- 교대 시간 0, 운영자가 즉시 반응한다고 가정했습니다.
+- 세션 175는 실제로는 코트를 3면만 썼는데 4면으로 돌렸으므로, 현실보다 빠듯한 조건입니다.
+- 세션 192의 멈춤 1건은 HEAD부터 있던 교착입니다. 귀가로 2명씩 남은 일반 팀 둘을 합치지 못해 생깁니다.
+
+**부작용 1건:** 검증 에이전트 실행이 저장소의 `node_modules` 캐시 파일 몇 개를 갱신했습니다. git에서 제외된 캐시라 `git status`에는 변화가 없습니다.
+
+**정해 주실 것:**
+- ①: 보완 3개를 넣어 작업 트리에 적용할까요? 보완 2는 권장안대로 기존 팀의 "자동매칭"을 HEAD처럼 4명 채우기로 할지도 함께 정해 주세요.
+- ②: 예약 대신 합류 대기를 기본으로 쓰는 정책 변경을 다음 작업으로 진행할까요?
+
+---
+
+## #295
+
+**Prompt**: go on
+
+**Answer**: Final review is running (correctness + UX/docs, two independent reviewers). I'll fold in anything real, then hand the patch over.
+
+Where things stand:
+- **Patch:** built and verified in the scratch copy. Unit 877/877, e2e 135/135, `tsc` and eslint clean. It applies cleanly to your working tree.
+- **Not yet in the repo:** applying it there was blocked by the permission classifier, so I haven't touched the repo. Your current uncommitted changes are backed up in the scratchpad.
+- **Two decisions I made from the data:**
+  - Supplement 2 went with the recommended option: an existing team's "자동매칭" fills four players, as in HEAD.
+  - For ②, I dropped my own "fall back to reservations" idea because it made session 324 worse.
+
+---
+
+## #296
+
+**Prompt**: <task-notification>
+<task-id>w13fmj28r</task-id>
+<tool-use-id>toolu_018nQygdWLRZscfBNBd4QdTP</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/tasks/w13fmj28r.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Independent review of the final waiting-slot patch (correctness vs HEAD/current, and UX/docs consistency)" completed</summary>
+<result>{"correctness":{"verdict":"한 곳만 고치면 되는 문제가 아니라 네 가지 문제를 고쳐야 합니다. 중간 2건(그중 하나는 작업트리 대비 회귀), 낮음~중간 1건, 낮음 1건입니다. 네 건 모두 실패하는 재현 테스트로 확인했습니다. 수정안 하나로 네 테스트가 모두 통과했고, 기존 단위 테스트 877건, 시뮬레이터 queue.test, tsc도 깨지지 않았습니다.\n\n**문제없음으로 확인한 부분**\n- 경기 완료 전에 합류 대기팀을 채우는 경로는 남아 있지 않습니다. fillWaitingTeams를 부르는 곳은 completeMatch 한 곳이고, autoFillEmptyCourts의 flexible 경로는 코트를 재조합할 뿐 대기팀을 채우지 않습니다.\n- completeMatch 순서 변경(세션 검사 → 예약 해소 → 편집 권한이 있을 때만 채움)과 HEAD의 코트 그룹 예약 대체 경로는 제대로 동작합니다.\n- 작은 보드 545개 구성을 전수 조사했습니다(대기자 남·여&lt;4·여4+ 각 0~3명 × 대상 9종). needsReservation과 autoFillTarget 대기 분기가 어긋나는 경우는 없었습니다. 경기 중 선수를 시드로 쓴 경우만 no-op이 났는데, 이는 UI(SessionBoard.onMagnetClick)가 막는 도달 불가 입력입니다.\n\n**재현·수정 자료**\n- 재현 테스트: `/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/scratchpad/review/corr/tree/src/store/zz_review.test.ts`, `zz_b2.test.ts`, `zz_enum.test.ts`\n  - 실행: 그 tree 디렉터리에서 `node node_modules/vitest/vitest.mjs run src/store/zz_review.test.ts src/store/zz_b2.test.ts`\n- 작업트리 비교본: `.../review/corr/base` (패치를 역적용한 것)\n- 검증한 수정안: `.../review/corr/proposed-fix.diff` (적용본은 `.../review/corr/fixed`)","findings":[{"severity":"medium","title":"(5) 코트 그룹 몫을 따로 먼저 고정해서, 둘 다 채울 수 있는데 합류 대기팀을 못 채움 (작업트리 대비 회귀)","detail":"membershipSlice.ts:152-153은 코트 그룹 몫(kept)을 planWaitingTeamFills(partialCourts, pool)로 먼저 뽑아 두고, 남은 풀로 대기팀 계획을 따로 세웁니다. 그래서 코트 그룹이 품질 점수(로테이션·판수)로 고른 '특정 사람'이 대기팀에 꼭 필요한 성별 범주를 가져가도 막을 방법이 없습니다.\n\n재현(zz_review.test.ts A):\n- 코트1 경기 중 a(남) b(남) c(여5) d. 완료 후 d는 휴식\n- 빈 코트2 그룹 [e,f,g] 모두 남자, lastGameType은 혼복\n- 합류 대기팀 [x,y] (여3, 여3)\n\n결과:\n- fixtree: 완료 뒤 대기팀은 [x,y] 2명 그대로이고, 코트 버튼을 누르면 court-2 = e,f,g,a가 됩니다. 남은 b·c로는 [x,y]를 완성할 수 없습니다(남1·여3은 허용되지 않음).\n- 작업트리(base): 대기팀 = x,y,a,b, court-2 = e,f,g,c로 두 팀이 모두 완성됩니다.\n\n즉 문서 15행이 말하는 '그 그룹을 완성할 사람을 먼저 남겨 둔다'가 사람 단위로 고정되면서 공동 배분이 가능한 경우에도 대기팀을 놓칩니다.","fix":"두 번 계획하지 말고 한 번에 계획하되, 코트 그룹에 우선 가중치를 줍니다.\n- planWaitingTeamFills(teams, pool, ctx, priorityCount = 0)로 바꿉니다. 앞의 priorityCount개 팀은 weight = teams.length + 1, 나머지는 1입니다.\n- capacity는 `weight[index] + capacity(...)`로, acceptCompletion은 `=== possible - weight[index]`로 바꿉니다.\n- fillWaitingTeams에서는 다음처럼 호출하고 코트 그룹 id는 계획에서 빼서 자유 상태로 둡니다.\n  `const plan = new Map([...planWaitingTeamFills([...partialCourts, ...teams], pool, data.ctx, partialCourts.length)].filter(([id]) =&gt; !courtIds.has(id)))`\n\n이렇게 하면 코트 그룹이 완성되는 수는 절대 줄지 않습니다. proposed-fix.diff에 적용해 확인했습니다: 테스트 A 통과, 기존 boardStore·fillWaitingTeams 테스트와 queue.test 통과, tsc 통과."},{"severity":"medium","title":"이미 있는 일반 예비팀도 추천 창 기본값이 '대기'가 됨: 자동편성이 비활성되고, 일반 팀이 합류 대기팀으로 바뀜 (카드 버튼·문서와 모순)","detail":"새 needsReservation이 teamId 대상에도 적용되어, waitForCompletion이 없는 일반 팀에서도 prefersWaitingDraft가 true를 반환합니다(waitingDrafts.ts:10-24). 코드 주석(membershipSlice.ts:457)과 문서(TEAM_GENERATION_RULES.md:12)는 '대기 기본값은 새 팀에만 적용한다'고 되어 있고, 카드 자동매칭은 {waitForCompletion:false}로 지금 4명을 채웁니다.\n\n그런데 추천 창(RecommendTeammateDialog.tsx:60-64, 254, 262)에서는 이렇게 됩니다.\n- 드래그로 묶은 2명 일반 팀의 빈자리를 누르면 체크박스가 켜진 채로 열리고, nothingToWaitFor 때문에 자동편성이 비활성, 확인도 비활성입니다.\n- 1명을 골라 자동편성을 누르면 일반 팀이 waitForCompletion=true로 바뀌고 3명에서 멈춥니다. 이후 카드 버튼은 '완료 후 채움' 비활성이 됩니다.\n\n재현(zz_review.test.ts C, C2. 코트1 경기 중, 자유 선수 e,f만 있는 일반 팀 [e,f]):\n- fixtree: prefersWaitingDraft({teamId}) = true. C2는 [e,f,g], wait=true, 예약 0\n- 작업트리: false. C2는 4명(예약 1)\n- HEAD: 자동편성은 예약으로 4명 채움\n\n같은 팀인데 카드 버튼과 추천 창의 기본 동작이 반대입니다.","fix":"waitingDrafts.ts의 teamId 분기에서 팀의 현재 상태를 그대로 따르게 합니다.\n`if (target.teamId) { const team = inputs.drafts.get(target.teamId); return !!team &amp;&amp; team.courtId == null &amp;&amp; team.waitForCompletion === true; }`\n\n최소 수정으로는 needsReservation과 ready 분기를 새 팀·시드에만 적용하면 됩니다. 이렇게 하면 추천 창·스토어·카드 버튼 규칙이 하나로 맞고, nothingToWaitFor도 실제 합류 대기팀에만 걸립니다. 적용해 확인했습니다: C·C2 통과, 단위 테스트 전체 통과(시뮬레이터는 autoFillTeam과 newTeam만 쓰므로 영향 없음)."},{"severity":"low","title":"(3) 누락: 빈 코트 버튼의 '준비된 다음 팀 옮기기'가 다른 코트 선수 변경 명단의 선수가 든 팀도 옮김 (문서 19행과 모순)","detail":"autoFillEmptyCourts의 0명 코트 경로(membershipSlice.ts:92-102) queued 필터에는 editingRosterIds 검사가 없습니다. 반면 projection은 그런 팀을 busy('선수 변경 중', CTA 비활성)로 표시하고, 문서 19행은 '모든 자동 채움(코트 버튼 …)은 선수 변경 명단 선수를 쓰지 않는다'고 적고 있습니다.\n\n재현(zz_b2.test.ts. 코트1·2 경기 중, 코트3 비어 있음, 준비된 팀 [i,j,k,l]이 먼저 생성, 그 뒤 [m,n,o,p], 코트2 명단 변경에 i를 스테이징):\n- autoFillTeam('court-3')을 누르면 court-3 = i,j,k,l이 됩니다. 선수 변경 중인 팀이 준비된 [m,n,o,p]를 제칩니다.\n- applyMatchEdit(2)로 저장하면 court-3 = j,k,l 3명만 남아 코트가 막히고, [m,n,o,p]는 대기열에 그대로 남습니다.\n\n수정본에서는 court-3 = m,n,o,p입니다. HEAD부터 있던 동작이지만, 이번 패치가 (3)을 주장하고 문서에도 적었으므로 보고합니다.","fix":"queued 필터 안에서 `const busy = editingRosterIds(state)`를 두고 멤버 조건에 `!busy.has(member.playerId)`를 추가합니다(proposed-fix.diff에 포함). 이렇게 하면 문서 19행 설명이 사실이 됩니다."},{"severity":"low","title":"needsReservation 풀이 선수 변경 명단 선수를 포함해서 autoFillTarget과 어긋남: 기본값이 경기 중 선수를 지정 예약","detail":"두 함수가 쓰는 풀이 다릅니다.\n- prefersWaitingDraft → needsReservation(waitingDrafts.ts:29): buildRecommendData 풀을 그대로 씁니다.\n- autoFillTarget(membershipSlice.ts:490): 풀에서 matchEdits 명단을 뺍니다.\n\n그래서 '명단 변경 선수를 넣어야만 자유 대기자로 4명이 되는' 경우, needsReservation은 false(완성 가능)로 판단합니다. 그러면 예약 경로로 넘어가 경기 중인 특정 선수를 예약하는데, 이번 정책(6)이 막으려던 바로 그 동작입니다.\n\n재현(zz_review.test.ts D. 자유 선수 e,f,g,k 중 k를 코트2 명단 변경에 스테이징, 새 팀 자동편성):\n- fixtree: 팀 [e,f,g] + 경기 중 a 예약\n- 기대: 예약 없이 2명 합류 대기팀\n- 작업트리: 숨겨진 k를 그대로 써서 4명(다른 버그였는데, 패치가 절반만 고친 셈)\n\n명단 변경은 잠깐 걸리는 상태라 영향은 작습니다.","fix":"prefersWaitingDraft(target, inputs, extraIds, unavailable = new Set())로 바꾸고, needsReservation에서 `pool.filter(p =&gt; !unavailable.has(p.id))`로 거릅니다.\n- 스토어: autoFillTarget에서 `editing`을 넘깁니다(proposed-fix.diff에 포함, 테스트 D 통과).\n- 추천 창: useBoardStore(s =&gt; s.matchEdits)로 같은 집합을 만들어 넘겨야 표시되는 기본값과 스토어 판단이 같아집니다."}]},"uxDocs":{"verdict":"의도한 7가지 동작의 뼈대는 코드와 맞습니다. 코트 버튼은 fillWaitingTeams를 부르지 않고, 대기팀 CTA는 비활성 `완료 후 채움`이며, 1~3명 코트 그룹은 예약으로 대체하고, 완료 시 예약 해소와 코트 그룹 몫 보존도 맞게 동작합니다. 관련 단위 테스트 187/187, 동기 queue 테스트도 통과했습니다.\n\n시뮬레이터 수치는 최종 트리로 다시 돌려 확인했습니다.\n- 빠듯한 세션 base 순서: fix2 결과와 50/50 trace가 같습니다.\n- 커밋된 queue.test.ts: 세션 156에서 스크래치 하네스와 수치가 같습니다.\n- legacy: HEAD와 1212/1212 같습니다.\n- 따라서 175·209·156·192의 핵심 수치(5~40분, 35~50/50, 58.8→14.9, 47.2→18.6)는 유효합니다.\n\nUX와 문서에는 고칠 점이 있습니다.\n- (1) 추천 창에서 '기존 일반 예비팀'의 기본값이 새 needsReservation 때문에 '대기'로 뒤집힙니다. working tree 대비 회귀이고, \"대기 기본값은 새 팀에만\"이라는 문서와 모순됩니다.\n- (2) 새 팀 기본값이 대기인데 대기팀을 만들 수 없으면, 자동편성 버튼이 활성인 채로 누르는 순간 창이 닫히고 에러 토스트만 뜹니다.\n- (3) needsReservation과 추천 목록이 '선수 변경' 명단을 모릅니다.\n- (4) 세션 324 수치 일부(README 표, 1팀 동일, 5.2%·100/101, 0.3%)가 최종 코드가 아니라 수정 전 결과입니다.\n- 이 밖에 빠듯한 세션 서술 과장, 빈 코트 무음 no-op 문서화, 모순 토스트, '합류 대기' 용어 충돌이 작은 이슈로 남아 있습니다.\n\n재현 자료(모두 scratchpad/review/ 아래):\n- 테스트: tree/src/store/review-ux.test.ts (R1~R6)\n- 재실행 결과: final-{156,175,192,209}.json, final-324-trace.json, committed-156.json\n- 수정안: waitingDrafts.proposed.ts","findings":[{"severity":"medium","title":"기존 일반 예비팀의 추천 창이 기본으로 '대기'를 켜서 자동편성·확인이 막히거나 팀이 합류 대기팀으로 바뀜 (working tree 대비 회귀)","detail":"원인: src/lib/board/waitingDrafts.ts:10-14. teamId 대상이 대기팀이 아니면 false를 돌려주지 않고 아래 ready 판정과 새 needsReservation(:23-24)으로 내려갑니다.\n\n영향 범위:\n- 추천 창(RecommendTeammateDialog.tsx:60-64)은 이 값을 기본값으로 씁니다. 빠듯한 세션에서 일반 2인 팀의 빈자리를 누르면 '경기 완료 후 빈자리 채우기'가 체크된 채 열립니다.\n- 그러면 nothingToWaitFor로 자동편성(:254)이 비활성이 되고, 확인(:262)도 비활성입니다.\n- 한 명을 골라 자동편성을 누르면 membershipSlice.ts:492 → :499 경로로 일반 팀이 waitForCompletion:true로 바뀝니다. 예약은 붙지 않습니다.\n- 같은 팀의 카드 `자동매칭`(:458, 명시적으로 false)은 예약까지 써서 지금 4명을 채웁니다. 입구마다 결과가 다릅니다.\n\n문서와의 모순:\n- TEAM_GENERATION_RULES.md:12 \"대기 기본값은 새 팀에만 적용한다\"\n- TEAM_SELECTION_POLICY.md:20 \"이미 있는 팀…기존대로 예약\"\n\n재현(review/tree/src/store/review-ux.test.ts):\n- R1: g~l 휴식, abcd 경기 중, 일반 팀 [e,f]. prefersWaitingDraft({teamId})가 fixtree에서 true, working tree 버전(git show HEAD:…)에서 false.\n- R2: [e,f] + 선택 g → 자동편성 → {anchorMemberIds:[e,f,g], waitForCompletion:true}, 예약 0.\n- R2b: 같은 상황의 카드 버튼 → 4명 + 예약.","fix":"waitingDrafts.ts의 teamId 분기를 `if (!team || team.courtId != null) return false; return team.waitForCompletion === true;`로 바꿉니다. 기존 팀은 자기 상태만 반영하고, 대기 기본값은 newTeam·seed에만 적용되어 문서와 맞습니다.\n\n수정안은 review/waitingDrafts.proposed.ts에 있습니다. 적용 상
+... (truncated 7389 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/tasks/w13fmj28r.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/subagents/workflows/wf_0b45c568-fdf/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/workflows/scripts/review-waiting-final-wf_0b45c568-fdf.js', resumeFromRunId: 'wf_0b45c568-fdf'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>2</agent_count><agents_done>2</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>546463</subagent_tokens><tool_uses>145</tool_uses><duration_ms>1112083</duration_ms></usage>
+</task-notification>
+
+**Answer**: # ①·② 반영 완료, 저장소 적용만 남음
+
+①(보완 3개 포함)과 ②(새 팀은 예약 대신 합류 대기)를 모두 구현하고 검증까지 끝낸 패치가 준비됐습니다. 다만 작업 트리에 적용하는 단계가 권한 분류기에 막혔습니다. 커밋 안 된 변경 위에 덮어쓰는 작업이라 되돌리기 어렵다고 판단한 것이라, 우회하지 않았고 저장소 코드는 아직 그대로입니다. 적용은 직접 해 주셔야 합니다.
+
+[코드 블록 생략]
+
+- 적용 가능한지는 `git apply --check`로 확인했습니다.
+- 현재 커밋 안 된 변경은 적용 전에 스크래치 폴더 `backup/`에 백업해 두었습니다(추적 파일 diff와 미추적 파일 묶음).
+- 패치 파일은 git에서 제외되는 `reports/` 폴더에 있습니다.
+
+## 바뀌는 동작
+- **합류 대기팀은 경기 완료 때만 채웁니다.** "지금 채우기" 버튼을 없애고 비활성 "완료 후 채움" 표시로 바꿨습니다. 코트 버튼도 더 이상 대기팀을 먼저 채우지 않습니다.
+- **1~3명이 있는 코트 그룹:** 대기자로 못 채우면 HEAD처럼 경기 중 선수를 예약해 채웁니다.
+- **이미 있는 일반 예비팀:** "자동매칭"도 추천 창도 지금 4명을 채웁니다. 합류 대기 기본값은 새 팀에만 적용합니다.
+- **②:** 새 팀을 대기자만으로 4명 만들 수 없고 대기자가 2명 이상이면, 특정 경기 중 선수를 예약하지 않고 합류 대기 자리로 남깁니다. 대기자가 1명뿐이면 팀을 만들지 않고 안내하며, 추천 창은 닫히지 않아서 대기를 끄면 예약으로 만들 수 있습니다.
+- **경기 완료 때 배분:** 빈 코트에 1~3명만 있는 그룹과 합류 대기팀이 쓸 사람을 한 번에 나눕니다. 코트 그룹 완성이 우선입니다.
+- **"선수 변경" 명단의 선수:** 모든 자동 채움과 추천 목록에서 뺍니다.
+- **안내 정리:** 빈 코트를 못 채우면 안내를 띄웁니다. 팀이 해체됐는데 "N명만 채웠어요"가 뜨던 모순 알림도 고쳤습니다.
+
+## 검증
+- **테스트:** 단위 883/883, e2e 135/135, 시뮬레이터 47개(1개는 실데이터가 필요해 건너뜀)가 통과했고, `tsc`와 eslint도 깨끗합니다.
+- **새 회귀 테스트 16개:** 모두 이전 코드에서는 실패하는 것을 확인했습니다.
+- **독립 리뷰:** 리뷰 두 번에서 나온 문제를 모두 재현한 뒤 고쳤습니다. 제 보완이 새로 만든 회귀 2건(기존 일반 팀이 대기로 바뀜, 완료 때 두 번 나눠 계획해서 대기팀을 놓침)도 여기에 포함됩니다.
+- **오늘 오전(세션 324):** 1~2팀 준비는 거의 그대로입니다. 3팀 준비에서 직전 3명 재회는 5.5%, 새 팀을 먼저 만들든 버튼을 바로 누르든 5.3~5.5%로 비슷합니다. 수정 전에는 순서에 따라 77~80%까지 올라갔습니다.
+- **빠듯한 세션 4개, 24개 조건, HEAD 대비:**
+  - 코트 빈 시간이 모든 조건에서 5~40분 줄었습니다(시드 35~50/50에서 개선).
+  - 3명 재회 경기 비율도 모든 조건에서 줄었습니다. 세션 156의 2팀 준비는 58.8%에서 14.9%입니다.
+  - 대가도 있습니다. 판수 표준편차는 세션 175·192에서 0.10~0.18 늘었고, 최장 대기는 세션 175에서 1.5~5.4분 늘었습니다.
+
+## 제가 내린 판단 두 가지
+- **대기자가 1명뿐일 때 예약 팀으로 대신 만드는 동작은 넣지 않았습니다.** 기본 순서에서는 결과가 같았습니다. 새 팀을 먼저 만드는 순서의 3팀 준비에서는 효과가 엇갈렸습니다. 빠듯한 세션에서는 코트 빈 시간이 3~5분 줄지만, 세션 324에서는 같은 4명 연속이 0.5%에서 1.6%로 나빠집니다. 차이가 작고 엇갈려서 "예약 대신 기다린다"는 원칙을 따랐습니다. 이 트레이드오프는 문서에 적어 두었습니다.
+- **"합류 대기" 용어 충돌은 그대로 뒀습니다.** 원래 코트 라벨 "N번 코트 · 합류 대기"는 예약한 선수가 아직 경기 중이라는 뜻인데, 이번 기능은 같은 말을 이름 없는 빈자리에 씁니다. 바꾸려면 라벨, e2e, 문서를 함께 고쳐야 해서 따로 결정받는 게 맞다고 봤습니다.
+
+적용하신 뒤 `/commit`으로 정리하시면 됩니다. 용어를 바꿀지 알려 주시면 이어서 하겠습니다.
+
+---
+
+## #297
+
+**Prompt**: 니가 다 해줘
+
+**Answer**: _(응답 대기 중…)_
+
+---

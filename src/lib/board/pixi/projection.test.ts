@@ -42,6 +42,32 @@ function card(snapshot: BoardSnapshot, key: string): CardView {
 }
 
 describe("Pixi board projection", () => {
+	it("distinguishes completion-waiting places from ordinary empties and dragged members", () => {
+		const { bs, ss } = fixture();
+		team(bs, "ordinary", ["c", "d"]);
+		team(bs, "waiting", ["a", "b"], { waitForCompletion: true });
+		const project = createBoardProjection();
+		const before = project(bs, ss);
+		expect(card(before, "team:ordinary").waitingSlots).toBeUndefined();
+		expect(card(before, "team:waiting")).toMatchObject({ waitingSlots: [2, 3], appearance: { ctaLabel: "완료 후 채움", ctaEnabled: false } });
+		expect(card(before, "team:waiting").appearance.label).toContain("합류 대기 2/4");
+		bs.dragInfo = { playerId: "a", detachable: true, restable: true };
+		const dragging = card(project(bs, ss), "team:waiting");
+		expect(dragging.emptySlots).toEqual([0, 2, 3]);
+		expect(dragging.waitingSlots).toEqual([2, 3]);
+		bs.drafts = new Map(bs.drafts);
+		team(bs, "waiting", ["a", "b", "e", "f"]);
+		expect(card(project(bs, ss), "team:waiting").waitingSlots).toBeUndefined();
+	});
+	it("labels a full group waiting for a reserved player the same on a court and in the queue, apart from waiting places", () => {
+		const { bs, ss } = fixture();
+		ss.courts = [court(1, ["e", "f", "g", "h"]), { id: 2, match: null }];
+		team(bs, "court", ["a", "b", "c"], { courtId: 2 });
+		bs.reservations.set("rc", { id: "rc", playerId: "e", teamId: "court", createdAt: 1 });
+		const label = card(createBoardProjection()(bs, ss), "team:court").appearance.label;
+		expect(label).toBe("2번 코트 · 예약 대기");
+		expect(label).not.toContain("합류 대기");
+	});
 	it("keeps the same court card key and anchor through empty, ready, playing and empty again", () => {
 		const { bs, ss } = fixture();
 		const project = createBoardProjection();
