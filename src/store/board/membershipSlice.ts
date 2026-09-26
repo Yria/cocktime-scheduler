@@ -34,6 +34,7 @@ import { nextGroupAnchor } from "../../lib/board/groupGrid";
 import { prefersWaitingDraft } from "../../lib/board/waitingDrafts";
 import { planWaitingTeamFills } from "../../lib/teamSelection/fillWaitingTeams";
 import { editingRosterIds } from "../../lib/board/matchRosterEdit";
+import { matchAvoidGroups } from "../matchAvoidStore";
 
 /** 멤버십 슬라이스 — 자석/예비팀/예약(ghost) 등 공유 멤버십의 편집 액션. */
 export type MembershipSlice = Pick<
@@ -108,13 +109,13 @@ export const createMembershipSlice: StateCreator<
 					continue;
 				}
 			}
-			const data = buildRecommendData({ teamId: team.id }, [], { ...get(), ...ss }, { excludePlaying: true, excludeReserved: true });
+			const data = buildRecommendData({ teamId: team.id }, [], { ...get(), ...ss, avoidGroups: matchAvoidGroups() }, { excludePlaying: true, excludeReserved: true });
 			const editing = editingRosterIds(get().matchEdits);
 			if (!data || data.confirmed.some(player => data.playingIds.has(player.id) || player.status === "resting"
 				|| editing.has(player.id) || (ss.cockCheckEnabled && !player.cockChecked))) continue;
 			let picks = autoFillTeammates(data.confirmed, data.pool.filter(p => !editing.has(p.id)), data.ctx, 4 - data.confirmed.length);
 			if (picks.length + data.confirmed.length < 4) {
-				const flexible = buildRecommendData({ teamId: team.id }, [], { ...get(), ...ss },
+				const flexible = buildRecommendData({ teamId: team.id }, [], { ...get(), ...ss, avoidGroups: matchAvoidGroups() },
 					{ excludePlaying: true, excludeReserved: true, includeWaitingDrafts: true });
 				if (flexible) {
 					const pool = flexible.pool.filter(p => !editing.has(p.id) && !get().assigningTeamIds.has(get().magnets.get(p.id)?.teamId ?? ""));
@@ -138,7 +139,7 @@ export const createMembershipSlice: StateCreator<
 			.filter(team => team.members.every(p => p && !editing.has(p.id)))
 			.map(team => ({ id: team.id, members: team.members.filter((p): p is NonNullable<typeof p> => !!p) }));
 		if (!teams.length) return;
-		const data = buildRecommendData({ newTeam: true }, [], { ...state, ...ss }, { excludePlaying: true, excludeReserved: true });
+		const data = buildRecommendData({ newTeam: true }, [], { ...state, ...ss, avoidGroups: matchAvoidGroups() }, { excludePlaying: true, excludeReserved: true });
 		if (!data) return;
 		const pool = data.pool.filter(p => !editing.has(p.id));
 		// 빈 코트에 1~3명만 올라간 그룹이 완성할 사람을 먼저 남긴다. 그 그룹은 코트 버튼으로 채운다.
@@ -478,6 +479,7 @@ export const createMembershipSlice: StateCreator<
 				groupHistory: ss.groupHistory,
 				lastGameType: ss.lastGameType,
 				cockCheckEnabled: ss.cockCheckEnabled,
+				avoidGroups: matchAvoidGroups(),
 			},
 			{ excludeReserved: true }, // 다른 팀과 이중 예약 방지
 		);
@@ -497,7 +499,7 @@ export const createMembershipSlice: StateCreator<
 			return count() > countBefore || flag() !== flagBefore;
 		};
 		const explicit = options.waitForCompletion;
-		const waiting = (explicit ?? prefersWaitingDraft(target, { ...get(), ...ss }, extraIds, editing))
+		const waiting = (explicit ?? prefersWaitingDraft(target, { ...get(), ...ss, avoidGroups: matchAvoidGroups() }, extraIds, editing))
 			&& (target.teamId == null || drafts.get(target.teamId)?.courtId == null) && data.confirmed.length < 4;
 		if (waiting) {
 			const valid = canCompleteComposition(data.confirmed) && !data.confirmed.some(p => p.status === "resting" || (ss.cockCheckEnabled && !p.cockChecked));

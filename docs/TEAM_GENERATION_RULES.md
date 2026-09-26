@@ -22,6 +22,21 @@
 
 관련 코드: `src/lib/teamSelection/fillWaitingTeams.ts`, `src/lib/board/waitingDrafts.ts`, `src/store/board/membershipSlice.ts`, `src/store/board/matchSlice.ts`.
 
+## 같이 매칭하지 않기 (2026-09-26)
+
+지정된 **한 계정만** 쓰는 숨은 설정이다. 그 계정이 보드 상단의 코트 현황(가운데 코트 점)을 0.8초 길게 누르면 연다(주 버튼·한 손가락만, 10px 넘게 움직이면 취소). 다른 계정(운영진 포함)에는 진입점도, 핸들러도, 화면 차이도 없다. 기능이 있다는 사실 자체는 공개 저장소와 앱 번들에서 알 수 있다.
+
+- **저장:** `match_avoid_groups` 테이블. 행마다 `members.id` 2~4명이다(DB check: 개수·중복·null). 같은 사람 구성은 순서와 관계없이 한 번만 저장된다(unique `match_avoid_key`). 읽기·쓰기는 `match_avoid_owner`에 지정된 활성 계정만 가능하다(`is_match_avoid_owner()`). 주인 지정은 저장소 밖에서 DB에 직접 넣는다. members 행이 있는 선수는 RSVP 게스트를 포함해 고를 수 있고, 세션 설정에서 이름만 넣은 선수는 고를 수 없다.
+- **의미:** 묶음 안의 **모든 두 사람**은 **자동편성**에서 같은 경기(4명)에 넣지 않는다. 3~4명 묶음이면 그중 어느 둘도 함께 뽑지 않는다.
+- **적용 범위:** 누가 보드를 편집하든 적용한다. 자동 선발은 보드 편집 기기에서 돌므로, 활성 운영진 기기는 `board_selection_rules(session_id)`로 **이번 회차에 2명 이상 있는 묶음의 회원 id만** 받는다. 이름·만든 사람·전체 목록은 받지 않는다. 적용되는 곳: 카드·코트 버튼의 자동매칭, 추천 창의 자동편성 버튼, 빈 코트 재조합, 경기 완료 후 합류 대기팀 채움, 편성제안의 자동매칭, 새 팀의 합류 대기 기본값(`prefersWaitingDraft`). 묶음 때문에 대기자만으로 네 명을 만들 수 없으면, 특정 경기 중 선수를 예약하지 않고 합류 대기팀을 만든다.
+- **화면에는 드러내지 않는다.** 추천 창의 후보 목록·순서는 묶음 없이 계산하므로 평소와 같고, 묶음 상대도 탭으로 고를 수 있다. 판정은 새로 뽑는 사람에게만 적용된다. 확정 멤버(직접 고르거나 끌어다 넣은 사람)와 피하는 후보는 풀에서 빠지고, 뽑는 사람끼리도 서로 피한다. 직접 함께 넣은 두 사람은 그대로 두고 나머지만 채운다. 회원이 올린 편성제안의 명단도 운영진이 적용하는 수동 경로라 검사하지 않는다.
+- **강한 제약이다.** 점수로 뒤집을 수 없다. 피하는 쌍 없이 네 명을 만들 수 없으면 그 조합을 만들지 않고 기존 경로(합류 대기, 대기를 끈 경우 경기 중 예약, 안 되면 "편성 가능한 조합이 없어요")를 따른다. 풀이 네 명보다 적어 부분 편성을 할 때는 인원을 줄여서라도 만든다. 합류 대기팀 채움은 성별 범주 사전 배분 뒤, 묶음 때문에 비어 버린 팀을 한 번 더 채워 본다.
+- **드러날 수 있는 흔적:** 개발자 도구로 네트워크를 보면 선발 규칙 응답에 회원 id 쌍이 보인다. 추천 창의 '경기 완료 후 빈자리 채우기' 기본값이 묶음 때문에 켜질 수 있다(스토어의 자동편성 판단과 일치시키기 위함). 사람이 아주 적을 때 "편성 가능한 조합이 없어요"가 드물게 뜰 수 있다.
+- **동기화:** 운영진 기기가 보드에 들어올 때, 편집권을 잡을 때, 화면이 다시 보일 때, 연결이 돌아올 때 규칙을 다시 읽는다. 편집 기기는 2분마다(실패 중에는 1분마다) 확인한다. 그래서 주인이 바꾼 묶음은 최대 약 2분 뒤에 다른 편집 기기에 반영된다(주인 기기에는 즉시). 보드 방송은 쓰지 않는다. 불러오기에 실패하면 이전 규칙으로 계속 편성한다. 주인의 설정 화면은 목록을 불러오기 전에는 저장을 막고 실패 안내와 [다시 불러오기]를 보인다. 계정이 바뀌면(로그아웃 포함) 메모리의 규칙·목록을 바로 지운다.
+- **알려진 빈틈:** 묶음을 저장하기 전에 이미 만들어진 예비팀은 다시 검사하지 않는다(빈 코트로 옮겨질 때도 그대로). 회원 파티(`selectMemberParty`, 2026-09-13부터 비활성)는 회원 기기에서 선발하므로 이 묶음을 모른다. 되살리려면 서버 확정 단계(`member_party_finish`)에서 묶음을 검사해야 한다(해당 RPC는 아직 authenticated에 열려 있다).
+
+관련 코드: `src/lib/teamSelection/avoidGroups.ts`(`buildAvoidMap`·`avoidGroupError`), `recommendTeammates.ts`(`RecommendContext.avoid`), `fillWaitingTeams.ts`, `src/lib/board/recommendPool.ts`(`avoidGroups` 입력), `src/lib/board/waitingDrafts.ts`, `src/store/matchAvoidStore.ts`(`rules`=선발 규칙, `groups`=주인 목록), `src/components/board/MatchAvoidModal.tsx`, `supabase/migrations/20260926000000_match_avoid_groups.sql`.
+
 > 사용자 흐름·용어는 [팀매칭 기획](TEAM_MATCHING_SPEC.md), 구현 문제·정책 결정 사항은 [정합성 검토](TEAM_MATCHING_REVIEW.md)를 먼저 참고한다. 이 문서는 공식과 가중치의 상세 기준이다.
 > 2026-09-07 문서 대조 반영. 아래 과거 시뮬레이션·프로덕션 수치는 튜닝 당시의 기록이며 이번 검토에서 재측정하지 않았다.
 > 같은 날 새 만남 보정(`W_NEW_ENCOUNTER=12`)을 추가했다. 이 변경의 전후 비교는 [2,400세션 합성 검증](TEAM_MIXING_VALIDATION.md)에 별도로 기록했다.
@@ -276,7 +291,7 @@ score = intraDiff × 0.5 + interDiff × 1.5
   - `excludeReserved:true`(자동편성·회원 파티)면 **다른 팀에 ghost 예약된 선수** 제외 — 이중 예약 방지
   - 자석(`MagnetPosition`) 없는 선수는 제외 — 멤버십 commit(`attachAnchor`)이 자석을 전제로 하기 때문
   - `includeWaitingDrafts:true`(빈 코트 재조합 전용)면 **미완성·예약 없는 합류 대기팀**의 anchor도 후보에 넣는다. 일반 팀·완성 팀·예약이 있는 팀·코트 그룹의 멤버는 계속 제외
-- `ctx` = `groupHistory` / `ongoingGroups` / `lastGameType` / `playingIds`(코트 기반)
+- `ctx` = `groupHistory` / `ongoingGroups` / `lastGameType` / `playingIds`(코트 기반) / `avoid`(입력 `avoidGroups`가 있을 때만)
 
 ### 추천 가중치 (RECOMMEND_WEIGHTS)
 
@@ -330,6 +345,7 @@ score = intraDiff × 0.5 + interDiff × 1.5
 - `lastGameType: Record<string, GameType>` — `session_player.id` → 직전(또는 진행중) 게임 타입
 - `playingIds: ReadonlySet<string>` — 현재 코트에서 경기중인 `session_player.id`. `W_PLAYING` 페널티와 **대기 항 차단**(3절) 두 곳에 쓰인다. `RankContext` 에도 선택 필드로 있어 `rankCandidates` 단독 호출에서도 가드가 걸린다
 - `ongoingGroups?: readonly (readonly string[])[]` — 현재 코트의 4인 집합. 새 만남 판단에만 사용하며 완료 경기 벌점에는 미리 더하지 않는다. `groupHistory`와 함께 `RankContext`에서 공유한다.
+- `avoid?: ReadonlyMap<string, ReadonlySet<string>>` — [같이 매칭하지 않기](#같이-매칭하지-않기-2026-09-26) 쌍(`session_player.id` 양방향). 새로 뽑는 사람에게만 적용하는 강한 제약이다. `buildRecommendData`가 `avoidGroups`(회원 id 묶음)를 이번 회차 선수로 바꿔 채운다
 - **복구 누락:** 초기 로드와 시작·완료 이벤트는 `lastGameType`을 채우지만 `resyncFromServer`는 현재 이를 복구하지 않는다([검토 R3](TEAM_MATCHING_REVIEW.md#r3-재연결-복구에서-직전-경기-유형이-누락)).
 
 ### 점수 분해 디버그 (ScoreBreakdown)

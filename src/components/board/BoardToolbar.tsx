@@ -1,4 +1,4 @@
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft } from "lucide-react";
 import ModalSheet from "../common/ModalSheet";
@@ -8,6 +8,9 @@ import { useBoardStore } from "../../store/boardStore";
 import { useAuthStore } from "../../store/authStore";
 import { useAppStore } from "../../store/appStore";
 import { TOOLBAR_H } from "../../lib/board/constants";
+import { useLongPress } from "../../hooks/useLongPress";
+import MatchAvoidModal from "./MatchAvoidModal";
+import { useMatchAvoidStore } from "../../store/matchAvoidStore";
 
 export { TOOLBAR_H };
 
@@ -51,6 +54,21 @@ const BoardToolbar = memo(function BoardToolbar() {
 	const [confirmEnd, setConfirmEnd] = useState(false);
 	// 다른 기기가 편집 중일 때 권한을 "뺏는" 경우만 경고 확인. 빈 자리(자유) 점유는 경고 없음.
 	const [confirmTakeover, setConfirmTakeover] = useState(false);
+	// 숨은 메뉴: 목록 주인 계정이 코트 현황을 길게 누르면 '같이 매칭하지 않기'를 연다(표시 없는 진입점).
+	// 다른 계정에는 핸들러·스타일 차이도 두지 않는다.
+	const avoidOwner = useMatchAvoidStore(s => s.owner);
+	const [showAvoid, setShowAvoid] = useState(false);
+	const avoidPress = useLongPress<void>(() => setShowAvoid(true), 800);
+	const avoidStart = useRef<{ x: number; y: number } | null>(null);
+	const startAvoidPress = (e: React.PointerEvent) => {
+		if (!e.isPrimary || e.button !== 0) return; // 오른쪽 버튼·두 번째 손가락은 무시
+		avoidStart.current = { x: e.clientX, y: e.clientY };
+		avoidPress.start("avoid", undefined);
+	};
+	const moveAvoidPress = (e: React.PointerEvent) => {
+		const start = avoidStart.current;
+		if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) { avoidStart.current = null; avoidPress.cancel(); }
+	};
 
 	const onConfirmEnd = useCallback(() => {
 		setConfirmEnd(false);
@@ -122,7 +140,15 @@ const BoardToolbar = memo(function BoardToolbar() {
 				</button>
 
 				{/* 코트 현황(중앙) — 비어있음(초록)/경기중(주황) */}
-				<div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minWidth: 0, overflow: "hidden" }}>
+				<div
+					data-testid="court-status"
+					onPointerDown={avoidOwner ? startAvoidPress : undefined}
+					onPointerMove={avoidOwner ? moveAvoidPress : undefined}
+					onPointerUp={avoidOwner ? avoidPress.cancel : undefined}
+					onPointerLeave={avoidOwner ? avoidPress.cancel : undefined}
+					onPointerCancel={avoidOwner ? avoidPress.cancel : undefined}
+					style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minWidth: 0, overflow: "hidden", alignSelf: "stretch" }}
+				>
 					{courts.map((court) => {
 						const empty = !court.match;
 						const dotColor = empty ? "var(--ios-green)" : "var(--ios-orange)";
@@ -214,6 +240,8 @@ const BoardToolbar = memo(function BoardToolbar() {
 					onDismiss={() => setConfirmTakeover(false)}
 				/>
 			)}
+
+			{showAvoid && avoidOwner && <MatchAvoidModal onClose={() => setShowAvoid(false)} />}
 
 			{showPresence && (
 				<ModalSheet position="center" className="p-6" onClose={() => setShowPresence(false)}>

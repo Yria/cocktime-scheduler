@@ -6,6 +6,9 @@ import { useSessionStore } from "../store/sessionStore";
 import { useBoardPlayerPool } from "./useBoardPlayerPool";
 import { useCourtSig } from "./useBoardStageLayout";
 import { hasPendingDraftSave } from "../store/board/draftsSync";
+import { useAuthStore } from "../store/authStore";
+import { useMatchAvoidStore } from "../store/matchAvoidStore";
+import { usePageVisibility } from "./usePageVisibility";
 
 // SessionBoard의 세션 동기화/편집권 부수효과 묶음(반환값 없음) — 풀 초기화, 원격 보드 멤버십 적용,
 // 세션 Realtime 구독, 자동 편집권 점유, 불변식 I2 자가치유. 스토어 값은 훅 내부에서 직접 구독한다.
@@ -23,6 +26,29 @@ export function useSessionBoardEffects() {
 	const boardDrafts = useSessionStore((s) => s.boardDrafts);
 	const applyRemoteDrafts = useBoardStore((s) => s.applyRemoteDrafts);
 	const isEditor = useSessionStore((s) => s.isEditor);
+	// 자동편성 선발 규칙(같이 매칭하지 않기)은 운영진 기기만 불러온다. 이번 회차 사람끼리의 묶음만 오고
+	// 화면에는 드러내지 않는다. 다른 기기에서 바뀐 규칙이 편집 기기에 늦게라도 닿도록 편집권을 잡을 때·화면이
+	// 다시 보일 때·연결이 돌아올 때 다시 읽고, 편집 기기는 2분마다(실패 중에는 1분마다) 확인한다.
+	// 보드 방송은 쓰지 않는다(회원 기기도 받는 채널이라 변경이 있었다는 사실조차 알리지 않는다).
+	const isAdmin = useAuthStore(s => s.isAdmin);
+	const loadRules = useMatchAvoidStore(s => s.loadRules);
+	const rulesFailed = useMatchAvoidStore(s => s.rulesStatus === "error");
+	const visible = usePageVisibility();
+	useEffect(() => {
+		if (isAdmin && visible && sessionId) void loadRules(sessionId);
+	}, [isAdmin, sessionId, isEditor, visible, loadRules]);
+	useEffect(() => {
+		if (!isAdmin || !sessionId) return;
+		const reload = () => void loadRules(sessionId);
+		window.addEventListener("online", reload);
+		return () => window.removeEventListener("online", reload);
+	}, [isAdmin, sessionId, loadRules]);
+	useEffect(() => {
+		// 실패 재시도도 1분 간격 — 함수 배포 전(프론트만 먼저 배포)에도 요청이 몰리지 않게.
+		if (!isAdmin || !visible || !isEditor || !sessionId) return;
+		const timer = setInterval(() => void loadRules(sessionId), rulesFailed ? 60_000 : 120_000);
+		return () => clearInterval(timer);
+	}, [isAdmin, isEditor, visible, rulesFailed, sessionId, loadRules]);
 	// 원인4 수정: 자석은 sessionPlayers에서 파생돼(useBoardPlayerPool→initializeFromPool) boardDrafts보다
 	// 늦게 로드될 수 있다. 과거엔 magnets.size===0이면 영구 bail + deps=[boardDrafts]라, 자석이 뒤늦게
 	// 채워져도 이 effect가 재실행되지 않아 관전자가 DB의 팀을 영영 못 그렸다(하드 새로고침해도 동일 — 원인4).

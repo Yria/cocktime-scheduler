@@ -12,6 +12,7 @@ import type { Court, GameType, GroupHistory, SessionPlayer } from "../../types";
 import type { DraftTeam, MagnetPosition, Reservation } from "../../types/board";
 import { playingIdsFromCourts, teamMembers } from "./membership";
 import type { RecommendContext } from "../teamSelection";
+import { buildAvoidMap } from "../teamSelection/avoidGroups";
 
 export interface RecommendPoolInputs {
 	drafts: ReadonlyMap<string, DraftTeam>;
@@ -23,6 +24,8 @@ export interface RecommendPoolInputs {
 	lastGameType: Record<string, GameType>;
 	/** 콕 체크 on이면 cockChecked=false 선수는 매칭 대기 아님 → 풀에서 제외. */
 	cockCheckEnabled: boolean;
+	/** 운영진이 지정한 '같이 매칭하지 않기' 묶음(회원 id). 묶음 안 두 사람은 자동으로 같은 경기에 넣지 않는다. */
+	avoidGroups?: readonly (readonly string[])[];
 }
 
 export interface RecommendData {
@@ -137,6 +140,7 @@ export function buildRecommendData(
 		ongoingGroups: courts.flatMap(court => court.match ? [[...court.match.teamA, ...court.match.teamB]] : []),
 		lastGameType,
 		playingIds,
+		...(inputs.avoidGroups?.length ? { avoid: buildAvoidMap(inputs.avoidGroups, sessionPlayers.values()) } : {}),
 	};
 
 	return { confirmed, members, pool, ctx, playingIds };

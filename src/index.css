@@ -142,6 +142,23 @@ input[type="number"] {
 	height: 100dvh; /* 일반 브라우저: 동적 뷰포트 */
 	position: relative; /* 절대배치 자식 기준(SessionBoard) */
 }
+/* 보드 화면: 자석을 누르고 끄는 동안 글자 선택·선택 커서·iOS 확대경/길게 누르기 메뉴·이미지 끌기가
+   뜨지 않게 한다. 입력창은 예외. 모달(ModalSheet)은 body로 포털되므로 영향이 없다. */
+.board-no-select,
+.board-no-select * {
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+}
+.board-no-select img {
+	-webkit-user-drag: none;
+}
+.board-no-select input,
+.board-no-select textarea,
+.board-no-select [contenteditable="true"] {
+	-webkit-user-select: text;
+	user-select: text;
+}
 @media all and (display-mode: standalone) {
 	.app-shell-h {
 		/* lvh = 레이아웃 뷰포트(가시 영역, 예 869). 셸은 이 안에 들어가고, 내부 콘텐츠는

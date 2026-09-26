@@ -2,6 +2,7 @@ import { buildRecommendData, type RecommendPoolInputs, type RecommendPoolTarget 
 import { isTeamStartable, playingIdsFromCourts, teamMembers } from "./membership";
 import { canCompleteComposition } from "../teamSelection/groupPolicy";
 import { canCompleteFrom } from "../teamSelection/fillWaitingTeams";
+import { autoFillTeammates } from "../teamSelection/recommendTeammates";
 
 /** Keep immediate court replacements ready; prepare later teams with open places.
  * Also wait instead of reserving named playing people when the free players cannot complete an allowed four.
@@ -33,5 +34,9 @@ function needsReservation(target: RecommendPoolTarget, inputs: RecommendPoolInpu
 	// Mirror the waiting fill: it tops up to two, and the team needs one member who is not playing.
 	const added = Math.min(Math.max(0, 2 - data.confirmed.length), data.pool.length);
 	const hasWaiting = added > 0 || data.confirmed.some(p => !data.playingIds.has(p.id));
-	return data.confirmed.length + added >= 2 && hasWaiting && !canCompleteFrom(data.confirmed, data.pool);
+	const slots = 4 - data.confirmed.length;
+	// Avoided pairs make a composition-feasible pool infeasible; ask the same search the fill uses.
+	const completable = canCompleteFrom(data.confirmed, data.pool)
+		&& (!data.ctx.avoid || autoFillTeammates(data.confirmed, data.pool, data.ctx, slots).length === slots);
+	return data.confirmed.length + added >= 2 && hasWaiting && !completable;
 }

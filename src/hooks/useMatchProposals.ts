@@ -13,6 +13,7 @@ import { cockPendingIds, playingIdsFromCourts } from "../lib/board/membership";
 import { arrangeBoard } from "../lib/board/arrange";
 import { buildRecommendData } from "../lib/board/recommendPool";
 import { autoFillTeammates } from "../lib/teamSelection";
+import { matchAvoidGroups } from "../store/matchAvoidStore";
 import { randomId } from "../lib/randomId";
 import { settleFreeMagnets } from "../lib/board/settle";
 import type { DraftTeam } from "../types/board";
@@ -257,7 +258,7 @@ async function editSubmitted(changes: { proposal: MatchProposal; ids: string[] }
 function autoFillSubmitted(proposal: MatchProposal) {
 	if (!canEditSubmitted()) return;
 	const board = useBoardStore.getState(), session = useSessionStore.getState();
-	const data = buildRecommendData({ newTeam: true }, proposal.player_ids, { ...board, ...session }, { excludePlaying: true, excludeReserved: true });
+	const data = buildRecommendData({ newTeam: true }, proposal.player_ids, { ...board, ...session, avoidGroups: matchAvoidGroups() }, { excludePlaying: true, excludeReserved: true });
 	if (!data || data.confirmed.length !== proposal.player_ids.length) { toast("세션을 나간 회원을 먼저 빼주세요.", { variant: "error" }); return; }
 	const picks = autoFillTeammates(data.confirmed, data.pool, data.ctx, 4 - data.confirmed.length);
 	if (!picks.length) { toast("자동매칭할 수 있는 대기 회원이 없어요.", { variant: "error" }); return; }

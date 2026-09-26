@@ -9990,6 +9990,131 @@ To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude
 
 **Prompt**: 니가 다 해줘
 
+**Answer**: # 적용·검증·커밋 완료
+
+저장소에 반영하고 커밋까지 마쳤습니다. 커밋은 `01e86bc`이고 34개 파일이 바뀌었습니다. 푸시는 하지 않았습니다. 이 저장소에서 `git push`는 곧 프론트엔드 배포라서, 직접 결정하시도록 남겼습니다.
+
+**한 일**
+- **패치 적용:** 직접 지시하신 뒤 다시 시도해 적용했습니다. 적용 전에 기존 변경을 백업했고, 적용 결과가 검증한 스크래치 복사본과 파일 단위로 똑같은지 확인했습니다.
+- **용어 정리:** "합류 대기"는 이번 기능의 이름 없는 빈자리만 뜻하게 했습니다. 예약한 선수가 아직 경기 중인 4명 코트 그룹의 라벨은 "N번 코트 · 합류 대기"에서 "예약 대기"로 바꿨습니다. 예비팀이 같은 상태를 이미 "예약 대기"라고 부르고 있어서 그쪽에 맞춘 것입니다. 이 라벨 테스트를 새로 넣었고 `COURT_BOARD_REDESIGN.md`와 규칙 문서도 함께 고쳤습니다.
+- **정리:** 제가 만든 시뮬레이터 하네스에 남아 있던 lint 오류 5개를 고쳤습니다.
+- **커밋:** 히스토리 파일을 포함해 `/commit` 절차대로 한 커밋으로 묶었습니다. 이번 대화 기록 `#297`은 이 응답이 끝나면 훅이 채우기 때문에, 그 뒤 히스토리 파일 하나가 다시 수정됨으로 보일 수 있습니다.
+
+**저장소에서 다시 돌린 검증:** 단위 884/884, e2e 135/135, 시뮬레이터 47개(실데이터가 필요한 1개는 건너뜀)가 통과했고 `tsc` 두 개와 eslint도 깨끗합니다.
+
+**남은 참고 사항**
+- **대가:** 인원이 빠듯한 모임에서 코트 공백과 재회는 줄지만, 일부 세션에서 판수 편차가 조금 커지고 최장 대기가 몇 분 늘어납니다. 수치는 `docs/TEAM_GENERATION_RULES.md`에 있습니다.
+- **실제 모임 확인:** 다음 실제 모임 기록으로 재회율과 판수 편차가 시뮬레이션대로 나오는지 보면 좋겠습니다. `tools/team-simulator/fetch-queue-input.py <세션 id>`로 그날 데이터를 바로 다시 돌릴 수 있습니다.
+
+---
+
+## #298
+
+**Prompt**: 매칭할때 지정한 특정 인원은 매칭되지 않게 하는 히든메뉴를 넣어줘. 운영자만 볼 수 있고 2~4명까지 지정가능해.
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #299
+
+**Prompt**: go on
+
+**Answer**: The feature is implemented and green: unit 895/895, e2e 141/141, `tsc` and eslint clean. The migration also passed a dry run on production, and nothing was left behind. An independent review is now running from three angles: whether every automatic-selection path is covered, whether anything leaks to members, and UX/docs. I'll fold in any real findings, then report.
+
+---
+
+## #300
+
+**Prompt**: <task-notification>
+<task-id>wtanvxzvk</task-id>
+<tool-use-id>toolu_01Q8SrCLvkjyQGvJrubgM7ng</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/8b78216e-9aa4-4278-adcd-8d7ab8162e73/tasks/wtanvxzvk.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Adversarial review of the new operator-only "같이 매칭하지 않기" feature (algorithm coverage, security/visibility, UI/docs)" completed</summary>
+<result>[{"lens":"coverage","verdict":"자동 선발 경로 대부분에 묶음이 적용돼 있습니다. autoFillEmptyCourts(두 번의 buildRecommendData), fillWaitingTeams→planWaitingTeamFills, autoFillTarget, 추천 창(useTeammateRecommendations), 편성제안 자동매칭(autoFillSubmitted)이 모두 ctx.avoid를 받습니다. 적용 안 되는 곳은 다음과 같습니다. (1) 새 팀 기본 경로의 '대기팀으로 만들지, 예약할지' 판단(prefersWaitingDraft, 스토어와 추천 창 두 곳). (2) selectMemberParty와 getMemberPartyCandidates. 다만 MemberPartyPanel이 어디에도 마운트되지 않아 실행되지 않는 코드입니다. 이미 만들어진 예비팀을 빈 코트로 옮기는 경로는 사람을 새로 뽑지 않으니 문제가 되는 건 갱신이 늦을 때뿐이고, pairPlayers는 네 명을 팀으로 나누기만 합니다. 선수를 고르는 서버 RPC는 없습니다(finish_member_party는 클라가 정한 id를 받고, apply_proposal은 수동 경로). 한 회원이 선수 행을 여러 개 가진 경우는 buildAvoidMap이 처리합니다. 성능도 괜찮습니다: 묶음 200개·풀 40명에서 호출당 약 70ms, 묶음 없을 때 약 50ms. 실제로 중요한 빈틈은 두 가지입니다. ① 기본 새 팀 자동편성이 묶음 때문에 대기자만으로 네 명을 못 만들면, 정책상 만들어야 할 합류 대기팀 대신 경기 중 선수를 지정 예약합니다. ② 묶음을 보드 진입 때 한 번만 불러와, 다른 운영진 기기에서 바꾼 내용이나 첫 로드 실패가 세션 내내 반영되지 않습니다. 나머지는 모서리 경우입니다. 실패 테스트 5개는 수정 전 사본(scratchpad/avoid-review/orig)에서 모두 실패하고, 제안한 수정(scratchpad/avoid-review/fixes.patch, 적용본은 scratchpad/avoid-review/repo)을 넣으면 기존 895개를 포함해 903/903이 통과합니다. tsc 오류는 리뷰용 테스트 파일에만 있고 수정한 소스에는 없습니다.","findings":[{"severity":"medium","title":"새 팀 기본 자동편성의 '대기팀 vs 예약' 판단이 묶음을 몰라, 묶음 때문에 막히면 경기 중 선수를 지정 예약한다","detail":"autoFillTarget은 waitForCompletion을 명시하지 않으면 prefersWaitingDraft로 기본값을 정합니다. 그런데 src/store/board/membershipSlice.ts:502는 입력에 avoidGroups를 넘기지 않고(`{ ...get(), ...ss }`), 설령 넘겨도 src/lib/board/waitingDrafts.ts:36의 needsReservation이 `!canCompleteFrom(data.confirmed, data.pool)`로 성별·등급 구성만 봅니다. 그래서 대기자 4명 중 두 명이 묶음이라 대기자만으로 네 명을 못 만드는데도 '만들 수 있다'고 판단해 대기팀으로 가지 않습니다. 그다음 autoFillTeammates가 두 번째 탐색에서 경기 중 선수를 골라 예약(ghost)합니다. 구성상 불가능할 때(예: 대기자 3명)는 합류 대기팀을 만들고 예약하지 않는 것이 기존 정책입니다(membershipSlice.ts의 '세션 324 재생에서 같은 4명 연속과 최장 대기가 늘었다' 주석). 묶음 때문에 막힐 때만 이 정책이 뒤집힙니다. RecommendTeammateDialog.tsx:62의 '경기 완료 후 빈자리 채우기' 체크박스 기본값도 같은 함수를 묶음 없이 호출합니다. 기존 테스트(boardStore.test.ts의 '새 팀 자동편성은 … 경기 중 선수로 대신한다')는 waitForCompletion:false를 명시해서 기본 경로를 검증하지 않았습니다. 문서의 '대기자로 안 되면 경기 중 예약 등 기존 경로'도 실제 기존 경로(대기팀)와 다릅니다.","fix":"(1) membershipSlice.ts:502와 RecommendTeammateDialog.tsx:62의 prefersWaitingDraft 입력에 avoidGroups를 넘깁니다(스토어: matchAvoidGroups(), 창: useMatchAvoidStore의 groups를 memberIds로 변환). (2) waitingDrafts.ts의 needsReservation에서 판정을 `const slots = 4 - data.confirmed.length; const completable = canCompleteFrom(data.confirmed, data.pool) &amp;&amp; (!data.ctx.avoid || autoFillTeammates(data.confirmed, data.pool, data.ctx, slots).length === slots); return … &amp;&amp; !completable;`로 바꿉니다. 이렇게 하면 실제 채우기와 같은 탐색으로 판정합니다. 스크래치에서 적용해 보니 기존 테스트가 모두 통과합니다. TEAM_GENERATION_RULES.md의 해당 문장도 '대기자만으로 못 만들면 합류 대기팀(기본값)'으로 고쳐야 합니다.","repro":"cd /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/scratchpad/avoid-review/orig &amp;&amp; node node_modules/vitest/vitest.mjs run src/store/boardStore.test.ts -t \"review\" src/lib/teamSelection/avoidReview.test.ts -t R2  (describe 'review: 같이 매칭하지 않기 기본 경로': 대조군(대기자 abc, 경기 중 efgh)은 합류 대기팀이 만들어지고 예약 0건으로 통과합니다. 대기자 abcd + 묶음 a–b에서 autoFillTarget({newTeam:true})를 부르면 reservations.size가 기대값 0이 아니라 1이 되어 실패합니다. avoidReview R2는 prefersWaitingDraft가 true 기대에 false를 돌려줍니다.)","verdict":{"refuted":false,"reasoning":"반박하지 못했습니다. 주장이 맞고, 실제 UI에서 도달할 수 있으며, 재현도 됩니다.\n\n**코드로 확인한 사실**\n- 문제 입력: src/store/board/membershipSlice.ts:502 는 `prefersWaitingDraft(target, { ...get(), ...ss }, extraIds, editing)` 로 부릅니다. 여기에 avoidGroups 가 없습니다. 같은 파일 112·118행의 buildRecommendData 호출은 `avoidGroups: matchAvoidGroups()` 를 넘기므로, 이 호출만 빠진 것입니다.\n- src/components/board/RecommendTeammateDialog.tsx:62 도 체크박스 기본값을 묶음 없이 계산합니다.\n- 판단 로직: src/lib/board/waitingDrafts.ts:36 needsReservation 은 `!canCompleteFrom(data.confirmed, data.pool)` 만 봅니다. canCompleteFrom(fillWaitingTeams.ts:34)은 성별·등급 세 범주의 개수만 비교합니다. 그래서 설령 avoidGroups 를 넘겨도(data.ctx.avoid 가 있어도) 결과가 달라지지 않습니다.\n- 결과: 대기자 abcd·묶음 a–b 이면 '대기자만으로 완성 가능'으로 판단해 waiting=false 가 됩니다. 이어 autoFillTeammates(maxPlaying=3)가 첫 탐색(대기자만)에서 실패하고, 두 번째 탐색에서 경기 중 선수 1명을 골라 예약(ghost)합니다.\n- 도달 경로: SessionBoard.tsx:137 NewGroupFab → RecommendTeammateDialog → 체크박스를 건드리지 않고 자동편성(120행 `waitForCompletion: waitingChoice ?? undefined`) → 스토어가 기본값을 결정합니다. 조건은 경기가 하나라도 진행 중이면 충분합니다(`playing.size &gt; 0`). 빈 코트가 없어도 `Math.max(1, 0)` 이라 needsReservation 까지 내려갑니다. seedId 로 연 경우와 extraIds 로 사람을 고른 경우(예: a 선택 + 풀 bcd, a–b 묶음)도 같습니다.\n\n**정책 근거 (의도된 동작이 아님)**\n- docs/TEAM_GENERATION_RULES.md 9행(2026-09-25) 규칙: \"대기자만으로 허용 네 명을 만들 수 없다 → 특정 경기 중 선수를 예약하는 대신 이름 없는 자리로 기다린다.\"\n- 새 섹션은 묶음을 '강한 제약'이라고 정의합니다. 그러면 묶음 때문에 못 만드는 네 명도 '허용 네 명 불가'에 해당합니다.\n- 그런데 새 섹션의 \"대기자로 안 되면 경기 중 예약 등 기존 경로\"라는 문구는 새 팀 기본값의 실제 기존 경로(대기팀)와 어긋납니다.\n- 기존 테스트 '새 팀 자동편성은 … 경기 중 선수로 대신한다'는 waitForCompletion:false 를 명시하므로 기본 경로를 검증하지 않습니다.\n- 다른 곳에 이를 막는 가드는 없습니다. waiting 분기는 explicit ?? prefersWaitingDraft 한 곳에서만 결정됩니다.\n\n**재현** (…/scratchpad/avoid-review/orig)\n- boardStore.test.ts 'review: 같이 매칭하지 않기 기본 경로'\n  - 대조군(대기자 abc): 통과\n  - 대기자 abcd + a–b 묶음: `reservations.size` 가 기대값 0이 아니라 1이 되어 실패(2424행)\n- avoidReview R2: prefersWaitingDraft 가 false 를 돌려줌\n\n**수정안** (검증함: …/scratchpad/avoid-review/r2fix)\n1. membershipSlice.ts:502 → `prefersWaitingDraft(target, { ...get(), ...ss, avoidGroups: matchAvoidGroups() }, extraIds, editing)`\n2. RecommendTeammateDialog.tsx:62 → `const avoidGroups = useMatchAvoidStore(s =&gt; s.groups)` 를 추가하고, 입력에 `avoidGroups: avoidGroups.map(g =&gt; g.memberIds)` 를 넘깁니다. 체크박스 표시와 스토어 판단을 일치시키기 위해서입니다.\n3. waitingDrafts.ts needsReservation 의 마지막 줄을 아래처럼 바꿉니다.\n   ```ts\n   const slots = 4 - data.confirmed.length;\n   const completes = data.ctx.avoid\n     ? autoFillTeammates(data.confirmed, data.pool, data.ctx, slots).length === slots\n     : canCompleteFrom(data.confirmed, data.pool);\n   return data.confirmed.length + added &gt;= 2 &amp;&amp; hasWaiting &amp;&amp; !completes;\n   ```\n   (`import { autoFillTeammates } from \"../teamSelection/recommendTeammates\"` 추가.) 풀은 excludePlaying 이라 대기자뿐이고 maxPlaying 은 0 입니다. 묶음이 없으면 기존 경로를 그대로 탑니다.\n4. 문서 수정: '같이 매칭하지 않기' 섹션의 '대기자로 안 되면 경기 중 예약' 문구를 \"새 팀·시드 기본값은 묶음 때문에 대기자로 못 만들 때도 합류 대기팀(대기 끄면 예약)\"으로 고칩니다.\n5. 테스트 추가: boardStore.test.ts 에 waitForCompletion 을 명시하지 않은 `autoFillTarget({ newTeam: true })` 케이스를 넣습니다. 기대값은 reservations 0, waitForCompletion true 입니다.\n\n**수정 후 결과** (r2fix)\n- 리뷰 테스트 2개(boardStore 기본 경로·R2) 모두 통과\n- 전체 unit 64파일 897/897 통과(기존 895 + 리뷰 2)\n- `tsc -p tsconfig.app.json --noEmit` 오류 없음\n\n**심각도: 중~하.** 묶음 안의 사람이 대기자 쪽에 있고 대기자 풀이 좁을 때만 생깁니다. 그러나 이 경우 9-25에 시뮬레이션 근거로 없앤 '경기 중 선수 지정 예약'이 기본값으로 되살아납니다. 예약된 선수는 연속 출전하게 되고, 같은 4명 재회와 최장 대기가 늘어납니다."}},{"severity":"medium","title":"묶음을 보드 진입 때 한 번만 불러온다: 다른 운영진 기기에서 바꾼 내용과 첫 로드 실패가 세션 내내 반영되지 않는다","detail":"src/hooks/useSessionBoardEffects.ts:24-28의 effect 의존성은 [isAdmin, sessionId, loadMatchAvoid]뿐이라 보드 진입 때 한 번만 불러옵니다. 숨은 메뉴는 편집자가 아니어도 운영진이면 열 수 있습니다(BoardToolbar는 isAdmin만 봄). 예를 들어 부운영진이 폰으로 'A·B 같이 넣지 않기'를 저장해도 태블릿(편집자)의 autoFillEmptyCourts·fillWaitingTeams·autoFillTarget은 몇 시간 동안 계속 A·B를 같이 뽑습니다. 삭제도 마찬가지로 반영되지 않습니다. 편집자가 보드를 다시 들어가거나 모달을 열어야만 갱신됩니다. 또 src/store/matchAvoidStore.ts:27은 실패 시 이전 값을 유지하는데, 첫 로드에서는 이전 값이 []입니다. 체육관 와이파이 순단 한 번이면 그 세션의 제약이 조용히 전부 꺼지고 재시도나 표시도 없습니다. 문서의 '불러오기에 실패하면 이전 값을 유지'는 이 경우를 다루지 않습니다. 묶음을 추가하기 전에 자동으로 만들어진 예비팀이 빈 코트로 옮겨질 때(autoFillEmptyCourts의 queued 이동)도 다시 검사하지 않습니다. 부수 경합(낮음)도 있습니다. 저장 전에 시작된 load(모달 열림이나 보드 진입, 두 번의 왕복)가 add 뒤에 도착하면 방금 저장한 묶음을 로컬 상태에서 지웁니다. 로컬 상태만 문제라 다음 load에서 복구되지만, 그 사이 자동편성에는 빠집니다.","fix":"useSessionBoardEffects의 로드 조건을 넓힙니다. (a) 의존성에 isEditor를 넣어 편집권을 잡을 때마다 다시 불러옵니다. (b) usePageVisibility로 앱이 다시 보일 때 다시 불러옵니다. (c) loaded가 false인 동안 백오프로 재시도합니다. 원격 변경이 곧바로 반영돼야 하면 add/remove 때 기존 보드 채널에 'match-avoid-changed' 브로드캐스트를 보내고, 받은 운영진 기기가 load()하게 합니다. 드문 이벤트라 Realtime 비용은 무시할 만합니다. 경합은 matchAvoidStore에 모듈 수준 revision 카운터를 두고 add/remove 성공 때 revision++, load는 시작 시점 값이 바뀌었으면 결과를 버리게 합니다(스크래치에서 검증함). 문서에는 '첫 로드 실패 시 제약 없음'을 알려진 빈틈으로 적거나 재시도로 없앱니다.","repro":"코드 경로: useSessionBoardEffects.ts:27에서 `if (isAdmin) void loadMatchAvoid();`
+... (truncated 41682 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/8b78216e-9aa4-4278-adcd-8d7ab8162e73/tasks/wtanvxzvk.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/subagents/workflows/wf_2a39e1a3-1b1/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/5e1340ea-6c4d-4e98-a297-5dc0d5ad5861/workflows/scripts/review-match-avoid-wf_2a39e1a3-1b1.js', resumeFromRunId: 'wf_2a39e1a3-1b1'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>11</agent_count><agents_done>11</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>1520144</subagent_tokens><tool_uses>365</tool_uses><duration_ms>1269841</duration_ms></usage>
+</task-notification>
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #301
+
+**Prompt**: go on
+
+**Answer**: # "같이 매칭하지 않기" 숨은 메뉴 추가
+
+운영진만 보이는 숨은 메뉴를 넣었습니다. 여기서 2~4명을 한 묶음으로 저장하면, 자동편성·추천이 그 묶음 안의 어느 두 사람도 같은 경기(4명)에 넣지 않습니다. 테스트는 모두 통과했습니다. 변경은 스테이징만 했고, 커밋·푸시와 DB 배포는 하지 않았습니다.
+
+**사용법:** 보드 맨 위 가운데의 코트 현황(코트 점)을 운영진이 0.8초 길게 누르면 메뉴가 열립니다. 사람을 2~4명 골라 저장하거나, 저장된 묶음을 지울 수 있습니다. 회원 기기에는 진입점이 없고, 데이터도 불러오지 않습니다.
+
+## 동작 방식
+- **적용 범위:** 운영진 기기의 자동 선발 전부에 적용됩니다. 추천 창, 자동편성, 카드·코트 버튼, 빈 코트 재조합, 경기 완료 후 합류 대기팀 채움, 편성제안의 자동매칭이 여기에 들어갑니다.
+- **강한 제약:** 점수로 뒤집히지 않습니다. 묶음 때문에 대기자만으로 4명을 못 만들면, 경기 중 선수를 예약하지 않고 합류 대기팀을 만듭니다(어제 정한 정책과 같습니다).
+- **직접 배치는 허용:** 운영진이 드래그로 함께 넣은 두 사람은 그대로 두고, 나머지 자리만 채웁니다.
+- **추천 창 표시:** 묶음 상대는 목록에서 숨기지 않고 맨 뒤에 비활성으로 두며, "같이 안 함" 배지를 붙였습니다. 예전에 휴식 선수를 숨겼다가 버그로 오해받은 일이 있어서입니다.
+- **저장 위치:** 회원 단위로 저장해 다음 회차에도 유지됩니다. members 행이 있는 선수는 RSVP 게스트를 포함해 모두 고를 수 있습니다.
+
+## 보안
+- **새 테이블 `match_avoid_groups`:** 활성 운영진만 읽고 쓸 수 있습니다. 탈퇴·비활성 처리된 전 운영진도 막았습니다. 같은 사람 구성은 순서가 달라도 한 번만 저장됩니다.
+- **프로덕션 실증:** 적용 후 바로 되돌리는 트랜잭션으로 확인했습니다.
+  - 운영진: 저장 가능
+  - 회원·비활성 운영진: 0건 조회, 쓰기 거부
+  - 잘못된 인원·중복 묶음: 거부
+  - 실행 뒤 프로덕션에 남은 것은 없습니다.
+- **변경 알림 방식:** 다른 운영진 기기에서 바꾼 묶음은 보드 방송으로 알리지 않습니다. 방송 채널은 회원도 받기 때문입니다. 대신 편집 기기가 2분마다 확인하므로 반영에 최대 약 2분 걸립니다.
+
+## 검증
+- **테스트:** 단위 902/902, e2e 145/145, `tsc`, eslint 모두 통과했습니다.
+- **독립 리뷰:** 세 방향(적용 누락, 정보 유출, 사용성)으로 반박 검증을 돌렸고, 나온 문제는 모두 고쳤습니다. 주요 수정은 다음과 같습니다.
+  - 묶음 때문에 막히면 경기 중 선수를 예약하던 문제
+  - 다른 기기에서 바꾼 묶음, 또는 첫 불러오기 실패가 세션 내내 반영되지 않던 문제
+  - 불러오기 실패 시 화면이 "불러오는 중…"에서 멈추고 같은 묶음이 두 번 저장되던 문제
+  - 로그아웃 뒤에도 메모리에 묶음이 남던 문제
+- **새 회귀 테스트 8개:** 수정 전 코드에서는 모두 실패하는 것을 확인했습니다.
+
+## 배포할 때
+**DB를 먼저 올려야 합니다.** `supabase db push`를 실행한 뒤 `git push`를 하세요. 프론트만 먼저 나가면 메뉴에 "불러오지 못했어요"가 뜨고, 그동안은 이 설정 없이 편성됩니다. 앱은 깨지지 않고, 재시도는 1분 간격이라 요청이 몰리지 않습니다.
+
+## 남은 빈틈
+- **기존 예비팀:** 묶음을 저장하기 전에 이미 만든 예비팀은 다시 검사하지 않습니다.
+- **회원 파티:** 지금 꺼져 있는 회원 파티는 이 묶음을 모릅니다. 다시 켜려면 서버에서 묶음을 검사하는 작업이 먼저 필요합니다.
+- **기존 권한 문제:** `is_admin()`이 비활성 회원도 운영진으로 봅니다. 원래 있던 문제이고, 이번에는 이 테이블에서만 막았습니다.
+
+**주의 한 가지:** 이 저장소는 공개이고, 대화 원문이 `.agent-history`에 기록되어 커밋됩니다. 특정 두 사람의 이름을 들어 저에게 물어보시면 그 내용이 공개 저장소에 올라갈 수 있습니다. 그럴 때는 커밋 전에 해당 기록을 지워야 합니다.
+
+---
+
+## #302
+
+**Prompt**: 지금 만든거 설마 자동매칭외에 수동으로 매칭하는것도 막게한거야?
+
+**Answer**: 아니요, 수동 매칭은 막지 않았습니다. 다만 추천 창 한 곳에서는 탭으로 고르는 것이 막혀 있습니다. 확인해 보니 묶음을 읽는 곳은 자동 선발 경로뿐입니다. 사람을 직접 팀에 붙이거나(`attachAnchor`·`commitTeammates`), 드롭하거나, 경기를 시작하는 코드(`startMatch`)는 묶음을 전혀 보지 않습니다.
+
+| 경로 | 묶음 적용 |
+|---|---|
+| 자동편성, 카드·코트의 "자동매칭", 빈 코트 재조합, 경기 완료 후 합류 대기팀 채움, 편성제안의 자동매칭 | 적용됨 (같이 안 뽑음) |
+| 보드에서 선수를 팀·코트로 드래그 | 적용 안 됨 (같이 넣을 수 있음) |
+| 이미 같이 넣은 두 사람이 있는 팀을 자동편성 | 두 사람은 그대로 두고 나머지 자리만 채움 |
+| 경기 시작, 진행 중 코트의 선수 변경, 회원 편성제안을 운영진이 그대로 적용 | 적용 안 됨 |
+| **추천 창에서 탭으로 고르기** | **막혀 있음**. 팀에 이미 있거나 방금 고른 사람과 묶인 상대는 "같이 안 함" 배지와 함께 비활성으로 보임 |
+
+마지막 줄의 추천 창은 사람이 직접 고르는 화면이라, 수동 매칭을 일부 막은 셈입니다. 저는 추천 창을 "추천"으로 보고 막았지만, 운영진이 거기서 직접 골라 같이 넣고 싶을 수도 있습니다.
+
+원하시면 추천 창에서도 묶음 상대를 고를 수 있게 바꾸겠습니다. 배지는 그대로 보이고, 탭하면 선택되며, 자동으로 채우는 나머지 자리에만 묶음이 적용되는 방식입니다. 바꿀까요?
+
+---
+
+## #303
+
+**Prompt**: 이거 나만 볼 수 있는 형태면 좋겠는데.
+
 **Answer**: _(응답 대기 중…)_
 
 ---

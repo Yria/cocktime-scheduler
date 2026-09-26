@@ -13,6 +13,7 @@ import PlayerCard from "../shared/PlayerCard";
 import PlayerPickerList, { type PlayerPickerItem, type PlayerPickerSortOption } from "../shared/PlayerPickerList";
 import { prefersWaitingDraft } from "../../lib/board/waitingDrafts";
 import { editingRosterIds } from "../../lib/board/matchRosterEdit";
+import { useMatchAvoidStore } from "../../store/matchAvoidStore";
 
 type Props = {
 	onClose: () => void;
@@ -46,6 +47,8 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 	const [debug, setDebug] = useState(false);
 
 	const { ranked, members, playingIds } = useTeammateRecommendations({ teamId, seedId, newTeam }, selectedIds);
+	// 합류 대기 기본값은 스토어의 자동편성 판단과 같아야 해서 같이 매칭하지 않기 규칙을 넣는다(화면 표시는 없음).
+	const avoidRules = useMatchAvoidStore(s => s.rules);
 
 	const selectedPlayers = useMemo(
 		() =>
@@ -61,6 +64,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 	const canWait = filledCount < 4 && (!teamId || drafts.get(teamId)?.courtId == null);
 	const waitForCompletion = canWait && (waitingChoice ?? prefersWaitingDraft({ teamId, seedId, newTeam }, {
 		...useSessionStore.getState(), courts, sessionPlayers, cockCheckEnabled, drafts, reservations, magnets,
+		avoidGroups: avoidRules,
 	}, selectedIds, editingRosterIds(matchEdits)));
 	// 대기 중인 기존 팀에 새로 고른 사람이 없으면 대기 모드 자동편성은 더할 사람이 없다.
 	const nothingToWaitFor = !!teamId && waitForCompletion && selectedIds.length === 0 && filledCount >= 2;

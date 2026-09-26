@@ -53,3 +53,28 @@ for (const width of [320, 390, 1440]) test(`explicit completion waiting leaves t
 	});
 	expect(result).toEqual({ teams: [{ size: 2, waiting: true }], reservations: 0 });
 });
+
+test("a player the seed must not be matched with looks and selects like anyone else, and only auto fill leaves them out", async ({ page }) => {
+	await page.goto("/e2e/recommendations.html?seed&avoid");
+	await expect(page.getByRole("heading", { name: "추천 팀원" })).toBeVisible();
+	const avoided = page.getByRole("button", { name: /대기선수2/ });
+	await expect(avoided).toBeEnabled();
+	await expect(page.getByText("같이 안 함")).toHaveCount(0);
+	await avoided.scrollIntoViewIfNeeded();
+	await page.screenshot({ path: "test-results/recommendations-avoid.png" });
+	await page.getByRole("button", { name: "자동편성", exact: true }).click();
+	const auto = await page.evaluate(() => {
+		const s = window.recommendationTest.board.getState();
+		return [...s.drafts.values()].flatMap(t => [...t.anchorMemberIds, ...[...s.reservations.values()].filter(r => r.teamId === t.id).map(r => r.playerId)]);
+	});
+	expect(auto).toContain("p0");
+	expect(auto).not.toContain("p1");
+});
+
+test("an operator can still pick the avoided partner by hand in the recommendation dialog", async ({ page }) => {
+	await page.goto("/e2e/recommendations.html?seed&avoid");
+	await page.getByRole("button", { name: /대기선수2/ }).click();
+	await page.getByRole("button", { name: /^확인/ }).click();
+	const members = await page.evaluate(() => [...window.recommendationTest.board.getState().drafts.values()].flatMap(t => t.anchorMemberIds).sort());
+	expect(members).toEqual(["p0", "p1"]);
+});

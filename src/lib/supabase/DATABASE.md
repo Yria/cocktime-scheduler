@@ -88,6 +88,20 @@
 
 RLS: select=authenticated 전체, write=`is_admin()`.
 
+### match_avoid_groups · match_avoid_owner (2026-09-26, `20260926000000`)
+같이 매칭하지 않기 묶음. 지정된 한 계정만 쓰는 숨은 설정(보드 코트 현황 롱프레스 → `MatchAvoidModal`). 묶음 안 두 사람은 자동편성에서 같은 경기에 넣지 않는다([규칙](../../../docs/TEAM_GENERATION_RULES.md#같이-매칭하지-않기-2026-09-26)).
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| id | UUID PK | `gen_random_uuid()` |
+| member_ids | UUID[] | members.id 2~4명. check: 개수·1차원·null 없음·중복 없음(`match_avoid_distinct_count`). unique: 정렬한 구성(`match_avoid_key`) — 순서만 다른 같은 묶음 금지(23505) |
+| created_at | TIMESTAMPTZ | |
+
+`match_avoid_owner(member_id PK)`: 목록 주인. 정책이 없어 클라이언트 롤은 직접 읽지 못한다. 값은 저장소 밖에서 DB에 직접 넣는다.
+
+RLS: match_avoid_groups select/insert/delete는 `is_match_avoid_owner()`(주인 + 활성)만. 다른 계정은 조회해도 0행, 쓰기는 42501.
+RPC `board_selection_rules(p_session_id)` (security definer): 활성 운영진에게 `{ owner, groups }`를 준다. groups는 그 회차 session_players에 2명 이상 있는 묶음의 회원 id들뿐이다. 그 밖의 계정은 `{ owner: false, groups: [] }`.
+클라: `matchAvoid.ts`(fetchBoardSelectionRules/fetchMatchAvoidGroups/createMatchAvoidGroup/deleteMatchAvoidGroup), `matchAvoidStore.ts`.
+
 ### cock_support_grants (2026-06-30, `20260630030000`)
 회원이 어느 달(ym)에 콕 지원을 소진했는지 1행. 그 달 첫 콕체크 확인이 upsert로 소진(멱등).
 | 컬럼 | 타입 | 설명 |

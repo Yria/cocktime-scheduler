@@ -78,5 +78,15 @@ export function planWaitingTeamFills(teams: readonly WaitingTeam[], pool: readon
 		const used = new Set(picks.map(p => p.id));
 		remaining = remaining.filter(p => !used.has(p.id));
 	});
+	// The category lookahead cannot see avoided pairs: people it held for a team the
+	// constraint blocks must not also leave an earlier, fillable team empty.
+	if (ctx.avoid?.size) for (const team of targets) {
+		if (result.has(team.id)) continue;
+		const picks = autoFillTeammates(team.members, remaining, ctx, 4 - team.members.length);
+		if (picks.length + team.members.length !== 4) continue;
+		result.set(team.id, picks);
+		const used = new Set(picks.map(p => p.id));
+		remaining = remaining.filter(p => !used.has(p.id));
+	}
 	return result;
 }

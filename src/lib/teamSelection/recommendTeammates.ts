@@ -12,6 +12,8 @@ export interface RecommendContext extends RankContext {
 	/** Full session roster, including people reserved elsewhere, for historical skills. */
 	players?: readonly SessionPlayer[];
 	cockCheckEnabled?: boolean;
+	/** Operator-set pairs never selected into one four (session player ids, both directions). */
+	avoid?: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 export interface RecommendWeights {
@@ -67,7 +69,10 @@ function searchGroups(
 	const eligible = (p: SessionPlayer) => p.status !== "resting" && (!ctx.cockCheckEnabled || p.cockChecked);
 	if (confirmed.some(p => !eligible(p)) || !canCompleteComposition(confirmed)) return empty;
 	const fixedIds = new Set(confirmed.map(p => p.id));
-	pool = unique(pool).filter(p => !fixedIds.has(p.id) && eligible(p) && (maxPlaying > 0 || !ctx.playingIds.has(p.id)));
+	// Avoided pairs are a hard constraint on picks only: members an operator placed by hand stay.
+	const avoided = (a: string, b: string) => ctx.avoid?.get(a)?.has(b) ?? false;
+	pool = unique(pool).filter(p => !fixedIds.has(p.id) && eligible(p) && (maxPlaying > 0 || !ctx.playingIds.has(p.id))
+		&& !confirmed.some(member => avoided(member.id, p.id)));
 	if (!pool.length) return empty;
 	const slots = (options.targetSize ?? 4) - confirmed.length;
 	if (slots <= 0) return empty;
@@ -105,6 +110,7 @@ function searchGroups(
 	const byCandidate = new Map<string, GroupScore>();
 
 	function consider(picks: SessionPlayer[]) {
+		if (ctx.avoid) for (let i = 0; i < picks.length; i++) for (let j = i + 1; j < picks.length; j++) if (avoided(picks[i].id, picks[j].id)) return;
 		if (options.acceptCompletion && !options.acceptCompletion(picks)) return;
 		const members = [...confirmed, ...picks];
 		const playing = members.filter(p => ctx.playingIds.has(p.id)).length;
@@ -140,7 +146,7 @@ function searchGroups(
 			if (!previous || compareGroupScores(priority, previous) < 0) byCandidate.set(p.id, priority);
 		}
 	}
-	function enumerate(candidates: SessionPlayer[]) {
+	function enumerate(candidates: SessionPlayer[], size: number) {
 		const picks: SessionPlayer[] = [];
 		function visit(start: number) {
 			if (picks.length === size) { consider(picks); return; }
@@ -152,8 +158,14 @@ function searchGroups(
 	}
 	// This separation is deliberate: no quality or repetition advantage can pull
 	// a playing candidate into a team when the remaining slots can be filled now.
-	enumerate(pool.filter(p => !ctx.playingIds.has(p.id)));
-	if (!best && maxPlaying > 0) enumerate(pool);
+	enumerate(pool.filter(p => !ctx.playingIds.has(p.id)), size);
+	if (!best && maxPlaying > 0) enumerate(pool, size);
+	// A short pool already yields a partial draft; avoided pairs among the picks
+	// shrink that draft instead of cancelling it. A full-size search never shrinks.
+	for (let smaller = size - 1; !best && ctx.avoid && size < slots && smaller >= 1; smaller--) {
+		enumerate(pool.filter(p => !ctx.playingIds.has(p.id)), smaller);
+		if (!best && maxPlaying > 0) enumerate(pool, smaller);
+	}
 	if (!best) return empty;
 	const winner: GroupChoice = best;
 	const ranked = pool.flatMap(player => {

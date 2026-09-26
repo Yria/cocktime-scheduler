@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { SessionPlayer, Court, GroupHistory, GameType } from "../types";
 import type { BoardDraftsPayload, DraftTeam, MagnetPosition, Reservation } from "../types/board";
 import { DEFAULT_VIEWPORT } from "../lib/board/geometry";
@@ -37,6 +37,12 @@ vi.mock("./sessionStore", () => ({
 		}),
 	},
 }));
+const mockAvoidFetch = vi.hoisted(() => vi.fn());
+const mockAvoidCreate = vi.hoisted(() => vi.fn());
+const mockAvoidDelete = vi.hoisted(() => vi.fn());
+const mockRulesFetch = vi.hoisted(() => vi.fn());
+vi.mock("../lib/supabase/matchAvoid", () => ({ fetchMatchAvoidGroups: mockAvoidFetch, createMatchAvoidGroup: mockAvoidCreate,
+	deleteMatchAvoidGroup: mockAvoidDelete, fetchBoardSelectionRules: mockRulesFetch }));
 vi.mock("./appStore", () => ({
 	useAppStore: { getState: () => ({ sessionMeta: { singleWomanIds: h.singleWomanIds } }) },
 }));
@@ -45,6 +51,8 @@ import { useBoardStore } from "./boardStore";
 import { serializeBoardDrafts, syncState } from "./board/draftsSync";
 import { useAdminCoverageStore } from "./adminCoverageStore";
 import { useToastStore } from "./toastStore";
+import { useMatchAvoidStore } from "./matchAvoidStore";
+import { useAuthStore } from "./authStore";
 import { teamMembers } from "../lib/board/membership";
 import { prefersWaitingDraft } from "../lib/board/waitingDrafts";
 import { groupGridAnchor } from "../lib/board/groupGrid";
@@ -444,6 +452,127 @@ describe("합류 대기 자리와 경기 완료 자동 채움", () => {
 		expect(queued()[0].anchorMemberIds).not.toEqual(expect.arrayContaining(["k", "l"]));
 		expect(useBoardStore.getState().magnets.get("k")!.teamId).toBeNull();
 		expect(useBoardStore.getState().magnets.get("l")!.teamId).toBeNull();
+	});
+});
+
+describe("같이 매칭하지 않기 묶음", () => {
+	afterEach(() => {
+		useMatchAvoidStore.getState().reset();
+		for (const mock of [mockAvoidCreate, mockAvoidFetch, mockAvoidDelete, mockRulesFetch]) mock.mockReset();
+	});
+	function setup() {
+		h.players = new Map([..."abcdefgh"].map(id => [id, { ...player(id), memberId: `m-${id}` }]));
+		h.courts = [{ id: 1, match: { id: "playing", courtId: 1, gameType: "남복", teamA: ["e", "f"], teamB: ["g", "h"], startedAt: "" } }, { id: 2, match: null }];
+		const board = useBoardStore.getState();
+		board.setStageSize(900, 1000);
+		board.initializeFromPool([...h.players.values()]);
+		board.ensureCourtGroups();
+		return board;
+	}
+	// 편집 기기가 받는 선발 규칙(이번 회차 묶음) — 자동편성은 이것만 본다.
+	const avoid = (...rules: string[][]) => useMatchAvoidStore.setState({ rules, rulesStatus: "ready" });
+	const members = (teamId: string) => { const s = useBoardStore.getState(); return teamMembers(teamId, s.drafts, s.reservations).map(m => m.playerId); };
+	it("새 팀 자동편성은 묶음 안의 두 사람을 같이 뽑지 않고, 대기자로 안 되면 경기 중 선수로 대신한다", () => {
+		const board = setup();
+		avoid(["m-a", "m-b"]);
+		board.autoFillTarget({ newTeam: true }, [], { waitForCompletion: false });
+		const team = [...useBoardStore.getState().drafts.values()].find(t => t.courtId == null)!;
+		const picked = members(team.id);
+		expect(picked).toHaveLength(4);
+		expect(picked.includes("a") && picked.includes("b")).toBe(false);
+	});
+	it("빈 코트 매칭도 이미 올라간 사람과 피하는 후보를 넣지 않는다", () => {
+		const board = setup();
+		for (const id of "efgh") h.players.get(id)!.status = "resting";
+		h.courts = [{ id: 1, match: null }, { id: 2, match: null }];
+		avoid(["m-a", "m-c"], ["m-a", "m-d"]);
+		board.commitTeammates({ teamId: "court-1" }, ["a"]);
+		board.autoFillTeam("court-1");
+		expect(members("court-1")).not.toEqual(expect.arrayContaining(["c"]));
+		expect(members("court-1")).not.toEqual(expect.arrayContaining(["d"]));
+	});
+	it("운영진이 직접 같이 넣은 두 사람은 그대로 두고 나머지만 채운다", () => {
+		const board = setup();
+		for (const id of "efgh") h.players.get(id)!.status = "resting";
+		h.courts = [{ id: 1, match: null }, { id: 2, match: null }];
+		avoid(["m-a", "m-b"]);
+		board.commitTeammates({ teamId: "court-2" }, ["a", "b"]);
+		board.autoFillTeam("court-2");
+		expect(members("court-2").sort()).toEqual([..."abcd"]);
+	});
+	it("새 팀 기본 자동편성은 묶음 때문에 대기자로 못 만들면 경기 중 선수를 예약하지 않고 합류 대기로 만든다", () => {
+		const board = setup();
+		avoid(["m-a", "m-b"]);
+		board.autoFillTarget({ newTeam: true });
+		const team = [...useBoardStore.getState().drafts.values()].find(t => t.courtId == null)!;
+		expect(team.waitForCompletion).toBe(true);
+		expect(useBoardStore.getState().reservations.size).toBe(0);
+		expect(members(team.id).includes("a") && members(team.id).includes("b")).toBe(false);
+	});
+	it("규칙을 불러오지 못하면 이전 규칙을 유지하고, 주인 목록을 불러오지 못하면 저장을 막는다", async () => {
+		avoid(["m-a", "m-b"]);
+		mockRulesFetch.mockResolvedValueOnce(null);
+		await useMatchAvoidStore.getState().loadRules(1);
+		expect(useMatchAvoidStore.getState()).toMatchObject({ rulesStatus: "error", rules: [["m-a", "m-b"]] });
+		useMatchAvoidStore.setState({ groups: [{ id: "g", memberIds: ["m-a", "m-b"], createdAt: "" }] });
+		mockAvoidFetch.mockResolvedValueOnce(null);
+		await useMatchAvoidStore.getState().load();
+		expect(useMatchAvoidStore.getState()).toMatchObject({ status: "error", groups: [expect.objectContaining({ memberIds: ["m-a", "m-b"] })] });
+		useToastStore.getState().clear();
+		expect(await useMatchAvoidStore.getState().add(["m-c", "m-d"], new Map())).toBe(false);
+		expect(mockAvoidCreate).not.toHaveBeenCalled();
+	});
+	it("저장·삭제 전에 시작된 불러오기 결과가 늦게 와도 방금 저장한 묶음을 지우지 않는다", async () => {
+		useMatchAvoidStore.setState({ groups: [], status: "ready" });
+		let finish!: (value: unknown) => void;
+		mockAvoidFetch.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+		const pending = useMatchAvoidStore.getState().load();
+		mockAvoidCreate.mockResolvedValueOnce({ id: "new", memberIds: ["m-a", "m-b"], createdAt: "" });
+		await useMatchAvoidStore.getState().add(["m-a", "m-b"], new Map());
+		finish({ groups: [], names: new Map() });
+		await pending;
+		expect(useMatchAvoidStore.getState().groups.map(g => g.id)).toEqual(["new"]);
+	});
+	it("서버가 같은 구성을 거절하면 중복이라고 알리고 목록을 다시 읽는다", async () => {
+		useMatchAvoidStore.setState({ groups: [], status: "ready" });
+		mockAvoidCreate.mockResolvedValueOnce("duplicate");
+		mockAvoidFetch.mockResolvedValueOnce({ groups: [{ id: "x", memberIds: ["m-b", "m-a"], createdAt: "" }], names: new Map() });
+		useToastStore.getState().clear();
+		expect(await useMatchAvoidStore.getState().add(["m-a", "m-b"], new Map())).toBe(false);
+		expect(useToastStore.getState().items.map(t => t.message)).toEqual(["이미 같은 묶음이 있어요"]);
+		await vi.waitFor(() => expect(useMatchAvoidStore.getState().groups.map(g => g.id)).toEqual(["x"]));
+	});
+	it("계정이 바뀌면 규칙·목록·주인 표시를 메모리에서 지운다", () => {
+		avoid(["m-a", "m-b"]);
+		useMatchAvoidStore.setState({ owner: true, groups: [{ id: "g", memberIds: ["m-a", "m-b"], createdAt: "" }] });
+		useAuthStore.setState({ memberId: "someone-else", isAdmin: false });
+		expect(useMatchAvoidStore.getState()).toMatchObject({ owner: false, rules: [], groups: [], status: "idle", rulesStatus: "idle" });
+	});
+	it("주인이 저장·삭제하면 바로 자동편성 규칙에 반영하고, 다른 묶음에 포함된 규칙은 지우지 않는다", async () => {
+		mockRulesFetch.mockResolvedValue({ owner: true, groups: [["m-a", "m-b"]] });
+		await useMatchAvoidStore.getState().loadRules(7);
+		useMatchAvoidStore.setState({ status: "ready", groups: [
+			{ id: "big", memberIds: ["m-a", "m-b", "m-z"], createdAt: "" }, { id: "pair", memberIds: ["m-a", "m-b"], createdAt: "" }] });
+		mockRulesFetch.mockReturnValue(new Promise(() => {}));
+		mockAvoidCreate.mockResolvedValueOnce({ id: "new", memberIds: ["m-c", "m-d"], createdAt: "" });
+		await useMatchAvoidStore.getState().add(["m-c", "m-d"], new Map());
+		expect(useMatchAvoidStore.getState().rules).toEqual([["m-a", "m-b"], ["m-c", "m-d"]]);
+		expect(mockRulesFetch).toHaveBeenLastCalledWith(7);
+		mockAvoidDelete.mockResolvedValueOnce(true);
+		await useMatchAvoidStore.getState().remove("big");
+		expect(useMatchAvoidStore.getState().rules).toEqual([["m-a", "m-b"], ["m-c", "m-d"]]);
+		mockAvoidDelete.mockResolvedValueOnce(true);
+		await useMatchAvoidStore.getState().remove("pair");
+		expect(useMatchAvoidStore.getState().rules).toEqual([["m-c", "m-d"]]);
+	});
+	it("주인이 아닌 운영진 기기도 규칙을 받아 자동편성에 쓰되 주인 표시는 받지 않는다", async () => {
+		mockRulesFetch.mockResolvedValueOnce({ owner: false, groups: [["m-a", "m-b"]] });
+		await useMatchAvoidStore.getState().loadRules(1);
+		expect(useMatchAvoidStore.getState()).toMatchObject({ owner: false, rules: [["m-a", "m-b"]] });
+		const board = setup();
+		board.autoFillTarget({ newTeam: true }, [], { waitForCompletion: false });
+		const team = [...useBoardStore.getState().drafts.values()].find(t => t.courtId == null)!;
+		expect(members(team.id).includes("a") && members(team.id).includes("b")).toBe(false);
 	});
 });
 

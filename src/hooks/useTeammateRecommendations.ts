@@ -62,6 +62,7 @@ export function useTeammateRecommendations(
 		const data = buildRecommendData(
 			{ teamId, seedId, newTeam },
 			selectedIds,
+			// 같이 매칭하지 않기 묶음은 넣지 않는다 — 목록은 평소대로 보이고, 묶음은 자동편성에서만 적용한다.
 			{ drafts, reservations, magnets, sessionPlayers, courts, groupHistory, lastGameType, cockCheckEnabled },
 			{ excludeReserved: true },
 		);

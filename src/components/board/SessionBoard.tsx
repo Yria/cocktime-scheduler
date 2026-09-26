@@ -117,8 +117,10 @@ export default function SessionBoard() {
 	// 자식이 position:absolute 라 positioned 조상으로 relative 를 둔다.
 	return (
 		<div
-			className="app-shell-h"
+			className="app-shell-h board-no-select"
 			style={{ width: "100%", overflow: "hidden", background: BG_BOARD }}
+			// 안드로이드 길게 누르기·마우스 오른쪽 메뉴 — 자석 롱프레스와 겹친다. 입력창은 그대로 둔다.
+			onContextMenu={(event) => { if (!(event.target instanceof HTMLElement && event.target.closest("input, textarea, [contenteditable='true']"))) event.preventDefault(); }}
 		>
 			<BoardToolbar />
 			{/* 동기화 중 표시 — 포어그라운드 복귀/재연결 시 서버 권위 재동기화 동안 상단 중앙에 잠깐 노출. */}
