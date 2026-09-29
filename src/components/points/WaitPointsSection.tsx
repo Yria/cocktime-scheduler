@@ -14,7 +14,7 @@ import Spinner from "../shared/Spinner";
 
 const PREVIEW = 8;
 
-/** 원장 사유 코드 → 사람이 읽는 한 줄. 서버 detail.reason 값과 1:1로 맞춘다(20260904000000). */
+/** 원장 사유 코드 → 사람이 읽는 한 줄. 서버 detail.reason 값과 1:1로 맞춘다(20260904000000 · 20260928000000). */
 function entryLabel(e: WaitPointEntry): string {
 	switch (e.reason) {
 		case "waitlisted_at_close":
@@ -29,6 +29,13 @@ function entryLabel(e: WaitPointEntry): string {
 			return "운영진 취소 — 우선참여권 반환";
 		case "session_cancelled":
 			return "회차 취소 — 우선참여권 반환";
+		// 경기 시작 없이 끝난 회차(20260928000000) — 한 사유가 세 종류에 걸리므로 kind 로 가른다.
+		case "session_not_held":
+			return e.kind === "refund"
+				? "열리지 않은 회차 — 우선참여권 반환"
+				: e.kind === "reversal"
+					? "열리지 않은 회차 — 당일 취소 감점 환원"
+					: "신청한 회차가 열리지 않음";
 		case "day_cancel":
 			return "당일 취소";
 		case "noshow":
@@ -136,7 +143,7 @@ export default function WaitPointsSection() {
 			>
 				{hasTicket
 					? `우선참여권이 있어요. 만석인 일정에서 '참석하기'를 누르면 정원 외 자리로 바로 확정할 수 있어요(회차당 ${TICKET_SESSION_CAP}명까지). 쓰기 전까지 포인트는 더 쌓이지 않아요.`
-					: `대기인 채로 회차가 마감될 때마다 1점씩 쌓이고, ${POINT_MAX}점을 모으면 만석인 일정에 정원 외 자리로 참여할 수 있어요. 당일에 취소하거나 오지 않으면 1점이 깎여요.`}
+					: `대기인 채로 회차가 마감되거나, 신청해 둔 회차가 경기 시작 없이 끝나면 1점씩 쌓여요. ${POINT_MAX}점을 모으면 만석인 일정에 정원 외 자리로 참여할 수 있어요. 당일에 취소하거나 오지 않으면 1점이 깎여요(열리지 않은 회차는 되돌려 드려요).`}
 			</p>
 
 			{loading && ledger.length === 0 ? (

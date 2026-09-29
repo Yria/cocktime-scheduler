@@ -3,8 +3,17 @@ import { supabase } from "./client";
 // 대기 포인트 / 우선참여권(티켓) 데이터 레이어. 규칙과 권한은 전부 서버(마이그레이션 20260904000000)에
 // 있고 여기서는 RPC 를 감싸기만 한다. 상수(7점·회차당 2명)의 클라 미러는 src/lib/schedule/waitStatus.ts.
 
-/** 원장 한 줄의 종류. earn=대기로 끝나 적립 / spend=티켓 사용 / refund=환원 / penalty=불참 차감 / adjust=운영진 보정. */
-export type WaitPointKind = "earn" | "spend" | "refund" | "penalty" | "adjust";
+/**
+ * 원장 한 줄의 종류. earn=적립(대기로 마감 · 미진행 회차) / spend=티켓 사용 / refund=환원 / penalty=불참 차감 /
+ * reversal=미진행 회차의 당일취소 감점 환원(20260928000000) / adjust=운영진 보정.
+ */
+export type WaitPointKind =
+	| "earn"
+	| "spend"
+	| "refund"
+	| "penalty"
+	| "reversal"
+	| "adjust";
 
 export interface WaitPointStatus {
 	balance: number;
@@ -21,7 +30,7 @@ export interface WaitPointEntry {
 	/** clamp 후 **실제로 적용된** 증감. 상한에 막혀 0인 행도 온다(detail.capped=true). */
 	delta: number;
 	balanceAfter: number;
-	/** 서버가 남긴 사유. reason 값: waitlisted_at_close / backfill / join / early_cancel / admin_cancel / session_cancelled / day_cancel / noshow. */
+	/** 서버가 남긴 사유. reason 값: waitlisted_at_close / backfill / join / early_cancel / admin_cancel / session_cancelled / session_not_held / day_cancel / noshow. session_not_held 는 earn·refund·reversal 에 공통이라 kind 와 함께 읽는다. */
 	reason: string | null;
 	capped: boolean;
 	note: string | null;

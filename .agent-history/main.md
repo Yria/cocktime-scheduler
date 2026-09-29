@@ -10115,6 +10115,177 @@ To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude
 
 **Prompt**: 이거 나만 볼 수 있는 형태면 좋겠는데.
 
+**Answer**: 9월 7일 작업(커밋 `22a50ed`)에서 만든 기능으로, 이번 세션에서 새로 한 것은 아닙니다. 지금 운영 DB에 있는 함수와 보류 중인 마이그레이션을 직접 비교해 정리했습니다.
+
+## 목적
+늦게 오거나 휴식했다 돌아온 사람은 판수가 적습니다. 자동편성은 판수가 적은 사람을 먼저 뽑기 때문에, 그대로 두면 이 사람이 한동안 연달아 뽑힙니다. 그래서 **합류하는 순간 판수를 "그때 참가자들의 평균"까지 올려서 시작**하게 합니다.
+- 원래 판수가 평균보다 많으면 그대로 둡니다. 깎지는 않습니다.
+- 평균은 반올림합니다.
+- 대기 시간도 합류 시점부터 다시 셉니다.
+- 예: 기존 참가자 판수가 2, 3, 3, 4이면 늦게 온 사람은 3판으로 시작합니다. 이 3은 추천 계산용 숫자이고, 실제 출전 기록은 0판 그대로 따로 남습니다.
+
+## 지금 운영 중인 방식과 보류된 수정의 차이
+
+| | 지금 운영 중 | 보류 중인 수정 (`20260907040000`) |
+|---|---|---|
+| 평균에 넣는 사람 | 휴식 중인 사람만 빼고 **전원**. 아직 오지 않아 콕 확인을 안 한 0판짜리도 포함 | 대기·경기 중이면서 **콕 확인을 한 사람만** |
+| 콕 체크 켠 세션 | 콕 확인 순간 보정 | 같음 |
+| 콕 체크 끈 세션 | 새로 추가돼도 **보정 없음** | 추가되는 순간 보정 |
+| 콕 체크를 켰다가 끌 때 | 없음 | 미확인 대기자를 한 번 보정 |
+| 휴식 복귀 | 보정함 (같은 평균 함수 사용) | 보정함 (고친 평균 사용) |
+
+지금 운영 버전의 핵심 문제는 **아직 오지 않은 사람의 0판이 평균을 끌어내린다**는 점입니다. 일정 신청자는 회차가 열리자마자 명단에 들어가 있고, 도착해서 콕 확인을 할 때 비로소 합류로 처리됩니다.
+
+예를 들어 먼저 온 4명이 각각 4판을 쳤고, 아직 오지 않은 4명이 0판이라고 하겠습니다.
+- 지금은 평균이 2판이라, 새로 온 사람이 2판으로 시작합니다. 먼저 온 사람보다 2판 앞서 우선권을 받습니다.
+- 수정본은 4판으로 시작합니다.
+
+## 검증과 보류 상태
+- 로컬 PostgreSQL 테스트 11개가 통과했습니다: `supabase/tests/late_join_game_count.test.mjs`.
+- 수학적 한계도 문서화했습니다: `docs/TEAM_MATCHING_MATH.md`.
+  - 평균 대비 오차는 최대 0.5판입니다.
+  - 경기가 끝나기 직전에 합류하느냐 직후에 합류하느냐에 따라 기준이 최대 1판 달라질 수 있습니다.
+  - 이 보정만으로 출전 순서까지 보장하지는 못합니다.
+- 문서에는 "운영 DB 적용 전"이라고만 적혀 있습니다. **왜 보류했는지는 기록에 없어서** 저도 이유를 모릅니다.
+
+참고로, 어제 오늘 오전 경기로 돌린 시뮬레이션은 운영 중인 방식이 아니라 **보류된 수정본의 평균 규칙**을 기준으로 계산했습니다. 그날은 늦게 온 사람이 1명뿐이라 결과에 미치는 영향은 작습니다.
+
+원하시면 최근 실제 회차 기록으로 "지금 방식 때문에 늦게 온 사람이 판수를 얼마나 덜 받았는지"를 먼저 재 보겠습니다. 결과를 보고 수정본을 배포할지 정하시면 됩니다.
+
+---
+
+## #304
+
+**Prompt**: 적용해
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #305
+
+**Prompt**: go on
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #306
+
+**Prompt**: go on
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #307
+
+**Prompt**: hi
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #308
+
+**Prompt**: go on
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #309
+
+**Prompt**: go on
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #310
+
+**Prompt**: claude doctor
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #311
+
+**Prompt**: hi
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #312
+
+**Prompt**: go on
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #313
+
+**Prompt**: 현재 우리 서비스에 포인트 제도가 있는데, 대기인 상태로 지나가면 포인트를 줘서 나중에 대기줄무시하고 입장하는기능 있잖아. 이 포인트를 다른 방법으로도 주고싶은데, 주말벙같이 인원이 다 차야만 경기가 진행되는 날에 참여를 눌렀는데 경기가 열리지 않았을때도 포인트를 주게하고싶어.
+
+**Answer**: 현황 조사를 백그라운드로 돌리고 있습니다. 조사 범위는 다섯 갈래입니다. 포인트 서버 로직, 회차가 무산으로 끝나는 경로, 화면 쪽 수정 지점, 문서에 남은 과거 결정, 그리고 프로덕션에서 무산 회차가 어떤 상태로 남는지(읽기만 합니다)를 봅니다. 결과가 오면 설계에서 정해 주셔야 할 부분을 정리해서 여쭙겠습니다.
+
+---
+
+## #314
+
+**Prompt**: <task-notification>
+<task-id>wevbtyas1</task-id>
+<tool-use-id>toolu_01SigHNJ443Tz3gMY9Cc9hvG</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/f29c4b36-e586-4ae2-8ef8-b314a0301271/tasks/wevbtyas1.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "대기 포인트 적립을 "정원 미달로 무산된 회차" 참여자에게 확장하기 위한 현황 파악" completed</summary>
+<result>[{"key":"points-server","report":"# 대기 포인트 서버 모델 지도 (최신 상태 기준, 2026-09-28 조사)\n\n파일은 수정하지 않았습니다. 표기: **[사실]**은 코드에서 직접 확인한 것이고, **[추정]**은 코드를 보고 추론한 것입니다(프로덕션 DB는 조회하지 않았습니다). 경로 접두사 `supabase/migrations/`는 생략합니다.\n\n## 0. 20260905 이후 재정의 전수 확인\n\n- **[사실]** 20260905 이후 마이그레이션에서 `wait_point|wait_ticket|trg_session_wait|exempt_reason|join_session|set_late_minutes`를 grep하면 걸리는 파일은 `20260921000000_scale_operator_freepass.sql` 하나뿐입니다.\n- **[사실]** 이 파일이 재정의하는 것은 `join_session`(:17-153), `promote_next_waitlisted`(:155), `set_late_minutes`(:203-329), `set_session_capacity`(:331), `wait_ticket_options`(:442-494)입니다. 바뀐 내용은 운영진 프리패스 한도 `operator_freepass_limit(capacity)`=max(2, floor(cap/8))(:7-12)뿐이고, 티켓 로직은 그대로 따라왔습니다.\n- **[사실]** 원장·잔액 테이블, `wait_points_write/recount`, 정산 함수, 종료·취소 트리거, `cancel_attendance`, `admin_cancel_attendance`, `wait_ticket_on_cancel`, `admin_adjust`는 **이후에 재정의된 적이 없습니다**. 따라서 최신 정의는 다음과 같습니다.\n  - `wait_points_settle_session`: 20260905:35-109\n  - 나머지 전부: 20260904\n- **[사실]** 20260905 이후 `public.sessions`에 새로 붙은 트리거는 두 개이고, 둘 다 status와 무관합니다.\n  - `trg_sessions_join_baseline_on_cock_disable`(20260907040000:121)\n  - `trg_sessions_resize_empty_courts`(20260922040000:106)\n\n## 1. 테이블\n\n### `wait_point_ledger` (20260904:102-112)\n- 컬럼: `id bigserial`, `member_id uuid → members ON DELETE CASCADE`, `session_id bigint`, `kind`, `delta`, `balance_after`, `detail jsonb`, `actor`, `created_at`.\n- `session_id`에는 **FK를 일부러 걸지 않았습니다**. 회차를 하드 삭제해도 원장이 남게 하려는 것입니다(:100-101).\n- kind CHECK: `('earn','spend','refund','penalty','adjust')`(:106). 컬럼 인라인 제약이라 제약 이름은 **[추정]** `wait_point_ledger_kind_check`입니다(PG 자동 명명 규칙 기준, 프로덕션 미확인).\n- `balance_after` CHECK는 `between 0 and 7`로 **리터럴 7이 하드코딩**돼 있습니다(:108). `wait_point_max()`를 참조하지 않습니다.\n- **멱등성**은 부분 유니크 인덱스 `wait_point_ledger_once_per_session (member_id, session_id, kind) where session_id is not null and kind in ('earn','penalty')`가 보장합니다(:122-124). 결과는 두 가지입니다.\n  - 회차당·회원당·kind당 한 행만 들어갑니다. 그래서 적립 사유가 달라도 `earn`이면 회차당 1회입니다.\n  - `spend/refund`는 재사용 경로를 열어두려고 일부러 제외했습니다(:119-121).\n- 헤더 원문: \"멱등성은 트리거가 주지 않는다 … closed→open→closed 재전이에서 다시 발화한다\"(:41-44).\n- RLS: 본인과 관리자만 SELECT할 수 있고, INSERT/UPDATE/DELETE 정책은 없습니다. 쓰기는 전부 SECURITY DEFINER 함수를 거칩니다(:132-139).\n- Realtime publication에서는 빠져 있습니다(:163-177).\n\n### `wait_point_balances` (:144-148)\n- `member_id PK`, `balance CHECK 0..7`(역시 리터럴, :146), `updated_at`.\n- 파생 캐시이면서 회원 단위 잠금 행입니다. 권위는 원장의 `sum(delta)`입니다(:150-151).\n\n## 2. 함수\n\n- **`wait_points_recount(p_member)`**(:182-206)\n  - balances 행을 `FOR UPDATE`로 잡아 직렬화하고, 저장값이 `sum(delta)`와 다르면 자가 치유합니다.\n  - 판정은 항상 이 함수의 반환값으로 합니다.\n- **`wait_points_write(p_member uuid, p_session bigint, p_kind text, p_delta int, p_detail jsonb default '{}', p_actor uuid default null) returns int`**(:211-254)\n  - clamp: `v_applied := least(greatest(p_delta, -v_bal), v_max - v_bal)`(:230). **kind별 부호 분기는 없습니다.** 부호는 호출자가 `p_delta`로 넘깁니다. 호출처별 값은 다음과 같습니다.\n    - earn +1\n    - penalty −1\n    - spend −7\n    - refund +7\n    - adjust는 임의 값\n  - clamp가 걸리면 `detail`에 `{capped:true, requested}`를 붙입니다(:236-238).\n  - `on conflict do nothing`(:240)으로 중복을 막습니다. 충돌 시 **현재 잔액을 그대로 반환**하고 balances는 건드리지 않습니다(:244).\n  - kind 값 검증은 CHECK에만 맡깁니다.\n- **티켓 상태 술어**\n  - `wait_ticket_spent`(:261-269): 해당 회차에서 spend 건수가 refund 건수보다 많으면 true입니다.\n  - `wait_ticket_session_used`(:284-292): status가 `('confirmed','late_pool')`이면서 spent인 행 수를 셉니다. `exempt_reason`을 믿지 않는 이유가 :275-279에 적혀 있습니다.\n- **정산 `wait_points_settle_session`**(최신 20260905:35-109)\n  - 게이트는 `exists(session_players where session_id)`입니다. 보드가 없으면 **즉시 return**합니다(:48-50).\n  - (a) 적립: `status='waitlisted'`이고, 게스트가 아니며(`invited_by is null`, `not is_guest`), `is_active`이고, 보드에 행이 없는 회원에게 `earn +1`, reason `waitlisted_at_close`(:55-74).\n  - (b) 차감: `status='confirmed'`이고 같은 필터를 통과했으며 보드에 행이 없는 회원에게 `penalty −1`, reason `noshow`(:89-106).\n  - 티켓 환급 분기는 없습니다.\n- **알림 `wait_ticket_ready`**(20260905:79-83)\n  - 적립 루프 안에서 `if v_bal = wait_point_max()`일 때 `notifications`에 INSERT합니다.\n  - INSERT는 `trg_notify_push_send`(20260622160000:56-58)를 거쳐 `net.http_post`로 send-push를 부르므로 **건마다 푸시**가 나갑니다.\n- **당일취소 헬퍼 `wait_ticket_on_cancel`**(20260904:747-788)\n  - `cancel_attendance`(:791-830)와 `admin_cancel_attendance`(:833-888)가 호출합니다.\n  - 당일취소가 아니고 spent면 refund +7(reason `early_cancel`/`admin_cancel`)입니다(:771-775).\n  - 본인이 당일취소하면 penalty −1(reason `day_cancel`)입니다(:780-783).\n- **`wait_points_admin_adjust(uuid,int,text)`**(:1156-1173)\n  - `is_admin` 검사 후 `write(member, NULL, 'adjust', delta, {note}, actor)`를 부릅니다. delta 0은 예외입니다.\n  - session_id가 NULL이라 유니크 인덱스 대상이 아니고, 횟수 제한이 없습니다.\n- **백필**\n  - 20260904:1182-1211: 2026-08-01 이후 종료 회차, 당시 게이트는 matches였습니다.\n  - 20260905:120-154: 보드 게이트로 보정했습니다.\n  - 둘 다 earn/`backfill`이고, **알림과 노쇼 소급은 없습니다**.\n- **조회 RPC**(authenticated): `wait_points_my_status`(:1046-1066), `wait_points_my_ledger`(:1069-1094), `wait_ticket_options`(최신 20260921:442-494).\n\n## 3. 트리거와 sessions.status 전이\n\n- status CHECK: `('draft','open','active','closed','cancelled')`(20260621010000:39-42).\n\n| 전이 | 경로 | 포인트 처리 |\n|---|---|---|\n| →closed | `dbEndSession`(src/lib/supabase/actions.ts:219-232, active→closed), sync A단계가 **지난 날짜의 draft/open을 전부 closed로**(20260815000000:31-37), 레거시 `startSession`(src/lib/supabase/session.ts:85-88) | `trg_session_wait_points_on_close`(20260904:979-999, WHEN `new='closed' and old is distinct`)가 정산을 호출합니다. 본문 전체를 예외로 격리합니다(:245-249). 트리거는 이름 알파벳순으로 complete_matches → court → wait_points 순서로 돕니다(:236-238). |\n| →closed인데 보드 없음 | 방치된 회차를 sync A가 닫는 경우 | **아무것도 하지 않습니다.** 적립·차감이 없고 **티켓 환급도 없습니다** [사실: 정산에 환급 분기가 없음] |\n| →cancelled | `cancelOccurrence`(src/lib/supabase/recurring.ts:218-224, 클라가 직접 UPDATE), `dues_delete_session`에서 preserve인 경우(20260911010000:181) | `trg_session_wait_points_on_cancel`(20260904:1006-1040)은 티켓 환급만 합니다. attendances 행은 그대로 남습니다(sessions 취소 때 attendances를 바꾸는 트리거가 없음). |\n| 하드 DELETE | `dues_delete_session`의 else 분기: 일회성이면서 부과·입금 기록이 없는 회차(20260911010000:173-186) | sessions에 DELETE 트리거가 **없습니다**. attendances는 CASCADE로 지워지고 spend 원장만 고아로 남습니다. 결과적으로 **티켓 7점이 환급되지 않습니다** [사실] |\n| cancelled→draft | `reopenOccurrence`(recurring.ts:246) | 이후 다시 cancelled가 되면 트리거가 재발화하지만, 환급은 `wait_ticket_spent`로 자가 차단됩니다. |\n\n취소 트리거가 적립을 하지 않는 근거 원문(20260904:1002-1004):\n&gt; \"⑭ 회차 취소 훅 — 운영진 사정으로 열리지 않았으니 티켓을 전액 돌려준다. 적립은 하지 않는다(열리지 않은 회차에는 '못 들어간 손해'가 실재하지 않는다). closed 훅은 리터럴 매칭이라 취소 회차를 절대 타지 않는다.\"\n\n같은 정책이 회원용 문서에도 있습니다. docs/SCHEDULE_LIST_PARTICIPANTS_SPEC.md:58 \"진행되지 않은 회차(보드가 만들어진 적 없는 회차)는 적립도 차감도 하지 않는다.\" 이번 요청은 이 두 정책 문장을 **정면으로 뒤집는 변경**입니다.\n\n## 4. 이번 조사에서 발견한 기존 결함 (새 기능과 직결)\n\n1. **[사실] 취소 트리거가 일부 티켓 보유자를 놓칩니다.** 필터가 `a.exempt_reason = 'ticket'`(20260904:1017)인데, `set_late_minutes`는 티켓 보유자가 late_pool로 가면 `exempt_reason=null`로 바꿉니다(20260921:267-269). 정원 여유로 복귀해도 null인 채 남습니다(20260921:281-284). 이 경우 spend가 살아 있는데도 회차가 취소되면 **환급되지 않습니다**. 설계 문서 자신도 \"exempt_reason 으로 세면 상한이 뚫린다\"(20260904:275-279)며 이 컬럼을 믿지 말라고 적어 두었습니다.\n2. **[사실] 무산 회차에서 티켓이 날아갈 수 있습니다.** 방치 후 sync A가 closed로 닫거나 하드 DELETE된 회차에서는 티켓 7점이 환급되지 않습니다(§3 표).\n3. **[사실] `wait_ticket_ready`가 중복 발송될 수 있습니다.** 조건이 `v_bal = max`뿐이라, 이미 7점인 회원이 다시 대기로 끝나면 delta 0에 capped인 행이 새로 들어가면서 7이 반환됩니다. 종료 재발화 때 충돌이 나도 현재 잔액 7이 반환됩니다. 두 경우 모두 **알림이 또 나갑니다**. 주석의 \"전이(6→7)에서만 발화\"(20260905:77)는 코드와 맞지 않습니다. 실제로 발생했는지는 **[추정]** 아직 아닐 가능성이 큽니다(9/05 기준 최고잔액 2).\n4. **[사실] 문서와 코드가 어긋납니다.** docs/EXPANSION_SPEC.md:378은 티켓 상한 계수 기준을 `exempt_reason='ticket'`으로 적었지만, 코드는 원장의 `wait_ticket_spent` 기준이고 late_pool도 포함합니다.\n5. **[사실] 서버의 \"무산\" 정의가 두 개입니다.**\n   - 회계: 경기 기록(matches) 없음(20260713110000:70)\n   - 포인트: 보드(session_players) 없음(20260905:48)\n   - 서버에는 \"최소 인원이 차야 진행\" 같은 성사 조건 컬럼도, 취소 사유 컬럼도 없습니다(grep 결과 없음).\n\n## 5. 새 적립 사유(\"회차 무산 보상\")를 넣을 때 손댈 지점\n\n1. **kind 선택**\n   - **A안: `kind='earn'`을 재사용하고 `detail.reason`을 새로 둡니다**(예: `session_not_held`). CHECK와 인덱스를 바꿀 필요가 없고, 멱등성이 자동으로 보장되며, \"회차당 적립 1회\" 불변식이 지켜집니다. 대신 대기 적립과 무산 보상이 같은 회차에서 서로를 막습니다(이것이 바람직하다는
+... (truncated 36514 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/f29c4b36-e586-4ae2-8ef8-b314a0301271/tasks/wevbtyas1.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/f29c4b36-e586-4ae2-8ef8-b314a0301271/subagents/workflows/wf_9168cb6a-c08/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/f29c4b36-e586-4ae2-8ef8-b314a0301271/workflows/scripts/understand-wait-points-lapsed-session-wf_9168cb6a-c08.js', resumeFromRunId: 'wf_9168cb6a-c08'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>5</agent_count><agents_done>5</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>835404</subagent_tokens><tool_uses>273</tool_uses><duration_ms>664520</duration_ms></usage>
+</task-notification>
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #315
+
+**Prompt**: 신규기능이니까 기존 상황 소급부여 이런거 안해도됨
+
+**Answer**: 적대적 리뷰 4개 관점을 백그라운드로 돌리고 있습니다. 각 관점이 지적을 내면, 다른 에이전트가 그 지적을 반박하려고 코드와 PGlite로 직접 확인합니다. 결과가 오면 확인된 지적만 반영하겠습니다.
+
+지금까지 해 둔 것은 이렇습니다.
+- 새 마이그레이션 `20260928000000_wait_points_not_held.sql`
+- PGlite 테스트 15개(새 마이그레이션을 빼면 12개가 실패하는 것도 확인)
+- 원장 사유 라벨과 규칙 문구
+- 문서 3곳
+
+전체 테스트 919개, 린트, 빌드는 모두 통과했습니다.
+
+---
+
+## #316
+
+**Prompt**: <task-notification>
+<task-id>wfpaa2tym</task-id>
+<tool-use-id>toolu_014qLVdywP1vTuDmMTVWaTfr</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/f29c4b36-e586-4ae2-8ef8-b314a0301271/tasks/wfpaa2tym.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "미진행 회차 포인트 정산 변경을 4개 관점으로 리뷰하고 각 지적을 반박 검증" completed</summary>
+<result>[{"lens":"sql-safety","findings":[{"id":"sql-safety-1","severity":"minor","file":"supabase/migrations/20260928000000_wait_points_not_held.sql","line":203,"title":"시작하지 않은 게 이미 보이는 회차에 늦게 신청해도 위험 없이 +1을 받는다","scenario":"상태: 19:00~22:00 회차가 21:30까지 [경기 시작] 없이 status='open'이고 보드도 비어 있다. 회원 X가 21:30에 참석하기를 누른다. join_session 은 status가 open/active 이고 ends_at 이 아직 지나지 않았으면 통과시킨다(20260921000000_scale_operator_freepass.sql:53-55). 정원이 남으면 confirmed, 차 있으면 waitlisted 로 들어간다. 다음 날 sync A가 이 회차를 closed 로 바꾸면 종료 훅 → wait_points_settle_session 의 보드 없음 분기 → wait_points_settle_not_held (c) 루프(:198-210)가 돈다. 이 루프는 status in ('confirmed','late_pool','waitlisted') 만 보고 신청 시각은 보지 않으므로 X에게 +1이 들어간다. ends_at 이 null 인 회차는 다음 날 sync 가 돌기 전까지, 날짜가 지난 뒤에도 같은 방법이 통한다. 진행된 회차였다면 늦게 들어온 confirmed 는 노쇼 −1 위험을 졌지만, 미진행 회차에는 그런 위험이 전혀 없다. 결과적으로 '안 열린 게 보이는 회차에 막판 신청'이 손해 없이 포인트를 모으는 경로가 된다(7점이면 정원 외 티켓). 이 마이그레이션 헤더가 내세운 보상 근거인 '신청해 두고 시간을 비워 뒀는데 열리지 않은 손해'(:20-22)를 구현이 보장하지 못한다.","suggested_fix":"(c) 적립 루프에 신청 시각 조건을 넣는다. 예: `and (v_sched is null or a.requested_at &lt; v_sched)`. requested_at 은 신규 신청 때와 재신청 UPDATE 때 모두 now() 로 갱신된다(20260904000000:407, 20260621020000:17). 그래서 '시작 시각 전에 마지막으로 신청한 사람'만 대상이 되고, 당일취소 뒤 시작 후에 재신청한 경우도 걸러진다. 다른 방법은 join_session 에서 status='open' 이고 scheduled_at 이 지났으면 신청을 막는 것이다(시작 안 된 회차에 뒤늦게 신청할 이유가 없다). 어느 쪽이든 사양 N2 문구('끝까지 유지')를 해석하는 문제이므로 운영자 확인 후 반영하고, docs/SCHEDULE_LIST_PARTICIPANTS_SPEC.md §2.5 에도 적는다."}],"verdicts":[{"id":"sql-safety-1","verdict":"refuted","evidence":"동작 자체는 사실이다. 스크래치패드 late.mjs 로 PGlite 에서 실증했다(테스트 FIXTURE 에 requested_at 컬럼을 더하고 20260904→20260905→20260928 순으로 적용). scheduled_at=now()-150분, ends_at=now()+30분인 open 회차를 만들고, 보드 없이 requested_at=now() 인 confirmed 회원을 넣은 뒤 closed 로 바꿨다. 그 회원도 사전 신청자와 똑같이 earn +1(reason=session_not_held)을 받았다. (c) 루프(20260928000000:198-210)는 상태·게스트·활성만 본다.\n\n그러나 이 결과는 확정 사양이 요구하는 결과이고, '구현이 사양을 못 지키는' 경우가 아니다.\n(1) N2(:11-12)는 '끝까지 신청을 유지한 회원 **전원**'이다. N1(:10)은 추가 조건을 두지 않는다고 명시한다. 운영자 원 요청(:4-5)도 '참여를 눌렀는데 경기가 열리지 않았을 때'다. 21:30에 신청하고 끝까지 유지한 X는 문자 그대로 대상이다. 지적이 근거로 든 :20-22는 결정의 이유 설명이지 사양이 아니다. 지적 스스로도 수정안에 '사양 N2 문구 해석 문제이므로 운영자 확인 후 반영'이라고 적었다. 즉 사양을 다시 논의하자는 제안이다.\n(2) 제안한 수정은 N2를 깨뜨리고 정당한 대상을 떨어뜨린다. UI는 시작 시각이 지난 open 회차를 일부러 '진행 하이라이트'로 맨 위에 올리고 ends_at 전까지 참석하기를 열어 둔다(src/components/Home.tsx:324-351). 늦참(late_pool)도 N2 대상에 명시된 정식 경로다. 19:00 회차에 19:10에 '가겠다'고 신청했는데 운영진이 끝내 [경기 시작]을 누르지 않은 회원은 '시간을 비워 둔' 사람 그 자체다. 그런데 `requested_at &lt; v_sched` 조건은 이 회원을 제외한다. 대안인 'open이고 scheduled_at이 지났으면 join 차단'도 문제다. canStartSchedule에는 시작 상한이 없다(Home.tsx:337-340). 그래서 운영진이 늦게 시작하는 날 먼저 도착한 사람이 신청할 수 없게 되어, 기존 현장 신청 흐름이 망가진다.\n(3) 전제 일부가 과장됐다. '위험이 전혀 없다'는 틀리다. 회차가 닫히기 전까지 운영진은 언제든 시작을 누를 수 있고, 그러면 X도 보드에 시드되어 노쇼 −1 위험을 진다. 'ends_at null이면 날짜가 지난 뒤에도 통한다'는 변형도 UI로는 사실상 막혀 있다. scheduleActions.load가 목록을 조회하기 전에 sync_schedule_occurrences를 먼저 호출하고(src/store/scheduleStore.ts:141-143), A단계가 지난 날짜의 open 회차를 닫는다(20260815000000:31-36). 남는 틈은 자정 이후 아무 클라이언트도 sync를 부르기 전에 RPC를 직접 호출하는 좁은 창뿐이다.\n(4) 이득에도 상한이 있다. 미진행 회차당 1점이고, 유니크 인덱스가 이를 보장한다(:79-81).\n\n결론: 코드 결함이 아니라 확정 사양의 정책 선택이므로 refuted로 판정한다. 운영자가 '막판 신청'까지 보상할 뜻인지는 원하면 정책 질문으로 따로 전달할 수 있다. 다만 이번 사양 범위에서 고칠 대상은 아니다."}]},{"lens":"spec-conformance","findings":[{"id":"spec-conformance-1","severity":"minor","file":"supabase/migrations/20260928000000_wait_points_not_held.sql","line":192,"title":"당일취소 감점 환원(reversal)으로 처음 7점이 되면 wait_ticket_ready 알림이 나가지 않고, 같은 sync 안에서는 알림 여부가 행 처리 순서에 달려 있음","scenario":"7점 도달 여부는 wait_points_earn_one(:103-111)만 검사합니다. 미진행 정산의 (b) 감점 환원 루프(:183-195)는 wait_points_write 를 직접 불러서, 환원으로 7점에 닿아도 알림을 보내지 않습니다. PGlite 로 확인한 재현(스크래치패드 probe3.mjs): 잔액 6 → 토요일 오후 주말벙 S 를 당일취소해 5 → 같은 날 진행된 회차 T 가 대기인 채로 마감돼 +1, 6(직전 잔액이 5라 알림 없음) → 다음 날 sync A 가 S 를 미진행으로 닫아 reversal +1, 7. 결과는 잔액 7(우선참여권 보유)인데 wait_ticket_ready 가 0건입니다. 이 회원은 7점에 처음 닿았는데도 알림을 한 번도 받지 못합니다. S 와 T 가 둘 다 미진행이면 sync A 의 UPDATE 한 번이 두 회차를 닫습니다. 이때 S 를 먼저 처리하면 알림 1건(earn 이 7을 넘김), T 를 먼저 처리하면 0건(reversal 이 7을 넘김)입니다(probe.mjs Case A). 사양 5는 '7점 도달 알림만'이라고 합니다. 테스트 주석의 근거('환원으로 7이 된 것은 새로 모은 것이 아니다')는 티켓 환원(refund)에는 맞습니다. 하지만 감점 환원에는 맞지 않습니다. 감점 전에 7점이었던 적이 없는 회원도 있기 때문입니다.","suggested_fix":"reversal 에도 earn 과 같은 '직전 잔액 &lt; 7 이고 직후 = 7' 검사를 적용합니다. 예를 들어 earn_one 을 wait_points_credit_notify(p_member, p_session, p_kind, p_delta, p_detail, p_notify_session) 같은 공용 헬퍼로 일반화하고, (b) 루프가 그 헬퍼를 거치게 합니다. 티켓 환원(refund)은 지금처럼 제외합니다. 이렇게 하면 7을 넘기는 쪽이 earn 이든 reversal 이든 정확히 한 번 알림이 나가므로, sync A 의 행 순서 의존도 사라집니다."},{"id":"spec-conformance-2","severity":"minor","file":"supabase/migrations/20260928000000_wait_points_not_held.sql","line":364,"title":"하드 DELETE 뒤 같은 회차의 기존 원장 행(당일취소 감점·티켓 사용·사전취소 환원)은 날짜·장소가 비어 문서의 '내역에는 날짜·장소가 남는다'와 어긋남","scenario":"wait_points_my_ledger 의 대체 라벨은 각 행 자신의 detail.session_at / place_name 만 봅니다. 그런데 이 스냅샷은 새 미진행 정산 행(v_ctx)에만 들어갑니다. 기존 경로인 wait_ticket_on_cancel 의 penalty/refund 와 join_session 의 spend 는 detail 에 {reason} 만 남깁니다(20260904000000:773-783). PGlite 재현(probe.mjs Case B): 잔액 3 → 일회성 회차를 당일취소(−1) → 운영진이 [삭제](금융 기록 없음 → 하드 DELETE)합니다. 그러면 내 내역에 'reversal +1 · 10/3 · 체육관'과 '당일 취소 −1 · 날짜 없음 · 장소 없음'이 나란히 뜹니다. 티켓을 쓴 사람의 '우선참여권 사용 −7' 행도 날짜와 장소가 비고, 그 옆 '열리지 않은 회차 — 우선참여권 반환 +7'에만 라벨이 붙습니다. 이번에 추가한 SCHEDULE_LIST_PARTICIPANTS_SPEC.md:60 은 '일정 목록에서 사라지는 것과 무관하게 내역에는 날짜·장소가 남는다'고 약속하는데, 그 회차의 행 절반만 그 약속을 지킵니다.","suggested_fix":"원장이 append-only 이므로 조회 쪽에서 보강합니다. wait_points_my_ledger 에 같은 session_id 의 스냅샷 행을 찾는 lateral 조회를 더합니다. 예: left join lateral (select l2.detail-&gt;&gt;'session_at' sa, l2.detail-&gt;&gt;'place_name' pn from public.wait_point_ledger l2 where l2.session_id = l.session_id and l2.detail ? 'place_name' limit 1) snap on true 로 조인하고, coalesce(s.scheduled_at, (l.detail-&gt;&gt;'session_at')::timestamptz, snap.sa::timestamptz) 처럼 씁니다. 삭제 직전 정산이 그 회차에 스냅샷 행을 하나도 만들지 않는 경우(예: 전원이 사전취소)까지 막으려면, 앞으로는 spend/penalty/refund detail 에도 session_at·place_name 을 스냅샷하게 합니다."},{"id":"spec-conformance-3","severity":"minor","file":"docs/SCHEDULE_LIST_PARTICIPANTS_SPEC.md","line":62,"title":"'[경기 시작] 안 누르고 진행' 부작용 설명이 감점 환원·몰수 티켓 환원을 빠뜨렸고, 운영진이 그렇게 될 수밖에 없는 경로를 운영 문서가 알리지 않음","scenario":"문서에는 '안 누르고 진행하면 참석자 전원에게 1점이 쌓이고 불참 차감도 없다'고만 적혀 있습니다. 코드는 보드가 없는 모든 회차에서 settle_not_held 를 돌리므로, 실제로 진행한 회차라도 (a) 당일취소로 몰수된 우선참여권 7점을 전액 돌려주고 (b) 당일취소 −1 을 reversal 로 되돌립니다(마이그레이션 :179-195). 포인트로 보면 7점 몰수 환원이 가장 큰 효과인데 문서에서 빠져 있습니다. 운영진이 모르고 이 상태를 만드는 구체적 경로도 있습니다. 확정자 중 성별 미입력 회원이 있으면 [경기 시작]이 'profile incomplete'로 막힙니다(start_session_from_schedule, Home.tsx:50-51). 이때 운영진이 [즉석 세션 시작](Home.tsx:455-472 → session.ts:78 startSession)으로 대신 진행하면, 원래 일정 회차는 보드 없이 남아 다음 날 sync A 에서 미진행으로 정산됩니다. 반대 방향도 있습니다. 무산된 회차를 [경기 시작]→[종료]로 '정리'하면 확정자 전원이 보드에 시드되어 진행 회차로 판정되고, 신청 유지자 +1·감점 환원·몰수 티켓 환원이 모두 사라집니다. EXPANSION_SPEC.md:383 운영 사양은 '눌렀으면 진행, 아니면 미진행'이라는 선만 적고 이 두 운영 결과를 적지 않았습니다.","suggested_fix":"SCHEDULE_LIST_PARTICIPANTS_SPEC.md:62 괄호 안을 '참석자 전원에게 1점이 쌓이고, 불참 차감이 없으며, 당일 취소 감점과 몰수된 우선참여권도 돌려준다'로 바꿉니다. EXPANSION_SPEC.md §5.1 미진행 정산 항목에는 운영 주의 두 줄을 추가합니다. ① [경기 시작]이 막혀(성별 미입력 등) 즉석 세션으로 대신 진행하면 원 회차는 미진행으로 정산된다(진행하려면 프로필을 먼저 채우고 [경기 시작]). ② 무산 회차는 [경기 시작]→[종료]로 정리하지 말고 그대로 두거나 [삭제]한다."}],"verdicts":[{"id":"spec-conformance-1","verdict":"confirmed","evidence":"PGlite로 직접 재현했습니다(scratchpad/v2/verify.mjs, 원 마이그레이션 3개를 그대로 적용).\n\n코드 근거:\n- 7점 도달 검사는 wait_points_earn_one 안에만 있습니다(20260928000000:103-111).\n- 미진행 정산 (b) 감점 환원은 wait_points_write 를 직접 부르므로 7점 검사를 거치지 않습니다(:192-194).\n- sync A 는 UPDATE 한 문장으로 여러 회차를 닫습니다(20260815000000:32-36). 종료 트리거는 for each row 입니다(20260904000000:995-999). 그래서 어느 회차를 먼저 처리할지는 행의 물리 순서가 정합니다.\n\n재현 결과:\n- [1] 실제 sync A 와 같은 형태(`update sessions set status='closed' where status in ('draft','open')` 한 번)로 확인했습니다. 잔액 6에서 S 를 당일취소해 5가 됐고, S·T 둘 다 미진행입니다. 힙에서 S 가 먼저면 reversal 5→6, earn 6→7 이 되어 ready=1 입니다. T 가 먼저면 earn 5→6, reversal 6→7 이 되어 ready=0 입니다. 같은 상태인데 알림 여부가 행 순서로 갈립니다.\n- [1b] probe3 시나리오(진행된 T 에서 대기 +1 을 받은 뒤, 다음 날 S 미진행 reversal)도 재현됩니다. 잔액은 7로 끝나는데 알림은 0건입니다. reversal 을 뺀 원장의 max(balance_after) 는 6이라, 이 회원은 7점에 처음 닿았는데도 알림을 받지 못합니다.\n\n반박 시도가 실패한 이유:\n- 테스
+... (truncated 16831 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/f29c4b36-e586-4ae2-8ef8-b314a0301271/tasks/wfpaa2tym.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/f29c4b36-e586-4ae2-8ef8-b314a0301271/subagents/workflows/wf_0ac7716b-59e/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/f29c4b36-e586-4ae2-8ef8-b314a0301271/workflows/scripts/review-wait-points-not-held-wf_0ac7716b-59e.js', resumeFromRunId: 'wf_0ac7716b-59e'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>8</agent_count><agents_done>8</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>1582847</subagent_tokens><tool_uses>447</tool_uses><duration_ms>1681792</duration_ms></usage>
+</task-notification>
+
 **Answer**: _(응답 대기 중…)_
 
 ---

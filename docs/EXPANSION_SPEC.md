@@ -88,7 +88,7 @@ $$;
 | `attendances.meal_joining` | `true` `false` (boolean) | 정모 식사(회식) 참여. **기본 `true`(참여)** — "기본 참여, 안 먹는 사람만 해제" 모델이라 미응답/참여를 구분하지 않는다(3택 아님). `sessions.is_regular AND sessions.meal_enabled` 회차에서만 의미. 쓰기 `set_meal_joining(bigint,boolean,uuid)` — 본인 또는 내가 데려온 게스트. 취소 시 `true` 로 복원(BEFORE UPDATE 트리거 `trg_att_reset_meal` — 취소 경로 3개에 술어를 복제하지 않기 위해). 마이그레이션 `20260811010000` |
 | `attendances.exempt_reason` | `'newbie'` `'ticket'` (NULL 허용) | 정원 외 확정 자리의 **사유**. `capacity_exempt` 와 항상 쌍(exempt=false면 NULL). `capacity_exempt` 만으로는 화면이 정원 외를 전량 '신규'로 오표기한다. 마이그레이션 `20260904000000` |
 | `notifications.type` | `'promoted'` `'demoted'` `'session_cancelled'` `'session_closed'` `'session_open'` `'carpool_muster'` `'schedule_added'` `'new_member'` `'removed'` `'noshow'` `'wait_ticket_ready'` | 신규 타입은 여기 + `notifications.ts`/`send-push` 메시지 양쪽에 추가 |
-| `wait_point_ledger.kind` | `'earn'` `'spend'` `'refund'` `'penalty'` `'adjust'` | 대기 포인트 원장(append-only). 마이그레이션 `20260904000000` |
+| `wait_point_ledger.kind` | `'earn'` `'spend'` `'refund'` `'penalty'` `'reversal'` `'adjust'` | 대기 포인트 원장(append-only). 마이그레이션 `20260904000000`. `reversal` = 미진행 회차의 당일취소 감점 환원(`20260928000000`) |
 
 ### sessions 상태기계
 
@@ -375,16 +375,23 @@ alter table public.sessions
   - 목적: 오래 대기했는데 계속 못 들어오는 회원의 구제책. **대기인 채로 회차가 마감되면 +1점**, **7점**을 모으면 만석 회차에 **정원 외 자리**로 확정할 수 있다. 잔액은 0~7이고 7에서 더 쌓이지 않는다(티켓은 최대 1장 = '잔액이 7인 상태').
   - **자리 성격은 신규 프리패스와 같다**(`capacity_exempt = true` + `exempt_reason = 'ticket'`). 정원 안 빈자리를 소비하지 않으므로 **티켓 사용자가 대기 1번의 승격 기회를 빼앗지 않는다.**
   - **게이트가 다르다 — 모든 일정에서 쓸 수 있다.** 운영진·신규가 쓰는 `session_op_free`(부과 없는 일정) 게이트를 티켓에는 걸지 않는다. 대기가 실제로 밀리는 것이 인기 있는 정규 일정이라 거기서 못 쓰면 구제책이 되지 않기 때문이다. 대관비는 참석했으니 정상 부과된다(`dues_court_targets` 는 `capacity_exempt` 를 보지 않으므로 코드 변경 없이 자동 포함).
-  - **회차당 2명** (`wait_ticket_session_cap()`). 게스트 상한과 같은 단위이며, 같은 규약으로 **카운터 락 안에서 `count(*)`** 로 판정한다. 세는 대상은 `status='confirmed' AND exempt_reason='ticket'` 인 **살아 있는 행**이라 취소하면 슬롯이 저절로 돌아온다(저장 카운터 없음 = 드리프트 없음).
+  - **회차당 2명** (`wait_ticket_session_cap()`). 게스트 상한과 같은 단위이며, 같은 규약으로 **카운터 락 안에서 `count(*)`** 로 판정한다. 세는 대상은 `status in ('confirmed','late_pool')` 이면서 **원장상 지불이 살아 있는**(`wait_ticket_spent`) 행이라 취소하면 슬롯이 저절로 돌아온다(저장 카운터 없음 = 드리프트 없음). `exempt_reason` 으로 세지 않는다 — 늦참 전환이 사유를 내려놓아 상한이 뚫린다(`wait_ticket_session_used`).
   - **명시적 사용**: `join_session(p_session_id, p_use_ticket)`. 시그니처가 넓어졌으므로 구 1인자 함수를 **`drop function` 후 재생성**했다(오버로드가 남으면 PostgREST 가 후보를 못 골라 참석 신청 전체가 죽는다). 분기 순서상 정원 여유·운영진·신규로 들어갈 수 있으면 티켓을 **소모하지 않는다**.
   - **부여 지점은 본인이 누른 순간뿐** — `join_session`, `set_late_minutes`(정시 복귀 시 이미 지불한 자리 되찾기, **재차감 없음**). **`promote_next_waitlisted` 에는 티켓 조건이 없다(재론 금지)** — 넣으면 정원 안 대기 1순위가 티켓 보유자에게 영구 추월당해, 대기 구제가 목적인 기능이 대기 1번을 막는 역설이 된다(신규 프리패스와 같은 starvation 논증).
   - **−1 차감**: 확정 자리를 **본인이 당일에 취소**하면 −1(하한 0). 판정선은 회계와 같은 단일 술어 `dues_is_day_cancel_chargeable`(당일 KST + 확정 후 1시간 유예)이다. **운영진 제거는 벌하지 않는다**(귀책이 불분명). 노쇼는 회차 종료 시 `confirmed` 인데 `session_players` 행이 없는 경우로 판정한다 — 시작 RPC 가 확정자 전원을 시드하므로 부재는 '운영진이 보드에서 뺐다'는 뜻이다.
-  - **회차 게이트 = 보드(`session_players`) 존재**(2026-09-05 `20260905000000`). 뜻은 "경기를 기록했는가"가 아니라 "회차가 실제로 진행됐는가"이고, 그 증거는 보드다. 종전 `exists(matches)` 기준은 **팀생성(자동 편성)을 쓰지 않고 진행한 회차**를 유령 회차로 오분류해 그 회차 대기자의 적립을 통째로 막았다(프로덕션에 그런 회차가 2건 있었고, 마침 대기자가 없어 실피해는 없었다). sync A단계가 자동으로 닫은 진짜 유령 회차는 시작된 적이 없어 보드가 비어 있으므로 그대로 걸러진다.
+  - **회차 게이트 = 보드(`session_players`) 존재**(2026-09-05 `20260905000000`). 뜻은 "경기를 기록했는가"가 아니라 "회차가 실제로 진행됐는가"이고, 그 증거는 보드다. 종전 `exists(matches)` 기준은 **팀생성(자동 편성)을 쓰지 않고 진행한 회차**를 유령 회차로 오분류해 그 회차 대기자의 적립을 통째로 막았다(프로덕션에 그런 회차가 2건 있었고, 마침 대기자가 없어 실피해는 없었다). sync A단계가 자동으로 닫은 진짜 유령 회차는 시작된 적이 없어 보드가 비어 있으므로 그대로 걸러진다 — 걸러진 회차는 아래 **미진행 회차 정산**으로 간다.
+  - **미진행 회차 정산**(2026-09-28 `20260928000000`, 운영자 확정): 보드가 없는 회차(= [경기 시작]을 누른 적 없음)가 끝나면 ① 그 회차에 쓴 티켓 중 아직 지불 상태인 것 전액 환원(당일취소 몰수분 포함) ② 그 회차의 당일취소 감점을 실제 깎인 양만큼 `reversal` 로 환원 ③ **신청을 유지한 회원 전원**(`confirmed`·`late_pool`·`waitlisted`, 게스트·비활성 제외) `earn +1`(reason `session_not_held`). 옵션·주말·정원 미달 조건은 두지 않는다 — "눌렀으면 진행, 아니면 미진행"이 운영자의 선이다. 종전 "열리지 않은 회차에는 적립하지 않는다(못 들어간 손해가 없다)"를 **의도적으로 뒤집은** 것이다 — 보상하는 것은 '신청해 두고 시간을 비워 뒀는데 열리지 않은 손해'다.
+    - 경로 3개를 한 함수(`wait_points_settle_not_held`)로 모은다: 방치(sync A → `closed`, 종료 훅) · 반복/금융기록 회차 [삭제](→ `cancelled`, 취소 훅) · 금융기록 없는 일회성 [삭제](**하드 DELETE**, `BEFORE DELETE` 훅 — CASCADE 로 참석 행이 사라지기 직전에 정산하고, 원장은 FK 가 없어 남는다. 장소명은 `detail.place_name` 에 스냅샷). 겹쳐 발화해도 결과는 한 번이다(earn·reversal 은 유니크 인덱스, 환원은 `wait_ticket_spent`).
+    - 시작된 뒤 취소된 회차(RPC 직접 호출로만 가능)는 종전대로 티켓 환원만 한다. 시작된 회차의 하드 DELETE 는 아무것도 하지 않는다.
+    - 7점 알림은 **이번 가산(적립 `earn`·감점 환원 `reversal`)으로 막 찼을 때만**(`wait_points_credit`: 직전 잔액 < 7 이고 직후 = 7). 종전 코드는 이미 7점인 회원에게도 재적립 조건마다 알림을 다시 보냈다. 감점 환원도 검사하는 이유: 안 하면 sync A 가 한 UPDATE 로 여러 회차를 닫을 때 처리 순서에 따라 알림이 사라진다. 티켓 환원(`refund`)은 제외 — 쓸 때 이미 7점이었으니 한 번 알린 상태다. 미진행 경로의 알림은 `session_id` 없이 넣는다(하드 DELETE 의 CASCADE 가 지우지 않도록). 회차별 +1 알림은 여전히 없다.
+    - 하드 DELETE 된 회차의 내역 라벨: 원장은 append-only 라 이전 행(spend·penalty·사전취소 refund — `detail` 에 reason 만 있음)을 고치지 않고, `wait_points_my_ledger` 가 회차 행이 없을 때 **같은 회차의 스냅샷 행**에서 날짜·장소를 빌린다. 스냅샷 행이 하나도 없으면(전원 사전취소 뒤 삭제) 종전처럼 비어 있다.
+    - 운영 주의: 확정자 중 성별 미입력이 있으면 [경기 시작]이 막힌다. 이때 [즉석 세션]으로 대신 진행하면 원래 일정 회차는 보드 없이 남아 **미진행으로 정산된다**(신청자 전원 +1, 불참 차감 없음). 진행하려면 프로필을 채운 뒤 [경기 시작]을 누른다.
+    - 알려진 한계(수용): 취소 회차를 [되살리기]해 결국 진행돼도 이미 준 +1·환원은 회수하지 않는다. 시작 시각이 지난 미진행 회차에 늦게 신청한 사람도 '끝까지 신청 유지'라 +1 을 받는다(운영자 사양 그대로, 회차당 1점 상한). 소급 없음(신규 기능).
   - **참여 판정은 보드 등록까지만 본다 — 경기 출전 여부로 내려가지 않는다(재론 금지).** 확정자 907행 중 38행이 '보드에 올랐지만 미출전'이었고 원인은 본인 불참이 아니라 팀생성 미사용·보드 운용 방식이었다. 경기 로그까지 내려가면 판정이 운영진의 도구 사용 습관에 좌우된다.
-  - **환원**: 사전 취소·운영진 제거·회차 취소(`cancelled`)는 7점 전액 환원. **당일 취소·노쇼는 몰수**(C10). 이중 환원은 `wait_ticket_spent`(spend 건수 > refund 건수)가 스스로 막는다.
+  - **환원**: 사전 취소·운영진 제거·회차 취소(`cancelled`)·미진행 종료는 7점 전액 환원. **당일 취소·노쇼는 몰수**(C10) — 단 그 회차가 미진행으로 끝나면 몰수분도 환원한다. 환원 대상은 참석 행의 `exempt_reason` 이 아니라 **원장의 `spend` 행**으로 찾는다(늦참 전환·하드 DELETE 에서도 놓치지 않도록, `20260928000000`). 이중 환원은 `wait_ticket_spent`(spend 건수 > refund 건수)가 스스로 막는다.
   - **잔액은 세지 않고 기록한다**: `wait_point_ledger` 가 append-only 권위이고 `wait_point_balances` 는 파생 캐시다(`session_counter_sync` 와 같은 자가 치유). 원장의 `delta` 는 요청량이 아니라 **clamp 후 실제 적용량**이라 잔액 = `sum(delta)` 가 항상 성립한다.
-  - **멱등은 인덱스가 만든다**: 부분 유니크 `(member_id, session_id, kind) where kind in ('earn','penalty')`. 종료 트리거는 `closed→open→closed` 재전이에서 다시 발화하고 소급 백필도 같은 경로를 타므로, 트리거 WHEN 절이 아니라 원장 제약이 재실행 면역을 준다. `spend`/`refund` 는 **일부러 제외** — 환원 뒤 같은 회차에 다시 쓰는 경로가 삼켜지면 '공짜 재사용'이 된다.
-  - 종료 훅 `trg_session_wait_points_on_close` 는 `search_path=''` + 본문 전체 예외 격리다. 포인트 실패가 `sync_schedule_occurrences` A단계를 죽이면 회차 공개가 전면 중단된다(2026-07-26 실사고).
+  - **멱등은 인덱스가 만든다**: 부분 유니크 `(member_id, session_id, kind) where kind in ('earn','penalty','reversal')`. 종료 트리거는 `closed→open→closed` 재전이에서 다시 발화하고 소급 백필도 같은 경로를 타므로, 트리거 WHEN 절이 아니라 원장 제약이 재실행 면역을 준다. `spend`/`refund` 는 **일부러 제외** — 환원 뒤 같은 회차에 다시 쓰는 경로가 삼켜지면 '공짜 재사용'이 된다.
+  - 종료·취소·삭제 훅(`trg_session_wait_points_on_close`·`_on_cancel`·`_on_delete`)은 `search_path=''` + 본문 전체 예외 격리다. 포인트 실패가 `sync_schedule_occurrences` A단계를 죽이면 회차 공개가 전면 중단된다(2026-07-26 실사고).
   - 소급 적립: **2026-08-01 이후 종료된 회차**만 대상(운영자 확정). 노쇼 차감은 소급하지 않고 알림도 보내지 않는다.
   - 클라 미러: `src/lib/schedule/waitStatus.ts` 의 `POINT_MAX`·`TICKET_COST`·`TICKET_SESSION_CAP` 과 `splitConfirmedByCapacity.freepassTickets`. 사유를 안 보면 티켓 자리가 화면에 **'신규'로 거짓 표기**된다.
 - 알림 INSERT는 **같은 트랜잭션**에서 → 승급 롤백 시 알림도 미발생(불일치 차단).
