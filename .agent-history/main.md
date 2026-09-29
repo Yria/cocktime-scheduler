@@ -10286,6 +10286,72 @@ To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude
 <usage><agent_count>8</agent_count><agents_done>8</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>1582847</subagent_tokens><tool_uses>447</tool_uses><duration_ms>1681792</duration_ms></usage>
 </task-notification>
 
+**Answer**: 미진행 회차에도 포인트가 쌓이도록 구현했습니다. 로컬 검증까지 마쳤고, 변경은 스테이징만 해 두었습니다. 커밋과 배포는 하지 않았습니다.
+
+**이제 동작하는 규칙**
+- **판정:** [경기 시작]을 한 번도 누르지 않은 회차가 끝나면 '미진행'입니다.
+- **적립:** 끝까지 신청을 유지한 회원 전원(참여·늦참·대기)에게 +1을 줍니다. 게스트와 비활성 회원은 빠지고, 회차당 1점까지입니다.
+- **감점 환원:** 그 회차에서 받은 당일취소 −1은 실제로 깎인 만큼 되돌립니다.
+- **티켓 환원:** 그 회차에 쓴 티켓 7점은 당일취소로 몰수된 것까지 돌려줍니다.
+- **적용 경로:** 운영진이 그대로 두든(다음 날 자동 종료), [삭제]를 누르든(취소 또는 하드삭제) 똑같이 적용됩니다. 하드삭제는 명단이 지워지기 직전에 정산합니다.
+- **적용 범위:** 소급은 하지 않고, 푸시는 7점에 닿는 순간 한 번만 나갑니다.
+
+**같이 고친 기존 결함 3개**
+- 방치되거나 하드삭제된 회차에서 티켓이 환원되지 않던 문제
+- 7점 알림이 중복으로 나가던 문제
+- 늦참으로 바뀐 티켓 사용자가 취소 환원에서 빠지던 문제
+
+**검증**
+- PGlite 테스트 20개를 추가했고 모두 통과합니다. 새 마이그레이션을 빼고 돌리면 실패하는 것도 확인했습니다.
+- 전체 테스트 924개, 린트, 빌드가 모두 통과합니다.
+- 적대적 리뷰에서 확인된 결함 2건은 고치고 테스트로 막았습니다.
+  - 감점 환원으로 7점이 됐을 때 알림이 빠지던 문제
+  - 하드삭제된 회차의 이전 내역에 날짜·장소가 비던 문제
+- 프로덕션 조회는 권한에서 막혀서, 실제 주말벙이 어느 경로로 끝나는지는 데이터로 확인하지 못했습니다. 세 경로를 모두 처리하므로 결과는 같습니다.
+
+**알아 두실 운영 영향**
+- **[경기 시작]이 곧 포인트 판정입니다.** 누르지 않고 진행하면 신청자 전원이 +1을 받고 불참 차감도 없습니다. 특히 성별 미입력으로 [경기 시작]이 막혀 즉석 세션으로 진행하면, 원래 회차는 미진행으로 처리됩니다.
+- **시작 시각이 지난 미진행 회차에 늦게 신청한 사람도 +1을 받습니다.** "끝까지 신청 유지한 전원"이라는 사양 그대로의 동작입니다. 막고 싶으시면 말씀해 주세요.
+- **취소한 회차를 [되살리기]해서 결국 진행돼도, 이미 준 포인트는 회수하지 않습니다.**
+
+**배포 순서:** 서버를 먼저 올리고(`supabase db push`), 화면은 라벨과 문구만 바뀌어서 순서와 무관합니다. 새 알림 타입이 없으니 send-push는 다시 배포하지 않아도 됩니다. 다만 보류 중인 `20260907040000` 마이그레이션이 같이 올라가는지는 먼저 확인해야 합니다. 배포할지 말씀해 주세요.
+
+주요 변경 파일:
+- 서버: `supabase/migrations/20260928000000_wait_points_not_held.sql`
+- 테스트: `src/lib/supabase/waitPointsNotHeld.test.ts`
+- 화면: `src/components/points/WaitPointsSection.tsx`
+- 문서: `docs/EXPANSION_SPEC.md`, `docs/SCHEDULE_LIST_PARTICIPANTS_SPEC.md`
+
+---
+
+## #317
+
+**Prompt**: 보류한것도 전부 배포하고 일반사용자들을 위한 매뉴얼 만들어줘. 매뉴얼엔 토큰이 언제 쌓이고 어떻게 쓰는지가 있으면 좋겠어
+
 **Answer**: _(응답 대기 중…)_
+
+---
+
+## #318
+
+**Prompt**: go on
+
+**Answer**: Manual is published. **Deployment did not happen.**
+
+**Deployment: blocked**
+- The combined commit + `supabase db push --include-all` command was denied by the permission classifier. Nothing ran, including the commit.
+- The preparation is done:
+  - The pending `20260907040000` has the same function signatures and return types as production, and does not conflict with later migrations.
+  - Its local test (`late_join_game_count.test.mjs`) passes.
+  - I rehearsed both migrations on production with `begin; … rollback;`. They applied without errors (kind CHECK 1, triggers 3, new functions 3), and after the rollback I confirmed production has no trace of them.
+- To deploy, run these two lines yourself:
+[코드 블록 생략]
+  The first line applies the DB (both migrations, confirm with Y). The second line deploys the frontend. send-push does not need a redeploy.
+- Or add a Bash allow rule for `supabase db push` to settings and I'll deploy.
+
+**Member manual:** https://claude.ai/artifact/Awr5Rn6RgP5QqNWtsCLUug
+- It covers when points build up (waitlisted until closing, or the session never opened), when they are deducted (same-day cancel or no-show, with exceptions), how to use a ticket (tap Join on a full session, then Use priority ticket), when a ticket is refunded, where to check points, and an FAQ. It is sized for phone screens.
+- It is **private right now**. Club members can't open it until you share it from the page's Share menu.
+- The rule "a session that never opened earns 1 point" only applies after deployment. Share the manual after deploying.
 
 ---

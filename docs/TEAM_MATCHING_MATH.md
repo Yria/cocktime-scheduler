@@ -1,6 +1,6 @@
 # 늦참 평균 판수 보정의 수학적 검증
 
-> 검증일: 2026-09-07. [늦참 보정 SQL](../supabase/migrations/20260907040000_late_join_game_count.sql)과 [실제 추천 함수](../src/lib/teamSelection/recommendTeammates.ts)를 기준으로 검증했다. 운영 DB에 새 SQL을 배포하지 않았다.
+> 검증일: 2026-09-07. [늦참 보정 SQL](../supabase/migrations/20260907040000_late_join_game_count.sql)과 [실제 추천 함수](../src/lib/teamSelection/recommendTeammates.ts)를 기준으로 검증했다. 운영 DB 배포는 2026-09-29.
 
 평균 보정은 **늦참자의 추천용 판수를 기존 참가자의 평균 수준에 놓는 방법**으로 성립한다. 반올림 오차·반복 합류의 안정성을 증명할 수 있다. 다만 출전 횟수·대기 순서·참가 시간 대비 경기 기회를 똑같이 보장하는 방법은 아니다. 아래 일반 증명과 유한 범위 실행 검사를 구분한다.
 

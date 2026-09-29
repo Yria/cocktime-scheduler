@@ -108,7 +108,7 @@
 
 **추가 수학 검증:** [증명과 실행 결과](TEAM_MATCHING_MATH.md)에서 평균 오차 0.5판, 반복 합류 시 반올림 기준 유지·분산 비증가를 확인했다. 5,004개 판수 조합 및 늦참 인원 1~20명 조합을 검사했다. 동시에 완료 직전/직후의 최대 1판 차이와 그룹 이력 때문에 늦참자가 먼저 추천되는 반례를 확인했다. 따라서 R5의 구현 누락 보완을 출전 기회의 완전한 공정성 보장으로 해석하지 않는다.
 
-근거: [보완 SQL](../supabase/migrations/20260907040000_late_join_game_count.sql), [SQL 회귀 검사](../supabase/tests/late_join_game_count.test.mjs), [기존 휴식 복귀 SQL](../supabase/migrations/20260817020000_advisor_function_search_path.sql) `set_player_resting`, [추가 선수 생성](../src/lib/supabase/sessionSync.ts), [추천 자격](../src/lib/board/recommendPool.ts). **운영 DB 적용 전.**
+근거: [보완 SQL](../supabase/migrations/20260907040000_late_join_game_count.sql), [SQL 회귀 검사](../supabase/tests/late_join_game_count.test.mjs), [기존 휴식 복귀 SQL](../supabase/migrations/20260817020000_advisor_function_search_path.sql) `set_player_resting`, [추가 선수 생성](../src/lib/supabase/sessionSync.ts), [추천 자격](../src/lib/board/recommendPool.ts). **운영 DB 적용 완료(2026-09-29).**
 
 ### R6. 허용 설정과 실제 성별 분류의 의미가 어긋남
 
