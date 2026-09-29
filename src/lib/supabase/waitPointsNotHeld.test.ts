@@ -29,7 +29,8 @@ create table places (id bigint primary key, name text not null, charges_court_fe
 create table sessions (
 	id bigint primary key, status text not null default 'open',
 	scheduled_at timestamptz, ends_at timestamptz, capacity int,
-	place_id bigint references places(id), is_active boolean not null default false
+	place_id bigint references places(id), is_active boolean not null default false,
+	cock_check_enabled boolean not null default false
 );
 create table attendances (
 	session_id bigint not null references sessions(id) on delete cascade,
@@ -43,7 +44,7 @@ create table attendances (
 create table session_players (
 	id bigserial primary key,
 	session_id bigint not null references sessions(id) on delete cascade,
-	player_id text, member_id uuid
+	player_id text, member_id uuid, cock_checked boolean not null default false
 );
 create table matches (id bigserial primary key, session_id bigint references sessions(id) on delete cascade);
 create table notifications (
@@ -163,6 +164,9 @@ beforeAll(async () => {
 	const courtOnly = read("20260929000000_day_cancel_penalty_court_fee_only.sql");
 	await db.exec(courtOnly);
 	await db.exec(courtOnly);
+	const cock = read("20260929010000_wait_points_cock_check_participation.sql");
+	await db.exec(cock);
+	await db.exec(cock);
 });
 
 afterAll(async () => {
@@ -570,4 +574,59 @@ it("운영진이 뺀 경우는 대관 장소여도 감점하지 않는다", asyn
 	await db.query("select admin_cancel_attendance($1, $2)", [S, uid(1)]);
 	await db.query("select set_config('test.admin', 'false', false)");
 	expect(await rows(1)).toEqual([]);
+});
+
+// ── 콕 미제출 = 미참여(20260929010000) ──
+async function cockBoard(checked: number[], unchecked: number[]) {
+	await db.query("update sessions set cock_check_enabled = true where id = $1", [S]);
+	await db.query(
+		`insert into session_players(session_id, player_id, member_id, cock_checked)
+		select $1, x::text, x, x = any($2::uuid[]) from unnest($3::uuid[]) x`,
+		[S, checked.map(uid), [...checked, ...unchecked].map(uid)],
+	);
+}
+
+it("콕 체크 회차: 확정인데 콕 미확인으로 끝나면 불참 −1, 확인된 사람은 감점 없음", async () => {
+	for (const n of [1, 2]) await member(n);
+	await seedBalance(2, 3);
+	await attend(1, "confirmed");
+	await attend(2, "confirmed");
+	await cockBoard([1], [2]);
+	await setStatus("closed");
+	expect(await rows(1)).toEqual([]);
+	expect(await rows(2)).toEqual([{ kind: "penalty", delta: -1, reason: "noshow" }]);
+});
+
+it("콕 체크 회차: 보드에 추가만 되고 콕을 안 낸 대기자는 합류하지 않은 것 — 적립 +1", async () => {
+	for (const n of [1, 2, 3]) await member(n);
+	await attend(1, "confirmed");
+	await attend(2, "waitlisted");
+	await attend(3, "waitlisted");
+	await cockBoard([1, 3], [2]);
+	await setStatus("closed");
+	expect(await rows(2)).toEqual([{ kind: "earn", delta: 1, reason: "waitlisted_at_close" }]);
+	expect(await rows(3)).toEqual([]);
+});
+
+it("콕 체크를 끈 회차는 보드에만 있으면 참여 — 종전 규칙", async () => {
+	for (const n of [1, 2]) await member(n);
+	await seedBalance(2, 3);
+	await attend(1, "confirmed");
+	await attend(2, "confirmed");
+	await startBoard([1, 2]); // cock_checked=false 이지만 회차 설정이 off
+	await setStatus("closed");
+	expect(await rows(1)).toEqual([]);
+	expect(await rows(2)).toEqual([]);
+});
+
+it("콕 확인이 0명이어도 보드가 있으면 시작된 회차 — 미진행 보상 없이 전원 불참", async () => {
+	for (const n of [1, 2]) await member(n);
+	await seedBalance(1, 3);
+	await seedBalance(2, 3);
+	await attend(1, "confirmed");
+	await attend(2, "confirmed");
+	await cockBoard([], [1, 2]);
+	await setStatus("closed");
+	for (const n of [1, 2])
+		expect(await rows(n)).toEqual([{ kind: "penalty", delta: -1, reason: "noshow" }]);
 });

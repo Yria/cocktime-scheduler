@@ -39,7 +39,7 @@ function entryLabel(e: WaitPointEntry): string {
 		case "day_cancel":
 			return "당일 취소";
 		case "noshow":
-			return "불참(보드 미등록)";
+			return "불참(미합류)";
 		default:
 			return e.kind === "adjust"
 				? `운영진 보정${e.note ? ` — ${e.note}` : ""}`
