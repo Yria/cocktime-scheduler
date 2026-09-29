@@ -14,6 +14,17 @@ import Spinner from "../shared/Spinner";
 
 const PREVIEW = 8;
 
+/**
+ * 가점·감점 규칙 — 회원 매뉴얼(docs/member-guide/wait-points.html)의 '포인트 적립 조건'과 같은 내용.
+ * 서버 규칙(20260904000000 · 20260928000000 · 20260929000000 · 20260929010000)을 바꾸면 여기도 같이 고친다.
+ */
+const RULES: { delta: 1 | -1; title: string; detail: string }[] = [
+	{ delta: 1, title: "대기로 끝난 모임", detail: "대기로 신청했는데 끝날 때까지 자리가 나지 않았을 때. 현장에서 합류했다면 제외." },
+	{ delta: 1, title: "열리지 않은 모임", detail: "신청(참석·늦참·대기)을 끝까지 유지했는데 [경기 시작] 없이 끝났을 때. 중간에 취소했다면 제외." },
+	{ delta: -1, title: "당일 취소", detail: "대관 모임에서 참석 확정 상태로 당일에 직접 취소했을 때. 확정 후 1시간 안의 취소는 제외, 모임이 열리지 않으면 돌려드려요." },
+	{ delta: -1, title: "불참", detail: "참석 확정이었는데 끝날 때까지 콕 제출이 확인되지 않았거나 코트 명단에서 빠졌을 때." },
+];
+
 /** 원장 사유 코드 → 사람이 읽는 한 줄. 서버 detail.reason 값과 1:1로 맞춘다(20260904000000 · 20260928000000). */
 function entryLabel(e: WaitPointEntry): string {
 	switch (e.reason) {
@@ -143,7 +154,7 @@ export default function WaitPointsSection() {
 			>
 				{hasTicket
 					? `우선참여권이 있어요. 만석인 일정에서 '참석하기'를 누르면 정원 외 자리로 바로 확정할 수 있어요(회차당 ${TICKET_SESSION_CAP}명까지). 쓰기 전까지 포인트는 더 쌓이지 않아요.`
-					: `대기인 채로 회차가 마감되거나, 신청해 둔 회차가 경기 시작 없이 끝나면 1점씩 쌓여요. ${POINT_MAX}점을 모으면 만석인 일정에 정원 외 자리로 참여할 수 있어요. 대관 모임을 당일에 취소하거나, 신청해 놓고 오지 않으면 1점이 깎여요(열리지 않은 회차는 되돌려 드려요).`}
+					: `${POINT_MAX}점을 모으면 우선참여권이 생겨요. 만석인 일정에도 정원 외 자리로 바로 참석할 수 있어요(회차당 ${TICKET_SESSION_CAP}명까지).`}
 			</p>
 
 			{loading && ledger.length === 0 ? (
@@ -224,6 +235,46 @@ export default function WaitPointsSection() {
 					)}
 				</>
 			)}
+
+			{/* 가점·감점 규칙 — 내역 아래에 둔다. 내역의 사유를 보고 '왜 이렇게 됐지'를 바로 확인하는 자리. */}
+			<div
+				style={{
+					marginTop: 14,
+					paddingTop: 12,
+					borderTop: "1px solid rgba(120,120,128,0.14)",
+				}}
+			>
+				<p className="text-strong" style={{ fontSize: 12.5, fontWeight: 800, margin: "0 0 6px" }}>
+					포인트가 바뀌는 때
+				</p>
+				<ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+					{RULES.map((r) => (
+						<li key={r.title} className="flex" style={{ gap: 8, padding: "5px 0" }}>
+							<span
+								style={{
+									flexShrink: 0,
+									minWidth: 26,
+									fontSize: 12.5,
+									fontWeight: 800,
+									fontVariantNumeric: "tabular-nums",
+									color: r.delta > 0 ? "#30d158" : "#ef4444",
+								}}
+							>
+								{r.delta > 0 ? "+1" : "−1"}
+							</span>
+							<span style={{ minWidth: 0, fontSize: 12, lineHeight: 1.55 }}>
+								<span className="text-strong" style={{ fontWeight: 700 }}>
+									{r.title}
+								</span>
+								<span className="text-muted"> — {r.detail}</span>
+							</span>
+						</li>
+					))}
+				</ul>
+				<p className="text-faint" style={{ fontSize: 11.5, lineHeight: 1.55, margin: "6px 0 0" }}>
+					한 모임에서 쌓이는 건 최대 1점이고, 0점 아래로는 내려가지 않아요. 게스트는 대상이 아니에요.
+				</p>
+			</div>
 		</div>
 	);
 }

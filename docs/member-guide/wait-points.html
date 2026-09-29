@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>대기 포인트 안내</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;700&family=Black+Han+Sans&display=swap">
+<style>
+/* 휴대폰 한 줄 안내서: 적립 조건 → 쓰기 → 확인. 앱 실제 화면에 빨간 표시로 짚는다. */
+:root {
+	--bg: #f5f7fa; --surface: #ffffff; --fg: #17202b; --muted: #5b6878; --line: #dde3ea;
+	--plus: #0b84ff; --plus-soft: #e3f0ff; --minus: #c8423a; --minus-soft: #fbe7e5; --gold: #c98a12;
+	--font-display: "Black Han Sans", "IBM Plex Sans KR", "Apple SD Gothic Neo", sans-serif;
+	--font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+	:root { --bg: #10151c; --surface: #18202a; --fg: #e8edf3; --muted: #9aa7b6; --line: #2a3542;
+		--plus: #4ea6ff; --plus-soft: #15283d; --minus: #ff7a70; --minus-soft: #3a1d1b; --gold: #f0b43c; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body);
+	font-size: 16px; line-height: 1.65; padding-inline: 16px; padding-block: 28px 48px; word-break: keep-all; }
+.wrap { max-width: 520px; margin: 0 auto; display: grid; gap: 34px; }
+h1, h2 { font-family: var(--font-display); font-weight: 400; margin: 0; text-wrap: balance; }
+h1 { font-size: 32px; line-height: 1.2; }
+h2 { font-size: 22px; }
+p { margin: 0; }
+section { display: grid; gap: 12px; }
+.lede { color: var(--muted); }
+.lede b { color: var(--gold); }
+.shot { display: block; width: 100%; max-width: 100%; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); }
+.cond { display: grid; gap: 8px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 6px; }
+.head { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; align-items: center; font-weight: 700; }
+.n { text-align: center; font-weight: 700; border-radius: 6px; padding: 2px 0; font-variant-numeric: tabular-nums; }
+.n.plus { background: var(--plus-soft); color: var(--plus); }
+.n.minus { background: var(--minus-soft); color: var(--minus); }
+.card dl { margin: 0; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 10px; font-size: 14.5px; }
+.card dt { color: var(--muted); font-size: 13px; padding-top: 2px; text-align: center; }
+.card dd { margin: 0; }
+.common { margin: 0; padding-left: 20px; display: grid; gap: 4px; color: var(--muted); font-size: 14.5px; }
+.small { color: var(--muted); font-size: 14px; }
+.step { display: grid; gap: 8px; }
+.pair { display: grid; grid-template-columns: 1fr; gap: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+	<header style="display:grid;gap:10px">
+		<h1>대기 포인트</h1>
+		<p class="lede">포인트를 <b>7점</b> 모으면 <b>우선참여권</b>이 생겨요. 만석인 일정에도 대기 없이 바로 참석할 수 있어요.</p>
+	</header>
+
+	<section>
+		<h2>포인트 적립 조건</h2>
+		<div class="cond">
+			<div class="card">
+				<div class="head"><span class="n plus">+1</span><span>대기로 끝난 모임</span></div>
+				<dl>
+					<dt>조건</dt><dd>대기로 신청했는데 모임이 끝날 때까지 자리가 나지 않았을 때</dd>
+					<dt>제외</dt><dd>대기 중에 현장에서 합류한 경우(콕 제출이 확인되고 코트 명단에 오름)</dd>
+				</dl>
+			</div>
+			<div class="card">
+				<div class="head"><span class="n plus">+1</span><span>열리지 않은 모임</span></div>
+				<dl>
+					<dt>조건</dt><dd>신청(참석·늦참·대기)을 끝까지 유지했는데, 운영진이 <b>[경기 시작]</b>을 누르지 않고 끝난 모임. 인원이 모자라 무산된 주말벙이 대표적이에요.</dd>
+					<dt>제외</dt><dd>중간에 신청을 취소한 경우</dd>
+				</dl>
+			</div>
+			<div class="card">
+				<div class="head"><span class="n minus">−1</span><span>당일 취소</span></div>
+				<dl>
+					<dt>조건</dt><dd><b>대관 모임</b>에서, 참석이 확정된 상태로 모임 당일(0시부터)에 직접 취소했을 때</dd>
+					<dt>제외</dt><dd>대관하지 않는 모임 · 전날까지 취소 · 확정되고 1시간 안의 취소 · 늦참이나 대기 상태에서 취소 · 운영진이 명단에서 뺀 경우</dd>
+					<dt>환원</dt><dd>그 모임이 결국 열리지 않으면 1점을 돌려드려요</dd>
+				</dl>
+			</div>
+			<div class="card">
+				<div class="head"><span class="n minus">−1</span><span>불참</span></div>
+				<dl>
+					<dt>조건</dt><dd>참석 확정이었는데, 경기가 시작된 뒤 모임이 끝날 때까지 <b>콕 제출이 확인되지 않았거나</b> 코트 명단에서 빠졌을 때</dd>
+					<dt>제외</dt><dd>모임이 열리지 않은 경우</dd>
+				</dl>
+			</div>
+		</div>
+		<ul class="common">
+			<li>당일 취소 감점만 대관 모임에 적용되고, 나머지는 모든 모임에 똑같이 적용돼요.</li>
+			<li>한 모임에서 쌓이는 건 최대 1점이에요. 0점 아래로는 내려가지 않고, 7점에서 멈춰요.</li>
+			<li>게스트는 대상이 아니에요.</li>
+		</ul>
+		<img class="shot" src="img/01-waitlisted.png" alt="대기 중인 일정 카드의 '이 회차가 대기인 채로 마감되면 +1P (3/7)' 문구에 빨간 표시">
+		<p class="small">대기 중인 일정 카드에서 지금 점수를 볼 수 있어요.</p>
+	</section>
+
+	<section>
+		<h2>우선참여권 쓰기</h2>
+		<div class="step">
+			<p>7점이 되면 화면 위 가운데에 <b>티켓 표시</b>가 생겨요. 만석인 일정에서 <b>참석하기</b>를 누르세요.</p>
+			<img class="shot" src="img/02-badge.png" alt="화면 위 가운데 티켓 표시와 만석 일정의 참석하기 버튼에 빨간 표시">
+		</div>
+		<div class="step">
+			<p><b>우선참여권 사용</b>을 누르면 7점을 쓰고 바로 참석이 확정돼요.</p>
+			<img class="shot" src="img/03-ticket-dialog.png" alt="'우선참여권을 쓸까요?' 창의 우선참여권 사용 버튼에 빨간 표시">
+		</div>
+		<ul class="common">
+			<li>한 모임에 2명까지 쓸 수 있어요. 정원에 여유가 있으면 묻지 않고 포인트도 쓰지 않아요.</li>
+			<li>전날까지 취소하거나 모임이 취소·무산되면 7점을 돌려드려요. 당일 취소나 불참이면 돌려드리지 않아요.</li>
+		</ul>
+	</section>
+
+	<section>
+		<h2>내 포인트 보기</h2>
+		<p>오른쪽 위 <b>⋮</b>를 누르고 <b>내 정보</b>로 들어가세요.</p>
+		<div class="pair">
+			<img class="shot" src="img/00a-menu-button.png" alt="화면 오른쪽 위 ⋮ 메뉴 버튼에 빨간 원">
+			<img class="shot" src="img/00b-menu-sheet.png" alt="메뉴의 내 정보 항목에 빨간 표시">
+		</div>
+		<p>아래쪽 <b>대기 포인트</b> 칸에 지금 점수와 언제, 왜 바뀌었는지가 나와요.</p>
+		<img class="shot" src="img/04-my-points.png" alt="내 정보의 대기 포인트 칸: 3/7 점수와 '신청한 회차가 열리지 않음', '당일 취소' 내역에 빨간 표시">
+	</section>
+
+</div>
+</body>
+</html>
