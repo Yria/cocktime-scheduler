@@ -25,7 +25,7 @@ create table members (
 	skills jsonb not null default '{}', is_guest boolean not null default false,
 	is_active boolean not null default true
 );
-create table places (id bigint primary key, name text not null);
+create table places (id bigint primary key, name text not null, charges_court_fee boolean not null default true);
 create table sessions (
 	id bigint primary key, status text not null default 'open',
 	scheduled_at timestamptz, ends_at timestamptz, capacity int,
@@ -160,6 +160,9 @@ beforeAll(async () => {
 	const migration = read("20260928000000_wait_points_not_held.sql");
 	await db.exec(migration);
 	await db.exec(migration); // 재적용 안전
+	const courtOnly = read("20260929000000_day_cancel_penalty_court_fee_only.sql");
+	await db.exec(courtOnly);
+	await db.exec(courtOnly);
 });
 
 afterAll(async () => {
@@ -168,7 +171,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
 	await db.exec("begin");
-	await db.exec(`insert into places values (1, '토요벙 체육관');
+	await db.exec(`insert into places values (1, '토요벙 체육관', true), (2, '동네 공원', false);
 		insert into sessions(id, status, scheduled_at, place_id, capacity)
 		values (1, 'open', '2026-10-03T09:00:00+09', 1, 12),
 		       (2, 'open', '2026-10-04T09:00:00+09', 1, 12);`);
@@ -506,4 +509,65 @@ it("다른 회차의 원장·참석에는 영향이 없다", async () => {
 	await setStatus("closed", S);
 	expect(await rows(1, 2)).toEqual([]);
 	expect(await balance(1)).toBe(0);
+});
+
+// ── 당일 취소 감점은 대관 장소 회차에만(20260929000000) ──
+async function atPlace(placeId: number | null) {
+	await db.query("update sessions set place_id = $1 where id = $2", [placeId, S]);
+}
+
+it("비대관 장소 회차의 당일 취소는 감점하지 않는다", async () => {
+	await member(1);
+	await seedBalance(1, 3);
+	await atPlace(2);
+	await attend(1, "confirmed");
+	await cancelSelf(1, true);
+	expect(await rows(1)).toEqual([]);
+	expect(await balance(1)).toBe(3);
+});
+
+it("장소가 없는 회차의 당일 취소도 감점하지 않는다", async () => {
+	await member(1);
+	await seedBalance(1, 3);
+	await atPlace(null);
+	await attend(1, "confirmed");
+	await cancelSelf(1, true);
+	expect(await rows(1)).toEqual([]);
+});
+
+it("대관 장소 회차의 당일 취소는 종전대로 −1", async () => {
+	await member(1);
+	await seedBalance(1, 3);
+	await atPlace(1);
+	await attend(1, "confirmed");
+	await cancelSelf(1, true);
+	expect(await rows(1)).toEqual([{ kind: "penalty", delta: -1, reason: "day_cancel" }]);
+	expect(await balance(1)).toBe(2);
+});
+
+it("비대관 회차라도 당일 취소한 티켓은 종전대로 몰수, 사전 취소는 환원", async () => {
+	await member(1);
+	await member(2);
+	await atPlace(2);
+	await ticketHolder(1);
+	await ticketHolder(2);
+	await cancelSelf(1, true);
+	await cancelSelf(2, false);
+	expect(await rows(1)).toEqual([{ kind: "spend", delta: -7, reason: "join" }]);
+	expect(await rows(2)).toEqual([
+		{ kind: "spend", delta: -7, reason: "join" },
+		{ kind: "refund", delta: 7, reason: "early_cancel" },
+	]);
+});
+
+it("운영진이 뺀 경우는 대관 장소여도 감점하지 않는다", async () => {
+	await member(1);
+	await seedBalance(1, 3);
+	await atPlace(1);
+	await attend(1, "confirmed");
+	await db.query("select set_config('test.admin', 'true', false)");
+	await db.query("select set_config('test.day_cancel', 'true', false)");
+	await db.query("select admin_cancel_attendance($1, $2)", [S, uid(1)]);
+	await db.query("select set_config('test.admin', 'false', false)");
+	expect(await rows(1)).toEqual([]);
 });
