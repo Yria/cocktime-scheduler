@@ -296,6 +296,19 @@ describe("합류 대기 자리와 경기 완료 자동 채움", () => {
 		expect([...team.anchorMemberIds].sort()).toEqual([..."ijkl"]);
 		expect(team.waitForCompletion).toBeUndefined();
 	});
+	it("일반 예비팀의 자동매칭은 대기자만으로 못 채우면 경기중 예약 대신 합류 대기로 돌린다", () => {
+		const board = setup();
+		board.commitTeammates({ newTeam: true }, [..."efgh"]);
+		board.commitTeammates({ newTeam: true }, [..."ij"]);
+		board.commitTeammates({ newTeam: true }, [..."kl"]);
+		const id = queued()[1].id;
+		expect(useBoardStore.getState().drafts.get(id)!.waitForCompletion).toBeUndefined();
+		board.autoFillTeam(id);
+		const team = useBoardStore.getState().drafts.get(id)!;
+		expect([...team.anchorMemberIds].sort()).toEqual([..."ij"]);
+		expect(team.waitForCompletion).toBe(true);
+		expect(useBoardStore.getState().reservations.size).toBe(0);
+	});
 	it("코트 그룹의 예약 대체 경로도 다른 코트의 선수 변경 명단에 있는 선수를 쓰지 않는다", () => {
 		const board = setup();
 		h.courts.push({ id: 2, match: { id: "other", courtId: 2, gameType: "남복", teamA: ["g", "h"], teamB: ["i", "j"], startedAt: "" } }, { id: 3, match: null });
@@ -388,13 +401,16 @@ describe("합류 대기 자리와 경기 완료 자동 채움", () => {
 		expect(queued()[0].anchorMemberIds).toHaveLength(4);
 		expect(useBoardStore.getState().drafts.get("court-2")!.anchorMemberIds).toHaveLength(4);
 	});
-	it("이미 있는 일반 예비팀의 추천 창 기본값은 대기가 아니다", () => {
+	it("이미 있는 일반 예비팀의 추천 창 기본값은 대기자로 채울 수 있으면 대기가 아니고, 못 채우면 대기다", () => {
 		const board = setup();
-		for (const id of "ghijkl") h.players.get(id)!.status = "resting";
+		for (const id of "ghij") h.players.get(id)!.status = "resting";
 		board.commitTeammates({ newTeam: true }, [..."ef"]);
 		const id = queued()[0].id;
 		const inputs = () => ({ ...useBoardStore.getState(), sessionPlayers: h.players, courts: h.courts, groupHistory: h.groupHistory, lastGameType: h.lastGameType, cockCheckEnabled: false });
 		expect(prefersWaitingDraft({ teamId: id }, inputs())).toBe(false);
+		for (const id of "kl") h.players.get(id)!.status = "resting";
+		expect(prefersWaitingDraft({ teamId: id }, inputs())).toBe(true);
+		for (const id of "kl") h.players.get(id)!.status = "waiting";
 		board.commitTeammates({ teamId: id }, [], { waitForCompletion: true });
 		expect(prefersWaitingDraft({ teamId: id }, inputs())).toBe(true);
 	});
@@ -1279,7 +1295,7 @@ describe("autoFillTeam — 구성 중 팀의 빈 슬롯을 추천도순으로 �
 		expect(reservations.size).toBe(0);
 	});
 
-	it("동일 조건에서는 대기 선수를 먼저 채우고 남은 슬롯은 경기중 선수를 예약한다", () => {
+	it("대기를 끄면 동일 조건에서는 대기 선수를 먼저 채우고 남은 슬롯은 경기중 선수를 예약한다", () => {
 		h.players = new Map(["a", "b", "c", "d", "e"].map((id) => [id, player(id)]));
 		// d·e는 코트에서 경기중 → 경기중 비용 때문에 대기(c)가 먼저 선택된다.
 		h.courts = [{ id: 1, match: { teamA: ["d", "e"], teamB: ["y", "z"] } } as unknown as Court];
@@ -1287,7 +1303,7 @@ describe("autoFillTeam — 구성 중 팀의 빈 슬롯을 추천도순으로 �
 			magnets: [mag("a", "T"), mag("b", "T"), mag("c", null), mag("d", null), mag("e", null)],
 			drafts: [draft("T", ["a", "b"])],
 		});
-		useBoardStore.getState().autoFillTeam("T");
+		useBoardStore.getState().autoFillTarget({ teamId: "T" }, [], { waitForCompletion: false });
 		const { drafts, reservations } = useBoardStore.getState();
 		const team = drafts.get("T")!;
 		const ids = teamMembers("T", drafts, reservations).map((m) => m.playerId);
@@ -1317,14 +1333,53 @@ describe("autoFillTeam — 구성 중 팀의 빈 슬롯을 추천도순으로 �
 		expect(teamMembers("T", drafts, reservations)).toHaveLength(4);
 	});
 
-	it("대기 2명에 경기중 2명을 한 번에 예약할 수 있다", () => {
+	it("카드 자동매칭은 대기자로 못 채우면 경기중 선수를 예약하지 않고 합류 대기로 돌린다", () => {
+		useToastStore.setState({ items: [] });
+		h.players = new Map(["a", "b", "c", "d", "e"].map((id) => [id, player(id)]));
+		h.courts = [{ id: 1, match: { teamA: ["d", "e"], teamB: ["y", "z"] } } as unknown as Court];
+		seed({
+			magnets: [mag("a", "T"), mag("b", "T"), mag("c", null), mag("d", null), mag("e", null)],
+			drafts: [draft("T", ["a", "b"])],
+		});
+		useBoardStore.getState().autoFillTeam("T");
+		const s = useBoardStore.getState();
+		expect(s.drafts.get("T")).toMatchObject({ anchorMemberIds: ["a", "b"], waitForCompletion: true });
+		expect(s.reservations.size).toBe(0);
+		expect(useToastStore.getState().items.map(t => t.message)).toEqual([expect.stringContaining("합류 대기로 바꿨어요")]);
+	});
+
+	it("경기중 선수를 직접 고르면 대기로 돌리지 않는다", () => {
+		h.players = new Map(["a", "b", "c", "d", "e"].map((id) => [id, player(id)]));
+		h.courts = [{ id: 1, match: { teamA: ["d", "e"], teamB: ["y", "z"] } } as unknown as Court];
+		seed({
+			magnets: [mag("a", "T"), mag("b", "T"), mag("c", null), mag("d", null), mag("e", null)],
+			drafts: [draft("T", ["a", "b"])],
+		});
+		const inputs = { ...useBoardStore.getState(), sessionPlayers: h.players, courts: h.courts, groupHistory: [], lastGameType: {}, cockCheckEnabled: false };
+		expect(prefersWaitingDraft({ teamId: "T" }, inputs)).toBe(true);
+		expect(prefersWaitingDraft({ teamId: "T" }, inputs, ["d"])).toBe(false);
+	});
+
+	it("예약으로도 못 채우는 팀은 합류 대기로 돌리지 않는다", () => {
+		h.players = new Map(["a", "b", "c", "d", "e", "f"].map((id) => [id, player(id)]));
+		h.courts = [{ id: 1, match: { teamA: ["d", "e"], teamB: ["y", "z"] } } as unknown as Court];
+		seed({
+			magnets: [mag("a", "T"), mag("b", "T"), mag("c", null), mag("d", null), mag("e", null), mag("f", "U")],
+			drafts: [draft("T", ["a", "b"]), draft("U", ["f"])],
+			reservations: [{ id: "r1", playerId: "d", teamId: "U", createdAt: 1 }, { id: "r2", playerId: "e", teamId: "U", createdAt: 1 }],
+		});
+		useBoardStore.getState().autoFillTeam("T");
+		expect(useBoardStore.getState().drafts.get("T")!.waitForCompletion).toBeUndefined();
+	});
+
+	it("대기를 끄면 대기 2명에 경기중 2명을 한 번에 예약할 수 있다", () => {
 		h.players = new Map(["a", "b", "c", "d"].map((id) => [id, player(id)]));
 		h.courts = [{ id: 1, match: { teamA: ["c", "d"], teamB: ["y", "z"] } } as Court];
 		seed({
 			magnets: [mag("a", "T"), mag("b", "T"), mag("c", null), mag("d", null)],
 			drafts: [draft("T", ["a", "b"])],
 		});
-		useBoardStore.getState().autoFillTeam("T");
+		useBoardStore.getState().autoFillTarget({ teamId: "T" }, [], { waitForCompletion: false });
 		const s = useBoardStore.getState();
 		expect(s.drafts.get("T")!.anchorMemberIds).toEqual(["a", "b"]);
 		expect([...s.reservations.values()].map(r => r.playerId).sort()).toEqual(["c", "d"]);

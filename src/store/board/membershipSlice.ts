@@ -455,8 +455,8 @@ export const createMembershipSlice: StateCreator<
 			else if (count === 0 && empty && claimEdit()) toast("준비된 다음 팀이나 대기 선수가 부족해 코트를 채우지 못했어요");
 			return;
 		}
-		// 이미 있는 일반 예비팀의 버튼은 지금 네 명을 채운다(필요하면 경기중 예약). 합류 대기 기본값은 새 팀에만 쓴다.
-		get().autoFillTarget({ teamId }, [], { waitForCompletion: false });
+		// 이미 있는 일반 예비팀의 버튼은 지금 네 명을 채운다. 대기자만으로 못 채우면 경기중 예약 대신 합류 대기로 돌린다(prefersWaitingDraft).
+		get().autoFillTarget({ teamId }, []);
 	},
 
 	// 추천 모달의 "자동편성" 버튼 공용 — 팀/시드/새팀 어디서나 나머지 슬롯을 추천순으로 채워 commit.
@@ -506,7 +506,11 @@ export const createMembershipSlice: StateCreator<
 			const targetSize = Math.max(2, data.confirmed.length);
 			const picks = valid ? autoFillTeammates(data.confirmed, pool, data.ctx, targetSize - data.confirmed.length, undefined, { targetSize }) : [];
 			if (valid && data.confirmed.length + picks.length >= 2 && [...data.confirmed, ...picks].some(p => !data.playingIds.has(p.id))) {
-				return commit([...extraIds, ...picks.map(p => p.id)], true);
+				const switched = !!target.teamId && drafts.get(target.teamId)?.waitForCompletion !== true;
+				const committed = commit([...extraIds, ...picks.map(p => p.id)], true);
+				// 기존 일반 팀을 대기로 돌리면 아무도 더하지 않을 수 있다 — 채우기를 눌렀는데 조용히 바뀌지 않게 알린다.
+				if (committed && switched) toast("대기 선수가 부족해 합류 대기로 바꿨어요. 경기가 끝나면 빈자리를 채워요");
+				return committed;
 			}
 			// 기본값이 대기일 때 예약 팀으로 대신 만들지 않는다 — 세션 324 재생에서 같은 4명 연속과 최장 대기가 늘었다.
 			toast(!valid ? "현재 선택으로 합류 대기팀을 만들 수 없어요"

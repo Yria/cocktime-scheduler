@@ -10206,7 +10206,14 @@ To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude
 
 **Prompt**: claude doctor
 
-**Answer**: _(응답 대기 중…)_
+**Answer**: 배포가 성공했습니다. 이제 앱을 열면 [내 정보]의 대기 포인트 내역 아래에 "포인트가 바뀌는 때" 설명이 보입니다.
+
+오늘 작업한 것은 DB, 앱 화면, 매뉴얼까지 모두 반영됐습니다.
+- 열리지 않은 모임에 신청했던 회원에게 +1
+- 당일 취소 감점은 대관 모임에만 적용
+- 콕을 제출하지 않은 사람은 불참으로 처리
+- [내 정보] 설명
+- 회원 매뉴얼: `docs/member-guide/`에 HTML과 PNG로 저장
 
 ---
 
@@ -10626,6 +10633,238 @@ DB를 먼저 적용하고 화면을 올려 주세요. 화면 쪽은 문구만 �
 
 **Prompt**: [Image #1] 내 정보 페이지에 대기포인트 하단에 가점, 감점되는 상황을 매뉴얼처럼 설명해주면 좋을듯.
 근데 생각해보니까 대관세션인데 당일 취소하면 -1점, 근데 실제로 세션이 열리지 않으면 환원해서 +1점 이면 0점이고, 취소하지 않고 세션이 열리지않으면 +1점인데 맞는거지?
+
+**Answer**: 질문하신 계산은 맞습니다.
+- 대관 모임을 당일 취소했는데 그 모임이 열리지 않으면 −1 후 +1로 **0점**입니다. 취소했으니 미진행 적립은 없습니다.
+- 취소하지 않았는데 모임이 열리지 않으면 **+1점**입니다.
+- 잔액이 0점일 때 당일 취소했다면 깎인 게 없으니, 모임이 열리지 않아도 0점 그대로입니다.
+
+**[내 정보] 화면 변경**
+- 막대 아래 긴 설명은 한 줄로 줄였습니다: "7점을 모으면 우선참여권이 생겨요. 만석인 일정에도 정원 외 자리로 바로 참석할 수 있어요(회차당 2명까지)."
+- 내역 **아래**에 "포인트가 바뀌는 때"를 새로 넣었습니다. 매뉴얼과 같은 네 가지 조건입니다.
+  - +1 대기로 끝난 모임: 현장에서 합류했다면 제외
+  - +1 열리지 않은 모임: 중간에 취소했다면 제외
+  - −1 당일 취소: 대관 모임만, 확정 후 1시간 안의 취소는 제외, 모임이 열리지 않으면 돌려받음
+  - −1 불참: 콕 제출 미확인 또는 코트 명단에서 빠진 경우
+- 맨 아래에 "한 모임 최대 1점, 0점 아래로 안 내려감, 게스트 제외" 한 줄을 붙였습니다.
+- 실제 앱 화면으로 찍어 확인했습니다. 전체 테스트 933개와 빌드도 통과했습니다.
+
+**매뉴얼**
+- 앱 설명 문구가 바뀌어서 캡처 04와 전체 `wait-points.png`를 다시 만들었습니다.
+- 매뉴얼과 이번 화면 변경을 한 커밋(`fcfe738`)으로 묶었습니다.
+
+화면 배포는 직접 해 주셔야 합니다. DB 변경은 없어서 이것만 올리면 됩니다.
+[코드 블록 생략]
+
+---
+
+## #329
+
+**Prompt**: go on
+
+**Answer**: 오늘 작업은 DB, 앱 화면, 매뉴얼까지 전부 배포됐고 남은 작업은 없습니다. 저장소도 원격(`origin/main`)과 맞아 있고, 커밋 안 된 건 대화 기록 훅이 쓰는 `.agent-history/main.md`뿐입니다.
+
+메모리에 적힌 포인트 규칙이 예전 내용이라 새 규칙으로 고쳐 두었습니다.
+- 참여로 인정되려면 보드에 있고, 콕 확인을 쓰는 모임이면 콕 제출까지 확인돼야 합니다.
+- 당일 취소 −1은 대관 장소 모임에만 적용됩니다.
+
+배포 후 지켜볼 것이 두 가지 있습니다.
+- 운영진이 콕 확인을 누르지 않고 경기를 진행하면 참석자 전원이 불참 −1을 받습니다. 운영진께 공지해 두시면 좋습니다.
+- 첫 주말 모임이 무산되면 그 모임에 신청한 사람의 [내 정보] 내역에 "신청한 회차가 열리지 않음 +1"이 찍히는지 한 번 확인해 보세요.
+
+---
+
+## #330
+
+**Prompt**: 새프로젝트 만들거야. ~/Projects 폴더 하위에 만들거고 https://www.somoim.co.kr/c5d27e88-7d3c-11eb-8444-0a13280ca5bf1 이 도메인을 보면 소모임이 있는데 여기 게시판에 보면 일정을 올리는데 이걸 달력에 표현하는 일정표를 만들거야. 일반적인 캘린더에 일정있으면 시간과 섬네일을 넣으면 좋겠어. 프로젝트 이름은 escape-from-home 으로 해주고, 이미 폴더가 있을텐데 해당 프로젝트를 packages/playground 로 분리해서 monorepo 로 만들어줘.
+
+**Answer**: Workflow가 백그라운드에서 실행 중입니다. 지금까지 진행 상황은 이렇습니다.
+
+**완료:**
+- 기존 `~/Projects/escape-from-home`은 방탈출 자동예약 크롬 익스텐션이었습니다. 이걸 `git mv`로 `packages/playground`에 옮겨서 git 이력이 유지되고, 커밋 안 된 jigubyeol 작업도 그대로 남아 있습니다. 패키지 이름은 `@escape-from-home/playground`로 바꿨습니다.
+- 루트에 `package.json`과 `pnpm-workspace.yaml`을 새로 만들었습니다. npm 락파일 `package-lock.json`은 지웠습니다(pnpm으로 통일).
+- `.vscode/launch.json`과 `.claude/skills/escape`의 경로도 새 위치로 고쳤습니다.
+- playground 빌드는 통과합니다. 테스트 중 keyescape/zerohongdae 4건이 실패하는데, 외부 사이트에 실제로 접속하는 테스트라 연결이 거부돼서 생기는 것이고 이번 이동과는 관계없습니다.
+
+**소모임 API 조사 결과:**
+- 게시판은 `POST /api/articles`로 로그인 없이 받아올 수 있습니다. 다만 한 번에 최대 20건이고, 브라우저에서 직접 부르는 건 막혀 있어(CORS) 서버 쪽에서 받아와야 합니다.
+- **웹에는 게시글 상세 API가 없습니다.** 제목과 앞부분 120자만 받을 수 있어서, 날짜와 시간은 이 범위 안에서 찾아내야 합니다. 예: "10/10 토", "1ㅇ월16일", "7p50", "1145-1415".
+- 섬네일은 CloudFront 이미지 링크(`{글id}s1.png`)를 그대로 써도 열립니다.
+
+**실행 중인 Workflow:**
+1. 두 패키지를 동시에 만듭니다.
+   - `packages/somoim`: API 클라이언트와 날짜·시간·인원 파서. 실제 게시글 140건으로 테스트합니다.
+   - `packages/calendar`: Vite + React 월간 달력. 칸마다 시간과 섬네일이 들어가고, 누르면 상세 창이 열립니다. 모바일에서는 날짜를 누르면 그날 일정 목록이 나옵니다.
+2. 결과를 따로 점검합니다. 파서가 날짜를 제대로 뽑는지 게시글 전체를 대조하고, 브라우저로 화면을 확인하고, 코드 리뷰를 합니다.
+3. 점검에서 나온 문제를 고칩니다.
+
+데이터는 개발 서버에서는 요청할 때마다 소모임에서 새로 받아오고, 빌드할 때는 그 시점의 `events.json`을 받아 함께 넣습니다. 그래서 GitHub Pages 같은 정적 호스팅에 올릴 수 있습니다. 끝나면 결과를 정리해서 알려드리겠습니다.
+
+---
+
+## #331
+
+**Prompt**: playground 와 packages 는 monorepo 에서 말하는 packages/apps 와 같아. packages 에는 공통 라이브러리를, playground 는 실제 서비스되는 패키지가 들어가야해. 기존에 있던 익스텐션의 이름은 @escape-from-home/extension 으로 해줘
+
+**Answer**: 말씀하신 대로 구조를 바꿨습니다. `playground/`에는 실제 서비스되는 앱을, `packages/`에는 공통 라이브러리를 둡니다.
+
+[코드 블록 생략]
+
+- **익스텐션 이동:** `git mv`로 `packages/playground`를 `playground/extension`으로 옮겨서 git 이력은 유지됐습니다. 커밋 안 된 jigubyeol 작업도 그대로 남아 있습니다. 이름은 `@escape-from-home/extension`으로 바꿨고, 옮긴 뒤 빌드가 통과하는 것까지 확인했습니다.
+- **워크스페이스 설정:** `pnpm-workspace.yaml`에 `packages/*`와 `playground/*`를 모두 등록했습니다. 루트 스크립트는 `pnpm dev`가 캘린더를, `pnpm dev:extension`이 익스텐션을 실행합니다. `.vscode/launch.json`과 `.claude/skills/escape`의 경로도 새 위치로 고쳤습니다.
+- **작업 재시작:** 달력과 파서 작업은 경로가 바뀌어 한 번 멈췄다가 새 경로로 다시 시작했습니다. 멈추기 전에 만들어진 캘린더 파일은 새 위치로 옮겼고, 그 파일에서 이어서 작업합니다. somoim 패키지는 아직 작성 전이었습니다.
+
+구현, 파서 정확도·화면·코드 점검, 수정까지 끝나면 결과를 정리해서 알려드리겠습니다.
+
+---
+
+## #332
+
+**Prompt**: <task-notification>
+<task-id>wag43dq54</task-id>
+<tool-use-id>toolu_01DREfhy7uzBuqvHxGas65vi</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/f29c4b36-e586-4ae2-8ef8-b314a0301271/tasks/wag43dq54.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Build somoim client/parser package + calendar web app in escape-from-home monorepo, then audit parser, verify UI, review code" completed</summary>
+<result>{"somoimRes":"`packages/somoim` is complete. All 98 tests pass, `tsc --noEmit` is clean and the live sync worked. Nothing is committed or staged, and `playground/extension` was not touched. The only file that existed before was the fixture (plus the stub `package.json`, which I finished); everything else is new. No files outside the two new packages still point to `packages/calendar`.\n\n**Files** (all under `/Users/sam/Projects/escape-from-home/packages/somoim/`)\n- `package.json`: exports `.` → `./src/index.ts` and `./node` → `./src/node.ts`; scripts `sync`, `test`, `test:watch`, `typecheck`; dev deps typescript ~5.9.3, vitest ^4.1.2, @types/node ^24.12.0 (added with `pnpm add`).\n- `tsconfig.json` (strict, noEmit, bundler resolution, allowImportingTsExtensions, erasableSyntaxOnly, types node), `vitest.config.ts`, `README.md` (Korean).\n- `src/types.ts`: `DEFAULT_GROUP_ID`, `DEFAULT_GROUP_NAME` and every contract type.\n- `src/time.ts`: `somoimTimeToDate` (+1e9 offset), KST helpers, and `articlePostedAt` (uses `ot` for pinned posts where `w_t` = 2e9).\n- `src/api.ts`: `fetchArticles`. It paginates by the last item's `ot`, dedupes by id, drops posts older than `since` (default 120 days), and stops on an empty page, `eof`, `maxPages` (default 15) or a cursor that stops shrinking. It throws on an HTTP error or `res !== 100`.\n- `src/parse.ts`: `parseSchedule`, `parseParticipants`, `stripStatusMarkers`, `hasClosedMarker`, `normalizeText`.\n- `src/snapshot.ts`: `toScheduleEvent`, `toUndatedPost`, `snapshotFromArticles` (works without network), `buildSnapshot`, and image/avatar/group URL helpers.\n- `src/index.ts` (browser-safe exports), `src/node.ts` (`writeSnapshot`), `scripts/sync.ts` (default output `playground/calendar/public/data/events.json`).\n\n**Tests: 98, in 3 files**\n- `parse.test.ts` (36): every example from the task plus the date, time, year-inference, relative-date and marker-stripping forms. Negatives cover participant ratios, prices, durations, scores, \"1000방\", reservation-opening times and years.\n- `fixture.test.ts` (51):\n  - Invariants over all 140 articles: valid dates, `HH:mm`, participant bounds, a date within −60 to +200 days of posting, and image URLs present only when `ic &gt; 0`.\n  - Snapshot checks: notices excluded, sorted order, and the exact list of 6 undated posts.\n  - Hand-checked expected values for 47 specific articles, each read in the original.\n- `api.test.ts` (11): mocked pagination, boundary dedupe, `since` cutoff, default 120 days, `eof`, empty page, stuck cursor, `maxPages` 15, pinned notice first, HTTP/res errors, and `buildSnapshot` end to end.\n\n**Live sync** (`node packages/somoim/scripts/sync.ts /tmp/efh-events.json`)\n- 139 events from 2026-06-03 to 2026-11-08, plus 6 undated posts.\n- Status: 123 완료, 10 마감, 6 모집중. 53 events have no start time; the truncated preview (~120 chars) usually doesn't include one.\n- I checked the 31 events from 9/20 onward, the 8 oldest and all 6 undated posts. All looked right, for example: 10/10 11:45–14:15 (2/3), 10/16 19:00 (from the \"1ㅇ월\" typo), 9/25 19:50 (from \"7p50\"), 10/11 19:00 (from \"[10/11/일/19시]\").\n\n**Parse cases knowingly left unsupported**\n- **Hyphen dates** (`10-4`) and year-less day-only forms (`17일 토요일`) are not recognised.\n- **Only one date per post**: in \"8월 21일, 24일\" and \"8월 9-14일\" only the first date is used. The wedding post's second date (11/29) is dropped.\n- **Title always wins.** In Nine Games the title says 10/11 19시 and the body says \"17일 토요일 저녁 7시\"; the title is used.\n- **Korean-word times** like \"열시\" and \"두시\" are not parsed.\n- **Hours 1–9 are always read as PM** unless marked 오전/아침/am, so \"범계 10:30\" stays 10:30 and a real \"9:30 아침\" without a marker would become 21:30.\n- **A 4-digit year-like number with no marker can become a time.** \"2025 올해의 테마\" would read as 20:25 if it were the first time in the text. The one fixture case is safe because an earlier time comes first.\n- **Reservation-opening times are only skipped when followed by 에/부터 + 예약/오픈/티켓.** Other phrasings would be taken as the event time.\n- **A bare `N/N` in the title**, not in parentheses, with no weekday and no 인원/멤버/현재 label, is treated as a date. Examples: \"3/5 신사\", or a title that starts with \"3/3 이름\".\n- **Participant counts above 12** are only accepted after a 인원/멤버/현재/참여 label.\n- **(펑)** on a 관심사 (I) post gives 'closed'. On 모임후기 (E) it stays 'done', as the spec says; cancellation is not modelled separately.\n- **Relative dates** (오늘/내일/모레/이번주·다음주 X요일) are read from the title only. Weeks start on Monday.","calRes":"playground/calendar is finished. `tsc -b`, eslint and `vitest` all pass (14 tests), and `pnpm --filter @escape-from-home/calendar build` is green. The build pulled 139 live events into `dist/data/events.json`. I didn't touch playground/extension, made no commits and ran no git staging commands.\n\nWhile restarting the dev server I ran `pkill -f 'vite.*'`, and it killed processes outside this task. It stopped the vite dev server for `/Users/sam/Projects/subsy-client-v2/apps/subsy-web` (PID 29880), which has to be restarted by hand. It also stopped the context7 MCP server, because its command line contains `.vite-plus`. The session reported context7 as disconnected.\n\n**Files kept from the interrupted run (checked, still correct)**\n- Config: package.json, tsconfig.*, eslint.config.js, vite.config.ts (port 5174 strict), vitest.config.ts, .gitignore (`public/data/`), index.html (lang ko, title \"방탈사 일정표\", fonts), public/favicon.svg.\n- `vite/somoimData.ts`: in dev, GET /data/events.json calls `buildSnapshot()` live, caches for 60s and skips the cache with `?refresh=1`. If that fails it serves `public/data/events.json` with an `X-Somoim-Fallback` header. On build, `closeBundle` writes `dist/data/events.json`; if the network fails it falls back to public/, and fails with a clear error if that file is missing too.\n- `src/lib/calendar.ts` + test: Sunday-first month grid (4–6 weeks), KST date keys, grouping by date sorted by time with \"시간 미정\" last, and formatters.\n- No stale `packages/calendar` paths were left.\n\n**New files in `/Users/sam/Projects/escape-from-home/playground/calendar/src`**\n- `lib/status.ts` + test: filter labels, matching, per-status counts.\n- `hooks/useSnapshot.ts`: loading/error/ready states and a refresh action (dev uses `?refresh=1`, the deployed build adds a cache-buster). If a refresh fails it keeps showing the previous data.\n- `hooks/useMediaQuery.ts` and `hooks/useToday.ts` (KST, rechecked every minute).\n- `App.tsx` holds all the state. It passes contract types only to presentational components:\n  - `Header`: cover image, group name, \"마지막 갱신 HH:mm\", refresh button.\n  - `MonthNav`: prev/next month, 오늘 button, \"2026년 10월\" title.\n  - `FilterChips`: 전체/모집중/마감/완료 with counts.\n  - `MonthGrid` and `DayCell`: desktop cells show up to 3 items, then \"+N개 더\", which opens that day's list; mobile cells are tappable buttons with thumbnail dots and a +N count.\n  - `EventTicket`: thumbnail, time and title.\n  - `Thumb`: tries the article image, then the author avatar, then a lucide KeyRound placeholder.\n  - `DayAgenda`: the list for one day.\n  - `EventModal`: native `&lt;dialog&gt;`, so Esc and focus trapping come built in; backdrop click closes it and the close button gets focus. It shows the image, date, time range, participants, comments, author, preview, a note that the full post is in the app, and \"소모임에서 보기\".\n  - `UndatedList`: collapsible \"날짜를 못 찾은 게시글\" list.\n  - `StatusBadge`.\n- `index.css`: plain CSS with light/dark variables, plus breakpoints for phone (&lt;640) and tablet (640–959).\n\n**Design direction: a board-game board**\n- The month grid sits on a deep-teal felt board (#1f4a44) with paper-like day tiles; the page background is sage-grey (#e4e9e3), not cream.\n- Brass (#e3a93b) marks only \"모집중\" and today's date, which gets a round brass token. It matches the keyhole favicon.\
+... (truncated 35249 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/f29c4b36-e586-4ae2-8ef8-b314a0301271/tasks/wag43dq54.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/e0a1528b-dc6f-4df6-a48f-1032463e5b17/subagents/workflows/wf_0e1444cd-e57/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/e0a1528b-dc6f-4df6-a48f-1032463e5b17/workflows/scripts/somoim-calendar-build-wf_befea06f-e3f.js', resumeFromRunId: 'wf_0e1444cd-e57'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>6</agent_count><agents_done>6</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>1019150</subagent_tokens><tool_uses>274</tool_uses><duration_ms>1955400</duration_ms></usage>
+</task-notification>
+
+**Answer**: 소모임 게시판 일정을 달력으로 보여주는 앱을 만들었고, 요청하신 monorepo 구조(`playground/` = 서비스 앱, `packages/` = 공통 라이브러리)로 정리했습니다. 테스트(파서 118건, 달력 18건)와 빌드 모두 통과하고, 빌드할 때 실제 게시판에서 일정 139건을 받아오는 것까지 확인했습니다. 변경 사항은 `escape-from-home` 저장소에 staging만 해두었고 커밋은 하지 않았습니다.
+
+**⚠️ 먼저 확인해 주셔야 할 것:** 작업하던 에이전트가 dev 서버를 재시작하면서 `pkill -f 'vite.*'`를 실행하는 바람에 이번 작업과 상관없는 프로세스까지 종료됐습니다.
+- `~/Projects/subsy-client-v2/apps/subsy-web`의 vite dev 서버가 꺼져서 직접 다시 켜셔야 합니다.
+- 이 세션의 context7과 chrome-devtools MCP도 끊겼습니다(chrome-devtools도 같은 이유로 보입니다). 그래서 마지막 화면 확인은 headless Chrome 캡처로 대신했습니다.
+
+## 구조
+[코드 블록 생략]
+- `pnpm dev`는 달력을 5174 포트로, `pnpm dev:extension`은 익스텐션을 띄웁니다.
+- `pnpm build`는 달력만 빌드합니다. 익스텐션 빌드는 git에 올라가 있는 zip 파일을 덮어쓰기 때문에 `build:extension`으로 따로 분리했습니다.
+- 커밋 안 된 jigubyeol 작업은 staged 상태 그대로 새 위치로 따라왔습니다.
+- npm 락파일 `package-lock.json`은 지웠습니다(pnpm으로 통일).
+
+## 달력 앱
+- 일요일부터 시작하는 월간 달력이고, 날짜 칸마다 **섬네일 + 시작 시간 + 제목**이 들어갑니다. 게시글 이미지가 없으면 작성자 프로필 사진, 그것도 없으면 기본 아이콘을 씁니다.
+- 모집중·마감·완료를 색으로 구분하고, 취소된 벙("펑")은 빨간 취소선으로 표시합니다. 상단 필터로 상태별로 골라 볼 수 있습니다.
+- 일정을 누르면 상세 창이 열립니다. 큰 이미지, 시간대, 참여 인원(예: 2/4), 본문 미리보기, "소모임에서 보기" 버튼이 들어 있습니다.
+- 모바일에서는 달력 칸에 섬네일 점만 보이고, 날짜를 누르면 아래에 그날 일정 목록이 나옵니다. 390px 폭에서 가로로 넘치지 않는 것도 확인했습니다.
+- 데이터는 dev 서버에서는 소모임에서 실시간으로 받아오고(60초 캐시), 빌드할 때는 그 시점 일정을 파일로 함께 넣습니다. 그래서 GitHub Pages 같은 정적 호스팅에 올릴 수 있지만, 배포된 화면은 다시 빌드하기 전까지 빌드 시점 데이터를 보여줍니다.
+
+## 소모임 쪽 제약
+- 웹에는 게시글 상세 API가 없어서 **제목과 본문 앞 120자만** 받을 수 있습니다. 날짜·시간은 그 안에서 찾아내는데, 시간이 뒤쪽에 적힌 글은 "시간 미정"으로 나옵니다. 139건 중 53건이 그렇습니다.
+- 날짜를 못 찾은 글 6건은 달력 아래 "날짜를 못 찾은 게시글" 목록에 따로 모았습니다.
+- 모집중·마감·완료 구분은 이 모임의 게시판 카테고리 규칙(관심사=모집중, 자유=마감, 모임후기=완료)을 따릅니다. 다른 모임에 쓰려면 이 부분을 바꿔야 합니다.
+
+## 남은 문제
+- 시간을 1~9시로만 적은 글은 오후로 읽습니다. 그래서 제목에 "오전"이 있는데 본문에 "9:50"만 적힌 글이 21:50으로 나오는 사례가 하나 있습니다.
+- 한 글에 날짜가 여러 개 있으면(예: "8월 21일, 24일") 첫 날짜만 달력에 올라갑니다.
+- 처음 불러오는 동안 모바일에서 "이 날은 올라온 벙이 없습니다"가 잠깐 보입니다.
+- 달력 칸의 키보드 방향키 이동이 없고, 스크린리더용 구조 표시도 일부 빠져 있습니다.
+- 루트 `pnpm test`는 익스텐션의 외부 사이트 실접속 테스트가 원래부터 실패해서 항상 실패로 끝납니다. 이번 이동과는 관계없습니다.
+
+---
+
+## #333
+
+**Prompt**: 본문글은 어떻게 가져왔어?
+
+**Answer**: 소모임 웹사이트가 게시판을 보여줄 때 쓰는 목록 API를 그대로 호출해서 가져왔습니다. 따로 로그인이나 인증은 필요 없습니다.
+
+[코드 블록 생략]
+
+**찾은 과정**
+1. 모임 페이지 HTML을 받아 보니 Next.js 앱이었고, 페이지에 들어 있는 데이터에는 공지 5건만 있었습니다.
+2. 페이지의 JS 파일을 받아 `/api/` 문자열을 찾아보니, 게시판의 "게시글 더보기" 버튼이 `/api/articles`를 POST로 부르고 있었습니다.
+3. 같은 요청을 직접 보내 보니 로그인 없이 200 응답이 왔습니다.
+
+**응답에 들어 있는 것**
+- 각 글마다 제목(`at`), 작성자, 작성 시각, 카테고리, 이미지 개수, 댓글 수가 옵니다.
+- 본문은 `c` 필드에 들어 있는데, **제목을 포함해 약 120자에서 잘려서** 옵니다. 게시판 목록에 보이는 두 줄 미리보기용 데이터입니다.
+- 한 번에 최대 20건이라, 이전 페이지 마지막 글의 `ot` 값을 넘겨 가며 최근 120일치를 모읍니다.
+- 시각 값은 유닉스 시간에서 10억을 뺀 숫자라, 10억을 더해서 날짜로 바꿉니다. JS 코드에서 확인한 규칙입니다.
+
+**전체 본문은 못 가져옵니다**
+- 웹 코드에 게시글 상세를 불러오는 API가 없습니다. 웹에서는 글을 눌러도 앱을 설치하라는 안내만 나옵니다.
+- `/api/article`, `/api/articles/detail` 같은 주소를 몇 개 시도해 봤지만 전부 HTML 페이지만 돌아왔습니다. 댓글 API(`/api/comments`)는 500 에러였습니다.
+- 그래서 날짜·시간은 제목과 앞 120자 안에서만 찾고, 시간이 그 뒤에 적힌 글은 "시간 미정"으로 나옵니다.
+
+**섬네일**
+- 이미지가 있는 글(이미지 개수 > 0)은 `https://d3vo2hyhx9t76k.cloudfront.net/{글id}s1.png`를 씁니다.
+- 이 주소 규칙도 JS 코드에서 찾았고, 로그인 없이 바로 열리는 것을 확인했습니다.
+
+**어디서 호출하나**
+- 이 API는 브라우저에서 다른 사이트가 부르는 것을 허용하지 않습니다(CORS 헤더가 없습니다).
+- 그래서 달력 앱이 직접 부르지 않고, Vite 플러그인(`playground/calendar/vite/somoimData.ts`)이 Node에서 호출합니다. 개발 중에는 요청이 올 때마다, 빌드할 때는 한 번 받아서 `data/events.json`을 만듭니다.
+
+전체 본문이 꼭 필요하다면 모바일 앱이 쓰는 API를 분석해야 합니다. 이건 비공개 API라 인증이 필요할 가능성이 크고, 이용약관 문제도 있어 보여 이번에는 하지 않았습니다.
+
+---
+
+## #334
+
+**Prompt**: 합류대기가 지금 사람 눌러서 나오는 창에서만 나오는데 자동매칭 할때 상황이 여의치않을때도 나오게 햐줘
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #335
+
+**Prompt**: <task-notification>
+<task-id>wewx2rzl1</task-id>
+<tool-use-id>toolu_01BsjG7uEmnY3Fba52D1Skzr</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/f29c4b36-e586-4ae2-8ef8-b314a0301271/tasks/wewx2rzl1.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Replay recorded sessions HEAD vs working tree and adversarially review the card auto-match waiting fallback" completed</summary>
+<result>{"sim":"The change has a small effect in the replay harness and no material regression. 26 of 40 conditions produced identical game orders on every seed. The 14 that changed moved by at most about 0.5 on any metric's mean, and none stalled. For the one session with spare players (s324) the change is a clean improvement, because it removes nearly all remaining reservations. The two tight sessions that changed (s175 and s192) moved by amounts within noise, in opposite directions.\n\n**Setup.** `SIM_QUEUE_MODES=waiting`, 30 seeds plus the seed-0 replay, depths 2 and 3, 4 scenarios, 5 sessions. I ran it once on HEAD fcfe738 in a temporary worktree and once on the working tree. All 10 runs passed their tests (5/5 each). \"Same\" below means the game-order trace matched exactly.\n\n**No change at all (identical on every seed):** all of s156; s209 except queue-first depth 3; s175 at depth 2; s192 except queue-first depth 3; s324 stay at both depths.\n\n**Changed conditions (mean HEAD -&gt; working tree):**\n\n| Session | Scenario, depth | Same seeds | Court idle (min) | Reservations | Waiting teams | 3-player rematch % | Same four in a row % | Max wait incl. unplayed (min) | Game count std | Stalled |\n| --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- | ---: |\n| s324 | base / queue-first / tap-fill, 2 | 30/31 | 0.32 -&gt; 0.31 | 0.20 -&gt; 0.10 | 41.17 -&gt; 41.23 | unchanged | unchanged | unchanged | unchanged | 0 |\n| s324 | base / tap-fill, 3 | 25/31 | 0.06 -&gt; 0.00 | 0.53 -&gt; 0.10 | 44.83 -&gt; 44.90 | 5.60 -&gt; 5.33 | 0.47 -&gt; 0.27 | 14.56 -&gt; 14.32 | 0.77 -&gt; 0.75 | 0 |\n| s324 | queue-first, 3 | 25/31 | 0.06 -&gt; 0.00 | 0.53 -&gt; 0.10 | 44.90 -&gt; 44.90 | 5.40 -&gt; 5.33 | 0.33 -&gt; 0.27 | 14.36 -&gt; 14.32 | 0.76 -&gt; 0.75 | 0 |\n| s175 | base / stay / tap-fill, 3 | 27/31 | 137.25 -&gt; 137.61 | 41.87 -&gt; 41.83 | 11.23 -&gt; 11.27 | 20.00 -&gt; 20.32 | 13.44 -&gt; 13.76 | 19.37 -&gt; 19.88 | 1.56 -&gt; 1.60 | 0 |\n| s175 | queue-first, 3 | 27/31 | 139.98 -&gt; 140.34 | 42.57 -&gt; 42.73 | 11.97 -&gt; 12.03 | 20.00 -&gt; 19.68 | 13.23 -&gt; 13.23 | 20.03 -&gt; 20.07 | 1.56 -&gt; 1.58 | 0 |\n| s192 | queue-first, 3 | 20/31 | 121.98 -&gt; 121.13 | 43.53 -&gt; 42.13 | 11.40 -&gt; 12.50 | 20.62 -&gt; 20.00 | 13.23 -&gt; 13.12 | 22.91 -&gt; 21.92 | 2.32 -&gt; 2.31 | 0 |\n| s209 | queue-first, 3 | 30/31 | 72.52 -&gt; 72.65 | 42.93 -&gt; 42.90 | 13.37 -&gt; 13.43 | 20.91 -&gt; 20.81 | unchanged | 17.38 -&gt; 17.35 | unchanged | 0 |\n\n- **s324:** every metric improves or stays flat. Reservations fall to 0.1 and court idle reaches 0 at depth 3. At depth 3 the 3-player rematch p95 drops from 12 to 10 in base and tap-fill.\n- **s175 depth 3:** the only condition that leans worse. The means are all small, but the p95 tail is where it shows: court idle p95 goes 153.3 -&gt; 163.5 min and max-wait p95 goes 27.1 -&gt; 32.1 min. With only 4 of 31 seeds differing, this is one or two bad seeds rather than a systematic shift. Reservations do not fall here (about 42 either way).\n- **s192 queue-first depth 3:** improves slightly. About 1.1 more teams become waiting teams and 1.1 fewer reserved teams, which is the intended effect. Game count std p95 rises from 2.60 to 2.71.\n- **s209:** the one changed condition is a single differing seed and is noise.\n- **Broken-team minutes** are unchanged everywhere (0.4 in s175, 0 elsewhere).\n\n**Why the effect is so small.** On the tight sessions (s156, s175, s192, s209), about 42 playing-player reservations remain at depth 3 either way. They come from the automatic pairing that creates new teams (`autoFillTarget` with `newTeam`), which this change does not touch. The change only affects repairing an existing team through the card button.\n\n**Correction to the task note.** Broken ordinary teams do not come only from departures. s175 \"stay\" (no departures) changed exactly like \"base\" and shows 0.4 broken-team minutes. The court card button pulls members out of queued ordinary teams, which also leaves them short.\n\n**Verdict.** Directionally positive for the user's request. The only thing worth a note is the s175 depth-3 p95 tail (about 10 min more idle, 5 min more max wait) in a few seeds. It is not material enough to block.\n\nThe outputs are in `/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/0c5a31ec-bece-4a21-9d3f-084b6e538a1a/scratchpad/out/{head,work}-s{156,175,192,209,324}.json` and include traces with real IDs. I removed the worktree and made no edits to the repo. `docs/TEAM_GENERATION_RULES.md` changed during the run, but not from anything I did.","reviews":["I found one real correctness issue (medium) and one lower-severity state inconsistency. Tests pass: `pnpm exec vitest run src/store/boardStore.test.ts src/lib/board` gives 378 passing. No files were modified.\n\n**Paths traced with no problem found:**\n- **Existing team with 2–3 members:** the waiting branch in `autoFillTarget` (`membershipSlice.ts:505-511`) gets `targetSize = confirmed.length`, so it picks 0 people. It calls `commit([], true)`, which only flips the flag. `commit` counts a flag change as success, so `autoFillTeam` shows the toast once. After that the CTA is disabled (\"완료 후 채움\", `projection.ts:132,164`), so there is no loop and no silent no-op.\n- **Team with any reservation:** covers a team made only of playing ghosts, and anchors mixed with ghosts. It returns false and keeps the old reservation path.\n- **Member resting or cock-unchecked:** `needsReservation` returns false, so it uses the old path, same as before.\n- **No match playing:** the `playing.size &gt; 0` guard sends it to the old partial fill.\n- **Member in the matchEdits roster:** `autoFillTarget` rejects it before `prefersWaitingDraft` runs, and the editing set is also passed as `unavailable`.\n- **Avoid groups:** `needsReservation` uses the same `autoFillTeammates` search that the fill uses.\n- **Waiting-branch validity:** `needsReservation` checks the same conditions (composition, resting, a non-playing member), so the \"현재 선택으로 합류 대기팀을 만들 수 없어요\" toast can't be hit from the card button.\n\n**Issues:**\n\n1. **The card turns a team that can never be completed into a waiting team, with a toast promising it will fill** — severity medium.\n   - Where: `src/lib/board/waitingDrafts.ts:18` (`needsReservation`, completability check at 38-41) and `src/store/board/membershipSlice.ts:459-460`.\n   - Cause: `needsReservation` only asks whether the *free* players can complete the four. It never asks whether *anyone in the session* can. `canCompleteComposition(confirmed)` only checks the team's own gender mix, not who is actually present.\n   - Scenario: an existing team of 3 men. No other man is present. Free players are 2 women below skill 4, and 4 women of the same kind are playing.\n     - Before: the reservation path searched a pool that includes playing players, found nothing, and showed the error \"편성 가능한 조합이 없어요\".\n     - Now: the team is switched to waiting and the toast says \"경기가 끝나면 빈자리를 채워요\". `planWaitingTeamFills` will never find a fourth player, so the team stays at \"합류 대기 3/4\" with the CTA disabled.\n   - Same result when every playing player who could complete the team is already reserved by another team, or when avoid rules block every combination that includes playing players.\n   - Fix: for an existing team, add one more condition to `needsReservation` — the team must be completable from the whole session. Build the data with `{ excludeReserved: true }` but without `excludePlaying`, and apply the same `canCompleteFrom` plus avoid-group `autoFillTeammates` check. Switch to waiting only when the old reservation path would have succeeded. Otherwise return false, so the old error toast still shows.\n\n2. **Through the dialog, an existing team can now end up waiting and holding a reservation** — severity low-medium.\n   - Where: `src/lib/board/waitingDrafts.ts:17-18` (reservation check only looks at the team's current state) 
+... (truncated 6875 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/f29c4b36-e586-4ae2-8ef8-b314a0301271/tasks/wewx2rzl1.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/0c5a31ec-bece-4a21-9d3f-084b6e538a1a/subagents/workflows/wf_f1c21273-21c/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/087e67ac/projects/-Users-sam-Projects-cocktime-scheduler/0c5a31ec-bece-4a21-9d3f-084b6e538a1a/workflows/scripts/verify-waiting-fallback-wf_f1c21273-21c.js', resumeFromRunId: 'wf_f1c21273-21c'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>3</agent_count><agents_done>3</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>318495</subagent_tokens><tool_uses>42</tool_uses><duration_ms>558574</duration_ms></usage>
+</task-notification>
+
+**Answer**: 카드의 `자동매칭` 버튼도 이제 합류 대기로 바뀌어요. 이미 있는 일반 예비팀에서 누를 때 대기 선수만으로 네 명을 못 채우면, 경기 중인 사람을 예약하지 않고 그 팀을 합류 대기팀으로 돌립니다. 이때 "대기 선수가 부족해 합류 대기로 바꿨어요. 경기가 끝나면 빈자리를 채워요" 안내가 뜹니다. 전체 테스트와 대기열 시뮬레이터 테스트는 모두 통과했고, 커밋은 하지 않고 staging만 했습니다.
+
+**동작 방식**
+- 대기 선수로 네 명이 되면 예전처럼 지금 바로 채웁니다.
+- 아래 경우에는 예전처럼 경기 중 선수를 예약해 채웁니다.
+  - 진행 중인 경기가 없을 때
+  - 그 팀에 이미 예약한 선수가 있을 때
+  - 경기 중인 선수를 직접 골랐을 때
+- 경기 중 선수를 예약해도 네 명을 못 만들면 대기로 돌리지 않고, 예전처럼 "편성 가능한 조합이 없어요"가 뜹니다. 검토 중에 찾은 문제인데, 그대로 두면 끝까지 안 채워지는 대기팀이 생겨 막았습니다.
+- 빈자리를 눌러 여는 추천 창도 같은 기준으로 대기 체크가 기본으로 켜집니다. 추천 창의 자동편성으로 대기로 바뀔 때도 같은 안내가 뜹니다. 체크를 끄고 자동편성하면 예전처럼 예약해서 채웁니다.
+- 코트에 붙은 팀의 버튼은 바뀌지 않았습니다.
+
+**원래 의도와 달라질 수 있는 점**
+- 대기로 바뀔 때 새 팀과 똑같이 2명까지만 채웁니다. 그래서 2명짜리 팀에 남는 대기 선수가 1명 있어도 지금 넣지 않고, 경기가 끝날 때 나눠 넣습니다. 예전에는 그 1명을 넣고 경기 중인 1명을 예약했습니다.
+- 대기로 바뀐 팀은 빈 코트에서 매칭할 때 다른 대기팀과 합쳐질 수 있습니다.
+- 추천 창에서 사람을 직접 골라 `확인`만 눌러도, 체크가 켜져 있으면 그 팀이 대기팀이 됩니다.
+
+**실제 기록 재생 결과**: 기록된 세션 5개(156, 175, 192, 209, 324)를 이번 수정 전과 후로 다시 돌려 비교했습니다. 비교한 40개 조건 중 26개는 결과가 완전히 같았고, 멈춘 경우는 없었습니다.
+- 여유 인원이 있는 세션 324는 예약이 거의 없어졌고(0.53→0.10), 빈 코트 시간도 0분이 됐습니다.
+- 인원이 빠듯한 세션에서는 차이가 작고 오차 수준입니다. 이런 세션의 예약은 대부분 새 팀을 만들 때 생기는데, 이번 수정은 거기를 건드리지 않습니다.
+- 유일하게 나빠진 쪽은 세션 175(예비팀 3개)입니다. 31개 시드 중 4개만 결과가 달랐는데, 가장 나쁜 5% 경우에 빈 코트 시간이 약 10분, 최장 대기가 약 5분 늘었습니다.
+
+바꾼 곳은 `src/lib/board/waitingDrafts.ts`와 `src/store/board/membershipSlice.ts`이고, 추천 창과 테스트 4건도 새 기준에 맞게 고치고 새 테스트 3건을 넣었습니다. CLAUDE.md 규칙에 따라 `docs/TEAM_GENERATION_RULES.md`도 같이 고쳤습니다.
+
+---
+
+## #336
+
+**Prompt**: 여기까지 커밋후 배포
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #337
+
+**Prompt**: go on
 
 **Answer**: _(응답 대기 중…)_
 

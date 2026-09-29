@@ -68,7 +68,8 @@ export interface BoardState {
 	commitTeammates: (target: { teamId?: string; seedId?: string; newTeam?: boolean }, playerIds: string[], options?: { waitForCompletion?: boolean }) => void;
 	/**
 	 * 카드 버튼 자동편성 — 네 명의 조합을 비교한다. 코트 그룹은 다음 팀·자유 대기자·대기팀 재조합 순,
-	 * 1~3명이 있으면 경기중 예약까지 쓴다. 합류 대기팀은 채우지 않는다(경기 완료 때 채움).
+	 * 1~3명이 있으면 경기중 예약까지 쓴다. 일반 예비팀은 대기자만으로 못 채우면 예약 대신 합류 대기로 돌린다.
+	 * 합류 대기팀은 채우지 않는다(경기 완료 때 채움).
 	 */
 	autoFillTeam: (teamId: string) => void;
 	/** 추천 모달의 "자동편성" — 팀/시드/새팀 대상의 나머지를 대기 선수로 채워 commit. extraIds=사용자 직접 선택분. */

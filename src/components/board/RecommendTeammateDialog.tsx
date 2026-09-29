@@ -67,7 +67,7 @@ export default function RecommendTeammateDialog({ teamId, seedId, newTeam, onClo
 		avoidGroups: avoidRules,
 	}, selectedIds, editingRosterIds(matchEdits)));
 	// 대기 중인 기존 팀에 새로 고른 사람이 없으면 대기 모드 자동편성은 더할 사람이 없다.
-	const nothingToWaitFor = !!teamId && waitForCompletion && selectedIds.length === 0 && filledCount >= 2;
+	const nothingToWaitFor = !!teamId && drafts.get(teamId)?.waitForCompletion === true && waitForCompletion && selectedIds.length === 0 && filledCount >= 2;
 
 	// "실력순" 정렬 기준 밴드 — 알고리즘 skillDiff(스프레드 증가분)와 동일 의미론. 미등급(0)은 제외.
 	const skillBand = useMemo(() => {
