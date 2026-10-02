@@ -75,10 +75,6 @@ const status = (member: number) =>
 	scalar("select status from attendances where session_id=1 and member_id=$1", [
 		uid(member),
 	]);
-const operatorCount = () =>
-	scalar(
-		"select count(*)::int from attendances where status='confirmed' and is_operator(member_id)",
-	);
 
 beforeAll(async () => {
 	db = new PGlite();
