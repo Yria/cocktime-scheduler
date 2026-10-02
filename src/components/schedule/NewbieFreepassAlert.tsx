@@ -32,7 +32,7 @@ function fmtGraceEnd(ymd: string): string {
  *
  * 문구는 단정하지 않는다("접수돼요" + 예외 한 줄) — 프리패스는 대관비를 걷지 않는 일정에서만 열리고,
  * 클라이언트는 일정의 부과 여부를 신뢰성 있게 알 수 없다(비활성 장소는 목록에서 걸러져 '장소 없음'과
- * 구분되지 않는다). 인원 상한은 없다(마이그레이션 20260903000000 R2).
+ * 구분되지 않는다). 회차당 2명까지라 '대기 없이'도 단정이 아니다(20261002000000 — 상한이 차면 대기).
  */
 export default function NewbieFreepassAlert() {
 	const memberId = useAuthStore((s) => s.memberId);
@@ -82,7 +82,8 @@ export default function NewbieFreepassAlert() {
 					)}
 				</p>
 				<p className="text-faint" style={{ fontSize: 12.5 }}>
-					· 대관비를 걷는 일정은 정원까지만 받아요(만석이면 대기).
+					· 만석 일정의 신규 자리는 회차당 2명까지예요(먼저 누른 순서).
+					<br />· 대관비를 걷는 일정은 정원까지만 받아요(만석이면 대기).
 				</p>
 			</div>
 		</ConfirmDialog>
