@@ -288,7 +288,7 @@ export async function applySubmittedProposal(proposalId: string, teamId: string)
 		if (scope !== matchProposalScope()) return;
 		applyProposals([result.proposal]);
 		useSessionStore.getState().applyDraftsIfNewer(result.drafts, result.version);
-		useBoardStore.getState().applyRemoteDrafts(result.drafts);
+		useBoardStore.getState().applyRemoteDrafts(result.drafts, result.version);
 		useBoardStore.getState().scatterMagnets(released);
 		toast(`${target.courtId}번 코트 명단을 편성제안으로 교체했어요`, { variant: "success" });
 	} catch (error) {

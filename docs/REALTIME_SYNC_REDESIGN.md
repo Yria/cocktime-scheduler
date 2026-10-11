@@ -91,6 +91,14 @@
 ### 🔵 Stage 2b — postgres_changes 제거 + publication drop (미착수, 게이팅)
 `publication DROP TABLE`이 **유일한 비가역 단계**라, PWA는 강제 업데이트가 안 되니 **클라 버전 텔레메트리로 잔존 구클라 0 확인 + DB발 sync 브로드캐스트가 클라에 실제 수신됨을 E2E 양성 확인**(realtime.send 4-arg 시그니처가 이 인스턴스에서 동작하는지 — 첫 사용이라 배포 후 검증 필수)한 뒤 실행한다. 얻는 것은 쿼터 절감과 신호 경로 단일화.
 
+### 🟣 운영진 동시 편집(실험, 2026-10-12) — 세션 플래그로 격리
+단일 편집자 불변식(①)을 **세션 단위로만** 푼다. `sessions.board_multi_editor` 가 false 면 위 경로와 완전히 같다.
+- **신호**: 플래그는 sessions 행에 있어 토글(`admin_set_board_multi_editor`)이 editor_* 정리·`board_drafts_version`+1 과 **같은 행 이벤트**로 도착하고, sync bump 비교 컬럼에 들어가 힌트 broadcast 도 나간다. 재구독 catch-up 은 `load_session_state` 스냅샷의 같은 키로 받는다.
+- **쓰기**: ON 의 `board_save_drafts` 는 버전 CAS 만 본다. 통째 LWW 대신 클라가 base(적용 직후 투영)·mine·theirs 를 선수 배치 단위로 3-way 머지해 보낸다. 충돌은 스냅샷으로 원인(플래그 꺼짐/CAS 아님/진짜 충돌)을 가른 뒤 rebase-retry(최대 3회). 토글의 버전 bump 덕분에 전환 전에 출발한 저장은 전환 뒤 CAS 로 실패한다.
+- **resync 와의 관계**: 로컬 지식에 기댄 자동 정제는 ON 에서 서버로 올리지 않는다(늦게 받은 기기가 남의 배치를 지우는 경로 차단). 정제는 머지 기준에도 접혀 '내 변경'으로 새지 않는다.
+- **드래그 미리보기**: `board-drag:{sessionId}` broadcast(self:false, ack:false, presence 없음, 운영진 && ON 만 구독) — 표시 전용이라 유실돼도 무해하고, 확정은 여전히 board_drafts 저장 → 행 이벤트. 회원에게는 채널이 없어 쿼터 영향은 운영진 수 × 드래그 중 초당 ~4건.
+- **롤백**: 토글 OFF → 필요 시 클라 revert → DB down(`supabase/rollback/…_down.sql`, `board_assert_editor` 는 `20261012000000` 가드 버전 기준).
+
 ## 7. 외부 검증 (공식 + 커뮤니티, 2026-07-22)
 
 - **공식**: postgres_changes는 변경 1건당 구독자 수만큼 인가 검사 + 순서보존 단일 스레드라 확장 한계(~3,000 동접 넘으면 Broadcast로). Supabase에 **`Migrate from Postgres Changes` 전용 가이드** 존재. Broadcast from Database가 "대부분의 use case에 권장". 트러블슈팅에 "Handling Silent Disconnections in Background Applications" 항목 존재(= iOS PWA 백그라운드 조용한 끊김 공식 인정).

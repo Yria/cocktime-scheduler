@@ -100,3 +100,11 @@ ON → OFF 전환과 동기화, 휴식 복귀, 내부 함수와 RPC 실행 권�
 수학적 성질은 `pnpm exec vitest run src/lib/teamSelection/lateJoinFairness.test.ts --reporter=verbose`로 별도 확인한다.
 5,004개 판수 조합에 실제 SQL을 적용하고, 반복 합류의 오차·분산 경계 및 경기 종료 시점·그룹 이력 반례를 검사한다.
 일반 증명과 검증 범위는 [늦참 평균 판수 수학 검증](../../docs/TEAM_MATCHING_MATH.md)에 기록했다.
+
+## 경기 RPC 서버 가드
+
+`node_modules/.bin/vitest run src/lib/supabase/boardMatchGuards.test.ts`는 로컬 PGlite에
+`20261012000000_board_match_guards.sql`을 올리고 실제 `assign_match`·`set_match_roster`·`complete_match`·
+`board_assert_editor`를 실행한다. 휴식·콕 미확인 선수의 시작 허용, 빈 자리·중복·다른 진행 경기·다른 세션 선수 거부,
+종료 세션 거부, 클라 removed/added 무시(서버 계산), 낡은 로스터로 완료해도 실제 로스터만 갱신, client id 미전달 시 운영진만 통과를 검사한다.
+운영 DB와 다중 연결 잠금 경합은 검사하지 않는다.

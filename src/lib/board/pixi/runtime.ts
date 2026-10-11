@@ -2,6 +2,9 @@ import type { Application, Container } from "pixi.js";
 import { useBoardStore } from "../../../store/boardStore";
 import { useDebugStore } from "../../../store/debugStore";
 import { useSessionStore } from "../../../store/sessionStore";
+import { setLocalDragActive } from "../../../store/board/localDrag";
+import { useRemoteDragStore, type RemoteDrag } from "../../../store/remoteDragStore";
+import { toast } from "../../../store/toastStore";
 import type { StagePoint } from "../../../types/board";
 import { EMPTY_SLOT_R, MAGNET_HIT_R, PAIR_RADIUS, PAIR_RADIUS_DETACH, TEAM_BOX_ABOVE, TEAM_BOX_BELOW, TEAM_W } from "../constants";
 import { computeSlotOffset, isInDetachZone, isInRestField, isInsideTeamBounds, slotIndexAt } from "../geometry";
@@ -10,6 +13,7 @@ import { nearestFreePartner, resolveDropTarget } from "../dropResolver";
 import { cockPendingIds, playingIdsFromCourts } from "../membership";
 import { registerBoardCameraFlush } from "./cameraBridge";
 import { cardControls } from "./cardControls";
+import { createDragSender } from "./dragSender";
 import { createFrameScheduler } from "./frameScheduler";
 import { createBoardInteractionController, type BoardInteractionTarget } from "./interactionController";
 import { createBoardProjection } from "./projection";
@@ -34,13 +38,30 @@ interface Binding {
 	animation?: { from: StagePoint; started: number };
 }
 
+/** 다른 운영진이 끌고 있는 항목(동시 편집) — 원본 자리는 흐리게, 미리보기는 별도 레이어에 그린다. */
+export interface RemoteDragView {
+	key: string;
+	view: BoardEntity;
+	name: string;
+}
+
 export interface BoardPresentation {
 	scene: BoardSnapshot;
 	drag: { view: BoardEntity; point: StagePoint } | null;
 	hover: ReturnType<typeof useBoardStore.getState>["hoverTarget"];
 	playerDragging: boolean;
 	locate: BoardCallbacks["locate"];
+	/** 원격 드래그 미리보기 목록과 흐리게 그릴 원본 key 집합(동시 편집이 아니면 항상 빈 값). */
+	remote: readonly RemoteDragView[];
+	remoteHeld: ReadonlySet<string>;
 }
+
+const NO_REMOTE: readonly RemoteDragView[] = [];
+/** 이 간격 안에 양쪽이 같은 항목을 잡으면 '동시'로 보고 연결 id 로 가른다(D10). */
+const GRAB_TIE_MS = 250;
+const NO_REMOTE_HELD: ReadonlySet<string> = new Set();
+/** 원격 미리보기 보간 시간상수(지수평활). 250ms 간격 샘플을 부드럽게 잇는다. */
+const REMOTE_TAU_MS = 100;
 
 /** One instance per mounted renderer. Only the commit paths call domain commands. */
 export class BoardRuntime {
@@ -65,6 +86,13 @@ export class BoardRuntime {
 	private cleanups: (() => void)[] = [];
 	private proposalUnsubscribe?: () => void;
 	private presentation: BoardPresentation;
+	// 실시간 드래그(동시 편집) — 송신 스로틀, 원격 미리보기 노드와 보간 상태, 마지막 프레임 시각.
+	private sender = createDragSender(() => useRemoteDragStore.getState().port);
+	/** 공유 드래그를 시작한 시각(동시 잡기 판정 — remoteDragStore.startedAt 과 같은 이 기기 시계). */
+	private dragStartedAt = 0;
+	private remotePreviews = new Map<string, { node: Container; x: number; y: number }>();
+	private remoteCache: { drags: ReadonlyMap<string, RemoteDrag>; scene: BoardSnapshot; dragKey: string | null; remote: readonly RemoteDragView[]; held: ReadonlySet<string> } | null = null;
+	private lastFrame = 0;
 	private eligibility: { players: unknown; courts: unknown; resting: unknown; cock: boolean; playing: Set<string>; notReady: Set<string>; restingIds: Set<string> } | null = null;
 	readonly scheduler;
 	readonly controller;
@@ -85,6 +113,7 @@ export class BoardRuntime {
 			onDragMove: (_target, point) => {
 				if (!this.dragging) return;
 				this.dragPoint = point;
+				this.sender.move(point);
 				this.pendingHover = true;
 				this.scheduler.invalidate();
 			},
@@ -92,7 +121,8 @@ export class BoardRuntime {
 			onCancel: () => this.cancelDrag(),
 			onEmptyDoubleTap: () => this.callbacks.onEmptyDoubleTap?.(),
 		});
-		this.cleanups.push(useBoardStore.subscribe(this.refresh), useSessionStore.subscribe(this.refresh), useAdminCoverageStore.subscribe(this.refresh));
+		this.cleanups.push(useBoardStore.subscribe(this.refresh), useSessionStore.subscribe(this.refresh), useAdminCoverageStore.subscribe(this.refresh),
+			useRemoteDragStore.subscribe(this.onRemoteDrags));
 		this.proposalUnsubscribe = callbacks.proposals?.subscribe(this.refresh);
 		this.cleanups.push(() => this.proposalUnsubscribe?.());
 		this.cleanups.push(registerBoardCameraFlush(() => this.controller.flushZoom()));
@@ -117,12 +147,56 @@ export class BoardRuntime {
 	}
 	setWorld = (node: Container | null) => { this.world = node; this.scheduler.invalidate(); };
 	setPreview = (node: Container | null) => { this.preview = node; this.scheduler.invalidate(); };
+	/** 원격 미리보기 노드 등록. 처음 붙을 때는 원본 자리에서 출발해 목표로 미끄러진다. */
+	bindRemotePreview(key: string, node: Container) {
+		const existing = this.remotePreviews.get(key);
+		if (existing?.node === node) return;
+		const view = this.allViews().find((v) => v.key === key);
+		const parent = view && this.parentOf(view);
+		const from = existing ?? (view ? this.point(view, parent) : useRemoteDragStore.getState().drags.get(key)) ?? { x: 0, y: 0 };
+		node.position.set(from.x, from.y);
+		this.remotePreviews.set(key, { node, x: from.x, y: from.y });
+		this.scheduler.invalidate();
+	}
+	unbindRemotePreview(key: string, node: Container) {
+		if (this.remotePreviews.get(key)?.node === node) this.remotePreviews.delete(key);
+		this.scheduler.invalidate();
+	}
 	zIndex(key: string, initial: number) { return this.lifted.get(key) ?? initial; }
 	committed = () => { this.skipAnimationPlayer = null; this.scheduler.invalidate(); };
 
 	private readPresentation(): BoardPresentation {
 		const bs = useBoardStore.getState();
-		return { scene: this.readScene(), drag: this.dragging, hover: bs.hoverTarget, playerDragging: bs.dragInfo !== null, locate: this.callbacks.locate };
+		const scene = this.readScene();
+		const { remote, held } = this.readRemote(scene);
+		return { scene, drag: this.dragging, hover: bs.hoverTarget, playerDragging: bs.dragInfo !== null, locate: this.callbacks.locate, remote, remoteHeld: held };
+	}
+	/** 원격 드래그 → 이 기기 장면의 항목. 장면에 없는 key(상태가 아직 안 맞음)는 그리지 않는다. 내가 끄는 항목은 제외. */
+	private readRemote(scene: BoardSnapshot) {
+		const drags = useRemoteDragStore.getState().drags;
+		const dragKey = this.dragging?.view.key ?? null;
+		const cache = this.remoteCache;
+		if (cache && cache.drags === drags && cache.scene === scene && cache.dragKey === dragKey) return cache;
+		if (drags.size === 0) {
+			this.remoteCache = { drags, scene, dragKey, remote: NO_REMOTE, held: NO_REMOTE_HELD };
+			return this.remoteCache;
+		}
+		const views = new Map(this.allViews(scene).map((view) => [view.key, view] as const));
+		const remote: RemoteDragView[] = [];
+		for (const drag of drags.values()) {
+			const view = views.get(drag.key);
+			if (view && drag.key !== dragKey) remote.push({ key: drag.key, view, name: drag.name });
+		}
+		// move·keepalive 는 좌표만 바뀐다 — 좌표는 draw() 가 store 에서 직접 읽어 보간하므로, 항목·이름·뷰가 같으면
+		// 이전 배열/Set 을 그대로 써 presentation 을 새로 내지 않는다(BoardScene·카드 전체 리렌더 방지).
+		const prev = cache?.remote;
+		if (cache && prev && prev.length === remote.length && prev !== NO_REMOTE
+			&& prev.every((item, i) => item.key === remote[i].key && item.view === remote[i].view && item.name === remote[i].name)) {
+			this.remoteCache = { drags, scene, dragKey, remote: prev, held: cache.held };
+			return this.remoteCache;
+		}
+		this.remoteCache = { drags, scene, dragKey, remote, held: new Set(remote.map((item) => item.key)) };
+		return this.remoteCache;
 	}
 	private readScene() { return this.projection(useBoardStore.getState(), useSessionStore.getState(), this.callbacks.proposals?.getSnapshot(), useAdminCoverageStore.getState()); }
 
@@ -142,7 +216,8 @@ export class BoardRuntime {
 			this.scheduler.invalidate();
 		}
 		if (next.scene === this.presentation.scene && next.drag === this.presentation.drag
-			&& next.hover === this.presentation.hover && next.playerDragging === this.presentation.playerDragging && next.locate === this.presentation.locate) return;
+			&& next.hover === this.presentation.hover && next.playerDragging === this.presentation.playerDragging && next.locate === this.presentation.locate
+			&& next.remote === this.presentation.remote) return;
 		this.presentation = next;
 		for (const listener of this.listeners) listener();
 	};
@@ -193,6 +268,20 @@ export class BoardRuntime {
 			this.updateHover(this.dragging.view.source, this.dragPoint);
 		}
 		let active = false;
+		const dt = this.lastFrame ? Math.min(100, Math.max(0, time - this.lastFrame)) : 16;
+		this.lastFrame = time;
+		if (this.remotePreviews.size) {
+			const drags = useRemoteDragStore.getState().drags;
+			const k = 1 - Math.exp(-dt / REMOTE_TAU_MS);
+			for (const [key, preview] of this.remotePreviews) {
+				const target = drags.get(key);
+				if (!target) continue;
+				const dx = target.x - preview.x; const dy = target.y - preview.y;
+				if (Math.hypot(dx, dy) < 0.5) { preview.x = target.x; preview.y = target.y; }
+				else { preview.x += dx * k; preview.y += dy * k; active = true; }
+				preview.node.position.set(preview.x, preview.y);
+			}
+		}
 		for (const binding of this.bindings.values()) {
 			const animation = binding.animation;
 			if (!animation) continue;
@@ -202,6 +291,7 @@ export class BoardRuntime {
 			if (t === 1) binding.animation = undefined;
 			else active = true;
 		}
+		if (!active) this.lastFrame = 0;
 		this.app.render(); this.metrics.frames++;
 		return active;
 	}
@@ -224,6 +314,48 @@ export class BoardRuntime {
 				&& member.point.x === original.members[i].point.x && member.point.y === original.members[i].point.y);
 	}
 
+	private parentOf(view: BoardEntity, scene = this.presentation.scene): CardView | undefined {
+		if (view.kind === "card") return undefined;
+		return scene.entities.find((e): e is CardView => e.kind === "card" && e.members.some((m) => m.key === view.key));
+	}
+	/** 소프트락 — 이 항목·부모 카드·(카드면) 멤버 중 하나라도 다른 운영진이 잡고 있으면 그 원격 드래그. */
+	private remoteHolder(view: BoardEntity, parent?: CardView): RemoteDrag | undefined {
+		const drags = useRemoteDragStore.getState().drags;
+		if (drags.size === 0) return undefined;
+		const keys = [view.key, ...(parent ? [parent.key] : []), ...(view.kind === "card" ? view.members.map((m) => m.key) : [])];
+		for (const key of keys) { const drag = drags.get(key); if (drag) return drag; }
+		return undefined;
+	}
+	/**
+	 * 내가 끄는 항목을 상대도 잡았을 때 내가 놓아야 하는가. 늦게 잡은 쪽은 보통 소프트락에 막히므로 겹침은
+	 * '거의 동시'이거나 한쪽이 상대 start 를 놓쳤을 때만 생긴다.
+	 *  · 상대 start 를 못 받고 move/keepalive 부터 받았다 → 상대가 먼저 잡고 있었다 → 내가 놓는다.
+	 *  · 상대가 GRAB_TIE_MS 넘게 늦게 잡았다 → 상대가 놓는다(상대는 내 start 를 놓쳤고, 내 keepalive 를 받으면 위 규칙으로 놓는다).
+	 *  · GRAB_TIE_MS 안의 동시 잡기 → 양쪽이 같은 결론을 내도록 연결 id 사전순으로 큰 쪽이 놓는다.
+	 */
+	private yieldsTo(holder: RemoteDrag, connId: string): boolean {
+		if (holder.joinedLate) return true;
+		const diff = holder.startedAt - this.dragStartedAt;
+		if (diff > GRAB_TIE_MS) return false;
+		if (diff < -GRAB_TIE_MS) return true;
+		return connId > holder.c;
+	}
+	/** 원격 드래그 수신 — 다시 그리고, 내가 끄는 항목과 겹친 동시 잡기를 정리한다. */
+	private onRemoteDrags = () => {
+		if (this.disposed) return;
+		const drag = this.dragging;
+		const port = useRemoteDragStore.getState().port;
+		if (drag && port && this.sender.active) {
+			const holder = this.remoteHolder(drag.view, this.parentOf(drag.view));
+			if (holder?.phase === "live" && holder.c !== port.connId && this.yieldsTo(holder, port.connId)) {
+				this.controller.cancel();
+				toast(`${holder.name || "다른 운영진"}님이 잡고 있어요`);
+			}
+		}
+		this.refresh();
+		this.scheduler.invalidate();
+	};
+
 	private point(view: BoardEntity, parent?: CardView): StagePoint {
 		const node = this.bindings.get(view.key)?.node;
 		const local = node ? { x: node.x, y: node.y } : view.point;
@@ -235,7 +367,7 @@ export class BoardRuntime {
 	private magnetTarget(view: MagnetView, parent?: CardView): BoardInteractionTarget {
 		const invoke = (action: () => void) => { if (this.isValid(view.source)) action(); };
 		return {
-			key: view.key, source: view.source, point: this.point(view, parent), draggable: view.draggable,
+			key: view.key, source: view.source, point: this.point(view, parent), draggable: view.draggable && !this.remoteHolder(view, parent),
 			onTap: () => invoke(() => {
 				if (view.cockPending) this.callbacks.onCockCheck(view.player.id);
 				else if (view.source.kind === "free") this.callbacks.onMagnetClick(view.player.id);
@@ -314,7 +446,7 @@ export class BoardRuntime {
 					if (inside({ x: center.x + offset.x, y: center.y + offset.y }, EMPTY_SLOT_R)) return button(`slot${slot}`, () => this.callbacks.onSlotClick(id));
 				}
 			}
-			if (x >= -TEAM_W / 2 && x <= TEAM_W / 2 && y >= -TEAM_BOX_ABOVE && y <= TEAM_BOX_BELOW) return { key: view.key, source: view.source, point: center, draggable: view.draggable };
+			if (x >= -TEAM_W / 2 && x <= TEAM_W / 2 && y >= -TEAM_BOX_ABOVE && y <= TEAM_BOX_BELOW) return { key: view.key, source: view.source, point: center, draggable: view.draggable && !this.remoteHolder(view) };
 		}
 		return null;
 	}
@@ -323,10 +455,15 @@ export class BoardRuntime {
 		if (!target.source || !this.isValid(target.source)) return;
 		const view = this.find(target.source);
 		if (!view?.draggable) return;
+		const parent = this.parentOf(view);
+		if (this.remoteHolder(view, parent)) return; // 다른 운영진이 잡고 있다(소프트락)
 		this.committing = true;
 		this.dragging = { view, point: target.point };
 		this.dragPoint = target.point;
-		const parent = this.presentation.scene.entities.find((e) => e.kind === "card" && e.members.some((m) => m.key === view.key));
+		setLocalDragActive(true);
+		// 개인 제안 작성(제안 카드·멤버, 작성 모드의 자유 자석)은 공유 보드 편집이 아니라 보내지 않는다.
+		const privateDrag = view.source.kind === "proposal" || view.source.kind === "proposal-member" || !!this.callbacks.proposals?.getSnapshot().enabled;
+		if (!privateDrag) { this.dragStartedAt = Date.now(); this.sender.start(view.key, target.point); }
 		this.lifted.set(parent?.key ?? view.key, ++this.z);
 		const binding = this.bindings.get(view.key); if (binding) binding.animation = undefined;
 		const bs = useBoardStore.getState();
@@ -374,6 +511,8 @@ export class BoardRuntime {
 		} finally {
 			this.restoreSource(drag.view.key);
 			this.dragging = null; this.dragPoint = null; bs.clearDrag(); bs.setRestFieldHot(false);
+			this.sender.end(point);
+			setLocalDragActive(false); // 드롭 결과가 store 에 반영된 뒤 — 보류한 원격 적용이 이 드롭을 덮지 않는다
 			this.committing = false; this.publish();
 		}
 	}
@@ -381,6 +520,8 @@ export class BoardRuntime {
 	private cancelDrag() {
 		if (this.dragging) this.restoreSource(this.dragging.view.key);
 		this.committing = true; this.dragging = null; this.dragPoint = null; this.pendingHover = false;
+		this.sender.cancel();
+		setLocalDragActive(false);
 		useBoardStore.getState().clearDrag(); useBoardStore.getState().setRestFieldHot(false);
 		this.scale = this.lastStoreScale = useBoardStore.getState().scale;
 		this.scheduler.invalidate();
@@ -518,8 +659,10 @@ export class BoardRuntime {
 	dispose() {
 		if (this.disposed) return;
 		this.disposed = true;
+		if (this.dragging) setLocalDragActive(false);
+		this.sender.cancel();
 		for (const cleanup of this.cleanups) cleanup();
 		this.controller.dispose(); this.scheduler.dispose();
-		this.bindings.clear(); this.listeners.clear();
+		this.bindings.clear(); this.remotePreviews.clear(); this.listeners.clear();
 	}
 }

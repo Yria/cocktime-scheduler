@@ -1,11 +1,12 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../store/appStore";
 import { useBoardStore } from "../store/boardStore";
 import { useSessionStore } from "../store/sessionStore";
 import { useBoardPlayerPool } from "./useBoardPlayerPool";
 import { useCourtSig } from "./useBoardStageLayout";
-import { hasPendingDraftSave } from "../store/board/draftsSync";
+import { getDraftsBase, hasPendingDraftSave, subscribeDraftSaveIdle } from "../store/board/draftsSync";
+import { isLocalDragActive, subscribeLocalDrag } from "../store/board/localDrag";
 import { useAuthStore } from "../store/authStore";
 import { useMatchAvoidStore } from "../store/matchAvoidStore";
 import { usePageVisibility } from "./usePageVisibility";
@@ -62,17 +63,45 @@ export function useSessionBoardEffects() {
 	const magnetCount = useBoardStore((s) => s.magnets.size);
 	const ensureCourtGroups = useBoardStore((s) => s.ensureCourtGroups);
 	const lastAppliedDraftsRef = useRef<typeof boardDrafts | null>(null);
-	useLayoutEffect(() => { lastAppliedDraftsRef.current = null; }, [sessionId]);
+	const lastAppliedMagnetCountRef = useRef(-1);
+	useLayoutEffect(() => { lastAppliedDraftsRef.current = null; lastAppliedMagnetCountRef.current = -1; }, [sessionId]);
+	// 동시 편집(multiEditor) 전용 재적용 규칙:
+	//  · 로컬 드래그 중·저장 큐가 남아 있으면 보류하고, 드롭/취소·큐 소진 때 다시 시도한다(아래 두 신호가 deps).
+	//  · 머지 기준(draftsBase)보다 새 버전일 때만 원격을 적용한다. rebase 는 sessionStore 에 theirs 를 넣고 화면엔
+	//    머지 결과를 그리므로, 같은 버전 재적용을 막지 않으면 큐가 비는 순간 theirs 가 내 머지분을 지운다.
+	//  · 같은 버전이어도 자석 수가 바뀌면(늦게 합류한 선수) 다시 적용한다 — 큐가 비었으면 로컬 의도는 모두 저장됐고,
+	//    서버 원본에 있지만 자석이 없어 못 그렸던 배치를 이제 그린다(단일 편집자의 STALE 원복 문제는 없다).
+	const multiEditor = useSessionStore((s) => s.multiEditor);
+	const boardDraftsVersion = useSessionStore((s) => s.boardDraftsVersion);
+	const localDragging = useSyncExternalStore(subscribeLocalDrag, isLocalDragActive);
+	const [saveIdleTick, setSaveIdleTick] = useState(0);
+	useEffect(() => (multiEditor ? subscribeDraftSaveIdle(() => setSaveIdleTick((n) => n + 1)) : undefined), [multiEditor]);
 	useEffect(() => {
+		if (!multiEditor) return;
+		if (useBoardStore.getState().magnets.size === 0 && pool.length > 0) return;
+		if (localDragging || hasPendingDraftSave()) return; // 드롭/취소·저장 완료 뒤로 보류
+		const base = getDraftsBase(sessionId);
+		const magnetsChanged = lastAppliedMagnetCountRef.current !== magnetCount;
+		lastAppliedDraftsRef.current = boardDrafts;
+		if (base && (boardDraftsVersion < base.version || (boardDraftsVersion === base.version && !magnetsChanged))) return;
+		lastAppliedMagnetCountRef.current = magnetCount;
+		applyRemoteDrafts(boardDrafts, boardDraftsVersion);
+		ensureCourtGroups();
+	}, [multiEditor, boardDrafts, boardDraftsVersion, applyRemoteDrafts, magnetCount, ensureCourtGroups, pool.length,
+		localDragging, saveIdleTick, sessionId]);
+	useEffect(() => {
+		if (multiEditor) return; // 동시 편집은 위 이펙트가 담당
 		if (useBoardStore.getState().magnets.size === 0 && pool.length > 0) return;
 		// 저장 중 돌아온 경우도 이전 응답으로 마지막 드롭을 되돌리지 않는다.
 		if (hasPendingDraftSave() && (lastAppliedDraftsRef.current !== null || useBoardStore.getState().manualLayout)) return;
 		const draftsChanged = lastAppliedDraftsRef.current !== boardDrafts;
 		if (!draftsChanged && isEditor) return; // 편집자: 멤버십 미수신 + magnetCount만 변한 재적용은 STALE 원복 위험 → 스킵
 		lastAppliedDraftsRef.current = boardDrafts;
-		applyRemoteDrafts(boardDrafts);
+		applyRemoteDrafts(boardDrafts, boardDraftsVersion);
 		ensureCourtGroups();
-	}, [boardDrafts, applyRemoteDrafts, magnetCount, isEditor, ensureCourtGroups, pool.length]);
+		// boardDraftsVersion 은 boardDrafts 와 함께 바뀌므로 deps 에 넣지 않는다(기존 재실행 조건 유지).
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [boardDrafts, applyRemoteDrafts, magnetCount, isEditor, ensureCourtGroups, pool.length, multiEditor]);
 
 	// 세션 Realtime 채널 구독 — 보드는 SessionMain 없이 단독 마운트되므로 직접 구독해야
 	// handleAssign/handleComplete가 동작한다(_channel 필요). 없으면 경기시작/완료가 무반응.
@@ -105,8 +134,9 @@ export function useSessionBoardEffects() {
 		// 읽기 전용으로 진입한다(자유일 때만 opener 가 편집자로 자동 점유).
 		if (autoClaimTriedRef.current || !clientId || !lockSynced) return;
 		autoClaimTriedRef.current = true; // 최초 1회만 시도 — 이후 free 전이엔 재점유하지 않음(플래핑 방지)
-		if (lockFree && !isEditor && presenceCount <= 1) claimEditingIfFree();
-	}, [clientId, lockSynced, lockFree, isEditor, presenceCount, claimEditingIfFree, sessionId]);
+		// 동시 편집에서는 운영진이 이미 편집자라 점유할 락이 없다.
+		if (!multiEditor && lockFree && !isEditor && presenceCount <= 1) claimEditingIfFree();
+	}, [clientId, lockSynced, lockFree, isEditor, presenceCount, claimEditingIfFree, sessionId, multiEditor]);
 
 	// ── 불변식 I2 자가 치유 — 코트 변화 시 경기중이 된 anchor를 예비팀에서 즉시 제거(편집자·뷰어 모두) ──
 	// 경기 시작/로스터 편입으로 코트에 올라간 선수가 동시편집 레이스(유실된 dissolve)나 setMatchRoster

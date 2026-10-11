@@ -18,6 +18,7 @@
 | board_drafts | JSONB? | 보드 "팀 구성중" 멤버십 공유 드래프트 |
 | cock_check_enabled | BOOLEAN | **콕 체크 모드**(2026-06-19, `20260619000000`). 디폴트 true. on이면 선수가 콕 제출 확인을 받아야 매칭 대기 상태가 됨 |
 | board_drafts_version | BIGINT | **보드 동기화 v2**(2026-06-22, `20260622000000`). NOT NULL DEFAULT 0. board_drafts 낙관적 동시성(쓰기 CAS, `board_save_drafts`) + 수신측 단조성 가드 기준. 쓰기 경로는 `board_save_drafts` RPC(version CAS)로 배선됨(원인3 해소). |
+| board_multi_editor | BOOLEAN | 운영진 동시 편집(실험, `20261012010000`). NOT NULL DEFAULT false. true 면 운영진 전원이 편집자이고 편집 락(editor_*)을 쓰지 않는다. 변경은 `admin_set_board_multi_editor` 로만(editor_* 정리 동반). sync bump 감시 대상. |
 | editor_client_id | TEXT? | **서버 권위 편집 락**(2026-06-22, `20260622000000`). "보유자" = `editor_client_id != null AND editor_lease_until > now()`. presence 파생 락을 대체(배선 완료) — 편집 락 섹션 참고. |
 | editor_name | TEXT? | 편집 보유자 표시명(편집 락) |
 | editor_lease_until | TIMESTAMPTZ? | 편집 락 lease 만료 시각. heartbeat(`board_claim_editor` 본인 재호출)로 연장, crash 시 자연 만료로 자동 회수 |
@@ -120,9 +121,9 @@ RLS: select=authenticated 전체, insert=authenticated(보드 편집자가 콕�
 
 | RPC | 시그니처 | 용도 |
 |---|---|---|
-| `assign_match` | (코트 배정 파라미터) | matches INSERT(**assigned_by=p_name**, 2026-06-30 `20260630020000`: 경기 시작 누른 편집자 실명 기록) + players→playing + match_assign_count++ **+ match_state_version++**(2026-06-22, `20260622130000`: 코트 동기화 신호). 코트 점유 시 `unique_violation`→`RAISE EXCEPTION 'court already assigned'`(dbAssignMatch=false 처리) |
-| `complete_match` | `(p_match_id UUID, p_session_id BIGINT, p_game_type TEXT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID)` | match→completed + **player_snapshot 기록**(2026-06-18) + players→waiting(game_count++/혼복 남자 mixed_count++) **+ match_state_version++**(`20260622130000`). pair_history UPSERT는 `20260727090000`에서 제거(동반 이력=완료 matches 파생). 시그니처 불변(스냅샷은 RPC 내부에서 session_players로부터 생성) |
-| `set_match_roster` | `(p_match_id UUID, p_session_id BIGINT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID, p_removed_ids UUID[], p_added_ids UUID[])` | **경기 로스터 수정 원자 RPC**(2026-06-22, `20260622130000`, 기존 직접 UPDATE 대체). playing 매치의 4슬롯 교체 + removed→waiting + added→playing + match_state_version++ 를 단일 트랜잭션. 변경 선수(removed+added) 반환(클라 broadcast 용). game_count 는 완료 시점에만 집계하므로 미변경. |
+| `assign_match` | (코트 배정 파라미터) | matches INSERT(**assigned_by=p_name**, 2026-06-30 `20260630020000`: 경기 시작 누른 편집자 실명 기록) + players→playing + match_assign_count++ **+ match_state_version++**(2026-06-22, `20260622130000`: 코트 동기화 신호). 코트 점유 시 `unique_violation`→`RAISE EXCEPTION 'court already assigned'`(dbAssignMatch=false 처리). **서버 가드**(2026-10-12 `20261012000000`): sessions 행 `FOR UPDATE`(진행 세션만, 아니면 `'session closed'`) · 4인 non-null·distinct(`'four distinct players required'`) · 같은 세션 진행 경기 중복 거부(`'players already playing'`) · 선수 UPDATE 를 `session_id` 고정 + `status<>'playing'` 로 4행 아니면 `'players not ready'`(휴식·콕 미확인 시작은 허용 유지). 클라 `matchGuardMessage` 가 토스트로 매핑 |
+| `complete_match` | `(p_match_id UUID, p_session_id BIGINT, p_game_type TEXT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID)` | match→completed + **player_snapshot 기록**(2026-06-18) + players→waiting(game_count++/혼복 남자 mixed_count++) **+ match_state_version++**(`20260622130000`). pair_history UPSERT는 `20260727090000`에서 제거(동반 이력=완료 matches 파생). 시그니처 불변(스냅샷은 RPC 내부에서 session_players로부터 생성). `20261012000000`: sessions `FOR UPDATE` 선행 · `session_id` 고정 · 선수 갱신/스냅샷은 클라 p_team_* 대신 matches 의 **실제 로스터**(RETURNING) 사용 |
+| `set_match_roster` | `(p_match_id UUID, p_session_id BIGINT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID, p_removed_ids UUID[], p_added_ids UUID[])` | **경기 로스터 수정 원자 RPC**(2026-06-22, `20260622130000`, 기존 직접 UPDATE 대체). playing 매치의 4슬롯 교체 + removed→waiting + added→playing + match_state_version++ 를 단일 트랜잭션. 변경 선수(removed+added) 반환(클라 broadcast 용). game_count 는 완료 시점에만 집계하므로 미변경. `20261012000000`: sessions `FOR UPDATE` · removed/added 를 **서버가 현재 로스터와 비교해 계산**(p_removed_ids/p_added_ids 무시, 시그니처 유지) · added 가 다른 진행 경기에 있으면 `'players already playing'` · 선수 UPDATE `session_id` 고정 |
 | `load_session_state` | `(p_session_id BIGINT)` | **세션 상태 단일 스냅샷**(2026-06-22, `20260622140000`). board_drafts+version+match_state_version+court_count+editor_*+진행중 matches 를 단일 SELECT(같은 MVCC 시점)로 JSONB 반환. 재구독 catch-up·CAS 충돌 복구에서 팀 편성/코트 배정 두 권위를 "같은 시점"으로 수렴. 클라 `dbLoadSessionState`(sessionStore `resyncFromServer`). |
 | `set_player_resting` | `(p_session_player_id UUID, p_session_id BIGINT, p_resting BOOLEAN)` | status 휴식/복귀 전환. 복귀 시 joined_at_match 를 휴식 구간만큼 전진(deficit 보정) + wait_since 리셋. 갱신 선수 반환 (`20260615130000`) |
 | `board_claim_editor` | `(p_session_id BIGINT, p_client_id TEXT, p_name TEXT, p_lease_seconds INT=20)` | **보드 동기화 v2**(2026-06-22, `20260622000000`). 편집권 획득/연장(heartbeat) CAS. 조건부 UPDATE `WHERE editor IS NULL OR lease<now() OR editor=client` → row-lock 직렬화로 동시 호출 중 정확히 1명만 비-0행 수신(이중 편집권 차단). 결과 row(o_client_id/o_name/o_lease_until) 반환, 0행=획득 실패. 클라 `dbBoardClaimEditor`+heartbeat(7s). |
@@ -130,6 +131,7 @@ RLS: select=authenticated 전체, insert=authenticated(보드 편집자가 콕�
 | `board_takeover_editor` | `(p_session_id BIGINT, p_client_id TEXT, p_name TEXT, p_lease_seconds INT=20)` | **편집권 강제 탈취**(2026-06-23, `20260623050000`). 명시 "편집 권한 가져오기" 전용. lease 조건 **없이**(`WHERE id=session`만) 호출자를 편집자로 덮어쓴다 — `board_claim_editor`(CAS)가 활성 보유자의 유효 lease를 못 뺏어 가져오기가 되돌아가는 문제 해결. 직전 보유자는 다음 heartbeat(CAS) 거부 + 실시간 row 수신으로 읽기 모드로 수렴. 클라 `dbBoardTakeoverEditor`(sessionStore `claimEditor`). |
 | `board_release_editor` | `(p_session_id BIGINT, p_client_id TEXT)` | 편집권 해제(정상 이탈: unsubscribe/pagehide). 보유자 본인만. crash 시는 lease 만료가 백업. |
 | `board_save_drafts` | `(p_session_id BIGINT, p_client_id TEXT, p_name TEXT, p_payload JSONB, p_base_version BIGINT, p_lease_seconds INT=20)` | board_drafts 낙관적 버전 CAS 쓰기 **+ self-claim**. `WHERE version=base AND (editor IS NULL OR lease<now() OR editor=client)` 통과 시 board_drafts 교체+version+1+editor_*=호출자(쓰면서 락 획득/연장). 새 version 반환, 0행이면 NULL(충돌/타인 점유) → 통째 last-writer-wins 손실·조용한 실패 차단. self-claim이라 사전 claim 없이 첫 쓰기가 락을 잡음(데드존 없음). 클라 `dbBoardSaveDrafts`(boardStore `pushDraftsToRemote`, 직렬화+충돌 시 resync). |
+| `admin_set_board_multi_editor` | `(p_session_id BIGINT, p_on BOOLEAN)` | **운영진 동시 편집(실험) 토글**(2026-10-12, `20261012010000`). 운영진만. `sessions.board_multi_editor`=p_on 과 `editor_*`=NULL, `board_drafts_version`+1(내용 불변 — 전환 전에 출발한 저장을 CAS 로 실패시킴)을 **한 UPDATE** 로(값이 같으면 no-op) → 같은 행 이벤트로 함께 도착 + sync bump. ON 세션: `board_assert_editor`=운영진만(self-claim 없음) · `board_save_drafts`=버전 CAS 만(editor_* 미갱신) · claim/takeover/handoff=no-op · 회원 파티는 운영진 계정을 편집자로 보고 제외. OFF 세션은 기존 본문 그대로. 클라 `dbAdminSetBoardMultiEditor`(sessionStore `setBoardMultiEditor`, 보드 툴바 '동시 편집'). 플래그는 `load_session_state`·sessions 행 양쪽으로 읽는다(`multiEditor`). |
 
 > **제거된 RPC(deprecated)**: ~~`save_team_candidates(BIGINT, JSONB)`~~, ~~`save_match_queue(BIGINT, JSONB)`~~, ~~`activate_pending_player(BIGINT, UUID)`~~.
 > ~~`swap_match_player(UUID, BIGINT, TEXT, UUID, UUID)`~~ — `20260615140000` 에서 추가됐으나 미사용으로 `20260616000000_db_cleanup.sql` 에서 DROP. **경기 수정(로스터 변경)은 `20260622130000` 부터 `set_match_roster` RPC**로 원자 처리(이전엔 클라가 matches/session_players 를 직접 UPDATE, 동기화 없음 — H3).
@@ -304,3 +306,28 @@ board_drafts(팀 편성)는 위 v2로 수렴했으나 **matches(코트 배정)�
 경기 시작·선수 교체를 세션 행 잠금 안에서 검사한다. 이전 경기 시작 RPC와 직접 쓰기도
 같은 검사를 거친다. 진행 중 운영진과 대기 운영진의 맞교대, 경기 종료는 허용한다.
 이미 운영진이 모두 경기 중이거나 참석하지 않은 경우 일반 회원의 경기를 막지는 않는다.
+
+## 운영진 동시 편집 (실험, 2026-10-12, `20261012010000`)
+
+세션 단위 플래그 `sessions.board_multi_editor`(기본 false). **false 인 세션은 서버·클라 모두 이전과 같은 경로**(단일 편집자 sticky 락)다.
+각 함수는 맨 앞에서 `board_multi_editor_enabled(p_session_id)`(stable · security definer)를 보고 갈라지며, OFF 쪽 본문은 기준 정의 그대로다.
+
+| 함수 | ON 세션 동작 |
+|---|---|
+| `board_assert_editor` | 운영진(`is_admin`)만 확인. self-claim UPDATE 없음 |
+| `board_save_drafts` | `board_drafts_version` CAS 만(편집자 조건 없음, editor_* 미갱신). UPDATE 에 `board_multi_editor` 를 다시 걸어 잠금 대기 중 꺼졌으면 0행 |
+| `board_claim/takeover/handoff_editor` | no-op(0행). 구버전 PWA 가 불러도 편집자가 생기지 않는다 |
+| `sessions_bump_sync_version` | 비교 컬럼에 `board_multi_editor` 추가 → 토글이 sync bump·힌트 broadcast |
+| `load_session_state` | 스냅샷에 `board_multi_editor` 키 추가(구클라는 무시) |
+| `_member_party_snapshot` · `member_party_hold` · `member_party_finish` | 운영진 계정의 누름·확정을 편집자 것으로 보고 제외 |
+
+- 머지는 서버가 아니라 클라(`src/lib/board/mergeDrafts.ts`, 선수 배치 단위 3-way)가 한다. 서버는 CAS 만 본다 — 충돌 시 클라가 `load_session_state` 로 원인을 가린다(플래그 꺼짐 / 버전 그대로=CAS 아님 / 그 외=rebase-retry 최대 3회).
+- 실시간 드래그는 DB 를 거치지 않는 broadcast 채널 `board-drag:{sessionId}`(운영진 && ON 일 때만, 보드 권위 아님).
+
+**경기 RPC 가드**(`20261012000000`, 플래그와 무관 — 이 파일만 따로 되돌릴 수 있게 분리): `assign_match`=sessions `FOR UPDATE`(진행 세션만) · 4인 non-null·distinct(`four distinct players required`) · 같은 세션 진행 경기 중복 거부(`players already playing`) · 선수 UPDATE 에 `session_id` 고정 + `status <> 'playing'` + ROW_COUNT=4(`players not ready`, 휴식·콕 미확인은 허용 유지). `complete_match`=session 고정 + 선수 갱신은 matches 의 실제 로스터. `set_match_roster`=sessions 잠금 + removed/added 를 서버가 계산(클라 배열 무시, 시그니처 유지). `board_assert_editor` 의 `p_client_id IS NULL` 분기에도 운영진 검사. 배포 시 진행 세션의 '진행 경기 없는 playing' 행(옛 완료 경로의 어긋남)을 1회 `waiting` 으로 정리한다. 클라 토스트 매핑은 `actions.ts` `matchGuardMessage`.
+
+**롤백 절차**
+1. 토글 OFF(`admin_set_board_multi_editor(id, false)`) — 즉시 기존 동작. 대부분 여기서 끝난다.
+2. 필요하면 클라이언트 revert 배포(신규 경로는 전부 `multiEditor` 조건 뒤라 OFF 에서는 무해).
+3. DB 까지 되돌릴 때 `supabase/rollback/20261012010000_board_multi_editor_flag_down.sql` 을 SQL 로 실행(db push 대상 아님). 켜진 세션을 끄고, 함수를 OFF 본문으로 복원하고, 토글 RPC·헬퍼·컬럼을 지운다. **`board_assert_editor` 는 `20260717000000` 이 아니라 `20261012000000` 가드 버전이 기준**이다(가드 마이그레이션은 유지).
+

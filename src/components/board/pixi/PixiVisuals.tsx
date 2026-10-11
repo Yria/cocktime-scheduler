@@ -509,3 +509,17 @@ export const SlotHoverVisual = memo(function SlotHoverVisual() {
 			context.stroke();
 		}} />;
 });
+
+/** 동시 편집 — 다른 운영진이 끌고 있는 항목 위의 '잡은 사람' 이름표. card 면 카드 윗변 위, 아니면 자석 위. */
+export const RemoteHolderBadge = memo(function RemoteHolderBadge({ name, card }: { name: string; card: boolean }) {
+	const width = 96; const height = 20;
+	const y = (card ? CARD_TOP : -MAGNET_R) - height - 6;
+	return <CachedSprite cacheKey={`remote-holder:${name}:${card}`}
+		bounds={{ x: -width / 2, y, width, height }}
+		paint={(context) => {
+			roundedRect(context, -width / 2, y, width, height, height / 2);
+			context.fillStyle = "rgba(15,23,42,0.85)";
+			context.fill();
+			text(context, name, -width / 2 + 6, y, width - 12, 11, "#FDE68A", true, height, true);
+		}} />;
+});

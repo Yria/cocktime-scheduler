@@ -11086,6 +11086,571 @@ To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude
 
 **Prompt**: 커밋하고 푸쉬
 
+**Answer**: `f313e72` 커밋으로 `main`에 push했습니다. 테스트 파일 수정과 히스토리 파일이 함께 들어갔습니다. 이제 GitHub Actions에서 프론트 배포가 다시 돌아갈 텐데, 그 결과는 아직 확인하지 않았습니다.
+
+---
+
+## #349
+
+**Prompt**: 10월 3일 부과에서 우창형 제외시키고싶은데 어떻게해
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #350
+
+**Prompt**: 10월 3일 부과에서 우창형 제외시키고싶은데 어떻게해
+
+**Answer**: 화면에서 바로 지울 수 있어요. 따로 SQL을 돌릴 필요는 없습니다.
+
+**대상 부과 (프로덕션에서 확인)**
+- 회차: `10/03 15:00 에이트민턴 #222`
+- 우창형: 대관비 6,000원, **당일취소로 부과된 건**
+- 아직 낸 돈이 없어서 취소해도 돌려줄 돈이 없습니다.
+
+**취소하는 순서**
+1. 회계 → **2026-10** → **부과** 탭으로 갑니다.
+2. **발행 내역**에서 `10/03 15:00 에이트민턴 #222`를 엽니다.
+3. 부과 명단 오른쪽의 **[부과 변경]**을 누르고 **우창형**을 체크합니다.
+4. **[선택한 1건 취소 후 발행]**을 누릅니다.
+5. 열린 창에서 **「취소만 하고 받은 돈을 잔액으로 돌려놓기」**를 체크하고 확인합니다. 이 칸을 체크하지 않으면 새 부과가 다시 발행되니 꼭 체크하세요.
+
+**알아두실 점**
+- 지워지는 게 아니라 '취소' 상태로 기록에 남습니다. 누가 취소했는지도 남습니다.
+- 자동 발행이 다시 돌아도 같은 부과가 또 생기지 않습니다. 취소된 부과도 이미 있는 부과로 치기 때문입니다.
+- 이건 돈만 취소하는 거예요. 당일취소로 깎인 대기 포인트 −1은 그대로 남습니다. 포인트도 돌려줘야 하면 따로 말씀해 주세요.
+- 10/04(#223) 회차에도 우창형 6,000원이 정상 참석으로 부과돼 있습니다. 이번에 취소하는 건 10/03 건뿐입니다.
+
+---
+
+## #351
+
+**Prompt**: 10월 9일 금요일 6~9시 세션보면 확정 22/24 인데 왜 대기가 1이 있을까
+
+**Answer**: **버그가 아니라 평일 게스트 상한(세션당 2명)에 걸린 정상 동작입니다.**
+
+10/9(금) 18~21시 회차(session 372, 성남실내체육관)를 프로덕션에서 조회했습니다.
+
+| 구분 | 인원 |
+|---|---|
+| 확정 | 22명 (회원 20 + **게스트 2**), 카운터 `confirmed_count=22`로 실제 행 수와 같음, 드리프트 없음 |
+| 대기 | 1명, **게스트**(10/7 17:29 KST에 다른 회원이 초대) |
+
+- 서버 `session_guest_cap`은 평일 회차의 확정 게스트를 **2명**으로 제한하고, 토·일은 무제한입니다. 금요일이라 평일 규칙이 적용됩니다.
+- 같은 날 15:07과 15:30에 한 회원이 게스트 2명을 초대해 이미 확정됐습니다.
+- 그 뒤 초대된 3번째 게스트는 `add_guest_attendance`의 확정 조건 `v_count < capacity AND v_gcount < v_gcap`에서 정원은 통과했지만(22<24) 게스트 조건에서 걸렸습니다(2<2 불성립). 그래서 빈자리가 있어도 대기로 들어갔습니다.
+- 회원이 취소해도 이 게스트는 올라가지 않습니다. 확정 게스트 2명 중 한 명이 빠질 때만 승격됩니다.
+
+화면 쪽(`src/lib/schedule/waitStatus.ts`의 `guestCap`)도 이 경우를 순번 대기가 아닌 '게스트 상한 대기'로 따로 표시하도록 되어 있습니다. 그래서 참가자 모달에서는 이유가 보이는데, 헤더의 "확정 22/24 · 대기 1"만 보면 오해하기 쉽습니다. 헤더 요약에도 "게스트 상한 대기"처럼 사유를 붙이고 싶으면 말씀해 주세요.
+
+---
+
+## #352
+
+**Prompt**: 회비관리 부과변경에 보면 너무 작업하기 힘들게 되어있어. 보통 여러명을 한번에 작업하기보다, 한명씩 하는경우가 많으니 정산함의 그것처럼 사람을 검색하고 선택해서 특정액션을 할 수 있는 형태로 바꿨음좋겠어
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #353
+
+**Prompt**: go on
+
+**Answer**: 리뷰 워크플로가 백그라운드에서 돌고 있습니다(데이터 정합성 · 전표 연동 · UX/접근성 3관점 → 각 발견을 반박 검증). 결과가 오면 반영해서 마무리하겠습니다.
+
+---
+
+## #354
+
+**Prompt**: <task-notification>
+<task-id>wmomyisvl</task-id>
+<tool-use-id>toolu_01FXMjyZP9sZC6vHHHSiidPV</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/74b0b39b-eac9-4905-afa0-60b5d6c52a3b/tasks/wmomyisvl.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Review person-centric charge change UI diff, adversarially verify findings" completed</summary>
+<result>[{"file":"src/components/accounting/ChargeVoucher.tsx","line":607,"title":"Replace voucher identifies lines by member, so the person view's same-member multi-charge selection produces duplicate keys and lines that can't be told apart","scenario":"In the 사람별 view, select two live charges for one member (for example 8월 회비 5,000 and 회식 5,000), then press 금액 변경. The replace lines are all built with the same member_id. Line 607 uses key={l.member_id}, so React gets duplicate keys, and pressing 제외 on one line can drop or keep the wrong row in the DOM. Each line shows only the member's name, with no group label. The '대체할 원부과' select at line 640 lists every option as 'memberLabel · won(amount)', which is identical when the amounts match. The admin cannot tell which input belongs to which charge. They can enter the new amount for the wrong charge, or remap previous_id so the new charge is issued into the other charge's group (the server uses old.group_id from previous_id). The group view never hit this because it selects distinct members within one group. Fix: key lines by previous_id and show the group label (chargeName) on each line and in each select option.","severity":"medium","verdict":{"real":true,"reason":"The claim holds. MemberChargePanel.tsx:173 sends `{type:\"replace\", chargeIds: picked}`, and all of `picked` belong to the one selected member. ChargeVoucher.tsx:81-101 then builds one line per charge, and every line gets that same `member_id`.\n\nLine 607 uses `key={l.member_id}`, so selecting two or more charges gives React duplicate keys. React warns about this, and when 제외 removes one line it can match the remaining rows to the wrong DOM nodes.\n\nThe labelling problem is also real. Each line shows only `memberLabel(data, l.member_id)` as its name, and the aria-label has no charge or group name either. The '대체할 원부과' options at line 659 read `memberLabel · won(amount)`, so two charges with the same amount look identical. The admin cannot tell which amount input or previous_id belongs to which charge. Only the preview section (line 1186) uses `chargeName(c.id)`, and only for the 취소 lines.\n\nThe group view sends charges of different members within one group, so it never produced this collision. The person view, newly added in this diff, is the first path that can produce it.\n\nOne partial caveat: the inputs are controlled, so the values shown come from state. The worst DOM misbehaviour on 제외 is therefore less certain. The duplicate keys and the lines being impossible to tell apart are certain. The suggested fix (key lines by `previous_id`, add `chargeName` to each line and each option) is appropriate."}},{"file":"src/components/accounting/MemberChargePanel.tsx","line":80,"title":"Selection is kept for rows that are collapsed out of view, so an action can apply to charges the admin can no longer see","scenario":"picked only filters on rows (all of the member's live charges), not on shown. Case 1: expand '지난 완납 부과', check one, then press '접기'. Case 2: check an unpaid previous-month charge, then a refresh after payment moves it into rest, which hides it. In both cases the caption still says 'N건 선택', and 부과 취소 / 금액 변경 send that hidden charge id. Fix: filter picked against shown, or clear the selection on collapse.","severity":"low","verdict":{"real":true,"reason":"Confirmed in the code. In MemberChargePanel.tsx:80, `picked` only filters `selected` against `rows`, which holds every live charge for the member, not against `shown`. Pressing 접기 (line 153, `setShowAll(!showAll)`) does not clear `selected`. When a data refresh moves a charge from primary into rest (its owe drops to 0 and it is not from this month), that charge also stays in `selected`. The caption at lines 161-162 still counts it in 'N건 선택', and both 금액 변경 and 부과 취소 (lines 173 and 183-187) send `chargeIds: picked`, so the hidden charge id goes out with them. One thing softens this: ChargeVoucher builds `initialCharges` from `draft.chargeIds`, so the dialog probably shows the hidden charge before the admin confirms. Even so, the panel's selection no longer matches what is on screen, which makes this a real but low-severity UX/correctness issue. Fix: filter `picked` against `shown`, or clear the selection on collapse."}},{"file":"src/components/accounting/MemberChargePanel.tsx","line":78,"title":"Paid charges from later months are collapsed and labeled '지난 완납 부과'","scenario":"rest is everything that is not in ym and has owe==0, so it includes charges whose occurred_on is after ym. Example: open the dues screen for 2026-08 for a member whose September monthly dues and October court fee are already paid. Those later charges are hidden behind '지난 완납 부과 2건 보기', which wrongly calls them past. Fix: compare occurred_on &lt; ym for the 'past' bucket, or reword the label.","severity":"low","verdict":{"real":true,"reason":"I confirmed this in the code. In MemberChargePanel.tsx, `primary` holds the charges whose occurred_on starts with `ym` or that still have `owe &gt; 0` (lines 74-76). `rest` is every other row (line 78), and nothing checks whether a charge is before or after `ym`. `rowsOf` takes every live charge for the member from `data.charges`, which covers all charges, not just one month (ChargeManagement only narrows `monthGroups` to the month). If the admin opens an earlier month (for example 2026-08 while it is 2026-10), any paid charges from later months, such as September dues or an October court fee, land in `rest`. The toggle at lines 149-157 then shows them as '지난 완납 부과 N건 보기' ('show N past paid charges'), which calls them past. The bug is in the label, not the data: the charges are still listed and can be selected once expanded. It is real but minor. Fix: put only rows with `occurred_on &lt; ym` in the 'past' group, or change the label so it doesn't say past."}},{"file":"src/components/accounting/ChargeVoucher.tsx","line":607,"severity":"high","title":"Replace lines use key={l.member_id}, so keys collide when one member has several charges","scenario":"In 사람별 view, check two charges for the same member (for example 9월 회비 and 회식) and click 금액 변경. initialCharges becomes two lines with the same member_id (lines 81-101), so both line rows render with the same React key. React warns about duplicate keys. Clicking 제외 on the first line (line 635, index filter), or editing amounts or due schedules, can make React reuse or drop the wrong DOM subtree. The rendered amount/납기 inputs can then show a different charge than the one being edited, which is a real risk on a money form. The group view never hit this because each group has only one line per member. Fix: key by l.previous_id (plus the index for lines added later), not member_id.","verdict":{"real":true,"reason":"I confirmed this is real. In the new MemberChargePanel.tsx, every checkbox selects a charge of one member, and lines 173 and 184 send all of them as `{type:\"replace\", chargeIds: picked}`. In ChargeVoucher.tsx, lines 53-54 filter those into initialCharges, and lines 80-101 turn each charge into its own line with `member_id: c.member_id`. So when two or more charges are checked, every line has the same member_id. Line 607 renders the lines with `key={l.member_id}`, so the keys repeat. That always triggers React's duplicate-key warning. It also makes reconciliation unreliable: 제외 removes a line by index (line 635), and a line's 납기 schedule can change between lines (single vs. multiple due months). React does not define what happens with duplicate keys, so rows can be kept, reused or dropped in the wrong place. The inputs are controlled, so typed values partly cover this, but React does not guarantee the rows stay correct. Before this diff the bug was not reachable: the group view has one line per member, so keys were unique. The person view is the first place it shows up. The fix is to key by l.previous_id, falling back to the index."}},{"file":"src/components/accounting/ChargeVoucher.tsx","line":643,"severity":"high","title":"The 
+... (truncated 17499 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/74b0b39b-eac9-4905-afa0-60b5d6c52a3b/tasks/wmomyisvl.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/364e165f/projects/-Users-sam-Projects-cocktime-scheduler/74b0b39b-eac9-4905-afa0-60b5d6c52a3b/subagents/workflows/wf_7906a724-914/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/364e165f/projects/-Users-sam-Projects-cocktime-scheduler/74b0b39b-eac9-4905-afa0-60b5d6c52a3b/workflows/scripts/review-member-charge-panel-wf_7906a724-914.js', resumeFromRunId: 'wf_7906a724-914'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>21</agent_count><agents_done>21</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>1921117</subagent_tokens><tool_uses>129</tool_uses><duration_ms>178658</duration_ms></usage>
+</task-notification>
+
+**Answer**: 부과 탭에 정산함처럼 회원을 검색해서 고른 뒤 그 사람 부과만 처리하는 **사람별** 보기를 추가했고, 들어가면 이 보기가 먼저 열립니다. e2e(accounting 46개)와 단위 테스트 941개가 모두 통과했습니다. 변경 파일은 staging만 해 두었고 커밋은 하지 않았습니다.
+
+**사용 흐름**
+- 발행 내역 오른쪽 위에 `사람별 | 회차별` 전환이 생겼습니다. 회차별은 기존 화면 그대로입니다.
+- 사람별에서 이름이나 초성으로 회원을 찾으면, 후보마다 "8월 부과 2건 · 미납 5,000원"처럼 요약이 붙어 나옵니다.
+- 회원을 고르면 그 사람의 유효한 부과 중 **이번 달 것과 미납이 남은 것**만 보입니다. 다른 달의 완납 부과는 접혀 있고 펼쳐서 볼 수 있습니다.
+- 부과를 체크한 뒤 버튼을 누르면 기존 전표가 열립니다:
+  - **금액 변경**: 기존 "취소 후 발행" 전표
+  - **부과 취소**: 같은 전표인데 "취소만 하고 잔액으로 돌려놓기"가 미리 체크된 상태
+  - **이월**: 미납·입금 이월 전표에 그 회원이 미리 채워진 상태
+- 전표를 닫고 돌아와도 같은 회원이 선택된 채로 남아 있습니다.
+
+**리뷰에서 나온 문제와 수정**
+- 한 사람의 부과를 여러 건 골라 금액 변경을 열면, 전표의 줄이 모두 같은 회원 이름이라 어느 칸이 어느 부과인지 구분할 수 없었습니다. 실제 돈 입력이 엉뚱한 부과에 들어갈 수 있는 문제였습니다. 이제 줄마다 "김지훈 · 회식"처럼 부과 이름이 붙고, 이 경우에는 "대체할 원부과" 선택칸을 숨깁니다.
+- 체크한 뒤 목록을 접으면 안 보이는 부과가 처리 대상에 남아 있었습니다. 이제 화면에 보이는 것만 처리합니다.
+- 버튼 이름 중복, 체크박스 접근성 이름, "지난 완납" 라벨 오류도 함께 고쳤습니다.
+
+**의도적으로 손대지 않은 것**
+- 회원을 고른 뒤에도 후보 목록이 위에 남아 있습니다. 다음 사람으로 바로 넘어가기 편하라고 그대로 뒀습니다.
+- 전표를 열었다가 닫으면 체크 선택은 풀립니다. 선택한 회원은 유지됩니다.
+
+새 화면은 `MemberChargePanel.tsx`이고, 사람별 흐름 e2e 테스트를 하나 추가했습니다. 기존 테스트 중 회차별 화면을 쓰는 4개에는 "회차별" 클릭을 넣었습니다.
+
+---
+
+## #355
+
+**Prompt**: [Image #2] 디자인할때 좌측에 색깔보더좀 넣지마
+
+**Answer**: 회비관리 화면에 있던 좌측 색 보더를 모두 없앴습니다. 회계 e2e 46개가 전부 통과했고, 정산함 카드 스크린샷에서 보더가 사라진 것을 확인했습니다. 보내주신 "취소 후 발행" 전표는 따로 캡처해 보지 않았지만, 보더를 그리던 규칙 자체를 삭제했습니다.
+
+- **보내주신 전표 카드**(취소 후 발행 등 편집 중인 전표): 왼쪽 파란 3px 보더를 지웠습니다. 테두리는 1px 외곽선만 남습니다.
+- **되돌리기·위험 블록**: 왼쪽 빨간 이중 보더 대신 연한 빨간 바탕에 얇은 외곽선으로 바꿨습니다.
+- **정산함 카드**: 미정산은 주황, 정산 완료는 초록으로 칠하던 왼쪽 보더를 지웠습니다. 상태는 카드 안 문구로 충분히 보입니다.
+
+수정은 `accounting.css` 한 파일이고, 앞의 사람별 부과 변경 작업과 함께 staging만 해 두었습니다. 앞으로 디자인할 때 좌측 색 보더를 쓰지 않도록 메모리에도 저장했습니다.
+
+---
+
+## #356
+
+**Prompt**: [Image #3] 이부분 디자인이 다른 페이지와 다르게 이질적인데 요소만 놓고 네가 재디자인해
+
+**Answer**: 부과 명단 모달을 앱의 일정 참가자 명단 모달과 같은 방식으로 다시 디자인했습니다. 표시하는 정보는 그대로 두고 배치와 스타일만 바꿨습니다. 회계 e2e 46건이 모두 통과했고, 실제 렌더 스크린샷도 모바일 라이트·다크 모드에서 확인했습니다.
+
+**바꾼 것**
+- **상단 제목 영역**: 제목과 인원 요약 줄의 글자 크기·굵기를 앱의 다른 모달과 맞췄습니다. 크게 각져 있던 닫기 버튼은 앱 표준 32px 원형 ✕로 바꿨습니다. 회계 화면의 44px 터치 영역 규칙은 유지했습니다.
+- **요약 박스**: 구분선 두 줄로 나뉘어 있던 "부과 제외 · …"와 "현재 참석 기록 · …"을 연한 회색 박스 하나로 합쳤습니다. 안에서는 `참석 기록` / `부과 제외`를 항목 이름과 값으로 정렬해 보여줍니다.
+- **명단을 상태별 섹션으로**: `납부 전 · 종료 후 부과 · 완납 · 부과 제외` 순서로 묶고, 각 섹션 위에 "종료 후 부과 6명"처럼 상태와 인원을 표시합니다.
+- **한 줄 행**: 왼쪽의 `?`/`✓` 기호 자리에 아바타를 넣었습니다. 이름은 굵게, 년생·게스트는 옅게 붙였고, 금액은 오른쪽에 둡니다.
+
+**반복되던 표시 정리**
+- 행마다 붙던 "종료 후 부과"·"완납"·"미납" 표시는 섹션 제목과 뜻이 같아서 화면에서는 숨겼습니다. 스크린리더와 테스트를 위해 페이지 코드에는 남겨 두었습니다.
+- 섹션과 다른 상태일 때만 이름 옆에 작은 표시가 붙습니다. 부분 납부, 납기 이월, 미납 면제, 부과 취소가 여기에 해당합니다.
+- 행마다 있던 "참석 확정" 사유는 요약 박스에 인원이 이미 나오므로 숨겼습니다. 당일취소·보드 참가처럼 의미 있는 사유만 보입니다.
+- 금액이 없는 행의 오른쪽 `—`와 행 사이 구분선은 없앴습니다.
+
+**함께 바뀐 것**
+- 같은 모달을 쓰는 월 회비 납부 명단에도 같은 디자인이 적용됩니다.
+- 처음 열 때 닫기 버튼에 포커스가 가 있으면 파란 테두리가 32px 원보다 조금 크게 그려집니다. 그대로 두었습니다.
+
+변경 파일은 `AccountingOverview.tsx`, `AccountingDetailModal.tsx`, `accounting-layout.css`입니다. 커밋은 하지 않고 staging만 해 두었습니다.
+
+---
+
+## #357
+
+**Prompt**: supabase 한달 사용량 체크해서 요금제 넘는지 확인하고싶은데 너한테 뭘 주면될까
+
+**Answer**: 보고서를 HTML 파일 한 개로 만들어서 브라우저로 열어 뒀어요. 아티팩트로는 올리지 않았어요.
+
+`reports/supabase-log-ingestion-20261011/index.html`
+
+`reports/`는 gitignore에 걸려 있어서 커밋되지 않아요.
+
+담은 내용은 이렇습니다.
+1. **결론**: 지금 적용되는 한도는 전부 여유가 있고, 넘은 건 Log Ingestion 하나예요. 이건 아직 적용 전이에요. 수정안을 다 적용해도 1GB 안으로는 안 들어와요.
+2. **쿼터 현황표**: 항목마다 현재값과 월말 예상치를 정리했어요.
+3. **로그 출처**:
+   - 요청 종류별·로그 출처별 비중 막대그래프
+   - 시간대별 요청 수 그래프 (정모 시간을 빨간색으로 표시)
+   - 요청이 많은 엔드포인트와 그 원인
+4. **수정안 A/B/C**: 코드 위치, 반박 검증 뒤 보정한 하루 절감량, 위험도를 같이 적었어요.
+5. **적용 후 예상**: 단계마다 월말 예상치를 1GB 한도선과 비교한 그래프예요.
+6. **진행 순서 제안**
+
+화면은 다크 모드와 모바일 폭에서도 깨지지 않게 만들었어요. 다만 실제 브라우저 화면은 제가 확인하지 못했어요.
+
+---
+
+## #358
+
+**Prompt**: match_state_version 이 뭐야?
+
+**Answer**: `match_state_version`은 `sessions` 테이블에 있는 숫자 컬럼이에요. **그 회차의 경기 상태가 바뀔 때마다 1씩 올라가는 카운터**예요. 2026-06-22 마이그레이션(`20260622130000_match_state_sync.sql:33`)에서 추가됐어요.
+
+**언제 올라가나:** 서버에서 경기를 바꾸는 함수가 실행될 때마다 같은 트랜잭션에서 `+1`을 해요.
+- `assign_match`: 코트에 경기 배정
+- `complete_match`: 경기 종료
+- 경기 취소, 선수 교체, 빈 코트 정리 같은 경기 관련 동작
+
+경기와 관계없는 변경은 이 숫자를 올리지 않아요. 대기열 편집(`board_save_drafts`)이나 편집권 획득이 그런 경우예요. 이런 변경은 별도 카운터인 `sync_version`이 맡아요.
+
+**왜 있나:** 기기마다 "마지막으로 반영한 경기 상태 버전"을 들고 있어요(`sessionStore.ts:181`). 서버 버전이 내 버전보다 크면 놓친 경기 변경이 있다는 뜻이라 다시 불러오고, 같거나 작으면 이미 최신이라 건너뛰어요(`sessionStore.ts:539`). 시계 대신 숫자로 "내가 최신인가"를 판정하는 장치예요.
+
+**수정안 A1과의 관계:** 지금은 보드를 다시 불러올 때마다 끝난 경기 목록(`GET matches?status=completed`)도 무조건 같이 조회해요. 그런데 끝난 경기 목록은 `complete_match`가 실행될 때만 바뀌고, 그때는 항상 이 버전이 올라가요. 그래서 **버전이 그대로면 끝난 경기 목록도 그대로라는 게 보장돼요.** 버전이 바뀌었을 때만 조회하면 정확성은 그대로 두고 요청을 하루 약 650건 줄일 수 있어요.
+
+---
+
+## #359
+
+**Prompt**: 근데 세션안에서 matches 를 매번 부른다고?
+
+**Answer**: 네, 맞아요. 코드로 확인했어요. 보드를 다시 불러오는 `resyncFromServer`가 실행될 때마다 요청이 **항상 2개씩** 같이 나가요(`sessionStore.ts:464-467`).
+
+[코드 블록 생략]
+
+**왜 따로 부르나:** `load_session_state`는 **진행 중인 경기만** 실어 와요. 끝난 경기의 4인 구성은 "같은 조 다시 묶지 않기" 판단에 쓰는 이력이라 별도로 조회해요. 주석에 적힌 이유는 "경기 종료 알림이 유실되거나 편집권이 넘어간 뒤에도 최신 이력을 보장하려고"예요.
+
+**문제는 다시 불러오기가 너무 자주 일어난다는 거예요.** 아래 경우마다 실행돼요.
+- 화면이 켜져 있으면 25초마다 (워치독)
+- 운영진이 대기열을 저장할 때마다(`board_save_drafts`) 서버가 보내는 변경 알림을 받고, 보드를 보는 모든 기기가
+- 선수가 들어오고 나가거나 편집권이 바뀔 때마다
+- 앱으로 돌아올 때마다 (2~3번 겹쳐서)
+
+그래서 정모 1시간 동안 `load_session_state` 884번과 `GET matches` 1,064번이 거의 한 쌍으로 움직였어요. 차이 나는 약 180번은 경기 변경 때 진행 중 경기를 따로 다시 받는 조회(`refetchMatches`)예요. 수정안 A6이 이걸 없애는 거예요.
+
+**낭비인 이유:** 끝난 경기 목록은 경기가 끝날 때만 바뀌어요. 그런데 대기열 저장 한 번에도 접속한 모든 기기가 이 목록 전체를 다시 받아요. 게다가 정모 후반에는 끝난 경기가 수십 개라 응답도 점점 커져요.
+
+**수정 (A1):** 보드 상태 안에 있는 `matchStateVersion`이 바뀌었을 때만 끝난 경기 목록을 조회해요. 경기 종료 함수(`complete_match`)는 항상 이 버전을 올리니까 종료를 놓칠 일이 없어요. 대기열 저장, 선수 출입, 워치독 때문에 다시 불러올 때는 요청이 1개로 줄어요.
+
+---
+
+## #360
+
+**Prompt**: 엥? 같은 조 다시 묶지 않기는 현재 세션에서만 적용되는 룰이고 이전경기 이력은 볼 필요가없어
+
+**Answer**: 네, 맞아요. 이 조회도 **현재 세션 안의 경기만** 가져와요. `dbLoadCompletedMatchTeams`가 `.eq("session_id", sessionId)`로 걸러서 지난 회차 경기는 안 봐요(`board.ts:92`). 제가 "이전 경기 이력"이라고 써서 헷갈리게 했네요.
+
+정확히는 이렇게 돼요.
+- **가져오는 것:** 오늘 이 세션에서 **이미 끝난 경기들**의 4인 구성이에요.
+- **쓰는 곳:** 같은 조 다시 묶지 않기 판단이에요. 예를 들어 3시에 A·B·C·D가 같이 쳤으면, 4시 자동편성에서 그 넷을 다시 묶지 않으려고 이 목록을 봐요.
+- **문제:** 이 목록은 오늘 경기가 하나 끝날 때만 바뀌어요. 그런데 대기열 저장이나 25초 워치독처럼 경기와 상관없는 이유로 다시 불러올 때도 매번 통째로 다시 받아요.
+
+그래서 이 조회 자체는 필요하고, A1은 경기가 끝났을 때만 받게 하자는 거예요.
+
+더 줄이는 방법도 있어요. 끝난 경기 목록을 `load_session_state` 응답에 같이 실으면 이 별도 요청이 아예 없어져요. 다만 DB 함수를 바꿔서 배포해야 해요(`supabase db push`). 프론트만 고치는 버전 조건(A1)이 더 가볍고, 절감 효과는 둘이 거의 같아요.
+
+---
+
+## #361
+
+**Prompt**: 아 그걸 메모리에 들고있는게 아니고 매번 조회하는구나
+
+**Answer**: 둘 다예요. 메모리에도 들고 있고, 그와 별개로 매번 다시 조회도 해요.
+
+- **메모리 보관:** 스토어에 `groupHistory`로 들고 있어요. 보드에 처음 들어올 때 한 번 채워요(`sessionStore.ts:176`).
+- **메모리 갱신:** 경기가 끝나면 다른 기기에도 경기 종료 알림(`match_completed`)이 가요. 그걸 받으면 조회 없이 메모리에 1건을 추가해요(`sessionBroadcastHandlers.ts:93-114`).
+- **매번 다시 조회:** 위와 별도로, 보드를 다시 불러올 때마다 서버에서 목록을 통째로 받아 메모리와 합쳐요(`sessionStore.ts:496`). 경기 종료 알림을 못 받았을 때를 대비한 안전장치예요.
+
+그러니까 평소에는 메모리에 있는 이력으로 충분하고, 서버 조회는 **알림을 놓쳤을 때만 의미가 있어요.** 그런데 지금은 그 안전장치를 대기열 저장이나 25초 워치독 때도 매번 돌리고 있는 거예요.
+
+A1을 적용하면 이렇게 돼요. 다시 불러온 결과에서 `matchStateVersion`이 올라가 있으면 내가 모르는 경기 변경이 있었다는 뜻이니 그때만 서버에서 받아요. 버전이 그대로면 메모리의 이력을 그대로 믿어요. 알림을 놓친 경우도 버전 차이로 잡히니까 안전장치 역할은 그대로 남아요.
+
+---
+
+## #362
+
+**Prompt**: 일단 전체작업은 패스.
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #363
+
+**Prompt**: 세션 내에서 보드에 자석 움직일때 지금 1명만 하고 나머진 읽기전용으로 하고 있는데, 전체가 같은걸 보고 동기화하는걸 만든다고 가정할때, 현재 백엔드에서 가능한 구조야?
+
+**Answer**: 쓰기 경로, 실시간 경로, 인프라 제약을 병렬로 조사하는 워크플로우를 띄웠습니다. 조사가 끝나면 판정을 내리고, 그 판정을 반박해 보는 검증까지 거친 뒤 결과를 정리해 드리겠습니다.
+
+---
+
+## #364
+
+**Prompt**: go on
+
+**Answer**: 9월과 10월 회차(9/1~10/31, 일정 79개 중 오늘까지 지난 회차 54개)를 프로덕션 DB에서 조회했습니다. 결과는 아래와 같습니다.
+
+| 회원 | 9월 | 10월 |
+|---|---|---|
+| **한채근** | 참가 없음 | 참가 없음 |
+| **이상민** | 9/3 참가 (8경기), 9/15 신청 후 취소 | 참가 없음 |
+| **이인표** | 9/21 참가 (6경기), 9/29 참가 (6경기) | 참가 없음 |
+| **오영길** | 9/1 참가 (7경기), 9/5 신청 후 취소 | 참가 없음 |
+
+- **한채근**: 9·10월만 빠진 게 아닙니다. 가입한 뒤로 참석 신청이나 보드 입장 기록이 한 번도 없습니다(활성 회원 상태).
+- **이인표 9/29**: 참석 신청은 없었고, 보드에 바로 추가되어 콕 확인을 하고 경기를 했습니다(현장 추가로 보입니다).
+- 참가 3건은 모두 보드에 입장해 콕 확인까지 마치고 실제로 경기를 했습니다.
+- **10월**: 네 명 모두 오늘(10/12)까지 참가가 없습니다. 10월 말까지 남은 일정에 신청한 기록도 없습니다.
+
+참가 여부는 참석 신청(확정·취소), 보드 입장, 콕 확인, 경기 수로 판단했습니다.
+
+---
+
+## #365
+
+**Prompt**: 한채근, 이상민, 이인표, 오영길이가 9, 10월 모임참가했는지 확인해줘
+
+**Answer**: 이전 세션에서 멈췄던 조사 워크플로우를 다시 띄웠습니다. 끝난 단계는 저장된 결과를 다시 쓰고, 남은 단계만 실행합니다. 단계는 세 가지입니다.
+
+- **조사:** 서버 쓰기 경로, 실시간 동기화 경로, Supabase 쿼터 같은 운영 제약
+- **판정:** 현재 백엔드로 전원 동시 편집이 가능한지
+- **검증:** 그 판정을 반박해 보기
+
+완료 알림이 오면 판정, 막히는 지점, 선택지를 정리해 드리겠습니다.
+
+---
+
+## #366
+
+**Prompt**: <task-notification>
+<task-id>ws532y8l5</task-id>
+<tool-use-id>toolu_01CKCesRAzGfg2XTWbpmh7NG</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/494dbbab-777c-4f18-bb05-9c9b94641425/tasks/ws532y8l5.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "보드 다중 편집(전원 동시 편집·동기화)이 현 백엔드로 가능한지 조사·검증" completed</summary>
+<result>{"reports":[{"key":"write-path","summary":"Short answer: the backend can't run all-edit as-is. Two parts are already safe for several editors at once, but the main state is the weak point.\n\n**Already safe for concurrent editors**\n- Court assignment is enforced in the database: at most one playing match per court, with atomic transactions.\n- Starting a match from a member's proposal and applying a proposal to a waiting group both lock the session row, check the session version and check that the players are not already busy.\n\n**The blocker: the whole board is one JSON blob with one version number**\n- The blob is `sessions.board_drafts`: team lists, ghost reservations, slots, court links and magnet coordinates.\n- It has a single counter, `board_drafts_version`, and every save replaces the whole blob.\n- If someone else saved first, the save is rejected and the client throws away its unsaved changes and reloads from the server. Nothing is merged.\n- With several editors, the last save never silently overwrites another (no data damage). Instead, edits fail and get rolled back very often.\n\n**The \"one person per board\" invariants are not enforced on the server**\n- Reconcile rule I1 (one player in at most one team) and I2 (a player who is on court is not in any waiting team) are only cleaned up in the client, when the screen is redrawn (`remoteDrafts.ts:44-71`).\n- The basic match-start function `assign_match` does not check that the four players are waiting, or that they aren't already in another playing match. It just sets them to playing.\n- So the same player can be put on two courts at once.\n\n**The single-editor lock is the main protection**\n- Today the editor lock (`board_assert_editor`) is the main thing keeping those invariants intact.\n- It is not airtight even now:\n  - If the client ID is left empty, the check is skipped entirely.\n  - Admins can write straight to the sessions, matches and session_players tables, because the row security rules only check admin status.\n  - The rest toggle and cock-check functions have no editor check at all.\n\n**What it would take**\n- Move to per-entity writes: one database function per action, such as \"move player\" or \"change a team's roster\". Or keep the blob but update it partially on the server, inside a locked transaction.\n- Enforce player uniqueness in the database, through a session-row lock or an exclusion constraint. Add this to `assign_match` and `set_match_roster` too.\n- Make starting a match and dissolving the waiting team a single transaction.\n- Server-side partial-update code already exists to copy: `member_party` (adds a team to the blob without touching the lock) and `apply_match_proposal_to_group` (locks the session row, checks the version, rebuilds part of the blob). Turning the lock off alone would leave many conflicts plus duplicate-player risk.","facts":[{"claim":"Board team composition is stored as one JSONB snapshot column on the sessions row, not as a row per entity. Magnet, team and court coordinates are now in the same payload under the optional layout field.","evidence":"supabase/migrations/20260610120000_add_board_drafts.sql:5-7 (sessions.board_drafts JSONB {teams,reservations}). src/types/board.ts:54-66 (BoardDraftsPayload: teams[{id,courtId,memberIds,slots,confirmedMs,...}], reservations[], layout{teams,courts,magnets: StagePoint}).","implication_for_multi_editor":"The unit of storage is the whole board. Two people moving different magnets still compete for the same row and the same blob. Concurrent editing needs a split into rows per team, per reservation or per position, or partial (JSON-patch) updates on the server."},{"claim":"Court assignment and player state are stored separately, as rows in matches and session_players.","evidence":"20260817020000_advisor_function_search_path.sql:134-146 (assign_match INSERTs into matches, UPDATEs session_players.status='playing', bumps sessions.match_state_version). 20260618000000_dedup_session_players_unique.sql:77 UNIQUE(session_id, player_id).","implication_for_multi_editor":"Board state is split across two sources: the board_drafts blob and the matches/session_players rows. Changing both has to happen in one transaction."},{"claim":"Versioning has two levels. board_drafts uses one board-wide version with compare-and-set. Match state has its own monotonic counter, match_state_version, which is a sync signal and not a compare-and-set guard. A trigger maintains sync_version as a single revision clock.","evidence":"20260717000000_lock_sticky_no_heartbeat.sql:49-69 (board_save_drafts: WHERE board_drafts_version = p_base_version, then version+1, replacing the whole board_drafts). 20260817020000:29-48 (sessions_bump_sync_version raises sync_version when board_drafts_version, match_state_version or status changes). 20260722010000_sync_version_broadcast.sql:129-146 (realtime.send of {v: sync_version} on topic session-bc:{id}).","implication_for_multi_editor":"With one coarse version, A and B editing different teams at the same time still conflict. Concurrency is effectively fully serialized."},{"claim":"On a compare-and-set conflict the client does no merge or rebase. It drops its own pending saves and replaces its state with the server snapshot, so the user's edit is lost and an error toast appears.","evidence":"src/store/board/draftsSync.ts:92-101 (version==null: removes saves from pendingSaves, then resyncFromServer({force:true}) and the toast 'Could not save board changes, synced to the latest server state'). draftsSync.ts:119-129 (pushDraftsToRemote returns immediately if !isEditor).","implication_for_multi_editor":"Data is not corrupted (no lost update, because the compare-and-set rejects stale writes). But with several editors, conflict rejections and rollbacks become frequent and the experience falls apart. A per-action function, such as move_player(p_player, p_target, ...), that changes only part of the state on the server would be needed."},{"claim":"board_save_drafts requires the caller to be the lock holder. If the lock is free, the call takes it (self-claim). If someone else holds it, the call fails with 0 rows.","evidence":"20260717000000_lock_sticky_no_heartbeat.sql:63-67 (AND is_admin() AND version=base AND (editor_client_id IS NULL OR = p_client_id)), 60-62 (sets editor_* to the caller).","implication_for_multi_editor":"To allow concurrent editing, this function needs at least the editor condition and the editor_* overwrite removed. The version compare-and-set alone is not enough to run multiple editors."},{"claim":"The full list of functions that call board_assert_editor (latest definitions) is: assign_match, set_match_roster, complete_match, assign_match_with_admin_coverage, start_match_proposal_with_admin_coverage, edit_match_proposals, start_match_proposal, and apply_match_proposal_to_group.","evidence":"20260817020000:130 (assign_match), :166 (set_match_roster), :218 (complete_match). 20260922030000_confirm_admin_absence.sql:49, :70. 20260918030000_edit_and_start_match_proposals.sql:27 (edit), and start_match_proposal in the same file. 20260922010000_apply_proposal_to_court_group.sql:26. Definition: 20260717000000:73-105.","implication_for_multi_editor":"Removing the gate would let every admin start, complete and change rosters at the same time. The protections left would be only the court unique index, the status='playing' conditional UPDATE, and the extra checks in the proposal path."},{"claim":"The editor gate has holes even today. It is skipped entirely when p_client_id is NULL. Admins can bypass it with direct table writes through RLS. set_player_resting has no editor check at all. member_party adds to board_drafts without checking the lock.","evidence":"20260717000000:82-84 (IF p_client_id IS NULL THEN RETURN). 20260715090000_matches_pairhistory_rls_admin_write.sql:40 (matches FOR ALL USING is_admin()). 20260713140000_sessions_players_rls_admin_write.sql:35,41 (sessions/session_players admin_wr
+... (truncated 38561 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/494dbbab-777c-4f18-bb05-9c9b94641425/tasks/ws532y8l5.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/364e165f/projects/-Users-sam-Projects-cocktime-scheduler/494dbbab-777c-4f18-bb05-9c9b94641425/subagents/workflows/wf_e1a78019-92c/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/364e165f/projects/-Users-sam-Projects-cocktime-scheduler/494dbbab-777c-4f18-bb05-9c9b94641425/workflows/scripts/board-multi-editor-feasibility-wf_e1a78019-92c.js', resumeFromRunId: 'wf_e1a78019-92c'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>6</agent_count><agents_done>6</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>321657</subagent_tokens><tool_uses>28</tool_uses><duration_ms>157643</duration_ms></usage>
+</task-notification>
+
+**Answer**: 결론부터 말하면 **현재 백엔드 그대로는 안 됩니다.** 전면 재설계까지는 필요 없고, 보드에 쓰는 경로만 부분적으로 고치면 가능합니다. 조사 → 판정 → 반박 검증까지 돌렸고, 판정은 검증을 통과했습니다.
+
+## 이미 다중 편집을 견디는 부분 (수신·동기화 쪽)
+- **전원이 같은 화면을 보는 구조는 이미 동작합니다.** DB에 쓰면 `sync_version`이 올라가고 힌트가 브로드캐스트되며, 각 클라이언트가 `load_session_state` 스냅샷을 가져와 맞춥니다. 25초 워치독과 탭 복귀(visibilitychange) 시 재동기화도 있습니다.
+- **코트 중복 배정은 DB가 막습니다.** 부분 유니크 인덱스가 있어서, 동시에 같은 코트를 잡으면 한쪽이 거절됩니다.
+- **경기 배정·로스터 변경은 이미 세션 단위로 줄 세워집니다.** `matches` INSERT 때 도는 트리거가 세션 행을 잠그기 때문입니다(`20260920020000_require_admin_match_coverage.sql:8`).
+- **그대로 확장해 쓸 서버 패턴이 있습니다.** 제안을 경기로 시작하는 경로가 이렇게 동작합니다: 세션 행 잠금 → 서버에서 "한 사람은 한 곳에만" 검사 → `board_drafts` 일부만 수정 → 버전 +1 (`20260918030000`, `20260922010000`). `member_party`도 같은 방식입니다.
+
+## 막히는 지점 (편집락만 풀면 터지는 것)
+1. **보드 전체가 JSONB 하나에 버전 하나입니다.** 저장할 때 보드 전체의 버전을 비교한 뒤 통째로 덮어씁니다(`board_save_drafts`, `20260717000000:56-69`). 자석 좌표도 같은 덩어리에 들어 있어서, 서로 다른 자석만 옮겨도 충돌로 처리됩니다.
+2. **충돌하면 내 편집을 버립니다.** 병합 없이 서버 상태로 강제 재동기화하고 에러 토스트를 띄웁니다(`src/store/board/draftsSync.ts:96-100`). 편집자가 여럿이면 진 쪽 드롭이 계속 되돌아갑니다.
+   - 검증에서 추가로 나온 점: `member_party`나 제안 적용도 버전을 올리기 때문에, 이 롤백은 **편집자가 한 명인 지금도 일어날 수 있는 문제**입니다.
+3. **같은 선수가 두 코트에 들어갈 수 있습니다.** `assign_match`에 "대기 상태인 선수 4명인지" 같은 사전조건이 없습니다(`20260817020000:128-153`). 지금은 편집락이 사실상 유일한 방어입니다. 잠금은 트리거가 이미 걸어 주니, 필요한 건 조건 검사뿐입니다.
+4. **"한 사람은 한 팀에만", "경기 중인 사람은 대기팀에 없음"(I1/I2) 규칙을 클라이언트만 지킵니다.** 서버는 받은 payload를 검증 없이 저장합니다. 화면에서 고쳐 주는 곳은 `src/lib/board/remoteDrafts.ts:44-71`입니다.
+5. **"경기 시작"과 "대기팀 해체"가 따로 저장됩니다.** 2026-06-24 중복 사고가 이 구조에서 났습니다.
+6. **원격 반영 로직이 편집자 1명 + 관전자 구조를 전제로 짜여 있습니다.** 근거는 `src/hooks/useSessionBoardEffects.ts:56-75`입니다. 보드 상태가 들어오는 경로도 행 변경 구독, 힌트 후 pull, 브로드캐스트 세 갈래라서 병합 설계가 생각보다 복잡합니다.
+7. **편집자 게이트에 지금도 구멍이 있습니다.** `p_client_id`가 NULL이면 검사를 건너뛰고, 운영진은 테이블에 직접 쓸 수 있으며, `set_player_resting`에는 편집자 검사가 없습니다.
+
+## 쿼터 영향
+- **Realtime 메시지 수 자체는 여유가 있습니다.** 2026-10 기준 2M 중 66k를 썼습니다.
+- **다만 쓰기 1회가 접속자 전원에게 퍼집니다.** sessions 행 전체(board_drafts 포함)가 변경 구독으로 가고, 각자 pull도 합니다. 편집자가 늘면 비용이 대략 N²로 커지고, 이미 185%인 Log Ingestion이 더 악화됩니다.
+- **드래그 중 좌표를 10Hz로 공유하면 Free 플랜의 초당 100건 한도에 걸립니다.** 잡기·놓기 이벤트만 보내거나 2~4Hz 이하로 줄여야 합니다.
+
+## 선택지
+| 안 | 내용 | 판정 |
+|---|---|---|
+| A. 편집락만 해제 | SQL 몇 줄 | ❌ 선수 중복 배정·2026-06 사고 재발 |
+| **B. 서버 원자 op RPC (권장)** | 기존 "세션 행 잠금 → 규칙 검사 → 부분 수정" 패턴을 보드의 모든 동작으로 확장 | 비용·위험 중간, 되돌릴 수 있음 |
+| C. 테이블 정규화 | board_drafts를 팀/멤버 행으로 쪼개고 유니크 제약 | 가장 견고하지만 되돌릴 수 없는 대수술 |
+| D. CRDT/Yjs | 클라이언트 상태 전면 교체 | ❌ 문서 병합만 보장하고 I1/I2 같은 규칙은 못 지킴 |
+
+## B안 순서
+1. **편집락을 유지한 채로 지금 바로 할 수 있는 방어부터 넣습니다.** `assign_match`·`set_match_roster`에 "대기 상태 4명" 사전조건을 넣고, `p_client_id` NULL 구멍을 막습니다. 사전조건을 `matches` BEFORE 트리거에 넣으면 레거시 RPC와 직접 쓰기까지 한 번에 막힙니다.
+2. **"코트 배정 + 대기팀 해체"를 RPC 하나로 묶습니다.**
+3. **보드 동작별 RPC를 만들고 좌표를 분리합니다.** move/detach/reserve 같은 RPC를 두고, 좌표(layout)는 별도로 빼서 마지막 쓰기 우선(LWW)으로 처리합니다. 클라이언트에는 미확정 동작 큐를 두고, 원격 스냅샷이 오면 그 위에 다시 적용합니다. 이게 끝난 다음에야 편집락을 풉니다.
+4. **자석 잡기는 브로드캐스트로 알리는 권고용으로만 둡니다.** 서버에 잡기 상태를 저장하면 폐기했던 하트비트 방식이 되살아나므로 하지 않습니다.
+5. **같은 시점에 변경 구독을 줄이고 delta 전송을 함께 검토합니다.** 그래야 Log Ingestion 문제를 피할 수 있습니다.
+
+비용에서 주의할 점이 하나 있습니다. 3단계에서 보드 규칙(draftMutations·reconcile, ghost 예외 포함)을 SQL로도 다시 구현해야 해서 같은 규칙을 두 곳에서 관리하게 됩니다. 운영진 1명 커버리지 거절 같은 새 충돌 유형도 롤백 처리에 넣어야 합니다. 그래서 "중간"이라는 비용 추정은 다소 낮게 잡혔을 수 있습니다.
+
+착수 전에 정하실 것이 하나 있습니다. **"전원"이 운영진 전원인지, 일반 회원까지인지**입니다. 지금은 모든 보드 쓰기가 `is_admin`으로 막혀 있어서, 이 선택에 따라 권한 설계가 크게 달라집니다.
+
+---
+
+## #367
+
+**Prompt**: 혹시 이상민이 사는곳이 운중동아님? 조회해봐
+
+**Answer**: 아니요, 이상민 회원의 거주지는 **성남동**으로 등록되어 있습니다.
+
+거주지가 운중동인 회원은 **차성민**(분당구 운중동) 한 명뿐입니다. 이름이 비슷해서 헷갈리셨을 수도 있습니다.
+
+거주지는 회원이 직접 입력한 값이라 실제 사는 곳과 다를 수 있습니다.
+
+---
+
+## #368
+
+**Prompt**: 10hz 가 내가아는 단위로 바꾸면 10프레임인가?
+
+**Answer**: 네, **초당 10번**이라는 뜻이라 "10프레임(10fps)"으로 이해하셔도 됩니다. 정확히는 **드래그 중인 자석 좌표를 다른 사람들에게 1초에 10번 보낸다**는 의미입니다.
+
+- **내 화면:** 기존대로 60fps로 부드럽게 움직입니다. 전송 횟수와는 상관없습니다.
+- **다른 사람 화면:** 좌표를 1초에 10번만 받습니다. 그대로 그리면 뚝뚝 끊겨 보이지만, 받은 점 사이를 보간(중간값을 채워 그리기)하면 꽤 자연스럽게 보입니다.
+
+쿼터 문제는 이렇게 생깁니다. 1명이 10Hz로 드래그하면 초당 10건을 보내는데, 접속자 10명이 각자 받으므로 **초당 약 100건**이 됩니다. Free 플랜 한도가 초당 100건이라 드래그 한 번에 바로 닿는 것입니다. 그래서 2~4Hz(초당 2~4번)로 줄이고 보간하거나, 아예 잡기·놓기 두 순간만 보내자고 제안드렸습니다.
+
+---
+
+## #369
+
+**Prompt**: 근데 내가 지금 supabase free 요금젠데 가능?
+
+**Answer**: 네, Free 요금제에서도 됩니다. 다만 **드래그 중 좌표를 실시간으로 공유하는 것만 조심하면** 됩니다.
+
+| 항목 | Free 한도 | 다중 편집 시 예상 | 판정 |
+|---|---|---|---|
+| Realtime 월 메시지 | 200만 건 | 현재 6.6만 건 → 놓을 때만 동기화하면 편집자 10명이어도 월 약 36만 건 | ✅ 여유 |
+| 동시 접속 | 200명 | 한 세션 접속자 수십 명 | ✅ |
+| 초당 메시지 | 100건 | 드래그를 10Hz로 공유하면 바로 닿음 | ⚠️ 2~4Hz 이하나 잡기·놓기만 보내면 OK |
+| Log Ingestion | 이미 185% (경고) | 편집자가 늘수록 커짐 | ⚠️ 이게 진짜 걸림돌 |
+
+선택에 따라 정리하면 이렇습니다.
+- **놓을 때만 동기화(B안 기본):** Free로 충분합니다. 남이 옮긴 자석은 놓는 순간 휙 이동하는 정도입니다.
+- **드래그 중에도 보여주기:** 2~4Hz로 보내고 보간하면 Free 안에서 가능합니다. 같은 세션 안에서 여러 명이 동시에 드래그하면 초당 한도에 근접할 수 있습니다.
+- **10Hz 이상 실시간 공유:** Free로는 무리입니다.
+
+진짜 병목은 Realtime이 아니라 **Log Ingestion**입니다. 쓰기 한 번마다 접속자 전원이 스냅샷을 다시 받아오는 구조라서, 편집자가 늘면 로그량도 같이 커집니다. 그래서 다중 편집을 할 거면 **"변경분만 보내고 전체 재조회는 줄이기"를 함께 해야** Free에서 버틸 수 있습니다. 순서는 B안 1~2단계(서버 방어 로직)부터 하는 게 맞고, 이 둘은 쿼터 영향이 없습니다.
+
+참고로 Free 한도 수치는 조사 에이전트가 정리한 값이고, 이번에 Supabase 공식 문서로 다시 확인하지는 않았습니다. 착수 전에 대시보드의 Usage 화면에서 한 번 확인하시길 권합니다.
+
+---
+
+## #370
+
+**Prompt**: 병목이슈는 일단 패스하고, realtime 구현하고 싶은데 한번 체크해줘. 그리고 써보다가 렉이 많다던지, 사용성이 안좋으면 롤백해야하니 고려해서 작업해줘
+
+**Answer**: 아직 코드는 고치지 않았고, 구현 설계 워크플로우를 돌리는 중입니다. 고르신 대로 이렇게 잡았습니다.
+
+- **편집 권한:** 운영진 전원이 동시에 편집하고, 일반 회원은 계속 읽기전용
+- **드래그 표시:** 운영진 화면에는 다른 운영진이 드래그하는 자석이 실시간으로 보이고(약 4Hz + 보간, 누가 잡았는지 표시), 회원 화면에는 놓는 순간에만 반영
+- **롤백:** DB 기능 플래그 하나로 끕니다. 재배포 없이 즉시 기존 단일 편집자 모드로 돌아가고, 꺼진 상태에서는 지금과 똑같이 동작하도록 설계합니다.
+- **플래그와 무관한 서버 방어:** 같은 선수가 두 코트에 들어가지 않게 `assign_match`에 사전조건을 넣는 것도 함께 검토합니다.
+
+워크플로우는 세 단계입니다.
+1. 클라이언트 드래그·저장 흐름, 서버 RPC, 수신 경로를 정밀하게 파악
+2. 구현 설계 작성
+3. 설계 반박 검증 (데이터 정합성 관점, 롤백·렉 관점 각각)
+
+끝나면 설계를 요약해 보여드리고 바로 구현에 들어가겠습니다. 다만 관련 없는 회계 변경이 staged 상태라서 그 파일들은 건드리지 않습니다. DB 마이그레이션은 파일만 만들고, 실제 배포(`supabase db push`)는 직접 실행하셔야 합니다.
+
+---
+
+## #371
+
+**Prompt**: <task-notification>
+<task-id>wtw0va7bv</task-id>
+<tool-use-id>toolu_01AQuCU5ZTbmugU8BTfYro7R</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/494dbbab-777c-4f18-bb05-9c9b94641425/tasks/wtw0va7bv.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "운영진 동시 편집 + 실시간 드래그 공유 구현 설계 (롤백 가능한 플래그 기반)" completed</summary>
+<result>{"maps":[{"key":"client-edit-pipeline","summary":"I mapped the client editing pipeline without changing any files. The narrowest place to switch modes is `computeLockFromRow` (src/lib/editLock.ts:56-68). It is the only place `isEditor` is calculated, and about 60 gates read that value. With the flag ON, it could return `isEditor = isAdmin &amp;&amp; flag` and the edit gates would open with no other edits. Doing only that creates five problems:\n(1) The save queue in draftsSync sends the whole board payload under one version check (CAS). When a save fails it forces a resync and shows an error toast (draftsSync.ts:96-100), so with several editors at once some saves will often fail. It has no debounce; instead it merges waiting saves (only the newest payload is kept).\n(2) Healing and court-group effects run automatically on every client (healPlayingAnchors, ensureCourtGroups, applyRemoteDrafts heal push). With several editors, each one saves the same fix at the same moment and the saves collide.\n(3) While a local save is pending, incoming changes are ignored (useSessionBoardEffects.ts:69-71).\n(4) The runtime cancels the local drag when a remote change moves or replaces the entity being dragged.\n(5) Proposals, member party and the lock UI all assume \"admin and not editor\".\nThe store actions are intent-level functions (playerId + drop point → `resolveDropTarget` → immer mutation). There is no op log, so \"rebase\" can be built by recording intents and replaying them on a fresh snapshot. The draftMutations helpers can run without the zustand store, given a Map-based state. However, they do not give the same result twice (`randomId`/`Date.now`/`currentEditorName`, plus `clampToStage` uses the device's stage size). For drag broadcast, the hook points are BoardRuntime `beginDrag`, the `onDragMove` callback, `finishDrag` and `cancelDrag`. They already have world coordinates, so a new 4Hz throttle and send can go there.","items":[{"topic":"Drag pipeline: pointer to store action","detail":"Canvas pointer events (runtime.ts:491-499 attachInput) go to the interactionController. pointerMove starts a drag once movement passes DRAG_DISTANCE=3px and target.draggable is true. It then calls ports.onDragStart once (interactionController.ts:225-229), then ports.onDragMove(target, worldCenter) on every pointermove (:231). pointerUp calls ports.onDragEnd (:265-266) and cancel calls ports.onCancel. In BoardRuntime (runtime.ts:77-94): onDragStart→beginDrag(322-336) sets this.dragging/dragPoint, lifts the z-index, calls bs.markManualLayout for cards and bs.setDragInfo for magnets. onDragMove→(85-90) only sets this.dragPoint and pendingHover, then scheduler.invalidate. It writes nothing to the store. draw() (185-207) runs per frame: it positions the preview and calls updateHover(400-484), which runs resolveDropTarget and setHoverTarget. onDragEnd→finishDrag(338-379) branches on source.kind. team→bs.setTeamAnchor+settleBoard. court→bs.setCourtAnchor+settleBoard. Player inside a court→stageMatchPlayer. playing→handlePlayingMagnetDrop. ghost→cancelReservation or handleGhostDrop. anchor in the detach zone→detachMember. Rest field→restPlayer/unrestPlayer. Otherwise→handleDrop(playerId, point). In finally it runs restoreSource, clearDrag and publish. cancelDrag is at 381-389. Coordinates are world (stage) coordinates in canvas CSS px / scale. They are device-independent, so they can be broadcast as is.","evidence":"src/lib/board/pixi/interactionController.ts:202-266; src/lib/board/pixi/runtime.ts:77-94,185-207,322-389,400-484"},{"topic":"Hook points for drag coordinate broadcast and rendering remote drags","detail":"Send: emit drag-start at the end of beginDrag (runtime.ts:335), using source/sourceKey and view.key. Throttle in the onDragMove callback (runtime.ts:85-90), sampling this.dragPoint at 250ms. Emit the final position plus 'dropped' in finishDrag's finally (376), and 'cancel' in cancelDrag (381). Do not send for source.kind values proposal and proposal-member: those are private proposal drags (runtime.ts:346,355-362). Receive and render: BoardScene draws only the local drag preview layer (BoardScene.tsx:98-103, presentation.drag). Showing a remote drag needs a separate remoteDrags state (a Map keyed by entity key → {point, holderName, ts}), a new Pixi container with interpolation in BoardRuntime.draw (the per-frame animation loop at 196-204 can be reused), and a projection input for hiding or dimming the original entity (the visible/hidden props at BoardScene.tsx:70,77,92 only look at presentation.drag, so they would need extending). To stop two people grabbing the same entity, add a check in pick() / magnetTarget (runtime.ts:235-238,317) so remotely held keys are not draggable. Caution: refresh() (129-137) cancels the local drag when isDragValid fails. That happens when the dragged entity's source changes or the member points of a card change (217-225). So with flag ON, an applyRemoteDrafts from another admin will often cancel a local card drag.","evidence":"src/components/board/pixi/BoardScene.tsx:70,77,85-103; src/lib/board/pixi/runtime.ts:129-137,217-225,235-238,317"},{"topic":"Realtime channel: who receives the drag broadcast","detail":"session-bc:{id} is created with broadcast self:false and presence key=clientId (broadcast.ts:49-57). sendBroadcast is channel.send (59-68). Both members and admins subscribe to this channel (sessionChannels.ts:67-93). Presence track only carries {clientId, name, claimAt} and has no isAdmin. If 4Hz drag messages go on session-bc, they fan out to every connected member as well, which works against the Free tier's 100 msg/s limit. Since members should only see confirmed drops, use a separate admin-only channel such as session-drag:{id} (subscribe only when isAdmin &amp;&amp; flag), or at least check isAdmin on the receiving side. clientId is the login user.id (DATABASE.md:262), so one person's tabs and devices share the same clientId. That makes it unsuitable for telling drag owners apart; a per-tab id is needed.","evidence":"src/lib/supabase/broadcast.ts:49-68; src/lib/supabase/sessionChannels.ts:67-93; src/lib/supabase/DATABASE.md:262"},{"topic":"Where isEditor is calculated (single point for the flag)","detail":"computeLockFromRow sets isEditor = active &amp;&amp; editor.clientId === myClientId (editLock.ts:56-68). recomputeLock (sessionEditorLock.ts:55-67) applies it with set(info) and also handles the editorTakenBy 'taken over' notice. Callers: claimNow(73-96), onSessionRowUpdate→editorRowChanged (sessionStore.ts:102-113, ~595), takeover(398-426), handoff(435-445), unsubscribe(653-676). Proposal: with flag ON, isEditor = isAdmin &amp;&amp; flag (lockFree/holder only for display), and detectEditorLoss always returns null. With flag OFF, the existing expression is unchanged. The flag value must be read inside the store, either from groupSettings (fetchGroupSettings is already called at sessionStore.ts:185) or from another field. GroupSettings currently has only three fields (types/index.ts:96-103; clubSettings.ts:13-30 selects only cock_*). Adding a column means extending both the select and the type. Note: fetchGroupSettings runs once at subscribe time, so a mid-session flag change is not picked up. For an instant rollback, the client needs a re-read on resync or a postgres_changes subscription.","evidence":"src/lib/editLock.ts:56-88; src/store/sessionEditorLock.ts:55-96; src/store/sessionStore.ts:185,398-445,653-676; src/lib/supabase/clubSettings.ts:13-30; src/types/index.ts:96-103"},{"topic":"Full list of isEditor gates and what changes with flag ON (1/2: store and actions)","detail":"Pure edit gates (OK if isEditor becomes true for all admins): claimEdit() draftsSync.ts:67-69 → used by 17 actions in membershipSlice (84,131,244,288,353,419,431,467,561,571,584,607,631) and matchSlice (46,167,235,260). handleDrop non-editor branch (membershipSlice.ts:168-177, local free-magnet move only). sessionStore handleAssign(194-195), han
+... (truncated 98191 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/494dbbab-777c-4f18-bb05-9c9b94641425/tasks/wtw0va7bv.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/364e165f/projects/-Users-sam-Projects-cocktime-scheduler/494dbbab-777c-4f18-bb05-9c9b94641425/subagents/workflows/wf_9e0f2cf7-8b0/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/364e165f/projects/-Users-sam-Projects-cocktime-scheduler/494dbbab-777c-4f18-bb05-9c9b94641425/workflows/scripts/board-multi-editor-design-wf_9e0f2cf7-8b0.js', resumeFromRunId: 'wf_9e0f2cf7-8b0'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>6</agent_count><agents_done>6</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>895169</subagent_tokens><tool_uses>157</tool_uses><duration_ms>774207</duration_ms></usage>
+</task-notification>
+
+**Answer**: 설계와 반박 검증이 끝나서 지금 구현 워크플로우가 돌고 있습니다. 아직 끝나지 않았습니다.
+
+**검증 결과 원래 설계에서 바꾼 점**
+- **플래그를 세션별로 둡니다.** 클럽 전체 설정이 아니라 회차마다 켜고 끕니다. 그래서 테스트 회차 하나에서만 켜 볼 수 있고, 켜고 끄는 순간 데이터가 엇갈리는 틈도 없앴습니다.
+- **자동 정리 저장을 막습니다.** 처음 설계에서는 운영진 기기마다 화면을 자동 정리한 결과를 서버에 저장했습니다. 그러면 선수 목록을 늦게 받은 기기가 다른 사람의 정상 배치를 지울 수 있어서, 동시 편집 모드에서는 사람이 직접 한 편집만 저장합니다.
+- **충돌 병합을 선수 단위로 합니다.** 팀 단위로 "나중에 저장한 쪽이 이김"으로 처리하면 한쪽의 선수 이동이 조용히 되돌아갑니다. 그래서 선수 한 명 한 명의 위치를 기준으로 병합합니다.
+- **다른 운영진의 드래그는 별도 레이어에 그립니다.** 자석을 직접 움직이면 화면이 다시 그려질 때마다 제자리로 튀어서 깜빡이기 때문입니다.
+
+**구현 순서**
+1. 서버 방어. 플래그와 상관없이 같은 선수가 두 코트에 들어가는 것을 막고, 로스터 변경 시 클라이언트가 보낸 목록을 그대로 믿지 않게 합니다.
+2. 세션 플래그와 운영진용 토글
+3. 충돌 병합과 재시도
+4. 실시간 드래그 공유
+5. 리뷰 두 갈래(동시 편집 정합성, 플래그를 껐을 때 기존과 똑같은지) 후 수정, 문서 갱신, 롤백용 SQL 작성
+
+DB 배포나 프로덕션 실행은 하지 않고 파일만 만듭니다. 커밋도 하지 않습니다. 끝나면 결과와 배포·시험 순서를 정리해 드리겠습니다.
+
+---
+
+## #372
+
+**Prompt**: <task-notification>
+<task-id>wypnwr7ls</task-id>
+<tool-use-id>toolu_01YNAEni5xJRztdx8Pv9K6yn</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/494dbbab-777c-4f18-bb05-9c9b94641425/tasks/wypnwr7ls.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "운영진 동시 편집(세션 플래그) + 실시간 드래그 공유 구현 · 리뷰 · 수정" completed</summary>
+<result>{"reports":[{"files_changed":["/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20261012000000_board_match_guards.sql","/Users/sam/Projects/cocktime-scheduler/src/lib/supabase/actions.ts","/Users/sam/Projects/cocktime-scheduler/src/lib/supabase/boardMatchGuards.test.ts","/Users/sam/Projects/cocktime-scheduler/src/lib/supabase/DATABASE.md","/Users/sam/Projects/cocktime-scheduler/supabase/tests/README.md"],"summary":"D11 서버 가드를 구현했다. 마이그레이션은 작성만 했고 배포는 하지 않았다. staged된 회계 변경은 건드리지 않았고 git commit/stash/reset/checkout도 하지 않았다.\n\n기준으로 삼은 최신 정의:\n- assign_match, set_match_roster, complete_match: 20260817020000_advisor_function_search_path.sql\n- board_assert_editor: 20260717000000_lock_sticky_no_heartbeat.sql\n- 래퍼 assign_match_with_admin_coverage(20260922030000)와 start_match_proposal(20260918030000)은 둘 다 public.assign_match를 PERFORM으로 호출한다. 따라서 래퍼는 고치지 않았다.\n\n마이그레이션(20261012000000_board_match_guards.sql). 공통으로 search_path='', security definer, public. 한정, 시그니처 유지, revoke/grant 재명시를 지켰다.\n1. board_assert_editor: p_client_id IS NULL 분기는 auth.uid()가 null이거나 is_admin이 아니면 'not editor'(42501)를 낸다. 나머지 본문은 0717과 같다.\n2. assign_match:\n   - 맨 앞에서 sessions 행을 FOR UPDATE로 잠근다. 대상은 is_active이면서 status='active'인 세션뿐이고, 아니면 'session closed'를 낸다.\n   - 그다음 board_assert_editor를 호출한다.\n   - 4명이 non-null이고 서로 다른지 확인한다. 아니면 'four distinct players required'.\n   - 같은 세션의 playing 경기와 선수가 겹치면 'players already playing'.\n   - INSERT 뒤 session_players UPDATE에 session_id 고정과 status&lt;&gt;'playing'을 걸고, ROW_COUNT가 4가 아니면 'players not ready'. status='waiting'은 강제하지 않는다.\n   - unique_violation을 'court already assigned'로 바꾸는 처리는 그대로 유지했다.\n3. set_match_roster:\n   - sessions FOR UPDATE, assert, 새 로스터 유효성 확인 순서로 진행한다.\n   - matches의 현재 로스터를 FOR UPDATE로 읽고 removed/added를 서버가 계산한다. 클라가 넘긴 배열은 무시한다. NULL 슬롯에 안전하도록 array_position으로 비교한다.\n   - added가 다른 진행 경기에 있으면 'players already playing'.\n   - 선수 UPDATE는 session_id를 고정한다. added가 이 세션 선수가 아니면 'players not ready'.\n   - 반환값은 서버가 계산한 removed와 added 선수다.\n4. complete_match:\n   - sessions FOR UPDATE를 먼저 건다. 기존에는 matches를 잠근 뒤 sessions를 갱신했는데, roster 수정은 sessions를 먼저 잠그므로 둘이 동시에 돌면 교착이 생길 수 있었다. 잠금 순서를 sessions → matches로 통일했다.\n   - WHERE에 session_id를 고정했다.\n   - UPDATE ... RETURNING으로 실제 로스터를 받아 player_snapshot, 선수 갱신, 반환에 쓴다.\n   - p_game_type은 기존처럼 사용한다.\n\n기존 흐름이 깨지지 않는지 코드로 확인한 내용:\n- 메인 보드 시작 게이트 isTeamStartable(src/lib/board/membership.ts)은 경기중 멤버만 거르고 휴식·콕 미확인은 통과시킨다. 서버도 status&lt;&gt;'playing'만 보므로 기존 시작이 유지된다. 테스트에서 resting 선수와 cock_checked=false 선수로 시작이 성공함을 확인했다.\n- ghost 예약 팀은 경기중 멤버가 있으면 isTeamStartable이 false다. 완료 후에만 시작할 수 있으므로 영향이 없다.\n- handleComplete 다음 handleAssign 순서로 순차 await하며, 완료와 배정을 병렬로 호출하는 경로는 없다.\n- start_match_proposal은 이미 같은 사전 검사와 sessions 잠금을 한 뒤 assign_match를 호출한다. 같은 트랜잭션 안의 중복 잠금이라 문제없다.\n\n클라(src/lib/supabase/actions.ts):\n- export 함수 matchGuardMessage(message, 'start'|'roster')를 추가했다. 'players already playing', 'players not ready', 'four distinct players required', 'session closed'를 한국어 토스트 문구로 바꾼다.\n- dbAssignMatch와 dbSetMatchRoster는 이 문구로 토스트를 띄우고 false/null을 반환한다. 이후 호출자의 기존 resyncFromServer가 그대로 동작한다.\n- complete_match는 새 에러 문자열이 없어 기존 처리('already completed', 'not editor')를 유지했다.\n- 제안 시작 경로(useMatchProposals errorMessage)는 기존 'players' 포괄 매핑과 'session closed' 매핑이 새 문구를 이미 덮는다.\n\n테스트와 문서:\n- src/lib/supabase/boardMatchGuards.test.ts(13개): PGlite에 실제 마이그레이션을 올려 assign, roster, complete, assert 가드와 매핑 함수를 검증한다.\n- DATABASE.md의 RPC 표와 supabase/tests/README.md에 짧은 메모를 추가했다.","tests":"- pnpm test(vitest run): Test Files 67 passed, Tests 954 passed, 실패 0. 신규 boardMatchGuards.test.ts 13/13 통과가 포함된 결과다. 기존 테스트는 수정 없이 모두 통과했다.\n- pnpm exec tsc -b --noEmit: exit 0.\n- pnpm lint: 기존 오류 20개, 경고 2개로 exit 1. 대상 파일은 .design-sync, ds-bundle, reports/, scripts/team-audit, MemberAdminPage, GradeInput, PlayerAvatar, PlayerCard, useSetupPlayers, supabase/functions/ingest-bank-email로, 모두 이번 단계와 무관하다. 변경 파일(actions.ts, boardMatchGuards.test.ts)만 eslint로 돌리면 exit 0이다.\n- 참고: scripts/team-matching-repro.test.tsx(별도 config)는 이번 단계 전부터 깨져 있다. src/components/board/MatchEditModal 모듈이 없어 suite 로드에서 실패한다.","open_issues":["assign_match의 status&lt;&gt;'playing' 조건(D11 지시)은 세션 잠금과 matches 중복 검사가 있으면 사실상 중복이다. 이 조건 때문에 생기는 위험이 하나 있다. session_players.status='playing'인데 진행 경기가 없는 '고아' 드리프트가 생기면, 그 선수는 서버가 'players not ready'로 계속 거부해 경기를 시작할 수 없다. 클라 playingIds는 courts(matches) 기준이라 화면에는 시작 가능으로 보인다. complete_match가 실제 로스터를 쓰도록 바뀌어 드리프트 원인은 줄었지만, 사후 관찰이 필요하다.","assign_match에 'session closed' 검사(is_active and status='active')를 넣었다. 설계 원문에는 있고 D11 요약에는 없는 항목이다. 종료된 세션에서 낡은 화면이 배정하는 것을 막는 용도이고, 메인 보드는 활성 세션에서만 동작하므로 정상 흐름에는 영향이 없다고 판단했다.","complete_match에 sessions FOR UPDATE를 추가했다. D11에 명시되지 않은 항목이다. set_match_roster(sessions→matches)와 기존 complete_match(matches→sessions 갱신, 트리거 포함)의 잠금 순서가 반대라 교착 가능성이 있어 순서를 통일했다. 그 대가로 같은 세션의 완료와 배정이 직렬화된다.","set_match_roster는 added 선수가 이 세션 선수가 아니면 'players not ready'를 낸다. D11에 명시되지 않은 추가 가드다.","complete_match의 혼복 판정은 여전히 클라 p_game_type을 쓴다. 로스터는 서버 기준으로 바뀌었지만 game_type은 범위 밖이라 그대로 두었다.","다중 연결 잠금 경합은 PGlite 단일 연결로는 검증할 수 없다. 배포 전 Management API로 begin…rollback 리허설을 권장한다.","supabase/tests/admin_coverage.test.mjs와 match_proposals.test.mjs는 특정 과거 파일을 고정해 불러오므로 이번 마이그레이션을 검증하지 않는다. 실행하지 않았다."]},{"files_changed":["/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20261012010000_board_multi_editor_flag.sql","/Users/sam/Projects/cocktime-scheduler/src/lib/editLock.ts","/Users/sam/Projects/cocktime-scheduler/src/lib/editLock.test.ts","/Users/sam/Projects/cocktime-scheduler/src/store/sessionEditorLock.ts","/Users/sam/Projects/cocktime-scheduler/src/store/sessionStore.ts","/Users/sam/Projects/cocktime-scheduler/src/store/sessionStoreState.ts","/Users/sam/Projects/cocktime-scheduler/src/lib/supabase/board.ts","/Users/sam/Projects/cocktime-scheduler/src/lib/supabase/types.ts","/Users/sam/Projects/cocktime-scheduler/src/hooks/useSessionBoardEffects.ts","/Users/sam/Projects/cocktime-scheduler/src/components/board/BoardToolbar.tsx","/Users/sam/Projects/cocktime-scheduler/src/store/board/draftsSync.ts","/Users/sam/Projects/cocktime-scheduler/src/store/board/matchSlice.ts","/Users/sam/Projects/cocktime-scheduler/src/store/board/membershipSlice.ts","/Users/sam/Projects/cocktime-scheduler/src/store/board/viewSlice.ts","/Users/sam/Projects/cocktime-scheduler/src/store/boardStore.ts","/Users/sam/Projects/cocktime-scheduler/src/lib/supabase/DATABASE.md","/Users/sam/Projects/cocktime-scheduler/src/store/sessionMultiEditor.test.ts","/Users/sam/Projects/cocktime-scheduler/src/store/board/multiEditorHeal.test.ts","/Users/sam/Projects/cocktime-scheduler/src/lib/supabase/boardMultiEditorFlag.test.ts"],"summary":"D1~D5 구현을 마쳤습니다. 마이그레이션은 파일만 작성했고 배포하지 않았습니다. staged된 회계 변경은 건드리지 않았고, commit/stash/reset/checkout도 하지 않았습니다.\n\n서버 (supabase/migrations/20261012010000_board_multi_editor_flag.sql)\n모든 함수는 search_path='', security definer, public. 한정, 시그니처 유지, revoke/grant 재명시를 지켰습니다.\n- 컬럼: sessions.board_multi_editor boolean not null default false.\n- 헬퍼: public.board_multi_editor_enabled(p_session_id)를 stable로 만들었고 호출 권한은 전부 revoke했습니다.\n- board_assert_editor: 20261012000000 가드 버전을 기준으로 했습니다. ON이면 auth.uid가 있고 is_admin일 때만 통과하며, self-claim은 하지 않습니다. OFF는 가드 버전 본문 그대로입니다.\n- board_save_drafts: sql에서 plpgsql로 바꾸고 맨 앞에서 플래그로 분기합니다.\n  - ON: is_admin과 버전 CAS만 봅니다. editor_*는 갱신하지 않습니다.\n  - ON 분기 WHERE에 s.board_multi_editor를 다시 걸었습니다. 행 잠금을 기다리는 사이 플래그가 꺼지면 0행으로 끝납니다.\n  - OFF: 0717 본문 그대로이고, 0행이면 NULL을 반환하는 것도 같습니다.\n- board_claim/takeover/handoff_editor: plpgsql로 바꾸고, ON이면 RETURN만 하는 no-op(0행)입니다. OFF는 기존 UPDATE 그대로입니다. release는 바꾸지 않았습니다.\n- sessions_bump_sync_version: 비교 컬럼에 board_multi_editor를 추가했습니다.\n- load_session_state: 반환 객체에 'board_multi_editor' 키를 추가했습니다.\n- admin_set_board_multi_editor(p_session_id, p_on) → boolean\n  - is_admin을 확인한 뒤, 한 UPDATE에서 플래그를 바꾸고 editor_*를 모두 NULL로 비웁니다.\n  - 값이 이미 같으면 아무것도 쓰지 않습니다. OFF를 다시 눌러 현재 편집자를 내쫓지 않게 하려는 것입니다.\n  - 세션이 없으면 'session not found', 운영진이 아니면 'admin only'(
+... (truncated 30507 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/494dbbab-777c-4f18-bb05-9c9b94641425/tasks/wypnwr7ls.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/364e165f/projects/-Users-sam-Projects-cocktime-scheduler/494dbbab-777c-4f18-bb05-9c9b94641425/subagents/workflows/wf_a6786caf-d46/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/364e165f/projects/-Users-sam-Projects-cocktime-scheduler/494dbbab-777c-4f18-bb05-9c9b94641425/workflows/scripts/board-multi-editor-implement-wf_a6786caf-d46.js', resumeFromRunId: 'wf_a6786caf-d46'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>7</agent_count><agents_done>7</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>1627143</subagent_tokens><tool_uses>446</tool_uses><duration_ms>3908896</duration_ms></usage>
+</task-notification>
+
+**Answer**: 운영진 동시 편집과 실시간 드래그 공유를 구현했습니다. 롤백은 회차별 토글로 합니다. 타입 검사는 통과했고 테스트는 74개 파일, 1052개가 모두 통과했습니다. 변경은 staging만 해 두었고 커밋과 DB 배포는 하지 않았습니다. 회계 쪽 변경은 건드리지 않았습니다.
+
+## 만든 것
+**동시 편집 모드는 회차마다 켜고 끕니다.**
+- 운영진이 보드 툴바에서 "동시 편집(실험)"을 켜면 그 회차만 운영진 전원이 편집할 수 있습니다. 회원은 지금처럼 읽기전용입니다.
+- 꺼져 있으면 서버와 클라이언트 모두 기존 1인 편집과 똑같이 동작합니다.
+
+**충돌 처리:** 두 운영진이 동시에 놓으면, 진 쪽이 서버 최신 상태를 받아 **선수 단위로 병합**한 뒤 다시 저장합니다(최대 3회).
+- 서로 다른 선수를 옮겼다면 양쪽 변경이 모두 남습니다.
+- 같은 선수를 각자 다른 곳으로 옮겼다면 나중에 저장한 쪽 위치가 남습니다. 먼저 옮긴 운영진에게는 따로 알림이 가지 않습니다.
+- 3번 다 실패하면 지금처럼 서버 상태로 되돌리고 토스트를 띄웁니다.
+
+**드래그 표시:**
+- 운영진 화면에서는 다른 운영진이 끄는 자석이 이름표와 함께 실시간으로 보입니다. 좌표는 초당 4번 보내고 그 사이를 부드럽게 채웁니다.
+- 누가 잡고 있는 자석은 다른 사람이 잡을 수 없습니다.
+- 회원은 이 채널에 아예 연결되지 않아서, 놓는 순간에만 바뀐 위치를 봅니다.
+
+## 롤백
+1. **즉시:** 그 회차의 토글을 끄면 됩니다. 재배포 없이 몇 초 안에 1인 편집으로 돌아가고, 이후 운영진 한 명이 "편집 권한 가져오기"를 누르면 됩니다.
+2. **코드:** 프론트 커밋을 revert합니다.
+3. **DB까지 지울 때:** `supabase/rollback/20261012010000_board_multi_editor_flag_down.sql`을 직접 실행합니다.
+
+렉이 있는지는 브라우저 콘솔의 `[board-multi]` 로그(충돌·재시도·폴백 횟수)와 Supabase Realtime 리포트의 피크 수치로 판단하시면 됩니다.
+
+## 토글과 상관없이 동작이 바뀌는 부분
+`20261012000000_board_match_guards.sql`은 서버 방어용 마이그레이션이라 토글을 꺼 둬도 적용됩니다.
+- 같은 선수를 두 코트에 넣으면 거절하고, 사람이 읽을 수 있는 토스트를 띄웁니다.
+- 로스터 변경과 경기 완료는 클라이언트가 보낸 선수 목록 대신 서버에 있는 실제 로스터를 기준으로 처리합니다.
+- 배포할 때 한 번, 진행 중인 경기에 없는데 "경기중"으로 남아 있는 선수를 대기로 되돌립니다. 그래서 **경기가 진행되는 시간대에는 배포를 피하세요.**
+
+## 켜기 전에 아셔야 할 점
+- **켜면 생기는 불편:** 동시 편집이 켜진 회차에서는 경기를 뛰는 운영진이 회원 파티에서 빠지고, 운영진의 제안 작성 기능이 사라집니다.
+- **아직 확인하지 못한 것:** 실제 화면에 Pixi가 어떻게 그려지는지(이름표, 보간, 동시에 잡을 때)는 단위 테스트로 볼 수 없었습니다. 운영진 기기 2대와 회원 기기 1대로 직접 확인해야 합니다.
+- **DB 리허설도 아직입니다.** 두 마이그레이션은 로컬 테스트 DB(PGlite)로만 검증했고, 프로덕션에서 `begin…rollback`으로 미리 돌려 보지는 않았습니다.
+
+## 배포 순서
+1. (원하시면) 제가 Management API로 `begin…rollback` 리허설을 돌립니다.
+2. 경기 없는 시간에 `! supabase db push`를 실행합니다.
+3. 커밋하고 push해서 프론트를 배포한 뒤, 운영진 기기의 PWA가 새 버전으로 바뀌었는지 확인합니다.
+4. 테스트 회차 하나에서 토글을 켜고 운영진 2~3명이 써 봅니다. 이상하면 토글을 끄면 됩니다.
+
+설계와 롤백 절차는 `docs/session-board.md` §15와 `src/lib/supabase/DATABASE.md`에 정리해 두었습니다.
+
+---
+
+## #373
+
+**Prompt**: go on
+
+**Answer**: 운영 DB는 읽기 전용 조회로 확인했고, 리허설 스크립트까지 준비했습니다. 리허설은 DB에 쓰기를 하는 요청이라 자동 모드에서는 제가 실행할 수 없습니다. 아래 명령을 직접 실행해 주세요.
+
+[코드 블록 생략]
+
+**운영 DB 확인 결과**
+- **미적용 마이그레이션:** 마지막으로 적용된 것이 20261002000000이라, 이번에 만든 두 파일만 남아 있습니다.
+- **함수 구성:** 교체할 함수 15개의 인자 구성이 운영 DB와 같습니다. 같은 이름의 함수가 따로 하나 더 생기는 일은 없습니다.
+- **배포 시점:** 지금 진행 중인 회차가 0개이고, 경기 없이 "경기중"으로 남은 선수도 0명입니다. 배포 때 한 번 도는 정리 작업이 바꿀 행이 없으니 지금 배포해도 안전합니다.
+
+**리허설 스크립트가 하는 일**
+모든 실행을 `begin … rollback`으로 감싸서 운영 DB에는 흔적이 남지 않습니다.
+- **A:** 두 마이그레이션을 적용했을 때 컬럼, 토글 RPC, 헬퍼 함수, `assign_match` 가드가 생기는지 확인합니다.
+- **B:** 적용한 뒤 롤백 SQL까지 실행했을 때 동시 편집 관련 흔적이 모두 사라지고 가드만 남는지 확인합니다.
+- **마지막:** 실제 DB에 아무것도 새지 않았는지 다시 확인합니다.
+
+출력 맨 위의 `== A`, `== B` 줄에 기대값을 적어 두었습니다. 결과를 붙여 주시면 판독하겠습니다. 리허설이 통과하면 그다음 순서는 이렇습니다.
+1. `! supabase db push`로 DB를 배포합니다.
+2. 커밋하고 push해서 프론트를 배포합니다. 원하시면 `/commit`으로 정리해 드릴게요.
+3. 테스트 회차 하나에서 동시 편집 토글을 켜고 운영진 기기 2대와 회원 기기 1대로 확인합니다.
+
+---
+
+## #374
+
+**Prompt**: 끝나면 커밋하고 푸쉬해
+
 **Answer**: _(응답 대기 중…)_
 
 ---

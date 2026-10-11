@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
 	type BroadcastPayload,
+	dbAdminSetBoardMultiEditor,
 	dbAssignMatch,
 	dbBoardHandoffEditor,
 	dbBoardReleaseEditor,
@@ -34,7 +35,8 @@ import { randomId } from "../lib/randomId";
 import { useAuthStore } from "./authStore";
 import { appActions } from "./appStore";
 import { toast } from "./toastStore";
-import { flushBoardDrafts } from "./board/draftsSync";
+import { flushBoardDrafts, getDraftsBase } from "./board/draftsSync";
+import { setRemoteDragLink } from "./board/remoteDragLink";
 import {
 	applyDraftsIfNewerImpl,
 	handleMatchCompleted,
@@ -112,6 +114,41 @@ function editorRowChanged(row: {
 		rowLease !== c.leaseUntilMs
 	);
 }
+
+// ── 운영진 동시 편집 플래그(sessions.board_multi_editor) ─────────────────────
+// 서버 권위 값을 sessions 행 이벤트와 load_session_state 양쪽에서 받는다. 토글은 editor_* 정리와 같은 UPDATE 라
+// 행 이벤트 하나에 함께 실려 온다 — 플래그를 먼저 반영한 뒤 락을 재산정해야 '편집권 상실'로 오인하지 않는다.
+// 값이 바뀌었으면 true(호출측이 recomputeLock({transition:true}) 로 이어간다).
+function applyMultiEditorFlag(get: GetFn, set: SetFn, next: boolean): boolean {
+	if (get().multiEditor === next) return false;
+	// 첫 권위 동기 전(진입 직후)의 값 채움은 '전환'이 아니므로 안내하지 않는다. 회원은 편집과 무관해 생략.
+	const announce = get().lockSynced && useAuthStore.getState().isAdmin;
+	set({ multiEditor: next });
+	syncRemoteDrag(get);
+	if (announce) {
+		toast(next
+			? "동시 편집이 켜졌어요. 운영진 모두 보드를 편집할 수 있어요"
+			: "동시 편집이 꺼졌어요. 편집하려면 '편집 권한 가져오기'를 눌러 주세요");
+	}
+	return true;
+}
+
+// 실시간 드래그 채널(board-drag)은 운영진 && 동시 편집 && 구독 중일 때만 연다. 조건이 바뀔 때마다 부른다(멱등).
+// 회원·단일 편집 모드는 채널이 없다. hold 해제 기준은 '이 기기 보드가 반영한 서버 버전'(draftsBase) —
+// 동시 편집에서는 드래그·저장 대기 중 원격 적용을 미루므로 boardDraftsVersion(수신 버전)보다 늦을 수 있다.
+function syncRemoteDrag(get: GetFn) {
+	const s = get();
+	const sessionId = getSessionId();
+	const want = s.multiEditor && s._clientId != null && sessionId > 0 && useAuthStore.getState().isAdmin;
+	setRemoteDragLink(want ? {
+		sessionId,
+		name: s._myName ?? getDeviceName(),
+		appliedVersion: () => getDraftsBase(sessionId)?.version ?? get().boardDraftsVersion,
+	} : null);
+}
+
+// 운영진 여부가 늦게 로드되거나 바뀌면 동시 편집 중의 isEditor(=운영진 여부)를 다시 계산한다.
+let authUnsub: (() => void) | null = null;
 
 // ── Broadcast from DB 힌트 → 디바운스 pull (Stage 2) ────────────────────────
 // DB 트리거가 쏜 {v} 힌트를 받으면 로컬 syncVersion 보다 클 때만 짧은 디바운스 후 load_session_state pull.
@@ -397,8 +434,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		// RPC를 먼저 await 후 점유 확정 — 낙관적 선점이 직전 보유자 heartbeat row 갱신과 겹쳐 되돌아가는 레이스를 피한다.
 		// 편집 권한 획득은 운영진(isAdmin)만 — 일반 회원은 읽기 전용이라 점유/탈취 불가.
 		if (!useAuthStore.getState().isAdmin) return;
-		const { _clientId, _myName, isEditor, presenceCount } = get();
-		if (isEditor || !_clientId) return;
+		const { _clientId, _myName, isEditor, presenceCount, multiEditor } = get();
+		if (isEditor || !_clientId || multiEditor) return; // 동시 편집에는 가져올 락이 없다
 		const name = _myName ?? "기기";
 		// 체감 지연의 원인: 본래 takeover RPC 왕복을 await한 뒤에야 편집 모드로 전환했다(직전 보유자 heartbeat와
 		// 겹쳐 되돌아가는 레이스 회피용). 그런데 혼자(presenceCount<=1)면 경쟁 보유자가 없어 그 레이스가 없으므로,
@@ -428,13 +465,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		// 첫 편집 시 자유 상태면 점유(boardStore.claimEdit 경로). 남이 유효 lease면 점유 안 함(보기 전용 유지).
 		// 편집 권한 획득은 운영진(isAdmin)만 — 일반 회원은 자유 상태여도 점유하지 않고 읽기 전용 유지.
 		if (!useAuthStore.getState().isAdmin) return;
-		const { isEditor, lockFree, _clientId } = get();
-		if (isEditor || !lockFree || !_clientId) return;
+		const { isEditor, lockFree, _clientId, multiEditor } = get();
+		if (isEditor || !lockFree || !_clientId || multiEditor) return;
 		claimNow(get, set);
 	},
 	handoffEditor: async (toClientId, toName) => {
-		const { _clientId, isEditor } = get();
-		if (!isEditor || !_clientId) return;
+		const { _clientId, isEditor, multiEditor } = get();
+		if (!isEditor || !_clientId || multiEditor) return; // 동시 편집에는 넘길 락이 없다
 		const res = await dbBoardHandoffEditor(getSessionId(), _clientId, toClientId, toName, LEASE_SECONDS);
 		if (!res) return; // 양도 실패(이미 내가 보유자 아님)
 		// 권위적 변경 — in-flight heartbeat .then 무효화(양도 직후 stale 갱신 방지, setEditorCache가 lockEpoch 증가)
@@ -444,6 +481,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			leaseUntilMs: res.leaseUntil ? Date.parse(res.leaseUntil) : Date.now() + LEASE_SECONDS * 1000,
 		});
 		recomputeLock(get, set, { suppressLossNotice: true }); // 자발적 양도 → 보기 전용(뺏김 알림 X)
+	},
+	setBoardMultiEditor: async (on) => {
+		if (!useAuthStore.getState().isAdmin) return false;
+		const sid = getSessionId();
+		if (!sid) return false;
+		const applied = await dbAdminSetBoardMultiEditor(sid, on);
+		if (applied == null) {
+			toast("동시 편집 설정을 바꾸지 못했어요. 다시 시도해 주세요", { variant: "error" });
+			return false;
+		}
+		// 다른 기기는 sessions 행 이벤트로 받는다. 이 기기는 스냅샷으로 바로 수렴(플래그+editor_* 동시).
+		await get().resyncFromServer();
+		return true;
 	},
 	dismissEditorTakenNotice: () => set({ editorTakenBy: null }),
 	applyDraftsIfNewer: (drafts, version) => applyDraftsIfNewerImpl(get, set, drafts, version),
@@ -521,16 +571,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			if (courtsChanged) patch.courts = reconciledCourts;
 		}
 		if (Object.keys(patch).length) set(patch);
+		// 동시 편집 플래그는 skipLock 이어도 반영한다. 바뀌었으면 같은 스냅샷의 editor_* 로 락도 함께 맞춘다
+		// (토글이 둘을 한 UPDATE 로 바꾸므로, 전환 순간엔 보호할 in-flight claim 이 의미 없다).
+		const flagChanged = applyMultiEditorFlag(get, set, snap.multiEditor === true);
 		// 워치독(skipLock)은 편집 락을 건드리지 않는다 — 편집자의 in-flight 낙관 claim이 주기 pull에
 		// 되돌려지는 것을 막는다. 락 수렴은 라이브 postgres_changes + visibilitychange/재구독 resync가 담당.
-		if (opts?.skipLock) return;
+		if (opts?.skipLock && !flagChanged) return;
 		// 서버 스냅샷이 권위 — in-flight heartbeat .then 무효화(setEditorCache가 lockEpoch 증가)
 		setEditorCache({
 			clientId: snap.editorClientId,
 			name: snap.editorName,
 			leaseUntilMs: snap.editorLeaseUntil ? Date.parse(snap.editorLeaseUntil) : 0,
 		});
-		recomputeLock(get, set, { suppressLossNotice: opts?.suppressLossNotice });
+		recomputeLock(get, set, { suppressLossNotice: opts?.suppressLossNotice, transition: flagChanged });
 		// 첫 권위 락 동기 완료 — 진입 auto-claim 게이트 해제(이제 lockFree 가 서버 진실을 반영).
 		if (!get().lockSynced) set({ lockSynced: true });
 	},
@@ -594,11 +647,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					// 별 스트림인 session_players delta 의 적용을 함의하지 않기 때문. applied 전진을 여기서 하면 선수
 					// delta 유실 시 힌트 pull 이 스킵돼 fast-heal 이 무력화된다(리뷰 B-high). applied 는 pull(resync)에서만.
 					if (row.sync_version != null) noteSeenSyncVersion(row.sync_version);
+					// 동시 편집 플래그를 락보다 먼저 반영한다 — 토글은 editor_* 정리와 같은 행 이벤트로 온다.
+					const flagChanged = row.board_multi_editor !== undefined
+						&& applyMultiEditorFlag(get, set, row.board_multi_editor === true);
 					// 편집 락은 실제로 바뀐 row 에서만 갱신 — sync-bump-only UPDATE 의 lockEpoch churn/가짜 뺏김 방지.
-					if (editorRowChanged(row)) {
-						setCachedEditorFromRow(row);
-						recomputeLock(get, set);
-					}
+					const editorChanged = editorRowChanged(row);
+					if (editorChanged) setCachedEditorFromRow(row);
+					if (editorChanged || flagChanged) recomputeLock(get, set, { transition: flagChanged });
 				},
 				// 재구독(재연결) 직후 1회 재조회 — SUBSCRIBED~첫 UPDATE 공백 보정(drafts+버전+락 모두).
 				// 자동 점유 없음 — 편집자가 되려면 편집 동작(드래그)이나 '편집 권한 가져오기' 버튼 필요.
@@ -647,12 +702,18 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		resetEditorCache(); // 세션 경계 — 이전 세션의 in-flight heartbeat .then 무효화(lockEpoch 증가)
 		recomputeLock(get, set); // 초기 lockFree; SUBSCRIBED 후 onResync가 서버 권위로 채움
 		installLockLifecycle(get);
+		authUnsub?.();
+		authUnsub = useAuthStore.subscribe((auth, prev) => {
+			if (auth.isAdmin !== prev.isAdmin && get().multiEditor) { recomputeLock(get, set); syncRemoteDrag(get); }
+		});
+		syncRemoteDrag(get);
 	},
 
 	unsubscribe: () => {
-		const { _channel, _metaChannel, _clientId, isEditor } = get();
+		const { _channel, _metaChannel, _clientId, isEditor, multiEditor } = get();
 		// 편집 보유자면 명시 해제(best-effort). 실패(crash 등)해도 "편집 권한 가져오기"(takeover)로 회수.
-		if (isEditor && _clientId) {
+		// 동시 편집에서는 보유한 락이 없어 해제하지 않는다(대기 중인 저장은 큐가 계속 처리한다).
+		if (isEditor && _clientId && !multiEditor) {
 			const sessionId = getSessionId();
 			// 마지막 드롭이 저장되기 전에 락을 해제하면 trailing 저장이 유실되거나 락을 재점유한다.
 			void flushBoardDrafts().finally(() => {
@@ -661,7 +722,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				return dbBoardReleaseEditor(sessionId, _clientId);
 			});
 		}
+		setRemoteDragLink(null);
 		teardownLockLifecycle();
+		authUnsub?.();
+		authUnsub = null;
 		clearSyncPull();
 		resetEditorCache();
 		if (_channel) supabase.removeChannel(_channel);
@@ -681,6 +745,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			lockFree: true,
 			editorTakenBy: null,
 			lockSynced: false,
+			multiEditor: false,
 		});
 	},
 }));

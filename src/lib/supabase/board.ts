@@ -25,6 +25,8 @@ export interface SessionStateSnapshot {
 	editorClientId: string | null;
 	editorName: string | null;
 	editorLeaseUntil: string | null;
+	/** 운영진 동시 편집 플래그(sessions.board_multi_editor). 구서버(키 없음)면 false 로 본다. */
+	multiEditor?: boolean;
 }
 
 export async function dbLoadSessionState(
@@ -48,6 +50,7 @@ export async function dbLoadSessionState(
 		editor_client_id: string | null;
 		editor_name: string | null;
 		editor_lease_until: string | null;
+		board_multi_editor?: boolean | null;
 	};
 	return {
 		drafts: d.board_drafts ?? { teams: [], reservations: [] },
@@ -60,6 +63,7 @@ export async function dbLoadSessionState(
 		editorClientId: d.editor_client_id ?? null,
 		editorName: d.editor_name ?? null,
 		editorLeaseUntil: d.editor_lease_until ?? null,
+		multiEditor: d.board_multi_editor === true,
 	};
 }
 
@@ -217,4 +221,23 @@ export async function dbBoardReleaseEditor(
 		p_client_id: clientId,
 	});
 	if (error) console.error("dbBoardReleaseEditor:", error);
+}
+
+/**
+ * 운영진 동시 편집 플래그 토글(admin_set_board_multi_editor). 플래그와 editor_* 정리가 한 UPDATE 라
+ * 다른 기기에는 같은 sessions 행 이벤트로 함께 도착한다. 성공 시 적용된 값, 실패면 null.
+ */
+export async function dbAdminSetBoardMultiEditor(
+	sessionId: number,
+	on: boolean,
+): Promise<boolean | null> {
+	const { data, error } = await supabase.rpc("admin_set_board_multi_editor", {
+		p_session_id: sessionId,
+		p_on: on,
+	});
+	if (error) {
+		console.error("dbAdminSetBoardMultiEditor:", error);
+		return null;
+	}
+	return data === true;
 }

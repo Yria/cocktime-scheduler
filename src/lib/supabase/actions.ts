@@ -10,6 +10,24 @@ import { rowToSessionPlayer } from "./transformers";
 import type { SessionPlayerRow } from "./types";
 import { toast } from "../../store/toastStore";
 
+/**
+ * 경기 RPC 서버 가드(20261012000000) 에러 → 사람이 읽을 문구. 해당 없으면 null.
+ * 호출자는 실패 시 서버 권위로 resync 하므로 문구는 '왜 안 됐는지'만 알린다.
+ */
+export function matchGuardMessage(message: string | undefined, action: "start" | "roster"): string | null {
+	if (!message) return null;
+	const suffix = action === "start" ? "경기를 시작하지 않았어요." : "선수 교체를 적용하지 않았어요.";
+	if (message.includes("players already playing")) return `다른 코트에서 경기 중인 선수가 있어요. ${suffix}`;
+	if (message.includes("players not ready")) {
+		return action === "start"
+			? `이미 경기 중이거나 세션에 없는 선수가 있어요. ${suffix}`
+			: `세션에 없는 선수가 있어요. ${suffix}`;
+	}
+	if (message.includes("four distinct players required")) return `빈 자리나 중복된 선수가 있어요. ${suffix}`;
+	if (message.includes("session closed")) return `종료된 세션이에요. ${suffix}`;
+	return null;
+}
+
 export async function dbAssignMatch(
 	sessionId: number,
 	matchId: string,
@@ -36,6 +54,12 @@ export async function dbAssignMatch(
 	if (error) {
 		if (error.message?.includes("admin coverage required")) {
 			toast("운영진 출전 상태가 바뀌었어요. 경기시작을 다시 눌러 확인해 주세요.", { variant: "error" });
+			return false;
+		}
+		const guard = matchGuardMessage(error.message, "start");
+		if (guard) {
+			console.warn("dbAssignMatch: rejected by server guard —", error.message);
+			toast(guard, { variant: "error" });
 			return false;
 		}
 		// 다른 기기가 먼저 같은 코트를 배정한 경우(부분 유니크 인덱스 충돌)
@@ -144,6 +168,12 @@ export async function dbSetMatchRoster(
 	if (error) {
 		if (error.message?.includes("admin coverage required")) {
 			toast("운영진이 최소 한 명은 경기 밖에 남아 있어야 해요. 선수 교체를 적용하지 않았어요.", { variant: "error" });
+			return null;
+		}
+		const guard = matchGuardMessage(error.message, "roster");
+		if (guard) {
+			console.warn("dbSetMatchRoster: rejected by server guard —", error.message);
+			toast(guard, { variant: "error" });
 			return null;
 		}
 		if (error.message?.includes("not editor")) {

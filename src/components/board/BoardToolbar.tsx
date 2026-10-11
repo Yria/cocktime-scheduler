@@ -41,6 +41,9 @@ const BoardToolbar = memo(function BoardToolbar() {
 	const myClientId = useSessionStore((s) => s._clientId);
 	const claimEditor = useSessionStore((s) => s.claimEditor);
 	const handoffEditor = useSessionStore((s) => s.handoffEditor);
+	// 운영진 동시 편집(실험, 세션별). 켜져 있으면 락 UI(넘기기/가져오기) 대신 '동시 편집'을 보여 준다.
+	const multiEditor = useSessionStore((s) => s.multiEditor);
+	const setBoardMultiEditor = useSessionStore((s) => s.setBoardMultiEditor);
 	// 편집 권한 획득은 운영진만 — 일반 회원은 읽기 전용(가져오기 버튼 숨김).
 	const isAdmin = useAuthStore((s) => s.isAdmin);
 	// 일정으로 연 세션은 수동 종료 금지 — 즉석 세션(scheduled_at 없음)만 종료 버튼 노출.
@@ -54,6 +57,8 @@ const BoardToolbar = memo(function BoardToolbar() {
 	const [confirmEnd, setConfirmEnd] = useState(false);
 	// 다른 기기가 편집 중일 때 권한을 "뺏는" 경우만 경고 확인. 빈 자리(자유) 점유는 경고 없음.
 	const [confirmTakeover, setConfirmTakeover] = useState(false);
+	const [showMulti, setShowMulti] = useState(false);
+	const [multiSaving, setMultiSaving] = useState(false);
 	// 숨은 메뉴: 목록 주인 계정이 코트 현황을 길게 누르면 '같이 매칭하지 않기'를 연다(표시 없는 진입점).
 	// 다른 계정에는 핸들러·스타일 차이도 두지 않는다.
 	const avoidOwner = useMatchAvoidStore(s => s.owner);
@@ -91,6 +96,13 @@ const BoardToolbar = memo(function BoardToolbar() {
 		setConfirmTakeover(false);
 		claimEditor();
 	}, [claimEditor]);
+
+	const onToggleMulti = useCallback(async () => {
+		setMultiSaving(true);
+		const ok = await setBoardMultiEditor(!multiEditor);
+		setMultiSaving(false);
+		if (ok) setShowMulti(false);
+	}, [multiEditor, setBoardMultiEditor]);
 
 	const onHandoff = useCallback(
 		(toClientId: string, toName: string) => {
@@ -164,6 +176,25 @@ const BoardToolbar = memo(function BoardToolbar() {
 						);
 					})}
 				</div>
+
+				{/* 동시 편집(실험) — 운영진만. 켜져 있으면 초록으로 표시하고, 누르면 켜기/끄기 시트를 연다. */}
+				{isAdmin && (
+					<button
+						type="button"
+						onClick={() => setShowMulti(true)}
+						aria-label={multiEditor ? "동시 편집 중" : "동시 편집 설정"}
+						data-testid="multi-editor-toggle"
+						style={iconBtn(multiEditor ? "var(--ios-green)" : "var(--text-secondary)")}
+					>
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+							<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+							<circle cx="9" cy="7" r="4" />
+							<path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+							<path d="M16 3.13a4 4 0 0 1 0 7.75" />
+						</svg>
+						{multiEditor && <span>동시 편집</span>}
+					</button>
+				)}
 
 				{/* 세션 설정은 운영진만 — /setup 진입(세션 생성/편성)은 운영진 전용 */}
 				{isAdmin && (
@@ -243,6 +274,31 @@ const BoardToolbar = memo(function BoardToolbar() {
 
 			{showAvoid && avoidOwner && <MatchAvoidModal onClose={() => setShowAvoid(false)} />}
 
+			{showMulti && isAdmin && (
+				<ModalSheet position="center" className="p-6" onClose={() => setShowMulti(false)}>
+					<div className="flex items-center justify-between mb-3">
+						<h3 className="font-bold text-strong text-lg">동시 편집 (실험)</h3>
+						<button type="button" onClick={() => setShowMulti(false)} className="btn-icon-close">✕</button>
+					</div>
+					<p className="text-sm text-muted mb-2">
+						{multiEditor
+							? "지금 이 세션은 운영진 모두가 함께 보드를 편집하고 있어요."
+							: "켜면 이 세션에서 운영진 모두가 편집 권한 없이 함께 보드를 편집해요."}
+					</p>
+					<p className="text-xs text-faint mb-4">
+						이 세션에만 적용돼요. 켜져 있는 동안 운영진은 회원 파티에 참여하지 않아요. 문제가 있으면 끄면 바로 한 명만 편집하는 방식으로 돌아가요.
+					</p>
+					<button
+						type="button"
+						onClick={() => void onToggleMulti()}
+						disabled={multiSaving}
+						className="btn-lq-primary w-full"
+					>
+						{multiSaving ? "바꾸는 중…" : multiEditor ? "동시 편집 끄기" : "동시 편집 켜기"}
+					</button>
+				</ModalSheet>
+			)}
+
 			{showPresence && (
 				<ModalSheet position="center" className="p-6" onClose={() => setShowPresence(false)}>
 					<div className="flex items-center justify-between mb-3">
@@ -264,13 +320,13 @@ const BoardToolbar = memo(function BoardToolbar() {
 										{d.name}{isMe ? " (나)" : ""}
 									</span>
 									<span className="flex items-center gap-1.5">
-										{holds && (
+										{holds && !multiEditor && (
 											<span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
 												편집 중
 											</span>
 										)}
 										{/* 내가 편집자이고 상대가 다른 기기면 편집권 넘기기(서버 권위 양도). */}
-										{isEditor && !isMe && (
+										{isEditor && !isMe && !multiEditor && (
 											<button
 												type="button"
 												onClick={() => onHandoff(d.clientId, d.name)}
@@ -287,14 +343,16 @@ const BoardToolbar = memo(function BoardToolbar() {
 					<p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
 						{!isAdmin
 							? "편집은 운영진만 가능합니다. 일반 회원은 보기 전용입니다."
-							: lockFree
+							: multiEditor
+								? "동시 편집 중입니다. 운영진 모두 편집할 수 있습니다."
+								: lockFree
 								? "현재 아무도 편집하지 않습니다. 편집하면 자동으로 권한을 갖습니다."
 								: isEditor
 									? "내가 편집 권한을 갖고 있습니다."
 									: `${holderName ?? "다른 기기"}님이 편집 중입니다. 권한을 가져오면 상대는 보기 전용이 됩니다.`}
 					</p>
 					{/* 편집 권한 가져오기는 운영진만 — 일반 회원은 읽기 전용이라 버튼 노출 안 함. */}
-					{!isEditor && isAdmin && (
+					{!isEditor && isAdmin && !multiEditor && (
 						<button type="button" onClick={onTakeover} className="btn-lq-primary w-full">
 							편집 권한 가져오기
 						</button>

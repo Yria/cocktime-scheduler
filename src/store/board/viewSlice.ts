@@ -15,7 +15,7 @@ import { useSessionStore } from "../sessionStore";
 import type { BoardState } from "./types";
 import { clampScale } from "./zoom";
 import { clampToStage, gridPos, runSettle } from "./layoutHelpers";
-import { syncState } from "./draftsSync";
+import { refineLocally, syncState } from "./draftsSync";
 
 /** 뷰/레이아웃 슬라이스 — 줌·스테이지 크기·드래그 하이라이트·정렬/흩어짐·풀 초기화·리셋. */
 export type ViewSlice = Pick<
@@ -79,7 +79,8 @@ export const createViewSlice: StateCreator<
 		const ids = new Set(players.map((p) => p.id));
 		if (current.size === ids.size && [...ids].every((id) => current.has(id))) return;
 
-		set((s) => {
+		// 선수 목록(이 기기가 받은 session_players)에 기댄 정리 — 동시 편집에서는 화면만 맞춘다.
+		refineLocally(() => set((s) => {
 			let idx = s.magnets.size;
 			for (const p of players) {
 				if (s.magnets.has(p.id)) continue;
@@ -107,7 +108,7 @@ export const createViewSlice: StateCreator<
 			for (const tid of ghostLostTeamIds) {
 				if (!dissolveIfUnderTwo(s, tid)) clearConfirmIfBelowFull(s, tid);
 			}
-		});
+		}));
 	},
 
 	setTeamAnchor: (teamId, x, y) => {

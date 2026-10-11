@@ -1,6 +1,6 @@
 import type { StateCreator } from "zustand";
 import type { SessionPlayer } from "../../types";
-import type { StagePoint } from "../../types/board";
+import type { BoardDraftsPayload, StagePoint } from "../../types/board";
 import { DEFAULT_VIEWPORT } from "../../lib/board/geometry";
 import { MAGNET_SIZE, TEAM_BOX_BELOW } from "../../lib/board/constants";
 import { canonicalizeDrafts, reconcileMembership } from "../../lib/board/remoteDrafts";
@@ -28,7 +28,23 @@ import { useAppStore } from "../appStore";
 import { toast } from "../toastStore";
 import { rosterSaveKey } from "../../lib/board/matchRosterEdit";
 import type { BoardState } from "./types";
-import { claimEdit, pushDraftsToRemote, serializeBoardDrafts, syncState } from "./draftsSync";
+import { claimEdit, pushDraftsToRemote, refineLocally, serializeBoardDrafts, setDraftsBase, syncState } from "./draftsSync";
+
+/**
+ * 서버 payload 를 이 기기에 적용했을 때의 로컬 투영(부수효과 없음) — 동시 편집 rebase 의 머지 기준.
+ * reconcileMembership(자석 보유·I1/I2/I3 정제)을 자석 사본에 돌려 serialize 한다. 좌표는 payload 원본을 쓴다
+ * (적용하면 applyBoardLayout 이 그 좌표를 그대로 복원한다).
+ */
+export function projectRemoteDrafts(state: BoardState, payload: BoardDraftsPayload): BoardDraftsPayload {
+	const magnets = new Map([...state.magnets].map(([id, m]) => [id, { ...m }]));
+	const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
+	const vw = state.stageW || DEFAULT_VIEWPORT.vw;
+	const vh = state.stageH || DEFAULT_VIEWPORT.vh;
+	const { drafts, reservations } = reconcileMembership(payload, magnets, new Map(), vw, vh, playingIds);
+	const projected = serializeBoardDrafts({ drafts, reservations, magnets, courtAnchors: state.courtAnchors, manualLayout: false });
+	const layout = readBoardLayout(payload.layout);
+	return layout ? { ...projected, layout } : projected;
+}
 
 /** 경기 슬라이스 — 원격 멤버십 적용/자가치유·경기 시작/완료/로스터 수정. */
 export type MatchSlice = Pick<
@@ -48,11 +64,19 @@ export const createMatchSlice: StateCreator<
 		set((state) => dissolveDraft(state, teamId));
 		get().scatterMagnets(ids);
 	},
-	applyRemoteDrafts: (payload) => {
+	applyRemoteDrafts: (payload, version, base) => {
+		// 동시 편집 머지 기준 — '서버 버전 version 을 이 기기에 적용한 직후의 로컬 투영'. 적용이 끝난 뒤(또는
+		// 이미 같아 건너뛸 때) 한 곳에서 기록한다. rebase 는 머지 결과를 그리되 기준은 theirs(base)로 둔다.
+		const recordBase = () => {
+			const sessionId = useAppStore.getState().sessionMeta?.sessionId;
+			if (!sessionId) return;
+			if (base) setDraftsBase(sessionId, version, base.projection, base.raw);
+			else setDraftsBase(sessionId, version, serializeBoardDrafts(get()), payload);
+		};
 		const layout = readBoardLayout(payload.layout);
 		// 명단이 같아도 위치만 바뀐 서버 스냅샷은 적용한다. 좌표가 없는 구버전은 로컬 위치를 유지한다.
 		if (canonicalizeDrafts(payload) === canonicalizeDrafts(serializeBoardDrafts(get()))
-			&& (!layout || JSON.stringify(layout) === JSON.stringify(serializeBoardLayout(get())))) return;
+			&& (!layout || JSON.stringify(layout) === JSON.stringify(serializeBoardLayout(get())))) { recordBase(); return; }
 		// 불변식 I2(경기중 anchor 제거)·I1(중복 제거) 강제를 위해 reconcile에 넘긴다.
 		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 		syncState.applyingRemoteDrafts = true;
@@ -122,11 +146,13 @@ export const createMatchSlice: StateCreator<
 		} finally {
 			syncState.applyingRemoteDrafts = false;
 		}
+		recordBase();
 		// 편집자: reconcile이 불변식 위반(경기중 anchor·중복)을 정제해 로컬이 수신 payload와 달라졌다면
 		// 그 정제 결과를 서버로 영속화한다 — 동시편집 레이스로 유실된 dissolve가 서버 board_drafts에 남아 있어도
 		// (화면은 위에서 이미 정제됨) 서버까지 수렴시켜 새로고침/재구독 시 "유령 팀" 부활을 막는다. 뷰어는 화면만 정제.
+		// 동시 편집에서는 정제가 이 기기의 자석·코트 지식에 기대므로 저장하지 않는다(화면만 정제).
 		const ss = useSessionStore.getState();
-		if (ss.isEditor) {
+		if (ss.isEditor && !ss.multiEditor) {
 			const healed = serializeBoardDrafts(get());
 			if (canonicalizeDrafts(healed) !== canonicalizeDrafts(payload)) {
 				pushDraftsToRemote(healed);
@@ -139,9 +165,10 @@ export const createMatchSlice: StateCreator<
 		// 뷰어에게도 실행해야, 편집자의 '매칭 확정' 직후 match_started(코트) broadcast는 도착했지만 board_drafts
 		// 해체(dissolve)가 아직 안 온 창에서 '코트+유령 팀'이 동시에 보이는 것을 막는다(그 창을 1프레임으로 축소).
 		// 영속화(pushDraftsToRemote)는 편집자만(draftsSync의 !isEditor no-op) → 뷰어 실행은 순수 로컬·CAS 무관.
+		// 동시 편집에서는 화면만 정제한다(refineLocally — 늦게 받은 코트 상태로 남의 배치를 지우지 않게).
 		const playingIds = playingIdsFromCourts(useSessionStore.getState().courts);
 		if (playingIds.size === 0) return;
-		set((s) => {
+		refineLocally(() => set((s) => {
 			for (const [teamId, team] of [...s.drafts]) {
 				if (s.assigningTeamIds.has(teamId)) continue; // 경기시작 진행중 팀은 startMatch가 직접 처리
 				if (!team.anchorMemberIds.some((id) => playingIds.has(id))) continue; // 변경 없음 → 건드리지 않음(멱등)
@@ -160,7 +187,7 @@ export const createMatchSlice: StateCreator<
 					clearConfirmIfBelowFull(s, teamId); // 살아남았지만 4명 미만이면 매칭확정 해제
 				}
 			}
-		});
+		}));
 	},
 
 	startMatch: async (teamId, approvedAdminRoster) => {

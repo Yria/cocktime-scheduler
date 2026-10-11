@@ -23,6 +23,9 @@ vi.mock("../../../store/sessionStore", () => ({ useSessionStore: {
 vi.mock("../../../store/debugStore", () => ({ useDebugStore: { getState: () => ({ openDebug: stores.openDebug }) } }));
 
 import { BoardRuntime, type BoardCallbacks } from "./runtime";
+import { useRemoteDragStore } from "../../../store/remoteDragStore";
+import { useToastStore } from "../../../store/toastStore";
+import type { ProposalComposer, ProposalComposerSnapshot } from "../matchProposals";
 
 class TestCanvas extends EventTarget {
 	style = { touchAction: "" };
@@ -132,6 +135,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	for (const runtime of runtimes) runtime.dispose();
+	useRemoteDragStore.getState().connect(null);
 	vi.useRealTimers(); vi.unstubAllGlobals();
 });
 
@@ -416,5 +420,170 @@ describe("BoardRuntime input and scene integration", () => {
 		runtime.controller.pointerUp({ id: 2, x: 200, y: 450 });
 		expect(board.getState().handleDrop).not.toHaveBeenCalled();
 		expect(frames.size).toBe(0);
+	});
+});
+
+describe("동시 편집 실시간 드래그", () => {
+	beforeEach(() => {
+		// 송신 스로틀은 Date.now 기준이라 시계까지 가짜로 돌린다(프레임 시각은 직접 넘긴다).
+		vi.useRealTimers();
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+	});
+	function connect(connId = "m") {
+		const send = vi.fn<(key: string, phase: string, x: number, y: number) => void>();
+		useRemoteDragStore.getState().connect({ connId, name: "나", send }, () => 0);
+		return send;
+	}
+	const remote = (k: string, ph: "start" | "move" | "end" | "cancel", c = "z", s = 1, x = 300, y = 300) =>
+		useRemoteDragStore.getState().receive({ k, ph, x, y, c, n: "남운영", s });
+
+	it("포트가 없으면(회원·단일 편집) 아무것도 보내지 않는다", () => {
+		const { runtime } = setup();
+		const send = vi.fn();
+		runtime.controller.pointerDown({ id: 1, x: 100, y: 400 });
+		runtime.controller.pointerMove({ id: 1, x: 110, y: 410 });
+		runtime.controller.pointerUp({ id: 1, x: 160, y: 430 });
+		expect(send).not.toHaveBeenCalled();
+		expect(useRemoteDragStore.getState().port).toBeNull();
+	});
+
+	it("start·end 는 즉시, move 는 250ms 스로틀(trailing)·4px 미만 생략으로 보낸다", () => {
+		const { runtime } = setup();
+		const send = connect();
+		runtime.controller.pointerDown({ id: 1, x: 100, y: 400 });
+		runtime.controller.pointerMove({ id: 1, x: 110, y: 410 });
+		expect(send.mock.calls).toEqual([["free:a", "start", 100, 400]]);
+		runtime.controller.pointerMove({ id: 1, x: 130, y: 420 });
+		expect(send).toHaveBeenCalledTimes(1); // start 직후 250ms 안 — trailing 으로 미룬다
+		vi.advanceTimersByTime(250);
+		expect(send.mock.calls[1]).toEqual(["free:a", "move", 130, 420]);
+		vi.advanceTimersByTime(300);
+		runtime.controller.pointerMove({ id: 1, x: 132, y: 421 }); // 4px 미만
+		vi.advanceTimersByTime(300);
+		expect(send).toHaveBeenCalledTimes(2);
+		runtime.controller.pointerMove({ id: 1, x: 150, y: 430 }); // 250ms 지난 뒤 첫 move 는 leading 으로 즉시
+		expect(send.mock.calls[2]).toEqual(["free:a", "move", 150, 430]);
+		runtime.controller.pointerUp({ id: 1, x: 160, y: 430 });
+		expect(send.mock.calls[3]).toEqual(["free:a", "end", 160, 430]);
+		vi.advanceTimersByTime(1000);
+		expect(send).toHaveBeenCalledTimes(4);
+	});
+
+	it("취소는 cancel 을 보낸다", () => {
+		const { runtime } = setup();
+		const send = connect();
+		runtime.controller.pointerDown({ id: 1, x: 100, y: 400 });
+		runtime.controller.pointerMove({ id: 1, x: 110, y: 410 });
+		window.dispatchEvent(new Event("blur"));
+		expect(send.mock.calls.at(-1)?.[1]).toBe("cancel");
+	});
+
+	it("개인 제안 작성 드래그(제안 카드·멤버·작성 모드 자유 자석)는 보내지 않는다", () => {
+		const { runtime, callbacks } = setup({ editor: false });
+		const snapshot: ProposalComposerSnapshot = { enabled: true, groups: [{ id: "G", playerIds: ["a", "b"], anchor: { x: 200, y: 180 } }],
+			sendingIds: new Set(), proposals: [], anchors: new Map(), resolvingIds: new Set(), viewerId: "me", isAdmin: false };
+		const proposals = { getSnapshot: () => snapshot, subscribe: () => () => {}, drop: vi.fn(), dropSubmitted: vi.fn(() => false),
+			removeSubmittedMember: vi.fn(), move: vi.fn(), removeMember: vi.fn(), removeGroup: vi.fn(), submit: vi.fn() } satisfies ProposalComposer;
+		runtime.setCallbacks({ ...callbacks, proposals });
+		const send = connect();
+		const drag = (id: number, x: number, y: number) => {
+			runtime.controller.pointerDown({ id, x, y });
+			runtime.controller.pointerMove({ id, x: x + 10, y: y + 10 });
+			expect(runtime.getSnapshot().drag).not.toBeNull();
+			runtime.controller.pointerUp({ id, x: x + 20, y: y + 20 });
+		};
+		drag(1, 200, 90); // 제안 카드
+		drag(2, 165, 145); // 제안 멤버
+		drag(3, 248, 400); // 작성 모드의 자유 자석
+		expect(proposals.move).toHaveBeenCalledTimes(1);
+		expect(send).not.toHaveBeenCalled();
+	});
+
+	it("다른 운영진이 잡은 항목·그 카드의 멤버는 집을 수 없고, 원본은 흐리게·미리보기는 따로 그린다", () => {
+		const { runtime, board } = setup();
+		addTeam();
+		const send = connect();
+		remote("free:c", "start");
+		remote("team:T", "start", "y");
+		expect(runtime.getSnapshot().remoteHeld).toEqual(new Set(["free:c", "team:T"]));
+		expect(runtime.getSnapshot().remote.map((item) => [item.key, item.view.kind, item.name])).toEqual([
+			["free:c", "magnet", "남운영"], ["team:T", "card", "남운영"]]);
+		runtime.controller.pointerDown({ id: 1, x: 248, y: 400 });
+		runtime.controller.pointerMove({ id: 1, x: 270, y: 420 });
+		runtime.controller.pointerUp({ id: 1, x: 300, y: 450 });
+		runtime.controller.pointerDown({ id: 2, x: 165, y: 145 }); // 잡힌 카드의 멤버
+		runtime.controller.pointerMove({ id: 2, x: 180, y: 160 });
+		runtime.controller.pointerUp({ id: 2, x: 200, y: 300 });
+		expect(board.getState().handleDrop).not.toHaveBeenCalled();
+		expect(board.getState().detachMember).not.toHaveBeenCalled();
+		expect(send).not.toHaveBeenCalled();
+		remote("free:c", "cancel", "z", 2);
+		runtime.controller.pointerDown({ id: 3, x: 248, y: 400 });
+		runtime.controller.pointerMove({ id: 3, x: 270, y: 420 });
+		runtime.controller.pointerUp({ id: 3, x: 300, y: 450 });
+		expect(board.getState().handleDrop).toHaveBeenCalledTimes(1);
+	});
+
+	it("원격 미리보기는 원본 자리에서 목표로 보간하며 진행 중에는 프레임을 이어 간다", () => {
+		const { runtime } = setup();
+		connect();
+		remote("free:a", "start", "z", 1, 100, 400);
+		remote("free:a", "move", "z", 2, 300, 400);
+		const preview = node();
+		runtime.bindRemotePreview("free:a", preview as unknown as Container);
+		expect(preview.position.set).toHaveBeenLastCalledWith(100, 400);
+		let t = 1000;
+		const step = () => { const callbacks = [...frames.values()]; frames.clear(); t += 16; for (const callback of callbacks) callback(t); };
+		step(); step();
+		expect(preview.x).toBeGreaterThan(100);
+		expect(preview.x).toBeLessThan(300);
+		expect(frames.size).toBe(1);
+		for (let i = 0; i < 200 && frames.size; i++) step();
+		expect(preview.x).toBe(300);
+		expect(frames.size).toBe(0); // 수렴하면 프레임 루프를 멈춘다
+		runtime.unbindRemotePreview("free:a", preview as unknown as Container);
+	});
+
+	it("거의 동시에 같은 항목을 잡으면 연결 id 가 큰 쪽만 놓고 안내한다", () => {
+		const { runtime } = setup();
+		useToastStore.getState().clear();
+		const send = connect("m");
+		runtime.controller.pointerDown({ id: 1, x: 100, y: 400 });
+		runtime.controller.pointerMove({ id: 1, x: 110, y: 410 });
+		remote("free:a", "start", "z"); // 상대 id 가 크다 → 내가 유지
+		expect(runtime.getSnapshot().drag).not.toBeNull();
+		expect(runtime.getSnapshot().remote).toEqual([]); // 내가 끄는 항목은 원격 미리보기로 겹쳐 그리지 않는다
+		remote("free:a", "cancel", "z", 2);
+		remote("free:a", "start", "a", 1); // 상대 id 가 작다 → 내가 놓는다
+		expect(runtime.getSnapshot().drag).toBeNull();
+		expect(send.mock.calls.at(-1)?.[1]).toBe("cancel");
+		expect(useToastStore.getState().items.map((item) => item.message)).toEqual(["남운영님이 잡고 있어요"]);
+	});
+
+	it("먼저 오래 잡고 있었으면 상대 id 가 작아도 놓지 않고, start 를 놓친 상대(먼저 잡은 쪽)에게는 놓는다", () => {
+		const { runtime } = setup();
+		useToastStore.getState().clear();
+		connect("m");
+		runtime.controller.pointerDown({ id: 1, x: 100, y: 400 });
+		runtime.controller.pointerMove({ id: 1, x: 110, y: 410 });
+		vi.advanceTimersByTime(2000);
+		remote("free:a", "start", "a"); // 내 start 를 놓친 상대가 2초 늦게 잡았다 → 상대가 놓을 차례
+		expect(runtime.getSnapshot().drag).not.toBeNull();
+		remote("free:a", "cancel", "a", 2);
+		remote("free:a", "move", "z", 1); // 상대 start 를 놓치고 keepalive 부터 받았다 → 상대가 먼저였다
+		expect(runtime.getSnapshot().drag).toBeNull();
+		expect(useToastStore.getState().items.map((item) => item.message)).toEqual(["남운영님이 잡고 있어요"]);
+	});
+
+	it("좌표만 바뀐 원격 move 는 presentation 을 새로 내지 않는다", () => {
+		const { runtime } = setup();
+		connect("m");
+		remote("free:a", "start", "z", 1, 300, 300);
+		const before = runtime.getSnapshot();
+		expect(before.remote.map((item) => item.key)).toEqual(["free:a"]);
+		remote("free:a", "move", "z", 2, 340, 320);
+		expect(runtime.getSnapshot()).toBe(before);
+		remote("free:b", "start", "y", 1);
+		expect(runtime.getSnapshot()).not.toBe(before); // 항목이 늘면 새로 낸다
 	});
 });

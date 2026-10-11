@@ -29,6 +29,9 @@ export interface SessionRow {
 	editor_client_id: string | null;
 	editor_name: string | null;
 	editor_lease_until: string | null;
+	// 운영진 동시 편집(실험, 마이그레이션 20261012010000). true 면 운영진 전원이 편집자이고 editor_* 는 비어 있다.
+	// 구서버 row 에는 키가 없다(undefined) — 그때는 기존 단일 편집자 모드로 본다.
+	board_multi_editor?: boolean;
 	// board_drafts 낙관적 동시성(쓰기 CAS) + 수신측 단조성 가드 기준. DB NOT NULL DEFAULT 0.
 	board_drafts_version: number;
 	// 코트 배정(matches) 동기화 단조 우산(마이그레이션 20260622130000). 모든 매치 변경 RPC가 ++.

@@ -110,3 +110,40 @@ describe("detectEditorLoss — 편집권 뺏김 전이 감지", () => {
 		expect(detectEditorLoss(false, next, "me")).toBeNull();
 	});
 });
+
+describe("동시 편집(multiEditor) 분기", () => {
+	const held = { clientId: "other", name: "남", leaseUntilMs: 0 };
+	const free = { clientId: null, name: null, leaseUntilMs: 0 };
+
+	it("켜져 있으면 운영진은 editor_client_id 와 무관하게 편집자", () => {
+		expect(computeLockFromRow(free, "me", { multiEditor: true, isAdmin: true }).isEditor).toBe(true);
+		expect(computeLockFromRow(held, "me", { multiEditor: true, isAdmin: true }).isEditor).toBe(true);
+		expect(computeLockFromRow(free, null, { multiEditor: true, isAdmin: true }).isEditor).toBe(true);
+	});
+
+	it("켜져 있어도 회원은 편집자가 아니다(내가 보유자로 적혀 있어도)", () => {
+		expect(computeLockFromRow(free, "me", { multiEditor: true, isAdmin: false }).isEditor).toBe(false);
+		expect(computeLockFromRow({ clientId: "me", name: "나", leaseUntilMs: 0 }, "me", { multiEditor: true, isAdmin: false }).isEditor).toBe(false);
+	});
+
+	it("꺼져 있으면 옵션을 줘도 기존 판정과 같다", () => {
+		for (const editor of [free, held, { clientId: "me", name: "나", leaseUntilMs: 0 }]) {
+			for (const isAdmin of [true, false]) {
+				expect(computeLockFromRow(editor, "me", { multiEditor: false, isAdmin })).toEqual(computeLockFromRow(editor, "me"));
+			}
+		}
+	});
+
+	it("holder/lockFree 는 표시용으로 그대로 남는다", () => {
+		const r = computeLockFromRow(held, "me", { multiEditor: true, isAdmin: true });
+		expect(r).toMatchObject({ holderClientId: "other", holderName: "남", lockFree: false });
+	});
+
+	it("detectEditorLoss: 동시 편집 중이거나 전환 직후면 null", () => {
+		const next: LockInfo = { holderClientId: "other", holderName: "철수", lockFree: false, isEditor: false };
+		expect(detectEditorLoss(true, next, "me")).toBe("철수");
+		expect(detectEditorLoss(true, next, "me", { multiEditor: true })).toBeNull();
+		expect(detectEditorLoss(true, next, "me", { transition: true })).toBeNull();
+		expect(detectEditorLoss(true, next, "me", { multiEditor: false, transition: false })).toBe("철수");
+	});
+});

@@ -63,6 +63,8 @@ export interface SessionState {
 	/** 첫 권위 락 동기(resyncFromServer)가 끝났는지 — 진입 auto-claim 을 실제 락 상태 확인 후로 지연하는 게이트.
 	 * false 동안은 lockFree 가 stale(캐시 미채움)이라 낙관 선점 시 '가짜 편집권 뺏김' 다이얼로그가 뜬다. */
 	lockSynced: boolean;
+	/** 운영진 동시 편집(실험, sessions.board_multi_editor). true 면 isEditor=운영진 여부이고 편집 락(editor_*)을 쓰지 않는다. */
+	multiEditor: boolean;
 
 	/** 서버 권위 재동기화(resyncFromServer) 진행 중 — 포어그라운드 복귀/재연결 시 "동기화 중" 표시용. */
 	boardSyncing: boolean;
@@ -99,6 +101,8 @@ export interface SessionState {
 	claimEditor: () => void;
 	claimEditingIfFree: () => void;
 	handoffEditor: (toClientId: string, toName: string) => Promise<void>;
+	/** 운영진 전용 — 이 세션의 동시 편집 플래그를 바꾼다(admin_set_board_multi_editor). 성공 여부 반환. */
+	setBoardMultiEditor: (on: boolean) => Promise<boolean>;
 	/** 편집권 뺏김 다이얼로그 닫기(editorTakenBy=null). */
 	dismissEditorTakenNotice: () => void;
 	/** board_drafts를 단조(새 버전만) 반영 — boardStore 저장 성공/충돌 복구에서 호출. */
@@ -151,6 +155,7 @@ export const initialState = {
 	lockFree: true,
 	editorTakenBy: null as string | null,
 	lockSynced: false,
+	multiEditor: false,
 	boardSyncing: false,
 	_channel: null as RealtimeChannel | null,
 	_metaChannel: null as RealtimeChannel | null,

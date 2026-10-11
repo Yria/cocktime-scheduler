@@ -101,8 +101,16 @@ export interface BoardState {
 	setAutoScale: (v: number) => void;
 	/** 드래그-엔드 후 소스(팀/코트)에서 겹친 자유 자석을 흩어지게 */
 	settleBoard: (source: DragSource) => void;
-	/** 공유된 명단과 저장된 좌표를 로컬에 적용. 좌표가 없는 구버전은 기존 배치 규칙으로 복원. */
-	applyRemoteDrafts: (payload: BoardDraftsPayload) => void;
+	/**
+	 * 공유된 명단과 저장된 좌표를 로컬에 적용. 좌표가 없는 구버전은 기존 배치 규칙으로 복원.
+	 * version 은 payload 의 서버 버전 — 적용 직후 로컬 투영을 동시 편집 머지 기준(draftsBase)으로 기록한다.
+	 * base 를 주면(rebase 가 머지 결과를 그릴 때) 기준은 그 값(theirs)으로 둔다.
+	 */
+	applyRemoteDrafts: (
+		payload: BoardDraftsPayload,
+		version: number,
+		base?: { projection: BoardDraftsPayload; raw: BoardDraftsPayload },
+	) => void;
 	/**
 	 * 불변식 I2 자가 치유(편집자 전용) — 경기중이 된 anchor를 모든 예비팀에서 제거하고, 그 결과 인원이
 	 * 부족해진 팀은 해체한다. 코트 변화(courtSig) 시 SessionBoard가 호출한다. 변경이 생기면 subscribe가

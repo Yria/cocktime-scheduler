@@ -40,6 +40,12 @@ export interface EditorCache {
 	leaseUntilMs: number;
 }
 
+/** 동시 편집 모드(sessions.board_multi_editor). 꺼져 있거나 생략하면 기존 단일 편집자 판정이다. */
+export interface LockMode {
+	multiEditor: boolean;
+	isAdmin: boolean;
+}
+
 export interface LockInfo {
 	holderClientId: string | null;
 	holderName: string | null;
@@ -56,6 +62,7 @@ export interface LockInfo {
 export function computeLockFromRow(
 	editor: EditorCache,
 	myClientId: string | null,
+	opts?: LockMode,
 ): LockInfo {
 	const active = !!editor.clientId;
 	const holderClientId = active ? editor.clientId : null;
@@ -63,7 +70,8 @@ export function computeLockFromRow(
 		holderClientId,
 		holderName: active ? editor.name : null,
 		lockFree: !active,
-		isEditor: active && editor.clientId === myClientId,
+		// 동시 편집(세션 플래그)에서는 운영진이면 편집자다. holder/lockFree 는 표시용으로만 남는다.
+		isEditor: opts?.multiEditor ? opts.isAdmin : active && editor.clientId === myClientId,
 	};
 }
 
@@ -72,12 +80,16 @@ export function computeLockFromRow(
  * 그 자리를 다른 사람이 가져간(next.holderClientId 존재 && 나 아님) 전이일 때 그 사람 이름을 반환한다.
  * lease 만료로 자유(holder=null)가 되거나 내가 계속 보유 중이면 null(뺏김 아님).
  * 자발적 양도(handoffEditor)는 호출측에서 별도로 억제한다(이 함수는 전이만 본다).
+ * 동시 편집 모드이거나 모드 전환 직후(transition)면 항상 null 이다.
  */
 export function detectEditorLoss(
 	prevIsEditor: boolean,
 	next: LockInfo,
 	myClientId: string | null,
+	opts?: { multiEditor?: boolean; transition?: boolean },
 ): string | null {
+	// 동시 편집 중이거나 모드가 막 바뀐 전이는 '뺏김'이 아니다(전환 안내는 별도 토스트).
+	if (opts?.multiEditor || opts?.transition) return null;
 	const lostToOther =
 		prevIsEditor &&
 		!next.isEditor &&

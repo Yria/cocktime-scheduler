@@ -28,7 +28,7 @@ import { useSessionStore } from "../sessionStore";
 import { toast } from "../toastStore";
 import type { BoardState, DragSource } from "./types";
 import { clampToStage, placeArranged, replaceAtSlot, runSettle } from "./layoutHelpers";
-import { claimEdit, currentEditorName, syncState } from "./draftsSync";
+import { claimEdit, currentEditorName, refineLocally, syncState } from "./draftsSync";
 import { reconcileCourtGroups } from "../../lib/board/courtGroups";
 import { nextGroupAnchor } from "../../lib/board/groupGrid";
 import { prefersWaitingDraft } from "../../lib/board/waitingDrafts";
@@ -76,7 +76,8 @@ export const createMembershipSlice: StateCreator<
 	ensureCourtGroups: () => {
 		const courts = useSessionStore.getState().courts;
 		if (!courts.length) return;
-		set(s => reconcileCourtGroups(s, courts));
+		// 코트 그룹 정합은 이 기기의 코트 목록에 기댄다 — 동시 편집에서는 화면만 맞춘다.
+		refineLocally(() => set(s => reconcileCourtGroups(s, courts)));
 	},
 	// 합류 대기팀은 여기서 채우지 않는다(경기 완료 때만, completeMatch). 코트 버튼에서 먼저 채우면
 	// 빈 코트가 쓸 자유 대기자를 대기팀이 가져가고, 방금 만든 대기팀이 곧바로 같은 사람들로 완성된다.

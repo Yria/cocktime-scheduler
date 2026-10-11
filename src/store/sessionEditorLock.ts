@@ -4,6 +4,7 @@ import {
 	type EditorCache,
 } from "../lib/editLock";
 import { dbBoardClaimEditor, dbBoardReleaseEditor } from "../lib/supabase";
+import { useAuthStore } from "./authStore";
 import { getSessionId, type GetFn, type SetFn } from "./sessionStoreState";
 
 // ── 서버 권위 편집 락 생명주기 (presence 파생 폐기 — 원인2 / 하트비트·침묵 점유 폐기 — Realtime 감축) ──
@@ -51,17 +52,19 @@ export function resetEditorCache() {
  * cachedEditor + 현재 시각으로 락 상태 재산정.
  * 편집자였다가 다른 사람에게 뺏긴 전이면 editorTakenBy(다이얼로그용)를 세팅한다.
  * suppressLossNotice=true(자발적 양도)면 그 알림을 띄우지 않는다.
+ * 동시 편집(multiEditor)이면 isEditor=운영진 여부다. transition=true(모드 전환 직후)면 뺏김 알림을 띄우지 않는다.
  */
-export function recomputeLock(get: GetFn, set: SetFn, opts?: { suppressLossNotice?: boolean }) {
+export function recomputeLock(get: GetFn, set: SetFn, opts?: { suppressLossNotice?: boolean; transition?: boolean }) {
 	const myClientId = get()._clientId;
 	const prevIsEditor = get().isEditor;
-	const info = computeLockFromRow(cachedEditor, myClientId);
+	const multiEditor = get().multiEditor;
+	const info = computeLockFromRow(cachedEditor, myClientId, { multiEditor, isAdmin: useAuthStore.getState().isAdmin });
 	set(info);
 	if (info.isEditor) {
 		// 내가 (다시) 편집자가 되면 떠 있던 뺏김 알림은 닫는다.
 		if (get().editorTakenBy) set({ editorTakenBy: null });
 	} else if (!opts?.suppressLossNotice) {
-		const takenBy = detectEditorLoss(prevIsEditor, info, myClientId);
+		const takenBy = detectEditorLoss(prevIsEditor, info, myClientId, { multiEditor, transition: opts?.transition });
 		if (takenBy) set({ editorTakenBy: takenBy });
 	}
 }
@@ -123,8 +126,9 @@ export function installLockLifecycle(get: GetFn) {
 	// crash/강제종료면 해제가 안 나가 락이 붙잡히지만 "편집 권한 가져오기"(takeover)로 항상 회수 가능.
 	if (pageHideHandler) window.removeEventListener("pagehide", pageHideHandler);
 	pageHideHandler = () => {
-		const { _clientId, isEditor } = get();
-		if (isEditor && _clientId) void dbBoardReleaseEditor(getSessionId(), _clientId);
+		const { _clientId, isEditor, multiEditor } = get();
+		// 동시 편집에서는 보유한 락이 없다(editor_* 미사용) — 해제 호출을 보내지 않는다.
+		if (isEditor && _clientId && !multiEditor) void dbBoardReleaseEditor(getSessionId(), _clientId);
 	};
 	window.addEventListener("pagehide", pageHideHandler);
 

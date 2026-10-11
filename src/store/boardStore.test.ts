@@ -176,7 +176,7 @@ describe("합류 대기 자리와 경기 완료 자동 채움", () => {
 		expect(payload.teams.find(t => t.id === ids[0])!.waitForCompletion).toBe(true);
 		board.reset();
 		board.initializeFromPool([...h.players.values()]);
-		board.applyRemoteDrafts(payload);
+		board.applyRemoteDrafts(payload, 0);
 		expect(useBoardStore.getState().drafts.get(ids[0])!.waitForCompletion).toBe(true);
 		await board.completeMatch(1);
 		expect(useBoardStore.getState().drafts.get(ids[0])!.anchorMemberIds).toHaveLength(4);
@@ -656,7 +656,7 @@ describe("코트에 고정된 그룹", () => {
 		useBoardStore.getState().applyRemoteDrafts({ teams: [
 			{ id: "court-1", courtId: 1, memberIds: ["a"], createdMs: 1 },
 			{ id: "court-2", courtId: 2, memberIds: [], createdMs: 2 },
-		], reservations: [] });
+		], reservations: [] }, 0);
 		useBoardStore.getState().dismissTeam("court-1");
 		expect(useBoardStore.getState().drafts.get("court-1")).toMatchObject({ courtId: 1, anchor: groupGridAnchor(0), anchorMemberIds: [] });
 		expect(useBoardStore.getState().drafts.get("court-2")?.anchorMemberIds).toEqual([]);
@@ -1570,7 +1570,7 @@ describe("1인 팀 금지 — ghost가 빠지는 로컬 경로", () => {
 		useBoardStore.getState().applyRemoteDrafts({
 			teams: [{ id: "SOLO", memberIds: ["x"], createdMs: 1 }],
 			reservations: [],
-		});
+		}, 0);
 
 		const s = useBoardStore.getState();
 		const x = s.magnets.get("x")!;
@@ -1747,7 +1747,7 @@ describe("예약(ghost) 구조 정합 — anchor xor ghost / 중복 / 동기화 
 				{ id: "r2", playerId: "g", teamId: "T2", createdMs: 4 }, // g:T2 (유지될 것)
 				{ id: "r3", playerId: "g", teamId: "T2", createdMs: 5 }, // g:T2 중복 → 버려야
 			],
-		});
+		}, 0);
 		const st = useBoardStore.getState();
 		expect([...st.reservations.values()].filter((r) => r.playerId === "p")).toHaveLength(0); // anchor라 ghost 없음
 		const gRes = [...st.reservations.values()].filter((r) => r.playerId === "g");
@@ -1775,7 +1775,7 @@ describe("saved board layout", () => {
 		board.bindSession(1);
 		board.initializeFromPool([player("a"), player("b")]);
 		board.setStageSize(320, 600);
-		board.applyRemoteDrafts(JSON.parse(JSON.stringify(saved)));
+		board.applyRemoteDrafts(JSON.parse(JSON.stringify(saved)), 0);
 		board.ensureCourtGroups();
 		expect(serializeBoardDrafts(useBoardStore.getState())).toEqual(saved);
 		expect(useBoardStore.getState().manualLayout).toBe(true);
@@ -1793,12 +1793,12 @@ describe("saved board layout", () => {
 			version: 1, teams: { "court-1": { x: 280, y: 410 } }, courts: { "1": { x: 280, y: 410 } },
 			magnets: { a: { x: 700, y: 610 }, absent: { x: 2, y: 3 } },
 		} };
-		board.applyRemoteDrafts(payload);
+		board.applyRemoteDrafts(payload, 0);
 		expect(useBoardStore.getState().drafts.get("court-1")?.anchor).toEqual({ x: 280, y: 410 });
 		expect(useBoardStore.getState().magnets.get("a")).toMatchObject({ x: 700, y: 610 });
 		expect(useBoardStore.getState().magnets.has("absent")).toBe(false);
 		board.applyRemoteDrafts({ ...payload, layout: { ...payload.layout!, teams: { "court-1": { x: NaN, y: -1 } },
-			courts: {}, magnets: { a: { x: Infinity, y: 100 } } } });
+			courts: {}, magnets: { a: { x: Infinity, y: 100 } } } }, 0);
 		expect(useBoardStore.getState().drafts.get("court-1")?.anchor).toEqual({ x: 280, y: 410 });
 		expect(useBoardStore.getState().magnets.get("a")).toMatchObject({ x: 700, y: 610 });
 	});
@@ -1812,7 +1812,7 @@ describe("applyRemoteDrafts — 좌표 없는 구버전 명단은 로컬 위치�
 		useBoardStore.getState().applyRemoteDrafts({
 			teams: [{ id: "T", memberIds: ["a"], createdMs: 1 }],
 			reservations: ["b", "c", "d"].map(id => ({ id: `r-${id}`, playerId: id, teamId: "T", createdMs: 2 })),
-		});
+		}, 0);
 		const s = useBoardStore.getState();
 		expect(s.drafts.get("T")!.anchorMemberIds).toEqual(["a"]);
 		expect(s.reservations.size).toBe(3);
@@ -1829,7 +1829,7 @@ describe("applyRemoteDrafts — 좌표 없는 구버전 명단은 로컬 위치�
 		useBoardStore.getState().applyRemoteDrafts({
 			teams: [{ id: "T1", memberIds: ["a", "b"], createdMs: 1 }],
 			reservations: [{ id: "r1", playerId: "c", teamId: "T1", createdMs: 2 }],
-		});
+		}, 0);
 
 		const s = useBoardStore.getState();
 		expect(s.drafts.size).toBe(1);
@@ -1853,7 +1853,7 @@ describe("applyRemoteDrafts — 좌표 없는 구버전 명단은 로컬 위치�
 		useBoardStore.getState().applyRemoteDrafts({
 			teams: [{ id: "NEW", memberIds: ["a", "c"], createdMs: 5 }],
 			reservations: [],
-		});
+		}, 0);
 
 		const s = useBoardStore.getState();
 		expect(s.drafts.has("OLD")).toBe(false);
@@ -1872,7 +1872,7 @@ describe("applyRemoteDrafts — 좌표 없는 구버전 명단은 로컬 위치�
 		useBoardStore.getState().applyRemoteDrafts({
 			teams: [{ id: "T1", memberIds: ["a", "b"], createdMs: 9 }],
 			reservations: [],
-		});
+		}, 0);
 		const t = useBoardStore.getState().drafts.get("T1")!;
 		expect(t.anchor).toEqual({ x: 300, y: 500 }); // 기존 위치 유지
 		expect([...t.anchorMemberIds].sort()).toEqual(["a", "b"]); // 멤버십은 갱신
@@ -1895,7 +1895,7 @@ describe("applyRemoteDrafts — 좌표 없는 구버전 명단은 로컬 위치�
 		useBoardStore.getState().applyRemoteDrafts({
 			teams: [{ id: "T1", memberIds: ["b", "d"], createdMs: 1 }],
 			reservations: [],
-		});
+		}, 0);
 
 		const s = useBoardStore.getState();
 		const a = s.magnets.get("a")!;
@@ -1919,7 +1919,7 @@ describe("applyRemoteDrafts — 좌표 없는 구버전 명단은 로컬 위치�
 		useBoardStore.getState().applyRemoteDrafts({
 			teams: [{ id: "SOLO", memberIds: ["x"], createdMs: 1 }],
 			reservations: [],
-		});
+		}, 0);
 
 		const s = useBoardStore.getState();
 		const x = s.magnets.get("x")!;
@@ -1962,7 +1962,7 @@ describe("회귀 — applyRemoteDrafts는 사용자 배치 자유 자석을 건�
 		useBoardStore.getState().applyRemoteDrafts({
 			teams: [{ id: "T1", memberIds: ["x", "y"], createdMs: 1 }],
 			reservations: [],
-		});
+		}, 0);
 		expect(useBoardStore.getState().magnets.get("x")!.teamId).toBe("T1");
 		expect(useBoardStore.getState().magnets.get("y")!.teamId).toBe("T1");
 		// 버그면 settleFreeMagnets가 u를 팀 박스 밖으로 밀어냄. 수정 후엔 그대로.
@@ -1973,7 +1973,7 @@ describe("회귀 — applyRemoteDrafts는 사용자 배치 자유 자석을 건�
 		useBoardStore.getState().setStageSize(2000, 2000);
 		// 지름 이내로 가깝게 둔 두 자유 자석 — 예전 코드면 settle이 분리해버림.
 		seed({ magnets: [mag("u", null, 500, 500), mag("v", null, 505, 500)] });
-		useBoardStore.getState().applyRemoteDrafts({ teams: [], reservations: [] });
+		useBoardStore.getState().applyRemoteDrafts({ teams: [], reservations: [] }, 0);
 		expect(useBoardStore.getState().magnets.get("u")).toMatchObject({ x: 500, y: 500 });
 		expect(useBoardStore.getState().magnets.get("v")).toMatchObject({ x: 505, y: 500 });
 	});
@@ -2473,7 +2473,7 @@ describe("미리 만든 그룹의 코트 배정", () => {
 		expect(queued().map(t => t.anchor)).toEqual([groupGridAnchor(2), groupGridAnchor(3)]);
 		const payload = serializeBoardDrafts(useBoardStore.getState());
 		board.reset(); board.initializeFromPool([...h.players.values()]);
-		board.applyRemoteDrafts(payload); board.ensureCourtGroups();
+		board.applyRemoteDrafts(payload, 0); board.ensureCourtGroups();
 		expect(queued().map(t => t.anchorMemberIds)).toEqual([ids.slice(8, 12), ids.slice(12)]);
 	});
 	it("완료 후 매칭을 누른 코트로 먼저 만든 다음 팀부터 옮기고, 그룹만 해제한다", async () => {
