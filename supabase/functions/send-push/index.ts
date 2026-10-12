@@ -175,6 +175,32 @@ function buildBody(
   }
 }
 
+/** 알림 1건의 딥링크(scope 상대경로). */
+function deepLink(n: NotificationPayload): string {
+  // 회비 알림 → /my-dues, 세션 알림 → /session.
+  // 우선참여권 알림은 session_id 를 provenance 로만 달고 있다 — 보드가 아니라 홈(일정 목록)으로
+  // 보내야 바로 쓸 수 있으므로 세션 분기보다 먼저 걸러낸다.
+  if (n.type === "payment_confirmed" || n.type === "dues_unpaid") return "my-dues";
+  if (n.type === "wait_ticket_ready") return "";
+  return n.session_id ? "session" : "";
+}
+
+/** 웹푸시 동시 전송 상한. 정기 공개 묶음(50건 × 기기 수)을 한꺼번에 열지 않는다. */
+const SEND_CONCURRENCY = 20;
+
+async function runPool<T>(items: T[], limit: number, fn: (x: T) => Promise<void>) {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) await fn(items[i++]);
+  });
+  await Promise.all(workers);
+}
+
+// 본문은 두 모양을 받는다:
+//   { notifications: [...] } — 트리거(notify_push_send_batch)가 INSERT 문장 하나의 새 행을 묶어 보낸 것
+//   { id, recipient_member_id, ... } — 단건(이전 행 트리거 형식, 수동 재발송)
+// 묶음 하나에 대해 구독·회차·장소를 **한 번씩만** 조회한다. 2026-10-11 일요일 공개 때 알림마다 따로
+//   실행·조회하던 것이 PostgREST 연결을 바닥내 앱 전체가 25초 멈췄다(마이그레이션 20261012030000).
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });
@@ -184,109 +210,125 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const n = (await req.json()) as NotificationPayload;
+    const body = await req.json();
+    const list: NotificationPayload[] = Array.isArray(body?.notifications)
+      ? body.notifications
+      : [body as NotificationPayload];
+    if (list.length === 0) return json({ sent: 0 });
     const sb = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-    // 수신자의 모든 기기 구독 조회 (service_role → RLS 우회)
+    // 수신자들의 모든 기기 구독 (service_role → RLS 우회)
+    const recipients = [...new Set(list.map((n) => n.recipient_member_id))];
     const { data: subs, error } = await sb
       .from("push_subscriptions")
-      .select("endpoint, p256dh, auth")
-      .eq("member_id", n.recipient_member_id);
+      .select("member_id, endpoint, p256dh, auth")
+      .in("member_id", recipients);
     if (error) throw new Error(`push_subscriptions select: ${error.message}`);
-    if (!subs || subs.length === 0) {
-      return new Response(JSON.stringify({ sent: 0, reason: "no-subscriptions" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+    const subsByMember = new Map<string, typeof subs>();
+    for (const s of subs ?? []) {
+      const arr = subsByMember.get(s.member_id) ?? [];
+      arr.push(s);
+      subsByMember.set(s.member_id, arr);
     }
+    const targets = list.filter((n) => subsByMember.has(n.recipient_member_id));
+    if (targets.length === 0) return json({ sent: 0, reason: "no-subscriptions" });
 
     // 메시지를 풍부하게: 세션 제목·시각·일정 장소 + 카풀 집결지 장소명 조회
-    const ctx: NotifCtx = {};
-    let sessionPlaceId: number | null = null;
-    if (n.session_id != null) {
-      const { data: s } = await sb
+    const sessionIds = [
+      ...new Set(targets.map((n) => n.session_id).filter((x): x is number => x != null)),
+    ];
+    const sessById = new Map<
+      number,
+      { title: string | null; scheduled_at: string | null; place_id: number | null }
+    >();
+    if (sessionIds.length > 0) {
+      const { data: ss } = await sb
         .from("sessions")
-        .select("title, scheduled_at, place_id")
-        .eq("id", n.session_id)
-        .maybeSingle();
-      if (s) {
-        ctx.sessionTitle = s.title;
-        ctx.scheduledAt = s.scheduled_at;
-        sessionPlaceId = s.place_id;
-      }
+        .select("id, title, scheduled_at, place_id")
+        .in("id", sessionIds);
+      for (const s of ss ?? []) sessById.set(s.id, s);
     }
-    const carpoolPlaceId =
-      n.payload && typeof n.payload.place_id === "number"
-        ? n.payload.place_id
-        : null;
-    const placeIds = [sessionPlaceId, carpoolPlaceId].filter(
-      (x): x is number => x != null,
-    );
+    const carpoolPlaceOf = (n: NotificationPayload) =>
+      n.payload && typeof n.payload.place_id === "number" ? n.payload.place_id : null;
+    const placeIds = [
+      ...new Set(
+        targets
+          .flatMap((n) => [
+            n.session_id != null ? sessById.get(n.session_id)?.place_id ?? null : null,
+            carpoolPlaceOf(n),
+          ])
+          .filter((x): x is number => x != null),
+      ),
+    ];
+    const placeName = new Map<number, string>();
     if (placeIds.length > 0) {
-      const { data: pls } = await sb
-        .from("places")
-        .select("id, name")
-        .in("id", placeIds);
-      const byId = new Map((pls ?? []).map((p) => [p.id, p.name]));
-      if (sessionPlaceId != null)
-        ctx.placeName = byId.get(sessionPlaceId) ?? null;
-      if (carpoolPlaceId != null)
-        ctx.carpoolPlaceName = byId.get(carpoolPlaceId) ?? null;
+      const { data: pls } = await sb.from("places").select("id, name").in("id", placeIds);
+      for (const p of pls ?? []) placeName.set(p.id, p.name);
     }
 
     const appServer = await getAppServer();
-    const msg = JSON.stringify({
-      title: "콕타임",
-      body: buildBody(n.type, n.payload, ctx),
-      // 딥링크(scope 상대경로): 회비 알림 → /my-dues, 세션 알림 → /session.
-      // 우선참여권 알림은 session_id 를 provenance 로만 달고 있다 — 보드가 아니라 홈(일정 목록)으로
-      // 보내야 바로 쓸 수 있으므로 세션 분기보다 먼저 걸러낸다.
-      url:
-        n.type === "payment_confirmed" || n.type === "dues_unpaid"
-          ? "my-dues"
-          : n.type === "wait_ticket_ready"
-            ? ""
-            : n.session_id
-              ? "session"
-              : "",
-      tag: `notif-${n.id}`,
-      type: n.type,
-    });
-
-    const stale: string[] = [];
-    await Promise.allSettled(
-      subs.map(async (s) => {
-        try {
-          const subscriber = appServer.subscribe({
-            endpoint: s.endpoint,
-            keys: { p256dh: s.p256dh, auth: s.auth },
-          });
-          await subscriber.pushTextMessage(msg, {});
-        } catch (e) {
-          if (
-            e instanceof webpush.PushMessageError &&
-            (e.isGone() || e.response.status === 404)
-          ) {
-            stale.push(s.endpoint);
+    const jobs: { endpoint: string; p256dh: string; auth: string; msg: string }[] = [];
+    for (const n of targets) {
+      const s = n.session_id != null ? sessById.get(n.session_id) : undefined;
+      const carpoolPlaceId = carpoolPlaceOf(n);
+      const ctx: NotifCtx = s
+        ? {
+            sessionTitle: s.title,
+            scheduledAt: s.scheduled_at,
+            placeName: s.place_id != null ? placeName.get(s.place_id) ?? null : null,
           }
-        }
-      }),
-    );
-    if (stale.length > 0) {
-      await sb.from("push_subscriptions").delete().in("endpoint", stale);
+        : {};
+      if (carpoolPlaceId != null) ctx.carpoolPlaceName = placeName.get(carpoolPlaceId) ?? null;
+      const msg = JSON.stringify({
+        title: "콕타임",
+        body: buildBody(n.type, n.payload, ctx),
+        url: deepLink(n),
+        tag: `notif-${n.id}`,
+        type: n.type,
+      });
+      for (const sub of subsByMember.get(n.recipient_member_id)!) {
+        jobs.push({ endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth, msg });
+      }
     }
 
-    await sb.from("notifications").update({ sent: true }).eq("id", n.id);
+    const stale = new Set<string>();
+    let sent = 0;
+    await runPool(jobs, SEND_CONCURRENCY, async (j) => {
+      try {
+        const subscriber = appServer.subscribe({
+          endpoint: j.endpoint,
+          keys: { p256dh: j.p256dh, auth: j.auth },
+        });
+        await subscriber.pushTextMessage(j.msg, {});
+        sent++;
+      } catch (e) {
+        if (
+          e instanceof webpush.PushMessageError &&
+          (e.isGone() || e.response.status === 404)
+        ) {
+          stale.add(j.endpoint);
+        }
+      }
+    });
+    if (stale.size > 0) {
+      await sb.from("push_subscriptions").delete().in("endpoint", [...stale]);
+    }
 
-    return new Response(
-      JSON.stringify({ sent: subs.length - stale.length }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
+    await sb
+      .from("notifications")
+      .update({ sent: true })
+      .in("id", targets.map((n) => n.id));
+
+    return json({ sent, notifications: targets.length });
   } catch (e) {
     // 어떤 오류든 응답 본문에 노출 → net._http_response.content 로 진단 가능
-    return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : String(e) }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
-    );
+    return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
 });
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}

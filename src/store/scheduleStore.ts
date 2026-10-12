@@ -136,6 +136,27 @@ function enqueueLate<T>(sessionId: number, fn: () => Promise<T>): Promise<T> {
 	return next;
 }
 
+/** 회차별 진행 중인 신청 요청. */
+const joinInFlight = new Set<number>();
+
+async function joinOnce(sessionId: number, useTicket: boolean) {
+	// spending 은 헤더 배지를 잠시 감추는 플래그다 — 어떤 경로로 빠져나가도 반드시 되돌린다.
+	// 켠 채로 새면 티켓이 있는데도 배지가 영구히 사라져 "왜 없어졌지"가 된다.
+	if (useTicket) waitPointActions.setSpending(true);
+	let res: { ok: boolean; error?: string };
+	try {
+		res = await joinSession(sessionId, useTicket);
+	} finally {
+		if (useTicket) waitPointActions.setSpending(false);
+	}
+	if (res.ok) {
+		await reloadAttendances();
+		// 티켓을 안 썼어도 잔액이 바뀌었을 수 있다(서버가 프리패스로 처리했을 수도) — 한 번 맞춘다.
+		void waitPointActions.loadStatus();
+	}
+	return res;
+}
+
 export const scheduleActions = {
 	async load() {
 		useScheduleStore.setState({ loading: true });
@@ -161,21 +182,15 @@ export const scheduleActions = {
 
 	/** 참석 신청. useTicket=true 면 만석일 때 우선참여권(포인트 7점)을 써서 정원 외 자리로 확정한다. */
 	async join(sessionId: number, useTicket = false) {
-		// spending 은 헤더 배지를 잠시 감추는 플래그다 — 어떤 경로로 빠져나가도 반드시 되돌린다.
-		// 켠 채로 새면 티켓이 있는데도 배지가 영구히 사라져 "왜 없어졌지"가 된다.
-		if (useTicket) waitPointActions.setSpending(true);
-		let res: { ok: boolean; error?: string };
+		// 같은 회차에 신청 요청이 이미 떠 있으면 두 번째는 보내지 않는다(연타·다른 버튼 경로).
+		//   결과 처리(재조회·에러 안내)는 먼저 떠난 요청이 맡는다.
+		if (joinInFlight.has(sessionId)) return { ok: true };
+		joinInFlight.add(sessionId);
 		try {
-			res = await joinSession(sessionId, useTicket);
+			return await joinOnce(sessionId, useTicket);
 		} finally {
-			if (useTicket) waitPointActions.setSpending(false);
+			joinInFlight.delete(sessionId);
 		}
-		if (res.ok) {
-			await reloadAttendances();
-			// 티켓을 안 썼어도 잔액이 바뀌었을 수 있다(서버가 프리패스로 처리했을 수도) — 한 번 맞춘다.
-			void waitPointActions.loadStatus();
-		}
-		return res;
 	},
 
 	async cancel(sessionId: number) {

@@ -207,15 +207,34 @@ export async function joinSession(
 	sessionId: number,
 	useTicket = false,
 ): Promise<{ ok: boolean; error?: string }> {
-	const { error } = await supabase.rpc("join_session", {
-		p_session_id: sessionId,
-		p_use_ticket: useTicket,
-	});
-	if (error) {
+	for (let attempt = 1; ; attempt++) {
+		const { error } = await supabase.rpc("join_session", {
+			p_session_id: sessionId,
+			p_use_ticket: useTicket,
+		});
+		if (!error) return { ok: true };
+		// 이미 신청돼 있으면 목적은 이뤄진 것이다. 일요일 18:00 공개 때 응답이 늦어 새로고침·재탭하면
+		//   앞선 요청이 이미 커밋돼 있어서 이 에러가 수십 건 났다(2026-10-11 실측) — 실패로 띄우지 않는다.
+		if (error.message?.includes("already joined")) return { ok: true };
+		// 회차 카운터 잠금 대기 한도(join_session 의 lock_timeout)·일시 과부하는 잠깐 뒤 재시도한다.
+		//   재시도가 앞선 요청과 겹쳐도 위의 already joined 로 수렴하므로 중복 신청은 생기지 않는다.
+		if (attempt < JOIN_MAX_ATTEMPTS && isTransientJoinError(error)) {
+			await new Promise((r) =>
+				setTimeout(r, 300 * attempt + Math.random() * 700),
+			);
+			continue;
+		}
 		console.error("joinSession:", error);
 		return { ok: false, error: error.message };
 	}
-	return { ok: true };
+}
+
+const JOIN_MAX_ATTEMPTS = 4;
+
+/** 55P03 = lock_not_available(lock_timeout), 57014 = statement timeout, 그 외 네트워크·게이트웨이 오류. */
+function isTransientJoinError(error: { code?: string; message?: string }) {
+	if (error.code === "55P03" || error.code === "57014") return true;
+	return /fetch|network|timeout|load failed/i.test(error.message ?? "");
 }
 
 /** 참석 취소. confirmed였으면 대기 1순위 자동 승급(RPC). */
