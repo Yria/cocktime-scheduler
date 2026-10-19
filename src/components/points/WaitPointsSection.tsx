@@ -35,7 +35,7 @@ function entryLabel(e: WaitPointEntry): string {
 		case "join":
 			return "우선참여권 사용";
 		case "early_cancel":
-			return "사전 취소 — 우선참여권 반환";
+			return "시작 전 취소 — 우선참여권 반환";
 		case "admin_cancel":
 			return "운영진 취소 — 우선참여권 반환";
 		case "session_cancelled":

@@ -1,6 +1,6 @@
 import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 // 미진행 회차 정산(20260928000000)을 실제 포인트 마이그레이션 위에서 돌린다.
 // 20260904000000 → 20260905000000 → 새 마이그레이션(두 번 — 재적용 안전)을 순서대로 올리고
@@ -36,6 +36,7 @@ create table attendances (
 	session_id bigint not null references sessions(id) on delete cascade,
 	member_id uuid not null references members(id),
 	status text not null, invited_by uuid, position int,
+	requested_at timestamptz default now() - interval '1 day',
 	confirmed_at timestamptz default now() - interval '1 day', cancelled_at timestamptz,
 	capacity_exempt boolean not null default false, late_minutes int not null default 0,
 	carpool_role text not null default 'none', carpool_seats int, updated_at timestamptz,
@@ -44,7 +45,8 @@ create table attendances (
 create table session_players (
 	id bigserial primary key,
 	session_id bigint not null references sessions(id) on delete cascade,
-	player_id text, member_id uuid, cock_checked boolean not null default false
+	player_id text, member_id uuid, cock_checked boolean not null default false,
+	joined_at timestamptz not null default now()
 );
 create table matches (id bigserial primary key, session_id bigint references sessions(id) on delete cascade);
 create table notifications (
@@ -167,6 +169,9 @@ beforeAll(async () => {
 	const cock = read("20260929010000_wait_points_cock_check_participation.sql");
 	await db.exec(cock);
 	await db.exec(cock);
+	const keep = read("20261020000000_wait_ticket_keep_until_start.sql");
+	await db.exec(keep);
+	await db.exec(keep);
 });
 
 afterAll(async () => {
@@ -363,7 +368,7 @@ it("미진행 회차에 쓴 티켓은 자리를 들고 있든 당일 취소로 �
 	await member(2);
 	await ticketHolder(1); // 자리 유지
 	await ticketHolder(2);
-	await cancelSelf(2, true); // 당일 취소 → 몰수 + 감점(잔액 0 이라 0)
+	await cancelSelf(2, true); // 시작 전 당일 취소 → 감점(잔액 0 이라 0) 후 즉시 환원(20261020000000)
 
 	await setStatus("closed"); // 방치 종료 — 종전에는 환원 경로가 없었다
 
@@ -376,7 +381,7 @@ it("미진행 회차에 쓴 티켓은 자리를 들고 있든 당일 취소로 �
 	expect(await rows(2)).toEqual([
 		{ kind: "spend", delta: -7, reason: "join" },
 		{ kind: "penalty", delta: 0, reason: "day_cancel" },
-		{ kind: "refund", delta: 7, reason: "session_not_held" },
+		{ kind: "refund", delta: 7, reason: "early_cancel" }, // 미진행 정산이 다시 환원하지 않는다
 	]);
 	expect(await balance(2)).toBe(7);
 	// 환원으로 7점이 된 것은 '새로 모은 것'이 아니다 — 알림 없음.
@@ -549,14 +554,15 @@ it("대관 장소 회차의 당일 취소는 종전대로 −1", async () => {
 	expect(await balance(1)).toBe(2);
 });
 
-it("비대관 회차라도 당일 취소한 티켓은 종전대로 몰수, 사전 취소는 환원", async () => {
+it("비대관 회차라도 시작 뒤 당일 취소한 티켓은 몰수, 사전 취소는 환원", async () => {
 	await member(1);
 	await member(2);
 	await atPlace(2);
 	await ticketHolder(1);
 	await ticketHolder(2);
+	await cancelSelf(2, false); // 전날 취소
+	await startBoard([1]);
 	await cancelSelf(1, true);
-	await cancelSelf(2, false);
 	expect(await rows(1)).toEqual([{ kind: "spend", delta: -7, reason: "join" }]);
 	expect(await rows(2)).toEqual([
 		{ kind: "spend", delta: -7, reason: "join" },
@@ -629,4 +635,152 @@ it("콕 확인이 0명이어도 보드가 있으면 시작된 회차 — 미진�
 	await setStatus("closed");
 	for (const n of [1, 2])
 		expect(await rows(n)).toEqual([{ kind: "penalty", delta: -1, reason: "noshow" }]);
+});
+
+// ── 시작 전에는 당일 취소해도 티켓 유지(20261020000000) ──
+it("시작 전 당일 취소: 대관 장소여도 감점이 먼저라 티켓 7점이 그대로 돌아온다", async () => {
+	await member(1);
+	await atPlace(1);
+	await ticketHolder(1);
+	await cancelSelf(1, true);
+	expect(await rows(1)).toEqual([
+		{ kind: "spend", delta: -7, reason: "join" },
+		{ kind: "penalty", delta: 0, reason: "day_cancel" },
+		{ kind: "refund", delta: 7, reason: "early_cancel" },
+	]);
+	expect(await balance(1)).toBe(7);
+	expect(await cached(1)).toBe(7);
+	expect(await scalar("select wait_ticket_spent($1, $2)", [S, uid(1)])).toBe(false);
+});
+
+it("시작 뒤 당일 취소는 종전대로 몰수 + 대관 감점", async () => {
+	await member(1);
+	await member(2);
+	await atPlace(1);
+	await ticketHolder(1);
+	await attend(2, "confirmed");
+	await startBoard([1, 2]);
+	await cancelSelf(1, true);
+	expect(await rows(1)).toEqual([
+		{ kind: "spend", delta: -7, reason: "join" },
+		{ kind: "penalty", delta: 0, reason: "day_cancel" },
+	]);
+	expect(await balance(1)).toBe(0);
+});
+
+it("운영진 제거: 시작 전 당일이면 환원, 시작 뒤 당일이면 몰수", async () => {
+	await member(1);
+	await member(2);
+	await ticketHolder(1);
+	await db.query("select set_config('test.admin', 'true', false)");
+	await db.query("select set_config('test.day_cancel', 'true', false)");
+	await db.query("select admin_cancel_attendance($1, $2)", [S, uid(1)]);
+	expect(await rows(1)).toEqual([
+		{ kind: "spend", delta: -7, reason: "join" },
+		{ kind: "refund", delta: 7, reason: "admin_cancel" },
+	]);
+
+	await db.query("delete from wait_point_ledger where member_id = $1", [uid(1)]);
+	await db.query("update wait_point_balances set balance = 0 where member_id = $1", [uid(1)]);
+	await db.query("delete from attendances where member_id = $1", [uid(1)]);
+	await ticketHolder(1);
+	await attend(2, "confirmed");
+	await startBoard([1, 2]);
+	await db.query("select admin_cancel_attendance($1, $2)", [S, uid(1)]);
+	await db.query("select set_config('test.admin', 'false', false)");
+	expect(await rows(1)).toEqual([{ kind: "spend", delta: -7, reason: "join" }]);
+});
+
+describe("소급 보상(20261020000000 ③)", () => {
+	const KEEP = "20261020000000_wait_ticket_keep_until_start.sql";
+	/** 종전 규칙으로 몰수된 상태를 직접 만든다 — spend 만 있고 refund 가 없다. */
+	async function forfeited(n: number, at: string) {
+		await seedBalance(n, 7);
+		await db.query(
+			"insert into wait_point_ledger(member_id, session_id, kind, delta, balance_after, detail, created_at) values ($1, $2, 'spend', -7, 0, '{\"reason\":\"join\"}', $3)",
+			[uid(n), S, at],
+		);
+		await db.query("update wait_point_balances set balance = 0 where member_id = $1", [uid(n)]);
+	}
+
+	it("시작 전 취소·재신청은 환원하고, 시작 뒤 취소·티켓 자리 유지·늦참은 건드리지 않는다", async () => {
+		for (const n of [1, 2, 3, 4, 5]) await member(n);
+		// 보드 시작 18:00 KST
+		await db.query(
+			"insert into session_players(session_id, player_id, member_id, joined_at) values ($1, 'x', $2, '2026-10-03T18:00:00+09')",
+			[S, uid(9)],
+		);
+		for (const n of [1, 2, 3, 4, 5]) await forfeited(n, "2026-10-01T10:00:00+09");
+		// 1: 시작 전 취소 상태
+		await db.query(
+			"insert into attendances(session_id, member_id, status, cancelled_at) values ($1, $2, 'cancelled', '2026-10-03T15:00:00+09')",
+			[S, uid(1)],
+		);
+		// 2: 시작 전 취소 후 일반 재신청(세션 246 의 모양)
+		await db.query(
+			"insert into attendances(session_id, member_id, status, requested_at) values ($1, $2, 'confirmed', '2026-10-03T15:48:00+09')",
+			[S, uid(2)],
+		);
+		// 3: 시작 뒤 취소 — 정당한 몰수
+		await db.query(
+			"insert into attendances(session_id, member_id, status, cancelled_at) values ($1, $2, 'cancelled', '2026-10-03T19:00:00+09')",
+			[S, uid(3)],
+		);
+		// 4: 티켓 자리를 그대로 들고 있음
+		await db.query(
+			"insert into attendances(session_id, member_id, status, capacity_exempt, exempt_reason, requested_at) values ($1, $2, 'confirmed', true, 'ticket', '2026-10-01T10:00:00+09')",
+			[S, uid(4)],
+		);
+		// 6: 시작 전 취소 → 재신청 → 시작 뒤 다시 취소 — 첫 몰수는 시작 전이었다
+		await member(6);
+		await forfeited(6, "2026-10-01T10:00:00+09");
+		await db.query(
+			"insert into attendances(session_id, member_id, status, requested_at, cancelled_at) values ($1, $2, 'cancelled', '2026-10-03T15:48:00+09', '2026-10-03T19:00:00+09')",
+			[S, uid(6)],
+		);
+		// 5: 늦참으로 사유만 잃음(취소 아님) — requested_at 은 최초 신청 그대로
+		await db.query(
+			"insert into attendances(session_id, member_id, status, requested_at) values ($1, $2, 'late_pool', '2026-10-01T10:00:00+09')",
+			[S, uid(5)],
+		);
+
+		await db.exec(read(KEEP));
+		await db.exec(read(KEEP)); // 재적용해도 한 번
+
+		for (const n of [1, 2, 6]) {
+			expect(await rows(n)).toEqual([
+				{ kind: "spend", delta: -7, reason: "join" },
+				{ kind: "refund", delta: 7, reason: "early_cancel" },
+			]);
+			expect(await balance(n)).toBe(7);
+			expect(await cached(n)).toBe(7);
+		}
+		for (const n of [3, 4, 5]) {
+			expect(await rows(n)).toEqual([{ kind: "spend", delta: -7, reason: "join" }]);
+		}
+	});
+});
+
+it("시작 뒤라도 확정 1시간 안의 취소는 오조작으로 보고 환원한다", async () => {
+	await member(1);
+	await member(2);
+	await ticketHolder(1);
+	await db.query("update attendances set confirmed_at = now() - interval '10 minutes' where member_id = $1", [uid(1)]);
+	await attend(2, "confirmed");
+	await startBoard([1, 2]);
+	await cancelSelf(1, false); // 유예 안이라 당일취소 술어도 false
+	expect(await rows(1)).toEqual([
+		{ kind: "spend", delta: -7, reason: "join" },
+		{ kind: "refund", delta: 7, reason: "early_cancel" },
+	]);
+});
+
+it("시작 뒤 취소는 날짜가 바뀌었어도(당일 술어 false) 몰수", async () => {
+	await member(1);
+	await member(2);
+	await ticketHolder(1);
+	await attend(2, "confirmed");
+	await startBoard([1, 2]);
+	await cancelSelf(1, false);
+	expect(await rows(1)).toEqual([{ kind: "spend", delta: -7, reason: "join" }]);
 });

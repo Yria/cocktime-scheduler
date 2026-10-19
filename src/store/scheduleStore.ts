@@ -197,7 +197,7 @@ export const scheduleActions = {
 		const res = await cancelAttendance(sessionId);
 		if (res.ok) {
 			await reloadAttendances();
-			// 당일 취소 −1 · 사전 취소 티켓 환원이 서버에서 일어난다.
+			// 당일 취소 −1 · 시작 전 취소(당일 포함) 티켓 환원이 서버에서 일어난다.
 			void waitPointActions.loadStatus();
 		}
 		return res;

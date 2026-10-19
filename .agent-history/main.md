@@ -12359,7 +12359,11 @@ I staged the changed files. I left `e2e/accounting.spec.ts` unstaged, because it
 
 **Prompt**: "16명 6,500원으로 다시 나누기" 버튼을 만들지 말고, 취소하거나 이럴때 다이얼로그띄우고 확인누르면 다시처리하게 해
 
-**Answer**: _(응답 대기 중…)_
+**Answer**: DB 배포가 반영됐습니다. 프로덕션에서 직접 확인했습니다.
+- **새 규칙:** 취소 처리 함수가 새 버전으로 바뀌어, 경기 시작 전 취소는 당일이어도 7점이 돌아옵니다.
+- **보상:** 오상진 님(세션 246)에게 +7점 환원이 들어갔고 잔액은 7점입니다. 우선참여권을 바로 다시 쓸 수 있습니다. 환원은 푸시 알림이 가지 않으니 따로 알려주세요.
+
+티켓 사용 확인 창과 포인트 내역 라벨 문구는 아직 예전 그대로 보입니다. 커밋한 뒤 `git push` 하면 반영됩니다. 다른 작업으로 이미 스테이징돼 있던 `apps-script.gs`가 함께 올라가 있으니 커밋할 때 빼거나 같이 넣을지 정하시면 됩니다.
 
 ---
 
@@ -12387,7 +12391,14 @@ To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude
 <usage><agent_count>8</agent_count><agents_done>8</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>773785</subagent_tokens><tool_uses>91</tool_uses><duration_ms>231061</duration_ms></usage>
 </task-notification>
 
-**Answer**: _(응답 대기 중…)_
+**Answer**: The frontend deploy succeeded (GitHub Actions run 39297307124: build and deploy both passed). The new screens are live on ckti.me, and the DB changes went in earlier, so everything is now in production.
+
+For phones that installed the app (PWA), the update may only appear after closing and reopening the app.
+
+When you get a chance, please check these on the real data:
+1. **10/18 19:00 대관 card**: it should show "104,000원 ÷ 16명 = 1인 6,500원", and 자세히 보기 should show 남필립's guest 심동훈 and the hourly participation graph.
+2. **부과 탭 → 부과 명단**: it should show the 납부 전 / 완납 sections with avatar rows, with 이민지 under 부과 취소·면제.
+3. **엔빵 재분배 확인창**: this only appears on the next 엔빵 session where you cancel someone's charge. It was verified in tests and in a rehearsal on production data, but hasn't been triggered by a real cancellation yet.
 
 ---
 
@@ -12503,7 +12514,25 @@ The DB migration (`! supabase db push --linked`) is still not deployed. Until it
 
 **Prompt**: 여기까지 커밋후 배포
 
-**Answer**: _(응답 대기 중…)_
+**Answer**: All changes are committed as `022a10d` on `main`, but the push was blocked by the permission check, so the frontend isn't deployed yet.
+
+Please run the push yourself:
+
+[코드 블록 생략]
+
+GitHub Pages then deploys the frontend automatically. The DB migration is already live, so no further DB deploy is needed.
+
+**What's in the commit (36 files)**
+- 부과 명단 improvements: cancel reasons, the attendance timeline graph, person-chip editing, and the same section + avatar design as the 일정 참여 명단.
+- 현황 '자세히 보기' modal: shows the graph and who invited each guest, and lets you change or cancel a charge in place.
+- 엔빵 card: shows "총액 ÷ 부과 인원 = 1인 금액", plus the re-split confirmation dialog backed by the new server function.
+- Re-issuing charges when a session total is changed after issue, including the preview dialog on the schedule screen. This was already in your working tree, and it went into the same commit.
+- History entry #416 added.
+
+**Checks**
+- Typecheck and production build pass.
+- Unit tests pass (275).
+- Accounting e2e: 46 of 47 pass. The one failure (receipt card height) was already failing before this work.
 
 ---
 
@@ -12513,3 +12542,136 @@ The DB migration (`! supabase db push --linked`) is still not deployed. Until it
 **Action:** 회계 부과 명단 개선·엔빵 재분배·회차 총액 변경 재발행
 
 **Answer:** 부과 명단의 '취소'가 재발행 대체/부과 취소/당일취소를 뭉뚱그리던 문제를 사유별로 분리하고, 참석 변경 이력(ops_audit) 기반 시간별 확정 인원 그래프(취소 점에만 팁)를 추가. 부과 변경은 사람 칩 선택→금액 변경/부과 취소/이월 버튼으로 바꾸고, 부과 탭과 현황 모달 명단을 일정 참가자 명단과 같은 섹션+아바타 행(ChargeRoster 공용)으로 통일. 현황 '자세히 보기' 안에서 그래프·게스트 초대자 표시·금액 변경/부과 취소 처리 가능. 엔빵 카드는 '총액 ÷ 부과 인원 = 1인 금액'을 부과 N명과 같은 값으로 표시하고, 인원이 바뀌어 어긋나면 '재분배 필요'. 엔빵 회차에서 부과 취소로 인원이 바뀌면 확인창을 띄워 서버 RPC dues_respread_court_group(선납/일반 분리·당일취소 line 복원·revision 고정·종료 회차·범위 가드)으로 재발행(20261019010000, 세션 395 보정 포함). 회차 총액을 발행 뒤 바꾸면 취소 후 재발행하는 dues_set_session_fee(20261019000000)와 일정 화면 미리보기 확인창 포함. 리뷰 워크플로 2회로 당일취소 판정·late_pool·자동승격 표기·선납 표식 유실 등 결함 수정.
+
+## #416
+
+**Prompt**: 통장가져오기가 잘 안되는데 한번 확인해봐
+
+**Answer**: I couldn't find a bug in 통장 가져오기 itself. From the logs, it is fetching and reading the files fine; the bank Excel files just contained no new transactions.
+
+**What actually happened (from the logs and DB)**
+- You pressed 통장 가져오기 5 times between 02:18 and 02:51 KST today. Every call succeeded (200) with no errors.
+- Two new statement emails came in today (02:18 and 02:50 KST). Both were downloaded and read.
+- Every transaction in those two Excel files was already in the DB, so 0 new transactions were saved.
+  - The duplicate check uses time + amount + post-transaction balance, so it won't wrongly treat a different transaction as a duplicate.
+- As a result, the latest saved transaction is still **10/19 11:32 KST** (최광준 출금 156,000원).
+
+**What I need from you:** in the Toss app, were there any deposits after 10/19 11:32?
+- **If there were**, the Excel you requested probably has a 조회기간 that ends before then. The current screen only says "가져오기 완료" and never shows the period or how many were new, so you can't tell. Try requesting the Excel again with a period that includes today.
+- **If there weren't**, it's working correctly.
+
+**Two improvements I'd suggest, regardless of the answer**
+1. **Show the result clearly:** replace "가져오기 완료" with something like "엑셀 조회기간 9/20~10/19 · 거래 312건 · 새 거래 0건 · 엑셀 마지막 거래 10/19 11:32", so the cause is visible right away. This needs a change to the `ingest-bank-email` Edge Function, and you'd deploy it with `supabase functions deploy`.
+2. **Stop re-reading old files:** Gmail groups all the Toss emails into one thread, so every press also re-downloads and re-parses earlier statements already in the trash (today, the 02:18 one was read twice). Results don't change, but it's slower and wastes server time. The fix is to skip trashed emails in the Apps Script, which you'd need to save in the Apps Script editor.
+
+Tell me if you want me to go ahead with either.
+
+---
+
+## #417
+
+**Prompt**: 휴지통에 있는거는 건너뛰는것만작업해줘
+
+**Answer**: I've added the skip, but it won't take effect until you paste the updated script into the Apps Script editor and deploy it.
+
+**Change (`supabase/functions/ingest-bank-email/apps-script.gs`)**
+- While reading the emails, it now skips any email already in the trash (`msg.isInTrash()`).
+  - Gmail groups all the Toss emails into one thread, and search returns the whole thread. That's why emails already trashed were being downloaded and parsed again.
+  - Results don't change: it was only re-reading statements whose transactions were already saved, so they were dropped as duplicates.
+- The comment at the top wrongly said "trashed emails don't show up in search", so I corrected it.
+
+**What you need to do:** this file isn't deployed automatically; it runs in Google Apps Script.
+1. Open the Apps Script project linked to the bank Gmail and replace the code with the updated `apps-script.gs`.
+2. **Deploy → 배포 관리 → edit → 새 버전**. Choose a new version of the existing deployment rather than creating a new one, so the URL stays the same.
+
+I couldn't run this in Apps Script myself. After you deploy it, press 통장 가져오기 once. It works if the result is the same as before but finishes faster.
+
+I've staged the change but haven't committed it. If you'd like, I can commit it together with the next task.
+
+---
+
+## #418
+
+**Prompt**: 정산함 정산이 옛날것이 위로 올라오게 하지 않았나?
+
+**Answer**: Yes. The 정산함 list sorts by transaction time, oldest first (`AccountingAdmin.tsx:177`). That change is in the code and in the version deployed today.
+
+I also checked whether the real data could break the sort. Bank transaction times all come in the same format (UTC, `+00:00`), so time order is correct. Transaction IDs don't follow time order, because the Excel file lists newest first, but the sort uses time, not ID.
+
+Two things to check:
+- The 정산함 only shows transactions from the month you're viewing. Older unsettled items from earlier months won't appear at the top; you have to switch to that month.
+- If you see newest first on the 정산함 itself, please send a screenshot. 회계 → 거래 목록 is a different list and is intentionally newest first.
+
+Separately, 통장 가져오기 is working. Your new statement email at 03:00 KST saved 10 new transactions, through 10/20 02:50, including 정민서1018, 전준형두탕게스 and 이지인 500원. So the earlier Excel files simply had nothing newer.
+
+---
+
+## #419
+
+**Prompt**: 티켓써서 입장하기 했을때 실제로 세션이 시작하기전에 취소하면 티켓이 증발하는데 시작하기 전까진 취소해도 유지하게 해줘. 서버 기록 확인해서 위와같은 이유로 날아간 티켓있으면 보상해줘
+
+**Answer**: 타입 체크 통과. 검증 워크플로 완료 알림을 기다리는 중입니다.
+
+---
+
+## #420
+
+**Prompt**: <task-notification>
+<task-id>woi3wuwcx</task-id>
+<tool-use-id>toolu_012ZqBEv8fU67AhYqPNPNiYt</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/2079ced7-c6e6-42ca-b8c3-5aeb545db1f6/tasks/woi3wuwcx.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Adversarially review the wait-ticket keep-until-start migration and compensation" completed</summary>
+<result>[{"title":"Back-compensation misses a ticket forfeited before start when the member rejoined and later cancelled again","severity":"medium","file":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20261020000000_wait_ticket_keep_until_start.sql","detail":"The DO block matches a row through one of two branches: (1) status='cancelled' AND cancelled_at &lt; board_at, or (2) status &lt;&gt; 'cancelled' AND requested_at &gt; spent_at AND requested_at &lt; board_at. cancel_attendance (20260930000000_promote_waitlist_in_active.sql:79-82) overwrites cancelled_at on every cancel but leaves requested_at alone. join_session (20261012020000_join_session_lock_timeout.sql:120) sets requested_at = now() on a re-request. So if a member cancels a second time after the board starts, the row is 'cancelled' with cancelled_at after the start. Branch 1 fails, and branch 2 is skipped because of the status &lt;&gt; 'cancelled' guard. That ticket was still lost before the start under the old C10 rule. The production check that 'matched exactly 1 row (session 246)' used the same predicate, so it cannot see these rows and does not prove nothing else exists. Fix: drop the status guard from branch 2, i.e. (requested_at &gt; spent_at AND requested_at &lt; board_at AND exempt_reason is distinct from 'ticket') OR (status='cancelled' AND cancelled_at &lt; board_at). A re-request before the start implies the cancel before it was also before the start, whatever the row's current status. wait_ticket_spent still prevents a double refund.","scenario":"Same day: ticket join at 04:05, so balance is 0 and a spend row is written. Day-cancel at 15:00 forfeits the ticket under the old rule. Normal rejoin at 15:48 confirms the member and sets requested_at=15:48. The board starts at 18:14. The member day-cancels again at 18:30, so status='cancelled' and cancelled_at=18:30. Branch 1 fails (18:30 &gt; 18:14) and branch 2 is excluded by status. The 7 points lost at 15:00 are never compensated.","lens":"correctness","verdict":{"real":true,"reasoning":"I checked this against the code and the gap is real. In practice it only affects historical rows, which is exactly what the compensation DO block is for.\n\nHow the scenario plays out:\n1. **Ticket join:** `join_session` (20261012020000:96-108) writes a spend of -7 with exempt_reason='ticket'.\n2. **Day-cancel before the start:** under the old C10 rule (20260929000000) the ticket was forfeited. Forfeiting writes no ledger row, so `wait_ticket_spent` (spend count &gt; refund count, 20260904000000:261) stays true. `cancel_attendance` sets cancelled_at=now() and leaves exempt_reason in place (20260930000000:78-84).\n3. **Normal rejoin:** this is allowed because 'already joined' only blocks confirmed or waitlisted rows. It overwrites requested_at=now(), exempt_reason=null and cancelled_at=null (20261012020000:118-124).\n4. **Board starts.**\n5. **Second day-cancel:** this sets status='cancelled' and cancelled_at to a time after the board started. `wait_ticket_on_cancel` sees spent=true and a day-cancel, so under the old rule it forfeits again, which writes nothing.\n\nThe resulting row has status='cancelled', cancelled_at &gt; board_at, requested_at in (spent_at, board_at) and exempt_reason null. Branch 1 of the DO block fails because cancelled_at is after the start. Branch 2 is excluded by its `status &lt;&gt; 'cancelled'` guard. The 7 points lost at step 2 are therefore never refunded.\n\nThe reasoning behind the fix holds. join_session only accepts a re-request after the previous cancel, so a requested_at later than spent_at proves the ticket seat was released no later than requested_at, regardless of the row's current status. The `exempt_reason is distinct from 'ticket'` guard still excludes rows that re-joined with a new ticket; for those, requested_at equals the new spend's transaction now(), so it is not greater than max(spent_at) either.\n\nDouble refunds stay impossible: each refund makes `wait_ticket_spent` false, and the loop writes at most one refund per (session, member).\n\nThe production check that found exactly 1 row used the same predicate, so it could not have found rows like these. Whether any exist in production is still unverified.\n\nOne residual edge case remains, and it is minor: someone who used a ticket, cancelled, re-joined with a second ticket, and then lost the second ticket after the start. The first ticket is not covered, and the fix does not cover it either.","suggested_fix":"In supabase/migrations/20261020000000_wait_ticket_keep_until_start.sql, in the DO block's WHERE clause, drop the `a.status &lt;&gt; 'cancelled'` condition from branch 2:\n\n    and (\n        (a.status = 'cancelled' and a.cancelled_at &lt; b.board_at)\n        or (a.exempt_reason is distinct from 'ticket'\n            and a.requested_at &gt; sp.spent_at\n            and a.requested_at &lt; b.board_at)\n    )\n\nThen re-run the read-only production count with this predicate and update the comment block in ③, which currently says 1 row (session 246)."}},{"title":"Forfeit is still decided by the day-cancel predicate, so a cancel after the start can still refund the ticket","severity":"low","file":"/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20261020000000_wait_ticket_keep_until_start.sql","detail":"The new rule is 'refund unless (v_day_cancel AND v_started)'. v_day_cancel comes from dues_is_day_cancel_chargeable (20260810000000_day_cancel_grace_1h.sql:40-47). It is true only when the cancel falls on the same KST date as scheduled_at AND (cancelled_at - confirmed_at) &gt;= 1 hour. Two cancels in an already-started session are therefore 'not day-cancel' and get a full 7-point refund: (a) a cancel within 1 hour of confirmation, which happens when join_session ticket-joins an active session (allowed by 20261012020000:49 and :135) or after being promoted mid-session; (b) a cancel after KST midnight in an active session that runs past midnight. The old code behaved the same way, so this is not a regression. It does contradict the rule this migration and the updated docs state, 'once the session has started, cancelling forfeits the ticket'. If 'started' is meant to be the forfeit line, the condition should be 'v_started' alone, or v_started OR the day-cancel predicate.","scenario":"Session is active (board exists). A member ticket-joins at 19:00 (spend 7) and is placed on the board. They play, then cancel at 19:40. confirmed_at was only 40 minutes earlier, so dues_is_day_cancel_chargeable is false and wait_ticket_on_cancel refunds the full 7 points even though the session has started.","lens":"correctness","verdict":{"real":true,"reasoning":"I tried to refute this and couldn't. The scenario can happen, and the code does what the reviewer says.\n\n- **What decides the refund.** In 20261020000000_wait_ticket_keep_until_start.sql, `wait_ticket_on_cancel` refunds when `v_ticket and not (v_day_cancel and v_started)`. `v_day_cancel` comes from `dues_is_day_cancel_chargeable` (20260810000000_day_cancel_grace_1h.sql). That check is true only when the cancel is on the same KST date as `scheduled_at` AND `cancelled_at - confirmed_at &gt;= 1 hour`. If either part is false, the refund happens even when the board exists.\n- **Ticket-joining a started session is allowed.** `join_session` (20261012020000) accepts `status in ('open','active')`. The ticket branch sets `confirmed_at = now()`. When the status is `active`, it also inserts the member straight into `session_players`. So a member who ticket-joins a running session has `confirmed_at` set to the join time.\n- **Cancelling a started session is allowed.** `cancel_attendance` and the admin cancel (20260930000000) block only `closed` and `cancelled` sessions. Both call `wait_ticket_on_cancel`. Nothing blocks a member who is already on the board.\n- **Result.** Ticket-join at 19:00 into an active session, play, cancel at 19:40. The cancel is 40 minutes after confirmation, so `v_day_cancel` is false 
+... (truncated 22745 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/2079ced7-c6e6-42ca-b8c3-5aeb545db1f6/tasks/woi3wuwcx.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/d988a299-daf6-4ad2-8da5-6c99fd6a7adf/subagents/workflows/wf_23f93f1c-01b/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/d988a299-daf6-4ad2-8da5-6c99fd6a7adf/workflows/scripts/verify-ticket-keep-until-start-wf_23f93f1c-01b.js', resumeFromRunId: 'wf_23f93f1c-01b'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>12</agent_count><agents_done>12</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>1115161</subagent_tokens><tool_uses>94</tool_uses><duration_ms>240831</duration_ms></usage>
+</task-notification>
+
+**Answer**: 시작 전에 취소하면 티켓이 유지되도록 바꿨고, 날아간 티켓 보상도 같은 마이그레이션에 넣었습니다. 아직 프로덕션에 배포하지 않았습니다.
+
+## 바뀐 규칙
+| 상황 | 이전 | 이후 |
+|---|---|---|
+| 경기 시작 전에 취소(당일 포함) | 당일이면 7점 날아감 | **7점 환원** |
+| 경기 시작 뒤 취소 | 당일이면 날아감, 자정을 넘기면 오히려 환원됨 | **날아감**(확정 후 1시간 안 취소는 실수로 보고 환원) |
+| 운영진이 뺀 경우 | 당일이면 날아감 | 위와 같은 기준 |
+| 노쇼, 회차 취소·무산 | 그대로 | 그대로 |
+
+- **"시작"의 기준:** 보드가 만들어졌는지([경기 시작]을 눌렀는지)로 판단합니다. 대기 포인트의 다른 규칙도 같은 기준을 씁니다. 세션의 시작 시각 값은 아직 시작 안 한 회차에도 채워져 있어서 기준으로 쓸 수 없었습니다.
+- **제가 정한 부분:** 대관 장소에서 당일 취소하면 −1 감점이 붙습니다. 환원을 먼저 하고 감점하면 6점이 돼서 결국 티켓을 또 못 씁니다. 그래서 감점을 먼저 적고 환원을 나중에 하도록 했습니다. 티켓을 쓴 직후 잔액은 0점이라 실제로 깎이는 점수는 없고 7점이 그대로 돌아옵니다. 다른 방식을 원하시면 말씀해 주세요.
+
+## 서버 기록 확인과 보상
+티켓 사용 기록은 전체에서 1건이었고, 그 1건이 이 문제로 날아간 경우였습니다.
+- 오상진 님, 세션 246(10/15 18:00 성남실내체육관): 10/14 04:05에 티켓 사용 → 당일 시작 전에 취소해서 몰수 → 15:48에 일반 신청으로 다시 들어옴 → 18:14 경기 시작. 현재 잔액은 0점입니다.
+- 배포하면 7점이 환원되고, 내역에는 "시작 전 취소 — 우선참여권 반환"으로 표시됩니다. 환원은 알림 대상이 아니라서 푸시는 가지 않으니, 따로 알려주시면 좋겠습니다.
+- 프로덕션에서 적용 후 결과를 보고 되돌리는 리허설을 해 봤고, 보상 1건, 잔액 0 → 7이 맞게 나왔습니다. 실제 DB는 바뀌지 않았습니다.
+
+## 검증
+- 별도 검증 에이전트들이 찾아낸 문제 중 실제로 확인된 것은 모두 고쳤습니다.
+  - 보상 조건이 "시작 전 취소 → 재신청 → 시작 뒤 다시 취소" 경우를 놓치고 있었습니다. 넓힌 뒤 다시 조회해도 대상은 같은 1건입니다.
+  - 몰수 기준이 날짜에 묶여 있어서, 시작 뒤 자정을 넘긴 취소는 환원되던 구멍이 있었습니다.
+  - 문서와 주석에 이전 규칙 문구가 남은 곳이 있었습니다.
+- 테스트는 전체 1088개가 통과했습니다(대기 포인트 테스트 35개, 새 경우 포함). 타입 체크도 통과했습니다.
+
+## 변경 파일
+- 새 마이그레이션 `20261020000000_wait_ticket_keep_until_start.sql`
+- 티켓 사용 확인 창 문구(`ScheduleCard.tsx`), 포인트 내역 라벨(`WaitPointsSection.tsx`), 주석(`scheduleStore.ts`)
+- 문서: `EXPANSION_SPEC`, `SCHEDULE_LIST_PARTICIPANTS_SPEC`, 회원 안내(`member-guide/wait-points.html`)
+- 테스트: `waitPointsNotHeld.test.ts`
+
+`waitStatus.ts` 상수, 알림, 회계는 영향이 없어 손대지 않았습니다. 파일은 스테이징만 해 두었고 커밋은 하지 않았습니다. 다른 작업으로 이미 스테이징돼 있던 `apps-script.gs`도 함께 올라가 있으니 커밋할 때 참고하세요.
+
+**배포:** `! supabase db push` 후 프론트 문구는 `git push`로 반영됩니다.
+
+---
+
+## #421
+
+**Prompt**: 코드도 배포
+
+**Answer**: _(응답 대기 중…)_
+
+---
