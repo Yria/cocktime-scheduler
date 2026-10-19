@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Pencil, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { fmtMD, won } from "../../lib/dues/duesText";
 import { billingProgress } from "../../lib/dues/overview";
@@ -7,10 +7,63 @@ import {
 	type BillingPerson,
 	groupParticipation,
 } from "../../lib/dues/participation";
+import { TARGET_LABEL } from "../../lib/dues/sessionSettle";
+import { splitDrift, splitPerHead } from "../../lib/dues/splitDrift";
 import { groupSummary, memberLabel } from "../../lib/dues/summary";
 import type { AccountingData } from "../../lib/dues/types";
 import { readAccountingParticipation } from "../../lib/supabase/dues";
 import AccountingDetailModal from "./AccountingDetailModal";
+import AttendanceTimeline from "./AttendanceTimeline";
+import { RosterRow, RosterSection } from "./ChargeRoster";
+import ChargeVoucher from "./ChargeVoucher";
+import type { OperationDraft } from "./OperationDialog";
+import { useAttendanceLog } from "./useAttendanceLog";
+import { useRespreadPrompt } from "./useRespreadPrompt";
+
+/** 대관 명단 모달 위의 시간별 확정 인원 그래프(참석 변경 기록은 열 때 한 번 읽는다). */
+function GroupTimeline({
+	data,
+	sessionId,
+}: {
+	data: AccountingData;
+	sessionId: number;
+}) {
+	const { log, error } = useAttendanceLog(sessionId, true);
+	if (error) return <p className="ac-tl-empty">{error}</p>;
+	if (!log) return <p className="ac-tl-empty">참석 기록 불러오는 중…</p>;
+	return (
+		<AttendanceTimeline log={log} nameOf={(id) => memberLabel(data, id)} />
+	);
+}
+
+const num = (v: unknown) => (typeof v === "number" && v > 0 ? v : null);
+
+/**
+ * 엔빵 회차의 "총액 ÷ 인원 = 1인 금액". 인원은 카드의 '부과 N명'과 **같은 값**(지금 유효한 부과 수)이고,
+ * 1인 금액은 그 인원으로 서버 규칙(10원 절상·정액 근처 스냅)을 다시 계산한다. 발행 당시 기준
+ * (basis.head·per_head)은 부과를 취소해도 그대로라 화면 숫자끼리 어긋난다(세션 395: ÷17 vs 부과 16명).
+ * 아직 발행 전이면 참석 기록의 대상 수로 보여 준다.
+ */
+function splitFormula(
+	basis: Record<string, unknown>,
+	settle:
+		| { mode: string; total: number | null; targetCount: number }
+		| undefined,
+	charged: number,
+	flatFee: number | null,
+): { total: number; head: number; perHead: number; snapped: boolean } | null {
+	const split = settle?.mode === "split" ? settle : undefined;
+	const total = num(basis.total) ?? num(split?.total);
+	const head = charged || num(split?.targetCount);
+	if (!total || !head) return null;
+	const perHead = splitPerHead(total, head, flatFee);
+	return {
+		total,
+		head,
+		perHead,
+		snapped: perHead !== Math.ceil(total / head / 10) * 10,
+	};
+}
 
 function Progress({
 	paid,
@@ -52,14 +105,32 @@ export default function AccountingOverview({
 	ym,
 	sessionLabels,
 	onNavigate,
+	disabled,
+	onDone,
+	onPendingChange,
 }: {
 	data: AccountingData;
 	ym: string;
 	sessionLabels: Map<number, string>;
 	onNavigate: (page: "inbox" | "charge" | "ledger") => void;
+	disabled: boolean;
+	onDone: () => Promise<void>;
+	onPendingChange: (pending: boolean) => void;
 }) {
 	const [feeOpen, setFeeOpen] = useState(false);
 	const [groupOpen, setGroupOpen] = useState<string | null>(null);
+	// 명단 모달 안에서 한 사람 부과를 고치는 흐름: 행의 [변경] → 처리 선택 → 같은 모달에서 전표.
+	const [picked, setPicked] = useState<string | null>(null);
+	const [voucher, setVoucher] = useState<OperationDraft | null>(null);
+	const respread = useRespreadPrompt(data);
+	const openVoucher = (draft: OperationDraft) => {
+		respread.watch(draft);
+		setVoucher(draft);
+	};
+	const closeDetail = () => {
+		setPicked(null);
+		setVoucher(null);
+	};
 	const groups = useMemo(
 		() =>
 			data.groups
@@ -120,97 +191,211 @@ export default function AccountingOverview({
 	const unpaidPeople = fee.rows.filter(
 		(r) => r.remaining > 0 && r.remaining !== r.later,
 	).length;
+	// 명단은 앱의 참가자 명단(SessionParticipantsModal)과 같은 문법으로 그린다 —
+	// 상태별 섹션 머리 + 아바타 한 줄 행. 섹션 머리가 상태를 말하므로 행마다 같은
+	// 상태어 알약을 되풀이하지 않고, 섹션과 다른 상태어(부분 납부·납기 이월·미납 면제 …)만 보인다.
 	const roster = (
 		progress: ReturnType<typeof billingProgress>,
 		people?: BillingPerson[],
-	) => (
-		<div className="ac-overview-roster">
-			{(
-				people ??
-				progress.rows.map(
-					(payment): BillingPerson => ({
-						memberId: payment.charge.member_id,
-						state: "charged",
-						reason: "",
-						payment,
-						label:
-							payment.remaining === 0
-								? "완납"
-								: payment.remaining === payment.later
-									? "납기 이월"
-									: payment.paid > 0
-										? "부분 납부"
-										: "미납",
-					}),
-				)
-			).map((person) => {
-				const r = person.payment;
-				const paidDates = [
-					...new Set(
-						(r?.payments ?? [])
-							.map(
-								(a) =>
-									data.bank.find((t) => t.id === a.bank_tx_id)?.occurred_at,
-							)
-							.filter((date): date is string => !!date),
-					),
-				].sort();
-				const done = person.state !== "excluded" && r?.remaining === 0;
-				const tone =
-					person.state === "excluded" ? "" : done ? "is-ok" : "is-ask";
-				// 거터 글리프(✓/?)와 뜻이 정확히 같은 두 상태어는 화면에서 감춘다.
-				// '부분 납부'·'납기 이월'은 ? 가 구분해 주지 못하므로 그대로 보인다.
-				// 글리프가 aria-hidden 이라 문구 자체는 DOM 에 남겨 보조기기에 전한다.
-				const glyphEcho = person.label === "완납" || person.label === "미납";
-				return (
-					<div key={person.memberId} className="ac-row">
-						<span className={`ac-row-gutter ${tone}`} aria-hidden="true">
-							{person.state === "excluded" ? "—" : done ? "✓" : "?"}
-						</span>
-						<span className="ac-row-body">
-							<strong>{memberLabel(data, person.memberId)}</strong>
-							<span
-								className={`ac-row-state ${tone}${glyphEcho ? " is-glyph-echo" : ""}`}
-							>
-								{person.label}
-							</span>
-							{r && (
-								<span className="ac-row-note">
-									{r.remaining > 0
-										? r.due
-												.map(
-													(d) =>
-														`${d.due_ym.slice(0, 4)}년 ${Number(d.due_ym.slice(5))}월 납기 · ${won(d.remaining)}`,
-												)
-												.join(" / ")
-										: paidDates.length
-											? `${paidDates.map(fmtMD).join(", ")} 입금으로 납부`
-											: "납부 완료"}
-								</span>
-							)}
-							{person.reason && (
-								<span className="ac-row-note">{person.reason}</span>
-							)}
-						</span>
-						{r ? (
-							<strong className="ac-amount">
-								{won(r.remaining || r.paid)}
-							</strong>
-						) : (
-							<span className="ac-amount" aria-hidden="true">
-								—
-							</span>
-						)}
-					</div>
-				);
-			})}
-			{!(people?.length ?? progress.rows.length) && (
-				<p className="ac-overview-empty">발행된 부과가 없습니다.</p>
-			)}
-		</div>
-	);
+		inviters?: Map<string, string>,
+	) => {
+		const list =
+			people ??
+			progress.rows.map(
+				(payment): BillingPerson => ({
+					memberId: payment.charge.member_id,
+					state: "charged",
+					reason: "",
+					payment,
+					label:
+						payment.remaining === 0
+							? "완납"
+							: payment.remaining === payment.later
+								? "납기 이월"
+								: payment.paid > 0
+									? "부분 납부"
+									: "미납",
+				}),
+			);
+		const sections: {
+			title: string;
+			tone: string;
+			rank: number;
+			rows: BillingPerson[];
+		}[] = [];
+		for (const person of list) {
+			const [title, tone, rank]: [string, string, number] =
+				person.state === "excluded"
+					? ["부과 제외", "", 3]
+					: person.state === "unissued"
+						? [person.label, "is-ask", 1]
+						: person.payment?.remaining
+							? ["납부 전", "is-ask", 0]
+							: ["완납", "is-ok", 2];
+			const section = sections.find((s) => s.title === title);
+			if (section) section.rows.push(person);
+			else sections.push({ title, tone, rank, rows: [person] });
+		}
+		sections.sort((a, b) => a.rank - b.rank);
+		return (
+			<div className="ac-overview-roster">
+				{sections.map((section) => (
+					<RosterSection
+						key={section.title}
+						title={section.title}
+						tone={section.tone}
+						count={section.rows.length}
+					>
+						{section.rows.map((person) => {
+							const r = person.payment;
+							const member = data.members.find((m) => m.id === person.memberId);
+							const name = memberLabel(data, person.memberId).split(" · ")[0];
+							const paidDates = [
+								...new Set(
+									(r?.payments ?? [])
+										.map(
+											(a) =>
+												data.bank.find((t) => t.id === a.bank_tx_id)
+													?.occurred_at,
+										)
+										.filter((date): date is string => !!date),
+								),
+							].sort();
+							// '참석 확정'은 종료 후 부과 대상의 기본 사유라 행마다 되풀이하지 않는다
+							// (머리글의 참석 기록 요약이 인원을 센다). 당일취소·보드 참가만 보인다.
+							const reason =
+								person.reason === TARGET_LABEL.attending ? "" : person.reason;
+							const inviter = inviters?.get(person.memberId);
+							const guestNote = member?.guest
+								? inviter
+									? `${memberLabel(data, inviter).split(" · ")[0]} 님이 데려온 게스트`
+									: "게스트 · 초대한 회원 기록 없음"
+								: "";
+							const charge = r?.charge;
+							const editable = !!charge && charge.state === "live";
+							const note = r
+								? r.remaining > 0
+									? r.due
+											.map(
+												(d) =>
+													`${d.due_ym.slice(0, 4)}년 ${Number(d.due_ym.slice(5))}월 납기 · ${won(d.remaining)}`,
+											)
+											.join(" / ")
+									: paidDates.length
+										? `${paidDates.map(fmtMD).join(", ")} 입금으로 납부`
+										: "납부 완료"
+								: "";
+							return (
+								<RosterRow
+									key={person.memberId}
+									data={data}
+									memberId={person.memberId}
+									label={person.label}
+									tone={
+										person.state === "excluded"
+											? ""
+											: r?.remaining === 0
+												? "is-ok"
+												: "is-ask"
+									}
+									// 섹션 머리와 같은 상태어는 화면에서 감추되 DOM 에는 남겨 보조기기·e2e 에 전한다.
+									echo={
+										person.label === section.title ||
+										(section.title === "납부 전" && person.label === "미납")
+									}
+									notes={[note, reason, guestNote]}
+									amount={r ? won(r.remaining || r.paid) : undefined}
+									settled={!!r && r.remaining === 0}
+									trailing={
+										editable && (
+											<button
+												type="button"
+												className="ac-link ac-roster-edit"
+												aria-expanded={picked === charge.id}
+												aria-label={`${name} 부과 변경`}
+												disabled={disabled}
+												onClick={() =>
+													setPicked(picked === charge.id ? null : charge.id)
+												}
+											>
+												변경
+											</button>
+										)
+									}
+								>
+									{editable && picked === charge.id && (
+										<div
+											className="ac-member-charge-actions ac-roster-actions"
+											role="group"
+											aria-label={`${name} 부과 처리`}
+										>
+											<button
+												type="button"
+												disabled={disabled}
+												onClick={() =>
+													openVoucher({
+														type: "replace",
+														chargeIds: [charge.id],
+													})
+												}
+											>
+												<Pencil size={16} aria-hidden="true" />
+												금액 변경
+											</button>
+											<button
+												type="button"
+												className="is-stop"
+												disabled={disabled}
+												onClick={() =>
+													openVoucher({
+														type: "replace",
+														chargeIds: [charge.id],
+														cancelOnly: true,
+													})
+												}
+											>
+												<XCircle size={16} aria-hidden="true" />
+												부과 취소
+											</button>
+										</div>
+									)}
+								</RosterRow>
+							);
+						})}
+					</RosterSection>
+				))}
+				{!list.length && (
+					<p className="ac-overview-empty">발행된 부과가 없습니다.</p>
+				)}
+			</div>
+		);
+	};
+	const voucherView = () =>
+		voucher && (
+			<ChargeVoucher
+				key={JSON.stringify(voucher)}
+				draft={voucher}
+				data={data}
+				viewYm={ym}
+				onClose={(saved) => {
+					closeDetail();
+					if (saved) respread.saved();
+				}}
+				onDone={onDone}
+				onPendingChange={onPendingChange}
+			/>
+		);
+	const inviterMap = (sessionId: number | null) => {
+		const session = context?.sessions.find((s) => s.id === sessionId);
+		return new Map(
+			(session?.attendances ?? []).flatMap((a) =>
+				a.invitedBy ? [[a.memberId, a.invitedBy] as const] : [],
+			),
+		);
+	};
 	return (
 		<div className="ac-overview" aria-label="월별 납부 현황" role="region">
+			{respread.dialog}
 			{drafts > 0 && (
 				<div className="ac-notice is-ask">
 					<span aria-hidden="true">?</span>
@@ -275,9 +460,12 @@ export default function AccountingOverview({
 					<AccountingDetailModal
 						title={`${month} 회비 납부 명단`}
 						subtitle={`부과 ${fee.rows.length}명 · 완납 ${fee.paidCount}명 · 미납 ${unpaidPeople}명 · 납기 이월 ${deferred}명`}
-						onClose={() => setFeeOpen(false)}
+						onClose={() => {
+							setFeeOpen(false);
+							closeDetail();
+						}}
 					>
-						{roster(fee)}
+						{voucher ? voucherView() : roster(fee)}
 					</AccountingDetailModal>
 				)}
 			</section>
@@ -315,6 +503,10 @@ export default function AccountingOverview({
 								? (sessionLabels.get(g.session_id) ?? g.label)
 								: g.label;
 							const open = groupOpen === g.id;
+							// 정액 맞춤 판정에 정액 기본값이 필요해 참석 기록(context)을 읽은 뒤에만 본다.
+							const drift = context
+								? splitDrift(g, data.charges, context.flatFee)
+								: null;
 							return (
 								<div
 									key={g.id}
@@ -356,6 +548,43 @@ export default function AccountingOverview({
 										</span>
 									</div>
 
+									{g.kind === "court" &&
+										(() => {
+											const f = splitFormula(
+												g.basis,
+												participation.attendance,
+												participation.chargedCount,
+												context?.flatFee ?? null,
+											);
+											if (drift)
+												return (
+													<div className="ac-overview-drift" role="alert">
+														<p>
+															<strong>엔빵 재분배 필요</strong> · 부과 인원이{" "}
+															{drift.issuedHead !== null
+																? `${drift.issuedHead}명 → `
+																: ""}
+															{drift.head}명으로 바뀌었습니다.
+														</p>
+														<p>
+															대관 {won(drift.total)} ÷ {drift.head}명 ={" "}
+															<strong>1인 {won(drift.perHead)}</strong> · 지금{" "}
+															{drift.charged.map(won).join("/")}씩 부과되어{" "}
+															{drift.shortfall >= 0
+																? `${won(drift.shortfall)} 덜 걷힘`
+																: `${won(-drift.shortfall)} 더 걷힘`}
+														</p>
+													</div>
+												);
+											if (!f) return null;
+											return (
+												<p className="ac-overview-footnote ac-overview-split">
+													엔빵 · 대관 {won(f.total)} ÷ {f.head}명 ={" "}
+													<strong>1인 {won(f.perHead)}</strong>
+													{f.snapped && " (정액에 맞춤)"}
+												</p>
+											);
+										})()}
 									<div className="ac-overview-group-meta">
 										<span>
 											{progress.rows.length
@@ -364,22 +593,24 @@ export default function AccountingOverview({
 										</span>
 										<strong
 											className={
-												progress.remaining > 0 || missingCount > 0
+												progress.remaining > 0 || missingCount > 0 || drift
 													? "ac-overview-amber"
 													: participation.pendingCount > 0
 														? ""
 														: "ac-in"
 											}
 										>
-											{progress.remaining > 0
-												? `${won(progress.remaining)} 남음`
-												: missingCount > 0
-													? "부과 확인 필요"
-													: participation.pendingCount > 0
-														? "종료 후 부과"
-														: progress.rows.length
-															? "납부 완료"
-															: ""}
+											{drift
+												? "재분배 필요"
+												: progress.remaining > 0
+													? `${won(progress.remaining)} 남음`
+													: missingCount > 0
+														? "부과 확인 필요"
+														: participation.pendingCount > 0
+															? "종료 후 부과"
+															: progress.rows.length
+																? "납부 완료"
+																: ""}
 										</strong>
 									</div>
 									{progress.rows.length > 0 && (
@@ -423,36 +654,74 @@ export default function AccountingOverview({
 										<AccountingDetailModal
 											title={`${label} 부과 명단`}
 											subtitle={`${participation.complete ? "전체" : "발행 명단"} ${participation.totalCount}명 · 부과 ${participation.chargedCount}명 · 제외 ${participation.excludedCount}명`}
-											onClose={() => setGroupOpen(null)}
+											onClose={() => {
+												setGroupOpen(null);
+												closeDetail();
+											}}
 										>
-											{participation.exclusions.length > 0 && (
-												<p className="ac-overview-exclusions">
-													부과 제외 ·{" "}
-													{participation.exclusions
-														.map((e) => `${e.label} ${e.count}명`)
-														.join(" · ")}
-												</p>
+											{voucher ? (
+												voucherView()
+											) : (
+												<>
+													{/* 명단의 근거(참석 기록)와 제외 사유를 한 장의 요약 면으로 묶는다. */}
+													{(participation.attendance ||
+														participation.exclusions.length > 0 ||
+														(g.kind === "court" &&
+															!participation.complete)) && (
+														<dl className="ac-roster-facts">
+															{participation.attendance && (
+																<div className="ac-overview-attendance">
+																	<dt>참석 기록</dt>
+																	<dd>
+																		참석 확정{" "}
+																		{participation.attendance.attendCount}명
+																		{participation.attendance
+																			.targetDayCancelCount > 0 &&
+																			` · 당일취소 부과 ${participation.attendance.targetDayCancelCount}명`}
+																		{participation.attendance.boardAddedCount >
+																			0 &&
+																			` · 보드 추가 ${participation.attendance.boardAddedCount}명`}
+																		{participation.attendance.mode ===
+																			"split" && " · 엔빵은 운영진 포함"}
+																	</dd>
+																</div>
+															)}
+															{participation.exclusions.length > 0 && (
+																<div className="ac-overview-exclusions">
+																	<dt>부과 제외</dt>
+																	<dd>
+																		{participation.exclusions
+																			.map((e) => `${e.label} ${e.count}명`)
+																			.join(" · ")}
+																	</dd>
+																</div>
+															)}
+															{g.kind === "court" &&
+																!participation.complete && (
+																	<div className="ac-overview-attendance is-wide">
+																		<dd>
+																			{context ||
+																			participationError === contextKey
+																				? "참석 기록을 확인할 수 없어 발행 명단만 표시합니다."
+																				: "참석·제외 인원을 확인 중입니다."}
+																		</dd>
+																	</div>
+																)}
+														</dl>
+													)}
+													{g.kind === "court" && g.session_id != null && (
+														<GroupTimeline
+															data={data}
+															sessionId={g.session_id}
+														/>
+													)}
+													{roster(
+														progress,
+														participation.rows,
+														inviterMap(g.session_id),
+													)}
+												</>
 											)}
-											{participation.attendance && (
-												<p className="ac-overview-attendance">
-													현재 참석 기록 · 참석 확정{" "}
-													{participation.attendance.attendCount}명
-													{participation.attendance.targetDayCancelCount > 0 &&
-														` · 당일취소 부과 ${participation.attendance.targetDayCancelCount}명`}
-													{participation.attendance.boardAddedCount > 0 &&
-														` · 보드 추가 ${participation.attendance.boardAddedCount}명`}
-													{participation.attendance.mode === "split" &&
-														" · 엔빵은 운영진 포함"}
-												</p>
-											)}
-											{g.kind === "court" && !participation.complete && (
-												<p className="ac-overview-attendance">
-													{context || participationError === contextKey
-														? "참석 기록을 확인할 수 없어 발행 명단만 표시합니다."
-														: "참석·제외 인원을 확인 중입니다."}
-												</p>
-											)}
-											{roster(progress, participation.rows)}
 										</AccountingDetailModal>
 									)}
 								</div>

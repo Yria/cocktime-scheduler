@@ -28,10 +28,10 @@ import { remaining } from "./duesText";
 // ============================================================
 
 const KST_OFFSET_MS = 9 * 3600 * 1000;
-const GRACE_MS = 3600 * 1000; // 확정 후 1시간 — 즉시 철회는 자리를 점유한 적이 없어 부과 근거가 없다.
+export const GRACE_MS = 3600 * 1000; // 확정 후 1시간 — 즉시 철회는 자리를 점유한 적이 없어 부과 근거가 없다.
 
 /** KST 달력일 키(연-월-일). 서버 술어의 `(ts at time zone 'Asia/Seoul')::date` 대응. */
-function kstDateKey(iso: string): string {
+export function kstDateKey(iso: string): string {
 	const d = new Date(new Date(iso).getTime() + KST_OFFSET_MS);
 	return `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
 }

@@ -26,6 +26,7 @@ export interface SessionAttendanceRow {
 	status: string; // confirmed | late_pool | waitlisted | cancelled
 	confirmedAt: string | null; // 마지막으로 자리를 잡은 시각(grace 기준, 대기는 null)
 	cancelledAt: string | null;
+	invitedBy?: string | null; // 게스트를 데려온 회원(attendances.invited_by)
 }
 
 export interface SessionFeeRow {

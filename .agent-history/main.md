@@ -11799,6 +11799,717 @@ To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude
 
 **Prompt**: 이제 코드 푸쉬해
 
+**Answer**: 이번 작업 파일만 커밋 `6c29583`로 묶어 `main`에 푸시했습니다. 이제 프론트도 새 버전으로 배포됩니다.
+
+- **커밋에 넣은 것:** 신청 처리 파일 2개(`schedule.ts`, `scheduleStore.ts`), `send-push`, 마이그레이션 2개, 히스토리 파일(#380)
+- **빼둔 것:** 회계 화면 변경 11개 파일은 커밋하지 않고 스테이징 상태로 그대로 두었습니다.
+
+이로써 Edge Function, DB, 프론트 배포가 모두 끝났습니다. 효과는 다음 일요일(10/18) 18:00 로그에서 확인하면 됩니다.
+
+---
+
+## #381
+
+**Prompt**: 근데 이거 옵션을 한명은 키고 한명은 끄면 어떻게 동작함?
+
 **Answer**: _(응답 대기 중…)_
 
 ---
+
+## #382
+
+**Prompt**: go on
+
+**Answer**: 이 옵션은 사람마다 따로 갖는 설정이 아닙니다. 회차(세션) 하나에 값이 하나뿐이고(`sessions.board_multi_editor`), 마지막으로 누른 사람의 선택이 그 회차 보드를 보는 모든 운영진 화면에 똑같이 적용됩니다. 그래서 "A는 켠 상태, B는 끈 상태"가 동시에 있을 수는 없습니다.
+
+**A가 켜고 나서 B가 끄는 경우**
+1. A가 켜면 운영진 모두가 바로 편집할 수 있게 됩니다. 각 화면에 "동시 편집이 켜졌어요" 안내가 뜹니다.
+2. B가 끄면 전원이 다시 한 명만 편집하는 기존 방식으로 돌아갑니다.
+   - 끄는 순간 편집권은 아무에게도 없습니다. 서버가 켜고 끌 때마다 편집자 정보를 비우기 때문입니다.
+   - 그래서 모든 운영진이 보기 전용이 되고, "편집하려면 '편집 권한 가져오기'를 눌러 주세요" 안내가 뜹니다. 끄는 사람도 마찬가지입니다.
+   - 편집권을 자동으로 가져가는 건 보드에 처음 들어올 때 한 번뿐이라, 끈 뒤에는 누군가 직접 가져와야 합니다.
+3. 끄는 순간 다른 운영진이 막 옮긴 배치 중 아직 저장되지 않은 것은 버려집니다. 저장 대기 시간이 0.3초라 그보다 짧은 순간의 변경만 해당하고, 화면은 서버에 저장된 상태로 맞춰집니다. 상대가 잡고 있던 자석을 보여 주는 실시간 드래그 표시도 사라집니다.
+
+**둘이 거의 동시에 누르는 경우**
+- 버튼은 각자 화면이 보여 주는 현재 상태의 반대 값을 서버에 보냅니다.
+- 둘 다 꺼진 화면에서 켜기를 누르면 두 번째 요청은 아무것도 바꾸지 않습니다. 서버가 같은 값이면 무시하기 때문입니다.
+- 서로 반대 값을 보냈다면 서버에 나중에 도착한 쪽으로 정해지고, 모든 화면이 곧 그 값으로 맞춰집니다. 화면끼리 상태가 갈라진 채 남지는 않습니다.
+
+**영향받지 않는 것**
+- 회원 화면은 이 옵션과 무관하게 동작합니다.
+- 다른 회차에도 영향이 없습니다.
+
+결론적으로 운영진끼리 상의 없이 켜고 끄면, 끄는 순간 모두의 편집권이 사라지고 아주 짧은 순간의 미저장 배치가 날아갈 수 있습니다. 경기 진행 중에는 한 사람만 이 옵션을 다루는 게 안전합니다.
+
+---
+
+## #383
+
+**Prompt**: 아 한명이 키면 다른사람은 자동적요잉구나
+
+**Answer**: 네, 맞습니다. 한 명이 켜면 그 회차 보드를 보고 있는 운영진 모두에게 바로 적용되고, 각자 화면에 "동시 편집이 켜졌어요" 안내가 뜹니다.
+
+나중에 보드에 들어오는 운영진도 처음부터 동시 편집 상태로 시작합니다. 이 설정은 회차마다 따로 저장되기 때문에 다른 회차에는 영향이 없습니다.
+
+---
+
+## #384
+
+**Prompt**: 2026-10-18 19:00~21:00
+이 세션 금액 넣으려니까 입력이 안되는데 무슨 문제일까
+
+**Answer**: 웹 조사를 4갈래로 나눠 동시에 돌리고 있습니다. 삼성 커뮤니티·국내 커뮤니티 제보, Chromium 버그 트래커, 개발자 우회책, One UI GPU 드라이버 회귀를 각각 찾습니다. 끝나면 결과를 정리해서 알려드리겠습니다.
+
+스크린샷과 코드를 비교해서 지금까지 확인한 점입니다.
+- 깨진 화면은 모달(`ModalSheet`)입니다. 모달 배경 `.lq-sheet`(`backdrop-filter: blur(40px) saturate(200%)`)와 뒤를 어둡게 덮는 딤 `.lq-overlay`(`blur(8px)`) **둘 다 칠해지지 않았습니다**. 그래서 뒤의 일정 목록이 어두워지지 않고 그대로 보이고, 모달 글자만 그 위에 겹쳐 그려졌습니다.
+- 초록 세로줄이 **스크린샷에도 찍혀 있습니다**. 그렇다면 삼성 AMOLED 패널의 초록줄 하드웨어 불량이 아니라, 브라우저가 그린 화면 자체가 깨진 것입니다.
+- 지금 가장 유력한 가설은 업데이트로 바뀐 GPU 드라이버와 Chromium 렌더링 엔진이 충돌해 `backdrop-filter`를 제대로 못 그리는 것입니다. 아직 웹 근거로 확인한 것은 아닙니다.
+
+---
+
+## #385
+
+**Prompt**: [Image #1] OneUI 업데이트하고 삼성폰에서 이래 나온다는데 원인이 뭘까 웹에서 찾아봐
+
+**Answer**: 버그가 아니라 서버 규칙에 막힌 겁니다. 다만 막혔다는 걸 화면이 알려주지 않아서 "입력이 안 되는" 것처럼 보입니다.
+
+**무슨 일이 있었나 (세션 #395, 10/18 19:00~21:00 에이트민턴)**
+- 이 회차는 반복 규칙 없이 따로 만든 일정이고, 코트 총액이 비어 있는 채로 끝났습니다.
+- 총액이 비어 있으면 정액으로 부과되는 규칙이라, 세션을 종료한 순간(10/18 22:01) 대관비가 자동 발행됐습니다. **13명 × 6,000원 = 78,000원**이고, 지금은 아무도 내지 않은 상태입니다.
+- 서버의 총액 저장 함수(`dues_set_session_fee`)는 이미 발행된 부과가 있으면 저장을 거부합니다. 오류 문구는 "발행 이력이 있는 회차입니다. 회비 관리에서 부과 금액을 변경해 주세요"입니다. 화면 안내문에도 "발행 이력이 없는 회차의 총액만 변경할 수 있어요"라고 적혀 있습니다.
+
+**화면에 아무 반응이 없었던 이유 (UI 버그)**
+`SchedulePage.tsx:146`의 `handleFixCourtFee`가 서버 오류를 잡아서 보여주지 않습니다. 그래서 거부돼도 토스트나 오류 문구 없이 그냥 넘어갑니다.
+
+**지금 할 수 있는 방법**
+- **회비 관리**에서 #395 부과 금액을 직접 바꾸면 됩니다. 지금 이게 정식 경로입니다.
+- 실제 총액을 알려주시면 엔빵(10원 절상) 기준으로 1인당 금액을 계산해 드리겠습니다.
+
+**고칠 만한 것 (말씀 주시면 진행)**
+1. 오류를 삼키는 부분을 고쳐서 거부 사유가 토스트로 보이게 하기. 작은 수정입니다.
+2. 아무도 내지 않은 회차면 총액을 바꿀 때 부과를 다시 계산하기. 이건 메모리에 적어둔 "종료 회차 총액 수정이 부과에 반영 안 됨" 문제와 같은 건이라, 서버 마이그레이션이 필요하고 `ACCOUNTING_SPEC.md`도 같이 고쳐야 합니다.
+
+같은 일이 다시 안 생기게 하려면, 따로 만드는 대관 일정은 세션을 종료하기 전에 총액부터 넣어두는 게 안전합니다.
+
+---
+
+## #386
+
+**Prompt**: <task-notification>
+<task-id>wenlaobi5</task-id>
+<tool-use-id>toolu_01T8VEhfWcPpdzad5R7bo6tT</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/4e0adf2b-03a3-4601-acae-46e7c3c0d001/tasks/wenlaobi5.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Research web for Samsung One UI update causing backdrop-filter/modal rendering glitches in Chrome/Samsung Internet" completed</summary>
+<result>{"synth":"# One UI 업데이트 후 삼성폰 모달 깨짐: 원인 분석\n\n## 1. 가장 유력한 원인\n\n**One UI 9.0(Android 17) 업데이트에서 생긴 Chrome의 GPU 렌더링 버그로 보입니다. 확신도는 중상 정도입니다.**\n\n**출처로 확인된 것**\n- **업데이트 시기가 맞습니다.** 한국에서 One UI 9.0 정식판이 S24에 10/6, S23에 10/14부터 배포됐습니다. 사용자가 말한 \"One UI 업데이트\"는 8.x가 아니라 9.0일 가능성이 큽니다.\n- **비슷한 제보가 최근 2주 안에 여러 건 있습니다.**\n  - 삼성멤버스 한국: \"one ui 9.0 업데이트 이후 크롬 오류\". 네이버에서 보라색 줄이 왔다 갔다 하고 화면이 지지직거린다는 내용입니다.\n  - 미국 삼성 커뮤니티: Z Flip 7에서 Chrome에 검정·보라색이 칠해지고 \"black box\"가 생긴다는 글, Chrome이 심하게 깨진다는 글이 있습니다.\n  - S24 Ultra의 9.0 베타에서 Chrome만 깜빡였고, 8.5에서는 없던 증상이라고 합니다.\n- **Firefox로 바꾸니 정상이었다는 제보가 있습니다.** 패널 고장이 아니라 Chrome의 GPU 처리 경로 문제라는 쪽에 힘이 실립니다.\n- **삼성 GPU는 Chrome에서 원래 문제가 잦았습니다.** 예를 들어 Chrome이 삼성 GPU에 Vulkan 방식을 일괄 적용하려다 2025-05에 되돌렸고(crbug 371512561), Xclipse 940에서 초록 화면 깜빡임 버그(crbug 370654173)도 있었습니다.\n- 다만 삼성, Google, Chromium 어느 쪽도 공식 인정이나 패치를 내지 않았습니다. 커뮤니티 원문은 403으로 막혀서 검색 결과 요약만 확인했습니다.\n\n**추론에 해당하는 것**\n- 업데이트로 GPU 드라이버가 바뀌면서 Chrome의 GPU 처리 경로(Vulkan, ANGLE, Graphite 등)에서 합성이 실패했다고 추정합니다. 어느 경로가 원인인지 밝힌 출처는 없습니다.\n- 우리 CSS가 원인이 아니라고 보는 근거는 이렇습니다.\n  - `.dark .lq-sheet`의 배경은 불투명도 0.91~0.95의 rgba 그라데이션입니다(`src/index.css:766`). 이건 일반적인 배경 그리기입니다.\n  - 그런데 blur뿐 아니라 이 배경까지 통째로 안 그려졌습니다.\n  - Chromium에 알려진 backdrop-filter 문제(380416865 비불투명 backdrop root, 40720431 opacity 조합, 중첩 무시)는 \"blur가 안 먹는\" 증상까지만 설명합니다. 배경색 누락, 초록 줄, 파랗게 칠해진 아바타는 설명하지 못합니다.\n  - 그래서 backdrop-filter가 만드는 렌더 표면 전체가 깨진 것으로 봅니다.\n- **경쟁 가설 하나: Samsung Internet 강제 다크모드.** 아바타 색이 바뀐 것은 설명되지만 초록 줄과 배경 누락은 설명되지 않습니다. 사용자가 Samsung Internet을 쓰는 경우에만 가능성이 있습니다.\n\n## 2. 초록 줄: 패널 하드웨어인가, 렌더링인가\n\n**렌더링 문제입니다.** 근거는 다음과 같습니다.\n- 줄이 스크린샷에 찍혀 있습니다. 스크린샷은 패널을 거치기 전 프레임버퍼를 캡처하므로, 화면 패널 결함은 스크린샷에 나오지 않습니다.\n- 유명한 \"green line\"(One UI 8/8.5, 주로 S23)은 화면 전체를 가로지르는 고정된 세로선입니다. 어느 앱에서든 같은 자리에 나오고 부팅 로고에서도 보입니다. 이번처럼 모달 영역에만 생기는 줄과는 다릅니다.\n- 더 확실히 하려면 다이얼러에서 `*#0*#`을 눌러 Red/Green/Blue 단색 테스트를 해 보면 됩니다. 이 화면에서 줄이 없으면 패널은 정상입니다.\n\n## 3. 사용자가 해볼 수 있는 조치 (효과는 모두 미검증)\n\n1. **원인 확인부터 합니다.** 같은 화면을 Samsung Internet과 Firefox에서 열어 봅니다. 브라우저를 바꿔서 정상이면 Chrome 렌더링 문제로 확정됩니다. 그동안은 다른 브라우저를 쓰면 됩니다.\n2. Play 스토어에서 Chrome과 Android System WebView를 최신으로 업데이트합니다. 앱으로 설치한 PWA도 Chrome 엔진을 쓰기 때문입니다. 그다음 Chrome을 강제 종료하고 다시 엽니다.\n3. `chrome://gpu`에서 GPU 정보를 확인합니다. GL_RENDERER(Mali 또는 Xclipse), ANGLE이 Vulkan을 쓰는지, Graphite가 켜져 있는지를 보고 화면을 캡처해 받아둡니다. crbug에 제보할 때 필요합니다.\n4. `chrome://flags`에서 아래 항목을 하나씩 Disabled로 바꿔 봅니다. 하나 바꿀 때마다 Chrome을 완전히 재시작해야 합니다.\n   - `#enable-vulkan`\n   - \"Choose ANGLE graphics backend\"를 OpenGL로\n   - `#skia-graphite` (항목이 있을 때만)\n   - `#enable-gpu-rasterization`\n5. 캐시 삭제와 재부팅은 효과가 없었다는 제보가 대부분입니다. 근본 해결은 삼성 월간 패치나 Chrome 업데이트를 기다리는 것입니다.\n\n## 4. 개발자 쪽 CSS 완화책 (안전한 순서)\n\n1. **시트와 오버레이에 불투명한 기본 배경을 먼저 깝니다.** backdrop-filter가 실패해도 화면이 읽히게 하려는 것입니다. 다만 이번에는 rgba 배경까지 안 그려졌기 때문에, 배경색만으로는 막지 못할 수 있습니다.\n2. **오버레이(`.lq-overlay`)에서 backdrop-filter를 빼고 진한 dim만 남깁니다.** 블러 레이어(시트)가 블러 레이어(오버레이) 안에 겹쳐 있는 구조가 없어지고, 문서 높이 전체를 덮는 거대한 블러 레이어도 사라집니다. 부작용이 가장 작습니다.\n3. **모달이 열려 있는 동안 뒤쪽 glass 요소(sticky 헤더, 카드)의 backdrop-filter를 끕니다.** body에 클래스를 붙이는 방식입니다. 합성 레이어 수와 GPU 메모리 압박이 줄어듭니다.\n4. **시트(`.lq-sheet`)도 blur(40px)와 saturate(200%)를 빼고 불투명 단색으로 바꿉니다.** 디자인 질감은 손해지만 시트가 안 그려질 위험이 가장 확실하게 사라집니다. 버그가 의심되는 레이어를 아예 만들지 않기 때문입니다. 1~3을 해도 해결이 안 되면 이걸로 갑니다.\n5. **안드로이드 삼성 기기만 골라 끄는 방법은 비권장입니다.** UA로 감지해 backdrop-filter를 끄는 식인데, UA 판별이 불안정하고 언젠가 이 코드를 걷어내야 합니다. 쓰더라도 임시로만 쓰세요.\n6. **`will-change`나 `translateZ(0)` 핵은 비권장입니다.** 실기기에서 검증된 적이 없고, 레이어를 더 늘려 오히려 악화시킬 수 있습니다.\n\n검증하려면 영향받은 기기에서 2번만 먼저 적용해 보고, 그래도 깨지면 4번까지 적용하는 순서로 원인 레이어를 좁히면 됩니다.\n\n## 5. 인용한 출처\n\n- https://r1.community.samsung.com/t5/%EC%84%9C%EB%B9%84%EC%8A%A4-%EA%B8%B0%ED%83%80/one-ui-9-0-%EC%97%85%EB%8D%B0%EC%9D%B4%ED%8A%B8-%EC%9D%B4%ED%9B%84-%ED%81%AC%EB%A1%AC-%EC%98%A4%EB%A5%98/m-p/39903703\n- https://us.community.samsung.com/t5/Galaxy-Z-Series/One-UI-9-Color-issues-in-Chrome-browser/m-p/3685155\n- https://us.community.samsung.com/t5/Galaxy-Z-Series/Chrome-glitches-bad-after-the-One-UI-9-update/m-p/3688541\n- https://eu.community.samsung.com/t5/discussion/screen-display-flickering-on-one-ui-9-0-beta/td-p/15344809\n- https://r1.community.samsung.com/t5/galaxy-s/one-ui-9-0-update-galaxy-s25-ultra/m-p/39961727\n- https://www.sammyfans.com/2026/10/06/samsung-galaxy-s24-series-one-ui-9-0-stable-update/\n- https://www.sammyfans.com/2026/10/14/one-ui-9-0-official-update-lands-on-galaxy-s23/\n- https://issues.chromium.org/issues/371512561\n- https://issues.chromium.org/issues/370654173\n- https://issues.chromium.org/issues/380416865\n- https://issues.chromium.org/issues/40720431\n- https://havn.blog/2024/03/14/chromium-and-nested.html\n- https://groups.google.com/a/chromium.org/g/chromium-dev/c/MPe6VZ5ZrnA\n- https://github.com/n1khil69/n1khil69.github.io/pull/37\n- https://www.androidauthority.com/samsung-galaxy-s23-green-line-one-ui-8-5-update-3677371/\n- https://whizz-mobile.com/guides/android-phone-screen-shows-lines/\n- https://citrimobile.com/repair-blog/samsung-green-line-screen-fix-singapore/\n- https://dev.to/burthcer/samsung-internets-dark-mode-turned-my-orange-buttons-dark-red-my-fix-is-only-partial-4f3k\n\n관련 코드는 `/Users/sam/Projects/cocktime-scheduler/src/index.css`(`.lq-overlay` 741행, `.lq-sheet` 751~775행)와 `/Users/sam/Projects/cocktime-scheduler/src/components/common/ModalSheet.tsx`입니다.","raw":[{"summary":"I couldn't find any report of CSS backdrop-filter breaking on Samsung after One UI 8.5 or 9, and no Chromium issue matching this symptom. Everything below comes from search-result snippets: Samsung Community, Samsung Members, PhoneArena and EU Community pages all returned HTTP 403 or a Cloudflare challenge, so I couldn't read the full threads.\n\nThe timing points to One UI 9, not 8.x. One UI 9 (Android 17) went stable on 22 July 2026 and is in a big rollout right now: South Korea about 1–2 weeks ago, US S24 around 2026-10-12, plus Z Fold6/Flip6, A-series and S25. In the last ~2 weeks several users posted about Chrome rendering corruption that started right after updating to One UI 9:\n- Z Flip 7 owners (Samsung US Community): \"black and purple coloring\" on Google results and websites, \"random highlighting\", \"black box and censor stuff\", and Chrome that \"glitches so bad\" it's unusable.\n- A Korean Samsung Members post (about 2026-10-13): with Chrome on Naver, \"보라색 줄이 왔다갔다 하면서 화면이 지지직\" (purple lines moving back and forth, screen crackling like static).\n- One UI 9.0 beta on an S24 Ultra (EU Community, about late September): Chrome flickers and goes black for about 5 seconds; this didn't happen on 8.5 stable.\n- One UI 9 home screen: widgets sometimes turn transparent and half the page dims.\n\nThese symptoms (wrong solid tints, coloured lines and stripes, boxes, transparency, Chrome-only) are close to our case: sheet and dim not painted, green stripes, avatars tinted solid blue. That supports the theory of a Chrome GPU compositing or driver bug introduced by One UI 9, not a bug in our CSS. Nobody named the root cause (Vulkan, ANGLE, Graphite or the GPU driver).\n\nThere's no official fix or acknowledgement from Samsung or Google. Clearing the cache, updating Chrome and restarting reportedly didn't help. The workaround users gave is switching browsers: Firefox worked for one user, Samsung Internet was recommended, and no one reported Samsung Internet being affected.\n\nThe One UI 8.5 \"green line\" reports (S23, May–June 2026) don't match. They are screen-wide, always on and heat or hardware related, not limited to the browser. A separate One UI 8.5 Google-app dark-mode colour bug only changes the palette.\n\nNext steps:\n- Ask the affected user for their exact phone model and One UI version, and whether they use Chrome, Samsung Internet or an installed PWA.\n- Test whether the bug still happens without backdrop-filter, and in Samsung Internet or Firefox.\n- Check whether turning on Accessibility &gt; Visibility enhancements &gt; Reduce transparency and blur changes anything.\n- Consider filing a crbug with the GPU details from c
+... (truncated 37027 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/4e0adf2b-03a3-4601-acae-46e7c3c0d001/tasks/wenlaobi5.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/3844cd12/projects/-Users-sam-Projects-cocktime-scheduler/4e0adf2b-03a3-4601-acae-46e7c3c0d001/subagents/workflows/wf_4963cbb9-6c1/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/3844cd12/projects/-Users-sam-Projects-cocktime-scheduler/4e0adf2b-03a3-4601-acae-46e7c3c0d001/workflows/scripts/oneui-render-glitch-research-wf_4963cbb9-6c1.js', resumeFromRunId: 'wf_4963cbb9-6c1'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>5</agent_count><agents_done>5</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>535932</subagent_tokens><tool_uses>90</tool_uses><duration_ms>276995</duration_ms></usage>
+</task-notification>
+
+**Answer**: 웹을 찾아본 결과, 이번 One UI 9.0 업데이트 이후 **Chrome 화면이 깨지는 버그**일 가능성이 높습니다. 저희 앱 코드 문제로 보이지는 않습니다. 다만 삼성이나 Google이 공식 인정한 적은 없고, 아래는 제보를 근거로 한 추정입니다.
+
+## 근거
+- **업데이트 시기가 맞습니다.** 한국에서 One UI 9.0(Android 17) 정식판이 10월 6일 S24, 10월 14일 S23부터 배포됐습니다. 말씀하신 업데이트는 8.x가 아니라 9.0일 가능성이 큽니다.
+- **최근 2주 사이 비슷한 제보가 여러 건 있습니다.**
+  - 삼성멤버스 한국: "one ui 9.0 업데이트 이후 크롬 오류". 네이버를 보면 보라색 줄이 오가고 화면이 지지직거린다고 합니다.
+  - 미국 삼성 커뮤니티 (Z Flip 7): Chrome에서 화면이 검정·보라색으로 물들고 검은 박스가 생겨 못 쓸 정도라고 합니다.
+  - 공통점은 Chrome에서만 생기고, Firefox로 바꾸면 정상이라는 것입니다.
+- **한계:** 커뮤니티 원문은 접속이 막혀서(403) 검색 결과 요약으로만 확인했습니다.
+
+## 초록 줄은 폰 화면 고장이 아닙니다
+초록 줄이 **스크린샷에 찍혀 있습니다**. 스크린샷은 브라우저가 그린 화면을 그대로 저장하므로, 화면 패널 고장이라면 스크린샷에는 나오지 않습니다. 화면 전체에 세로로 고정되는 삼성 초록줄 불량과는 모양도 다릅니다.
+
+## 이 화면만 깨진 이유 (추정)
+깨진 곳은 참가자 목록 모달입니다. 모달은 뒤를 흐리게 하는 효과(`backdrop-filter`)를 두 겹 씁니다. 모달 시트에 blur 40px, 뒤를 어둡게 덮는 막에 blur 8px입니다.
+
+스크린샷에서는 blur뿐 아니라 거의 불투명한 배경색까지 통째로 그려지지 않았습니다. CSS 규칙이 잘못됐다면 이렇게 깨지지 않습니다. 업데이트로 바뀐 GPU 드라이버와 Chrome 사이에서 이 흐림 효과가 들어간 영역의 렌더링이 실패한 것으로 보입니다.
+
+## 그 회원분께 안내할 것
+1. 같은 화면을 **Samsung Internet이나 Firefox**에서 열어 보게 해주세요. 정상으로 보이면 Chrome 문제로 확정되고, 당분간 그 브라우저를 쓰면 됩니다.
+2. Play 스토어에서 Chrome과 **Android System WebView**를 업데이트하고 Chrome을 다시 시작하게 해주세요.
+3. 근본 해결은 삼성 월간 패치나 Chrome 업데이트를 기다려야 합니다. 캐시 삭제나 재부팅은 효과가 없었다는 제보가 대부분입니다.
+
+## 우리 쪽에서 피해 가는 방법
+안전한 순서는 이렇습니다.
+1. 뒤를 어둡게 덮는 막(`.lq-overlay`, `src/index.css:741`)에서 흐림 효과를 빼고 어둡게만 남깁니다. 흐림이 두 겹 겹치는 구조가 없어지고, 화면에 보이는 차이는 거의 없습니다.
+2. 그래도 깨지면 모달 시트(`.lq-sheet`)도 흐림 없는 불투명 단색으로 바꿉니다. 질감은 조금 손해지만 가장 확실합니다.
+
+삼성 기기만 골라서 끄는 방식이나 `translateZ(0)` 같은 꼼수는 권하지 않습니다.
+
+먼저 1번만 고쳐서 그 회원분 폰으로 확인해 볼까요?
+
+---
+
+## #387
+
+**Prompt**: 이게 미리 입력하면 좋은데 정산이슈로 늦게 입력할수도 있어. 늦게 입력하면 기존 부과 정산처리된거 다 취소하고 다시 하게 해줄래?
+
+**Answer**: v2 회비 원장 구조를 4개 영역(데이터 모델, 관리자 명령, 대관비 발행·선납, 클라이언트·문서)으로 나눠 병렬로 분석 중입니다. 끝나면 설계를 종합해서 마이그레이션과 화면을 구현하겠습니다.
+
+---
+
+## #388
+
+**Prompt**: 일단 1번만 고치자
+
+**Answer**: 모달 뒤를 덮는 어두운 막(`.lq-overlay`, `src/index.css:741`)에서 흐림 효과(`backdrop-filter`)를 빼고, 어둡게 칠하는 색만 남겼습니다. 아직 그 삼성폰에서는 확인하지 못했습니다.
+
+- **바뀐 것:** 배경 진하기는 그대로입니다(라이트 0.5, 다크 0.6). 이제 모달 뒤 화면은 흐려지지 않고 어둡게만 보입니다.
+- **함께 고친 것:** 흐림을 전제로 쓴 주석을 맞게 고쳤습니다. `ModalSheet.tsx`의 주석 두 줄도 "blur"를 "딤"으로 바꿨습니다.
+- **스테이징:** 이 두 파일과 작업 기록 파일만 `git add` 했습니다. 목록에 같이 보이는 회계 쪽 파일들은 원래 스테이징돼 있던 것이고, 이번에 건드리지 않았습니다.
+
+배포한 뒤 그 회원분 폰에서 모달이 정상으로 나오는지 봐주세요. 그래도 깨지면 2단계로 모달 시트(`.lq-sheet`)의 흐림도 빼서 불투명 단색으로 바꾸겠습니다.
+
+---
+
+## #389
+
+**Prompt**: <task-notification>
+<task-id>wzyzao483</task-id>
+<tool-use-id>toolu_012eGHz17dgZZj532ZQXxM8S</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/60b221b6-b2c1-476e-9cda-edbed34c3df8/tasks/wzyzao483.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Map dues v2 ledger model to design court-fee reset+reissue after issuance" completed</summary>
+<result>{"findings":[{"area":"v2 dues data model &amp; charge lifecycle (dues_* tables, states, previous_id chain, allocations/reversals/positions, append-only guarantees, how paid/unmatched is computed)","findings":"## Sources checked\n- Original DDL: `supabase/migrations/20260907030000_dues_v2.sql:4-84` (tables `dues_v2_*`), renamed to `dues_*` by `20260911010000_promote_dues.sql:70-88`. Columns, constraints, indexes and triggers below were **checked against prod** (`scripts/prod-ro-sql.sh`, pg_constraint/pg_indexes/pg_trigger/information_schema).\n- Live function bodies were dumped with `pg_get_functiondef` to `/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/60b221b6-b2c1-476e-9cda-edbed34c3df8/scratchpad/fn/*.sql`. They include dues_execute, dues_issue, dues_release, dues_assert, dues_allocate, dues_candidates_internal, dues_auto_issue, dues_set_session_fee, dues_prepay_due, dues_restore_reversed_prepayment, dues_match_position, dues_apply, dues_sync_bank, dues_bank_guard and dues_bank_inserted.\n- Many later migrations change functions by string-patching `pg_get_functiondef` and use an occurrence-count guard. Examples: `20260914010000_restore_reversed_prepayment.sql:27-63` and `20260921010000_dues_command_patch.sql:63-73`. Because of this, the live body is the source of truth. A new migration should follow the same \"exact occurrence, fail closed\" convention, or do a full `create or replace` from the live body.\n\n## Tables (live columns)\n| table | columns | constraints / indexes |\n|---|---|---|\n| dues_control | id(=1), enabled, paused, epoch uuid, revision bigint, activated_at | `baseline` was dropped (`20260908010000_retire_dues_recovery.sql:269`). Every money mutation does `select … for update` on this row and then `revision=revision+1`. |\n| dues_groups | id, source_key **unique**, kind∈{monthly,court,manual}, label, occurred_on, session_id→sessions **ON DELETE RESTRICT**, basis jsonb | Court groups use `source_key='court:'||session_id` (one group per session). `basis` is written only when the group is first created (dues_issue.sql:18-19). Later issues and replaces do not update it. |\n| dues_charges | id, legacy_id unique, group_id, member_id, amount (&gt;0), **state∈{live,cancelled,waived}**, previous_id→dues_charges(id), payer_hint, issued_at, basis jsonb | **`dues_live_charge` UNIQUE (group_id,member_id) WHERE state='live'**. Only one live charge per member per group; any number of cancelled or waived rows are allowed. |\n| dues_due | id, charge_id, due_ym, remaining (&gt;=0) | Instalment buckets of a charge. Cancel and waive set `remaining=0`; the rows are not deleted. |\n| dues_positions | id, bank_tx_id→bank_transactions RESTRICT, owner_id, amount (&gt;=0), purpose∈{unassigned,member_pending,carry,refund_pending,club}, available_ym, group_id | CHECKs: carry⇒available_ym and owner; (purpose='club')⇔(group_id not null); member_pending/carry⇒owner not null. A position is an unspent slice of a receipt. It is split, never merged. Zero-amount rows stay. |\n| dues_allocations | id, legacy_id, bank_tx_id, owner_id, charge_id, due_id, amount (&gt;0), **reversed** (0..amount), created_at | Index on bank_tx_id and on charge_id. An allocation is a payment of a receipt slice into a due. |\n| dues_reversals | id, allocation_id, amount (&gt;0), created_at | Append-only log of releases. `allocations.reversed` must equal the sum of its reversals (enforced by dues_assert). |\n| dues_refunds | out_tx_id PK, in_tx_id, owner_id, amount | |\n| dues_expenses | bank_tx_id PK, group_id | |\n| dues_operations | id identity, epoch, request_id (**unique(epoch,request_id)**), action, payload, actor_id, result, created_at, reverted_at | `before_state` and `after_state` were dropped (`20260908010000:270`). **Undo/rollback no longer exist** (`dues_manage`, `restore_delta` and related functions were dropped at `20260908010000:260-266`). The journal is metadata only. |\n| dues_drafts | source_key PK, payload, hold_reason, updated_at | Auto-issue drafts that are held for review. A successful `issue` deletes the draft for that group's source_key (dues_execute.sql:43). |\n\n## Append-only / guards (prod triggers)\n- `bank_transactions`:\n  - `z_dues_bank_guard` (BEFORE UPDATE OR DELETE) raises unconditionally: `'통장 원본은 변경할 수 없습니다…'` (dues_bank_guard.sql).\n  - `dues_bank_inserted` (AFTER INSERT) creates an `unassigned` position for an incoming receipt, or a `dues_expenses` row for an outgoing one, and bumps the revision.\n- `dues_command_change` (AFTER I/U/D) is on groups, charges, due, positions, allocations, refunds, expenses and drafts (`20260921010000_dues_command_patch.sql:6-33`). It only records changed rows into the `dues.command_changes` GUC when `dues.capture_changes='on'`. That flag is set only inside `dues_command`, which builds the client `patch`. **It does not block deletes.** `reversals` and `operations` have no trigger.\n- **No trigger forbids DELETE on any `dues_*` table.** The constraints are:\n  - RLS is enabled and all privileges are revoked from anon/authenticated (`20260907030000:87-92`). Only SECURITY DEFINER RPCs write.\n  - The FKs `allocations→charges/due`, `reversals→allocations`, `due→charges` and `charges.previous_id→charges` have no CASCADE. Deleting a charge would first require deleting its reversals, then allocations, then due rows.\n  - No live code path deletes charges or allocations. The only deletes in dues_execute are `dues_refunds` (`reverse_refund`) and `dues_drafts`.\n- Design intent is append-only facts. Physical deletion is technically possible inside a definer function, but it would:\n  - erase the payment and release history that `dues_operations.result/patch` refer to;\n  - and with undo gone, leave no way to recover the deleted rows.\n- **v1's \"delete allocations then charges\" (`20260823080000_reset_session_court_on_fee_change.sql:10-17`) must NOT be ported.** In v2 the equivalent is release followed by cancel.\n\n## dues_assert invariants (run at the end of every dues_execute, dues_assert.sql)\n1. For each incoming bank tx: `t.amount = Σ(alloc.amount-reversed) + Σrefunds.amount + Σpositions.amount`. Money is conserved per receipt.\n2. One distinct owner per receipt across positions, allocations and refunds.\n3. For each charge: `(state='live' ? amount : 0) = Σdue.remaining + (state='live' ? Σ(alloc.amount-reversed) : 0)`. A cancelled or waived charge must therefore have all due `remaining=0`.\n4. For allocations: `d.charge_id=a.charge_id`, and **`state='cancelled'` ⇒ `a.amount=a.reversed`**, which means a charge cannot be cancelled while it still holds paid money. `a.reversed = Σreversals`.\n5. Positions only exist on incoming tx; refund amount equals the out tx amount.\n\n## Charge states and lifecycle\n- **live**: the only state that counts as owed. Its dues can be allocated: `dues_allocate` requires `c.state='live'` (dues_allocate.sql).\n- **cancelled**: set only by\n  - `replace` (dues_execute.sql:47-58), which first releases every live allocation with `dues_release(a.id,a.amount-a.reversed)`, then sets due `remaining=0`, then `state='cancelled'`;\n  - `dues_restore_reversed_prepayment`, which handles a fully refunded prepayment and adds the basis flags `prepayment_reversed=true` and `prepayment_reversed_at`.\n- **waived**: set by `waive` (dues_execute.sql:192-197). It is refused if any live allocation exists (`'납부가 있는 부과는 취소 후 발행으로 처리하세요'`).\n- **previous_id** is an amend/succession chain, meaning \"this charge replaces that cancelled one\". It is set by:\n  - `replace` lines, where `line.previous_id` must be in `charge_ids` (dues_execute.sql:60-65). The new charge's basis gets `previous_basis` and `reason`;\n  - `dues_issue`, which auto-links to the latest cancelled `prepayment_reversed` predecessor that has no successor (dues_issue.sql:29-35).\n  - The UI hides superseded charges: `participation.ts:38` builds the `replaced` set from previous_ids, and `chargeState.ts:isReversedPrepayment` hides reversed p
+... (truncated 85123 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/60b221b6-b2c1-476e-9cda-edbed34c3df8/tasks/wzyzao483.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/60b221b6-b2c1-476e-9cda-edbed34c3df8/subagents/workflows/wf_af9ccb5e-d1a/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/60b221b6-b2c1-476e-9cda-edbed34c3df8/workflows/scripts/understand-dues-v2-court-reissue-wf_af9ccb5e-d1a.js', resumeFromRunId: 'wf_af9ccb5e-d1a'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>5</agent_count><agents_done>5</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>695918</subagent_tokens><tool_uses>129</tool_uses><duration_ms>495007</duration_ms></usage>
+</task-notification>
+
+**Answer**: 구현과 운영 리허설까지 끝났습니다. 지금은 적대적 검토가 돌고 있습니다. 세 관점(돈·원장 정합성, 분기·엣지 케이스, 화면)에서 결함을 찾고, 찾은 것마다 별도 에이전트가 반박을 시도합니다. 결과가 나오면 확인된 것만 고친 뒤 정리해서 보고하겠습니다.
+
+---
+
+## #390
+
+**Prompt**: [Image #2] 셀렉트박스가 다크테마에서 잘 안보임
+
+**Answer**: 다크모드에서 셀렉트 목록이 안 보이던 문제를 고쳤습니다. 다만 브라우저에서 직접 열어 확인하지는 못했습니다. 펼쳐지는 목록은 운영체제가 그리는 창이라 개발자 도구 스크린샷에 잡히지 않습니다.
+
+- **원인:** 다크모드인데 브라우저에 "이 페이지는 다크"라는 정보(`color-scheme`)를 주지 않았습니다. 그래서 펼쳐지는 목록은 기본 흰 배경으로 뜨고, 글씨는 다크 테마의 흰색을 그대로 써서 흰 바탕에 흰 글씨가 됐습니다.
+- **수정:** `src/index.css`의 `html.dark`에 `color-scheme: dark`를 넣었습니다. 이 셀렉트뿐 아니라 앱 전체의 셀렉트 목록, 날짜 선택창, 스크롤바가 다크로 나옵니다.
+- **정리:** 회계 화면의 날짜 입력에만 따로 걸려 있던 같은 설정은 이제 필요 없어서 `accounting-layout.css`에서 지웠습니다.
+
+`accounting-layout.css`에 원래 커밋 안 된 회계 작업이 있었는데, 이번에 `git add`하면서 그 변경도 같이 스테이징됐을 수 있습니다. 커밋 전에 한 번 확인해 주세요.
+
+다크모드 폰에서 이 셀렉트(대관 회차)와 날짜 입력을 한 번 열어 봐 주세요.
+
+---
+
+## #391
+
+**Prompt**: [Image #3] 아직도 안보이는데?
+
+**Answer**: 지난번 수정으로는 스크롤바만 다크로 바뀌었고, 목록 바탕은 그대로 흰색이었습니다. 원인을 다시 찾아 고쳤는데, 아직 실제 화면에서는 확인하지 못했습니다.
+
+- **진짜 원인:** 회계 화면 셀렉트의 배경색이 반투명입니다(`--ac-fill` → `--seg-track`, 흰색 5%). Windows Chrome은 펼친 목록을 그릴 때 이 반투명 배경을 흰 바탕 위에 깝니다. 그래서 목록이 거의 흰색이 되고, 글씨는 다크 테마의 흰색을 그대로 써서 흰 바탕에 흰 글씨가 됩니다.
+- **수정:** `src/index.css`에서 모든 `option`에 불투명한 배경과 글자색을 직접 지정했습니다. 배경은 카드 배경색(`--card-lq-bg`, 다크 `#1c1c1e`), 글자는 기본 강조 글자색(`--tone-strong`)입니다. 라이트 모드는 흰 바탕에 짙은 글씨라 보이는 모습이 그대로입니다.
+- 지난번에 넣은 `color-scheme: dark`는 그대로 둡니다. 스크롤바와 날짜 선택창을 다크로 만드는 데 필요합니다.
+
+새로고침하고 대관 회차 셀렉트를 다시 열어 봐 주세요.
+
+---
+
+## #392
+
+**Prompt**: <task-notification>
+<task-id>wc9a1oyd5</task-id>
+<tool-use-id>toolu_01WykMMgqkXqiy3MuMj8U9mw</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/60b221b6-b2c1-476e-9cda-edbed34c3df8/tasks/wc9a1oyd5.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Adversarially review court-fee reissue migration + client changes" completed</summary>
+<result>[{"title":"Client never saves a new total when the per-head amount stays the same, and says the total is unchanged","file":"src/components/schedule/OccurrenceInfoView.tsx","scenario":"Example: closed session, 13 members charged the flat 6,000원, court_fee NULL (the session 395 case). The admin enters the real total, 78,000원. 78000/13 = 6000, and dues_court_per_head rounds anything in [6000, 6200) down to the flat 6,000원. dues_set_session_fee hits its 'unchanged' branch, which still runs `update sessions set court_fee=p_amount` and returns unchanged:true. previewFee() treats preview.unchanged as 'nothing to do': it shows '저장된 총액과 같아 바뀌는 부과가 없어요.' and returns without calling onFixCourtFee. Result: sessions.court_fee stays NULL. The admin can never record the actual total from this screen, and the message is false because the total did change; only the per-head amount matched.","severity":"medium","fix":"Only block when the total itself is unchanged: compare parseCourtFee(feeStr) with occurrence.court_fee on the client. When preview.unchanged is true but the total differs, still allow saving and show a line such as '인당 금액은 그대로라 부과는 바뀌지 않아요 — 총액만 저장합니다'.","verdict":{"real":true,"evidence":"I confirmed this by reading the code. I did not run PGlite, because every step can be traced exactly.\n\n1) Server, in supabase/migrations/20261019000000_session_fee_reissue.sql, dues_set_session_fee:\n- It runs `update public.sessions set court_fee=p_amount` unconditionally before the unchanged check.\n- The unchanged branch then fires when two things hold. First, no live charge differs from per_head and every live member is in targets. Second, either the status is not 'closed' or the candidate lines are empty. For a closed session where everyone is already charged, dues_candidates_internal leaves out members who already have live charges, so the lines are empty.\n- per_head comes from the candidate. The live dues_candidates_internal (scratchpad fn/dues_candidates_internal.sql, lines 34-35) and dues_court_per_head (20260823090000 line 46) both snap any result in [flat, flat+200) down to flat. So 13 members at the flat 6,000 with court_fee NULL, given an entered total of 78,000, gives ceil(78000/13/10)*10 = 6000, which equals flat. Every live charge already equals 6000 and the targets match, so the function returns {unchanged:true}. The court_fee update is kept only because a real call commits it.\n\n2) Preview, dues_session_fee_preview (same file, lines 165-177):\n- It calls dues_set_session_fee, then raises P0V02 and catches it. That rolls back the court_fee update.\n\n3) Client, src/components/schedule/OccurrenceInfoView.tsx, previewFee() (around lines 74-90):\n- It calls onPreviewCourtFee only, which goes to adminScheduleActions.previewCourtFee and then previewSessionCourtFee.\n- On `preview.unchanged` it calls setFeeError('저장된 총액과 같아 바뀌는 부과가 없어요.') and returns.\n- fixFee() and onFixCourtFee (adminScheduleStore.fixCourtFee, then setSessionCourtFee) are reachable only through the confirm dialog, and that dialog opens only when setFeePreview(preview) runs. The unchanged path never runs it.\n\nResult: sessions.court_fee stays NULL, and the admin has no way to record the real 78,000 total from this screen. The message says the total equals the saved one, which is false: the saved value is NULL (the 6,000 flat rule), not 78,000. This hits any total that splits to a per-head in [6000, 6200) when everyone is already charged the flat amount, and also any re-entry of a total that rounds to the same per-head. The server would have saved it, but the client never makes the call that commits."}},{"title":"Editing the fee in the draft/open session form now cancels and reissues prepaid charges with no confirmation","file":"src/store/adminScheduleStore.ts","scenario":"Before this change, the live dues_set_session_fee raised '발행 이력이 있는 회차입니다' whenever the session had any charge, so the edit form (useOccurrenceForm.handleOverride → overrideOccurrence) could not touch issued charges. Now: an open session has live prepayment court charges (members already paid). The admin opens the regular edit form, changes the court total in the same form as the time or notice, and taps save. overrideOccurrence calls setSessionCourtFee directly. The server runs 'replace': every prepaid charge is cancelled, payment allocations are released, and charges are reissued. Members who are no longer targets keep their money as balance. There is no preview or confirm step, unlike the danger-toned '취소 후 재발행' dialog in OccurrenceInfoView. The only feedback is a toast after the fact.","severity":"medium","fix":"In the form path, when courtFeeChanged, call previewSessionCourtFee first. If cancelled&gt;0 (or anything is issued), show the same ConfirmDialog with courtFeeResetLines before saving. Otherwise keep rejecting fee changes on sessions that have live charges in the form and send the admin to the info view flow.","verdict":{"real":false,"evidence":"The facts in the claim are accurate, but they do not show a wrong result. They describe a missing confirmation step that the change made on purpose.\n\nWhat is true:\n- The live and old dues_set_session_fee rejected any session that had issued charges, raising '발행 이력이 있는 회차입니다'.\n- Now, overrideOccurrence in src/store/adminScheduleStore.ts calls setSessionCourtFee whenever patch.courtFee differs from prev.court_fee. It shows only a toast afterwards, with no preview or confirm. The edit form's court-fee input in OccurrenceEditor.tsx (around line 428) is not gated on whether charges were issued.\n- Prepaid court charges do occur in prod. Today there are 38 live ones, all on sessions that are now closed.\n\nWhy this is not a defect:\n1. **The behaviour is intended.** The migration header for 20261019000000 states the decision as a policy (\"총액을 바꾸면 그 회차의 유효 대관비를 전부 취소하고 새 총액으로 재발행\"). The store comment says \"선납 회차 포함\" (prepaid sessions included).\n2. **No accidental trigger.** The form starts from court_fee, and parseCourtFee returns the same value on an unchanged save. So editing only the time or notice leaves courtFeeChanged false and makes no RPC call. The reissue only runs when the admin types a new total.\n3. **Saving the same total does nothing.** The RPC returns early with unchanged:true when every live charge already equals the per-head amount and the member is still a target. For a session that is not closed, it never issues to new members.\n4. **No money is lost.** dues_execute 'replace' releases the allocations, records them in dues_reversals, and moves the money to member_pending. It then reallocates it to the same member's new charge through previous_id. Any extra stays as the member's balance, which the claim itself admits. That is the correct outcome when the total changes.\n\nWhat is left is a difference in UX: the info view (for closed or in-progress sessions) has a danger-toned preview and confirm, and the draft/open edit form does not. The admin still gets exactly the fee change they asked for, and the ledger stays consistent and reversible. There is no input that leads to a wrong ledger state, so this is a design or UX gap, not a correctness defect."}},{"title":"Dialog shows '인당 0원으로 N명에게 발행합니다' when nothing was live before","file":"src/lib/schedule/courtFee.ts","scenario":"dues_set_session_fee assigns per_head only inside the `if g.id is not null and exists(live charges)` block. Case 1: admin sets a closed session's total to 0 (all charges cancelled with reissuable). Later the admin enters 52,000원 — the '0원으로 바꿨다가 다시 금액 입력' flow the migration is built for. Case 2: a closed session with no dues group at all, e.g. the total was 0 at close, then the admin enters a positive total and dues_auto_issue issues. In both cases the result has cancelled=0, issued_new=N and per_head=null. courtFeeResetLines falls into the `cancelled === 0` branch and renders `인당 ${won(r.per_head ?? 0)}` = '인당 0원으로 N명에게 발행합니다'. The confirm dialog shows a wrong amount for a 
+... (truncated 6680 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/60b221b6-b2c1-476e-9cda-edbed34c3df8/tasks/wc9a1oyd5.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/60b221b6-b2c1-476e-9cda-edbed34c3df8/subagents/workflows/wf_a1023f6e-884/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/60b221b6-b2c1-476e-9cda-edbed34c3df8/workflows/scripts/review-session-fee-reissue-wf_a1023f6e-884.js', resumeFromRunId: 'wf_a1023f6e-884'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<failures>[verify:Dialog shows '인당 0원으로 N명에게 발행합니다' when n] failed: You've hit your session limit · resets 2:20am (Asia/Seoul)
+[review:money] failed: You've hit your session limit · resets 2:20am (Asia/Seoul)
+[review:flow] failed: You've hit your session limit · resets 2:20am (Asia/Seoul)</failures>
+<usage><agent_count>8</agent_count><agents_done>5</agents_done><agents_error>3</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>842332</subagent_tokens><tool_uses>122</tool_uses><duration_ms>236949</duration_ms></usage>
+</task-notification>
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #393
+
+**Prompt**: go on
+
+**Answer**: DB 쪽은 운영에 반영된 걸 확인했습니다. 다만 프론트를 push하기 전까지 화면에서는 아직 쓸 수 없습니다.
+
+**DB 확인 결과**
+- 총액 변경 함수가 "취소 후 재발행" 버전으로 바뀌었고, 미리보기 함수도 새로 생겼습니다.
+- 생성기·발행 함수의 재발행 허용 패치가 각각 2곳 들어갔습니다.
+- 권한은 운영진만 실행할 수 있고, 로그인 안 한 사용자는 못 씁니다.
+- 장부 revision은 792 그대로입니다. 반영 과정에서 바뀐 장부 데이터는 없습니다.
+- 395회차는 아직 그대로입니다. 대관비 13건(정액 6,000원)이 남아 있고 총액은 비어 있습니다.
+
+**프론트를 push하기 전에 알아둘 점**
+- 지금 운영 중인 화면은 미리보기 없이 바로 저장합니다. 그래서 회차 상세에서 총액을 저장하면 서버가 확인창 없이 바로 취소·재발행합니다.
+- 기존 화면에도 "저장할까요?" 확인창은 있지만, 문구가 "발행 이력이 없는 회차만"이라는 옛 설명입니다.
+- 오류가 나도 화면에 안 뜨는 버그도 아직 남아 있습니다.
+- 그래서 395회차 입력은 프론트 배포 뒤에 하시는 게 안전합니다.
+
+**남은 순서**
+1. 커밋 → `git push`. 이전부터 staged 상태였던 회계 화면 변경(`src/components/accounting/*` 등)이 같이 들어 있으니, 이번 작업 파일과 나눠서 커밋할지 정해 주세요. 원하시면 `/commit`으로 정리하겠습니다.
+2. 배포가 끝나면 395회차 상세에서 실제 총액을 넣습니다. 확인창에 나오는 숫자를 보고 "취소 후 재발행"을 누르면 됩니다.
+
+---
+
+## #394
+
+**Prompt**: go on
+
+**Answer**: 이제 대관비가 발행된 뒤에 총액을 넣어도 됩니다. 저장하면 그 회차 대관비를 전부 취소하고 새 금액으로 다시 발행합니다. 테스트는 전체 1,062개가 통과했고, 운영 DB 리허설(실행 후 롤백, 흔적 없음)도 통과했습니다. 아직 배포는 안 했습니다.
+
+**총액을 바꾸면 일어나는 일**
+- 그 회차 대관비를 모두 취소합니다. 이미 낸 돈은 납부 연결이 풀립니다.
+- 아직 대상인 회원에게 새 인당 금액으로 다시 발행하고, 그 사람이 냈던 돈은 새 부과에 자동으로 다시 연결합니다. 정산함에서 하나씩 다시 맞출 필요가 없습니다.
+- 새 금액보다 많이 낸 돈은 그 회원의 잔액으로 남습니다. 환불이나 이월은 회비 관리에서 처리해야 합니다. 적게 냈으면 차액이 미납으로 남습니다.
+- 총액 미입력(정액)에서 금액 입력(엔빵)으로 바뀌면 운영진이 대상에 들어오므로 바로 발행됩니다. 0원으로 바꾸면 취소만 됩니다.
+- 사람이 직접 면제하거나 취소한 부과는 되살리지 않습니다.
+- 저장된 총액과 같은 값이면 저장하지 않습니다.
+- 총액이 달라도 인당 금액이 같으면 부과는 건드리지 않고 총액만 저장합니다. 예를 들어 395회차에 78,000원을 넣으면 인당 6,000원이라 지금과 같습니다.
+- 인당 금액이 정상 범위(정액의 ½~2.5배, 3,000~15,000원)를 벗어나면 아무것도 바꾸지 않고 거부합니다.
+
+**화면**
+- 저장을 누르면 서버에서 먼저 돌려본 숫자로 확인창이 뜹니다. 예: "기존 13건 취소, 인당 3,890원 재발행, 납부 N건은 다시 연결, 잔액 X원 남음".
+- 거부 사유는 입력칸 아래에 표시됩니다. 처음 질문하신 "아무 반응이 없던" 문제는 이걸로 해결됩니다.
+
+**운영 리허설 결과** (금액은 가정값입니다)
+
+| 회차 | 넣은 총액 | 결과 |
+|---|---|---|
+| 395 | 66,000원 | 13건 취소 → 17건 발행(운영진 4명 추가), 인당 3,890원 |
+| 382 | 60,000원 | 납부 8건 48,000원 중 36,960원은 새 부과에 다시 연결, 11,040원은 회원 잔액 |
+| 382 | 0원 | 전부 취소, 낸 48,000원은 모두 회원 잔액 |
+
+세 경우 모두 장부 검사(`dues_assert`)를 통과했고, 미리보기 숫자와 실제 실행 결과가 같았습니다.
+
+**검토 과정에서 고친 것**
+- 인당 금액이 같을 때 화면이 총액 저장을 막던 문제
+- 확인창 문구가 일부 경우 틀리던 문제: "인당 0원"으로 나오거나, 총액이 0원인데 "다시 연결된다"고 나오던 경우
+
+**알아두실 점**
+- 아직 시작 안 한 회차의 일정 수정 폼에서 총액을 바꿔도 같은 취소·재발행이 일어납니다. 이 경우는 확인창 없이 결과 토스트만 뜹니다. 선납한 사람이 있을 때만 해당되고, 장부상 문제는 없습니다. 확인창이 필요하면 추가하겠습니다.
+- 변경 파일은 staging만 해 뒀습니다. 이전부터 staged 상태였던 회계 화면 변경도 그대로 섞여 있으니 커밋할 때 나눠서 하세요.
+
+**배포**
+1. `! supabase db push` (DB 마이그레이션 `20261019000000`)
+2. 프론트는 커밋한 뒤 git push
+
+배포 후 395회차 상세에서 실제 총액을 넣고 저장하면 됩니다. 넣기 전에 결과를 미리 보고 싶으면 `scripts/rehearse-session-fee-reissue.sh 395 <총액>`으로 롤백 리허설을 돌려볼 수 있습니다.
+
+---
+
+## #395
+
+**Prompt**: 정산 남은거 보여줄때 오래된걸 위로 나오게 해줘
+
+**Answer**: 정산함의 미정산 목록을 오래된 입금이 위에 오도록 바꿨습니다. 같은 시각에 들어온 입금은 거래 번호가 작은 것이 위입니다. 반영되려면 프론트를 배포해야 합니다.
+
+- 수정 위치: `src/components/accounting/AccountingAdmin.tsx:166`
+- 타입 검사는 통과했습니다. e2e에서 첫 행을 집는 곳은 회계 원장 화면(`e2e/accounting.spec.ts:1477`) 하나라 이 목록과 관계없습니다. e2e 자체는 돌리지 않았습니다.
+- 회계 탭의 거래 원장(미정산 필터 포함)과 "오늘 처리한 N건" 줄은 그대로 최신순입니다. 이것도 오래된 순이 필요하면 말씀해 주세요.
+
+변경 파일은 staging해 뒀습니다. 앞서 한 총액 재발행 프론트와 함께 커밋해서 push하면 같이 반영됩니다.
+
+---
+
+## #396
+
+**Prompt**: 부과수정이 편했으면 하는데 사유를 알아야 명확하게 취소할수 잇어.
+10/18 부과에 "취소" 라고 써있는 사람들이 당일취소인지, 당일취소라면 언제 어떻게 했는지. 해당 시점에 그래프 있어서 시간별 참여현황도 보여줬음 좋겠어.
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #397
+
+**Prompt**: go on
+
+**Answer**: The review is running in the background. I'll finish the work once its results arrive.
+
+Here's what I found and changed so far.
+
+**What the 10/18 "취소" rows actually are**
+In #395 (19:00), the 13 rows marked "취소" are **not 당일취소**. They're the original charges, issued at 22:01 when the session ended. Today at 11:28 the 총액 was edited, which cancelled them and reissued the same people. Only 이민지 is a real 당일취소:
+- 이민지: confirmed 10/17 13:29, then cancelled the attendance herself at 10/18 10:58. That was 8시간 2분 before the 19:00 start, so she was charged.
+- In #251 (15:00), 김철중 cancelled at 10/18 10:20, also counted as 당일취소.
+- In #395, 김길환, 강민규 and others cancelled within an hour of confirming. That's the 1시간 grace window, so they weren't charged.
+
+**Code changes**
+- **Splitting up "취소"**: rows replaced by a reissue now show "총액 수정으로 재발행됨 · 10/19 11:28" and are folded under "이전 발행 N건 보기" by default. A row only shows "부과 취소" when an admin cancelled it and nothing replaced it.
+- **당일취소 detail**: a charged row whose attendance was cancelled shows a line like "10/18 10:58 본인 취소 · 시작 8시간 2분 전 · 확정 후 21시간 29분". It also says who cancelled: 본인, 운영진 or 초대자.
+- **Hourly participation graph**: a 대관 group shows a step chart of 확정 인원 over time.
+  - Toggle between 당일 and 전체.
+  - Marks the start time and 정원, and shows each cancellation as a dot.
+  - Tapping 그래프에서 보기 on a member's row highlights that person's changes.
+  - Hovering shows the time, headcount and who changed what.
+  - The full change history is also available as a table.
+- The data comes from the existing `ops_audit` change log (admin-only). No DB change or deploy is needed.
+- Main files: `src/lib/dues/attendanceLog.ts`, `src/components/accounting/AttendanceTimeline.tsx` and `src/components/accounting/ChargeManagement.tsx`.
+
+**Checks**
+- Typecheck and lint are clean.
+- Tests built from the real #395 records pass, along with the existing settlement tests (72/72).
+- I haven't looked at it on screen: Chrome isn't connected. Please open the 10/18 부과 in your browser and check it.
+
+---
+
+## #398
+
+**Prompt**: <task-notification>
+<task-id>wmccnox0f</task-id>
+<tool-use-id>toolu_017XrphPCg17J2atsv8eT8YZ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/2079ced7-c6e6-42ca-b8c3-5aeb545db1f6/tasks/wmccnox0f.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Review the charge-reason + attendance timeline change from 3 lenses and verify findings" completed</summary>
+<result>[{"file":"/Users/sam/Projects/cocktime-scheduler/src/lib/dues/attendanceLog.ts","line":185,"severity":"medium","summary":"chargeReason marks a live charge as 'dayCancel' whenever the client-side facts.dayCancel is true, even if the server set basis.line.is_day_cancel=false on purpose. dues_court_targets (20260818000000) clears the day-cancel flag for anyone who day-cancelled but then appears in session_players (they actually played).","failure_scenario":"A member confirms on Saturday, cancels at 10:00 KST on Sunday (session day), and an admin then puts them on the board and they play. The server issues a normal live charge with line.is_day_cancel=false. lastCancel sees confirmed→cancelled on the same day with more than 1h held, so dayCancel=true, and the row shows '당일취소' plus cancel facts. That contradicts the server's billing basis and the voucher. The fix is to trust an explicit basis is_day_cancel=false (only fall back to facts when the basis has no flag).","verdict":{"real":true,"reason":"I confirmed this by reading the code. dues_court_targets (in 20260818000000, and no later migration redefines it) sets is_day_cancel to false when a cancelled attendee is in session_players. dues_v2 stores that as basis.line.is_day_cancel=false, and session_fee_reissue copies it back into line on reissue. In attendanceLog.ts:185, chargeReason uses `isDayCancelBasis(charge) || facts?.dayCancel`. An explicit false on the server's basis is therefore overridden by the client's lastCancel result, which never looks at session_players. A member who day-cancelled and was then put on the board and played gets a normal live charge, yet the row says \"당일취소\", which contradicts the billing basis. A prod query found no live charge in this state right now, so the bug is latent rather than already showing.","fix":"In attendanceLog.ts, make the basis flag decide when it exists and use facts only when it doesn't:\n\nfunction dayCancelFlag(c: Charge): boolean | null {\n\tconst line = c.basis?.line;\n\tif (typeof line === \"object\" &amp;&amp; line !== null &amp;&amp; \"is_day_cancel\" in line) {\n\t\tconst v = (line as { is_day_cancel?: unknown }).is_day_cancel;\n\t\tif (typeof v === \"boolean\") return v;\n\t}\n\tconst v = c.basis?.is_day_cancel;\n\treturn typeof v === \"boolean\" ? v : null;\n}\n...\nconst flag = dayCancelFlag(charge);\nif (flag ?? facts?.dayCancel)\n\treturn { kind: \"dayCancel\", text: \"당일취소\", facts };\nif (facts) return { kind: \"other\", text: \"참석 취소\", facts };\n\nOptionally add a test where basis.line.is_day_cancel=false and the log shows a same-day cancel held more than 1h; it should not return dayCancel."}},{"file":"/Users/sam/Projects/cocktime-scheduler/src/lib/dues/attendanceLog.ts","line":104,"severity":"medium","summary":"The confirmedAt walk-back treats confirmed↔late_pool as one continuous hold, but the server does not. set_late_minutes sets confirmed_at=NULL when a member enters late_pool, and confirmed_at=now() on late_pool→confirmed. waitlisted→late_pool also leaves confirmed_at NULL. So the client's held/dayCancel/grace no longer matches dues_is_day_cancel_chargeable.","failure_scenario":"(1) A member is confirmed on day D-1, switches to late_pool via set_late_minutes, and cancels from late_pool on day D. The server's confirmed_at is NULL, so the predicate is false and there is no day-cancel charge. The client walks back to the D-1 confirm and reports dayCancel=true with '확정 후 20시간'. (2) late_pool→confirmed at 18:00, then cancel at 18:30 on day D. The server treats this as grace (30m), but the client keeps walking back past the late_pool event to the original confirm and reports dayCancel=true and grace=false. (3) waitlisted→late_pool→cancelled more than 1h later: the client sets confirmedAt to the late_pool time and reports dayCancel, but the server has confirmed_at NULL and does not charge. Prod has 13 confirmed→late_pool, 12 waitlisted→late_pool, 4 late_pool→confirmed and 6 late_pool→cancelled rows. Fix: stop the walk at any late_pool transition, and use only the latest →confirmed event as confirmedAt.","verdict":{"real":true,"reason":"The claim holds. In the current server definition (20261002000000_newbie_freepass_cap.sql, and the same in every earlier version), set_late_minutes moves a confirmed or waitlisted member into late_pool with `confirmed_at = null`. On the way out of late_pool it sets `confirmed_at = case when v_new = 'confirmed' then now() else null end`. So the server's confirmed_at only ever records the most recent →confirmed transition, and it is NULL whenever the cancel happens from late_pool.\n\ndues_is_day_cancel_chargeable (20260810000000) needs `p_confirmed_at is not null` and `cancelled_at - confirmed_at &gt;= 1h`. That gives these server results:\n- late_pool→cancelled: never chargeable.\n- late_pool→confirmed at 18:00, then cancelled at 18:30: grace, not chargeable.\n\nlastCancel (attendanceLog.ts:101-110) does two things the server does not:\n- It counts `e.to === 'late_pool'` as a confirmation.\n- It keeps walking back across confirmed↔late_pool to the first confirm (the comment there says \"confirmed↔late_pool 은 같은 점유\").\n\nIts docstring calls this \"the same predicate as dues_is_day_cancel_chargeable\", but the client returns dayCancel=true, grace=false and an inflated \"확정 후 N시간\" in all three scenarios from the claim.\n\nProd ops_audit has these transitions: confirmed→late_pool 13, waitlisted→late_pool 12, late_pool→confirmed 4, late_pool→cancelled 6, late_pool→waitlisted 7. The paths happen in real data.\n\nVisible impact: chargeReason is the only caller (ChargeManagement.tsx:449), and it only runs for rows that already have a charge. When the server's predicate is false, the charge is usually deleted, so the row never appears. The bug shows on rows whose live charge was kept for another reason, such as amount_paid&gt;0 or a manual or board-added charge. On those rows it labels \"당일취소\" where the correct label is \"참석 취소\", and shows a wrong held duration. The scope is narrow, but the client contradicts its own stated contract with the server.","fix":"In lastCancel, mirror the server's confirmed_at. The only transition that sets it is the latest →confirmed, and any move into late_pool or waitlisted clears it. Replace the walk loop with:\n\n```ts\nlet confirmedAt: string | null = null;\nfor (let i = trail.length - 2; i &gt;= 0; i--) {\n\tconst e = trail[i];\n\tif (e.to === \"confirmed\") { confirmedAt = e.at; break; } // server: confirmed_at = now() on each →confirmed\n\tbreak; // →late_pool / →waitlisted / →cancelled / delete: server confirmed_at is NULL at cancel time\n}\n```\n\nSince memberTrail drops same-status updates, this simplifies to: `const prev = trail.at(-2); const confirmedAt = prev?.to === \"confirmed\" ? prev.at : null;`.\n\nAlso fix the docstring/comment, and add tests for confirmed→late_pool→cancelled (dayCancel=false, grace=false, confirmedAt=null) and late_pool→confirmed→cancelled 30m later (grace=true)."}},{"file":"/Users/sam/Projects/cocktime-scheduler/src/lib/dues/attendanceLog.ts","line":51,"severity":"medium","summary":"actorText labels automatic waitlist promotions as '운영진' or '초大자'. A promotion is logged with the triggering request's req_path and actor (the person who cancelled, not the promoted member), so neither the self check nor the path checks recognise it.","failure_scenario":"Prod ops_audit holds 485 rows of /rpc/cancel_attendance waitlisted→confirmed where actor≠member. Member A cancels, waitlisted B is auto-promoted, and the timeline table and hover show 'B 대기→확정 · 운영진'. The same happens for set_late_minutes waitlisted→confirmed (5 rows, also '운영진') and cancel_guest_attendance waitlisted→confirmed (4 rows, shown as '초대자'). These are system promotions, not admin or inviter actions. Fix: classify to='confirmed' &amp;&amp; from='waitlisted' with actor≠member as 자동승격/시스템 before the path checks.","verdict":{"real":true,"reason":"I checked this against the code and prod data
+... (truncated 11380 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/2079ced7-c6e6-42ca-b8c3-5aeb545db1f6/tasks/wmccnox0f.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/2079ced7-c6e6-42ca-b8c3-5aeb545db1f6/subagents/workflows/wf_97e5aaee-e32/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/2079ced7-c6e6-42ca-b8c3-5aeb545db1f6/workflows/scripts/review-charge-reason-wf_97e5aaee-e32.js', resumeFromRunId: 'wf_97e5aaee-e32'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>9</agent_count><agents_done>9</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>865353</subagent_tokens><tool_uses>105</tool_uses><duration_ms>222049</duration_ms></usage>
+</task-notification>
+
+**Answer**: I fixed the 5 defects the review confirmed:
+
+1. **Server flag now wins for 당일취소.** If someone cancelled on the day but was then put on the board and played, the server records them as not 당일취소. The screen was overriding that with its own guess and showing "당일취소". It now follows the server's flag and only falls back to the change history when the flag is missing.
+2. **The "확정 후 N시간" time now matches how the server bills.** The server resets the confirmation time whenever someone moves to or from 늦참. My code was measuring from the very first confirmation. It now uses the same rules, so a cancel from 늦참 is not 당일취소, and a cancel 30 minutes after 늦참→확정 counts as 1시간 grace.
+3. **Waitlist promotions were labelled "운영진".** When someone moves from waiting to 확정 because another person cancelled, the history now says "자동승격". Prod has about 485 of these rows.
+4. **Phone tooltip.** It no longer runs off the edge of the screen for points near the ends of the graph.
+5. **Touch.** On a phone, tapping the graph now shows the tooltip, and it stays until the next tap.
+
+Typecheck and lint are clean, and all accounting tests pass (267/267), including new tests for each fix. I haven't seen it on screen yet. Please open the 10/18 부과 in your browser and check it.
+
+I staged the changed files. Separately, some files were already modified before this work (`docs/ACCOUNTING_SPEC.md`, `AccountingAdmin.tsx` and others). I didn't touch or stage those.
+
+---
+
+## #399
+
+**Prompt**: 각 사람마다 그래프에서 보기 기능은 필요없을거같고, 해당 화면에서 부과변경할때 특정 사람을 부과취소하려면 부과변경 버튼 누르고 전체 체크되있는거 일일히 풀고 해야하는데 부과변경 누르면 사람 칩이 나오고 누르면 해당 부과를 어떻게 할지 처리하는 버튼이 나왔으면 해
+
+**Answer**: I removed the per-person "그래프에서 보기" buttons and replaced the checkboxes in 부과 변경 with name chips.
+
+**How 부과 변경 works now**
+- Tapping 부과 변경 shows a chip for each person in that 부과 list, plus a 전원 chip. Nobody is selected at the start.
+- Tap someone's chip and three buttons appear right below: **금액 변경 / 부과 취소 / 이월**.
+  - To cancel one person, it's now: 부과 변경 → that person's chip → 부과 취소.
+  - You can tap several chips and handle them together, or use 전원 to select everyone.
+  - 이월 only works when exactly one person is selected, because it's handled per member.
+- These three buttons do the same thing as the ones on the 사람별 screen.
+- The 부과 list itself is now a plain list. The graph still appears once at the top of the group, with cancels as dots, but it no longer highlights a selected person.
+
+**Checks**
+- Typecheck is clean and all accounting tests pass (267).
+- Three e2e tests used the old checkbox flow, so I changed them to the chip flow, and all three pass.
+- I took a screenshot of the e2e screen at 390px width: chips wrap onto new lines and the three buttons line up in a row below them, with no overlap. That was test data, so the screen with the real 10/18 data hasn't been checked yet.
+
+I staged the changed files. I left `e2e/accounting.spec.ts` unstaged, because it already had your own uncommitted changes and my three edits are mixed in with them.
+
+---
+
+## #400
+
+**Prompt**: 현황 자세히보기화면에서 부과취소는 됐으면 하는데 아까 만든 챠트랑 게스트는 누구게스트인지, 부과금액변경/취소정도는 이안에서 할 수 있게 해
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #401
+
+**Prompt**: 현황 대관목록에서 엔빵이면 대관금액도 표시해줘.
+
+**Answer**: '자세히 보기' 명단 모달 안에서 이제 그래프 보기, 게스트 초대자 확인, 금액 변경·부과 취소가 다 됩니다. 현황 대관 카드에는 엔빵 대관금액도 넣었습니다. 실제 10/18 데이터로는 아직 화면을 확인하지 못했습니다.
+
+**현황 대관 카드: 엔빵 대관금액**
+- 엔빵 회차면 카드에 "엔빵 · 대관 104,000원 ÷ 17명"처럼 한 줄이 나옵니다.
+- 금액은 발행할 때 저장된 대관 총액을 먼저 쓰고, 없으면 참석 기록으로 계산한 값을 씁니다.
+- 정액 회차에는 이 줄이 나오지 않습니다.
+
+**자세히 보기 모달**
+- **그래프**: 대관 회차면 명단 위에 아까 만든 시간별 확정 인원 그래프가 나옵니다.
+- **누구 게스트인지**: 게스트 행에 "심유진 님이 데려온 게스트"가 붙습니다. 실제 데이터로 보면 #395 심동훈(심유진), #251 여준모(김지훈)입니다. 초대 기록이 없으면 "초대한 회원 기록 없음"으로 나옵니다.
+- **부과 변경·취소**: 행마다 오른쪽에 [변경]이 생겼습니다.
+  - [변경]을 누르면 그 행 아래에 [금액 변경] [부과 취소]가 펼쳐집니다.
+  - 고르면 같은 모달 안에서 부과 탭과 같은 전표가 열립니다.
+  - 저장하거나 닫으면 명단으로 돌아오고, 명단은 새로 고쳐집니다.
+  - 회비 납부 명단 모달에서도 똑같이 동작합니다.
+
+**검증**
+- 타입 검사는 통과했고, 회계 단위 테스트도 267개 모두 통과했습니다.
+- 회계 e2e는 46개 중 45개가 통과합니다.
+  - 모달에 [변경] 버튼이 생겨 키보드 이동 순서가 바뀌었고, 그에 맞게 테스트 2개를 고쳤습니다.
+  - 남은 1개(입금 카드 높이 테스트)는 이번 변경과 상관없이 원래부터 실패하던 것입니다. 이번 CSS를 되돌려도 똑같이 실패했습니다.
+- e2e 테스트 데이터로 회비 모달을 390px 폭 다크 모드에서 캡처해 봤습니다. [변경]을 누르면 버튼 줄이 펼쳐지고, 부과 취소 전표도 모달 안에서 열리는 것을 확인했습니다.
+- 대관 모달의 그래프와 게스트 표시는 화면으로 확인하지 못했습니다. 브라우저에서 10/18 대관 '자세히 보기'를 열어 한번 봐 주세요.
+
+**스테이징**
+이번에 저만 고친 파일은 스테이징했습니다. 아래 파일들은 원래 커밋되지 않은 변경이 있던 파일이라 스테이징하지 않았습니다.
+- `AccountingOverview.tsx`
+- `AccountingAdmin.tsx`
+- `e2e/accounting.spec.ts`
+
+---
+
+## #402
+
+**Prompt**: 엔빵 표현할때 "104,000원 ÷ 16명" 하고 = 넣어서 그래서 얼마내야하는지도 써줘
+
+**Answer**: 엔빵 대관 카드 줄을 계산식으로 바꿨습니다. 실제 10/18 데이터로 화면에서는 아직 확인하지 못했습니다.
+
+> 엔빵 · 대관 104,000원 ÷ 17명 = **1인 6,000원** (정액에 맞춤)
+
+- 나누는 인원(17명)과 1인 금액(6,000원)은 발행할 때 서버가 저장한 실제 계산 값입니다. 그 값이 없으면 참석 기록으로 계산합니다.
+  - 그래서 나중에 한 명을 따로 부과 취소해도 계산식의 인원은 줄지 않습니다. 인원이 16명이 아니라 17명으로 나오는 것도 발행 시점 인원이기 때문입니다.
+- 104,000 ÷ 17 = 6,117원은 정액 6,000원과 200원 미만 차이라서, 서버 규칙대로 6,000원이 부과됐습니다.
+  - 이렇게 정액으로 맞춰진 회차에는 "(정액에 맞춤)"이 붙습니다.
+  - 그래서 1인 금액 × 인원이 대관 총액과 다를 수 있습니다. 이 회차는 걷는 돈이 102,000원으로 총액보다 2,000원 적습니다.
+- 10/11 #382(78,000원 ÷ 13명 = 1인 6,000원)처럼 딱 나눠지면 이 표시는 붙지 않습니다.
+
+타입 검사는 통과했고, 현황 화면 e2e 테스트 4개도 모두 통과했습니다. 이번에 고친 `AccountingOverview.tsx`는 원래 커밋 안 된 변경이 있던 파일이라 스테이징하지 않았습니다.
+
+---
+
+## #403
+
+**Prompt**: 2026-10-18 · 에이트민턴 · 19:00–21:00
+세션 부과 금액을 부과생성 이후에 입력했는데 6천원이 아니고 6천5백원이 되서 완납이라고 표현하지 않아야하는데 해당 예외상황 체크해줘
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #404
+
+**Prompt**: 2026-10-18 · 에이트민턴 · 19:00–21:00
+세션 부과 금액을 부과생성 이후에 입력했는데 6천원이 아니고 6천5백원이 되서 완납이라고 표현하지 않아야하는데 해당 예외상황 체크해줘. 엔빵인데 정액에 맞춤 표현이 왜 떴는지도 체크하고
+
+**Answer**: 확인해 보니 버그나 예외 상황이 아니고, 지금 규칙대로 계산된 결과입니다. 6,500원이 되려면 16명으로 나눠야 하는데, 서버는 17명으로 나눴습니다.
+
+**왜 17명인가**
+- 실제로 참석 확정한 사람은 16명입니다.
+- 여기에 당일취소한 이민지가 대상에 더해졌습니다. 10/18 10:58에 본인이 취소했고, 확정한 지 21시간 뒤라 당일취소 부과 대상입니다.
+- 엔빵은 당일취소자도 나누는 인원에 넣는 규칙입니다. 빼면 코트를 비운 사람은 한 푼도 안 내고, 나온 사람들이 그 몫을 더 나눠 내게 되기 때문입니다.
+- 서버의 부과 대상 함수를 직접 조회해도 17명이 나옵니다.
+
+**왜 6,000원이 됐고 "정액에 맞춤"이 떴나**
+- 104,000 ÷ 17 = 6,117원이고, 10원 단위로 올리면 6,120원입니다.
+- 엔빵 규칙에 정액 근처 맞춤이 있습니다. 1인 금액이 6,000원 이상 6,200원 미만이면 6,000원으로 내립니다(`docs/ACCOUNTING_SPEC.md` 61행).
+- 6,120원이 이 구간에 들어가서 6,000원으로 부과됐습니다. 그래서 엔빵인데도 "(정액에 맞춤)"이 표시된 겁니다.
+- 걷히는 돈은 102,000원으로, 대관비보다 2,000원 적습니다.
+
+**완납 표시**
+- 총액을 입력한 시점(10/19 11:28)에 17명 모두 6,000원으로 다시 발행됐고, 이미 6,000원씩 냈습니다.
+- 그래서 지금 규칙으로는 완납이 맞는 상태입니다.
+- 총액을 나중에 입력해도 다시 발행되는 흐름은 정상적으로 작동했습니다.
+
+**6,500원으로 받으려면 규칙을 바꿔야 합니다.** 정할 것이 두 가지입니다.
+1. **당일취소자를 엔빵 인원에서 뺄지.** 빼면 104,000 ÷ 16 = 6,500원이 됩니다. 다만 이민지의 당일취소 부과를 정액 6,000원으로 따로 받을지, 아예 안 받을지도 같이 정해야 합니다.
+2. **엔빵에서 정액 맞춤을 없앨지.** 없애면 17명 그대로 1인 6,120원이 됩니다.
+
+어느 쪽으로 할지 정해 주시면 서버와 화면 계산을 함께 고치겠습니다. 바꾸면 이미 6,000원을 낸 사람들은 차액만큼 미납으로 다시 잡힙니다.
+
+---
+
+## #405
+
+**Prompt**: 근데 그 세션설명보면 
+
+<pasted_content id="e5d3">
+전체 24명 · 부과 16명 · 제외 8명
+
+
+</pasted_content id="e5d3">
+
+ 라고 써있어
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #406
+
+**Prompt**: 챠트에 마우스오버 노출되는걸 취소만 마우스오버했을때 팁나오게 해
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #407
+
+**Prompt**: go on
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #408
+
+**Prompt**: "16명 6,500원으로 다시 나누기" 버튼을 만들지 말고, 취소하거나 이럴때 다이얼로그띄우고 확인누르면 다시처리하게 해
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #409
+
+**Prompt**: 해당 세션은 다이얼로그가 있기 전에 작업한거라 재분배가 없는데 네가 해줘
+
+**Answer**: The removal is done. I'll fix things once the review results arrive.
+
+---
+
+## #410
+
+**Prompt**: <task-notification>
+<task-id>w0v0fji3x</task-id>
+<tool-use-id>toolu_01WjVoWpHWwU2z7sjV3GF4sZ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/2079ced7-c6e6-42ca-b8c3-5aeb545db1f6/tasks/w0v0fji3x.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Review split-respread prompt + drift detection for money-correctness bugs, verify findings" completed</summary>
+<result>[{"file":"src/components/accounting/useRespreadPrompt.tsx","line":105,"severity":"high","summary":"respread() sends one replace with basis {total, rounding:10}. dues_execute builds each new charge's basis only from the command basis (plus reason and previous_basis), so every reissued charge loses basis.prepayment, basis.line.is_day_cancel and rule:'court'. The server's own reissue path (dues_set_session_fee in 20261019000000) avoids this: it makes separate replace calls for prepayment and normal charges so the prepayment marker survives, and it writes basis.line back afterwards.","failure_scenario":"An 엔빵 group has a member who prepaid (basis.prepayment=true) and a 당일취소 member who is still charged (line.is_day_cancel=true). An admin cancels a third charge and accepts the respread. The new prepaid charge has no prepayment flag, so dues_restore_reversed_prepayment returns null if that deposit is later reversed. The obligation then stays issued instead of going back to the 'upcoming' state. The 당일취소 member's new charge shows as a normal charge in participation.ts and attendanceLog.ts. Prod check on session 395 (already run through the same payload by scripts/respread-session.sh): all 16 live charges have no basis.line and no rule.","verdict":{"real":true,"reason":"Confirmed by reading the code and checking prod.\n\n- **Client:** respread() in useRespreadPrompt.tsx (around lines 82-106) sends a single `replace`. Its basis is only `{total, rounding:10}`, and every line goes into that one call.\n- **Server:** in every version of dues_execute's replace branch (latest is 20260910010000_court_prepayment.sql:119), each new charge's basis is built as `(p-&gt;'basis' - 'members') || {reason, previous_basis: old.basis}`. Nothing from the old charge is carried to the top level, so `prepayment`, `line` and `rule` are all dropped.\n- **The server already handles this for its own reissue path:** dues_set_session_fee in 20261019000000_session_fee_reissue.sql:105-122 has the comment \"replace 의 basis 는 한 호출의 모든 줄에 붙으므로 선납/일반을 나눠 부른다(선납 표식 유지)\". It splits the replace into a prepayment call and a normal call, sets `rule:'court'`, `head` and `per_head`, then writes `basis.line` back because \"replace 는 basis.line 을 버린다\".\n- **Who reads these fields:**\n  - dues_restore_reversed_prepayment (20260914010000:11) returns null unless `c.basis-&gt;'prepayment' = true`. So once the respread drops the flag, reversing that deposit no longer moves the charge back out of the issued state.\n  - participation.ts:118-122 and attendanceLog.ts:144-148 read `basis.line.is_day_cancel`, falling back to `basis.is_day_cancel`. Both are now missing, so a 당일취소 charge displays as a normal charge.\n- **Prod, session 395:** all 16 live charges have no `basis.line`, `rule` is null and `prepayment` is null. Their `previous_basis` still holds the old line, with `is_day_cancel` false on every charge and no prepayment on any of them. So the actual damage in 395 is limited to the lost `line`/`rule` metadata. The defect is real and will cause the described behaviour in any group that has a prepaid or 당일취소 charge.","fix":"Do the respread on the server instead of building the replace in the client. Add an RPC `dues_respread_court_group(p_group uuid)`, admin-gated and security definer with `search_path=''`, that copies the replace loop from dues_set_session_fee (20261019000000:100-125):\n1. Take the live charges of the group and compute per_head with the server split rule (ceil(total/n/10)*10, then snap to the flat fee if it falls in [flat, flat+200)).\n2. For `pre in (false, true)`, call `public.dues_execute` with a `replace` for the live charges whose `coalesce(basis-&gt;'prepayment','false')=to_jsonb(pre)`. Use basis `{rule:'court', total, head:n, per_head, rounding:10} || case when pre then '{\"prepayment\":true}' end`.\n3. After the replace, restore line and prepayment-reversal history from the old charge: `update public.dues_charges c set basis = c.basis || jsonb_build_object('line', c.basis-&gt;'previous_basis'-&gt;'line') where c.id = any(new_ids) and c.basis-&gt;'previous_basis' ? 'line';`\n4. Update `dues_groups.basis` with head and per_head, the same way line 132 does.\n\nPoint useRespreadPrompt.respread() and scripts/respread-session.sh at this RPC.\n\nIf the RPC has to wait, the minimum client-side change is: split drift.liveIds by `c.basis?.prepayment === true`, send two replace commands, and add `rule:'court'`, `head` and `per_head` to the basis (plus `prepayment:true` on the prepaid call). `line` still cannot be restored from the client, so it still needs the server-side update in step 3.\n\nData repair for session 395: `update public.dues_charges set basis = basis || jsonb_build_object('line', basis-&gt;'previous_basis'-&gt;'line', 'rule', 'court') where id in (&lt;the 16 live ids&gt;) and basis-&gt;'previous_basis' ? 'line';` No prepayment flag needs restoring there. This is a prod write, so the user must run it."}},{"file":"src/lib/dues/splitDrift.ts","line":42,"severity":"high","summary":"splitDrift treats live charge count as the split head, with no check on session status, prepayment, or the server's amount_out_of_range limits (per_head*2&lt;flat or per_head&gt;flat*2.5). A court group created by prepayment on an open session has basis.total, but its live charges are only the few prepaid members. That group gets flagged '재분배 필요', and the respread prompt offers to split the whole court total among those few people.","failure_scenario":"An open session has court_fee 78,000. Two members prepay 6,000 each; the server computed per_head from the full attendance target list, and the group basis.total is 78000. The overview card shows '엔빵 재분배 필요' (78000/2 = 39,000 ≠ 6,000). If the admin cancels one prepayment, the prompt offers '1명 78,000원으로 다시 나누기', and confirming reissues a 78,000 charge to one member. The server generator would have held this as amount_out_of_range, but the client replace has no such guard.","verdict":{"real":true,"reason":"I tried to refute this and couldn't. The code path is real, but it is latent: nothing in prod hits it today.\n\n1. Court prepayment works on 엔빵 (split) sessions. `dues_v2_prepayment_candidates` and `dues_v2_prepay_due` in `supabase/migrations/20260910010000_court_prepayment.sql` accept an open session whether `court_fee` is null or greater than 0.\n2. Prepayment issues only the payer's line, but it passes the full candidate basis: `total`, `head` (the whole attendance target list), `per_head`, plus `prepayment: true`.\n3. When no group exists yet, `dues_v2_issue` creates it with that basis. So an open split session's court group has `basis.total` equal to the whole court fee, while its live charges are only the few prepaid members.\n4. `splitDrift` (`src/lib/dues/splitDrift.ts` lines 35-43) checks only `kind === 'court'`, `total &gt; 0`, and the live count. It does not check session status, `basis.prepayment`, or the server's `amount_out_of_range` hold (`per_head*2 &lt; flat` or `per_head &gt; flat*5/2`).\n5. With 78,000 split across 13 targets, the per-head is 6,000. If 2 members prepay, `splitDrift` computes 39,000 ≠ 6,000, so it returns a drift. `AccountingOverview.tsx:541` calls it for every non-monthly group, so the card shows '재분배 필요'.\n6. If the admin then cancels one prepayment through a replace voucher, the live count drops from 2 to 1. `useRespreadPrompt` fires and offers '1명 78,000원으로 다시 나누기'. Its `respread()` sends a client `replace` with `amount: perHead`, and the replace branch has no amount-range check like the generator's hold.\n\nProd check (read-only): every prepayment-created court group so far has `basis.total = null` (flat-fee sessions, so `splitDrift` returns early). The 4 currently open fee-charging sessions (339, 261, 350, 262) all have `court_fee` null. Only 4 of 31 court groups are split groups. So nothing is mis-flagged today. The path opens as soon as anyone prepays an open session that has a `court_fee` set.","fix":"In `sr
+... (truncated 13259 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/2079ced7-c6e6-42ca-b8c3-5aeb545db1f6/tasks/w0v0fji3x.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/2079ced7-c6e6-42ca-b8c3-5aeb545db1f6/subagents/workflows/wf_eb88bb61-e74/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/2079ced7-c6e6-42ca-b8c3-5aeb545db1f6/workflows/scripts/review-respread-wf_eb88bb61-e74.js', resumeFromRunId: 'wf_eb88bb61-e74'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>8</agent_count><agents_done>8</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>773785</subagent_tokens><tool_uses>91</tool_uses><duration_ms>231061</duration_ms></usage>
+</task-notification>
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #411
+
+**Prompt**: go on
+
+**Answer**: The migration is deployed and checks out on production:
+
+- **Server function**: `dues_respread_court_group` now exists.
+- **#395 record**: now reads 16명 × 6,500원 = 104,000원, matching what the screen shows.
+- **#395 charges**: all 16 have their 당일취소 mark and "court" rule tag back.
+- **Integrity check**: passes.
+
+You can ignore the `SET LOCAL ... transaction blocks` warning. The CLI ran the file outside a transaction, so the lock-wait limit at the top of the migration had no effect, but everything else applied.
+
+The confirmation dialog only works once the frontend is deployed. The new screen code is still uncommitted. When you deploy, commit and push both the staged files and the files I left unstaged. Several of those unstaged files also contain your own work: `AccountingOverview.tsx`, `AccountingAdmin.tsx`, `accounting-layout.css`, `ChargeVoucher.tsx`, `OperationDialog.tsx`, `e2e/accounting.spec.ts` and `docs/ACCOUNTING_SPEC.md`.
+
+---
+
+## #412
+
+**Prompt**: go on
+
+**Answer**: #395 is already re-split in production: 16 people × 6,500 = 104,000원. The new confirm dialog is built and tested, but it only works after you deploy one DB migration.
+
+**#395 now**
+- Reissued as 16 people × 6,500원; the 66,000원 already paid moved onto the new charges, so 38,000원 is still owed.
+  - 11 people now owe 500원 each.
+  - 5 people still owe the full 6,500원 (김주영, 엄지현, 전준형, 정민서, 최기선).
+- I did this by building the command in a script on my side, and that dropped two things from the 16 new charges: the 당일취소 mark and the "court" rule tag. The group's record also still says 17명 · 6,000원.
+  - The migration below fixes both. I rehearsed it on production data and rolled it back.
+
+**After cancel → dialog → re-split**
+- In an 엔빵 회차, when cancelling or changing a charge changes the number of people charged, the dialog opens as soon as you save. For example: "부과 인원이 17명에서 16명이 됐습니다 · 104,000원 ÷ 16명 = 1인 6,500원 · 8,000원이 덜 걷힙니다".
+- Pressing **"16명 6,500원으로 다시 나누기"** has the server reissue everyone; "그대로 두기" leaves it as is.
+  - The server keeps the prepayment mark and the 당일취소 mark, and moves money already paid onto the new charges.
+  - It refuses if another change landed after the dialog opened, if the session isn't closed, or if the new amount is outside 0.5–2.5× the flat fee.
+- The dialog does not appear when:
+  - a change keeps the same number of people;
+  - people's amounts were already set individually (so admin adjustments aren't overwritten);
+  - the flat-fee setting can't be read.
+- I removed the separate re-split button. The 현황 card shows "재분배 필요" instead of "완납" while an 엔빵 group is out of line.
+- On the chart, the tooltip now appears only on cancel points.
+
+**Checks**
+- Unit tests pass (275).
+- The new e2e test passes: cancel one of 3 → dialog → confirm → 2 people × 9,000원.
+- Rehearsal on production data: cancelling one of 13 in 회차 #382 re-split the rest to 12 × 6,500원, kept the marks, and passed the integrity check. Production was unchanged afterwards.
+- One accounting e2e test still fails (receipt card height); it fails the same way without these changes.
+
+**You need to do this** — writes to the production DB are blocked for me:
+[코드 블록 생략]
+This applies `20261019010000_dues_respread_court_group.sql`: it adds the server re-split function and fixes #395. You can rehearse it first with `scripts/rehearse-respread.sh`. The screen changes reach users through a frontend deploy (git push).
+
+I staged the files only I changed. I left these unstaged because they already had your uncommitted edits: `AccountingOverview.tsx`, `AccountingAdmin.tsx`, `ChargeVoucher.tsx`, `OperationDialog.tsx`, `e2e/accounting.spec.ts`, `docs/ACCOUNTING_SPEC.md`. The re-split rule is now written up in the 엔빵 section of `ACCOUNTING_SPEC.md`.
+
+---
+
+## #413
+
+**Prompt**: [Image #1] 나누기는 17을 하는데 왜 부과 전체인원은 16명이야? 16명이 맞는걸로 아는데, 노출되는 값은 최대한 같은 변수로 해
+
+**Answer**: The formula line now uses the same headcount as "부과 N명", so the card shows 16 everywhere. With the live data, #395's card reads:
+
+> 엔빵 · 대관 104,000원 ÷ 16명 = **1인 6,500원**
+
+The "(정액에 맞춤)" note goes away for #395, because 6,500원 is the plain division result.
+
+**Why it showed 17 before:** the formula line read the headcount and per-head amount saved when the charges were issued (17명, 6,000원). Those saved numbers didn't change when 이민지's charge was cancelled. "부과 16명" counts the charges that are actually active.
+
+**What changed:**
+- The headcount in the formula is the same value as "부과 16명": the number of active charges.
+- The per-head amount is recalculated from that headcount with the same rule as the server: round up to 10원, and use 6,000원 if the result is just above the flat fee.
+- "(정액에 맞춤)" only appears when that flat-fee rule actually changed the amount.
+- Before charges are issued, the line uses the target count from attendance records instead.
+- The "재분배 필요" warning already used the active-charge count, so every number on the card now comes from the same place.
+
+The overview and re-split e2e tests (5) pass. The saved 17명 in the database gets corrected to 16명 when the migration from last time (`supabase db push`) is deployed; the screen no longer depends on that saved value either way.
+
+---
+
+## #414
+
+**Prompt**: 부과명단 디자인도 일정 참여명단의 그것처럼 디자인 통일해
+
+**Answer**: The 부과 탭 부과 명단 now looks like the 일정 참여 명단: people are grouped under section headers with a count, and each person is one row with their avatar. The 현황 '자세히 보기' modal already looked this way, so both screens now draw their rows from the same shared component.
+
+**부과 탭 명단 changes**
+- **Sections:** 납부 전 · 완납 · 부과 취소·면제 · 이전 발행 (재발행으로 대체). Empty sections are hidden.
+  - Counts are in "명", the same as the 현황 modal. Only the 이전 발행 section counts in "건", because it lists old charges, not people.
+- **Rows:** avatar + name (birth year / 게스트) + amount. Paid amounts are shown dimmed.
+- **Tag next to the name:** only shows a reason the section header doesn't already say, such as 당일취소, 총액 수정으로 재발행됨, 부과 취소, 선납 취소, 변경 발행.
+- **Small grey lines under the name:** the cancellation details (e.g. "10/18 10:58 본인 취소 · 시작 8시간 2분 전") and any unpaid amount by month.
+- 부과 변경 (chips → actions) and the timeline graph work as before.
+
+**Code**
+- The new shared component is `ChargeRoster.tsx`, and both screens use it.
+- The roster CSS used to apply only inside the 현황 modal; I extended it so the 부과 탭 gets the same styles.
+
+**Checks**
+- I took screenshots of both screens from the e2e test data at phone width: the 부과 탭 명단 and the 회비 납부 명단 modal follow the same structure. I haven't checked the real 10/18 data on screen.
+- Typecheck is clean and unit tests pass (275).
+- In the accounting e2e suite, 46 of 47 pass. The one failure (receipt card height) was already failing before these changes.
+
+I staged `ChargeRoster.tsx` and `ChargeManagement.tsx`. I also edited `AccountingOverview.tsx` and `accounting-layout.css`, but left them unstaged because they already had your own uncommitted changes.
+
+The DB migration (`! supabase db push --linked`) is still not deployed. Until it is, the re-split confirmation dialog won't work and #395's saved record stays uncorrected.
+
+---
+
+## #415
+
+**Prompt**: 여기까지 커밋후 배포
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+---
+## #416
+
+**Action:** 회계 부과 명단 개선·엔빵 재분배·회차 총액 변경 재발행
+
+**Answer:** 부과 명단의 '취소'가 재발행 대체/부과 취소/당일취소를 뭉뚱그리던 문제를 사유별로 분리하고, 참석 변경 이력(ops_audit) 기반 시간별 확정 인원 그래프(취소 점에만 팁)를 추가. 부과 변경은 사람 칩 선택→금액 변경/부과 취소/이월 버튼으로 바꾸고, 부과 탭과 현황 모달 명단을 일정 참가자 명단과 같은 섹션+아바타 행(ChargeRoster 공용)으로 통일. 현황 '자세히 보기' 안에서 그래프·게스트 초대자 표시·금액 변경/부과 취소 처리 가능. 엔빵 카드는 '총액 ÷ 부과 인원 = 1인 금액'을 부과 N명과 같은 값으로 표시하고, 인원이 바뀌어 어긋나면 '재분배 필요'. 엔빵 회차에서 부과 취소로 인원이 바뀌면 확인창을 띄워 서버 RPC dues_respread_court_group(선납/일반 분리·당일취소 line 복원·revision 고정·종료 회차·범위 가드)으로 재발행(20261019010000, 세션 395 보정 포함). 회차 총액을 발행 뒤 바꾸면 취소 후 재발행하는 dues_set_session_fee(20261019000000)와 일정 화면 미리보기 확인창 포함. 리뷰 워크플로 2회로 당일취소 판정·late_pool·자동승격 표기·선납 표식 유실 등 결함 수정.

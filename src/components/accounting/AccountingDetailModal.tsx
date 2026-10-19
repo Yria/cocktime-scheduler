@@ -67,11 +67,11 @@ export default function AccountingDetailModal({
 					<button
 						ref={close}
 						type="button"
-						className="ac-detail-close"
+						className="btn-icon-close ac-detail-close"
 						aria-label="닫기"
 						onClick={onClose}
 					>
-						<X size={18} aria-hidden="true" />
+						<X size={16} aria-hidden="true" />
 					</button>
 				</div>
 				<div

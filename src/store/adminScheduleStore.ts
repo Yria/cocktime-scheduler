@@ -14,7 +14,11 @@ import {
 	updateRecurringRule,
 } from "../lib/supabase/recurring";
 import { toast } from "./toastStore";
-import { setSessionCourtFee } from "../lib/supabase/dues";
+import {
+	previewSessionCourtFee,
+	setSessionCourtFee,
+} from "../lib/supabase/dues";
+import { courtFeeResetToast } from "../lib/schedule/courtFee";
 import { duesActions } from "./duesStore";
 import {
 	type CreatePlaceInput,
@@ -169,23 +173,31 @@ export const adminScheduleActions = {
 				});
 			}
 		}
-		// 발행 이력이 없는 회차만 총액을 바꿀 수 있다. 서버가 재검증한다.
+		// 발행분이 있으면 서버가 전부 취소 후 재발행한다(선납 회차 포함).
 		if (row && courtFeeChanged) {
-			await setSessionCourtFee(sessionId, patch.courtFee ?? null);
+			const res = await setSessionCourtFee(sessionId, patch.courtFee ?? null);
 			void duesActions.load();
-			toast("대관 총액을 저장했어요", { variant: "success" });
+			toast(courtFeeResetToast(res), { variant: "success" });
 		}
 		if (row) await reloadOccurrences();
 		return row;
 	},
 
-	/** 발행 이력이 없는 회차의 대관 총액 변경. 기존 부과 변경은 회비 관리에서 처리한다. */
+	/** 총액 변경을 돌려 본 결과(서버 롤백). 확인창 숫자용 — 거부 사유는 throw. */
+	previewCourtFee(sessionId: number, amount: number | null) {
+		return previewSessionCourtFee(sessionId, amount);
+	},
+
+	/**
+	 * 종료·진행 회차의 대관 총액 변경. 발행분이 있으면 전부 취소(납부 해제) 후 새 금액으로 재발행하고,
+	 * 해제한 납부는 같은 회원 새 부과에 다시 연결된다. 실패는 throw — 호출부가 사유를 보여준다.
+	 */
 	async fixCourtFee(sessionId: number, amount: number | null) {
 		const res = await setSessionCourtFee(sessionId, amount);
 		await reloadOccurrences();
-		// 예정 선납 후보의 새 금액을 즉시 반영한다.
+		// 부과·잔액·선납 후보의 새 금액을 즉시 반영한다.
 		void duesActions.load();
-		toast("대관 총액을 저장했어요", { variant: "success" });
+		toast(courtFeeResetToast(res), { variant: "success" });
 		return res;
 	},
 

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
+import { shiftYm, won } from "../../lib/dues/duesText";
 import { matchingMembers, receiptHistory } from "../../lib/dues/selection";
-import MemberPicker from "./MemberPicker";
-import RefundPicker, { type RefundSelection } from "./RefundPicker";
 import { memberLabel } from "../../lib/dues/summary";
 import type {
 	AccountingCommand,
@@ -9,17 +8,15 @@ import type {
 	OperationResult,
 } from "../../lib/dues/types";
 import { actionLabel, purposeLabel } from "../../lib/dues/types";
-import {
-	accountingError,
-	previewAccounting,
-} from "../../lib/supabase/dues";
-import { shiftYm, won } from "../../lib/dues/duesText";
-import type { OperationDraft } from "./OperationDialog";
 import { randomId } from "../../lib/randomId";
-import ManualChargeFields from "./ManualChargeFields";
-import ChargeReferencePreset from "./ChargeReferencePreset";
-import { useInlineAccounting } from "./useInlineAccounting";
+import { accountingError, previewAccounting } from "../../lib/supabase/dues";
 import { duesActions } from "../../store/duesStore";
+import ChargeReferencePreset from "./ChargeReferencePreset";
+import ManualChargeFields from "./ManualChargeFields";
+import MemberPicker from "./MemberPicker";
+import type { OperationDraft } from "./OperationDialog";
+import RefundPicker, { type RefundSelection } from "./RefundPicker";
+import { useInlineAccounting } from "./useInlineAccounting";
 
 type IssueLine = {
 	member_id: string;
@@ -102,7 +99,7 @@ export default function ChargeVoucher({
 				})
 			: ((draft.candidate?.lines as IssueLine[] | undefined) ?? []),
 	);
-	const [cancelOnly, setCancelOnly] = useState(false);
+	const [cancelOnly, setCancelOnly] = useState(draft.cancelOnly ?? false);
 	const [advanced, setAdvanced] = useState(false);
 	const [optionsOpen, setOptionsOpen] = useState(false);
 	const compactManual = draft.type === "issue" && !draft.candidate && !advanced;
@@ -169,6 +166,16 @@ export default function ChargeVoucher({
 			)
 		: [];
 	const selectedMembers = new Set(lines.map((l) => l.member_id));
+	// 사람별 부과 변경은 한 회원의 여러 부과를 한 전표로 바꾼다 — 줄을 회원 이름만으로는
+	// 구분할 수 없으니 원부과 이름을 붙이고, 회원 간 원부과 재배정(select)은 숨긴다.
+	const sameMember =
+		draft.type === "replace" &&
+		new Set(initialCharges.map((c) => c.member_id)).size <
+			initialCharges.length;
+	const lineName = (l: IssueLine) =>
+		sameMember && l.previous_id
+			? `${memberLabel(data, l.member_id)} · ${chargeName(l.previous_id)}`
+			: memberLabel(data, l.member_id);
 	const chargeName = (id: string) =>
 		data.groups.find(
 			(g) => g.id === data.charges.find((c) => c.id === id)?.group_id,
@@ -604,12 +611,13 @@ export default function ChargeVoucher({
 						{!cancelOnly && !compactManual && (
 							<>
 								{lines.map((l, i) => (
-									<div key={l.member_id} className="ac-voucher-line">
-										<span className="ac-voucher-line-name">
-											{memberLabel(data, l.member_id)}
-										</span>
+									<div
+										key={`${l.previous_id ?? ""}:${l.member_id}`}
+										className="ac-voucher-line"
+									>
+										<span className="ac-voucher-line-name">{lineName(l)}</span>
 										<input
-											aria-label={`${memberLabel(data, l.member_id)} 부과액`}
+											aria-label={`${lineName(l)} 부과액`}
 											className={`${field} ac-voucher-line-amount`}
 											type="number"
 											min="1"
@@ -637,33 +645,36 @@ export default function ChargeVoucher({
 										>
 											제외
 										</button>
-										{draft.type === "replace" && initialCharges.length > 1 && (
-											<label>
-												대체할 원부과
-												<select
-													className={field}
-													value={l.previous_id ?? ""}
-													onChange={(e) =>
-														setLines(
-															lines.map((row, index) =>
-																index === i
-																	? {
-																			...row,
-																			previous_id: e.target.value,
-																		}
-																	: row,
-															),
-														)
-													}
-												>
-													{initialCharges.map((c) => (
-														<option key={c.id} value={c.id}>
-															{memberLabel(data, c.member_id)} · {won(c.amount)}
-														</option>
-													))}
-												</select>
-											</label>
-										)}
+										{draft.type === "replace" &&
+											initialCharges.length > 1 &&
+											!sameMember && (
+												<label>
+													대체할 원부과
+													<select
+														className={field}
+														value={l.previous_id ?? ""}
+														onChange={(e) =>
+															setLines(
+																lines.map((row, index) =>
+																	index === i
+																		? {
+																				...row,
+																				previous_id: e.target.value,
+																			}
+																		: row,
+																),
+															)
+														}
+													>
+														{initialCharges.map((c) => (
+															<option key={c.id} value={c.id}>
+																{memberLabel(data, c.member_id)} ·{" "}
+																{won(c.amount)}
+															</option>
+														))}
+													</select>
+												</label>
+											)}
 										{l.due_schedule ? (
 											<>
 												<p className="ac-caption">

@@ -101,7 +101,7 @@ export default function ModalSheet({
 	return createPortal(
 		<>
 			{/* 백드롭: position:absolute + 문서 전체 높이 → iOS 26 fixed 클리핑을 피해 스트립까지
-			    backdrop-filter blur 가 이어진다. 배경(딤 영역) 클릭 시 닫기. */}
+			    딤이 이어진다. 배경(딤 영역) 클릭 시 닫기. */}
 			<div
 				className="lq-overlay"
 				onPointerDown={() => { backdropPress.current = true; }}
@@ -121,7 +121,7 @@ export default function ModalSheet({
 				}}
 			/>
 			{/* 시트 컨테이너: visual viewport 안에 시트를 배치(시트는 세이프에어리어 위에 위치, 스트립엔
-			    백드롭 blur 만 보인다). pointer-events:none 으로 딤 영역 클릭은 아래 백드롭으로 통과. */}
+			    백드롭 딤만 보인다). pointer-events:none 으로 딤 영역 클릭은 아래 백드롭으로 통과. */}
 			<div
 				className={`group/modal-viewport fixed inset-0 flex ${posClass}`}
 				data-short-viewport={shortViewport || undefined}

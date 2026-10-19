@@ -1,21 +1,34 @@
-import { useState } from "react";
 import {
+	ArrowRightLeft,
 	CalendarDays,
 	ChevronRight,
 	ClipboardList,
+	Pencil,
 	Plus,
 	Users,
+	XCircle,
 } from "lucide-react";
+import { useState } from "react";
+import { cancelFactsText, chargeReason } from "../../lib/dues/attendanceLog";
 import { isReversedPrepayment } from "../../lib/dues/chargeState";
 import { holdReasonLabel, won } from "../../lib/dues/duesText";
 import { sessionChoiceLabels } from "../../lib/dues/selection";
 import { groupSummary, memberLabel } from "../../lib/dues/summary";
 import type { AccountingData, BillingGroup } from "../../lib/dues/types";
 import type { accountingSessions } from "../../lib/supabase/dues";
+import AttendanceTimeline from "./AttendanceTimeline";
+import { RosterRow, RosterSection } from "./ChargeRoster";
+import MemberChargePanel from "./MemberChargePanel";
 import type { OperationDraft } from "./OperationDialog";
+import { useAttendanceLog } from "./useAttendanceLog";
 import "./charge-management.css";
 
 const kinds = { monthly: "회비", court: "대관", manual: "수동" };
+
+export interface ChargeFocus {
+	view: "member" | "group";
+	member: string;
+}
 
 export default function ChargeManagement({
 	data,
@@ -28,6 +41,8 @@ export default function ChargeManagement({
 	onManual,
 	onDraft,
 	onCandidate,
+	focus,
+	onFocus,
 }: {
 	data: AccountingData;
 	ym: string;
@@ -43,6 +58,9 @@ export default function ChargeManagement({
 		sid?: number,
 		period?: string,
 	) => Promise<void>;
+	/** 사람별/회차별 보기와 고른 회원. 전표를 다녀와도 같은 사람에 머물도록 부모가 들고 있다. */
+	focus: ChargeFocus;
+	onFocus: (focus: ChargeFocus) => void;
 }) {
 	const [courtOpen, setCourtOpen] = useState(false);
 	const [sessionId, setSessionId] = useState("");
@@ -194,9 +212,37 @@ export default function ChargeManagement({
 					<h2>
 						발행 내역 <span>{issued.length}건</span>
 					</h2>
-					<span>부과액 · 미납</span>
+					<div className="ac-segment" role="group" aria-label="부과 보기">
+						<button
+							type="button"
+							className="ac-chip"
+							aria-pressed={focus.view === "member"}
+							onClick={() => onFocus({ ...focus, view: "member" })}
+						>
+							사람별
+						</button>
+						<button
+							type="button"
+							className="ac-chip"
+							aria-pressed={focus.view === "group"}
+							onClick={() => onFocus({ ...focus, view: "group" })}
+						>
+							회차별
+						</button>
+					</div>
 				</div>
-				{issued.length > 0 && (
+				{focus.view === "member" && (
+					<MemberChargePanel
+						data={data}
+						ym={ym}
+						labels={labels}
+						member={focus.member}
+						onMember={(member) => onFocus({ ...focus, member })}
+						disabled={disabled}
+						onDraft={onDraft}
+					/>
+				)}
+				{focus.view === "group" && issued.length > 0 && (
 					<div
 						className="ac-charge-filters ac-filter-chips"
 						role="group"
@@ -218,21 +264,22 @@ export default function ChargeManagement({
 						))}
 					</div>
 				)}
-				{shown.map((g) => (
-					<IssuedGroup
-						key={g.id}
-						data={data}
-						group={g}
-						label={
-							g.session_id ? (labels.get(g.session_id) ?? g.label) : g.label
-						}
-						open={expanded === g.id}
-						onToggle={() => setExpanded(expanded === g.id ? null : g.id)}
-						disabled={disabled}
-						onDraft={onDraft}
-					/>
-				))}
-				{!shown.length && (
+				{focus.view === "group" &&
+					shown.map((g) => (
+						<IssuedGroup
+							key={g.id}
+							data={data}
+							group={g}
+							label={
+								g.session_id ? (labels.get(g.session_id) ?? g.label) : g.label
+							}
+							open={expanded === g.id}
+							onToggle={() => setExpanded(expanded === g.id ? null : g.id)}
+							disabled={disabled}
+							onDraft={onDraft}
+						/>
+					))}
+				{focus.view === "group" && !shown.length && (
 					<div className="ac-charge-empty">
 						<ClipboardList size={26} aria-hidden="true" />
 						<strong>
@@ -354,7 +401,54 @@ function IssuedGroup({
 	const [editing, setEditing] = useState(false);
 	const [selected, setSelected] = useState<string[]>([]);
 	const selectedLive = selected.filter((id) => live.some((c) => c.id === id));
+	// 이월은 회원 단위 — 한 사람만 골랐을 때만 연다.
+	const selectedOne =
+		selectedLive.length === 1
+			? (live.find((c) => c.id === selectedLive[0])?.member_id ?? null)
+			: null;
 	const total = live.reduce((sum, c) => sum + c.amount, 0);
+	const sessionId = group.kind === "court" ? group.session_id : null;
+	const { log, error: logError } = useAttendanceLog(sessionId, open);
+	const [showReplaced, setShowReplaced] = useState(false);
+	const reasons = new Map(
+		summary.charges.map((c) => [
+			c.id,
+			chargeReason(c, summary.charges, group, log),
+		]),
+	);
+	// 총액 수정·부과 변경으로 대체된 옛 부과는 '취소'가 아니라 이력이다 — 기본은 접어 둔다.
+	const replaced = summary.charges.filter(
+		(c) => reasons.get(c.id)?.kind === "replaced",
+	);
+	const rows = summary.charges.filter(
+		(c) => showReplaced || reasons.get(c.id)?.kind !== "replaced",
+	);
+	const unpaid = (id: string) =>
+		data.due.some((d) => d.charge_id === id && d.remaining > 0);
+	const rosterSections = [
+		{
+			title: "납부 전",
+			tone: "is-ask",
+			rows: rows.filter((c) => c.state === "live" && unpaid(c.id)),
+		},
+		{
+			title: "완납",
+			tone: "is-ok",
+			rows: rows.filter((c) => c.state === "live" && !unpaid(c.id)),
+		},
+		{
+			title: "부과 취소·면제",
+			tone: "",
+			rows: rows.filter(
+				(c) => c.state !== "live" && reasons.get(c.id)?.kind !== "replaced",
+			),
+		},
+		{
+			title: "이전 발행 (재발행으로 대체)",
+			tone: "",
+			rows: rows.filter((c) => reasons.get(c.id)?.kind === "replaced"),
+		},
+	].filter((section) => section.rows.length > 0);
 	return (
 		<div className="ac-issued-group">
 			<button
@@ -404,81 +498,187 @@ function IssuedGroup({
 								disabled={disabled}
 								onClick={() => {
 									setEditing(!editing);
-									setSelected(live.map((c) => c.id));
+									setSelected([]);
 								}}
 							>
-								{editing ? "선택 닫기" : "부과 변경"}
+								{editing ? "변경 닫기" : "부과 변경"}
 							</button>
 						)}
 					</div>
-					{summary.charges.map((c) => {
-						const dues = data.due.filter(
-							(d) => d.charge_id === c.id && d.remaining > 0,
-						);
-						const state = isReversedPrepayment(c)
-							? "선납 취소"
-							: c.state === "cancelled"
-								? "취소"
-								: c.state === "waived"
-									? "면제"
-									: dues.length
-										? "미납/부분납"
-										: "완납";
-						const name = memberLabel(data, c.member_id);
-						return (
-							<div key={c.id} className="ac-issued-member">
-								<div>
-									{editing ? (
-										<label>
-											<input
-												type="checkbox"
-												disabled={disabled || c.state !== "live"}
-												checked={selectedLive.includes(c.id)}
-												onChange={(e) =>
-													setSelected(
-														e.target.checked
-															? [...selectedLive, c.id]
-															: selectedLive.filter((id) => id !== c.id),
-													)
-												}
-											/>
-											{name}
-										</label>
-									) : (
-										<strong>{name}</strong>
-									)}
-									<span>
-										{state}
-										{c.previous_id ? " · 변경 발행" : ""}
-									</span>
-									{dues.map((d) => (
-										<small key={d.id}>
-											{d.due_ym} 납기 · {won(d.remaining)} 남음
-										</small>
-									))}
-								</div>
-								<strong className="ac-number">{won(c.amount)}</strong>
-							</div>
-						);
-					})}
 					{editing && (
-						<div className="ac-undo-block">
-							<strong>선택한 부과 변경</strong>
-							<span>
-								기존 부과를 취소하고 새 금액으로 발행합니다. 이미 받은 돈은
-								잔액으로 돌린 뒤 새 부과에 다시 사용합니다.
-							</span>
-							<button
-								type="button"
-								className="ac-btn-undo"
-								disabled={disabled || !selectedLive.length}
-								onClick={() =>
-									onDraft({ type: "replace", chargeIds: selectedLive })
-								}
-							>
-								선택한 {selectedLive.length}건 취소 후 발행
-							</button>
+						<div className="ac-issued-edit">
+							<p className="ac-caption" aria-live="polite">
+								{selectedLive.length
+									? `${selectedLive.length}명 선택 · 아래에서 처리를 고르세요`
+									: "바꿀 사람을 누르세요"}
+							</p>
+							<div className="ac-issued-chips">
+								<button
+									type="button"
+									className="ac-chip"
+									aria-pressed={selectedLive.length === live.length}
+									disabled={disabled}
+									onClick={() =>
+										setSelected(
+											selectedLive.length === live.length
+												? []
+												: live.map((c) => c.id),
+										)
+									}
+								>
+									전원
+								</button>
+								{live.map((c) => {
+									const on = selectedLive.includes(c.id);
+									return (
+										<button
+											key={c.id}
+											type="button"
+											className="ac-chip"
+											aria-pressed={on}
+											disabled={disabled}
+											onClick={() =>
+												setSelected(
+													on
+														? selectedLive.filter((id) => id !== c.id)
+														: [...selectedLive, c.id],
+												)
+											}
+										>
+											{memberLabel(data, c.member_id)}
+										</button>
+									);
+								})}
+							</div>
+							{selectedLive.length > 0 && (
+								<>
+									<div
+										className="ac-member-charge-actions"
+										role="group"
+										aria-label="선택한 부과 처리"
+									>
+										<button
+											type="button"
+											disabled={disabled}
+											onClick={() =>
+												onDraft({ type: "replace", chargeIds: selectedLive })
+											}
+										>
+											<Pencil size={16} aria-hidden="true" />
+											금액 변경
+										</button>
+										<button
+											type="button"
+											className="is-stop"
+											disabled={disabled}
+											onClick={() =>
+												onDraft({
+													type: "replace",
+													chargeIds: selectedLive,
+													cancelOnly: true,
+												})
+											}
+										>
+											<XCircle size={16} aria-hidden="true" />
+											부과 취소
+										</button>
+										<button
+											type="button"
+											disabled={disabled || selectedOne === null}
+											aria-label="이 회원 미납·입금 이월"
+											onClick={() =>
+												selectedOne !== null &&
+												onDraft({ type: "carry", memberId: selectedOne })
+											}
+										>
+											<ArrowRightLeft size={16} aria-hidden="true" />
+											이월
+										</button>
+									</div>
+									<p className="ac-caption">
+										변경·취소는 원부과를 취소 표시로 남기고, 이미 받은 돈은
+										잔액으로 돌린 뒤 새 부과에 다시 씁니다.
+									</p>
+								</>
+							)}
 						</div>
+					)}
+					{sessionId !== null &&
+						(log ? (
+							<AttendanceTimeline
+								log={log}
+								nameOf={(id) => memberLabel(data, id)}
+							/>
+						) : logError ? (
+							<p className="ac-tl-empty">{logError}</p>
+						) : (
+							<p className="ac-tl-empty">참석 기록 불러오는 중…</p>
+						))}
+					{/* 일정 참가자 명단과 같은 문법: 상태별 섹션 머리 + 아바타 한 줄 행. */}
+					<div className="ac-overview-roster ac-charge-roster">
+						{rosterSections.map((section) => (
+							<RosterSection
+								key={section.title}
+								title={section.title}
+								tone={section.tone}
+								count={section.rows.length}
+								// 사람 단위는 현황 명단과 같은 "명", 대체된 옛 부과 이력만 "건".
+								unit={section.title.startsWith("이전 발행") ? "건" : "명"}
+							>
+								{section.rows.map((c) => {
+									const dues = data.due.filter(
+										(d) => d.charge_id === c.id && d.remaining > 0,
+									);
+									const reason = reasons.get(c.id);
+									const facts =
+										reason?.kind === "dayCancel" || reason?.kind === "other"
+											? reason.facts
+											: null;
+									// 섹션 머리가 납부 상태를 말하므로 알약엔 사유만(당일취소·재발행·선납 취소 …).
+									const label = isReversedPrepayment(c)
+										? "선납 취소"
+										: reason && reason.kind !== "plain"
+											? reason.text
+											: c.previous_id
+												? "변경 발행"
+												: undefined;
+									return (
+										<RosterRow
+											key={c.id}
+											data={data}
+											memberId={c.member_id}
+											label={label}
+											tone={reason?.kind === "dayCancel" ? "is-ask" : ""}
+											notes={[
+												facts && cancelFactsText(facts),
+												reason?.kind === "dayCancel" &&
+													!facts &&
+													!!log &&
+													"참석 변경 기록 없음(기록 시작 전 회차)",
+												...dues.map(
+													(d) =>
+														`${d.due_ym.slice(0, 4)}년 ${Number(d.due_ym.slice(5))}월 납기 · ${won(d.remaining)} 남음`,
+												),
+											]}
+											amount={won(c.amount)}
+											settled={c.state !== "live" || !dues.length}
+										/>
+									);
+								})}
+							</RosterSection>
+						))}
+					</div>
+					{replaced.length > 0 && (
+						<button
+							type="button"
+							className="ac-link ac-issued-history"
+							aria-expanded={showReplaced}
+							onClick={() => setShowReplaced(!showReplaced)}
+						>
+							{showReplaced
+								? "이전 발행 접기"
+								: `이전 발행 ${replaced.length}건 보기 (재발행으로 대체됨)`}
+						</button>
 					)}
 				</div>
 			)}

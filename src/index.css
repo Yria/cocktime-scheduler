@@ -104,6 +104,15 @@ html {
 }
 html.dark {
 	background-color: #0f172a;
+	/* 네이티브 컨트롤(select 펼침 목록·date 피커·스크롤바)도 다크로. 없으면 select 목록이 흰 배경에
+	   상속된 흰 글씨로 떠 안 보인다. */
+	color-scheme: dark;
+}
+/* select 배경이 반투명 토큰(--seg-track 등)이면 Windows Chrome 펼침 목록은 그 색을 흰 바탕에 깔아
+   거의 흰색이 되고, 글씨는 상속된 흰색이라 안 보인다. 옵션엔 불투명 표면색을 직접 준다. */
+option {
+	background-color: var(--card-lq-bg);
+	color: var(--tone-strong);
 }
 
 body {
@@ -740,10 +749,9 @@ h4,
 
 /* ── Overlays ──────────────────────────────────────────────── */
 .lq-overlay {
-	/* 모달 뒤 배경 딤. blur 가 약/미지원이어도 뒤 페이지가 충분히 가려지도록 딤을 진하게. */
+	/* 모달 뒤 배경 딤 — backdrop-filter 없이 딤만. One UI 9 + Chrome 에서 문서 전체 높이 blur 레이어 위에
+	   시트 blur 가 겹치면 딤·시트 배경이 통째로 안 그려지고 초록 줄이 생기는 렌더링 깨짐 제보(2026-10). */
 	background: rgba(0, 0, 0, 0.5);
-	backdrop-filter: blur(8px) saturate(120%);
-	-webkit-backdrop-filter: blur(8px) saturate(120%);
 }
 .dark .lq-overlay {
 	background: rgba(0, 0, 0, 0.6);

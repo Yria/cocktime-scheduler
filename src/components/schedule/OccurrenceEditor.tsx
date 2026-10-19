@@ -4,6 +4,7 @@ import type {
 	OccurrencePatch,
 	OneOffInput,
 } from "../../lib/supabase/recurring";
+import type { SetSessionFeeResult } from "../../lib/supabase/dues";
 import type { CreatePlaceInput } from "../../lib/supabase/schedule";
 import type { PlaceRow, SessionRow } from "../../lib/supabase/types";
 import {
@@ -34,6 +35,10 @@ interface Props {
 	onReopen: (occurrence: SessionRow) => Promise<void>;
 	/** 종료·진행 회차의 대관 총액 정정(미납 발행분 금액만 바뀐다). 정보 뷰에서 노출. */
 	onFixCourtFee: (sessionId: number, amount: number | null) => Promise<unknown>;
+	onPreviewCourtFee: (
+		sessionId: number,
+		amount: number | null,
+	) => Promise<SetSessionFeeResult>;
 	onClose: () => void;
 }
 
@@ -48,6 +53,7 @@ export default function OccurrenceEditor({
 	onDelete,
 	onReopen,
 	onFixCourtFee,
+	onPreviewCourtFee,
 	onClose,
 }: Props) {
 	const {
@@ -177,6 +183,9 @@ export default function OccurrenceEditor({
 						}
 						chargesCourtFee={occurrenceChargesCourt}
 						onFixCourtFee={(amount) => onFixCourtFee(occurrence.id, amount)}
+						onPreviewCourtFee={(amount) =>
+							onPreviewCourtFee(occurrence.id, amount)
+						}
 					/>
 				) : (
 					// 신규 일회성 또는 draft/open 편집 폼

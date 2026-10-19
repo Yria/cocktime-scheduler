@@ -692,9 +692,6 @@
 .ac-layout-v2 .ac-issue-slip input.ac-number {
 	font-weight: 700;
 }
-.dark .ac-issue-slip input[type="date"] {
-	color-scheme: dark;
-}
 .ac-issue-slip .ac-section-heading h4,
 .ac-issue-slip .ac-voucher-roster .ac-chip,
 .ac-issue-slip .ac-voucher-roster small {
@@ -1011,22 +1008,93 @@
 .ac-detail-body::-webkit-scrollbar-button,
 .ac-reference-list::-webkit-scrollbar-button { display: none; }
 .ac-detail-body:focus-visible { outline-offset: -2px; }
+/* 머리글·닫기·명단은 앱의 참가자 명단 시트(SessionParticipantsModal · SheetHeader)와
+   같은 문법이다 — 15.5/800 제목 + 12.5 보조줄, 32px 원형 ✕(.btn-icon-close). */
 .ac-detail-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.ac-detail-heading > div { min-width: 0; }
-.ac-detail-heading h2 { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
-.ac-detail-heading .ac-caption { margin-top: 4px; font-size: 12px; }
-.ac-detail-close {
+.ac-detail-heading > div { min-width: 0; padding-top: 2px; }
+.ac-detail-heading h2 { font-size: 15.5px; font-weight: 800; line-height: 1.35; color: var(--ac-ink); overflow-wrap: anywhere; }
+.ac-detail-heading .ac-caption { margin-top: 3px; font-size: 12.5px; font-weight: 600; line-height: 1.4; }
+/* 회계 화면 버튼 최소 터치 44px(accounting.css:141)은 지키고, 보이는 칩만 앱 표준 32px 원으로
+   그린다 — 6px 패딩 + content-box 배경 클립. 음수 마진으로 칩 외곽을 본문 오른끝·제목 윗선에 맞춘다. */
+.accounting-screen .ac-detail-close {
+	width: 44px;
+	height: 44px;
+	padding: 6px;
+	margin: -6px -6px -6px 0;
+	background-clip: content-box;
+	/* 앱의 --mat-ultra-thin 은 유리 시트용이라 회계의 불투명 흰 면 위에선 사라진다. */
+	background-color: var(--ac-fill);
+	color: var(--ac-ink-2);
+}
+.accounting-screen .ac-detail-close:focus-visible { outline-offset: -4px; }
+
+/* 근거 요약 면 — 규칙선 두 줄 대신 틴트 면 하나에 '참석 기록 / 부과 제외'를 이름-값으로 맞춘다. */
+.ac-detail-content .ac-roster-facts {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	gap: 6px 12px;
+	margin: 0;
+	padding: 10px 12px;
+	border-radius: 10px;
+	background: var(--ac-fill);
+	font-size: 12.5px;
+	line-height: 1.45;
+}
+.ac-detail-content .ac-roster-facts > div { display: contents; }
+.ac-detail-content .ac-roster-facts dt { color: var(--ac-ink-3); font-weight: 700; white-space: nowrap; }
+.ac-detail-content .ac-roster-facts dd { margin: 0; color: var(--ac-ink-2); text-wrap: pretty; }
+.ac-detail-content .ac-roster-facts .is-wide dd { grid-column: 1 / -1; }
+.accounting-screen.ac-detail-content .ac-overview-attendance { padding: 0; border: 0; }
+
+/* 명단(현황 상세 모달 · 부과 탭 공용) — 상태별 섹션 머리 + 아바타 한 줄 행. 행 사이 규칙선 없이 간격으로만 나눈다. */
+:is(.ac-detail-content .ac-overview-roster, .ac-overview-roster.ac-charge-roster) { margin: 0; padding: 0; border: 0; display: grid; gap: 10px; }
+:is(.ac-detail-content, .ac-charge-roster) .ac-roster-title {
+	padding: 6px 2px 4px;
+	font-size: 11.5px;
+	font-weight: 700;
+	letter-spacing: 0.2px;
+	color: var(--ac-ink-3);
+}
+:is(.ac-detail-content, .ac-charge-roster) .ac-roster-title.is-ask { color: var(--ac-ask); }
+:is(.ac-detail-content, .ac-charge-roster) .ac-roster-title.is-ok { color: var(--ac-ok); }
+:is(.ac-detail-content, .ac-charge-roster) .ac-roster-title > .ac-number { margin-left: 2px; color: var(--ac-ink-3); font-weight: 600; }
+:is(.ac-detail-content, .ac-charge-roster) .ac-row.ac-roster-row {
+	grid-template-columns: 32px minmax(0, 1fr) auto;
+	column-gap: 10px;
+	align-items: center;
+	min-height: 48px;
+	padding: 6px 2px;
+}
+:is(.ac-detail-content, .ac-charge-roster) .ac-row.ac-roster-row::before { display: none; }
+:is(.ac-detail-content, .ac-charge-roster) .ac-roster-avatar { grid-column: 1; display: flex; }
+:is(.ac-detail-content, .ac-charge-roster) .ac-roster-row .ac-row-body { gap: 1px; }
+:is(.ac-detail-content, .ac-charge-roster) .ac-roster-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+:is(.ac-detail-content, .ac-charge-roster) .ac-roster-name > strong { font-size: 14px; font-weight: 600; color: var(--ac-ink); overflow-wrap: anywhere; }
+:is(.ac-detail-content, .ac-charge-roster) .ac-roster-name > strong > span { font-size: 12px; font-weight: 500; color: var(--ac-ink-3); }
+:is(.ac-detail-content, .ac-charge-roster) .ac-roster-row .ac-row-note { font-size: 12px; line-height: 1.4; color: var(--ac-ink-3); }
+:is(.ac-detail-content, .ac-charge-roster) .ac-roster-row .ac-amount { align-self: center; font-size: 14px; font-weight: 700; }
+:is(.ac-detail-content, .ac-charge-roster) .ac-roster-row .ac-amount.is-settled { color: var(--ac-ink-3); font-weight: 600; }
+/* 섹션과 다른 상태어만 이름 옆 작은 알약으로 — 홈 알약(home:374, 0,4,0)보다 작게. */
+:is(.accounting-screen.ac-layout-v2.ac-detail-content, .accounting-screen.ac-layout-v2 .ac-charge-roster) .ac-roster-name > .ac-row-state {
 	display: inline-flex;
 	align-items: center;
-	justify-content: center;
-	width: 36px;
-	min-height: 36px;
-	flex-shrink: 0;
-	border: 1px solid var(--ac-rule);
-	border-radius: var(--ac-r-chip);
-	color: var(--ac-ink-2);
+	padding: 1px 7px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 700;
+	line-height: 1.4;
 	background: var(--ac-fill);
+	color: var(--ac-ink-2);
 }
-.ac-detail-content .ac-overview-roster { margin: 0; padding-top: 0; }
-.ac-detail-content .ac-overview-exclusions,
-.ac-detail-content .ac-overview-attendance { margin: 0; font-size: 12px; }
+:is(.accounting-screen.ac-layout-v2.ac-detail-content, .accounting-screen.ac-layout-v2 .ac-charge-roster) .ac-roster-name > .ac-row-state.is-ok { background: var(--ac-ok-soft); color: var(--ac-ok); }
+:is(.accounting-screen.ac-layout-v2.ac-detail-content, .accounting-screen.ac-layout-v2 .ac-charge-roster) .ac-roster-name > .ac-row-state.is-ask { background: var(--ac-ask-soft); color: var(--ac-ask); }
+/* 섹션 머리와 같은 상태어 — 화면에서만 감추고 보조기기·e2e 에는 남긴다. */
+:is(.accounting-screen.ac-layout-v2.ac-detail-content, .accounting-screen.ac-layout-v2 .ac-charge-roster) .ac-roster-name > .ac-row-state.is-echo {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}

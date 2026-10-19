@@ -18,6 +18,8 @@ export interface OperationDraft {
 		| "expense"
 		| "simple";
 	chargeIds?: string[];
+	/** replace 를 '취소만'으로 연다(사람별 부과 변경의 [부과 취소]). */
+	cancelOnly?: boolean;
 	memberId?: string;
 	positionId?: string;
 	outTxId?: number;

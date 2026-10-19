@@ -30,11 +30,12 @@ import { useDuesData, useDuesStore } from "../../store/duesStore";
 import AppScreen from "../common/AppScreen";
 import AccountingLedger from "./AccountingLedger";
 import AccountingOverview from "./AccountingOverview";
+import ChargeManagement, { type ChargeFocus } from "./ChargeManagement";
 import ChargeVoucher from "./ChargeVoucher";
-import ChargeManagement from "./ChargeManagement";
 import DuesSettingsModal from "./DuesSettingsModal";
 import type { OperationDraft } from "./OperationDialog";
 import TransactionCard from "./TransactionCard";
+import { useRespreadPrompt } from "./useRespreadPrompt";
 
 const tabs = [
 	["home", "현황"],
@@ -52,7 +53,15 @@ export default function AccountingAdmin() {
 	const { data, error, loading, refresh } = useDuesData();
 	const mode = useDuesStore((s) => s.mode)!;
 	const [draft, setDraft] = useState<OperationDraft | null>(null);
+	const respread = useRespreadPrompt(data ?? null);
+	// 전표를 열 때의 인원을 찍어 둔다(엔빵 인원이 바뀌면 저장 뒤 재분배를 묻는다).
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 열리는 순간만 찍는다
+	useEffect(() => respread.watch(draft), [draft]);
 	const [chargeManagement, setChargeManagement] = useState(true);
+	const [chargeFocus, setChargeFocus] = useState<ChargeFocus>({
+		view: "member",
+		member: "",
+	});
 	const [manualVersion, setManualVersion] = useState(0);
 	const [manualDirty, setManualDirty] = useState(false);
 	const [chargeNotice, setChargeNotice] = useState("");
@@ -90,7 +99,12 @@ export default function AccountingAdmin() {
 		};
 	}, [page, chargeManagement, sessions, sessionAttempt]);
 	const go = (month: string, tab = page) => {
-		if (tab === "charge" && (page !== "charge" || month !== ym) && !manualDirty && !draft)
+		if (
+			tab === "charge" &&
+			(page !== "charge" || month !== ym) &&
+			!manualDirty &&
+			!draft
+		)
 			setChargeManagement(true);
 		navigate(`/dues/${month}${tab === "home" ? "" : `/${tab}`}`);
 	};
@@ -160,8 +174,9 @@ export default function AccountingAdmin() {
 					kstMonth(t.occurred_at) === ym &&
 					transactionNeedsSettlement(data, t.id),
 			)
+			// 오래된 입금부터 — 묵은 미정산이 아래로 밀려 잊히지 않게.
 			.sort(
-				(a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id - a.id,
+				(a, b) => a.occurred_at.localeCompare(b.occurred_at) || a.id - b.id,
 			) ?? [];
 	const shownPending = pending.filter(
 		(t) => nameMatches(t.name ?? "", search) || String(t.id) === search.trim(),
@@ -295,6 +310,7 @@ export default function AccountingAdmin() {
 					</div>
 				</>
 			)}
+			{respread.dialog}
 			{!data ? (
 				<p className="ac-caption">회계 내역을 불러오는 중…</p>
 			) : (
@@ -306,6 +322,9 @@ export default function AccountingAdmin() {
 							ym={ym}
 							sessionLabels={sessionLabels}
 							onNavigate={(tab) => go(ym, tab)}
+							disabled={disabled}
+							onDone={refresh}
+							onPendingChange={setSettling}
 						/>
 					) : page === "ledger" ? (
 						<AccountingLedger
@@ -427,6 +446,8 @@ export default function AccountingAdmin() {
 										setDraft(next);
 									}}
 									onCandidate={candidate}
+									focus={chargeFocus}
+									onFocus={setChargeFocus}
 								/>
 							)}
 							{draft && (
@@ -436,6 +457,7 @@ export default function AccountingAdmin() {
 									data={data}
 									viewYm={ym}
 									onClose={(saved) => {
+										if (saved) respread.saved();
 										setDraft(null);
 										setChargeManagement(true);
 										setChargeNotice(saved ? "처리한 내용을 반영했습니다." : "");

@@ -364,11 +364,10 @@
 	border-radius: var(--ac-r-card);
 	padding: var(--ac-s-3);
 }
-/* 무장 슬롯 — 지금 편집 중인 한 건. 좌측 밴드가 '여기가 작업 지점'을 말한다. */
+/* 무장 슬롯 — 지금 편집 중인 한 건. 좌측 색 보더는 쓰지 않는다(디자인 원칙). */
 .ac-armed {
 	background: var(--ac-paper);
 	border: 1px solid var(--ac-rule-strong);
-	border-left: 3px solid var(--ac-act);
 	border-radius: var(--ac-r-field);
 	padding: var(--ac-s-3);
 	display: flex;
@@ -776,9 +775,9 @@
 	background: var(--ac-stop-soft);
 	color: var(--ac-stop);
 }
-/* 파괴적 처리는 형태로 구분한다 — 채움 버튼이 아니라 외곽선 + 이중 좌캡 */
+/* 파괴적 처리는 위험 틴트 면 + 외곽선으로 구분한다(좌측 색 보더 금지). */
 .ac-undo-block {
-	border-left: 3px double var(--ac-stop);
+	border: 1px solid var(--ac-stop-line, var(--ac-rule));
 	background: var(--ac-stop-soft);
 	border-radius: var(--ac-r-chip);
 	padding: var(--ac-s-2) var(--ac-s-3);
@@ -1636,13 +1635,6 @@
 	text-align: right;
 	font-variant-numeric: tabular-nums;
 	font-weight: 600;
-}
-/* 정산함 카드의 리브 — 판단이 남았는지를 카드 왼쪽 색면으로 먼저 말한다. */
-.ac-transaction.is-ask {
-	border-left: 3px solid var(--ac-ask);
-}
-.ac-transaction.is-settled {
-	border-left: 3px solid var(--ac-ok);
 }
 /* 남겨 둔 아바타형 픽커(환불 원입금 흐름). 내부 스크롤은 두지 않는다. */
 .ac-member-picker {
