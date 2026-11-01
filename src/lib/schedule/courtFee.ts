@@ -95,15 +95,30 @@ export function courtFeeResetLines(
 	return lines;
 }
 
-/** 저장 후 토스트 한 줄. */
-export function courtFeeResetToast(r: CourtFeeResetResult): string {
-	if (r.unchanged) return "대관 총액을 저장했어요 · 인당 금액이 같아 부과는 그대로예요";
-	const parts = ["대관 총액을 저장했어요"];
+/** 회차 수정 후 토스트. recharged=총액·대관장소 여부가 바뀌어 부과를 다시 맞춤. */
+export function occurrenceEditToast(
+	r: CourtFeeResetResult & { recharged: boolean },
+): string {
+	if (!r.recharged) return "회차를 저장했어요";
+	if (r.unchanged) return "회차를 저장했어요 · 부과는 그대로예요";
+	return ["회차를 저장했어요", ...resetParts(r)].join(" · ");
+}
+
+/** 확인창을 띄울 만큼 부과가 바뀌는가(취소·발행·발행 대기 중 하나라도). */
+export function resetTouchesCharges(r: CourtFeeResetResult): boolean {
+	return (
+		!r.unchanged &&
+		(r.cancelled ?? 0) + (r.reissued ?? 0) + (r.issued_new ?? 0) + r.held > 0
+	);
+}
+
+function resetParts(r: CourtFeeResetResult): string[] {
+	const parts: string[] = [];
 	if ((r.cancelled ?? 0) > 0) parts.push(`기존 ${r.cancelled}건 취소`);
 	const issued = (r.reissued ?? 0) + (r.issued_new ?? 0);
 	if (issued > 0) parts.push(`${issued}건 발행`);
 	if ((r.left_as_balance ?? 0) > 0)
 		parts.push(`잔액 ${won(r.left_as_balance ?? 0)} 남음`);
 	if (r.held > 0) parts.push("발행 대기");
-	return parts.join(" · ");
+	return parts;
 }

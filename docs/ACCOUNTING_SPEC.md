@@ -12,6 +12,7 @@
 
 > 2026-09-16: [명예회원 미납 회비 면제](../supabase/migrations/20260916020000_waive_honorary_member_monthly_dues.sql)도 운영 DB에 적용했다. 명예회원 지정 RPC가 기존 미납 월 회비를 같은 트랜잭션에서 면제하고 `cleared_unpaid`에 건수를 반환한다. 기존 명예회원의 잔여 미납 회비 1건(5,000원)을 정리했으며, 통장·납부·잔액·환불·회원 정보와 대상 외 부과/납기의 적용 전후 해시는 동일했다. 관련 테스트 49개, 타입 검사 및 변경 파일 린트를 통과했다.
 
+> 2026-11-02: [진행·종료 회차 수정](../supabase/migrations/20261102000000_session_edit_after_start.sql). 회차 에디터가 진행(active)·종료(closed) 회차도 연다(취소 회차만 정보 보기). 기존 회차 저장은 상태와 무관하게 `session_edit` 한 트랜잭션(경로는 서버가 잠근 행의 상태로 판단): 진행·종료 회차는 날짜 고정(시간만), **총액이 바뀌거나 대관장소 여부가 바뀌면**(또는 비대관인데 유효 대관비가 남아 있으면 — 예정 회차 선납분 포함) `dues_set_session_fee`로 부과를 취소·재발행한다. `dues_set_session_fee`는 이제 비대관 장소면 대상 없음으로 보고 유효 대관비를 전부 취소한다(이전엔 거부). 대관→대관·시간 변경은 부과 불변, 장부 라벨만 갱신. 화면은 `session_edit_preview`(실행 후 롤백)로 부과가 바뀔 때만 확인받는다(§4.4, §14). 검증 `src/lib/dues/sessionFeeReissue.test.ts`.
 > 2026-10-19: [회차 총액 변경 재발행](../supabase/migrations/20261019000000_session_fee_reissue.sql). v2 승격 뒤 `dues_set_session_fee`는 발행분이 하나라도 있으면 거부해, 총액 미입력으로 종료된 회차(세션 395, 정액 6,000원×13명)에 실제 총액을 넣을 수 없었다. 이제 발행분이 있으면 **유효 부과 전부를 `replace`로 취소하고 새 총액으로 재발행**한다(§14 "자격·총액 변경" 행). 행 삭제는 하지 않는다. 운영 리허설(begin…rollback): 395회차 13건 취소→17건 발행(운영진 4명 추가), 382회차 납부 8건 48,000원 해제→같은 회원 새 부과에 36,960원 재연결·11,040원 회원 잔액, `dues_assert` 통과. 검증 `src/lib/dues/sessionFeeReissue.test.ts`.
 
 ## 0. 먼저 구분할 개념
@@ -107,7 +108,7 @@
 | 운영진 `/dues/:ym/charge` 부과 | 회비·대관·수동 부과 발행, 발행 내역 조회 및 변경 |
 | 회원 `/my-dues` | 달 단위 납부 현황(달 이동 가능), 오늘 기준 낼 돈 알림, 입금 계좌 복사, 그 달의 납부·환불 내역 |
 | 회원 `/my-dues/ledger` | 클럽 월별 수입·지출과 항목별 수지(잔액은 운영진 전용) |
-| 일정 관리의 회차 상세 | 코트 총액 입력 및 저장·재발행 |
+| 일정 관리의 회차 상세 | 코트 총액 입력 및 저장·재발행. 진행·종료 회차도 수정(장소·총액 변경 시 대관비 재계산) |
 
 현황·정산함·회계·부과 탭의 월 선택은 공통이지만, 모든 조회가 그 달로 제한되지는 않는다(§11).
 
@@ -352,6 +353,7 @@ Claude Design `콕타임 회계 v2` 3a 아트보드 구조다(2026-09-11). 읽�
 | 부과 reset | 배분 합계로 unpaid/partial/paid/overpaid 복원 | 배분 불변 |
 | 입금 처리 취소 | 부과는 남고 배분 합계/상태 재계산 | **그 입금의 전체 배분** 삭제. 통장 원본·연결 환불·묶음은 남음 |
 | 회차 총액 저장·재발행 | (기존 모드) **완납·부분납·void·waived 포함 해당 회차 부과 전부 삭제 후 새 ID로 재생성**. 새 모드는 삭제 없이 취소 후 재발행 — §14 | 먼저 해당 회차의 배분 전부 해제. 다른 부과에 사용한 배분은 보존. 은행 거래는 남아 재처리 필요 |
+| 진행·종료 회차 수정 | 총액 변경 또는 대관장소↔비대관 전환이면 위 행과 같은 취소 후 재발행(비대관이 되면 취소만, 대관이 되면 종료 회차는 즉시 발행·진행 회차는 종료 때). 시간·대관→대관 장소·카풀·정모·식사·공지는 부과 불변(장부 라벨만 시간·장소 반영). 날짜 변경은 거부 | 위 행과 같음 |
 | 수동 부과 명단/금액 저장 | 배분 0인 기존 행만 갱신, 빠진 사람 중 배분 0·void 아님 삭제 | 배분된 사람은 금액·이름·날짜까지 기존 값 유지. 제외했어도 남음 |
 | 수동 부과 묶음 삭제 | 배분 0인 부과는 void 포함 삭제 | 배분된 행은 남음; 환불이 아님 |
 
@@ -439,7 +441,7 @@ DB는 다른 달 연결을 허용하지만, 정산함 후보·연결 환불 합�
 | 회비 대상·발행·초안 발행 | [월 회비 발행 모델](../supabase/migrations/20260823030000_monthly_issued_facts.sql), [ensure/종료 트리거](../supabase/migrations/20260715080000_auto_charge_generation.sql) |
 | 대관 대상·발행 | [참석 ∪ 보드](../supabase/migrations/20260818000000_court_targets_include_board_added.sql)의 `dues_court_targets`, [최신 종료 발행](../supabase/migrations/20260831000000_prepaid_court_close_auto_issue.sql) |
 | 초안 폐기·부과 상태 | [초안 도입](../supabase/migrations/20260823020000_charges_are_issued_facts.sql)의 `dues_discard_drafts`, [void/reset](../supabase/migrations/20260727130000_court_void_durable_all_deletes.sql)의 `dues_set_charge_status` |
-| 총액 재발행 | 새 모드: [취소 후 재발행](../supabase/migrations/20261019000000_session_fee_reissue.sql). 기존 모드: [회차 정산 초기화](../supabase/migrations/20260823080000_reset_session_court_on_fee_change.sql). [회차 화면](../src/components/schedule/OccurrenceInfoView.tsx) |
+| 총액 재발행 | 새 모드: [취소 후 재발행](../supabase/migrations/20261019000000_session_fee_reissue.sql). 기존 모드: [회차 정산 초기화](../supabase/migrations/20260823080000_reset_session_court_on_fee_change.sql). [진행·종료 회차 수정](../supabase/migrations/20261102000000_session_edit_after_start.sql). [회차 화면](../src/components/schedule/OccurrenceEditor.tsx) |
 | 비활성·명예 | [비활성 미납 삭제](../supabase/migrations/20260820020000_uncharge_dues_on_deactivate.sql), [명예회원](../supabase/migrations/20260720020000_dues_honorary_members.sql)의 `dues_set_honorary`, [본인 비활성화](../supabase/migrations/20260821020000_self_deactivate.sql) |
 | 수동 부과 | [최신 upsert/총액 저장](../supabase/migrations/20260823100000_txn_status_sync_and_batch_total.sql), [묶음 삭제](../supabase/migrations/20260823010000_manual_charge_batches.sql)의 `dues_delete_manual_batch`, [명단/금액 편집](../src/components/admin/dues/ManualChargeSheet.tsx) |
 | 입금 처리·동명이인 | [최신 배분 RPC](../supabase/migrations/20260823110000_reconcile_manual_batch_path.sql), [납부자/항목 선택](../src/components/admin/dues/ReconcileInRow.tsx), [후보 접기](../src/components/admin/dues/matching.ts) |
@@ -495,7 +497,7 @@ DB는 다른 달 연결을 허용하지만, 정산함 후보·연결 환불 합�
 | 환불 | 전체 월 원입금에서 선택. 실제 출금 한 건은 원입금 한 건에 연결. 연결 해제 후에도 환불 예정 금액을 예약 |
 | 월/묶음 집계 | 회원·운영진은 공통 원장을 조회. 월은 해당 월 실제 입출금, 묶음은 모든 관련 월의 거래·납부를 합산. 월 마감 잠금 없음 |
 | 기존 자료 | 활성화 시 현재 발행·납부·환불·취소·잔액을 이관. 과거 부과를 현재 자격으로 재계산하지 않고 기존 잔액을 자동 이월로 바꾸지 않음 |
-| 자격·총액 변경 | 회원 비활성화(본인 탈퇴 포함)는 월과 이월 여부에 관계없이 실제 납부 잔액이 0인 기존 월 회비를 `cancelled`로 보존하고 납기 잔액을 0으로 만든다. 명예회원 지정도 같은 미납 조건의 기존 월 회비를 `waived`로 보존하고 납기 잔액을 0으로 만든다. 부분·완납 회비, 대관비, 수동 부과, 기존 취소·면제는 유지한다. 재활성화·명예 해제는 취소·면제를 되돌리지 않는다. **회차 대관 총액 변경**(`dues_set_session_fee`, 일정 화면): 발행분이 있으면 그 회차의 유효 대관비를 전부 `replace`로 취소(납부 배분 해제 → 낸 사람 잔액)하고, 아직 대상인 회원에게 새 인당 금액으로 `previous_id`를 이어 재발행하면서 해제한 돈을 **같은 회원의 새 부과에 자동 재배분**한다. 넘치는 돈은 회원 잔액(환불·이월은 회비 관리), 모자라면 차액이 미납. 대상에서 빠진 회원(총액 0, 엔빵→정액의 운영진)은 취소만. 종료 회차는 새 대상(정액→엔빵의 운영진 등)도 바로 발행하고, 진행 전·중이면 종료 트리거에 맡긴다. 선납 부과는 `prepayment` 표식을 유지한다. 이 경로로 취소한 부과에는 `basis.reissuable=true`를 달아 이후 재발행(0원→금액 재입력 등)을 막지 않는다 — 사람이 면제·취소한 부과는 여전히 되살리지 않는다. 같은 값 재저장은 `unchanged`로 아무것도 바꾸지 않고, 인당 금액이 정상 범위(정액의 ½~2.5배) 밖이면 거부한다. 화면은 `dues_session_fee_preview`(실행 후 롤백) 숫자로 확인받는다 |
+| 자격·총액 변경 | 회원 비활성화(본인 탈퇴 포함)는 월과 이월 여부에 관계없이 실제 납부 잔액이 0인 기존 월 회비를 `cancelled`로 보존하고 납기 잔액을 0으로 만든다. 명예회원 지정도 같은 미납 조건의 기존 월 회비를 `waived`로 보존하고 납기 잔액을 0으로 만든다. 부분·완납 회비, 대관비, 수동 부과, 기존 취소·면제는 유지한다. 재활성화·명예 해제는 취소·면제를 되돌리지 않는다. **회차 대관 총액 변경**(`dues_set_session_fee`, 일정 화면): 발행분이 있으면 그 회차의 유효 대관비를 전부 `replace`로 취소(납부 배분 해제 → 낸 사람 잔액)하고, 아직 대상인 회원에게 새 인당 금액으로 `previous_id`를 이어 재발행하면서 해제한 돈을 **같은 회원의 새 부과에 자동 재배분**한다. 넘치는 돈은 회원 잔액(환불·이월은 회비 관리), 모자라면 차액이 미납. 대상에서 빠진 회원(총액 0, 엔빵→정액의 운영진)은 취소만. 종료 회차는 새 대상(정액→엔빵의 운영진 등)도 바로 발행하고, 진행 전·중이면 종료 트리거에 맡긴다. 선납 부과는 `prepayment` 표식을 유지한다. 이 경로로 취소한 부과에는 `basis.reissuable=true`를 달아 이후 재발행(0원→금액 재입력 등)을 막지 않는다 — 사람이 면제·취소한 부과는 여전히 되살리지 않는다. 같은 값 재저장은 `unchanged`로 아무것도 바꾸지 않고, 인당 금액이 정상 범위(정액의 ½~2.5배) 밖이면 거부한다. 화면은 `dues_session_fee_preview`(실행 후 롤백) 숫자로 확인받는다. **진행·종료 회차 수정**(`session_edit`, 2026-11-02)은 총액·대관장소 여부가 바뀔 때 같은 함수로 맞추며, 비대관 장소면 대상 없음으로 보고 전부 취소한다(0원과 같은 `reissuable` 경로라 대관장소로 되돌리면 재발행) |
 | 복구 | 일시 중지, 직전 금융 작업 되돌림, 새 금융 결정을 철회하고 기존 원장으로 복귀. 실제 통장 거래와 V2 처리 이력은 보존 |
 
 §13의 대관 초기화/수동 납부분 고정/과거 미납 삭제의 불일치는 새 모드에서 취소 후 발행과 원금 보존으로 통합했다. 이월을 면제로 처리하거나 납부로 세지 않으며, 동명이인 선택과 다른 달 환불은 새 화면을 사용한다. 기존 코드는 복귀 경로로 남아 있으므로 비활성 상태에서는 §0~§13의 동작을 유지한다.

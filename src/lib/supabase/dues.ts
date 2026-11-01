@@ -253,21 +253,6 @@ export interface SetSessionFeeResult {
 	issued: number;
 }
 
-export async function setSessionCourtFee(
-	sessionId: number,
-	amount: number | null,
-): Promise<SetSessionFeeResult> {
-	const { data, error } = await supabase.rpc("dues_set_session_fee", {
-		p_session_id: sessionId,
-		p_amount: amount,
-	});
-	if (error) {
-		console.error("setSessionCourtFee:", error);
-		throw new Error(error.message);
-	}
-	return data as SetSessionFeeResult;
-}
-
 /**
  * 엔빵 재분배: 남은 유효 대관비를 총액 ÷ 현재 인원으로 서버에서 재발행한다(선납 표식·당일취소 표시 유지).
  * revision 은 화면이 재분배 금액을 계산한 장부 기준 — 그 사이 다른 변경이 있으면 서버가 거부한다.
@@ -282,22 +267,6 @@ export async function respreadCourtGroup(groupId: string, revision: number) {
 		p_group_id: groupId,
 		p_revision: revision,
 	});
-}
-
-/** 총액 변경을 실제로 돌려 본 결과만 받는다(서버가 롤백). 확인창 숫자용. */
-export async function previewSessionCourtFee(
-	sessionId: number,
-	amount: number | null,
-): Promise<SetSessionFeeResult> {
-	const { data, error } = await supabase.rpc("dues_session_fee_preview", {
-		p_session_id: sessionId,
-		p_amount: amount,
-	});
-	if (error) {
-		console.error("previewSessionCourtFee:", error);
-		throw new Error(error.message);
-	}
-	return data as SetSessionFeeResult;
 }
 
 export async function sessionDeletionInfo(sessionId: number) {

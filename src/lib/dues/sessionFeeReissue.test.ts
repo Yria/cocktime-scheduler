@@ -133,6 +133,11 @@ beforeAll(async () => {
 		"20261019000000_session_fee_reissue.sql",
 	])
 		await db.exec(read(`migrations/${file}`));
+	// 진행·종료 회차 수정(20261102000000)이 쓰는 회차 컬럼. 정원 변경 경로는 여기서 타지 않는다.
+	await db.exec(`alter table sessions add column carpool_enabled boolean default false, add column notice_md text,
+    add column meal_place text, add column meal_place_lat double precision, add column meal_place_lng double precision,
+    add column capacity int;`);
+	await db.exec(read("migrations/20261102000000_session_edit_after_start.sql"));
 	await db.exec(
 		"update dues_control set activated_at='2026-09-07T12:00:00+09' where id=1",
 	);
@@ -335,4 +340,150 @@ it("진행 전 회차의 선납 부과는 선납 표식을 유지한 채 재발�
 		),
 	).toBe(2);
 	await db.exec("select dues_assert()");
+});
+
+// ── 회차 수정 session_edit(20261102000000) ──
+const editStarted = (patch: Record<string, unknown>) =>
+	scalar<Record<string, number | boolean | null>>(
+		"select session_edit(10,$1)",
+		[patch],
+	);
+
+it("종료 회차를 비대관 장소로 바꾸면 대관비를 전부 취소하고 낸 돈은 잔액으로 남긴다", async () => {
+	await pay(A, 6000);
+	const base = await balance(A);
+	await db.exec("insert into places values(20,'동네 체육관',false)");
+	const result = await editStarted({ place_id: 20 });
+	expect(result).toMatchObject({
+		recharged: true,
+		was_rental: true,
+		is_rental: false,
+		cancelled: 2,
+		reissued: 0,
+		paid_cancelled: 1,
+		left_as_balance: 6000,
+	});
+	expect(await live()).toEqual({});
+	expect((await balance(A)) - base).toBe(6000);
+	expect(
+		await scalar("select place_id from sessions where id=10"),
+	).toBe(20);
+	await db.exec("select dues_assert()");
+});
+
+it("비대관으로 바꿨다가 대관장소로 되돌리면 다시 발행된다", async () => {
+	await db.exec("insert into places values(20,'동네 체육관',false)");
+	await editStarted({ place_id: 20 });
+	const result = await editStarted({ place_id: 10 });
+	expect(result).toMatchObject({ recharged: true, issued_new: 2 });
+	expect(Object.keys(await live()).sort()).toEqual([A, B]);
+});
+
+it("부과와 무관한 필드만 바꾸면 부과는 그대로고 장부 라벨만 시간에 맞춘다", async () => {
+	const before = await charges();
+	const result = await editStarted({
+		scheduled_at: "2026-10-18T20:00:00+09",
+		ends_at: "2026-10-18T22:00:00+09",
+		is_regular: true,
+		notice_md: "안내",
+		carpool_enabled: true,
+	});
+	expect(result).toMatchObject({ recharged: false });
+	expect(await charges()).toEqual(before);
+	expect(
+		await scalar("select label from dues_groups where source_key='court:10'"),
+	).toBe("10/18 20:00 테스트 대관 #10");
+});
+
+it("총액을 바꾸면 dues_set_session_fee 와 같이 취소 후 재발행한다", async () => {
+	const result = await editStarted({ court_fee: 30000 });
+	expect(result).toMatchObject({ recharged: true, cancelled: 2 });
+	expect(
+		Object.values(await live()).map((c) => c.amount),
+	).toEqual([10000, 10000, 10000]);
+});
+
+it("날짜는 바꿀 수 없다", async () => {
+	await rejects(
+		"select session_edit(10,'{\"scheduled_at\":\"2026-10-19T19:00:00+09\"}')",
+		/날짜를 바꿀 수 없습니다/,
+	);
+});
+
+it("취소된 회차는 이 경로로 수정하지 않는다", async () => {
+	await db.exec(
+		"insert into sessions(id,title,status,scheduled_at,place_id) values(12,'취소','cancelled',now()+interval '1 day',10)",
+	);
+	await rejects(
+		"select session_edit(12,'{\"notice_md\":\"x\"}')",
+		/취소된 회차는/,
+	);
+});
+
+async function prepayOpen11() {
+	await db.exec(`insert into sessions(id,title,status,scheduled_at,ends_at,place_id) values(11,'예정 대관','open',now()+interval '7 days',now()+interval '7 days 2 hours',10);
+    insert into attendances(session_id,member_id,status) values(11,'${A}','confirmed');`);
+	await scalar("select dues_command($1,$2,$3)", [
+		{
+			reason: "선납",
+			action: "pay",
+			owner_id: A,
+			confirm_owner: true,
+			lines: [
+				{
+					position_id: await scalar(
+						"select id from dues_positions where bank_tx_id=90 and amount>0",
+					),
+					session_id: 11,
+					expected_amount: 6000,
+					amount: 6000,
+				},
+			],
+		},
+		crypto.randomUUID(),
+		await revision(),
+	]);
+}
+const live11 = () =>
+	scalar<number>(
+		"select count(*)::int from dues_charges c join dues_groups g on g.id=c.group_id where g.source_key='court:11' and c.state='live'",
+	);
+
+it("예정 회차의 선납 대관비도 장소를 비대관으로 바꾸면 취소된다", async () => {
+	await prepayOpen11();
+	await db.exec("insert into places values(20,'동네 체육관',false)");
+	expect(await live11()).toBe(1);
+	const result = await scalar<Record<string, unknown>>(
+		"select session_edit(11,$1)",
+		[{ place_id: 20 }],
+	);
+	expect(result).toMatchObject({ recharged: true, cancelled: 1 });
+	expect(await live11()).toBe(0);
+	await db.exec("select dues_assert()");
+});
+
+it("이미 비대관인데 유효 대관비가 남아 있으면 다음 저장 때 정리한다", async () => {
+	await prepayOpen11();
+	// 이 경로가 생기기 전처럼 장소만 직접 바꿔 선납분이 남은 상태
+	await db.exec(
+		"insert into places values(20,'동네 체육관',false); update sessions set place_id=20 where id=11",
+	);
+	const result = await scalar<Record<string, unknown>>(
+		"select session_edit(11,$1)",
+		[{ notice_md: "안내" }],
+	);
+	expect(result).toMatchObject({ recharged: true, cancelled: 1 });
+	expect(await live11()).toBe(0);
+});
+
+it("미리보기는 결과만 돌려주고 회차·장부를 바꾸지 않는다", async () => {
+	await db.exec("insert into places values(20,'동네 체육관',false)");
+	const before = await charges();
+	const result = await scalar<Record<string, unknown>>(
+		"select session_edit_preview(10,$1)",
+		[{ place_id: 20 }],
+	);
+	expect(result).toMatchObject({ preview: true, cancelled: 2 });
+	expect(await charges()).toEqual(before);
+	expect(await scalar("select place_id from sessions where id=10")).toBe(10);
 });

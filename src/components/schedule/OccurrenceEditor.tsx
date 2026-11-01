@@ -1,10 +1,14 @@
 import { useState } from "react";
-import { courtFeeChargeHint, parseCourtFee } from "../../lib/schedule/courtFee";
+import {
+	courtFeeChargeHint,
+	courtFeeResetLines,
+	parseCourtFee,
+} from "../../lib/schedule/courtFee";
 import type {
 	OccurrencePatch,
 	OneOffInput,
+	OccurrenceEditResult,
 } from "../../lib/supabase/recurring";
-import type { SetSessionFeeResult } from "../../lib/supabase/dues";
 import type { CreatePlaceInput } from "../../lib/supabase/schedule";
 import type { PlaceRow, SessionRow } from "../../lib/supabase/types";
 import {
@@ -15,6 +19,7 @@ import {
 	selectStyle,
 } from "../common/fieldStyles";
 import KakaoLocationSearch from "../common/KakaoLocationSearch";
+import ConfirmDialog from "../common/ConfirmDialog";
 import ModalSheet from "../common/ModalSheet";
 import { Switch } from "../common/Switch";
 import OccurrenceInfoView from "./OccurrenceInfoView";
@@ -29,16 +34,15 @@ interface Props {
 	places: PlaceRow[];
 	placeName: (id: number | null) => string | null;
 	onAddPlace: (input: CreatePlaceInput) => Promise<PlaceRow | null>;
-	onOverride: (sessionId: number, patch: OccurrencePatch) => Promise<void>;
 	onCreateOneOff: (input: OneOffInput) => Promise<void>;
 	onDelete: (occurrence: SessionRow) => Promise<void>;
 	onReopen: (occurrence: SessionRow) => Promise<void>;
-	/** 종료·진행 회차의 대관 총액 정정(미납 발행분 금액만 바뀐다). 정보 뷰에서 노출. */
-	onFixCourtFee: (sessionId: number, amount: number | null) => Promise<unknown>;
-	onPreviewCourtFee: (
+	/** 기존 회차 저장. 총액·대관장소 여부가 바뀌면 서버가 발행분을 취소 후 재발행한다. */
+	onEdit: (sessionId: number, patch: OccurrencePatch) => Promise<void>;
+	onPreviewEdit: (
 		sessionId: number,
-		amount: number | null,
-	) => Promise<SetSessionFeeResult>;
+		patch: OccurrencePatch,
+	) => Promise<OccurrenceEditResult>;
 	onClose: () => void;
 }
 
@@ -48,17 +52,20 @@ export default function OccurrenceEditor({
 	places,
 	placeName,
 	onAddPlace,
-	onOverride,
 	onCreateOneOff,
 	onDelete,
 	onReopen,
-	onFixCourtFee,
-	onPreviewCourtFee,
+	onEdit,
+	onPreviewEdit,
 	onClose,
 }: Props) {
 	const {
 		isRuleBased,
 		editable,
+		started,
+		chargePreview,
+		dismissChargePreview,
+		confirmChargeEdit,
 		occDate,
 		time,
 		setTime,
@@ -88,9 +95,10 @@ export default function OccurrenceEditor({
 		handleOverride,
 		handleDelete,
 	} = useOccurrenceForm(occurrence, date, {
-		onOverride,
 		onCreateOneOff,
 		onDelete,
+		onEdit,
+		onPreviewEdit,
 	});
 
 	const [showPicker, setShowPicker] = useState(false);
@@ -98,10 +106,6 @@ export default function OccurrenceEditor({
 	// 선택한 장소가 대관장소면 코트 총액(엔빵) 입력 노출
 	const placeChargesCourt =
 		places.find((p) => p.id === placeId)?.charges_court_fee ?? false;
-	// 정보 뷰(종료·진행)는 폼 상태가 아니라 **회차에 저장된 장소**로 판정한다(폼을 안 쓰므로).
-	const occurrenceChargesCourt =
-		occurrence != null &&
-		(places.find((p) => p.id === occurrence.place_id)?.charges_court_fee ?? false);
 
 	// 헤더 제목/태그
 	const title =
@@ -117,7 +121,8 @@ export default function OccurrenceEditor({
 			position="bottom"
 			onClose={onClose}
 			// 위에 새 장소 picker 가 떠 있을 땐 Escape 가 최상단 시트만 닫히게 잠시 끈다
-			closeOnEscape={!showPicker}
+			// 확인창이 떠 있을 때도 마찬가지(Esc 한 번에 시트까지 닫혀 입력이 사라지지 않게)
+			closeOnEscape={!showPicker && !chargePreview}
 			title={title}
 			subtitle={
 				occurrence ? (
@@ -176,20 +181,22 @@ export default function OccurrenceEditor({
 						placeName={placeName}
 						error={error}
 						onClose={onClose}
-						onReopen={
-							occurrence.status === "cancelled"
-								? () => onReopen(occurrence)
-								: undefined
-						}
-						chargesCourtFee={occurrenceChargesCourt}
-						onFixCourtFee={(amount) => onFixCourtFee(occurrence.id, amount)}
-						onPreviewCourtFee={(amount) =>
-							onPreviewCourtFee(occurrence.id, amount)
-						}
+						onReopen={() => onReopen(occurrence)}
 					/>
 				) : (
-					// 신규 일회성 또는 draft/open 편집 폼
+					// 신규 일회성 또는 기존 회차 편집 폼(취소 회차 제외)
 					<div className="flex flex-col gap-4">
+						{/* 진행·종료 회차: 날짜는 고정(부과 월·당일취소 판정이 날짜에 걸림), 부과에 닿는 변경은 확인 후 재발행 */}
+						{started && (
+							<p
+								className="text-muted"
+								style={{ fontSize: 12.5, lineHeight: 1.55 }}
+							>
+								{occurrence?.status === "closed" ? "종료된" : "진행 중인"} 회차예요.
+								날짜는 바꿀 수 없어요. 코트 총액이나 대관장소 여부를 바꾸면 이미
+								발행한 대관비를 취소하고 다시 계산해요(저장 전에 확인).
+							</p>
+						)}
 						{/* 시간 (시작 / 종료) — 네이티브 time 위젯이 width:100%를 무시하고 고유 폭(~180pt)으로 그려
 						    2단에선 좁은 셀 밖으로 넘친다. 폭 의존성 없이 안전하게 전체폭 세로 스택. */}
 						<div className="flex flex-col gap-3">
@@ -458,7 +465,8 @@ export default function OccurrenceEditor({
 							{busy ? "저장 중…" : occurrence ? "저장(변경)" : "저장"}
 						</button>
 
-						{occurrence && (
+						{/* 진행·종료 회차는 삭제하지 않는다(참석·경기·부과의 근거). */}
+						{occurrence && !started && (
 							<button
 								type="button"
 								onClick={handleDelete}
@@ -472,6 +480,37 @@ export default function OccurrenceEditor({
 				)}
 			</div>
 		</ModalSheet>
+		{chargePreview && (
+			<ConfirmDialog
+				zIndex={70}
+				title="저장하면 대관비 부과가 바뀌어요"
+				tone={(chargePreview.result.cancelled ?? 0) > 0 ? "danger" : "primary"}
+				confirmLabel={
+					(chargePreview.result.cancelled ?? 0) > 0 ? "취소 후 재발행" : "저장"
+				}
+				cancelLabel="닫기"
+				busy={busy}
+				busyLabel="처리 중…"
+				onConfirm={confirmChargeEdit}
+				onCancel={dismissChargePreview}
+				onDismiss={dismissChargePreview}
+			>
+				<div
+					className="text-muted flex flex-col gap-1.5"
+					style={{ fontSize: 13.5, lineHeight: 1.55, marginTop: 8 }}
+				>
+					{courtFeeResetLines(chargePreview.result, {
+						// 대관장소가 아니게 되면 걷을 대상이 없다 — 문구는 총액 0원(안 걷음)과 같다.
+						total: chargePreview.result.is_rental
+							? (chargePreview.patch.courtFee ?? null)
+							: 0,
+						closed: occurrence?.status === "closed",
+					}).map((line, i) => (
+						<p key={i}>{line}</p>
+					))}
+				</div>
+			</ConfirmDialog>
+		)}
 		{showPicker && (
 			<PlaceLocationPicker
 				onAddPlace={onAddPlace}

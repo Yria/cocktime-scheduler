@@ -6,19 +6,15 @@ import {
 	createOneOffOccurrence,
 	createRecurringRule,
 	deleteRecurringRule,
+	editOccurrence,
 	fetchOccurrences,
+	previewOccurrenceEdit,
 	fetchRecurringRules,
 	reopenOccurrence,
-	setSessionCapacity,
-	updateOccurrence,
 	updateRecurringRule,
 } from "../lib/supabase/recurring";
 import { toast } from "./toastStore";
-import {
-	previewSessionCourtFee,
-	setSessionCourtFee,
-} from "../lib/supabase/dues";
-import { courtFeeResetToast } from "../lib/schedule/courtFee";
+import { occurrenceEditToast } from "../lib/schedule/courtFee";
 import { duesActions } from "./duesStore";
 import {
 	type CreatePlaceInput,
@@ -139,66 +135,29 @@ export const adminScheduleActions = {
 	},
 
 	// ── 회차 개별 편집 ──
-	async overrideOccurrence(sessionId: number, patch: OccurrencePatch) {
-		// 정원 실변경 여부는 UPDATE 전 값과 비교(useOccurrenceForm 은 매번 capacity 를 patch 에 담는다).
-		const prev = useAdminScheduleStore
-			.getState()
-			.occurrences.find((o) => o.id === sessionId);
-		const prevCapacity = prev?.capacity;
-		const capacityChanged =
-			patch.capacity !== undefined && patch.capacity !== prevCapacity;
-		// 대관 총액도 정원과 같은 모양: 값의 소유자가 전용 RPC 다. 일반 PATCH 로 넣으면 총액만 바뀌고
-		// 이미 발행된 부과 금액은 그대로 남는다(2026-08-23 이전의 실제 갭).
-		const courtFeeChanged =
-			patch.courtFee !== undefined &&
-			patch.courtFee !== (prev?.court_fee ?? null);
-		// 정원 외 필드는 일반 PATCH. 정원이 바뀌었으면 capacity 는 아래 원자 RPC 가 소유하므로 제외.
-		const patchForUpdate = { ...patch };
-		if (capacityChanged) delete patchForUpdate.capacity;
-		if (courtFeeChanged) delete patchForUpdate.courtFee;
-		const row = await updateOccurrence(sessionId, patchForUpdate);
-		// 정원이 실제로 바뀐 경우: 정원 변경 + 참석/대기 재조정 + 알림을 한 트랜잭션(원자)으로.
-		// 실패하면 setSessionCapacity 가 throw → 폼이 에러를 노출하고 부분 적용을 성공으로 위장하지 않는다.
-		if (row && capacityChanged) {
-			const { promoted, demoted } = await setSessionCapacity(
-				sessionId,
-				patch.capacity ?? null,
-			);
-			const parts: string[] = [];
-			if (promoted > 0) parts.push(`대기 ${promoted}명 참석 승격`);
-			if (demoted > 0) parts.push(`참석 ${demoted}명 대기 강등`);
-			if (parts.length > 0) {
-				toast(`${parts.join(" · ")} — 해당 인원에 알림을 보냈어요`, {
-					variant: "success",
-				});
-			}
-		}
-		// 발행분이 있으면 서버가 전부 취소 후 재발행한다(선납 회차 포함).
-		if (row && courtFeeChanged) {
-			const res = await setSessionCourtFee(sessionId, patch.courtFee ?? null);
-			void duesActions.load();
-			toast(courtFeeResetToast(res), { variant: "success" });
-		}
-		if (row) await reloadOccurrences();
-		return row;
-	},
-
-	/** 총액 변경을 돌려 본 결과(서버 롤백). 확인창 숫자용 — 거부 사유는 throw. */
-	previewCourtFee(sessionId: number, amount: number | null) {
-		return previewSessionCourtFee(sessionId, amount);
-	},
-
 	/**
-	 * 종료·진행 회차의 대관 총액 변경. 발행분이 있으면 전부 취소(납부 해제) 후 새 금액으로 재발행하고,
-	 * 해제한 납부는 같은 회원 새 부과에 다시 연결된다. 실패는 throw — 호출부가 사유를 보여준다.
+	 * 기존 회차 수정. 회차 변경 + 정원 재조정(승격·강등 알림) + 부과 재계산(총액·대관장소 여부가 바뀌면
+	 * 발행분 취소 후 재발행)을 서버 한 트랜잭션으로. 경로는 서버가 잠근 행의 상태로 정한다.
 	 */
-	async fixCourtFee(sessionId: number, amount: number | null) {
-		const res = await setSessionCourtFee(sessionId, amount);
+	async editOccurrence(sessionId: number, patch: OccurrencePatch) {
+		const res = await editOccurrence(sessionId, patch);
 		await reloadOccurrences();
-		// 부과·잔액·선납 후보의 새 금액을 즉시 반영한다.
-		void duesActions.load();
-		toast(courtFeeResetToast(res), { variant: "success" });
+		// 부과·잔액의 새 금액을 즉시 반영한다.
+		if (res.recharged) void duesActions.load();
+		toast(occurrenceEditToast(res), { variant: "success" });
+		const parts: string[] = [];
+		if (res.promoted > 0) parts.push(`대기 ${res.promoted}명 참석 승격`);
+		if (res.demoted > 0) parts.push(`참석 ${res.demoted}명 대기 강등`);
+		if (parts.length > 0)
+			toast(`${parts.join(" · ")} — 해당 인원에 알림을 보냈어요`, {
+				variant: "success",
+			});
 		return res;
+	},
+
+	/** 위 수정을 돌려 본 결과(서버 롤백). 확인창 숫자용 — 거부 사유는 throw. */
+	previewOccurrenceEdit(sessionId: number, patch: OccurrencePatch) {
+		return previewOccurrenceEdit(sessionId, patch);
 	},
 
 	async addOneOff(input: OneOffInput, createdBy: string | null) {

@@ -12672,6 +12672,678 @@ To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude
 
 **Prompt**: 코드도 배포
 
+**Answer**: 운영 DB에 반영됐고, 결과가 리허설과 똑같습니다.
+
+- **게스트 행:** 87개에서 70개로 줄었고, 중복 그룹은 0개입니다.
+- **숨김:** 활성 게스트는 19명이 남았고, 51명은 숨겨졌습니다.
+- **참석 기록:** 확정 참석 2034건과 정원 카운터 2017은 변하지 않았습니다.
+- **월 콕 지원 기록:** 167건으로 리허설 결과와 같습니다.
+
+마이그레이션 파일은 아직 커밋하지 않았습니다. 지금은 스테이징만 돼 있습니다.
+
+---
+
+## #422
+
+**Prompt**: 8월부터 서비스 가입자 몇명인지 알려줘. 이름 필요없고 카운트만.
+
+**Answer**: 2026-08-01(KST)부터 오늘까지 서비스 가입자는 **35명**입니다. 로그인 계정이 만들어진 시점으로 셌습니다.
+
+| 월 | 가입 |
+|---|---|
+| 8월 | 12 |
+| 9월 | 18 |
+| 10월 (21일까지) | 5 |
+| **합계** | **35** |
+
+전체 누적 계정은 133개입니다. 로그인 계정이 없는 게스트는 빠져 있고, 그 뒤에 비활성화(탈퇴)된 계정도 아직 숫자에 들어 있습니다.
+
+---
+
+## #423
+
+**Prompt**: 월 회원별 참여횟수 보고싶은데 너무 읽기 힘들게 말고 추세를 알 수있을정도만
+
+**Answer**: 8월 이후 회원 1인당 참여 횟수는 늘다가 10월은 21일까지만 집계돼 낮게 보입니다. 9월에 정점이었고, 8회 이상 오는 회원이 가장 빠르게 늘었습니다.
+
+| 월 | 진행 회차 | 참여 회원 | 총 참여 | 1인 평균 | 1회 | 2~3회 | 4~7회 | 8회+ |
+|---|---|---|---|---|---|---|---|---|
+| 7월 | 24 | 78 | 403 | 5.2 | 18 | 14 | 28 | 18 |
+| 8월 | 31 | 82 | 482 | 5.9 | 13 | 17 | 29 | 23 |
+| 9월 | 37 | 84 | 578 | **6.9** | 12 | 16 | 24 | **32** |
+| 10월 (21일까지) | 30 | 77 | 400 | 5.2 | 14 | 22 | 24 | 17 |
+
+- **참여 회원 수는 거의 그대로입니다.** 매달 77~84명이라 새 사람이 늘었다기보다 같은 사람들이 더 자주 왔습니다.
+- **7월에서 9월 사이 많이 오는 회원이 늘었습니다.** 8회 이상 참여한 회원이 18명에서 32명이 됐고, 1인 평균도 5.2회에서 6.9회로 올랐습니다. 반대로 한 번만 온 회원은 18명에서 12명으로 줄었습니다.
+- **10월은 아직 집계 중입니다.** 21일 기준인데도 참여 회원이 이미 77명이라 전달과 비슷하게 갈 것 같습니다. 8회 이상과 1인 평균은 월말까지 더 올라갈 겁니다.
+
+**집계 기준:** 종료된 회차에서 참석이 확정된 회원만 셌고, 게스트는 뺐습니다. 6월에 있던 2회차는 테스트로 보여서 표에 넣지 않았습니다.
+
+---
+
+## #424
+
+**Prompt**: 6회이상 참여한사람 숫자
+
+**Answer**: 한 달에 6회 이상 참여한 회원 수입니다.
+
+| 월 | 6회 이상 | 참여 회원 | 비율 |
+|---|---|---|---|
+| 7월 | 30 | 78 | 38% |
+| 8월 | 35 | 82 | 43% |
+| 9월 | **41** | 84 | **49%** |
+| 10월 (21일까지) | 26 | 77 | 34% |
+
+9월에는 참여 회원의 절반 가까이가 6회 이상 왔습니다. 10월은 21일까지만 집계된 숫자라 월말까지 더 늘어납니다. 집계 기준은 앞의 표와 같습니다.
+
+---
+
+## #425
+
+**Prompt**: 월말고 전체기준
+
+**Answer**: 전체 기간 누적으로 6회 이상 참여한 회원은 **78명**입니다. 한 번이라도 참여한 회원 111명 중 70%입니다.
+
+이 78명 중 지금 활동 중인 회원은 72명이고, 나머지 6명은 비활성(탈퇴) 상태입니다. 집계 기준은 앞의 표와 같습니다(종료된 회차의 확정 참석, 게스트 제외).
+
+---
+
+## #426
+
+**Prompt**: 게스트정리 함 하자.
+
+**Answer**: 아직 아무것도 고치지 않았습니다. 게스트 데이터를 조회만 했습니다.
+
+현재 게스트 행은 87개이고, 실제 인원은 69명으로 보입니다. 정리할 수 있는 방향은 세 가지입니다.
+
+1. **중복 게스트 합치기 (추천):** 이름과 성별이 같은 게스트 28행이 11명분입니다. 한 명당 한 행만 남기고 참석·보드·경기 기록을 그 행으로 옮긴 뒤, 남는 17행은 지웁니다.
+   - 이 행들은 회비나 입금 기록과 연결된 게 0건이라 회계에는 영향이 없습니다.
+   - 같은 일정에 같은 사람이 두 번 신청돼 있던 2건은 취소된 쪽을 지웁니다.
+2. **게스트였다가 정회원이 된 사람 연결:** 정회원과 이름이 같은 게스트가 13건입니다. 다만 같은 이름의 정회원이 둘인 경우가 있고, 회비가 부과된 건도 4건 있어서 하나씩 확인해야 합니다.
+3. **오래 안 온 게스트 숨기기:** 회원관리의 '게스트 보기' 목록에서만 접힙니다. 정산이나 회비에는 아무 효과가 없습니다.
+
+어떤 걸 원하셨는지 말씀해 주세요. 위 셋 말고 다른 정리(목록 화면이나 이름 정리 등)를 생각하셨다면 그것도 알려주세요.
+
+---
+
+## #427
+
+**Prompt**: 오래된 게스트 숨기기 할 경우 숨겨진 회원은 내부적으로 어떻게 관리되는거?
+
+**Answer**: 게스트를 숨겨도 그 행은 지워지지 않습니다. `members` 테이블에 그대로 남고, `is_active` 값만 `false`로 바뀝니다. 바뀌는 곳은 회원관리 목록 하나뿐입니다.
+
+**숨기면 달라지는 곳**
+- **회원관리의 '게스트 보기' 목록:** '비활성 숨기기'가 켜져 있으면 목록에서 빠집니다. 끄면 다시 보이고, 칩에 나오는 게스트 수에는 계속 포함됩니다.
+- **정산함 납부자 후보:** 같은 이름이 여러 행일 때 활성 행이 먼저 대표로 뽑힙니다. 숨긴 게스트도 그 이름으로 검색하면 찾을 수 있고, 미납이 걸린 행은 숨겨도 후보에 남습니다.
+
+**숨겨도 그대로인 곳**
+- 과거 참석, 보드 선수, 경기 기록, 대관비 부과와 입금 기록은 모두 그대로 남습니다.
+- 비활성으로 바꾸면 미납 **월회비**를 자동으로 취소하는 트리거가 돕니다. 하지만 게스트에게는 월회비가 부과되지 않아서 취소될 건 없습니다. 게스트에게 걸린 대관비는 이 트리거가 건드리지 않습니다.
+- 앞서 드린 참여횟수 집계도 게스트를 빼고 센 숫자라 그대로입니다.
+
+**숨긴 게스트가 다시 오면**
+회원이 그 이름과 성별로 게스트 신청을 하면 서버가 숨겨진 기존 행을 찾아 다시 활성으로 돌리고 그 행에 참석을 붙입니다. 새 행을 만들지 않으니 이력도 이어집니다. 회원관리에서 운영진이 '게스트 다시 보이기'를 눌러 직접 되살릴 수도 있습니다.
+
+그래서 숨기기는 언제든 되돌릴 수 있고 부작용이 없지만, 실제로 정리되는 건 회원관리 '게스트 보기' 목록 하나뿐입니다. 행 수 자체를 줄이려면 앞에서 말씀드린 중복 게스트 합치기가 필요합니다.
+
+---
+
+## #428
+
+**Prompt**: 중복 게스트 합치고 숨기자
+
+**Answer**: 중복 게스트 합치기와 숨기기를 마이그레이션 하나로 만들었습니다. 운영 DB에는 아직 반영하지 않았고, 반영 전에 운영 DB에서 트랜잭션 안에서 돌려본 뒤 롤백까지 확인했습니다.
+
+**운영 DB 실행 결과 (롤백함)**
+| | 전 | 후 |
+|---|---|---|
+| 게스트 행 | 87 | **70** (중복 17행 삭제) |
+| 남아 있는 중복 그룹 | 11 | **0** |
+| 숨기지 않은 게스트 | 87 | **19** (51명 숨김) |
+| 확정 참석 / 정원 카운터 | 2034 / 2017 | 2034 / 2017 (변화 없음) |
+| 참석 행 | 4016 | 4014 (같은 일정에 같은 사람이 두 번 들어간 취소 행 2개 삭제) |
+| 월 콕 지원 기록 | 169 | 167 (같은 달에 두 번 받은 2건을 하나로) |
+
+롤백 뒤 운영 DB를 다시 보니 게스트 행이 87개 그대로였습니다.
+
+**동작 방식**
+- 이름과 성별이 같은 게스트 중 가장 최근에 만들어진 행을 대표로 남깁니다. 다시 신청할 때 서버가 재사용하는 행과 같은 기준입니다.
+- 참석, 보드 선수, 월 콕 지원 기록을 대표 행으로 옮기고, 실력 정보는 합치되 최신 값을 남깁니다.
+- 중복 행은 남은 참조가 하나도 없을 때만 지웁니다. 참조가 남았거나, 지울 참석 행이 취소 상태가 아니면 전체를 중단하고 아무것도 바꾸지 않습니다.
+- 숨김 기준은 최근 30일 안에 참석·신청 기록과 보드 기록이 모두 없는 게스트입니다. 이 30일은 제가 정한 값이라 바꾸려면 말씀해 주세요. 숨긴 게스트도 다시 신청하면 자동으로 되살아납니다.
+- 변경 이력 로그(`ops_audit`)에 남은 옛 id는 기록이라 그대로 둡니다.
+
+**반영 방법**
+[코드 블록 생략]
+마이그레이션 파일은 `supabase/migrations/20261021000000_guest_rows_merge_and_fold.sql`이고, 커밋하지 않고 스테이징만 해뒀습니다.
+
+---
+
+## #429
+
+**Prompt**: 지금까지 환불을 개인회원에게만 했는데 특정인에게 환불해야할 필요가 생겼어. 이거 어떻게 입력할까
+
+**Answer**: 현재 환불 구조를 확인했습니다. 원래 무엇을 입금했는지에 따라 입력 방법이 달라집니다.
+
+**현재 규칙** (정산함 출금 → "환불할 원입금 선택")
+- 환불 출금은 **원래 들어온 입금 한 건**에 반드시 연결해야 합니다.
+- 출금액이 그 입금의 환불 가능 잔액보다 작거나 같아야 합니다.
+- "환불"은 우리 통장에 들어온 돈을 되돌려주는 것이고, 누구에게 보내는지를 지정하는 개념이 아닙니다.
+
+**상황별 입력법**
+
+| 그 사람이… | 입력 방법 |
+|---|---|
+| 우리 통장에 입금한 적이 있고 회원(또는 게스트) 행이 있음 | 지금처럼 납부자에서 그 사람을 고르고, 그 사람의 입금을 원입금으로 선택 |
+| 입금은 했지만 회원 행이 없음 (오입금, 외부인) | **"회원으로 등록되지 않은 사람에게 오입금 환불"**을 체크하고, 미매칭 입금 목록에서 원입금을 고른 뒤 "이 돈이 맞다"에 체크 |
+| A가 B 대신 냈고, 그 돈을 A에게 돌려줌 | 납부자를 **A(실제 입금자)**로 선택하고 A의 입금을 연결. 받는 사람은 B가 아니라 돈을 넣은 사람 기준 |
+| **우리 통장에 입금한 적이 없음** (대신 결제한 사람에게 보전, 회식비 차액 지급, 상금 등) | 환불이 아닙니다. 출금 → **묶음 지정**(해당 회식/공구 묶음이나 새 묶음)이나 **대관 회차 지정**으로 지출 처리 |
+
+**지금은 안 되는 경우**
+- 입금 여러 건을 합쳐 한 번에 환불하기
+- 출금 하나를 여러 사람 몫으로 나눠 환불하기
+
+이런 경우라면 기능을 바꿔야 합니다.
+
+어떤 상황인지 알려주시면 정확한 입력 순서를 안내해 드리겠습니다. 예를 들어 그 사람이 우리 통장에 입금한 적이 있는지, 회원이나 게스트인지 알려주세요. 표 마지막 줄처럼 입금 기록이 없는 사람에게 주는 돈이라면 "환불"이 아니라 지출(묶음 귀속)로 넣는 게 회계상 맞습니다.
+
+---
+
+## #430
+
+**Prompt**: 2번 어떻게 함?
+
+**Answer**: 회원이 아닌 사람에게 오입금을 돌려줄 때(표의 2번)는 아래 순서로 입력하면 됩니다.
+
+**전제: 환불 출금이 통장 내역에 먼저 들어와 있어야 합니다.** 앱은 송금하지 않으므로, 실제로 이체한 뒤 통장 내역을 가져오면 됩니다.
+
+### 입력 순서
+1. **운영진 회계 → 정산함**(`/dues/<월>/inbox`)에서 그 환불 **출금** 건을 엽니다.
+2. 처리 방식에서 **환불할 원입금 선택**을 고릅니다.
+3. 납부자 칸 아래의 **"회원으로 등록되지 않은 사람에게 오입금 환불"**을 체크합니다. 회원 검색칸이 사라지고, **"아직 납부자를 확인하지 않은 입금"** 목록이 자동으로 펼쳐집니다.
+4. 목록에서 그 사람이 넣은 **원입금**을 고릅니다. 많으면 **필터**에서 입금월을 고르거나, 적요(입금자명)나 입금 번호로 검색할 수 있습니다.
+5. 아래에 나오는 **"이 원입금이 출금받는 미등록 납부자의 돈임을 확인했습니다"**를 체크합니다.
+6. 사유를 쓰고 저장합니다. 해당 월 회계의 **환불** 항목으로 잡힙니다.
+
+### 원입금이 목록에 안 보이면
+목록에는 아래 두 조건을 **모두** 만족하는 입금만 나옵니다.
+
+- **아무에게도 연결되지 않은 입금일 것.** 이미 어떤 회원의 납부로 처리했거나 납부자를 지정했다면 "미등록" 목록에서 빠집니다. 그 회원을 납부자로 골라 환불하거나, 기존 처리를 취소한 뒤 다시 해야 합니다.
+- **환불 가능 잔액이 출금액 이상일 것.** 그 입금을 이미 **묶음·대관 회차에 귀속**했다면 그 금액은 환불 가능 잔액에서 빠집니다. 거래 내역에서 **연결 취소**를 먼저 하세요.
+
+**금액이 다르면 저장되지 않습니다.** 출금액이 입금 한 건의 환불 가능 잔액을 넘으면 안 됩니다. 일부만 돌려주는 건 괜찮습니다. 반대로 입금 두 건을 합쳐 한 번에 돌려준 경우는 지금 기능으로 입력할 수 없습니다.
+
+---
+
+## #431
+
+**Prompt**: 아 설명을 다시할게 대관할때 225,000원 냈는데 이게 잘못된 금액이라 사장님이 3만원 환불해준걸 기록해야해
+
+**Answer**: 앱에서 "환불"은 **우리가 회원 입금을 돌려주는 출금**에만 씁니다. 이번 건은 반대로 **사장님이 우리 통장에 3만원을 넣은 입금**이라서, 그 대관 회차의 **수입**으로 넣어야 합니다.
+
+### 입력 순서
+1. 통장 내역을 가져와 3만원 **입금**을 정산함(`/dues/<월>/inbox`)에 띄웁니다.
+2. 그 입금 카드에서 납부자는 고르지 않고 **[용도 지정]**을 누릅니다.
+3. 용도는 **직접 수입**을 고릅니다.
+4. 수입 항목은 225,000원을 낸 **그 대관 회차**를 고릅니다. 검색해서 찾을 수 있습니다.
+5. 금액은 30,000원 그대로 두고, 사유에 "대관비 과다 결제분 사장님 환불"처럼 쓰고 저장합니다.
+
+이렇게 하면 그 회차는 지출 225,000원에 수입 30,000원이 붙어 **실제 대관비 195,000원**으로 집계됩니다. 통장 월 수입·지출도 실제 입출금과 맞습니다.
+
+### 먼저 확인할 것
+- **225,000원 출금이 같은 회차에 연결돼 있어야** 상쇄됩니다. 출금은 다른 곳에 있고 3만원만 회차에 붙어 있으면, 그 회차는 수입만 있는 상태로 보입니다.
+- **회원에게 대관비를 엔빵으로 부과했다면**, 225,000원 기준으로 나눴으면 회원들이 더 낸 상태입니다. 그 경우 회차 대관비 총액을 195,000원으로 고쳐야 합니다. 종료된 회차라 **취소 후 재발행**으로 고치게 됩니다. 이미 납부한 회원은 돌려줄 돈이 생길 수도 있습니다. 정액(6천원)이나 무부과 회차라면 할 일이 없습니다.
+
+엔빵 회차였는지 알려주시면 재발행 순서도 안내해 드리겠습니다.
+
+---
+
+## #432
+
+**Prompt**: 회원관리 페이지 스크롤이 이상하게 되서 회원목록 내릴수가없어
+
+**Answer**: 재현해 보려 했지만 막혀서 증상을 조금 더 여쭤봐야 합니다.
+
+**확인한 것**
+- 회원관리 화면의 스크롤 구조(화면 높이 고정 + 목록만 내부 스크롤 + 가상화)는 최근 커밋에서 바뀐 게 없습니다.
+- 최근 바뀐 건 10/20 커밋의 모달 배경 블러 제거뿐이고, 스크롤 잠금 코드는 그대로입니다.
+- 브라우저 디버깅 도구(Chrome)가 연결돼 있지 않아 실제 화면에서는 아직 재현하지 못했습니다.
+
+**알려주시면 원인을 좁힐 수 있습니다**
+1. **기기와 환경**: 아이폰 PWA(홈 화면 앱)인지, 사파리나 크롬인지, PC인지
+2. **증상 모양**:
+   - 목록이 아예 안 움직이나요?
+   - 조금 내려가다가 다시 튀어 올라오나요?
+   - 목록 영역이 아주 작게 잘려 보이나요?
+   - 화면 전체가 같이 움직이나요?
+3. **언제부터인지**: 처음 들어갈 때부터인지, 실력 편집이나 콕 설정 같은 **모달을 열었다 닫은 뒤**부터인지, 게스트 보기를 켠 뒤부터인지
+4. 가능하면 **스크린샷**도 부탁드립니다.
+
+PC에서 Chrome을 `--remote-debugging-port=9222`로 띄우고 로그인해 주시면, 제가 직접 화면을 열어 스크롤 상태를 측정할 수도 있습니다.
+
+---
+
+## #433
+
+**Prompt**: https://contextfirst.blog/superlite-hand-an-agent-a-spec/
+이거 설치했는데 사용 어케함
+
+**Answer**: superlite 점검 결과: 고칠 항목은 마지막의 `.gitignore` 하나뿐이고, 나머지는 바로 쓸 수 있습니다. 아직 아무것도 바꾸지 않았습니다.
+
+| 항목 | 결과 | 내용 |
+|---|---|---|
+| 프로젝트 언어·테스트 명령 | **PASS** (참고 1건) | TypeScript로 인식했습니다. 테스트 명령은 `npm test -- --reporter=junit …`로 자동 감지했습니다. 직접 실행해 보니 vitest 77개 파일, 1,088개 테스트가 모두 통과했습니다(10.8초). 참고로 이 프로젝트는 pnpm을 씁니다. `npm test`는 스크립트만 실행하고 패키지를 설치하지 않아서 동작에는 문제가 없습니다. 원하시면 pnpm으로 바꿔 둘 수 있습니다. |
+| Python 3.10+ (`sl` 도구) | **PASS** | Python 3.14.6 |
+| 모델 등급 | **PASS** | `models.json`에 opus/sonnet/haiku 가격과 속도가 모두 있습니다. `routing.json`: 기본은 sonnet이고, 기계적인 작업 중 임계 경로 밖에 있는 것만 haiku로 보냅니다. |
+| superpowers 정지 상태 | **PASS** | superpowers가 설치돼 있지 않고 `.superlite/peers.json`도 없어서 정지된 실행이 없습니다. 함께 깔린 다른 플러그인은 codex(openai-codex)인데, superpowers와 달리 스킬 이름이 겹치지 않습니다. |
+| `.superlite/` gitignore | **FIX** | `.gitignore`에 없습니다. 이대로면 실행 상태 파일(원장, 지표, 로그)이 커밋될 수 있습니다. → `.gitignore`에 `.superlite/` 한 줄 추가를 권합니다. |
+
+**바꿀까요?**
+1. `.gitignore`에 `.superlite/` 추가 (권장)
+2. (선택) 테스트 명령을 `pnpm test -- --reporter=default --reporter=junit --outputFile.junit={junit}`로 고정
+
+"yes"라고 하시면 1번만, "둘 다"라고 하시면 1·2번을 모두 적용합니다.
+
+---
+
+## #434
+
+**Prompt**: go on
+
+**Answer**: [코드 블록 생략]
+
+---
+
+## #435
+
+**Prompt**: 한글로 번역해줘
+
+**Answer**: [코드 블록 생략]
+
+이 프로젝트에서는 처음에 `/superlite:setup`으로 테스트 명령과 플러그인 충돌을 점검하면 됩니다. 그다음 작업 종류에 맞는 명령을 쓰면 됩니다.
+
+- **회원관리 스크롤 버그**: `/superlite:debug 회원관리 페이지 목록이 스크롤 안 됨`
+- **기능 변경**: `/superlite:feature <변경 내용>`
+- **작은 수정**: `/superlite:small <변경 내용>`
+
+같은 일을 하는 다른 플러그인이 하나 있습니다. 이 세션에 이미 설치된 `codex` 플러그인으로, 작업을 다른 에이전트에게 맡기는 플러그인입니다. 둘 다 켜져 있으면 처음 setup에서 충돌 경고가 나올 수 있습니다.
+
+---
+
+## #436
+
+**Prompt**: 바꿔
+
+**Answer**: `.gitignore`에 `.superlite/`를 추가했고, 이제 그 폴더는 git이 무시하는 것으로 확인했습니다. 파일은 staging만 해 두었고 커밋은 하지 않았습니다.
+
+테스트 명령은 바꾸지 않았습니다. 지금의 `npm test`로도 정상 동작하니, pnpm으로 고정하고 싶으시면 말씀해 주세요.
+
+superlite는 이제 쓸 수 있습니다. 앞서 멈춘 회원관리 스크롤 문제를 바로 맡기려면 `/superlite:debug 회원관리 페이지 회원 목록이 스크롤로 안 내려감`을 실행하면 됩니다. 그 전에 기기와 증상(앞서 여쭌 내용)을 함께 적어 주시면 원인을 더 빨리 좁힐 수 있습니다.
+
+---
+
+## #437
+
+**Prompt**: 이거 위해서 만든 로그인방법이 어딘가 있을텐데
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #438
+
+**Prompt**: 지금 로그인시켜놨으니까 확인해봐
+
+**Answer**: PC Chrome에서는 버그를 재현하지 못했습니다. 로그인해 주신 실제 운영 화면(`ckti.me/members`, 회원 수가 많아 목록 높이 9,316px)에서도 스크롤이 정상으로 내려갑니다. 그래서 원인은 아직 모르고, 코드는 아무것도 고치지 않았습니다.
+
+**측정 결과** (390×844 모바일 에뮬레이션, 실제 입력 신호로 측정)
+
+| 입력 | 결과 |
+|---|---|
+| 마우스 휠 | 600px 내려감 |
+| 터치 드래그 | 1,076px까지 내려감 |
+| 터치 스크롤 제스처 | 1,377px까지 내려감 |
+| 콕 설정 모달 열기 → Esc로 닫기 → 드래그 | 296px 내려감. 모달이 건 스크롤 잠금도 닫을 때 풀림 |
+
+- 목록 위를 덮는 투명한 요소나 터치를 막는 CSS도 없었습니다.
+- 화면 구조도 정상입니다. 셸 높이 844px 안에서 목록 영역이 562px로 잡히고, 목록만 따로 스크롤됩니다.
+- 회원관리 화면 코드는 9월 이후 바뀐 적이 없습니다.
+
+**남은 가능성**: PC Chrome 에뮬레이션은 iOS 사파리의 스크롤 처리를 흉내 내지 못합니다. 아이폰 PWA나 특정 기기에서만 생기는 문제일 가능성이 가장 큽니다.
+
+원인을 좁히려면 아래를 알려주세요.
+1. **기기와 환경**: 아이폰 홈 화면 앱(PWA)인지, 사파리인지, 안드로이드 크롬인지
+2. **증상 모양**: 목록이 아예 안 움직이나요, 조금 가다가 튀어 올라오나요, 아니면 목록 대신 화면 전체가 끌려가나요?
+3. **재현 조건**: 화면에 들어오자마자 그런지, 정렬 변경·게스트 보기·실력 편집 같은 조작을 한 뒤부터인지
+
+원인을 찾으면 회귀 테스트로 쓸 하네스를 만들어 두었습니다(아직 커밋하지 않은 새 파일).
+- `e2e/member-admin.html`, `e2e/member-admin.tsx`, `e2e/member-admin-mock.ts`: 회원관리 화면을 가짜 회원 80명으로 띄우는 하네스
+- `e2e/member-admin.spec.ts`: 휠 스크롤을 검사하는 Playwright 테스트(지금은 통과)
+
+원인이 안 나오면 이 파일들은 지우겠습니다.
+
+정리도 해 두었습니다. 제가 띄운 개발 서버는 껐고, 3번 탭에 걸었던 모바일 화면 크기 설정은 풀었습니다. 로그인 상태는 그대로 두었습니다.
+
+---
+
+## #439
+
+**Prompt**: 됐으니까 필요없는거 지워
+
+**Answer**: 디버깅용으로 만든 것들을 모두 지웠습니다.
+
+- **하네스 파일 4개 삭제**: `e2e/member-admin.html`, `e2e/member-admin.tsx`, `e2e/member-admin-mock.ts`, `e2e/member-admin.spec.ts`
+- **임시 파일 삭제**: 측정 스크립트와 개발 서버 로그
+- **하네스 브라우저 탭(4번) 닫음**: 로그인된 `ckti.me` 탭(2·3번)은 그대로 두었습니다.
+
+지금 작업 트리에는 앞서 staging한 `.gitignore`(`.superlite/` 추가)만 이번 작업 결과로 남아 있습니다. 그 외 두 항목은 이전부터 있던 것입니다.
+
+---
+
+## #440
+
+**Prompt**: hi
+
+**Answer**: DB 배포가 프로덕션에 반영된 것을 확인했습니다.
+
+- 적용된 마지막 DB 변경이 이번 `20261102000000`입니다.
+- 회원 앱에서 부르는 저장·미리보기 함수(`session_edit`, `session_edit_preview`)는 로그인 사용자에게 열려 있고, 내부 함수는 바깥에서 부를 수 없게 막혀 있습니다.
+- `dues_set_session_fee`에 대관비를 안 걷는 장소면 대관비를 전부 취소하는 처리가 들어갔습니다.
+- `SET LOCAL` 경고는 신경 쓰지 않아도 됩니다. 다른 DB 변경 파일들도 같은 줄로 시작하고, 매번 같은 경고가 나왔습니다.
+
+남은 건 프론트 배포입니다. 변경 파일은 스테이징까지 해 두었으니 커밋하고 push하면 됩니다. `/commit`을 쓰셔도 됩니다. 프론트가 올라가기 전까지는 예전 화면이 그대로 동작해서 문제가 없습니다. 예전 화면이 쓰던 함수들도 아직 남아 있습니다.
+
+배포 후에는 종료된 대관 회차 하나를 열어 코트 총액을 바꿔 보시면 됩니다. 대관비 변경 내용(몇 건 취소, 몇 건 재발행)이 확인창에 뜨면 정상이고, 그 창에서 [닫기]를 누르면 아무것도 바뀌지 않습니다.
+
+---
+
+## #441
+
+**Prompt**: 대한민국 무료방송만 모은 안드로이드 tv 앱을 만들고싶은데 기술적으로 가능한지, 방송은 몇개를 따올수 있는지 찾아봐
+
+**Answer**: 조사 워크플로를 백그라운드에서 돌리고 있습니다. 끝나면 결과를 정리해서 알려드릴게요.
+
+**조사 범위 (5개 영역을 동시에 조사)**
+- **지상파:** KBS, MBC, SBS, EBS와 지역 방송. 공식 라이브가 무료인지, 스트림이 어떤 구조인지, 약관에서 재배포를 막는지 확인합니다.
+- **종편·보도·공공채널:** JTBC, YTN, KTV, 국회방송 등. 웹 스트림이 공개돼 있는지, 유튜브 24시간 라이브가 있는지 봅니다.
+- **FAST 플랫폼:** 삼성 TV 플러스, LG 채널 등 광고 기반 무료 채널 플랫폼. 한국 채널 수와 제휴 방법을 알아봅니다.
+- **오픈소스 채널 목록:** iptv-org에 등록된 한국 채널을 실제로 세고, 지역 제한(지오블록)이 걸린 비율을 확인합니다.
+- **기술·법률:** Android TV 앱 구현 방법(ExoPlayer, TV Input Framework, 유튜브 임베드)과 안테나 튜너로 직접 받는 방법을 봅니다. 저작권법, 링크 판례, Play 스토어 정책도 함께 확인합니다.
+
+조사가 끝나면 검증 에이전트가 핵심 주장을 다시 확인하고 빠진 채널을 보완합니다. 채널 수는 세 등급으로 나눠 추정합니다.
+- **A:** 공식적으로 앱에 넣어도 되는 채널
+- **B:** 기술적으로 재생은 되지만 약관이나 법적으로 애매한 채널
+- **C:** FAST 플랫폼에 있는 채널(참고용)
+
+참고로 질문이 하나 있습니다. 앞으로 앱을 실제로 만들 때, 구현 전에 '완료 기준과 목적'을 정리한 스펙 문서를 기본으로 먼저 쓸까요? (on/off)
+
+---
+
+## #442
+
+**Prompt**: 가능여부확인만 하는거야
+
+**Answer**: 네, 앱은 만들지 않고 만들 수 있는지와 가져올 수 있는 채널 수만 조사합니다. 스펙 문서도 기본값을 off로 해두었습니다.
+
+조사 워크플로는 아직 돌아가는 중입니다. 끝나면 판단에 필요한 핵심만 짧게 정리해 드릴게요.
+- **기술적으로 가능한지:** 가능 / 조건부 / 불가 중 하나로 결론
+- **채널 수:** 공식적으로 써도 되는 채널, 재생은 되지만 법적으로 애매한 채널, FAST 플랫폼에 있는 채널(참고용)로 나눠서
+- **막히는 지점:** 약관, 법률, 기술 중 무엇이 걸림돌인지
+
+---
+
+## #443
+
+**Prompt**: <task-notification>
+<task-id>w60m1i2cy</task-id>
+<tool-use-id>toolu_011Ynunp8RcQBm1pMEz7Lqyu</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/efab5914-4ec4-4683-a345-a9d5ff2e9cec/tasks/w60m1i2cy.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "한국 무료 방송 Android TV 앱 기술 가능성·확보 가능 채널 수 조사" completed</summary>
+<result>{"research":[{"key":"terrestrial","summary":"결론: 기술적으로는 가능하지만, 로그인 없이 공식 스트림을 끝까지 볼 수 있는 곳은 사실상 KBS와 EBS(그리고 OBS)뿐이다. MBC와 SBS는 비로그인 상태에서 서버가 미리보기 스트림만 내준다. 2026-10-27에 한국 IP(ipinfo=KR)에서 공식 API를 curl로 직접 호출해 확인했다.\n\n(1) KBS: cfpwwwapi.kbs.co.kr/api/v1/landing/live 의 채널 목록을 받은 뒤 /live/channel_code/{code} 를 호출하면 CloudFront 서명 HLS URL이 나온다. 로그인과 Referer가 필요 없다. 서명(Policy)은 약 48시간 유효하고 IP 바인딩이 없다. 세그먼트는 AES-128로 암호화돼 있지만 키 URL도 Referer 없이 200을 준다. 제공 품질은 1500Kbps(SD)다. 목록상 TV 채널은 1TV·2TV·WORLD·NEWS24·Story·LIFE·KIDS·독도 8개, 단일 프로그램 24시간 nvod(FAST형) 10개, 지역 1TV 10개(부산·창원·대구·광주·전주·대전·청주·춘천·제주·울산)로 모두 28개다.\n\n(2) EBS: 온에어 HTML에 CloudFront 서명 m3u8이 그대로 박혀 있다. 24시간 유효하고, IP 조건이 0.0.0.0/0이라 사실상 IP 제한이 없으며, 로그인 없이 Referer 없이 200을 준다. 확인한 채널은 EBS2·KIDS·PLUS1·PLUS2·EBSe다. EBS1은 확인 시점에 src가 빈 문자열이었다. 프로그램 단위 온라인 송출 차단으로 추정하지만 확인하지 못했다. EBS1을 포함하면 6개다.\n\n(3) MBC: mediaapi.imbc.com/Player/OnAirURLUtil 은 Referer가 없으면 \"Not Allow\"를 돌려준다. Referer를 붙여도 비로그인이면 IsLogin=N과 함께 preview_hd.stream(3분 미리보기 전용) URL만 준다. MBC 본채널과 플러스채널(드라마·every1·M·ON) 모두 같다.\n\n(4) SBS: apis.sbs.co.kr/play-api/1.0/onair/channel/{S01..} 를 비로그인으로 호출하면 JWT 토큰이 duration=60, exp=iat+60으로 나온다. 서버가 1분 미리보기를 강제하는 구조다. 720p 소스는 required_login=Y로 표시된다. SBS, SBS Plus, Sports, funE, Golf, Biz, Life, No.1 뉴스라이브(S29)도 같다.\n\n(5) 지역 민방: OBS는 vod3.obs.co.kr 에 토큰 없는 고정 m3u8이 있어 바로 재생된다. UBC는 블로그 기준으로 시청 세션마다 소셜 인증을 요구한다. KNN·TBC·G1 등은 페이지에 로그인 요소만 보이고 스트림 URL은 확인하지 못했다(low).\n\n(6) YouTube: KBS News와 MBC NEWS가 24시간 뉴스 라이브를 운영한다. 공식 임베드(YouTube 플레이어)로 쓰는 것이 유일하게 허용이 분명한 경로다.\n\n정리하면, 로그인 없이 끝까지 볼 수 있는 채널은 대략 KBS 28 + EBS 6 + OBS 1 = 약 35개다. 지역 nvod를 빼고 \"진짜 방송 채널\"만 세면 약 25개다. 여기에 YouTube 뉴스 라이브 몇 개를 더할 수 있다. 사용자가 앱 안에서 MBC/SBS에 로그인하는 구조라면 각 7개 안팎을 더 붙일 수 있지만, 비공식 API 역공학이 필요하다.\n\n법적·정책 리스크가 가장 크다. 방송사가 서드파티 재생을 허용한다는 근거는 찾지 못했다. 각 사 이용약관의 재배포 조항 원문도 확보하지 못했다(low). Google Play 지식재산 정책은 저작권 침해를 유도하는 앱이나 무단 스트리밍 앱을 금지한다. 지상파 3사가 과거 불법 실시간 TV 앱 삭제를 요청한 사례도 있다. 비공개 API는 언제든 바뀌거나 막힐 수 있다. Wikipedia는 KBS·MBC 라이브를 \"South Korea only\"로 표기하고, SBS API에도 overseas_yn 필드가 있다. 해외 지오블록은 직접 검증하지 못했다.","channels":[{"name":"KBS 1TV","category":"지상파 본채널","source":"KBS 온에어 웹 API (cfpwwwapi.kbs.co.kr/api/v1/landing/live/channel_code/11)","stream_type":"토큰 HLS (CloudFront 서명 약 48시간, AES-128 키 공개, Referer 불필요, SD 1500Kbps)","free_no_login":true,"third_party_usable":"기술적으로는 가능하다(curl과 ExoPlayer UA로 200 확인). 공식 허가 근거는 없어 비공식 API 사용에 해당한다","evidence_url":"https://cfpwwwapi.kbs.co.kr/api/v1/landing/live/channel_code/11"},{"name":"KBS 2TV","category":"지상파 본채널","source":"KBS 온에어 API channel_code=12","stream_type":"토큰 HLS (CloudFront 서명, AES-128)","free_no_login":true,"third_party_usable":"기술적으로 가능하다(m3u8과 키 모두 Referer 없이 200). 허가는 없다","evidence_url":"https://cfpwwwapi.kbs.co.kr/api/v1/landing/live/channel_code/12"},{"name":"KBS WORLD","category":"KBS 부가","source":"KBS 온에어 API code 14","stream_type":"토큰 HLS","free_no_login":true,"third_party_usable":"KBS 1TV와 같은 구조","evidence_url":"https://cfpwwwapi.kbs.co.kr/api/v1/landing/live"},{"name":"KBS NEWS 24","category":"KBS 부가","source":"KBS 온에어 API code 81","stream_type":"토큰 HLS","free_no_login":true,"third_party_usable":"KBS 1TV와 같은 구조","evidence_url":"https://cfpwwwapi.kbs.co.kr/api/v1/landing/live"},{"name":"KBS Story / KBS LIFE / KBS KIDS","category":"KBS 부가(구 N계열)","source":"KBS 온에어 API code N94/N93/N96","stream_type":"토큰 HLS","free_no_login":true,"third_party_usable":"KBS 1TV와 같은 구조","evidence_url":"https://cfpwwwapi.kbs.co.kr/api/v1/landing/live"},{"name":"KBS 독도 TV","category":"KBS 부가(CCTV형)","source":"KBS 온에어 API code cctv01","stream_type":"토큰 HLS","free_no_login":true,"third_party_usable":"KBS 1TV와 같은 구조","evidence_url":"https://cfpwwwapi.kbs.co.kr/api/v1/landing/live"},{"name":"KBS nvod 10개 (쌈마이웨이, 태조왕건, 직장의신, 아이가다섯, 제빵왕김탁구, 1박2일, 내딸서영이, 역사저널그날, 인간극장, 어린이만화동산)","category":"KBS FAST형 단일프로그램 채널","source":"KBS 온에어 API code nvod1~nvod10 (channel_group N01)","stream_type":"토큰 HLS (추정, 목록에서 TV 타입으로 확인)","free_no_login":true,"third_party_usable":"개별 nvod URL 재생은 테스트하지 않았다","evidence_url":"https://cfpwwwapi.kbs.co.kr/api/v1/landing/live"},{"name":"KBS 지역 1TV 10개 (부산 10_11, 창원 20_11, 대구 30_11, 광주 40_11, 전주 50_11, 대전 60_11, 청주 70_11, 춘천 80_11, 제주 90_11, 울산 11_11)","category":"KBS 지역국","source":"KBS 온에어 API (local-*.gscdn.kbs.co.kr)","stream_type":"토큰 HLS (SD)","free_no_login":true,"third_party_usable":"부산·창원·대구·전주는 API에서 URL이 나오는 것을 확인했다","evidence_url":"https://cfpwwwapi.kbs.co.kr/api/v1/landing/live/channel_code/10_11"},{"name":"EBS2 / EBS KIDS / EBS PLUS1 / EBS PLUS2 / EBSe","category":"EBS","source":"EBS 온에어 웹페이지 HTML (www.ebs.co.kr/onair?channelCodeString=tv2 등)","stream_type":"토큰 HLS (liveotu.ebs.co.kr, CloudFront 서명 24시간, SourceIp 0.0.0.0/0, Referer 불필요)","free_no_login":true,"third_party_usable":"기술적으로 가능하다(HTML을 파싱하면 m3u8이 나오고 Referer 없이 200). 허가는 없다","evidence_url":"https://www.ebs.co.kr/onair?channelCodeString=tv2"},{"name":"EBS1","category":"EBS","source":"EBS 온에어 웹 (channelCodeString=tv)","stream_type":"토큰 HLS 예상. 확인 시점에는 src가 빈 문자열(프로그램 단위 송출 차단으로 추정)","free_no_login":true,"third_party_usable":"불확실하다. 시간대마다 확인이 필요하다","evidence_url":"https://www.ebs.co.kr/onair?channelCodeString=tv"},{"name":"MBC (본채널)","category":"지상파 본채널","source":"MBC 온에어 (mediaapi.imbc.com/Player/OnAirURLUtil)","stream_type":"토큰 HLS. API가 Referer를 검사하고(없으면 Not Allow), 비로그인이면 preview_hd.stream(3분 미리보기)만 준다","free_no_login":false,"third_party_usable":"비로그인으로는 사실상 불가능하다. 무료 회원 로그인 세션이 필요하다","evidence_url":"https://onair.imbc.com/"},{"name":"MBC DRAMA / every1 / MBC M / MBC ON","category":"MBC 계열 PP","source":"mediaapi.imbc.com/Player/OnAirPlusURLUtil?ch=1,2,3,6","stream_type":"토큰 HLS. 비로그인이면 *preview_hd 스트림만 준다","free_no_login":false,"third_party_usable":"MBC 본채널과 같다(로그인 필요)","evidence_url":"https://onair.imbc.com/"},{"name":"SBS (본채널) 및 SBS Plus/funE/Sports/Golf/Golf2/Biz/Life/No.1 뉴스라이브","category":"지상파 및 SBS 계열","source":"SBS 라이브 (apis.sbs.co.kr/play-api/1.0/onair/channel/{S01,...})","stream_type":"JWT 토큰 HLS (tvlive.sbs.co.kr). 비로그인이면 duration=60, exp=iat+60(1분 미리보기)이고 720p는 required_login=Y","free_no_login":false,"third_party_usable":"비로그인으로는 불가능하다(1분 후 토큰 만료). 로그인 토큰이 필요하다","evidence_url":"https://www.sbs.co.kr/live/S01"},{"name":"OBS 경인TV","category":"지역민방(지상파)","source":"OBS 온에어 웹 (www.obs.co.kr/onair)","stream_type":"직접 HLS (vod3.obs.co.kr:444/live/obsstream1/tv.stream/playlist.m3u8, 토큰 없음)","free_no_login":true,"third_party_usable":"기술적으로 가능하다(Referer 없이 200). 허가는 없다","evidence_url":"https://www.obs.co.kr/onair"},{"name":"UBC 울산방송","category":"지역민방","source":"UBC 온에어 웹","stream_type":"확인하지 못했다. 시청 세션마다 소셜 인증이 필요하다는 보도가 있다","free_no_login":false,"third_party_usable":"어려움(인증 필요)","evidence_url":"https://www.ubc.co.kr/onair/tv/"},{"name":"KNN, TJB, kbc, TBC, G1, JTV, CJB, JIBS 등 기타 지역민방과 지역MBC","category":"지역민방/지역MBC","source":"각 사 홈페이지 온에어","stream_type":"확인하지 못했다(페이지에 로그인 요소가 있고 m3u8은 찾지 못함). 나무위키에 따르면 지역MBC는 대부분 로그인이 필요하다","free_no_login":false,"third_party_usable":"low confidence. 사별로 개별 검증이 필요하다","evidence_url":"https://namu.wiki/w/%EB%AC%B8%ED%99%94%EB%B0%A9%EC%86%A1%20%EA%B3%84%EC%97%B4%20%EC%A7%80%EC%83%81%ED%8C%8C%20%EB%B0%A9%EC%86%A1%EC%82%AC"},{"name":"KBS News 24시 라이브 (YouTube)","category":"YouTube 공식 라이브","source":"YouTube KBS News 채널","stream_type":"YouTube 임베드","free_no_login":true,"third_party_usable":"YouTube IFrame/Player로 임베드하는 것은 YouTube 약관 범위 안에서 허용된다. 영상 ID는 바뀔 수 있다","evidence_url":"https://www.youtube.com/watch?v=M1WrMEUOBsU"},{"name":"MBC NEWS 24시간 라이브 (YouTube)","category":"YouTube 공식 라이브","source":"YouTube MBCNEWS 채널","stream_type":"YouTube 임베드","free_no_login":true,"third_party_usable":"YouTube 임베드로 허용된다. 영상 ID는 바뀔 수 있다","evidence_url":"https://www.youtube.com/watch?v=q9bM12ucTIY"}],"key_facts":[{"claim":"KBS 공식 API 목록에는 TV 채널 18개(본/부가 8 + nvod 10)와 지역 1TV 10개가 있다. 모두 로그인 없이 서명된 m3u8 URL을 받을 수 있다","confidence":"high (2026-10-27 직접 호출)","evidence_url":"https://cfpwwwapi.kbs.co.kr/api/v1/landing/live"},{"claim":"KBS 스트림은 CloudFront Signed URL로 약 48시간 유효하고 IP 바인딩이 없다. AES-128 키
+... (truncated 43964 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/efab5914-4ec4-4683-a345-a9d5ff2e9cec/tasks/w60m1i2cy.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/efab5914-4ec4-4683-a345-a9d5ff2e9cec/subagents/workflows/wf_7aa6db53-236/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/efab5914-4ec4-4683-a345-a9d5ff2e9cec/workflows/scripts/kr-free-tv-research-wf_7aa6db53-236.js', resumeFromRunId: 'wf_7aa6db53-236'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>6</agent_count><agents_done>6</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>492816</subagent_tokens><tool_uses>154</tool_uses><duration_ms>736190</duration_ms></usage>
+</task-notification>
+
+**Answer**: **결론: 기술적으로는 충분히 가능합니다. 다만 몇 개를 가져올 수 있는지는 기술보다 권리(허락)가 결정합니다.**
+
+에이전트들이 2026-10-27에 한국 IP에서 공식 API와 스트림을 직접 호출해 확인했습니다. 일반적인 Android TV 플레이어(ExoPlayer)와 YouTube 임베드만으로 대부분 재생됩니다.
+
+### 가져올 수 있는 채널 수
+
+| 등급 | 채널 수 | 내용 |
+|---|---|---|
+| **A. 써도 되는 것이 분명한 채널** | **약 8~15개** | 방송사 공식 YouTube 라이브 임베드(YTN, 연합뉴스TV, 국회방송, KTV, JTBC, MBN, 채널A, TV조선, 아리랑, KBS News, MBC NEWS 등). 24시간 상시 송출이 분명한 곳은 YTN, 연합뉴스TV, 국회방송 정도이고 나머지는 프로그램 단위라 수시로 끊깁니다. |
+| **B. 재생은 되지만 허락은 없는 채널** | **약 85~95개** (24시간 상시 송출만 세면 약 60개) | KBS 28개(본·부가 8, 단일 프로그램 24시간 채널 10, 지역 1TV 10), EBS 6개, OBS, 공공·종교 채널, 지역 MBC·민방 약 17개, 홈쇼핑 약 17개 |
+| **C. FAST 플랫폼에 있는 채널(참고)** | 삼성 TV 플러스 167개, 웨이브 무료 133개, LG채널 약 100개 | 전부 자사 기기·자사 앱 전용입니다. 다른 앱에 채널을 열어주는 제휴 프로그램은 확인되지 않았습니다. |
+
+### 핵심 사실
+- **로그인 없이 끝까지 볼 수 있는 공식 웹 라이브:** 지상파 중 KBS와 EBS뿐입니다(지역 민방 OBS도 가능). KBS는 공식 API에서 받은 스트림 주소가 약 48시간 유효해서, 주기적으로 갱신하면 됩니다.
+- **MBC·SBS는 비로그인으로 넣을 수 없습니다:**
+  - MBC는 3분 미리보기, SBS는 1분 미리보기만 나옵니다.
+  - 넣으려면 사용자 로그인 토큰을 재사용해야 하는데, 이는 회색 중에서도 짙은 쪽입니다.
+- **YouTube로만 볼 수 있는 채널이 있습니다:** JTBC, MBN, 채널A, YTN, 연합뉴스TV는 자체 공개 스트림이 사실상 없습니다.
+- **iptv-org(오픈소스 공개 채널 목록):** 한국 항목이 88개(고유 채널 72개)입니다. 대부분 홈쇼핑, 종교, 지역, 공공 채널이고 KBS1·2, MBC·SBS 본사, JTBC는 없습니다.
+- **안테나 튜너 경로:** 사용자가 HDHomeRun 같은 튜너를 연결하면 지역별 지상파 HD 7~9개를 법적 문제 없이 볼 수 있습니다.
+
+### 막히는 지점은 기술이 아니라 법·정책입니다
+- **저작권:** 방송사 스트림을 허락 없이 다른 앱에서 내보내는 것은 저작권법 제85조의 동시중계방송권 침해 소지가 있습니다. 방송사가 서드파티 재생을 공개적으로 허락한 사례는 한 곳도 확인되지 않았습니다.
+- **플레이스토어:** Google Play 지식재산 정책상 무단 스트리밍 앱은 삭제 대상입니다. 지상파 3사가 불법 실시간 TV 앱 삭제를 요청한 전례도 있습니다.
+- **API 유지:** 공식이 아닌 API를 쓰는 구조라 방송사가 언제든 바꾸거나 막을 수 있습니다.
+
+### 판단
+- **개인용(사이드로드):** 약 90개 채널 구성이 기술적으로 가능합니다.
+- **플레이스토어 출시:** 합법적으로 쓸 수 있는 건 YouTube 공식 라이브와 공공채널 위주로 10~20개 수준입니다. 지상파와 종편을 넣으려면 방송사와 직접 제휴하거나, 채널을 공급하는 회사(뉴아이디, LG유플러스 등)를 거쳐야 합니다.
+
+검증 에이전트가 처음 조사의 두 가지 주장, 즉 "지역민방은 로그인이 필요하다"와 "iptv-org 채널은 전부 연결이 안 된다"를 직접 재확인했는데, 실측과 달랐습니다. 위 수치는 이를 바로잡은 것입니다. 원본 결과는 `/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/efab5914-4ec4-4683-a345-a9d5ff2e9cec/tasks/w60m1i2cy.output`에 있습니다.
+
+---
+
+## #444
+
+**Prompt**: 개인적으로 사용하려고 해도 안되나?
+
+**Answer**: **결론: 혼자 쓰는 것은 법적 위험이 매우 낮습니다.** 앞에서 말한 문제는 대부분 다른 사람에게 배포하거나 스토어에 올릴 때 생기는 것입니다. 다만 몇 가지 선은 있습니다.
+
+### 개인 사용이면 괜찮은 이유
+- **동시중계방송권은 해당되지 않습니다.** 이 권리는 방송을 다른 사람들에게 다시 송출하는 행위를 막는 권리입니다. 내 TV에서 나 혼자 보는 것은 다시 송출하는 것이 아닙니다.
+- **방송사가 이미 무료로 공개한 스트림입니다.** KBS, EBS, OBS, 공공채널은 로그인 없이 누구에게나 주는 것이고, 웹브라우저 대신 내 앱으로 받아 보는 것뿐입니다.
+- **사적 이용 규정도 있습니다.** 저작권법 제30조는 개인이 사적으로 이용하려고 복제하는 것을 허용합니다.
+
+### 조심할 부분
+1. **로그인·미리보기 제한을 우회하면 안 됩니다.**
+   - MBC·SBS의 미리보기(3분/1분) 제한을 풀거나 토큰을 조작하는 것은 저작권법 제104조의2의 "기술적 보호조치 무력화"에 해당할 수 있습니다. 개인 용도여도 마찬가지입니다.
+   - 내 계정으로 정상 로그인해서 정상적으로 받은 스트림을 재생하는 정도는 회색이지만 위험이 낮습니다.
+   - KBS 스트림은 암호화돼 있지만 복호화 키를 서버가 공개적으로 내줍니다. 그대로 쓰는 것이라 무력화로 보기 어렵습니다.
+2. **이용약관 위반 가능성은 남습니다.** 이는 민사상 계약 문제이고, 개인 시청에 대해 실제로 문제 삼은 사례는 사실상 없습니다. 최악의 경우 계정 정지 정도입니다.
+3. **해외에서 VPN으로 국내 IP를 우회하는 것은** 약관 위반 소지가 조금 더 큽니다.
+4. **배포하는 순간 이야기가 달라집니다.** 친구에게 APK를 주거나 GitHub에 채널 주소를 담아 공개하면 "개인 사용"을 벗어납니다. 코드만 공개하고 채널 주소는 넣지 않는 식이면 위험이 줄어듭니다.
+
+### 현실적인 구성(개인용)
+- **위험 낮음:** KBS 28개, EBS 6개, OBS, 공공·종교·홈쇼핑 채널, YouTube 라이브를 합쳐 약 60~90개
+- **회색:** MBC·SBS는 내 계정으로 로그인해서 정상 스트림을 받는 경우만
+- **하지 말 것:** 미리보기 제한이나 DRM 우회
+
+(법률 자문은 아닙니다. 다만 국내에서 개인이 공개 무료 스트림을 시청했다고 처벌받은 사례는 찾을 수 없었습니다.)
+
+---
+
+## #445
+
+**Prompt**: 개인용으로 만들거기 때문에 좀 더 어두운 방법을 사용해도 좋아. 프로젝트 생성은 ~/Projects 폴더에 만들어
+
+**Answer**: `~/Projects/onair-tv`에 프로젝트를 만들고 기본 골격을 커밋했습니다(5a1d59a). 나머지 구현은 지금 백그라운드에서 진행 중이라, 아직 빌드나 실행으로 확인된 것은 없습니다.
+
+**골격에서 정해둔 것**
+- 기술 스택은 기존 anilife-tv와 같고, 빌드 설정도 거기서 가져왔습니다(Kotlin, Compose for TV, Media3, OkHttp).
+- 모든 채널 소스가 따를 공통 인터페이스를 먼저 정했습니다.
+- 여러 소스에 같은 채널이 있으면 하나만 남기고, 즐겨찾기와 마지막으로 본 채널을 저장합니다.
+- MBC·SBS 로그인 정보가 앱을 껐다 켜도 유지되도록 쿠키를 저장합니다.
+
+**진행 중인 작업**
+1. **구현(7개 동시):** KBS, EBS, OBS와 지역 민방, MBC 로그인, SBS 로그인, iptv-org 목록, 삼성 TV 플러스, 그리고 화면·플레이어. 화면 쪽은 홈 채널 목록, 리모컨 위/아래로 채널 전환, 채널 목록 오버레이, 설정, 로그인 화면입니다.
+2. **통합 검증:** 빌드와 단위 테스트를 통과시킨 뒤, 실제 방송사에 접속해 소스별로 채널 수와 재생 여부를 확인합니다. 이어서 이미 있는 TV 에뮬레이터(Television_1080p_API_31)에 설치해 홈 화면과 KBS 1TV 재생을 캡처합니다.
+3. **리뷰와 수정:** 별도 에이전트가 코드를 검토하고, 지적이 나오면 다른 에이전트가 고친 뒤 다시 빌드합니다.
+
+**제가 정한 사항**
+- **MBC·SBS 로그인:** 방송사 로그인 페이지를 앱 안 웹 화면으로 띄워 직접 로그인하는 방식입니다. 아이디와 비밀번호를 앱에 저장하지 않고, 방송사 쪽 로그인 절차가 바뀌어도 덜 깨집니다. 대신 로그인할 때 리모컨으로 입력해야 해서 조금 불편합니다.
+- **넘지 않는 선:** 미리보기 시간 제한과 DRM은 우회하지 않습니다. 로그인하지 않은 상태에서 MBC·SBS를 틀면 "로그인 필요" 안내가 나오고, 삼성 TV 플러스에서 DRM이 걸린 채널은 목록에서 뺍니다.
+- **진행 방식:** 원래 쓰던 작업 관리 스크립트 대신 워크플로 하나로 진행합니다. 새로 만드는 프로젝트라 그쪽 절차를 다 거치면 부담만 커서입니다.
+- **로그인 검증의 한계:** 계정이 없어 로그인 성공을 실제로 확인할 수 없습니다. 그래서 MBC·SBS 로그인은 방송사 웹 플레이어 코드를 근거로 구현하고, 실제 동작은 직접 로그인해서 확인하셔야 합니다.
+
+push나 배포는 하지 않습니다. 결과가 나오면 소스별 채널 수, 빌드·테스트 결과, 에뮬레이터 캡처를 정리해서 알려드릴게요.
+
+---
+
+## #446
+
+**Prompt**: <task-notification>
+<task-id>wep942bu1</task-id>
+<tool-use-id>toolu_01UQFaawqDBpS3Qs4jyRNXxJ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/efab5914-4ec4-4683-a345-a9d5ff2e9cec/tasks/wep942bu1.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "개인용 한국 무료방송 Android TV 앱(onair-tv) 소스·UI 구현 → 빌드/에뮬레이터 검증 → 리뷰·수정" completed</summary>
+<result>{"impl":[{"key":"kbs","files":["/Users/sam/Projects/onair-tv/app/src/main/java/dev/sam/onairtv/source/kbs/KbsSource.kt","/Users/sam/Projects/onair-tv/app/src/main/java/dev/sam/onairtv/source/kbs/KbsParser.kt","/Users/sam/Projects/onair-tv/app/src/test/java/dev/sam/onairtv/source/kbs/KbsParserTest.kt","/Users/sam/Projects/onair-tv/app/src/test/resources/kbs/live.json","/Users/sam/Projects/onair-tv/app/src/test/resources/kbs/channel_code_11.json","/Users/sam/Projects/onair-tv/app/src/test/resources/kbs/channel_code_10_11.json","/Users/sam/Projects/onair-tv/app/src/test/resources/kbs/channel_code_nvod1.json","/Users/sam/Projects/onair-tv/app/src/test/resources/kbs/channel_code_empty.json"],"summary":"KbsSource를 구현했습니다(package dev.sam.onairtv.source.kbs, id=\"kbs\", displayName=\"KBS\"). 2026-10-27에 curl로 실제 API를 다시 확인했고, 사전 조사 내용과 일치했습니다. 컴파일과 테스트는 이번 단계에서 돌리지 않았습니다(gradle 금지). 다음 단계에서 확인해야 합니다.\n\nAPI에서 실제로 확인한 내용:\n- 목록(landing/live): 응답 형태는 {ret, msg, channel:[{channel_group, channel_group_name, sort_order, channel_master:[{channel_code, title, channel_type(TV/RADIO/COUNTRY/DMB), channel_group, sort_order, image_path_channel_logo, item:[{service_url:\"-\", media_type, bitrate, channel_id}]}]}]}입니다.\n- 재생 URL(channel_code/{code}): 응답 형태는 {ret, msg, channel_item:[{service_url(CloudFront 서명 URL), media_type, bitrate…}], channelMaster}입니다.\n- 없는 코드를 보내도 ret=0이고 channel_item만 빈 배열로 옵니다.\n- media_type은 1TV/2TV는 tv·cc(자막)·preview(256Kbps 저화질), nvod는 대문자 \"TV\", 지역국은 \"local\"입니다.\n- 서명 정책(Policy)을 디코드하면 {\"Statement\":[{\"Resource\":…,\"Condition\":{\"DateLessThan\":{\"AWS:EpochTime\":…}}}]}이고, 만료는 약 47~48시간 뒤입니다.\n- 재생 확인: 서명 없이 세그먼트와 AES 키를 요청해도 HTTP 200이 나왔고, Referer/UA 헤더도 필요 없어서 headers는 비워 두었습니다.\n- 품질 선택지: 모든 채널이 영상 본편 항목을 하나만 줍니다. 그래도 여럿이 오면 비트레이트가 가장 높은 것을 고르도록 넣었습니다.\n\n구현 내용:\n- 파서는 KbsParser.kt에 네트워크와 분리된 internal 순수 함수로 두었습니다. kotlinx-serialization DTO(ignoreUnknownKeys)를 사용합니다.\n- parseKbsChannels(목록 파싱):\n  - channel_type이 TV인 채널은 1TV/2TV(11, 12)를 TERRESTRIAL로 둡니다. 81 또는 G02 그룹은 NEWS, nvod 또는 N01 그룹은 FAST, 나머지(WORLD·Story·LIFE·KIDS·독도)는 TERRESTRIAL_SUB입니다.\n  - 지역국(COUNTRY)은 제목이 …TV인 것만 남깁니다. \"부산1TV\"는 \"KBS 부산 1TV\"가 되고 그룹은 REGIONAL입니다.\n  - 라디오, DMB, 지역 라디오/FM, 영상 항목이 없는 채널은 뺍니다.\n  - 이름은 제목이 KBS로 시작하면 그대로 쓰고, 아니면 앞에 \"KBS \"를 붙입니다(nvod도 같은 규칙으로 \"KBS 쌈, 마이웨이\"가 됩니다).\n  - 로고는 image_path_channel_logo를 씁니다. order는 그룹 sort_order×100 + 채널 sort_order입니다.\n  - 결과는 28개입니다(본채널 3, NEWS24, N 케이블 3, 독도, nvod 10, 지역 1TV 10).\n- parseKbsStream(재생 URL 파싱): media_type이 tv/local이고 http로 시작하는 항목만 남기고 비트레이트 최댓값을 고릅니다. cc와 preview는 쓰지 않습니다. 항목이 없으면 IllegalStateException을 던집니다.\n- cloudFrontExpiresMillis(만료 시각): Expires 파라미터가 있으면 우선 쓰고, 없으면 Policy를 디코드해 DateLessThan의 AWS:EpochTime을 읽습니다. 디코드는 CloudFront 변형 문자(-→+, _→=, ~→/)를 되돌린 뒤 java.util.Base64로 합니다(minSdk 26이라 사용 가능). 값은 초×1000입니다.\n- KbsSource.kt는 Http.client로 GET을 동기 실행합니다(OkHttp 4 프로퍼티 API resp.code/resp.body). resolve는 매번 channel_code를 호출합니다.\n- 테스트: KbsParserTest(JUnit4) 10건을 작성했습니다. 픽스처는 실제 응답 5개입니다(live.json, channel_code_11, channel_code_10_11, channel_code_nvod1, channel_code_empty).\n\n경계: 공개 스트림만 씁니다. 미리보기 제한, 로그인, DRM을 우회하는 코드는 없습니다.","live_channel_count":"28 (TV 계열; 원본 응답 전체는 라디오·DMB·지역 라디오 포함 약 70여 항목)","open_issues":["컴파일·테스트 미실행(gradle 금지 단계). 확인할 부분: Json.decodeFromString&lt;T&gt; 사용을 위해 kotlinx.serialization.decodeFromString import를 넣었는데, 1.7.3에서 Json 멤버와 겹쳐 unused-import 경고만 날 수 있음. HttpUrl.Companion.toHttpUrlOrNull, Base64.getDecoder()가 패딩 없는 입력을 받는지.","픽스처의 서명 URL은 실제 값이며 약 48시간 뒤 만료된다. 테스트는 URL 문자열만 검사하므로 영향은 없지만, 공개 저장소에 올린다면 Signature를 마스킹하는 게 좋다.","nvod 채널 이름이 프로그램명이라 'KBS 쌈, 마이웨이' 형태가 된다. 'KBS 정주행: …' 같은 표기를 원하면 classify를 조정해야 한다.","1TV/2TV/WORLD 등은 본편 품질이 하나뿐이다(예: 1tv_3.m3u8, 1500Kbps 단일 미디어 플레이리스트). 응답에 없는 더 높은 화질 URL을 추측해 만드는 코드는 넣지 않았다."]},{"key":"ebs","files":["/Users/sam/Projects/onair-tv/app/src/main/java/dev/sam/onairtv/source/ebs/EbsSource.kt","/Users/sam/Projects/onair-tv/app/src/test/java/dev/sam/onairtv/source/ebs/EbsSourceTest.kt","/Users/sam/Projects/onair-tv/app/src/test/resources/ebs/onair_tv.html","/Users/sam/Projects/onair-tv/app/src/test/resources/ebs/onair_tv2.html","/Users/sam/Projects/onair-tv/app/src/test/resources/ebs/onair_ebsu.html","/Users/sam/Projects/onair-tv/app/src/test/resources/ebs/onair_tv_empty_src.html"],"summary":"I added EbsSource (id \"ebs\") in the ebs package. It has not been compiled or tested yet: I didn't run gradle, as the task said, so the next step needs to compile it and run the tests.\n\nWhat I checked live with curl:\n- The onair page has a `source = [{ src: '...' }]` block, and the src is a signed m3u8 URL on liveotu.ebs.co.kr (paths ebs1, ebs2, ebskids, plus1, plus2, ebse).\n- The signature lasts about 24 hours (now 1793073728, expiry 1793160127).\n- The master playlist returned HTTP 200 with no Referer.\n- The channelCodeString values are tv, tv2, ebsu (this is EBS KIDS), plus1, plus2 and ebse. The page also links radio and iradio, which I left out.\n- I found no JSON API that returns the stream URL. The page only calls `/onair/cururentOnair.json` (now playing) and `/onair/checkOnAirYn` (returns {\"blocking\":false}), so the code reads the URL from the HTML.\n\nHow it works:\n- **listChannels()**: returns a fixed list of the six channels, built by `internal buildChannels()` with no network call. EBS1 and EBS2 are TERRESTRIAL, the other four are PUBLIC. logoUrl is null because the pages have no per-channel logos.\n- **resolve()**: fetches the onair page with `Http.client` (OkHttp 4, nullable `resp.body?.string()`), then reads the src with `internal parseStreamSrc(html)`.\n  - If the src is an empty string, it throws `IllegalStateException(\"현재 온라인 송출이 제한된 프로그램입니다\")`.\n  - If the player block isn't on the page at all, it throws IOException.\n  - Otherwise it returns a `PlayableStream` with no headers.\n- **Expiry**: `internal parseCloudFrontExpiry(url)` decodes the Policy part of the URL (CloudFront's URL-safe base64, decoded with `java.util.Base64`, available from API 26) and reads `AWS:EpochTime` in milliseconds. If there is no Policy, it falls back to `Expires=`.\n\nTests (JUnit4, six cases) use the real pages for tv, tv2 and ebsu. The fourth fixture, onair_tv_empty_src.html, is the real tv page with only the src changed to `''`. I made that one because I couldn't catch a restricted time slot live. I ran the regex logic in Python against these fixtures and it extracts the URL correctly.","live_channel_count":"6","open_issues":["Not compiled and tests not run (gradle was off-limits this step); the next step needs to check both.","The empty-src (restricted broadcast) fixture is the real tv page with only src changed to ''. I couldn't reach a restricted time slot live, so this case hasn't been seen in a real response.","The restricted case throws a generic IllegalStateException. The contract has no typed exception for 'broadcast restricted', so the UI can only tell this case apart by the exception's message.","The fixtures are full real HTML pages, about 100KB each (four files)."]},{"key":"obs","files":["/Users/sam/Projects/onair-tv/app/src/main/java/dev/sam/onairtv/source/obs/ObsSource.kt","/Users/sam/Projects/onair-tv/app/src/main/java/dev/sam/onairtv/source/obs/ObsParser.kt","/Users/sam/Projects/onair-tv/app/src/test/java/dev/sam/onairtv/source/obs/ObsParserTest.kt","/Users/sam/Projects/onair-tv/app/src/test/resources/obs/onair.html"],"live_channel_count":"1 (OBS 경인TV만 공개 m3u8 확인)","summary":"ObsSource(id=\"obs\") 구현 완료. 채널은 OBS 경인TV 1개뿐이며 그룹은 REGIONAL, key는 \"obs:obs\"입니다. listChannels는 네트워크 없이 고정 목록을 돌려줍니다. resolve는 https://www.obs.co.kr/onair/ 를 Http.client로 받아 ObsParser.parseStreamUrl로 m3u8을 뽑습니다. 1순위는 video의 &lt;source src&gt;, 2순위는 스크립트 안의 절대 m3u8 주소(\\/ 와 &amp;amp; 복원)입니다. 페이지 요청이나 추출이 실패하면 알려진 고정 URL로 폴백하고, 헤더에는 Referer=온에어 페이지를 붙입니다. 파서는 internal object 순수 함수이고, JUnit4 테스트 5개와 실응답 픽스처(onair.html)를 넣었습니다. 테스트는 실페이지 추출, 이스케이프된 주소, 없음→null, 폴백값과 실페이지 값 일치, 채널 메타를 확인합니다. gradle은 실행하지 않았고 정규식만 python으로 같은 픽스처에 돌려 결과를 확
+... (truncated 38506 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/efab5914-4ec4-4683-a345-a9d5ff2e9cec/tasks/wep942bu1.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/efab5914-4ec4-4683-a345-a9d5ff2e9cec/subagents/workflows/wf_2e8e223b-f5e/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/efab5914-4ec4-4683-a345-a9d5ff2e9cec/workflows/scripts/onair-tv-build-wf_2e8e223b-f5e.js', resumeFromRunId: 'wf_2e8e223b-f5e'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>11</agent_count><agents_done>11</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>998827</subagent_tokens><tool_uses>268</tool_uses><duration_ms>1460725</duration_ms></usage>
+</task-notification>
+
+**Answer**: 앱이 완성됐습니다. 빌드와 테스트를 통과했고(84건 통과, 실서버 접속 테스트 1건은 기본 실행에서 제외), TV 에뮬레이터에서 KBS 1TV가 실제로 재생되는 것까지 확인했습니다.
+
+위치는 `~/Projects/onair-tv`이고 커밋은 3개입니다. push는 하지 않았습니다.
+
+### 실제로 접속해서 확인한 채널
+
+| 소스 | 목록 | 실제 재생 확인 |
+|---|---|---|
+| KBS (본·부가·단일 프로그램 24시간 채널·지역 1TV) | 28 | 5/5 |
+| EBS | 6 | 5/5 |
+| OBS 경인TV | 1 | 1/1 |
+| iptv-org (공공·종교·홈쇼핑·지역) | 68 | 5/5 (앞쪽 20개 중 18개 살아 있음) |
+| 삼성 TV 플러스 KR | 166 (DRM 채널 1개 제외) | 5/5 |
+| MBC 계열 | 5 | 로그인 전이라 "로그인 필요" 안내가 정상으로 뜸 |
+| SBS 계열 | 17 | 로그인 전이라 "로그인 필요" 안내가 정상으로 뜸 |
+
+목록을 단순히 더하면 291개이고, 여러 소스에 겹치는 채널을 하나로 합치면 그보다 조금 줄어듭니다. 로그인 없이 바로 볼 수 있는 채널은 약 270개입니다.
+
+### 에뮬레이터에서 확인한 동작
+- 홈 화면이 그룹별 줄로 나오고 채널 로고도 표시됩니다.
+- 재생 중 리모컨 위/아래로 채널을 바꿀 수 있습니다.
+- 재생 중 OK를 누르면 채널 목록이 뜨고, 메뉴 키로 즐겨찾기에 추가합니다.
+- KBS·EBS 스트림 주소는 시간이 지나면 만료되는데, 만료 전에 자동으로 새 주소를 받아 끊기지 않게 했습니다.
+- 캡처는 `docs/screens/home.png`, `docs/screens/player.png`에 있습니다.
+
+### 직접 확인하셔야 할 것
+- **MBC·SBS 로그인:** 계정이 없어 로그인 상태 재생은 검증하지 못했습니다. 설정 → 로그인으로 들어가 직접 로그인한 뒤 재생해 보세요. 안 되면 알려주시면 고치겠습니다.
+- **SBS 고화질:** SBS는 고화질(720p)에 유료 이용권이 필요할 수 있습니다. 그 경우 로그인해도 "로그인 필요" 안내가 계속 뜹니다.
+- **지역 민방:** KNN·TBC 등 9개 사는 전부 로그인이나 본인인증이 필요해서 넣지 않았습니다.
+- **채널A:** 측정 환경에서 접속이 막혔습니다(403). 국내 IP에서는 될 수도 있어 목록에는 남겨뒀습니다.
+- **삼성 TV 플러스:** 개인이 운영하는 비공식 목록에 의존합니다. 그 서비스가 내려가면 이 소스만 비고 나머지 채널은 그대로 나옵니다.
+
+### 리뷰 후 고친 것
+- 로그인하지 않은 MBC·SBS 채널이 다른 소스의 같은 채널을 가리던 문제를 고쳤습니다. 이제 로그아웃 상태면 다른 소스의 채널이 우선합니다.
+- 중복 판정에서 이름에 "tv"가 들어간 다른 채널을 같은 채널로 잘못 합칠 수 있던 문제를 고쳤습니다.
+- 나머지 지적은 사소한 것이라 그대로 뒀습니다. 예를 들어 새로고침을 연타하면 불러오기가 겹쳐 실행되는 정도입니다.
+
+미리보기 시간 제한과 DRM을 우회하는 코드가 없다는 것도 리뷰에서 확인했습니다.
+
+### 설치
+TV에서 개발자 옵션의 ADB 디버깅을 켠 뒤 아래를 실행하세요.
+[코드 블록 생략]
+실제 방송사에 접속해 채널 수를 다시 세려면 `LIVE=1 ./gradlew testDebugUnitTest --tests '*LiveSmokeTest*' -i`를 실행하면 됩니다.
+
+### 제가 정한 사항
+- **MBC·SBS 로그인 방식:** 방송사 로그인 페이지를 앱 안 웹 화면으로 띄워 직접 로그인합니다. 아이디·비밀번호를 앱에 저장하지 않는 대신, 리모컨으로 입력해야 해서 조금 불편합니다.
+- **로그인 유지 기간:** 로그인 정보는 30일 동안 저장됩니다. 저장하지 않으면 앱을 다시 켤 때마다 로그인이 풀리기 때문입니다.
+- **DASH 형식 채널 제외:** iptv-org에서 DASH 형식 채널 1개(MNB World)를 뺐습니다. 넣으려면 라이브러리 하나를 추가하면 됩니다.
+- **진행 방식:** 원래 쓰던 작업 관리 스크립트 대신 워크플로 하나로 진행했습니다. 새로 만드는 프로젝트라 그쪽 절차를 다 거치면 부담만 커서입니다.
+
+---
+
+## #447
+
+**Prompt**: 종료된 회차 수정못한다고 했는데, 진행중이거나 종료된 회차도 수정할 수 있게 해주고 그 액션이 부과를 변경하게 된다면 변경시켜줘
+
+**Answer**: 조사 워크플로(3개 에이전트: 저장 경로·서버 가드 / 필드별 부과 영향 / UI 배선)를 백그라운드에서 돌리고 있습니다. 결과가 오면 설계를 정하고 구현으로 넘어가겠습니다.
+
+---
+
+## #448
+
+**Prompt**: <task-notification>
+<task-id>w212fzxu6</task-id>
+<tool-use-id>toolu_01MTbEAiMMzWUSyUcDHYCPuz</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/0e4695be-0239-4a08-97d4-57e9cf69d812/tasks/w212fzxu6.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Map server guards and charge dependencies for editing active/closed sessions" completed</summary>
+<result>[{"key":"override-path","report":"# Save path for editing active/closed occurrences (회차): guards, triggers and charge effects\n\n**Main finding:** only the client blocks editing of active (진행중) and closed (종료) sessions. The server has no status check on a plain sessions UPDATE. But nothing on the server recalculates charges (부과) when the date, time or place changes. Today only the court-fee (대관비) total and capacity are routed to RPCs.\n\n## 1. Save path\n\n1. **[fact] The client gate is the only status gate.** `src/components/schedule/useOccurrenceForm.ts:97-99` sets `editable = occurrence == null || status === \"draft\" || status === \"open\"`. `OccurrenceEditor.tsx:170` falls back to `OccurrenceInfoView` when `!editable`. That view only offers `onFixCourtFee` / `onPreviewCourtFee` (`OccurrenceEditor.tsx:183-187`) and, for cancelled sessions, a reopen button.\n2. **[fact] `handleOverride`** (`useOccurrenceForm.ts:158-177`) always sends every field, including `capacity` and `courtFee`.\n3. **[fact] `SchedulePage.tsx:125-126`** passes this to `adminScheduleActions.overrideOccurrence` (`src/store/adminScheduleStore.ts:142-187`):\n   - It compares capacity and court fee against the cached `occurrences` row.\n   - It removes `capacity` from the PATCH when it changed, and does the same for `courtFee`.\n   - It then calls `updateOccurrence`, a plain PATCH.\n   - Only if the PATCH returned a row:\n     - capacity changed → `setSessionCapacity`, which calls the `set_session_capacity` RPC (`recurring.ts:193-199`);\n     - court fee changed → `setSessionCourtFee`, which calls the `dues_set_session_fee` RPC (`src/lib/supabase/dues.ts:256-268`), followed by `duesActions.load()`;\n     - then `reloadOccurrences()`.\n   - There is no status check anywhere in this function.\n4. **[fact] `updateOccurrence`** (`src/lib/supabase/recurring.ts:153-181`) runs `supabase.from(\"sessions\").update({is_overridden:true, ...fields}).eq(\"id\").select().single()`. On error it returns null and does not throw.\n5. **[inference] Partial failure:** if the PATCH succeeds and the fee or capacity RPC then throws, the other fields are already committed. The form shows the RPC error.\n\n## 2. Server-side guards on active/closed rows\n\n- **[fact] Row-level security (RLS):** `20260713140000_sessions_players_rls_admin_write.sql:35-36` has `sessions_admin_write ... for all to authenticated using (is_admin()) with check (is_admin())`. It does not look at status. No later migration changes the sessions policies or column grants (grep).\n- **[fact] Constraints:** only `sessions_status_check` (`20260621010000...:41-42`) plus foreign keys. There is no `ends_at &gt; scheduled_at` check.\n- **[fact] No BEFORE UPDATE trigger rejects or changes these fields.** The only BEFORE UPDATE trigger is `trg_sessions_bump_sync` (see section 3).\n- **[fact] `set_session_capacity`**, latest definition at `20260930000000_promote_waitlist_in_active.sql:155-269`:\n  - It always writes `capacity` first (`:181-183`).\n  - **active** (`:184-189`): runs `session_counter_sync`, then `promote_waitlist_fill`. That promotes waitlisted members to confirmed and inserts them into `session_players` as waiting (`:41`). No reallocation, no demotion. Returns `{promoted:n, demoted:0}`.\n  - **closed and anything not open** (`:191-194`): runs `session_counter_sync` only and returns 0/0. No promotion, no demotion, no charge changes.\n- **[fact] `dues_set_session_fee`**, latest at `20261019000000_session_fee_reissue.sql:50-169`, has **no status gate**. It rejects in these cases:\n  - not an admin (`:58`);\n  - amount below 0 (`:59`);\n  - legacy ledger, or a month before ledger activation: `'이전 장부에서 정산된 회차는 총액을 바꿀 수 없습니다'` (`:70-72`);\n  - per-head amount out of range (`:81-83`, `:150-153`);\n  - indirectly, `dues_candidates_internal` raises `'대관비 발행 대상 회차가 아닙니다'` when `place.charges_court_fee` is false or total ≤ 0 (`20260907030000_dues_v2.sql:792-798`, renamed from `dues_v2_*` by `20260911010000`). It is called whenever live charges exist and total is null or above 0 (`:77-78`).\n- **[fact] What `dues_set_session_fee` does by status:**\n  - If live charges exist: cancels them all and reissues through the dues `replace` command, preserving prepayment (선납) markers (`:76-133`).\n  - **closed only:** also issues to newly eligible members (`:136-163`). The first issue goes through `dues_auto_issue`, which requires `charges_court_fee`, status active or closed, total null or above 0, and **at least one match row** (`20260907030000_dues_v2.sql:831-846`).\n  - **active:** issues nothing; the close trigger issues later.\n  - It returns early with `unchanged` only if every live charge's amount and member set already match the targets (`:90-96`).\n\n## 3. Every trigger on public.sessions UPDATE (latest definitions)\n\n| Trigger | Fires when | What it does |\n|---|---|---|\n| `trg_sessions_bump_sync` (BEFORE UPDATE, `20260722010000:63`; function latest at `20261012010000:227-243`) | every update | Increments `sync_version` only when board columns, `status` or `is_active` change. **scheduled_at, ends_at, place_id, capacity, court_fee and is_regular do not bump it**, so board clients get no sync broadcast for these edits. [fact] |\n| `trg_sessions_broadcast_sync` (AFTER, `20260722010000:149`) | `sync_version` changed | Realtime broadcast. [fact] |\n| `trg_sessions_audit` (AFTER, `20260806010000:218-222`) | capacity, place_id, status, scheduled_at or ends_at changed | Writes an ops audit log entry; errors are swallowed (`:190-215`). It does not record court_fee or is_regular. [fact] |\n| `trg_session_court_on_close` (`20260715080000:142`; function `20260831000000:151-160`, then `20260911010000:150-153`) | status changes to closed | `dues_auto_issue('court', ym from scheduled_at, id, initial=true)`. **Only on the transition to closed.** [fact] |\n| `trg_session_complete_matches_on_close` (`20260720010000:100`) | status changes to closed | Completes matches still in progress. [fact] |\n| `trg_session_wait_points_on_close` (`20260904000000:995`) | status changes to closed | Wait-point (대기 포인트) settlement. [fact] |\n| `trg_session_wait_points_on_cancel` (`20260904000000:1036`) | status changes to cancelled | Wait-point handling. [fact] |\n| `trg_sessions_join_baseline_on_cock_disable` (`20260907040000:121`) | `cock_check_enabled` updated | Not relevant here. [fact] |\n| `trg_sessions_resize_empty_courts` (`20260922040000:106`) | `court_count` changed | Not relevant here. [fact] |\n| `trg_session_wait_points_on_delete` | BEFORE DELETE | Not an UPDATE trigger. [fact] |\n\n**[fact] No trigger reacts to changes in scheduled_at, ends_at, place_id, capacity, court_fee or is_regular, other than the audit log.** The comment at `20260823000000:28` says this explicitly.\n\n## 4. Fields that should change charges but currently don't\n\nThe charge inputs depend on these session fields:\n- **place's `charges_court_fee`:** decides whether the session is eligible for a court fee at all. [fact]\n- **scheduled_at:**\n  - the month: `ym` / `due_ym` and the ledger-month guard [fact];\n  - which same-day cancellations (당일취소) are chargeable: `dues_is_day_cancel_chargeable` compares the cancel date with the scheduled date in KST (`20260810000000`) and is used by `dues_court_targets` (`20260818000000`) [fact].\n- **court_fee:** the split total. Null means the flat 6,000 (정액); 0 means no charge. [fact]\n- **status:** active or closed. [fact]\n- **is_regular and the meal fields:** no charge effect. They only appear in `dues_v2_reference_members` (`20260908020000:4`). [fact]\n\nConsequences:\n- **[inference] scheduled_at or place changed on a closed session while the fee stays the same:** the client never calls `dues_set_session_fee`, because `courtFeeChanged` is false. Existing charges keep the old `due_ym` and the old same-day-cancel set.\n- **[inference] Possible fix for that case:** call `dues_set_session_fee(id, same amount)` after the PATCH. Its own `unchanged` check
+... (truncated 24880 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/0e4695be-0239-4a08-97d4-57e9cf69d812/tasks/w212fzxu6.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/0e4695be-0239-4a08-97d4-57e9cf69d812/subagents/workflows/wf_15cd8568-f03/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/0e4695be-0239-4a08-97d4-57e9cf69d812/workflows/scripts/closed-session-edit-understand-wf_15cd8568-f03.js', resumeFromRunId: 'wf_15cd8568-f03'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>3</agent_count><agents_done>3</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>289898</subagent_tokens><tool_uses>102</tool_uses><duration_ms>217131</duration_ms></usage>
+</task-notification>
+
+**Answer**: 구현은 끝났고 독립 리뷰가 진행 중입니다(서버 SQL/돈 불변식, 클라이언트 흐름, 회귀 3개 관점, 지적마다 반증 검증). 결과가 오면 확인된 지적을 반영하고 최종 정리하겠습니다.
+
+---
+
+## #449
+
+**Prompt**: <task-notification>
+<task-id>wdcvwek6g</task-id>
+<tool-use-id>toolu_01G39d2QdTvgdH2EJTcmRHeC</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/0e4695be-0239-4a08-97d4-57e9cf69d812/tasks/wdcvwek6g.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Review active/closed session editing with charge recalculation, verify each finding adversarially" completed</summary>
+<result>{"confirmed":[{"title":"Pressing Escape on the charge-confirm dialog also closes the editor sheet behind it and throws away the admin's edits","file":"src/components/schedule/OccurrenceEditor.tsx","line":128,"severity":"medium","scenario":"Both ModalSheets add their own window keydown listener for Escape (ModalSheet.tsx useEffect). The editor sheet uses closeOnEscape={!showPicker}, which ignores chargePreview. Example: an admin edits a closed session, changes the court fee from 40000 to 30000 and clicks 저장(변경). The preview finds live charges, so the ConfirmDialog opens (closeOnEscape, onDismiss=dismissChargePreview). If the admin presses Escape to back out of the dialog, both listeners run. dismissChargePreview fires, and so does the editor's onClose, which calls setOccModal(null). The whole editor unmounts and every unsaved field edit is lost. If Escape is pressed while confirmStartedEdit is in flight, the sheet also disappears mid-save. The request still commits, but any failure message has nowhere to show because the form that displays the error is gone.","fix":"Turn off Escape on the editor sheet while the dialog is up: closeOnEscape={!showPicker &amp;&amp; !chargePreview}. Also consider ignoring dismiss while busy, e.g. onDismiss={busy ? undefined : dismissChargePreview}.","verdict":{"real":true,"reasoning":"I tried to refute this and could not. In src/components/common/ModalSheet.tsx (lines 85-93), each sheet that has closeOnEscape adds its own `window` keydown listener, and that listener calls onClose on Escape. It does not call stopPropagation and there is no stack of open sheets, so every open sheet reacts to the same key press.\n\nConfirmDialog always passes `closeOnEscape` and sets `onClose={onDismiss}`. In OccurrenceEditor.tsx, the dialog gets `onDismiss={dismissChargePreview}`, so its listener is active.\n\nThe editor sheet has `closeOnEscape={!showPicker}` (line 127), which does not look at chargePreview, and its onClose is SchedulePage's `() =&gt; setOccModal(null)`. That unmounts OccurrenceEditor and its useOccurrenceForm state.\n\nSo with the charge-confirm dialog open, one Escape runs both listeners: the dialog is dismissed and the editor unmounts, and all unsaved edits are lost. The code comment above line 127 shows the author already turned off Escape for the place picker for this exact reason (\"Escape 가 최상단 시트만 닫히게\"), but the new chargePreview dialog was not added to that condition.\n\nConfirmDialog's `busy` flag only disables the buttons, not Escape. So pressing Escape while confirmStartedEdit is running also unmounts the editor mid-save, and any error from the save has nowhere to show.\n\nFix: `closeOnEscape={!showPicker &amp;&amp; !chargePreview}`, and pass `onDismiss={busy ? undefined : dismissChargePreview}`."}},{"title":"Open/draft path (and a modal opened before the board started) never reconciles prepaid court charges when the place switches from rental to non-rental; once closed, the new path cannot detect it either","file":"src/store/adminScheduleStore.ts","line":144,"severity":"medium","scenario":"An open rental-place session with prepaid court charges (court_prepayment lets members prepay while status='open'). The admin changes only the place to a non-rental gym and saves. overrideOccurrence sends a plain PATCH and calls setSessionCourtFee only when courtFee changed, so the prepaid charges stay live. The same thing happens when the modal was opened while the session was open and the board started before Save: `started` comes from the stale snapshot, so the old path runs on an active session. At close, dues_auto_issue returns 0 for a non-rental place, so the charges stay live and members still owe or have paid for a free session. Later, session_edit_started does not recharge because was_rental = is_rental = false and the fee is unchanged. The only way out is a fake court-fee edit.","fix":"Send open/draft edits that change charges_court_fee (or that touch a session that has a court:&lt;id&gt; group) through the same reconciliation. One option is to generalize session_edit_started_internal to allow status 'open' for the place/fee branch. Another is to have overrideOccurrence call dues_set_session_fee when the rental flag flips. Also make the server decide the path from the locked row's status, not the client snapshot.","verdict":{"real":true,"reasoning":"I could not refute this claim. Every step of the scenario is supported by the latest code. (1) Members can prepay while the session is open. In 20260910010000_court_prepayment.sql, dues_v2_prepayment_candidates and dues_v2_prepay_due require ss.status='open' and pl.charges_court_fee, so an open session at a rental place can hold live, paid court:&lt;id&gt; charges. (2) The open/draft save still goes to adminScheduleStore.overrideOccurrence (useOccurrenceForm: `if (!started) onOverride(...)`). That function sends a plain PATCH and calls setSessionCourtFee only when courtFee changed. The diff did not change this, so switching place_id from rental to non-rental leaves the live charges in place. No sessions trigger reacts to a place_id change: trg_sessions_audit only writes an audit log. (3) `started` comes from the occurrence snapshot the modal was opened with (`status === 'active' || 'closed'`), so a modal opened while the session was open uses the old path even if the board has started since. (4) At close, trg_session_court_on_close calls dues_generate_session_court, which calls dues_v2_auto_issue. That function returns 0 early when the place is not charges_court_fee (20260907030000_dues_v2.sql:844-847). Nothing cancels the existing live charges, so members stay charged, or keep having paid, for a session that is now free. (5) In 20261102000000, session_edit_started_internal sets recharge := new_fee is distinct from s.court_fee or was_rental&lt;&gt;is_rental. Both was_rental and is_rental are computed from the current row (already non-rental) and the target, so both are false. Unless the fee changes, dues_set_session_fee never runs, and its new non-rental cancel branch is never reached. The only ways out are a fake fee edit or switching the place to rental and back. Caveat: the open-path gap was already there before this diff. Still, the diff adds rental-to-non-rental reconciliation only for active and closed sessions, and it decides that from the before/after place of this one edit, so a switch made earlier on the open path is never caught. The defect is concrete and real."}}],"rejected":[{"title":"dues_set_session_fee now silently cancels every live (including paid) court charge whenever the place's current charges_court_fee is false, which turns a past error into a mass cancel","why":"The SQL part of the claim is correct, but the failure scenario can't happen through the app as described.\n\nWhat the SQL does: the latest dues_set_session_fee is in 20261102000000_session_edit_after_start.sql. It reads the place's current charges_court_fee. If that is false, eligible=false and targets='{}'. The 'unchanged' shortcut then fails because every live charge is missing from targets, and replace runs with empty lines. So if a fee change reached this function while the place was non-rental, all live charges would be cancelled and marked reissuable. The old code raised '대관비 발행 대상 회차가 아닙니다' from dues_candidates_internal (20260907030000_dues_v2.sql:798), so the behavior difference is real.\n\nWhy the scenario breaks:\n(1) The admin can't change only court_fee once the place is non-rental. OccurrenceEditor.tsx (~line 426) shows the '코트 총액' input only when `placeChargesCourt` (the selected place's charges_court_fee) is true. After the flag is turned off, the field is hidden. handleOverride sends courtFee: parseCourtFee(courtFeeStr), and courtFeeStr was initialised from occurrence.court_fee and never touched. So new_fee equals s.court_fee and was_rental equals is_rental (both false). recharge is false and dues_set_session_fee is never called. The open/draft path behaves the same wa
+... (truncated 2763 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/0e4695be-0239-4a08-97d4-57e9cf69d812/tasks/wdcvwek6g.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/0e4695be-0239-4a08-97d4-57e9cf69d812/subagents/workflows/wf_8196c951-258/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/0e4695be-0239-4a08-97d4-57e9cf69d812/workflows/scripts/review-started-session-edit-wf_8196c951-258.js', resumeFromRunId: 'wf_8196c951-258', args: {"diff":"/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/0e4695be-0239-4a08-97d4-57e9cf69d812/scratchpad/edit-started.diff"}}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>7</agent_count><agents_done>7</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>529893</subagent_tokens><tool_uses>152</tool_uses><duration_ms>346243</duration_ms></usage>
+</task-notification>
+
+**Answer**: 이제 진행 중이거나 종료된 회차도 편집 화면에서 모든 항목을 고칠 수 있습니다. 고친 내용이 대관비 부과에 영향을 주면 저장할 때 부과도 같이 바뀝니다. 단위 테스트(1,097건)와 타입·린트 검사는 통과했고, 변경 파일은 스테이징까지만 했습니다(커밋 안 함). 다만 새 DB 함수는 아직 프로덕션에 적용하지 않았고, 화면에서 직접 눌러 보는 확인도 하지 않았습니다.
+
+**부과가 바뀌는 경우**
+- **코트 총액을 바꾸면:** 이미 발행한 대관비를 취소하고 새 금액으로 다시 발행합니다. 낸 돈은 같은 회원의 새 부과에 다시 연결되고, 남는 돈은 그 회원의 잔액이 됩니다.
+- **대관장소를 대관비를 안 걷는 장소로 바꾸면:** 발행한 대관비를 전부 취소하고, 낸 돈은 잔액으로 남깁니다. 지금까지는 이 경우 서버가 오류를 내서 정리할 방법이 없었습니다.
+- **대관비를 안 걷는 장소를 대관장소로 바꾸면:** 종료된 회차는 바로 발행하고, 진행 중인 회차는 종료될 때 발행합니다.
+- 부과가 실제로 바뀔 때만 저장 전에 확인창이 뜹니다. "몇 건 취소, 몇 건 재발행, 잔액 얼마"를 서버에서 미리 계산해 보여 줍니다.
+
+**부과가 그대로인 경우**
+- 시간, 대관장소끼리의 변경, 카풀·정모·식사·공지·정원 변경이 여기에 해당합니다. 회비 장부에 보이는 회차 이름(날짜·시간·장소)만 새 값으로 바뀝니다.
+- 정원은 기존 규칙 그대로입니다. 진행 중이면 빈자리만큼 대기자를 승격하고, 종료된 회차는 인원 집계만 다시 맞춥니다.
+
+**제가 정한 제한**
+- **날짜:** 진행 중이거나 종료된 회차는 날짜를 바꿀 수 없고 시간만 바꿀 수 있습니다. 당일취소 부과 여부와 부과 월이 날짜에 묶여 있어, 날짜를 옮기면 부과를 맞출 방법이 없어서입니다. 원래 편집 화면에서도 날짜는 못 바꿨습니다.
+- **삭제:** 진행 중이거나 종료된 회차에는 삭제 버튼을 숨겼습니다. 참석·경기·부과 기록이 이 회차를 근거로 하기 때문입니다.
+- **취소된 회차:** 지금처럼 정보 보기와 되살리기만 됩니다.
+
+**리뷰에서 나와 고친 것**
+- **Esc 키:** 확인창에서 Esc를 누르면 뒤의 편집 화면까지 닫혀 입력한 내용이 사라졌습니다. 이제 확인창만 닫힙니다.
+- **예정 회차의 선납 대관비:** 예정 회차의 장소를 대관비 안 걷는 곳으로 바꿔도 선납한 대관비가 그대로 남았습니다(원래 있던 문제). 그래서 진행·종료 회차만이 아니라 기존 회차 저장을 전부 새 서버 함수 하나로 보내고, 회차 상태는 서버가 판단하게 했습니다. 이전에 이렇게 남은 선납분도 다음 저장 때 정리됩니다.
+
+부과 계산 규칙 문서(`docs/ACCOUNTING_SPEC.md`)도 함께 고쳤습니다.
+
+**배포 순서 (DB가 먼저)**
+이제 기존 회차를 저장하는 화면이 전부 새 DB 함수를 쓰기 때문에, 프론트를 먼저 올리면 모든 회차 저장이 실패합니다. 아래 명령으로 DB를 먼저 적용해 주세요.
+[코드 블록 생략]
+적용 전에 읽기 전용 조회로 두 가지는 확인했습니다. 이번에 고친 서버 함수(`dues_set_session_fee`)의 원본이 프로덕션 것과 똑같았고, 아직 적용 안 된 DB 변경은 이번 것 하나뿐입니다. 쓰기까지 해 보는 프로덕션 리허설은 자동 모드에서 막혀 하지 못했습니다.
+
+---
+
+## #450
+
+**Prompt**: 커밋하고배포
+
 **Answer**: _(응답 대기 중…)_
 
 ---

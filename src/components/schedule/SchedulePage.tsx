@@ -121,14 +121,6 @@ export default function SchedulePage() {
 	}, []);
 
 	// ── 회차 핸들러 ──
-	const handleOverride = useCallback(
-		async (sessionId: number, patch: OccurrencePatch) => {
-			await adminScheduleActions.overrideOccurrence(sessionId, patch);
-			setOccModal(null);
-		},
-		[],
-	);
-
 	const handleCreateOneOff = useCallback(
 		async (input: OneOffInput) => {
 			await adminScheduleActions.addOneOff(input, memberId);
@@ -142,11 +134,12 @@ export default function SchedulePage() {
 		setOccModal(null);
 	}, []);
 
-	// 종료·진행 회차 총액 변경 — 시트를 닫지 않는다(결과 토스트를 보고 이어서 확인하게).
-	// 실패 사유는 OccurrenceInfoView 가 받아서 보여준다.
-	const handleFixCourtFee = useCallback(
-		(sessionId: number, amount: number | null) =>
-			adminScheduleActions.fixCourtFee(sessionId, amount),
+	// 기존 회차 저장 — 정원 재조정·부과 재계산까지 서버 한 트랜잭션. 실패는 throw(폼이 사유 표시, 시트 유지).
+	const handleEdit = useCallback(
+		async (sessionId: number, patch: OccurrencePatch) => {
+			await adminScheduleActions.editOccurrence(sessionId, patch);
+			setOccModal(null);
+		},
 		[],
 	);
 
@@ -211,12 +204,11 @@ export default function SchedulePage() {
 					places={places}
 					placeName={placeName}
 					onAddPlace={handleAddPlace}
-					onOverride={handleOverride}
 					onCreateOneOff={handleCreateOneOff}
 					onDelete={handleRemoveOcc}
 					onReopen={handleReopenOcc}
-					onFixCourtFee={handleFixCourtFee}
-					onPreviewCourtFee={adminScheduleActions.previewCourtFee}
+					onEdit={handleEdit}
+					onPreviewEdit={adminScheduleActions.previewOccurrenceEdit}
 					onClose={() => setOccModal(null)}
 				/>
 			)}

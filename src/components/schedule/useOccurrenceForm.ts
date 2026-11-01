@@ -6,24 +6,39 @@ import {
 	kstEndWallClockToISO,
 	kstWallClockToISO,
 } from "../../lib/schedule/calendar";
-import { parseCourtFee } from "../../lib/schedule/courtFee";
+import {
+	parseCourtFee,
+	resetTouchesCharges,
+} from "../../lib/schedule/courtFee";
 import { sessionDeletionInfo } from "../../lib/supabase/dues";
 import type {
 	OccurrencePatch,
 	OneOffInput,
+	OccurrenceEditResult,
 } from "../../lib/supabase/recurring";
 import type { SessionRow } from "../../lib/supabase/types";
 
 interface Handlers {
-	onOverride: (sessionId: number, patch: OccurrencePatch) => Promise<void>;
 	onCreateOneOff: (input: OneOffInput) => Promise<void>;
 	onDelete: (occurrence: SessionRow) => Promise<void>;
+	/** 기존 회차 저장(정원 재조정·부과 재계산 포함). 실패는 throw. */
+	onEdit: (sessionId: number, patch: OccurrencePatch) => Promise<void>;
+	/** 위 저장을 서버에서 돌려 본 결과(롤백). 확인창 숫자용. */
+	onPreviewEdit: (
+		sessionId: number,
+		patch: OccurrencePatch,
+	) => Promise<OccurrenceEditResult>;
 }
 
 export function useOccurrenceForm(
 	occurrence: SessionRow | null,
 	date: string | null,
-	{ onOverride, onCreateOneOff, onDelete }: Handlers,
+	{
+		onCreateOneOff,
+		onDelete,
+		onEdit,
+		onPreviewEdit,
+	}: Handlers,
 ) {
 	const isRuleBased = occurrence?.recurring_schedule_id != null;
 	const status = occurrence?.status ?? null;
@@ -94,9 +109,14 @@ export function useOccurrenceForm(
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	// 편집 가능 여부 (draft/open 만 편집)
-	const editable =
-		occurrence == null || status === "draft" || status === "open";
+	// 편집 가능 여부 — 취소 회차만 정보 보기(되살리기). 진행·종료 회차도 편집한다(날짜는 서버가 고정).
+	const editable = occurrence == null || status !== "cancelled";
+	const started = status === "active" || status === "closed";
+	// 저장 전 확인창: 이 저장으로 대관비 부과가 바뀔 때만(미리보기 결과 + 확정할 patch).
+	const [chargePreview, setChargePreview] = useState<{
+		patch: OccurrencePatch;
+		result: OccurrenceEditResult;
+	} | null>(null);
 
 	function parseCapacity(): number | null {
 		const v = capacity.trim();
@@ -159,22 +179,42 @@ export function useOccurrenceForm(
 	function handleOverride() {
 		if (!occurrence || !occDate) return;
 		if (!validTimes()) return;
+		const patch: OccurrencePatch = {
+			scheduledAt: kstWallClockToISO(occDate, time),
+			endsAt: kstEndWallClockToISO(occDate, time, endTime),
+			carpoolEnabled,
+			placeId,
+			capacity: parseCapacity(),
+			courtFee: parseCourtFee(courtFeeStr),
+			isRegular,
+			noticeMd: noticeMd.trim() ? noticeMd : null,
+			mealEnabled: isRegular && mealEnabled,
+			mealPlace: mealPlace.trim() ? mealPlace.trim() : null,
+			// 가게명을 지우면 좌표도 함께 비운다(고아 좌표 방지)
+			mealPlaceLat: mealPlace.trim() ? (mealCoords?.lat ?? null) : null,
+			mealPlaceLng: mealPlace.trim() ? (mealCoords?.lng ?? null) : null,
+		};
+		// 서버에서 먼저 돌려 보고, 부과(발행분 취소·재발행 등)가 바뀌면 무엇이 바뀌는지 확인받는다.
 		void run(async () => {
-			await onOverride(occurrence.id, {
-				scheduledAt: kstWallClockToISO(occDate, time),
-				endsAt: kstEndWallClockToISO(occDate, time, endTime),
-				carpoolEnabled,
-				placeId,
-				capacity: parseCapacity(),
-				courtFee: parseCourtFee(courtFeeStr),
-				isRegular,
-				noticeMd: noticeMd.trim() ? noticeMd : null,
-				mealEnabled: isRegular && mealEnabled,
-				mealPlace: mealPlace.trim() ? mealPlace.trim() : null,
-				// 가게명을 지우면 좌표도 함께 비운다(고아 좌표 방지)
-				mealPlaceLat: mealPlace.trim() ? (mealCoords?.lat ?? null) : null,
-				mealPlaceLng: mealPlace.trim() ? (mealCoords?.lng ?? null) : null,
-			});
+			const result = await onPreviewEdit(occurrence.id, patch);
+			if (!resetTouchesCharges(result)) {
+				await onEdit(occurrence.id, patch);
+				return;
+			}
+			setChargePreview({ patch, result });
+			setBusy(false);
+		});
+	}
+
+	function confirmChargeEdit() {
+		if (!occurrence || !chargePreview) return;
+		const { patch } = chargePreview;
+		void run(async () => {
+			try {
+				await onEdit(occurrence.id, patch);
+			} finally {
+				setChargePreview(null);
+			}
 		});
 	}
 
@@ -205,6 +245,13 @@ export function useOccurrenceForm(
 		isRuleBased,
 		status,
 		editable,
+		started,
+		chargePreview,
+		// 저장 중엔 닫지 않는다(실패 사유를 보여줄 폼이 남아 있어야 한다).
+		dismissChargePreview: () => {
+			if (!busy) setChargePreview(null);
+		},
+		confirmChargeEdit,
 		occDate,
 		time,
 		setTime,

@@ -1,4 +1,5 @@
 import { supabase } from "./client";
+import type { SetSessionFeeResult } from "./dues";
 import type { RecurringScheduleRow, SessionRow } from "./types";
 
 /** 일정 추가 알림: 로그인 회원 전원(추가한 본인 제외)에게 'schedule_added' 알림 발송(운영진). */
@@ -149,12 +150,9 @@ export interface OccurrencePatch {
 	mealPlaceLng?: number | null;
 }
 
-/** 한 회차만 개별 수정(장소/시간/인원/카풀/정모). is_overridden=true 로 sync 덮어쓰기 방지. */
-export async function updateOccurrence(
-	sessionId: number,
-	patch: OccurrencePatch,
-): Promise<SessionRow | null> {
-	const row: Record<string, unknown> = { is_overridden: true };
+/** OccurrencePatch → sessions 컬럼(있는 키만). */
+function occurrenceColumns(patch: OccurrencePatch): Record<string, unknown> {
+	const row: Record<string, unknown> = {};
 	if (patch.scheduledAt != null) row.scheduled_at = patch.scheduledAt;
 	if (patch.endsAt != null) row.ends_at = patch.endsAt;
 	if (patch.carpoolEnabled != null) row.carpool_enabled = patch.carpoolEnabled;
@@ -167,45 +165,7 @@ export async function updateOccurrence(
 	if (patch.mealPlace !== undefined) row.meal_place = patch.mealPlace;
 	if (patch.mealPlaceLat !== undefined) row.meal_place_lat = patch.mealPlaceLat;
 	if (patch.mealPlaceLng !== undefined) row.meal_place_lng = patch.mealPlaceLng;
-	const { data, error } = await supabase
-		.from("sessions")
-		.update(row)
-		.eq("id", sessionId)
-		.select()
-		.single();
-	if (error) {
-		console.error("updateOccurrence:", error);
-		return null;
-	}
-	return data as SessionRow;
-}
-
-/** set_session_capacity 결과: 이번 정원 변경으로 승격/강등된 인원 수. */
-export interface ReconcileResult {
-	promoted: number;
-	demoted: number;
-}
-
-/**
- * 정원 변경 + 참석/대기 재조정을 한 RPC(한 트랜잭션)로 원자 처리. 운영진 전용.
- * 정원을 늘리면 대기자를 여유만큼 참석 승격, 줄이면 초과 참석자를 대기 강등하고
- * 각 대상에게 알림(→웹푸시)을 보낸다. 승격/강등 인원 수를 반환(0/0=변동 없음).
- * 실패 시 정원 변경도 롤백되므로, 부분 적용을 성공으로 위장하지 않도록 예외를 그대로 던진다.
- */
-export async function setSessionCapacity(
-	sessionId: number,
-	capacity: number | null,
-): Promise<ReconcileResult> {
-	const { data, error } = await supabase.rpc("set_session_capacity", {
-		p_session_id: sessionId,
-		p_capacity: capacity,
-	});
-	if (error) {
-		console.error("setSessionCapacity:", error);
-		throw new Error(error.message);
-	}
-	const r = (data ?? {}) as { promoted?: number; demoted?: number };
-	return { promoted: r.promoted ?? 0, demoted: r.demoted ?? 0 };
+	return row;
 }
 
 /**
@@ -311,4 +271,56 @@ export async function createOneOffOccurrence(
 		return null;
 	}
 	return data as SessionRow;
+}
+
+/**
+ * 회차 수정 결과(session_edit). recharged=총액·대관장소 여부가 바뀌어 부과를 다시 맞췄음 —
+ * 그때 나머지 키는 dues_set_session_fee 결과(취소·재발행 수 등)다. promoted/demoted=정원 변경 재조정.
+ */
+export interface OccurrenceEditResult
+	extends Partial<Omit<SetSessionFeeResult, "held">> {
+	/** 재계산하지 않았으면 0 으로 채운다(확인창·토스트 공용 타입과 맞춤). */
+	held: number;
+	recharged: boolean;
+	was_rental: boolean;
+	is_rental: boolean;
+	promoted: number;
+	demoted: number;
+	preview?: boolean;
+}
+
+/**
+ * 기존 회차 수정(취소 회차 제외) — 회차 변경 + 정원 재조정 + 부과 재계산(취소·재발행)을 한 트랜잭션으로.
+ * is_overridden=true 로 sync 덮어쓰기 방지. 진행·종료 회차의 날짜 변경은 서버가 거부(시간만).
+ * 실패는 throw — 폼이 사유를 보여준다(부분 적용을 성공으로 위장하지 않는다).
+ */
+export async function editOccurrence(
+	sessionId: number,
+	patch: OccurrencePatch,
+): Promise<OccurrenceEditResult> {
+	const { data, error } = await supabase.rpc("session_edit", {
+		p_session_id: sessionId,
+		p_patch: occurrenceColumns(patch),
+	});
+	if (error) {
+		console.error("editOccurrence:", error);
+		throw new Error(error.message);
+	}
+	return { held: 0, ...(data as Omit<OccurrenceEditResult, "held">) };
+}
+
+/** 위 수정을 실제로 돌려 본 결과만 받는다(서버가 롤백). 확인창 숫자용. */
+export async function previewOccurrenceEdit(
+	sessionId: number,
+	patch: OccurrencePatch,
+): Promise<OccurrenceEditResult> {
+	const { data, error } = await supabase.rpc("session_edit_preview", {
+		p_session_id: sessionId,
+		p_patch: occurrenceColumns(patch),
+	});
+	if (error) {
+		console.error("previewOccurrenceEdit:", error);
+		throw new Error(error.message);
+	}
+	return { held: 0, ...(data as Omit<OccurrenceEditResult, "held">) };
 }
