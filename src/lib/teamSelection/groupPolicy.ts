@@ -33,6 +33,21 @@ export function groupCapacity(men: number, lowWomen: number, highWomen: number, 
 	return best;
 }
 
+/** Smallest |team A sum − team B sum| over the legal 2v2 splits of four (2 men + 2 women: mixed pairs only).
+ * 0 when fewer than four or anyone is unrated — no information, like the spread term. */
+export function minInterDiff(members: readonly SessionPlayer[], grade: (p: SessionPlayer) => number = skillScore): number {
+	if (members.length !== 4) return 0;
+	const g = members.map(grade);
+	if (g.some(x => !Number.isFinite(x) || x <= 0)) return 0;
+	const mixed = members.filter(p => p.gender === "F").length === 2;
+	let best = Infinity;
+	for (const [a, b, c, d] of [[0, 1, 2, 3], [0, 2, 1, 3], [0, 3, 1, 2]]) {
+		if (mixed && members[a].gender === members[b].gender) continue;
+		best = Math.min(best, Math.abs(g[a] + g[b] - g[c] - g[d]));
+	}
+	return Number.isFinite(best) ? best : 0;
+}
+
 export function skillBand(grade: number): number {
 	return grade <= 0 || !Number.isFinite(grade) ? -1 : grade <= 3 ? 0 : grade <= 6 ? 1 : 2;
 }

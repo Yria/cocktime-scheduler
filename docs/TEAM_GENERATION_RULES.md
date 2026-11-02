@@ -2,6 +2,10 @@
 
 > **2026-09-24 현재 동작:** 네 명 선발의 우선순위는 [네 명 편성 정책](TEAM_SELECTION_POLICY.md)이 기준이다. 아래 과거 합산 점수·greedy 설명은 현재 `recommendTeammates`의 조합 탐색과 다르다. 이번 변경은 선발 가중치를 바꾸지 않고 **예비팀의 합류 대기 자리**와 경기 완료 후 채움을 추가한다.
 
+## 2대2 균형 항 (2026-11-02)
+
+`recommendTeammates`의 보조 점수(quality)에 `W_SKILL × W_BALANCE(4) × minInterDiff²`를 더했다(`RECOMMEND_WEIGHTS.W_BALANCE`, `groupPolicy.ts`의 `minInterDiff`). 3강1약({9,9,9,3})이 같은 실력 범위의 2강2약({9,9,3,3})보다 불리해진다. 교류 규칙·우선순위·페어 편성(`pairPlayers`)은 그대로다. 공식과 근거는 [네 명 편성 정책](TEAM_SELECTION_POLICY.md) "보조 점수와 실력 교류" 참조.
+
 ## 합류 대기 자리 (2026-09-24)
 
 - 진행 중인 경기가 있고 다음 중 하나면 새 예비팀의 자동편성은 기본 2명만 고른다(`prefersWaitingDraft`, 기존 일반 예비팀은 아래 두 번째 조건만). 수동으로 고른 3명은 유지한다.
@@ -314,6 +318,7 @@ score = intraDiff × 0.5 + interDiff × 1.5
 | `W_GENDER` | 50.0 | 혼복(2남2녀) 목표에서 성별 초과(3명+) 후보 페널티 |
 | `W_MIXED_COMPLETE` | 8.0 | 혼복 구조(남녀 혼합) 완성에 필요한 부족 성별 후보 보너스 |
 | `W_PLAYING` | 30.0 | 경기중 후보 페널티(대기 선수 우선) |
+| `W_BALANCE` | 4 | (현행 `recommendTeammates`, 2026-11-02) `W_SKILL` 괄호 안에서 최적 2대2 차이²에 곱함 — 실효 6 |
 
 ### 보드 특화 가산 요소
 

@@ -13344,6 +13344,362 @@ To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude
 
 **Prompt**: 커밋하고배포
 
+**Answer**: 커밋하고 배포까지 끝났습니다. DB는 앞서 적용했고, 이번에 프론트도 올라가서 이제 프로덕션에서 진행 중이거나 종료된 회차를 수정할 수 있습니다.
+
+- **커밋:** `e96d863` "진행·종료 회차 수정 허용 + 부과 연동(session_edit)". `main`에 push했습니다.
+- **배포:** GitHub Actions 배포가 성공했습니다(2분 5초). push 전에 로컬 빌드도 통과했습니다.
+- **같이 커밋한 것:** 이전 세션에서 스테이징만 해 두고 커밋하지 않았던 두 파일을 함께 넣었습니다.
+  - 게스트 중복 병합 마이그레이션(`20261021000000`): 프로덕션에는 이미 적용돼 있습니다.
+  - `.gitignore`: `.superlite/` 폴더를 제외하는 한 줄입니다.
+
+앱에서는 종료된 대관 회차 하나를 열어 코트 총액을 바꿔 보시면 됩니다. 몇 건을 취소하고 몇 건을 재발행하는지 확인창에 뜨면 정상입니다. 확인창에서 [닫기]를 누르면 아무것도 바뀌지 않습니다.
+
+---
+
+## #451
+
+**Prompt**: 팀짜는거 애플워치에서도 하고싶은데 방법이 있나?
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #452
+
+**Prompt**: go on
+
+**Answer**: 결론: 지금 웹앱(PWA)을 워치에 그대로 올릴 방법은 없습니다. 대신 **팀 편성 알고리즘을 서버로 옮기고, 워치는 버튼 역할만 하게 만드는 건 가능**합니다.
+
+## 왜 그대로는 안 되나
+- watchOS에는 Safari도 없고 PWA를 설치할 수도 없습니다. 웹 페이지는 메시지·메일에 온 링크를 눌렀을 때만 잠깐 열리고, 로그인 상태도 유지되지 않습니다.
+- 현재 팀 편성(`recommendTeammates` / `autoFillTeammates` / `buildRecommendData`)은 **브라우저 안에서만** 돕니다. 보드에 반영하는 것도 클라이언트가 RPC를 호출하는 방식입니다(`create_match_proposal`, `board_save_drafts` 등). 그래서 워치에서 쓰려면 편성 계산을 서버로 옮겨야 합니다.
+
+다행히 `src/lib/teamSelection/`과 `recommendPool.ts`는 순수 TypeScript입니다. 브라우저나 React에 묶인 코드가 없고, `node:fs`와 `pglite`는 테스트 파일에서만 씁니다. 그래서 **Edge Function(Deno)에서 그대로 import해서 쓸 수 있습니다.**
+
+## 선택지
+
+| 방법 | 워치에서 하는 일 | 비용 |
+|---|---|---|
+| **A. 단축어 + Edge Function** (추천) | 워치 단축어나 Siri로 "다음 경기 짜줘" → 서버가 편성 → 결과를 알림으로 받음 | Edge Function 1개와 개인 토큰 발급만 하면 됨. 앱스토어 불필요 |
+| B. 네이티브 watchOS 앱 (SwiftUI) | 코트와 대기 인원을 보고 탭으로 편성 | 개발자 계정 연 $99, Swift로 UI를 새로 작성, 아이폰 동반 앱 필요. 편성은 결국 A의 서버 함수를 호출 |
+| C. 웹푸시 알림 액션 버튼 | 알림에서 "편성" 버튼 누르기 | iOS 웹푸시가 액션 버튼을 제대로 지원하지 않을 가능성이 높아 확인이 필요하고, 성공을 장담하기 어려움 |
+
+## A안 구조
+1. **`recommend-next-match` Edge Function**: 서버에서 세션 상태를 불러오고(`load_session_state`와 같은 데이터), 지금 코드의 `buildRecommendData` → `autoFillTeammates`를 그대로 실행합니다.
+2. **보드에 바로 쓰지 않고 "제안"으로 넣습니다** (`create_match_proposal` 경로). 보드 동시편집 규칙상 편집자는 한 명뿐입니다(`board_assert_editor`). 워치가 편집락을 가져가면 보드를 잡고 있는 운영진과 충돌하므로, 워치는 제안만 올리고 보드에서 확정하게 하는 게 안전합니다. 보드를 아무도 안 잡고 있을 때만 바로 확정하는 방식은 그다음 단계로 둡니다.
+3. **인증**: 단축어로는 카카오·구글 로그인을 처리하기 어렵습니다. 운영진 전용 개인 토큰(해시로 저장, 폐기 가능)을 발급하고, 단축어가 `Authorization` 헤더에 담아 보냅니다.
+4. **결과 표시**: 단축어가 응답으로 "1코트: 철수·영희 vs 민수·지은"을 받아 워치 화면에 띄웁니다. 이미 있는 `send-push`로 알림을 보내도 됩니다.
+5. 그러면 웹(브라우저)과 서버 두 곳에서 같은 편성 코드가 돌게 됩니다. 그 코드를 한 소스에서 같이 쓰도록 묶어야 하고, 규칙을 바꿀 때 `docs/TEAM_GENERATION_RULES.md`에 이 경로도 함께 적어야 합니다.
+
+진행하려면 먼저 정해 주세요. **워치에서 경기를 바로 확정할지, 제안만 올리고 보드에서 확정할지**에 따라 설계가 달라집니다. 저는 제안 방식을 추천합니다.
+
+---
+
+## #453
+
+**Prompt**: 출시필요없이 개발자모드로 워치앱 설치가능?
+
+**Answer**: 네, 앱스토어에 출시하지 않아도 **Xcode로 본인 워치에 직접 설치할 수 있습니다.** 다만 무료 계정이냐 유료 계정이냐에 따라 제약이 크게 다릅니다.
+
+## 준비물
+- Mac + Xcode (지금 쓰는 맥이면 됩니다)
+- 워치와 페어링된 아이폰
+- 아이폰과 워치 **양쪽 모두**에서 개발자 모드 켜기 (설정 → 개인정보 보호 및 보안 → 개발자 모드). Xcode에 한 번 연결해야 이 메뉴가 나타납니다.
+- watchOS 9 이상이면 이 방식이 지원됩니다. 워치만 단독으로 도는 앱도 만들 수 있습니다.
+
+## 무료 Apple ID vs 유료 개발자 계정($99/년)
+
+| | 무료 (Personal Team) | 유료 |
+|---|---|---|
+| 내 기기에 설치 | 가능 | 가능 |
+| 유효기간 | **7일 뒤 실행 안 됨** → 맥에 연결해서 다시 설치해야 함 | 1년 |
+| 앱 개수 | 최대 3개 | 제한 없음 |
+| 푸시 알림(APNs) | **불가** | 가능 |
+| 다른 운영진에게 배포 | 불가 (그 사람의 기기를 직접 맥에 연결해야 함) | TestFlight 내부 테스터로 배포 가능, 심사 불필요 |
+
+## 현실적인 주의점
+- Xcode에서 워치로 설치하는 과정은 아이폰을 거치기 때문에 **느리고 자주 실패합니다.** 연결이 끊기거나 "Waiting for device"에서 멈추는 일이 흔합니다.
+- 무료 계정은 7일마다 다시 설치해야 해서, 혼자 테스트할 때는 괜찮지만 정모 때마다 실제로 쓰기에는 번거롭습니다.
+- 다른 운영진도 쓰게 하려면 사실상 유료 계정 + TestFlight가 필요합니다.
+
+## 참고
+앞서 말한 **A안(단축어 + Edge Function)은 앱을 설치할 필요가 전혀 없습니다.** 단축어 앱은 워치에 기본으로 깔려 있어서 7일 만료나 $99 비용 문제가 없습니다. 운영진도 단축어 링크만 받으면 바로 쓸 수 있습니다.
+
+그래서 순서는 이렇게 추천합니다. 먼저 **A안으로 서버 편성 함수를 만들고**, 나중에 워치 화면에서 코트를 직접 보고 싶어지면 그때 네이티브 앱을 얹으면 됩니다. 서버 함수는 네이티브 앱에서도 그대로 다시 쓸 수 있습니다.
+
+---
+
+## #454
+
+**Prompt**: A안이 좋긴한데, 완료된 팀 체크해야하고 새로 편성한 인원이 누군지도 알아야함
+
+**Answer**: 네, A안으로 둘 다 할 수 있습니다. 워치 단축어에는 "목록에서 선택"과 "결과 보기"가 있어서 아래처럼 쓸 수 있습니다.
+
+## 워치에서 쓰는 흐름
+[코드 블록 생략]
+탭 세 번이면 완료 처리와 새 인원 확인이 끝납니다. 서버 쪽은 Edge Function 하나에 엔드포인트 두 개면 됩니다.
+- `GET /status`: 진행 중인 코트와 대기 중인 팀
+- `POST /complete`: 경기 완료 → 다음 팀 투입 → 투입된 명단과 다음 대기 팀 반환
+
+## 걸리는 점 3가지 (코드를 확인한 결과)
+
+**1. 편집락**
+`complete_match`는 `board_assert_editor`를 통과해야 실행됩니다. 이 락은 **기기 단위(client_id)**로 잡힙니다. 그래서 운영진이 보드를 열어 락을 쥐고 있으면, 같은 사람이라도 워치에서 보낸 요청은 `not editor`로 거부됩니다.
+- **해결책**: 이미 있는 **운영진 동시 편집 모드(`board_multi_editor`)**를 켜면 운영진은 락 없이 통과합니다. 서버 함수를 따로 손볼 필요가 없습니다. 다만 메모리상 이 모드는 **아직 실사용 검증 전**이라, 워치 기능이 첫 실사용이 됩니다.
+
+**2. 다음 팀을 정하는 로직이 지금은 브라우저에만 있음**
+경기를 완료하면 대기열의 예비팀이 빈 코트로 들어가는데, 이 판단(`planWaitingTeamFills`, 대기 draft 저장)을 현재 보드 클라이언트가 합니다. 워치로 완료하려면 이 로직을 서버에서도 똑같이 돌려야 합니다.
+- 코드는 순수 TS라 Edge Function에서 그대로 import할 수 있습니다.
+- 대신 보드가 열려 있는 상태에서 서버가 draft를 바꾸면 버전 충돌(CAS)이 날 수 있습니다. 이 경우 보드가 다시 불러오도록 처리해야 하고, 이 부분이 이번 작업에서 가장 위험합니다.
+
+**3. 인증**
+`complete_match`는 `auth.uid()`로 운영진인지 확인합니다. 단축어용 개인 토큰을 Edge Function이 검증한 뒤, **그 회원 명의로 RPC를 호출**해야 합니다. 그 회원의 JWT를 서버에서 발급해야 합니다. 서비스 키로 우회하면 운영진 확인이 사라지므로 쓰면 안 됩니다.
+
+## 정해주셔야 할 것 하나
+완료한 뒤 새 팀을 어떻게 할까요?
+- **(a) 바로 코트에 투입하고 명단만 보여주기**: 보드에서 완료를 누를 때와 똑같이 동작합니다. 저는 이쪽을 추천합니다.
+- **(b) 명단을 먼저 보여주고 "투입" 버튼을 한 번 더 누르게 하기**: 탭이 하나 늘어나는 대신 실수를 막을 수 있습니다.
+
+정해주시면 설계 문서부터 정리하겠습니다. 이 작업은 편성 로직을 서버로 옮기는 것까지 포함하는 큰 작업이라, 계획을 확인받은 뒤에 진행하겠습니다.
+
+---
+
+## #455
+
+**Prompt**: 일단 너무 큰 변경이라 패스.
+
+**Answer**: 알겠습니다, 애플워치 작업은 보류할게요. 코드는 아무것도 건드리지 않았습니다.
+
+나중에 다시 꺼낼 때를 위해 이번 검토 내용은 메모리에 적어 두었습니다. 단축어 + Edge Function 방식이었고, 막히는 점은 세 가지였습니다.
+- 편집락이 기기 단위라 워치 요청이 거부됨
+- 다음 팀 투입 로직이 지금은 브라우저에만 있음
+- 단축어용 토큰을 회원 로그인(JWT)으로 바꿔 호출해야 함
+
+"완료 후 바로 투입할지, 확인 후 투입할지"는 아직 안 정했습니다.
+
+---
+
+## #456
+
+**Prompt**: 팀 짤때 3명이 잘하고 1명이 상대적으로 못하는 팀편성이 좀 보이는거 같은데 근거가 있나?
+
+**Answer**: 코드상으로는 이미 의심 가는 구조가 보입니다. 지금은 세 갈래(실데이터 통계, 코드 메커니즘 계산, 시뮬레이션 비교 실험)를 병렬로 확인하고 있고, 끝나면 반박 검토를 한 번 더 거칩니다.
+
+**지금까지 코드에서 보인 의심 지점(아직 가설):**
+1. **실력 비용이 `spread²`(최고−최저)뿐입니다** (`recommendTeammates.ts:131`). 그래서 `{9,9,9,3}`과 `{9,9,3,3}`의 실력 비용이 똑같습니다. 그런데 2:2는 9+3 vs 9+3으로 균형을 맞출 수 있고, 3:1은 어떻게 나눠도 9+3 vs 9+9가 됩니다.
+2. **교차밴드 교류 부채**(`groupPolicy.ts` `exchangeCost`, 2026-09-18 도입)도 의심됩니다. 고밴드(7~10)는 약 3판마다 저밴드(1~3)를 만나야 하는 부채가 쌓입니다. 저밴드 1명을 넣으면 고밴드 3명의 부채가 한 번에 해소되므로 3강1약이 "효율적인" 해가 될 수 있습니다.
+3. **실력 항이 우선순위 맨 끝에 있습니다** (`compareGroupScores`). 겹침이나 반복 쌍 수에서 승부가 나면 실력은 아예 비교되지 않습니다.
+
+결과가 오면 실제로 그런지, 그리고 어떤 원인이 얼마나 기여하는지 수치로 정리해 드리겠습니다.
+
+---
+
+## #457
+
+**Prompt**: <task-notification>
+<task-id>wcfnnpu4h</task-id>
+<tool-use-id>toolu_011fu3jrXCETAWBiHZSCeYNJ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/d1ac28ae-66c8-4a39-8c3b-859e800c6ed0/tasks/wcfnnpu4h.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "3강1약 편성이 실제로 많은지(실데이터)·왜 생기는지(코드·시뮬) 근거 수집 후 반박 검증" completed</summary>
+<result>{"findings":[{"key":"prod-data","verdict":"실데이터로는 \"3강1약이 많아졌다\"는 근거가 없습니다. 외톨이 약자 경기(lone-low)는 전체의 7.2%(261/3637)입니다. 같은 세션의 활성 참가자 중 성별 구성을 맞춰 무작위로 4명을 뽑으면 12.1%가 나오는데, 실제는 그 0.59배로 유의하게 적습니다(z=-9.7). 9/18 교류 규칙 도입 전후 비율도 0.61배에서 0.58배로 거의 같아서, 교류 규칙이 3강1약을 늘렸다는 신호는 실데이터에 없습니다. 체감은 남복에 몰린 현상으로 설명됩니다. 남복은 11.5%(약 9경기에 1번)가 이 모양이고(기준선 19.7%보다 적음), 그 '약자' 역할은 등급 1~2 남성이 반복해서 맡습니다(본인 경기의 10~17%).","numbers":["표본: 완료 경기 3637개, 108세션, 2026-07-13(1~10 등급 전환) ~ 2026-11-02, 등급은 matches.player_snapshot의 당시 등급. 제외: 미등급(0/null) 포함 561, 스냅샷 null 항목 32, team id와 스냅샷 불일치 28, 7/13 이전 43, 스냅샷 없음 1","lone-low 정의는 제안 그대로: 정렬 g1..g4에서 (g2-g1)&gt;=3 이고 (g2-g1)&gt;(g4-g2). lone-high는 대칭","전체: lone-low 7.2%(261) / lone-high 12.8%(466) / 기타 80.0%. 평균 spread 4.06","귀무(같은 세션, 경기 시작 ±45분 안에 뛴 사람, 경기 성별 구성 고정, 경기당 3000회 추출): lone-low 12.1%(E=438.8). 관측/기대 0.59, z=-9.67. lone-high 17.7%, 0.72, z=-8.13","도입 전 P1(07-13~09-18): n=2050, lone-low 6.7%(137), 귀무 11.0%, 0.61배, z=-6.63 | 도입 후 P2(09-19~11-02): n=1587, 7.8%(124), 귀무 13.5%, 0.58배, z=-7.06 | 최근 4주(10-05~11-02): n=965, 8.0%(77), 귀무 14.7%, 0.54배, z=-6.29","원시 비율은 6.7%에서 7.8%, 8.0%로 소폭 올랐지만, 같은 기간 귀무 기대치도 11.0%에서 13.5%, 14.7%로 올랐습니다(참가 로스터의 등급 분산이 커짐). 알고리즘 상대 효과는 그대로입니다","밴드 기준 3고+1저(7~10 셋 + 1~3 하나): 전체 1.8%(67), 귀무 3.6%, 0.51배, z=-6.07. P1 1.4%(29)에서 P2 2.4%(38), 최근 4주 2.9%(28)로 늘었지만 귀무도 3.1%에서 4.4%, 5.6%로 올라 비율은 0.46, 0.54, 0.52배. '저밴드 1명 + 나머지 3명이 같은 상위 밴드' 기준은 16.3% 대 귀무 15.7%(1.04배, z=+1.07)로 무작위와 차이 없음","경기 종류별 lone-low: 남복 n=1902에서 11.5%(219), 귀무 19.7%, 0.58배, z=-9.3 | 혼복/혼합 n=1542에서 2.7%(41), 귀무 4.1%, 0.65배 | 여복 n=193에서 0.5%(1). lone-low 261건 중 219건(84%)이 남복","누가 약자 역할을 맡나(세션 단위): 남성 등급 1은 본인 경기 178개 중 30개(17%), 남성 등급 2는 929개 중 93개(10%), 남성 등급 3은 771개 중 51개(7%). 여성 등급 1~4는 1~4%","기준을 느슨하게(gap&gt;=2) 해도 lone-low는 12.0%(436) 대 귀무 15.8%로 0.76배(z=-6.7). P1 0.80배, P2 0.72배, 최근 4주 0.69배로 역시 기준선보다 적음","귀무 풀을 세션 전체로 넓혀도 결과는 같음: lone-low 0.59배, z=-9.68","(d) lone-low 경기(n=261)의 2v2 interDiff: 평균 2.75. 분포 1:12%, 2:33%, 3:34%, 4:14%, 5:6%, 6:2%. 56%가 3 이상. 실제 페어 분할은 100% 그 4명으로 가능한 최적 분할과 같음. 즉 불균형은 페어 분할이 아니라 4명 선택에서 생김. 비교: 기타 경기(n=2910)는 평균 0.94, 3 이상 3%. lone-high(n=466)는 평균 3.14, 최적 분할 92%","lone-low 상위 구성: (2,5,6,7)이 21건, (2,5,5,7) 13건, (2,5,7,7) 12건, (3,6,7,7) 11건, (2,5,5,6) 9건. 등급 9 셋과 3 하나 같은 극단형은 드묾","주간 lone-low는 W29~W44 동안 4.1~9.1% 사이를 오르내리고 9/18 전후로 계단 변화 없음. P2 편집자별로는 2.5~12.1%(n=40~492)로 편차가 있음"],"caveats":["(c) 자동편성과 수동편성을 구분할 필드가 없습니다. matches.assigned_by는 '경기 시작을 누른 편집자 실명'일 뿐이고, match_proposals 14건(applied 6건)은 match_id가 모두 null이라 경기와 연결되지 않습니다. 그래서 관측치는 자동편성, 운영진 수동 조정, 회원 제안이 섞인 결과이고 알고리즘만의 효과로 분리할 수 없습니다. 편집자별 편차(2.5~12.1%)는 수동 개입의 영향일 수도 있습니다","귀무 기준선은 무작위 4명 추출이라 낮은 기준입니다. 판수·대기 제약을 지키면서 가능한 대안 중 lone-low를 피할 수 있었는지(달성 가능한 하한)는 이 분석에 없습니다. 기준선보다 적다고 해서 '더 줄일 여지가 없다'는 뜻은 아닙니다. 그걸 보려면 recommendTeammates의 실제 함수를 import한 재현 시뮬레이션이 필요합니다(런북 §3)","활성자 근사: 경기 시작 ±45분 안에 같은 세션에서 경기를 뛴 사람을 그 시점의 활성자로 봤습니다. 휴식 중이거나 콕 미확인인 사람이 섞일 수 있습니다. 세션 전체 풀로 바꿔도 결과는 같았습니다","player_snapshot은 경기 시점 기록이지만 완료 시점에 저장되므로, 경기 도중 등급이 바뀌면 바뀐 값이 들어갈 수 있습니다","스냅샷 id는 세션별 session_players.id라서 사람 단위로 묶지 못했습니다. 등급·성별 집계는 '세션 내 선수' 단위입니다","체감의 원인일 수 있는 것: 남복은 무작위로 뽑아도 19.7%가 3강1약일 만큼 남성 로스터의 등급 분산이 큽니다(등급 1~2 남성이 소수). 그래서 알고리즘이 무작위의 0.58배로 줄여도 남복 9경기 중 1경기꼴로 남습니다. 저등급 남성 본인은 자기 경기의 10~17%에서 혼자 약자가 됩니다. 이 패턴을 들은 대로 사람이 기억하기 쉽습니다","가설 (1)~(3)은 코드상 가능성이고, 실데이터로는 그 결과가 무작위 대비 증가로 나타나지 않았습니다. 다만 '저밴드 1명 + 상위 같은 밴드 3명' 기준은 무작위와 같은 수준(1.04배)이고, 혼복의 같은 기준은 1.16배(z=+2.0, 경계선)입니다. 밴드 단위 교류 규칙이 밴드 경계를 넘는 3+1 구성을 억제하지 않는다는 약한 신호입니다"],"method":"읽기 전용 조회 scripts/prod-ro-sql.sh로 2026-06-01 이후 completed matches를 받았습니다(id, session_id, game_type, team_a/b, started/ended_at, player_snapshot, assigned_by, match_proposals 연결 수). 저장: /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/c62deb67-1e44-4b44-b3d0-8274f7ffd069/scratchpad/matches.json. 분석 스크립트는 /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/c62deb67-1e44-4b44-b3d0-8274f7ffd069/scratchpad/analyze.py이고 인자는 `&lt;scratch&gt; &lt;창 분, 0이면 세션 전체&gt; &lt;gap 기준&gt;`입니다. 7/13 이후, 4명 모두 등급이 있는 경기만 대상으로 lone-low, lone-high, 밴드 3H+1L을 분류했습니다. 귀무는 경기마다 같은 세션의 활성 풀(±45분)에서 경기 성별 수(M/F)를 맞춰 무작위 4명을 3000회 뽑아 확률 p_i를 구하고, 기대치 Σp와 분산 Σp(1-p)(포아송-이항)로 z를 냈습니다. interDiff는 |A합-B합|이고 세 가지 분할 중 최솟값(최적 분할)과 비교했습니다. 결과는 /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/c62deb67-1e44-4b44-b3d0-8274f7ffd069/scratchpad/out45.txt, /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/c62deb67-1e44-4b44-b3d0-8274f7ffd069/scratchpad/out45_final.txt, /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/c62deb67-1e44-4b44-b3d0-8274f7ffd069/scratchpad/classified.json에 있습니다. 코드와 DB는 수정하지 않았습니다.","mechanism":"실데이터상 3강1약은 알고리즘이 만들어 내는 게 아니라 로스터 구성에서 옵니다. 남성 참가자 중 등급 1~2가 소수이고 나머지가 5~7에 몰려 있어서, 남복은 무작위로 뽑아도 약 20%가 lone-low입니다. 편성 결과는 이를 0.58배로 줄이지만 0이 되지는 않습니다. 원인은 다음과 같습니다. 실력 항은 사전식 마지막 단계(quality)에 있고(src/lib/teamSelection/recommendTeammates.ts searchGroups), 남복은 같은 성별 4명이 필요해 후보 풀이 좁습니다. 그 상태에서 저등급 남성이 판수·대기 우선순위로 뽑히면 남는 동성 후보가 중상위뿐인 경우가 생깁니다. 일단 4명이 정해지면 pairPlayers(src/lib/teamSelection/pairPlayers.ts:67-70, score=0.5·intraDiff+1.5·interDiff)는 lone-low 경기의 100%에서 최적 분할을 고르지만, 4명 구성상 interDiff가 평균 2.75(56%가 3 이상)로 남습니다. 불균형은 4명 선택 단계에서 결정됩니다. 교류 규칙(커밋 3da71e6, 9/18) 전후로 무작위 대비 비율은 0.61배에서 0.58배로 변하지 않았습니다."},{"key":"code-mechanism","verdict":"코드상으로는 근거가 있습니다. 3강1약 편성을 구조적으로 밀어주는 주된 원인은 교류 부채(exchangeCost) 항입니다. 상위 밴드(7~10)는 하위 밴드(1~3)를 만나야만 부채가 갚아지고 중위(4~6)를 만나서는 갚아지지 않습니다. 그래서 약자 1명이 끼면 강자 3명의 부채가 한꺼번에 0이 되고, 그 결과 {H,H,H,L}의 실력 항이 {H,H,H,H}, {H,H,M,M}, {H,H,H,M}, {H,H,L,L}보다 모두 낮아집니다(부채가 0일 때도 비슷하거나 낮습니다). 가설 (2)는 참, (1)은 참이지만 원인은 아니고(중립일 뿐), (3)은 대체로 거짓입니다. 결정의 약 70%는 사전식 앞단에서 동률이 나 quality가 결정하고, 그 quality가 오히려 외톨이 약자 쪽으로 기웁니다.","mechanism":"[실력 항 공식] recommendTeammates.ts:133-134에서 spread=max−min을 구하고, :140-141에서 quality = Σcost + rotation + W_SKILL(1.5)·(spread² + exchangeCost)로 계산합니다. 비교 순서는 :52-56에 있습니다(playing → remainingCapacity → overplay → maximumOverlap → repeatedPairs → quality).\n\n[교류 대상이 비대칭인 이유] groupPolicy.ts:70은 `band !== 1 &amp;&amp; present.includes(2 - band) ? [2 - band] : present.filter(b =&gt; b !== band)`입니다. 상위(2)의 교류 대상은 하위(0) 하나뿐이고(하위 밴드 참가자가 있을 때), 하위(0)의 대상은 상위(2)뿐입니다. 중위(1)만 0과 2 둘 다 대상입니다. 따라서 상위 밴드에게 중위와 치른 경기는 교류로 쳐지지 않아 부채가 +1 쌓입니다(:78-83).\n\n[부채 비용] :89-96에서 개인별 81·(after²−before²)/9를 더합니다. 증분 비용은 0→1이 +9, 1→2가 +27, 2→3이 +45이고, 갚으면 −9·before²입니다. quality에는 1.5배가 곱해져 들어갑니다.\n\n[가설 (2), 참] 약자 1명이 대상인 강자 3명의 부채를 동시에 0으로 만듭니다. 2H2L은 같은 4자리로 강자 2명만 갚고, 두 번째 L은 자기 부채가 보통 0이라 보상이 없습니다. 실력 항(1.5·(s²+ex)) 비교:\n- 강자 부채 g=1: {9,9,8,3} 13.5 / {9,9,3,2} 46.5 / {9,9,8,8} 163.5 / {9,9,5,5} 105 / {9,9,8,5} 145.5\n- g=2: 3H1L −108 / 2H2L −34.5 / HHHH 271.5 / HHMM 159\n- g=0에서도 {9,9,8,3} 54.0 ≈ HHHH 55.5 ≈ MMMM 54.0이고 HHHM 64.5보다 낮습니다. 4명이 모두 부채 +1을 떠안는 비용(36)이 spread² 36과 비슷하기 때문입니다.\n\n[가설 (1), 참이지만 원인은 아님] spread는 극값만 보므로 {9,9,9,3}과 {9,9,3,3}이 같은 비용입니다. 다만 교류 항을 끄면 quality 최소 조합 가운데 외톨이 약자는 약 1%에 불과합니다. spread²는 3강1약을 만들지 않고, 막지 못할 뿐입니다.\n\n[가설 (3), 대체로 거짓] 시뮬레이션에서 사전식 앞단이 단일 조합으로 결정을 끝낸 비율은 23~34%였습니다(세션 초반 0~6%, 후반 30~43%). 나머지는 평균 52~98개 조합이 동률이었고 그 안에서 quality가 골랐습니다. 이 동률 집합에 외톨이 약자와 아닌 조합이 함께 있을 때 현행 코드는 외톨이 약자를 35/60/30% 선택했고, 교류를 끄면 27/25/14%로 내려갑니다. repeatedPairs는 강자-강자 쌍이 많은 로스터에서 오히려 2H2L 쪽으로 미는 방향이라, 3강1약의 원인으로 보기 어렵습니다.\n\n[2v2 분할] pairPlayers는 4명이 확정된 뒤에 나눌 뿐입니다. {9,9,9,3}은 어떻게 나눠도 12 대 18로 차이가 6이고, {9,9,3,3}은 12 대 12로 맞출 수 있습니다.\n\n[문서] docs/TEAM_SELECTION_POLICY.md:24-39의 공식은 코드와 일치합니다. 다만 \"상위 밴드에게 중위는 교류로 쳐지지 않음\"과 \"부채 0에서도 3H1L이 HHHH·HHHM보다 싸짐\"이라는 함의는 적혀 있지 않습니다. docs/TEAM_GENERATION_RULES.md는 첫머리(:3)에서 POLICY 문서가 기준이라고 밝히지만, §2·§7·§8은 여전히 옛 greedy·skillDiff 밴드확장·W_GROUP2/3/4·W_GENDER 등을 현행처럼 설명합니다(:116, :297-316). 현재 RECOMMEND_WEIGHTS에는 6개 필드만 있고(recommendTeammates.ts:27-29) 교류 부채 설명은 RULES에 아예 없습니다. 실력 항 공식에 관해서는 RULES가 낡은 내용입니다.","method":"코드와 DB는 수정하지 않았고, scratch 디렉터리에서 vitest로 실제 모듈을 import해 실행했습니다.\n(A) /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/c62deb67-1e44-4b44-b3d0-8274f7ffd069/scratchpad/sim/a.test.
+... (truncated 14134 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/d1ac28ae-66c8-4a39-8c3b-859e800c6ed0/tasks/wcfnnpu4h.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/c62deb67-1e44-4b44-b3d0-8274f7ffd069/subagents/workflows/wf_f04f2525-e55/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/c62deb67-1e44-4b44-b3d0-8274f7ffd069/workflows/scripts/lone-weak-foursome-evidence-wf_f04f2525-e55.js', resumeFromRunId: 'wf_f04f2525-e55'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>4</agent_count><agents_done>4</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>326424</subagent_tokens><tool_uses>72</tool_uses><duration_ms>668368</duration_ms></usage>
+</task-notification>
+
+**Answer**: 근거는 있습니다. 다만 "코드가 3강1약 쪽으로 기우는 구조가 있다"와 "실제 경기에서 그게 늘었다"는 결론이 다릅니다. 코드와 DB는 건드리지 않았고, 조회와 시뮬레이션만 돌렸습니다.
+
+## 1. 코드: 3강1약 쪽으로 기우는 구조가 있다 (확인됨)
+
+**주원인은 9/18에 들어간 교류 부채(`exchangeCost`)입니다.**
+- 상위 밴드(7~10)가 갚을 수 있는 상대는 하위 밴드(1~3)뿐입니다. 중위(4~6)를 만나서는 갚아지지 않습니다 (`groupPolicy.ts:70`).
+- 그래서 약자 1명이 끼면 강자 3명의 부채가 한 번에 0이 됩니다 (`groupPolicy.ts:89-96`). 2강2약은 같은 네 자리로 강자 2명만 갚습니다.
+- 효과 크기는 "부채가 있는 상위 1명당 13.5점"입니다. 판수 1판(10점)과 비슷한 크기라 대기 시간 몇 분이면 뒤집힐 수 있지만, 동점인 후보들 사이에서는 3강1약이 꾸준히 이깁니다.
+
+**보조 원인은 실력 비용이 `spread²`(최고−최저)뿐이라는 점입니다.**
+- `{9,9,9,3}`과 `{9,9,3,3}`의 비용이 같습니다. 3강1약을 만들지는 않지만 막지도 못합니다.
+- 페어를 어떻게 나눠도 `{9,9,9,3}`은 12 대 18이고, `{9,9,3,3}`은 12 대 12로 맞출 수 있습니다.
+
+**가설이던 "실력 항이 우선순위 맨 끝이라 밀린다"는 약 20%만 설명합니다.** 실력 항(quality) 앞의 기준들로 끝나는 결정이 많지 않고, 대부분은 quality 안에서 갈립니다.
+
+**시뮬레이션 결과** (실제 로스터 5개 × 시드 100, 실제 `autoFillTeammates` 사용):
+
+| 조건 | 3강1약(밴드 기준) | 외톨이 약자 | 2v2 팀 간 차이 | 판수 형평 |
+|---|---|---|---|---|
+| 현행 | 6.0% | 10.6% | 1.63 | 0.544 |
+| 교류 부채 끔 | 2.1% | 7.4% | 1.21 | 0.551 |
+| 현행 + "가능한 최적 2v2 차이" 항 추가 | 2.4% | 6.3% | 1.12 | 0.543 |
+| 교류 끔 + 위 항 추가 | 1.4% | 5.1% | 0.97 | 0.553 |
+| 무작위 4명(합법 구성) | 3.8% | 11.8% | – | – |
+
+- 현행 코드는 밴드 기준 3강1약을 무작위보다 1.6배 많이 만듭니다.
+- 교류 부채를 끄면 3분의 1로 줄고, 판수 형평은 거의 그대로입니다.
+- 실력 비용을 분산으로 바꾸는 안은 오히려 나빠집니다. 분산은 `{9,9,9,3}`(27)을 `{9,9,3,3}`(36)보다 싸게 봅니다.
+
+## 2. 실데이터: "늘었다"는 근거는 약하다
+
+완료 경기 3,637개(7/13~11/2, 경기 당시 등급 기준)를 봤습니다.
+- 외톨이 약자 경기는 **7.2%**로, 같은 성별 구성의 무작위 4명(12.1%)의 약 0.6배입니다.
+- 9/18 전후의 무작위 대비 비율도 거의 같습니다(0.61배 → 0.58배).
+- 밴드 기준 3강1약의 단순 비율은 1.4% → 2.9%로 올랐지만, 같은 기간 무작위 기대치도 함께 올라 유의하지 않습니다.
+
+다만 이 데이터로 "알고리즘 효과는 없다"고 결론 내릴 수는 없습니다.
+- 자동 편성과 운영진 수동 편성을 구분하는 필드가 없어서 둘이 섞여 있습니다.
+- 9/18 전후에는 옛 알고리즘 교체, 코트 리필 수동화, 대기열 복원 같은 변경이 겹쳤습니다.
+
+## 3. 체감은 남복에서 온다
+
+- 외톨이 약자 경기의 **84%가 남복**입니다. 남복 9경기 중 1경기(11.5%)가 이 모양입니다.
+- 남성 등급 1~2가 소수라, 남자 4명을 맞춰야 하는 남복에서는 피하기 어렵습니다.
+- 그래서 같은 사람이 반복해서 약자 자리에 섭니다. 남성 등급 1은 본인 경기의 17%, 등급 2는 10%에서 혼자 약자였습니다.
+- 교류 부채 규칙은 이 상황을 깨기보다 유지하는 쪽으로 작동합니다.
+- 반대 모양(1강3약)이 12.8%로 더 흔하고, 같은 원리의 대칭입니다.
+
+## 개선한다면
+
+1. **교류 대상 규칙 수정:** 상위 밴드가 중위를 만나도 일부 갚은 것으로 치거나, 부채 해소를 "약자 1명이 여러 명 몫"이 되지 않게 바꿉니다.
+2. **"가능한 최적 2v2 차이" 항 추가:** 실력 비용에 이 항을 더합니다. 시뮬에서 효과가 가장 깔끔했고 판수 형평 손실이 없었습니다.
+3. **편성 출처 기록:** 경기에 자동/수동 편성 출처를 남기면 이후 실데이터로 판정할 수 있습니다.
+
+알고리즘을 바꾸면 `docs/TEAM_GENERATION_RULES.md`도 같이 고쳐야 합니다. 이 문서는 지금도 옛 greedy 공식을 설명하고 있고, 교류 부채 내용은 빠져 있습니다. 진행할까요?
+
+분석 스크립트와 데이터는 `/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/c62deb67-1e44-4b44-b3d0-8274f7ffd069/scratchpad/`에 있습니다(`analyze.py`, `matches.json`, `out45_final.txt`, `sim/`).
+
+---
+
+## #458
+
+**Prompt**: 개선방향 고민해서 다시 알려줘
+
+**Answer**: 개선안 비교 실험을 백그라운드에서 돌리고 있습니다. 레포는 건드리지 않고 스크래치 디렉터리에서만 작업합니다.
+
+**진행 방식**
+1. **현실적인 시뮬레이션 환경부터 만듭니다.** 지난번 지적대로 실제 사용 방식을 반영합니다: 운영진이 1~2명을 먼저 고르고 나머지를 자동으로 채우는 흐름, 성별 구성 규칙, 남녀가 섞인 실제 로스터. 현행 코드와 결과가 100% 같은지도 확인합니다.
+2. **개선안 4개를 동시에 측정합니다.**
+   - **V1:** 점수에 "4명을 가장 잘 나눴을 때의 2v2 차이" 항을 추가하고, 교류 규칙은 그대로 둡니다.
+   - **V2:** 교류 인정 기준을 1:1로 바꿉니다. 같은 편으로 만났을 때만 인정하거나, 약자 1명이 갚아 주는 강자 수에 상한을 둡니다.
+   - **V3:** 2v2로 균형 있게 나눌 수 있는 4명일 때만 교류로 인정합니다. 상위 밴드가 중위 밴드를 만난 경우도 일부 인정하는 안을 같이 시험합니다.
+   - **V4:** 위 안들의 조합입니다. 교류 규칙을 아예 끄는 안도 넣어서, 교류 의도를 잃으면 무엇을 잃는지 비교 기준으로 씁니다.
+3. **판정 후 반박 검토를 합니다.** 두 가지를 함께 따집니다.
+   - 3강1약과 2v2 불균형이 얼마나 줄었는지
+   - 다른 목표를 해치지 않았는지: 교류 의도(약자가 강자를 주기적으로 만나는가), 판수 형평, 같은 사람끼리 반복해서 묶이는지
+
+결과가 나오면 권고안과 수치, 실제 코드에서 바뀔 부분을 정리해 드리겠습니다.
+
+---
+
+## #459
+
+**Prompt**: <task-notification>
+<task-id>w40p9sipz</task-id>
+<tool-use-id>toolu_01AjWoLg8WnqdQL4XXPcrBnU</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/d1ac28ae-66c8-4a39-8c3b-859e800c6ed0/tasks/w40p9sipz.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "3강1약 완화 개선안 후보를 현실적 하네스에서 시뮬 비교·반박 검증 후 권고안 도출" completed</summary>
+<result>{"harness":"In the simulation, the current recommender produces 3-strong-1-weak (lone-low) foursomes at 12.8%. In the real games of the same 8 sessions the rate was 5.6%. The copied baseline in the harness matched the repo's `autoFillTeammates` on every decision (34,000/34,000 in the main run, 10,200/10,200 in the separate check). The full run takes about 2.5 minutes with 100 seeds, so no reduction was needed. No repo files were changed.\n\n## Harness (in `/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/c62deb67-1e44-4b44-b3d0-8274f7ffd069/scratchpad/h2/`)\n\n- **Real rosters:** `prep.py` turns `matches.json` into `sessions.json`. It covers 8 real sessions after 9/22, all with men and women: 262, 265, 266, 270, 258, 300, 252, 226. For each player it keeps gender, most common grade, arrival time and early-leave time. Names and IDs are replaced with numbers.\n  - **Courts:** average number of games running at once. The peak count overstated it, for example 4 instead of 3 for session 266.\n  - **Game length:** the real median per session.\n- **Gender rules:** the repo's `allowedGameType` is used unchanged.\n- **Operator seeds:** when a court frees up, the operator picks 1 seed 50% of the time, 2 seeds 30% of the time and none 20% of the time. These are the constants `SEED_RATES` and `P_SEED_LONGEST` in `sim.ts`.\n  - The first seed is the longest waiter or a random waiter, 50/50.\n  - The second seed is random but must still allow a legal gender mix.\n  - If filling fails, it falls back to a fully automatic pick. Measured fallback was 0.0%.\n- **Swappable picking function:** `FormationFn = (confirmed, pool, ctx) =&gt; picks`. `searchCopy.ts` is an exact copy of the repo's `recommendTeammates.ts`, except that the one quality line calls `hooks.quality(QualityInput)`.\n  - `QualityInput` includes `costSum`, `rotation`, `spread`, `grades`, `exchange` (bands, targets and debts), `history` and `exchangeCost()`. Exchange-rule variants can be computed directly from these.\n- **Pairing:** the repo's `pairPlayers(four, [])` splits each foursome into 2v2.\n- **Example variants in `variants.ts`:** `baseline`, `balance` (adds the best-possible-2v2-gap term squared), `noEx`, and `noEx+balance`. The two `noEx` variants turn the exchange rule off and are labelled `[교류 의도 훼손]` (breaks the exchange intent).\n- **Not modelled:** the waiting-team prefill (`planWaitingTeamFills`) and operators editing a recommendation by hand.\n\n## Running it\n```\ncd /Users/sam/Projects/cocktime-scheduler\nH=/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/c62deb67-1e44-4b44-b3d0-8274f7ffd069/scratchpad/h2\nSEEDS=100 pnpm exec vitest run --root $H                      # identity check + all variants, ~2.5 min\nSEEDS=100 VARIANTS=baseline,balance SESSIONS=262,300 TAG=x pnpm exec vitest run --root $H h2.test.ts\n```\n- Other settings: `IDENTITY=0` turns off the per-decision comparison with the repo, which roughly halves baseline time. `ID_SEEDS` sets the seed count for the identity check.\n- Timing at 100 seeds: baseline with the identity check about 60 seconds, each other variant about 27 seconds.\n- Results go to `out/&lt;TAG&gt;.txt` and `.json`.\n- To add a variant, add one line to `VARIANTS` in `variants.ts`, for example `{ name, desc, formation: fromHooks({ quality: q =&gt; ... }) }`.\n\n## Baseline vs real games (100 seeds × 8 sessions = 34,000 simulated games; 340 real games)\n\nColumn key:\n- **LL / LH:** lone-low / lone-high.\n- **mI≥4:** the best possible 2v2 gap is 4 or more.\n- **gStd:** standard deviation of games played.\n- **ov3:** shares 3 or more players with an earlier foursome.\n- **L·H / H·L:** low players' games that include a high player, and the reverse.\n- **L.run / H.run:** each player's longest streak of games without the other band, averaged.\n- **lowM-LL:** share of low-grade (1–2) men's games where they were the lone weak player.\n\n```\n               n     LL%  LH%  3H1L% inter i.p90 mI&gt;=4% spread gStd ov3% L·H% H·L% L.run H.run lowM-LL%\nREAL ALL      340    5.6 11.5   1.5  1.26  3.00    4.7   4.14 0.83 19.4 61.5 46.4  1.88  2.54      5.7\nbaseline ALL 34000  12.8 17.2   5.4  1.72  4.00   13.0   4.75 0.58  3.5 78.7 67.6  1.08  1.32     21.5\n```\n\nBaseline by session (LL% / 3H1L% / lowM-LL%):\n\n| Session | LL% | 3H1L% | lowM-LL% |\n|---|---|---|---|\n| 262 | 11.5 | 6.8 | 21.7 |\n| 265 | 13.2 | 7.6 | 25.1 |\n| 266 | 9.7 | 4.8 | – (no low-grade men) |\n| 270 | 13.2 | 5.6 | 11.0 |\n| 258 | 7.3 | 0.0 | 13.0 |\n| 300 | 17.7 | 7.5 | 30.6 |\n| 252 | 11.2 | 3.8 | 22.0 |\n| 226 | 15.3 | 4.8 | 32.0 |\n\nReal data by session (LL% / 3H1L%):\n\n| Session | LL% | 3H1L% |\n|---|---|---|\n| 262 | 3.4 | 3.4 |\n| 265 | 4.7 | 0 |\n| 266 | 8.8 | 5.9 |\n| 270 | 4.0 | 0 |\n| 258 | 0 | 0 |\n| 300 | 7.8 | 0 |\n| 252 | 3.9 | 0 |\n| 226 | 10.0 | 2.0 |\n\nThe other variants, as a first look:\n\n| Variant | LL% | 3H1L% | L·H% | H·L% | lowM-LL% |\n|---|---|---|---|---|---|\n| balance | 8.4 | 2.8 | 76.1 | 66.1 | 14.2 |\n| noEx (breaks intent) | 9.3 | 2.5 | 61.5 | 49.5 | 13.6 |\n| noEx+balance (breaks intent) | 7.3 | 1.9 | 60.9 | 50.3 | 11.1 |\n\n`balance` keeps most of the cross-band mixing. Turning the exchange rule off costs about 17 points of mixing, and the streaks without the other band grow from about 1.1–1.3 to 1.9–2.4. Neither change hurts how evenly games are shared (gStd).\n\n## Reading the results\n\n- **The algorithm alone is 2–4 times worse than what operators end up with.** Real games are the recommendation plus operators' manual edits, so operators seem to avoid many 3-strong-1-weak groups by hand. They pay for it by repeating groups more (19.4% vs 3.5% repeat 3 or more players) and by spreading games less evenly (0.83 vs 0.58). Compare variants as \"the default the algorithm gives before anyone edits it\".\n- **The simulated timeline runs a bit fast.** It uses median game lengths, so a simulated session finishes slightly earlier than the real one. That makes late arrivals land relatively later in the session.\n\nFiles are in `/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/c62deb67-1e44-4b44-b3d0-8274f7ffd069/scratchpad/h2/`:\n- README.md\n- prep.py\n- sessions.json\n- searchCopy.ts\n- variants.ts\n- sim.ts\n- h2.test.ts\n- identity.test.ts\n- vitest.config.ts\n- out/all.txt\n- out/all.json","variants":[{"key":"I added a \"best possible 2v2 gap\" term, W_BAL·minInterDiff², to quality and kept the exchange rule. This about halves 3-strong-1-weak foursomes (lone-low) in the simulation without breaking the rule's intent. W_BAL=6 gives LL 12.8→6.2%, 3H1L 5.4→2.0% and lowM-LL 21.5→10.3%. Mixing across bands drops by only 1–5 points: compare the 17-point drop from turning the exchange rule off (L·H 61.5 / H·L 49.5). Games-played evenness (gStd) stays at 0.56–0.58, no worse than baseline in any variant. Group repetition (ov3) gets slightly worse, 3.5→3.6–4.0%.\n- Effect of W_BAL: 1.5→3→6→10 gives LL 8.4→7.3→6.2→5.5%. Above 6 the gains are small and mixing keeps falling (L·H 76.1→74.8→73.5→73.0).\n- spread² coefficient: lowering it to 0.75 gives the same LL and 3H1L. It also brings mixing almost back to baseline (L·H 76.8, H·L 68.4, a bit above baseline 67.6). The cost is a slightly larger average spread (4.75→4.83). Raising it to 3 cuts mixing by about 9 points (L·H 69.4) and does not lower LL, so it is a bad choice.\n- sp0 (spread term removed) + bal6 is the best on LL/LH (6.1/8.6) and on mixing (78.5/71.6). But average spread rises to 4.97, so it gives up the spread band's own purpose (not putting players of very different levels in one game). That is why it is not the recommendation.\n- Not solved: in session 300, LL is still 9.8% and lowM-LL still about 20% (baseline 17.7/30.6). That residue comes from the gender rule (all-men games) and operator seeds, so the weight alone cannot remove it.\n- The baseline here gives exactly the harness's all.txt numbers (12.8/5.4/21.5). This confirms the same seeds and rosters. All 8 sessio
+... (truncated 54098 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/d1ac28ae-66c8-4a39-8c3b-859e800c6ed0/tasks/w40p9sipz.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/c62deb67-1e44-4b44-b3d0-8274f7ffd069/subagents/workflows/wf_e64bed15-21a/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/c62deb67-1e44-4b44-b3d0-8274f7ffd069/workflows/scripts/lone-weak-improvement-design-wf_e64bed15-21a.js', resumeFromRunId: 'wf_e64bed15-21a'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>7</agent_count><agents_done>7</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>651175</subagent_tokens><tool_uses>148</tool_uses><duration_ms>2531209</duration_ms></usage>
+</task-notification>
+
+**Answer**: 결론부터 말하면, **교류 규칙은 그대로 두고 "4명을 가장 공정하게 나눠도 남는 2v2 점수차"에 벌점 항 하나를 더하는 방법**이 가장 낫습니다. 시뮬레이션에서 3강1약이 절반 이하로 줄었고 다른 지표는 거의 나빠지지 않았습니다. 레포는 아직 수정하지 않았습니다.
+
+## 권고안: 균형 항 추가 (V1)
+
+[코드 블록 생략]
+- `minInterDiff`는 4명을 2v2로 나누는 3가지 방법 중 가장 작은 |A팀 합 − B팀 합|입니다. 혼복은 남녀가 섞이는 2가지 분할만 봅니다.
+  - `{9,9,9,3}`은 어떻게 나눠도 6점 차이라 벌점 36×W_BAL을 받습니다.
+  - `{9,9,3,3}`은 9+3 대 9+3으로 차이가 0이라 벌점이 없습니다.
+- 그래서 교류는 2강2약 경기로 일어나게 되고, "약자 1명이 강자 3명의 교류 부채를 한 번에 갚는" 이점만 사라집니다.
+- 코드 변경은 `recommendTeammates.ts`의 quality 한 줄과 작은 순수 함수 하나입니다.
+- 운영진에게는 "어떻게 팀을 나눠도 한쪽으로 기우는 4명은 덜 뽑는다"고 설명하면 됩니다.
+
+**시뮬레이션 결과** (실제 세션 8개 × 시드 100, 34,000경기)
+
+| 지표 | 현행 | 균형 항 추가 (W_BAL 6) |
+|---|---|---|
+| 3강1약 비율 | 12.8% | **6.2%** |
+| 3강1약 (밴드 기준: 7~10점 셋 + 1~3점 하나) | 5.4% | **2.0%** |
+| 2v2 팀 간 점수차 평균 | 1.72 | **1.05** |
+| 저등급(1~2) 남성이 혼자 약자가 된 경기 비율 | 21.5% | **10.3%** |
+| 교류율: 하위 선수 경기 중 상위와 같은 경기 | 78.7% | 73.5% |
+| 교류율: 상위 선수 경기 중 하위와 같은 경기 | 67.6% | 65.0% |
+| 판수 형평(경기 수 표준편차) / 3명 이상 반복 비율 | 0.58 / 3.5% | 0.57 / 3.8% |
+
+- **반박 검토도 통과했습니다.** 시드를 바꿔 다시 돌렸고, 튜닝에 쓰지 않은 실제 세션 14개로도 확인했습니다. 14개 세션 모두에서 3강1약이 줄었습니다(전체 11.3% → 6.8%).
+- **시뮬레이션 기준선은 현행 코드와 동일하게 동작합니다.** 34,000개 결정이 모두 일치했습니다.
+- **걱정한 부작용은 거의 없었습니다.** 하위 선수의 경기 수와 대기 간격은 그대로이고, 남복이 안 짜이는 경우도 늘지 않았습니다. 저등급 남성의 경기 수만 약 1% 줄었습니다.
+
+## 채택하지 않은 안
+
+| 안 | 이유 |
+|---|---|
+| 교류 규칙 끄기 | 교류율이 13~18%p 떨어지고, 반대 밴드를 못 만나는 연속 경기가 2배가 됩니다. 그런데도 3강1약은 균형 항 추가보다 많이 남습니다(9.4% vs 6.8%). |
+| 파트너로 만나야만 교류로 인정 (V2) | 효과가 약 1%p 낮고 교류 손실이 가장 큽니다. 과거 경기의 팀 구성 순서에 의존해 구현도 취약합니다. |
+| 2v2로 균형 있게 나눌 수 있을 때만 교류 인정 (V3) | 균형 항 추가와 효과가 비슷한데, 배포 순간 과거 경기에 새 규칙이 소급돼 진행 중인 세션의 교류 부채가 한꺼번에 뜁니다. |
+| 실력 범위 대신 분산 사용 | 분산은 3강1약을 오히려 우대합니다. |
+
+## 한계
+
+- **실제 감소폭은 시뮬레이션보다 작을 겁니다.** 운영진이 손으로 고치는 부분을 시뮬레이션에 넣지 않았는데, 실제 경기의 3강1약은 이미 5.6%입니다. 실질적인 효과는 "운영진이 손으로 고칠 일이 줄어든다"에 가깝습니다.
+- **저등급 남성이 아주 적은 세션은 덜 줄어듭니다.** 세션 300은 적용 후에도 3강1약이 약 9.5%입니다. 남자 4명을 맞춰야 하는 제약 때문에 가중치만으로는 없애기 어렵습니다.
+- **상위끼리만 치는 경기가 조금 늘어납니다** (6.1% → 7.7%).
+
+## 정해 주실 것
+
+- **실력 범위 항 계수:**
+  - **1.5 유지 + W_BAL 4.5~6 (추천):** 현재 동작을 가장 적게 바꿉니다.
+  - **0.75로 낮추기 + W_BAL 6:** 교류율이 현행 수준(76.8% / 68.4%)으로 돌아오지만, 한 경기 안의 실력 폭이 4.75 → 4.83으로 조금 넓어집니다.
+- **배포 후 확인:** 1~2주 실제 경기 로그로 3강1약, 상위끼리만 치는 경기, 저등급 남성의 약자 비율을 다시 재볼 수 있습니다. 경기에 자동/수동 편성 출처를 기록하는 필드를 같이 넣으면 이 측정이 훨씬 정확해집니다.
+
+진행하시면 균형 항 구현, `{9,9,9,3}`이 `{9,9,3,3}`보다 불리한지 확인하는 회귀 테스트, 문서 갱신(`docs/TEAM_GENERATION_RULES.md`, `docs/TEAM_SELECTION_POLICY.md`)을 같은 커밋에서 하겠습니다.
+
+시뮬레이션 재현 파일은 `/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/c62deb67-1e44-4b44-b3d0-8274f7ffd069/scratchpad/h2/` 아래에 있습니다(`README.md`, 변형별 결과는 `variants/`).
+
+---
+
+## #460
+
+**Prompt**: 그래서 어떻게 하겠다는거야?
+
+**Answer**: 점수식에 항 하나만 추가하겠습니다.
+
+**바꾸는 것**
+1. 4명을 고를 때 "이 4명을 가장 공정하게 2대2로 나눠도 남는 점수차"에 벌점을 줍니다.
+   - `{9,9,9,3}`은 어떻게 나눠도 6점 차이라 벌점을 받습니다.
+   - `{9,9,3,3}`은 9+3 대 9+3으로 나눌 수 있어 벌점이 없습니다.
+   - 그래서 강자와 약자를 섞을 때 3강1약 대신 2강2약이 뽑히게 됩니다.
+2. 나머지 규칙은 그대로 둡니다. 판수 우선, 같은 4명 반복 회피, 실력대 교류 규칙, 성별 구성 모두 유지합니다.
+
+**기대 효과** (실제 로스터로 돌린 시뮬레이션)
+- 자동편성 결과의 3강1약이 절반 이하로 줄어듭니다(12.8% → 약 6%).
+- 판수 공평성과 강약 교류는 거의 그대로입니다.
+- 운영진이 손으로 고치던 경우가 그만큼 줄어드는 효과로 보시면 됩니다.
+
+**작업 범위**
+- `recommendTeammates.ts`의 점수 계산 한 줄과 작은 함수 하나를 추가합니다.
+- "3강1약이 2강2약보다 불리한지" 확인하는 테스트를 추가합니다.
+- 규칙 문서 두 개를 갱신합니다.
+
+**하지 않는 것**
+- 교류 규칙 끄기: 강자와 약자가 만나는 빈도가 크게 줄어듭니다.
+- 교류 판정 방식 변경: 효과는 비슷한데 더 복잡합니다.
+
+남자 저등급이 아주 적은 날은 남복 구성상 3강1약이 일부 남습니다. 이 부분은 이 변경으로 다 해결되지 않습니다.
+
+이대로 진행할까요?
+
+---
+
+## #461
+
+**Prompt**: 해줘
+
 **Answer**: _(응답 대기 중…)_
 
 ---

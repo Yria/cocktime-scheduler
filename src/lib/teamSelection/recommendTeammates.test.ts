@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SessionPlayer } from "../../types";
 import { autoFillTeammates, recommendTeammates, RECOMMEND_WEIGHTS, type RecommendContext } from "./recommendTeammates";
-import { allowedGameType, buildExchangeState, exchangeCost, groupCapacity } from "./groupPolicy";
+import { allowedGameType, buildExchangeState, exchangeCost, groupCapacity, minInterDiff } from "./groupPolicy";
 import { determineGameType } from "./pairPlayers";
 
 const epoch = Date.UTC(2026, 8, 18, 10);
@@ -200,5 +200,29 @@ describe("경기 완료 직후 재편성 재현 — 알고리즘 변경 없음",
 			// 대조군: 반복 이력만 빼면 판수/대기시간 점수에 따라 기존 대기 4명 모두 선택된다.
 			expect(ids(fill([...waiting, ...ended], context()))).toEqual(ids(waiting));
 		} finally { vi.restoreAllMocks(); }
+	});
+});
+
+describe("2대2 균형: 3강1약보다 2강2약", () => {
+	const g = (id: string, grade: number, gender: "M" | "F" = "M") => player(id, { skills: { grade }, gender });
+	it("minInterDiff는 가능한 최적 분할의 팀 합 차이다", () => {
+		expect(minInterDiff([g("a", 9), g("b", 9), g("c", 9), g("d", 3)])).toBe(6);
+		expect(minInterDiff([g("a", 9), g("b", 9), g("c", 3), g("d", 3)])).toBe(0);
+		// 남2여2는 남녀가 섞인 분할만 허용: 남 9·9, 여 3·3 → (9+3) vs (9+3)
+		expect(minInterDiff([g("a", 9), g("b", 9), g("c", 3, "F"), g("d", 3, "F")])).toBe(0);
+		// 남 9·3, 여 9·3 → 크로스만이면 (9+9) vs (3+3)=12 또는 (9+3) vs (3+9)=0
+		expect(minInterDiff([g("a", 9), g("b", 3), g("c", 9, "F"), g("d", 3, "F")])).toBe(0);
+		// 남 9·9, 여 9·3 → 크로스 분할 둘 다 18 vs 12 = 6 (동성끼리 묶는 0 분할은 불가)
+		expect(minInterDiff([g("a", 9), g("b", 9), g("c", 9, "F"), g("d", 3, "F")])).toBe(6);
+		expect(minInterDiff([g("a", 9), g("b", 9), g("c", 3)])).toBe(0);
+		expect(minInterDiff([g("a", 9), g("b", 9), g("c", 3), g("d", 0)])).toBe(0);
+	});
+	it("실력 범위가 같으면 어떻게 나눠도 기우는 3강1약 대신 2강2약을 고른다", () => {
+		const seed = g("h1", 9), pool = [g("h2", 9), g("h3", 9), g("l1", 3), g("l2", 3)];
+		const picked = autoFillTeammates([seed], pool, context(), 3);
+		expect(picked.filter(p => p.id.startsWith("l"))).toHaveLength(2);
+		// 균형 항이 없으면 spread·교류가 동률이라 3강1약이 남는다 — 이 테스트가 균형 항을 실제로 검증함을 보장
+		const without = autoFillTeammates([seed], pool, context(), 3, { ...RECOMMEND_WEIGHTS, W_BALANCE: 0 });
+		expect(without.filter(p => p.id.startsWith("l"))).toHaveLength(1);
 	});
 });

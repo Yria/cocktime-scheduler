@@ -4,7 +4,7 @@
 import type { GameType, SessionPlayer } from "../../types";
 import type { RankContext } from "./rankCandidates";
 import { skillScore } from "./rankCandidates";
-import { allowedGameType, buildExchangeState, canCompleteComposition, exchangeCost, EXCHANGE_INTERVAL, groupCapacity, orderedGroupHistory } from "./groupPolicy";
+import { allowedGameType, buildExchangeState, minInterDiff, canCompleteComposition, exchangeCost, EXCHANGE_INTERVAL, groupCapacity, orderedGroupHistory } from "./groupPolicy";
 
 export interface RecommendContext extends RankContext {
 	lastGameType: Record<string, GameType>;
@@ -22,10 +22,14 @@ export interface RecommendWeights {
 	W_ROTATE: number;
 	W_PLAYING: number;
 	W_SKILL: number;
+	/** Multiplier on the squared best-achievable 2v2 gap (minInterDiff), inside the W_SKILL bracket
+	 * (effective 1.5 × 4 = 6). Separates {9,9,9,3} (gap 6) from {9,9,3,3} (gap 0), which spread alone cannot,
+	 * so cross-band exchange happens as 2+2 instead of one weak player among three strong. */
+	W_BALANCE: number;
 	EXCHANGE_INTERVAL: number;
 }
 export const RECOMMEND_WEIGHTS: RecommendWeights = {
-	W_GAME: 10, W_WAIT: 1, W_ROTATE: 6, W_PLAYING: 30, W_SKILL: 1.5, EXCHANGE_INTERVAL,
+	W_GAME: 10, W_WAIT: 1, W_ROTATE: 6, W_PLAYING: 30, W_SKILL: 1.5, W_BALANCE: 4, EXCHANGE_INTERVAL,
 };
 
 /** Compared in this order, never summed across priorities. */
@@ -138,7 +142,8 @@ function searchGroups(
 			return sum + (!last ? 0 : ((last === "혼복" || last === "혼합") === mixed ? weights.W_ROTATE : -weights.W_ROTATE));
 		}, 0);
 		const quality = members.reduce((sum, p) => sum + costs.get(p.id)!, 0) + rotation + weights.W_SKILL
-			* (spread ** 2 + exchangeCost(members.map(p => p.id), exchange, weights.EXCHANGE_INTERVAL));
+			* (spread ** 2 + exchangeCost(members.map(p => p.id), exchange, weights.EXCHANGE_INTERVAL)
+				+ weights.W_BALANCE * minInterDiff(members, p => grades.get(p.id) ?? 0) ** 2);
 		const priority: GroupScore = { playing, remainingCapacity, overplay: excess, maximumOverlap, repeatedPairs, quality };
 		if (!best || compareGroupScores(priority, best.priority) < 0) best = { picks: [...picks], priority };
 		for (const p of picks) {
