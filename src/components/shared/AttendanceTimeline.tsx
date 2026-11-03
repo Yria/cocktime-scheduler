@@ -8,6 +8,7 @@ import {
 	transitionText,
 } from "../../lib/dues/attendanceLog";
 import { kstDateKey } from "../../lib/dues/sessionSettle";
+import "./attendance-timeline.css";
 
 const W = 320;
 const H = 132;
@@ -38,6 +39,12 @@ function hourLabel(ms: number): string {
 	return `${d.getUTCHours()}시`;
 }
 
+/** 자정 눈금(여러 날 범위)은 날짜로. */
+function dayLabel(ms: number): string {
+	const d = new Date(ms + KST_MS);
+	return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+}
+
 /**
  * 회차 확정 인원의 시간별 계단 그래프. 취소 순간은 점으로 표시한다.
  * '당일' 은 세션일 0시부터라 당일취소가 언제 어떤 흐름 속에서 났는지 보인다.
@@ -49,7 +56,13 @@ export default function AttendanceTimeline({
 	log: SessionAttendanceLog;
 	nameOf: (memberId: string) => string;
 }) {
-	const [range, setRange] = useState<"day" | "all">("day");
+	// 기본은 '당일'. 다만 세션일이 아직 안 왔으면(메인에서 보는 공개 중 회차) 당일 구간이 비어
+	// 평평한 선만 보이므로 '전체'로 시작한다.
+	const [range, setRange] = useState<"day" | "all">(() =>
+		log.scheduledAt && Date.now() < kstDayStart(log.scheduledAt)
+			? "all"
+			: "day",
+	);
 	const [hover, setHover] = useState<number | null>(null);
 	const events = log.events;
 	const first = events[0]?.at;
@@ -101,8 +114,11 @@ export default function AttendanceTimeline({
 	for (const e of shown) d += ` H${x(new Date(e.at).getTime())} V${y(e.count)}`;
 	d += ` H${x(end)}`;
 
-	// 눈금: 범위가 하루 이내면 3시간, 아니면 12시간 간격(정각).
-	const step = (end - start <= 26 * 3600_000 ? 3 : 12) * 3600_000;
+	// 눈금: 하루 이내면 3시간, 사흘 이내면 12시간 간격(정각), 그보다 길면 하루 간격(자정, 날짜 표기).
+	//   일정은 보통 일주일 전에 열려 '전체'가 7일쯤 된다 — 12시간 눈금이면 14개가 겹친다.
+	const span = end - start;
+	const daily = span > 3 * 86_400_000;
+	const step = (span <= 26 * 3600_000 ? 3 : daily ? 24 : 12) * 3600_000;
 	const ticks: number[] = [];
 	for (
 		let t = Math.ceil((start + KST_MS) / step) * step - KST_MS;
@@ -165,6 +181,9 @@ export default function AttendanceTimeline({
 					aria-label="시간별 확정 인원 그래프"
 					onPointerDown={onMove}
 					onPointerMove={onMove}
+					// 터치로 시작한 게 세로 스크롤로 넘어가면 cancel 이 온다 — 스크롤하다 잡힌 툴팁은 지운다
+					// (메인 참가자 모달에선 그래프가 명단 스크롤 영역 맨 위라 자주 걸린다).
+					onPointerCancel={() => setHover(null)}
 					onPointerLeave={(ev) => {
 						// 터치는 손을 떼면 leave 가 와서 툴팁이 바로 사라진다 — 다음 탭까지 고정.
 						if (ev.pointerType === "mouse") setHover(null);
@@ -197,7 +216,7 @@ export default function AttendanceTimeline({
 							y={H - 6}
 							textAnchor="middle"
 						>
-							{hourLabel(t)}
+							{daily ? dayLabel(t) : hourLabel(t)}
 						</text>
 					))}
 					{log.capacity !== null && log.capacity > 0 && (

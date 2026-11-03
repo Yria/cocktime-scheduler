@@ -7,6 +7,7 @@ import { useAuthStore } from "../../store/authStore";
 import { scheduleActions } from "../../store/scheduleStore";
 import { toast } from "../../store/toastStore";
 import ModalSheet from "../common/ModalSheet";
+import SessionAttendanceTimeline from "./SessionAttendanceTimeline";
 import NewMemberIcon from "../shared/NewMemberIcon";
 import TicketIcon from "../shared/TicketIcon";
 import ConfirmDialog from "../common/ConfirmDialog";
@@ -119,6 +120,13 @@ export default function SessionParticipantsModal({
 
 			{/* 리스트 (스크롤) */}
 			<div className="px-3 pb-5 overflow-y-auto no-sb" style={{ maxHeight: "60vh" }}>
+				{/* 운영진 전용 — 시간별 확정 인원 그래프 + 변경 기록 표(회비 관리 '자세히 보기'와 같은 컴포넌트).
+				    헤더가 아니라 스크롤 영역 맨 위에 둔다: 작은 폰에서 그래프가 명단을 밀어내 시트가 넘치지 않게. */}
+				{isAdmin && (
+					<div className="px-2">
+						<SessionAttendanceTimeline sessionId={s.id} attendances={attendances} />
+					</div>
+				)}
 				{confirmed.length === 0 &&
 				waiting.length === 0 &&
 				latePool.length === 0 ? (

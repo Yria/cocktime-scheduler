@@ -13703,3 +13703,65 @@ To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude
 **Answer**: _(응답 대기 중…)_
 
 ---
+
+## #462
+
+**Prompt**: 지금 회비관리 자세히보기 누르면 상단에 시간별확정인원 그래프와 표로보기가 있는데 이거 컴포넌트로 빼서 메인화면 세션 참가목록 상단에도 넣어줘. 운영진에게만 보이게해
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #463
+
+**Prompt**: go on
+
+**Answer**: 리뷰 워크플로우가 백그라운드에서 돌고 있습니다. 결과가 오면 반영하고 마무리하겠습니다.
+
+---
+
+## #464
+
+**Prompt**: <task-notification>
+<task-id>w1azjq98f</task-id>
+<tool-use-id>toolu_01Ra5KjLD7h4hmq15QKrht6f</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/b4bc9049-69e7-47bf-9323-d2f214f6400c/tasks/w1azjq98f.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Review the AttendanceTimeline extraction + admin-only placement in participant modal" completed</summary>
+<result>[{"title":"라이브 재조회 뒤 hover 인덱스가 남아 툴팁이 다른 사람의 기록을 보여줌","file":"src/components/shared/AttendanceTimeline.tsx","line":66,"scenario":"메인 참가자 모달에서 운영진이 터치로 취소 점을 눌러 툴팁을 띄워 둡니다. 터치는 leave 때도 hover를 지우지 않습니다. 이 상태에서 다른 회원이 신청하거나 취소하면 refreshKey가 바뀌고 log가 새로 들어옵니다. 이때 AttendanceTimeline은 다시 마운트되지 않으므로 hover(숫자 인덱스)가 그대로 남습니다. 그런데 shown 배열은 바뀌었기 때문에 shown[hover]가 다른 이벤트를 가리킵니다. 그 결과 취소가 아닌 신청·확정 이벤트나 엉뚱한 회원의 시각·이름·인원이 툴팁과 십자선으로 표시됩니다. 회비 관리는 캐시를 쓰므로 log가 바뀌지 않았고, 이번 live 모드에서 새로 생긴 문제입니다.","fix":"hover를 인덱스 대신 이벤트 식별자로 저장합니다. 식별자는 테이블 key와 같은 `${at}-${memberId}-${to}`를 쓰고, 렌더할 때 shown에서 다시 찾습니다. 또는 log.events가 바뀔 때 hover를 null로 초기화합니다. 이때 useEffect는 쓰지 말고 이전 events 참조와 비교하는 패턴을 쓰거나, 래퍼에서 `&lt;AttendanceTimeline key={log.events.length + lastAt} …/&gt;`처럼 key를 주는 방식으로 처리합니다.","verdict":{"real":false,"reason":"이 결함은 실제로는 일어나지 않습니다. 앞부분 전제는 맞습니다. 터치 leave에서는 hover가 지워지지 않습니다. useAttendanceLog는 live 재조회 중에도 직전 log를 유지하므로 AttendanceTimeline이 다시 마운트되지 않고, hover 숫자 인덱스도 그대로 남습니다.\n\n하지만 '인덱스가 다른 이벤트를 가리킨다'는 핵심 주장은 코드상 성립하지 않습니다.\n1. readSessionAttendanceLog(src/lib/supabase/dues.ts:283)는 ops_audit을 .order(\"at\").order(\"id\") 오름차순으로 읽습니다. 감사 로그는 추가만 되므로 새 신청·취소 이벤트는 배열 끝에 붙고, 기존 이벤트의 인덱스는 바뀌지 않습니다.\n2. AttendanceTimeline의 view(66~105행)를 봐도 마찬가지입니다. start는 first(첫 이벤트)와 dayStart로만 정해지므로 새 이벤트가 붙어도 변하지 않습니다. end는 max(endedAt 또는 마지막 이벤트 시각, scheduledAt)이라 커질 수만 있습니다. 따라서 shown 필터의 앞쪽 원소와 순서가 그대로 유지되고, shown[hover]는 재조회 뒤에도 같은 취소 이벤트를 가리킵니다.\n3. range도 사용자가 누를 때만 바뀌고, 그때는 setHover(null)이 함께 호출됩니다.\n\n이론상 남는 경우는 두 가지입니다. 하나는 동시에 진행되던 트랜잭션이 더 이른 now()로 늦게 커밋되어 중간에 끼어드는 극히 드문 경합입니다. 다른 하나는 hover가 범위를 벗어나 undefined가 되어 툴팁이 사라지는 무해한 경우입니다. 시나리오에 적힌 '다른 회원이 신청하거나 취소하면 엉뚱한 이벤트가 보인다'는 일반적인 흐름에서는 재현되지 않습니다."}},{"title":"refreshKey가 참석 상태만 반영해 정원·종료·시작 시각 변경이 그래프에 반영되지 않음","file":"src/components/schedule/SessionAttendanceTimeline.tsx","line":25,"scenario":"readSessionAttendanceLog는 sessions의 scheduled_at, ended_at, capacity를 함께 읽습니다. 그런데 refreshKey는 attendances의 member_id:status만으로 만들어집니다. 모달이 열린 동안 운영진이 정원을 20에서 24로 바꾸면 모달 헤더(s.capacity)는 '/24'로 바뀝니다. 하지만 그래프의 정원선과 범례는 참석 변화가 생기기 전까지 계속 '정원 20'으로 남습니다. 경기 종료로 ended_at이 생겨도 end가 갱신되지 않습니다. 같은 시트 안에서 헤더와 그래프의 정원이 서로 다르게 보입니다.","fix":"refreshKey에 세션 메타를 함께 넣습니다. 예를 들어 래퍼 props로 session(또는 capacity·scheduled_at·status)을 받아 `${s.capacity}|${s.scheduled_at}|${s.status}|` 같은 값을 키 앞에 붙입니다. 또는 그래프에 넘기기 전에 log.capacity/scheduledAt을 현재 SessionRow 값으로 덮어씁니다.","verdict":{"real":false,"reason":"코드상 사실이긴 합니다. refreshKey는 member_id:status만으로 만들어지고(SessionAttendanceTimeline.tsx:25), readSessionAttendanceLog는 capacity와 ended_at을 열 때 한 번만 읽습니다. 그래도 실제 결함으로 보기는 어렵다고 판단합니다. (1) 정원을 늘렸는데 대기자가 있으면 서버가 대기자를 승격하고, 그러면 status가 바뀌어 refreshKey가 달라지므로 다시 읽습니다. 시나리오의 20→24가 바로 이 경우입니다. 정원과 그래프가 어긋나는 건 대기자가 없거나 정원을 줄인 경우뿐입니다. (2) ended_at이 없으면 그래프 끝은 마지막 이벤트 시각(AttendanceTimeline.tsx:70 endIso = endedAt ?? lastAt ?? scheduledAt)으로 잡힙니다. 그래서 종료 시각이 늦게 반영돼도 그리는 데이터는 같고, 축 끝만 조금 다를 수 있습니다. (3) 그래프는 운영진이 볼 때의 스냅샷입니다. 시트를 열어 둔 사이에 다른 화면에서 정원을 바꾸는 드문 동시 편집에서만 생기는 일이고, 다시 열면 바로 맞습니다. 데이터가 틀리거나 망가지는 정확성 결함이라기보다 갱신 범위를 어디까지 잡을지의 설계상 한계에 가깝습니다."}},{"title":"live 재조회가 한 번 실패하면 직전 그래프가 사라지고 오류 문구만 남음","file":"src/hooks/useAttendanceLog.ts","line":39,"scenario":"주석에는 '다시 읽는 동안은 직전 그래프를 그대로 둔다'고 되어 있습니다. 하지만 live 모드에서 재조회가 실패하면 setState({log: null, error})가 실행돼 잘 보이던 그래프를 오류 문구로 바꿉니다. 일요일 18시 공개처럼 PostgREST 풀이 고갈되는 시점이나 모바일 네트워크가 잠깐 끊긴 경우가 해당됩니다. 신청이 몰리는 시간대에 운영진이 그래프를 보고 있으면 첫 실패에서 그래프가 사라지고, 다음 참석 변경으로 키가 바뀌기 전까지 복구되지 않습니다.","fix":"live 모드에서 이미 같은 sessionId의 log가 있으면 오류가 나도 log를 유지하고 error만 기록합니다. 예: `setState(prev =&gt; ({ id: sessionId, log: prev.id === sessionId ? prev.log : null, error: msg }))`. 래퍼는 log가 있으면 그래프를 우선 렌더하고, 오류는 작은 보조 문구로만 표시합니다.","verdict":{"real":true,"reason":"코드상으로 맞는 지적입니다. 심각도는 낮습니다. 새로 추가된 live 모드(refreshKey 지정)에서 재조회가 실패하면 src/hooks/useAttendanceLog.ts:39-45의 실패 콜백이 setState({ id: sessionId, log: null, error })를 실행합니다. 같은 sessionId라서 반환값도 이 상태를 그대로 돌려줍니다. 그러면 src/components/schedule/SessionAttendanceTimeline.tsx:77의 `if (error) return &lt;p&gt;{error}&lt;/p&gt;`가 걸려 직전에 성공한 그래프 대신 오류 문구만 보입니다. 이는 12-13행 주석(\"다시 읽는 동안은 직전 그래프를 그대로 둔다\")이 말하는 의도와 어긋납니다. 성공 중인 재조회 동안에는 이전 상태가 유지되므로 주석이 맞지만, 실패하면 직전 log를 버립니다. 자동 재시도도 없어서 참석 명단(refreshKey)이 다시 바뀌거나 모달을 다시 열어야 복구됩니다. 기존 회비관리 경로(캐시 모드)는 첫 조회만 하므로 이 문제가 없고, 새 live 경로에서만 생깁니다. 다만 영향은 운영진 전용 보조 그래프가 일시적으로 오류 문구로 바뀌는 정도입니다. 고치려면 live 모드 실패 시 이전 log를 유지하면 됩니다. 예를 들어 setState(prev =&gt; ({ ...prev, error }))로 바꾸고, 렌더 쪽은 log가 있으면 그래프를 우선 표시합니다."}},{"title":"이름 조회가 일시적으로 실패해도 '알 수 없음'이 모달 수명 내내 고정됨","file":"src/components/schedule/SessionAttendanceTimeline.tsx","line":62,"scenario":"fetchMemberLabels는 네트워크나 RLS 오류가 나면 빈 Map을 돌려줍니다. 래퍼는 이 결과를 '못 찾은 id'로 보고 missingKey의 모든 id를 extra에 '알 수 없음'으로 저장합니다. extra에 들어간 id는 missingKey에서 빠지므로 다시 조회되지 않습니다. 그래서 일시적인 실패 한 번으로 취소·제거된 회원 전원이 그래프 툴팁과 '표로 보기'에 모달을 닫을 때까지 '알 수 없음'으로 표시됩니다. 실제로 행이 없는 경우와 조회 자체가 실패한 경우를 구분하지 못합니다.","fix":"fetchMemberLabels가 실패 시 throw하거나 `{ ok: false }`를 돌려주게 해서 실패와 '없음'을 구분합니다. 래퍼는 성공한 응답에서만 못 찾은 id를 '알 수 없음'으로 기록하고, 실패했을 때는 extra를 건드리지 않아 다음 log 갱신이나 재마운트 때 다시 조회되게 합니다.","verdict":{"real":true,"reason":"주장대로 동작하는 것을 코드에서 확인했습니다. 다만 심각도는 낮습니다.\n\n근거:\n1. `src/lib/supabase/members.ts`의 `fetchMemberLabels`(148-158행)는 Supabase 오류가 나면 `console.error`만 남기고 빈 Map을 돌려줍니다. 그래서 호출하는 쪽에서는 '조회 실패'와 '행 없음'을 구분할 수 없습니다.\n2. `src/components/schedule/SessionAttendanceTimeline.tsx` 66-68행은 `missingKey`의 모든 id에 대해 `found.get(id) ?? \"알 수 없음\"`을 `extra`에 저장합니다. 이 처리는 의도된 것으로, 같은 id를 반복 조회하지 않으려는 목적입니다.\n3. 56행의 `missingKey` 계산은 `extra.has(e.memberId)`인 id를 빼고 만듭니다. 그래서 한 번 '알 수 없음'이 들어간 id는 다시 조회되지 않습니다. `refreshKey`가 바뀌어 log가 새로 와도 이 id들은 계속 제외되므로 재시도할 길이 없습니다. `extra`는 컴포넌트 state라서 모달이 닫혀 언마운트될 때까지 남습니다.\n\n결과적으로 네트워크 오류가 한 번 나면, 취소되거나 제거되어 참석 행이 없는 사람들이 그래프 툴팁과 '표로 보기'에 모달을 다시 열 때까지 '알 수 없음'으로 표시됩니다.\n\n심각도가 낮은 이유:\n- 운영진 전용 표시 문제이고 데이터가 바뀌지는 않습니다.\n- 모달을 다시 열면 복구됩니다.\n- 이름 조회 직전에 log 조회는 성공했어야 하므로 이런 일시 장애가 날 확률도 낮습니다.\n\n그래도 오류와 '못 찾음'을 같은 값으로 묶어 영구 캐시하는 것은 스타일 문제가 아닌 실제 오류 처리 결함입니다.\n\n수정 방향: `fetchMemberLabels`가 오류 시 throw하거나 오류 플래그를 돌려주게 하고, 오류일 때는 `extra`에 저장하지 않으면 됩니다."}},{"title":"CSS 이동으로 로드 순서가 바뀌어 회비 화면 그래프의 [당일/전체] 버튼과 '표로 보기' summary가 44px로 커짐","file":"src/components/shared/attendance-timeline.css","line":43,"scenario":"예전에는 .ac-tl* 규칙이 charge-management.css 안에 있었습니다. 이 파일은 ChargeManagement가 import하므로 accounting.css보다 뒤에 로드됐고, 그래서 같은 특정도 (0,1,1)끼리 붙으면 `.ac-tl-range button { min-height: 32px }`과 `.ac-tl-table summary { min-height: 32px }`가 이겼습니다. 이번 변경으로 attendance-timeline.css를 AttendanceTimeline.tsx가 직접 import하고, 그 컴포넌트가 App.tsx 5행 Home → ScheduleCard → SessionParticipantsModal → SessionAttendanceTimeline 경로로 먼저 불립니다. 그래서 번들에서 이 CSS가 accounting.css(App.tsx 9행 DuesAdminPage 경로)보다 앞에 놓입니다. `vite build` 결과로 확인했습니다. .ac-tl 규칙은 바이트 오프셋 637/883에, `.accounting-screen button,.accounting-screen summary{min-height:44px;min-width:44px}`는 4999에 있습니다. 이 때문에 회비 관리의 부과 관리 상세(ChargeManagement)와 개요 명단 모달(AccountingOverview) 안에서 그래프 범위 토글 버튼과 '표로 보기' summary가 32px 대신 44px 높이에 최소 폭 44px로 그려집니다. 피그캡션 줄 높이가 커지고 표 토글도 부풀어 회비 화면에 시각 회귀가 생깁니다. dev 서버에서는 어느 화면을 먼저 열었는지에 따라 순서가 달라져 결과가 일정하지 않습니다.","fix":"특정도를 소스 순서와 상관없게 올리면 됩니다. 예를 들어 `.ac-tl .ac-tl-range button`과 `.ac-tl .ac-tl-table summary`처럼 (0,2,1)로 쓰고 min-width도 명시(min-width: 0 또는 auto)합니다. aria-pressed 변형도 같이 올립니다. 다른 방법은 `.accounting-screen .ac-tl-range button, .accounting-screen .ac-tl-table summary { min-height: 32px; min-width: 0 }` 오버라이드를 charge-management.css에 남기는 것입니다. 다른 .ac-tl 규칙(svg·p·table·th·td)과 충돌하는 회비 화면 CSS는 찾지 못했습니다. 버튼과 summary 두 군데만 해당합니다.","verdict":{"real":true,"reason":"실제 결함이 맞습니다. 코드를 읽고 빌드로 재현했습니다.\n- 특정도 비교: `.ac-tl-range button`, `.ac-tl-table summary`, `.accounting-screen button`, `.accounting-screen summary`는 모두 (0,1,1)입니다. 그래서 어느 규칙이 적용되는지는 번들 안의 순서로만 정해집니다. accounting.css 141-144행은 `min-height:44px; min-width:44px`를 주고, attendance-timeline.css 43행대와 142-146행은 `min-height:32px`를 줍니다.\n- 변경 전: Nov 2에 빌드된 기존 dist/assets/index-LO3BDoQ8.css에서 `.accounting-screen button,.accounting-scr
+... (truncated 5111 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/b4bc9049-69e7-47bf-9323-d2f214f6400c/tasks/w1azjq98f.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/b4bc9049-69e7-47bf-9323-d2f214f6400c/subagents/workflows/wf_b138f416-365/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/35e6e78d/projects/-Users-sam-Projects-cocktime-scheduler/b4bc9049-69e7-47bf-9323-d2f214f6400c/workflows/scripts/review-attendance-timeline-share-wf_b138f416-365.js', resumeFromRunId: 'wf_b138f416-365'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>11</agent_count><agents_done>11</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>595384</subagent_tokens><tool_uses>86</tool_uses><duration_ms>167793</duration_ms></usage>
+</task-notification>
+
+**Answer**: 메인 화면 참가자 목록 맨 위에 시간별 확정 인원 그래프와 "변경 기록 N건 표로 보기"를 넣었고, 운영진에게만 보입니다. 회비관리 자세히보기와 같은 컴포넌트를 공용으로 쓰도록 뺐습니다. 타입체크, 전체 테스트 1099개, 빌드는 통과했지만 운영진 계정으로 화면을 직접 띄워 보지는 않았습니다. 커밋 없이 staging만 해 뒀습니다.
+
+**어디에 보이나**
+- 홈 일정 카드에서 참가자 목록을 열면 명단 위에 나옵니다. 일정 관리 달력의 회차 시트도 같은 목록 창을 쓰기 때문에 거기에도 똑같이 나옵니다.
+- 헤더가 아니라 명단 스크롤 영역 맨 위에 넣었습니다. 작은 폰에서 그래프 때문에 목록 창이 화면 밖으로 넘치지 않게 하려고요.
+- 운영진이 아니면 컴포넌트 자체가 그려지지 않아 추가 조회도 없습니다. 근거 데이터(참석 변경 기록)도 원래 운영진만 읽을 수 있습니다.
+
+**메인 화면에 맞춰 바꾼 점**
+- **새로 읽기:** 회비관리에서는 끝난 회차라 한 번 읽은 걸 계속 씁니다. 메인에서는 진행 중인 회차라 참가 명단이 바뀔 때마다 다시 읽습니다. 다시 읽다 실패해도 직전 그래프는 그대로 둡니다.
+- **처음 보이는 범위:** 일정 당일이 아직 안 왔으면 '당일' 대신 '전체'로 시작합니다. 당일로 시작하면 선이 평평하게만 보입니다.
+- **날짜 눈금:** 범위가 3일보다 길면 눈금을 하루 간격 "11/4" 형태로 바꿨습니다. 일주일 전에 열린 일정은 12시간 눈금이 14개나 겹치기 때문입니다.
+- **취소한 사람 이름:** 지금 명단에 없는 사람은 회원 정보에서 따로 찾아옵니다.
+
+**리뷰에서 나와서 고친 것**
+- 회비관리 화면의 [당일/전체] 버튼과 '표로 보기'가 44px로 커지는 문제가 있었습니다. 스타일 파일을 옮기면서 적용 순서가 바뀐 탓이라, 이 규칙들이 순서와 상관없이 이기도록 고쳤습니다.
+- 회원 이름 조회가 한 번 실패하면 창을 닫을 때까지 '알 수 없음'으로 굳는 문제를 고쳤습니다. 이제 실패하면 다음 갱신 때 다시 찾습니다.
+- 그래프 위에서 손가락으로 스크롤을 시작하면 취소 말풍선이 떠서 안 사라지던 문제를 고쳤습니다.
+
+새로 만든 파일은 `src/components/schedule/SessionAttendanceTimeline.tsx`이고, 공용으로 옮긴 그래프는 `src/components/shared/AttendanceTimeline.tsx`입니다.
+
+---
+
+## #465
+
+**Prompt**: 운영에 배포
+
+**Answer**: _(응답 대기 중…)_
+
+---

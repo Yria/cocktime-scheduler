@@ -16,11 +16,11 @@ import { sessionChoiceLabels } from "../../lib/dues/selection";
 import { groupSummary, memberLabel } from "../../lib/dues/summary";
 import type { AccountingData, BillingGroup } from "../../lib/dues/types";
 import type { accountingSessions } from "../../lib/supabase/dues";
-import AttendanceTimeline from "./AttendanceTimeline";
+import AttendanceTimeline from "../shared/AttendanceTimeline";
 import { RosterRow, RosterSection } from "./ChargeRoster";
 import MemberChargePanel from "./MemberChargePanel";
 import type { OperationDraft } from "./OperationDialog";
-import { useAttendanceLog } from "./useAttendanceLog";
+import { useAttendanceLog } from "../../hooks/useAttendanceLog";
 import "./charge-management.css";
 
 const kinds = { monthly: "회비", court: "대관", manual: "수동" };

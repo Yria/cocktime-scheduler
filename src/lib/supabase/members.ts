@@ -1,6 +1,7 @@
 import { DEFAULT_SKILLS } from "../constants";
 import type { Gender, Player, PlayerSkills } from "../../types";
 import { skillScoreOf } from "../teamSelection";
+import { nameWithBirthYear } from "../birthYear";
 import { supabase } from "./client";
 
 // 회원(members) 기반 선수 명단·프로필 데이터 레이어. 구 Google Sheets 로스터를 대체.
@@ -138,4 +139,39 @@ export async function updateMemberProfile(
 		return false;
 	}
 	return true;
+}
+
+/**
+ * id → 표시 이름("홍길동 85", 게스트면 뒤에 "(게스트)"). 참석 변경 그래프가 이미 취소·제거돼
+ * 현재 참석 행에 없는 사람의 이름을 찾을 때 쓴다. 조회 실패는 null(호출부가 다시 시도할 수 있게 '없음'과 구분).
+ */
+export async function fetchMemberLabels(ids: string[]): Promise<Map<string, string> | null> {
+	const out = new Map<string, string>();
+	if (ids.length === 0) return out;
+	const { data, error } = await supabase
+		.from("members")
+		.select("id, name, birth_year, is_guest")
+		.in("id", ids);
+	if (error) {
+		console.error("fetchMemberLabels:", error);
+		return null;
+	}
+	for (const m of (data ?? []) as {
+		id: string;
+		name: string;
+		birth_year: number | null;
+		is_guest: boolean;
+	}[])
+		out.set(m.id, memberDisplayLabel(m.name, m.birth_year, m.is_guest));
+	return out;
+}
+
+/** 참석 기록용 한 줄 이름 — 이름+년생, 게스트 표시. */
+export function memberDisplayLabel(
+	name: string,
+	birthYear: number | null | undefined,
+	isGuest: boolean,
+): string {
+	const base = nameWithBirthYear(name, birthYear);
+	return isGuest ? `${base}(게스트)` : base;
 }

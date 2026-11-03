@@ -13,11 +13,11 @@ import { groupSummary, memberLabel } from "../../lib/dues/summary";
 import type { AccountingData } from "../../lib/dues/types";
 import { readAccountingParticipation } from "../../lib/supabase/dues";
 import AccountingDetailModal from "./AccountingDetailModal";
-import AttendanceTimeline from "./AttendanceTimeline";
+import AttendanceTimeline from "../shared/AttendanceTimeline";
 import { RosterRow, RosterSection } from "./ChargeRoster";
 import ChargeVoucher from "./ChargeVoucher";
 import type { OperationDraft } from "./OperationDialog";
-import { useAttendanceLog } from "./useAttendanceLog";
+import { useAttendanceLog } from "../../hooks/useAttendanceLog";
 import { useRespreadPrompt } from "./useRespreadPrompt";
 
 /** 대관 명단 모달 위의 시간별 확정 인원 그래프(참석 변경 기록은 열 때 한 번 읽는다). */
