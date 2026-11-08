@@ -383,3 +383,166 @@
 .ac-respread-error {
 	color: var(--ac-stop, #c62828);
 }
+
+/* 부과 변경 — 행 끝 처리 버튼(금액 변경·부과 취소·이월) */
+.ac-charge-roster .ac-row.ac-roster-row:has(> .ac-roster-actions-inline) {
+	grid-template-columns: 32px minmax(0, 1fr) auto auto;
+}
+.ac-roster-actions-inline {
+	display: inline-flex;
+	gap: 4px;
+}
+.ac-roster-actions-inline > button {
+	min-height: 36px;
+	padding: 0 8px;
+	border: 1px solid var(--ac-rule);
+	border-radius: var(--ac-r-field);
+	background: var(--ac-paper);
+	color: var(--ac-ink);
+	font-size: 12.5px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+.ac-roster-actions-inline > button.is-stop:not(:disabled) {
+	color: var(--ac-stop);
+}
+.ac-roster-actions-inline > button:disabled {
+	opacity: 0.45;
+}
+/* 좁은 화면: 버튼 묶음은 이름 아래 줄로 내린다. */
+@media (max-width: 420px) {
+	.ac-charge-roster .ac-row.ac-roster-row:has(> .ac-roster-actions-inline) {
+		grid-template-columns: 32px minmax(0, 1fr) auto;
+	}
+	.ac-roster-actions-inline {
+		grid-column: 2 / -1;
+		justify-self: end;
+		padding-bottom: 4px;
+	}
+}
+.ac-issued-edit-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--ac-s-2);
+}
+.ac-issued-edit-actions > button {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--ac-s-1);
+	min-height: 40px;
+}
+
+/* 사람 추가 모달 */
+.ac-add-member {
+	display: grid;
+	gap: var(--ac-s-2);
+}
+.ac-add-list {
+	display: grid;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.ac-add-item {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	min-height: 48px;
+	padding: 6px 4px;
+	border: 0;
+	border-bottom: 1px solid var(--ac-rule);
+	background: transparent;
+	color: var(--ac-ink);
+	text-align: left;
+}
+.ac-add-item:disabled {
+	opacity: 0.5;
+}
+.ac-add-name {
+	display: grid;
+	min-width: 0;
+}
+.ac-add-name > strong {
+	font-size: 14px;
+	font-weight: 600;
+}
+.ac-add-name > span,
+.ac-add-name > small {
+	font-size: 12px;
+	color: var(--ac-ink-3);
+}
+.ac-add-confirm {
+	display: grid;
+	gap: var(--ac-s-3);
+	padding: var(--ac-s-2) 0;
+}
+.ac-add-confirm > p {
+	margin: 0;
+	font-size: 15px;
+	color: var(--ac-ink);
+}
+.ac-add-confirm-actions {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: var(--ac-s-2);
+}
+.ac-add-error {
+	color: var(--ac-stop);
+	font-size: var(--ac-fs-meta);
+}
+
+/* 금액 변경 — 행의 [금액 변경]: 새 금액 하나만 받는 작은 창. */
+.ac-amount-edit {
+	display: grid;
+	gap: var(--ac-s-3);
+}
+.ac-amount-edit-facts {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: var(--ac-s-2);
+	margin: 0;
+}
+.ac-amount-edit-facts > div {
+	display: grid;
+	gap: 2px;
+}
+.ac-amount-edit-facts dt {
+	font-size: 12px;
+	color: var(--ac-ink-3);
+}
+.ac-amount-edit-facts dd {
+	margin: 0;
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--ac-ink);
+}
+.ac-amount-edit-field {
+	display: grid;
+	gap: 6px;
+	font-size: 13px;
+	color: var(--ac-ink-2, var(--ac-ink));
+}
+.ac-amount-edit-input {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.ac-amount-edit-input > input {
+	flex: 1;
+	min-width: 0;
+	font-size: 18px;
+	font-weight: 600;
+	text-align: right;
+}
+.ac-amount-edit .ac-caption {
+	margin: 0;
+}
+.ac-add-confirm > p.ac-caption {
+	font-size: var(--ac-fs-meta);
+	color: var(--ac-ink-3);
+}
+.ac-add-confirm > p.ac-add-error {
+	font-size: var(--ac-fs-meta);
+	color: var(--ac-stop);
+}

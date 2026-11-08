@@ -1,22 +1,25 @@
 import {
-	ArrowRightLeft,
 	CalendarDays,
 	ChevronRight,
 	ClipboardList,
 	Pencil,
 	Plus,
+	UserPlus,
 	Users,
-	XCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { cancelFactsText, chargeReason } from "../../lib/dues/attendanceLog";
 import { isReversedPrepayment } from "../../lib/dues/chargeState";
 import { holdReasonLabel, won } from "../../lib/dues/duesText";
 import { sessionChoiceLabels } from "../../lib/dues/selection";
+import { simpleAmountEditable } from "../../lib/dues/chargeAmountEdit";
+import { groupAddAmount } from "../../lib/dues/groupAdd";
 import { groupSummary, memberLabel } from "../../lib/dues/summary";
 import type { AccountingData, BillingGroup } from "../../lib/dues/types";
 import type { accountingSessions } from "../../lib/supabase/dues";
 import AttendanceTimeline from "../shared/AttendanceTimeline";
+import ChargeAddMember from "./ChargeAddMember";
+import ChargeAmountEdit from "./ChargeAmountEdit";
 import { RosterRow, RosterSection } from "./ChargeRoster";
 import MemberChargePanel from "./MemberChargePanel";
 import type { OperationDraft } from "./OperationDialog";
@@ -41,6 +44,7 @@ export default function ChargeManagement({
 	onManual,
 	onDraft,
 	onCandidate,
+	onGroupAdd,
 	focus,
 	onFocus,
 }: {
@@ -53,6 +57,8 @@ export default function ChargeManagement({
 	manualDirty: boolean;
 	onManual: () => void;
 	onDraft: (draft: OperationDraft) => void;
+	/** 묶음에 사람을 추가하기 직전·직후(엔빵 재분배 확인창 연동). */
+	onGroupAdd?: { before: (groupId: string) => void; after: () => void };
 	onCandidate: (
 		kind: "monthly" | "court",
 		sid?: number,
@@ -277,6 +283,7 @@ export default function ChargeManagement({
 							onToggle={() => setExpanded(expanded === g.id ? null : g.id)}
 							disabled={disabled}
 							onDraft={onDraft}
+							onGroupAdd={onGroupAdd}
 						/>
 					))}
 				{focus.view === "group" && !shown.length && (
@@ -387,6 +394,7 @@ function IssuedGroup({
 	onToggle,
 	disabled,
 	onDraft,
+	onGroupAdd,
 }: {
 	data: AccountingData;
 	group: BillingGroup;
@@ -395,17 +403,17 @@ function IssuedGroup({
 	onToggle: () => void;
 	disabled: boolean;
 	onDraft: (draft: OperationDraft) => void;
+	onGroupAdd?: { before: (groupId: string) => void; after: () => void };
 }) {
 	const summary = groupSummary(data, group);
 	const live = summary.charges.filter((c) => c.state === "live");
 	const [editing, setEditing] = useState(false);
-	const [selected, setSelected] = useState<string[]>([]);
-	const selectedLive = selected.filter((id) => live.some((c) => c.id === id));
-	// 이월은 회원 단위 — 한 사람만 골랐을 때만 연다.
-	const selectedOne =
-		selectedLive.length === 1
-			? (live.find((c) => c.id === selectedLive[0])?.member_id ?? null)
-			: null;
+	const [adding, setAdding] = useState(false);
+	const [amountEdit, setAmountEdit] = useState<string | null>(null);
+	const amountEditCharge = data.charges.find(
+		(c) => c.id === amountEdit && c.state === "live",
+	);
+	const addAmount = groupAddAmount(data, group.id);
 	const total = live.reduce((sum, c) => sum + c.amount, 0);
 	const sessionId = group.kind === "court" ? group.session_id : null;
 	const { log, error: logError } = useAttendanceLog(sessionId, open);
@@ -496,10 +504,7 @@ function IssuedGroup({
 								type="button"
 								className="ac-link"
 								disabled={disabled}
-								onClick={() => {
-									setEditing(!editing);
-									setSelected([]);
-								}}
+								onClick={() => setEditing(!editing)}
 							>
 								{editing ? "변경 닫기" : "부과 변경"}
 							</button>
@@ -507,101 +512,59 @@ function IssuedGroup({
 					</div>
 					{editing && (
 						<div className="ac-issued-edit">
-							<p className="ac-caption" aria-live="polite">
-								{selectedLive.length
-									? `${selectedLive.length}명 선택 · 아래에서 처리를 고르세요`
-									: "바꿀 사람을 누르세요"}
+							<p className="ac-caption">
+								각 사람 오른쪽 버튼으로 금액 변경·부과 취소·이월을 합니다.
+								변경·취소는 원부과를 취소 표시로 남기고, 이미 받은 돈은 잔액으로
+								돌린 뒤 새 부과에 다시 씁니다.
 							</p>
-							<div className="ac-issued-chips">
+							<div className="ac-issued-edit-actions">
 								<button
 									type="button"
-									className="ac-chip"
-									aria-pressed={selectedLive.length === live.length}
+									className="btn-lq-secondary"
+									disabled={disabled || addAmount === null}
+									onClick={() => setAdding(true)}
+								>
+									<UserPlus size={16} aria-hidden="true" />
+									사람 추가
+								</button>
+								<button
+									type="button"
+									className="btn-lq-secondary"
 									disabled={disabled}
 									onClick={() =>
-										setSelected(
-											selectedLive.length === live.length
-												? []
-												: live.map((c) => c.id),
-										)
+										onDraft({
+											type: "replace",
+											chargeIds: live.map((c) => c.id),
+										})
 									}
 								>
-									전원
+									<Pencil size={16} aria-hidden="true" />
+									전원 금액 변경
 								</button>
-								{live.map((c) => {
-									const on = selectedLive.includes(c.id);
-									return (
-										<button
-											key={c.id}
-											type="button"
-											className="ac-chip"
-											aria-pressed={on}
-											disabled={disabled}
-											onClick={() =>
-												setSelected(
-													on
-														? selectedLive.filter((id) => id !== c.id)
-														: [...selectedLive, c.id],
-												)
-											}
-										>
-											{memberLabel(data, c.member_id)}
-										</button>
-									);
-								})}
 							</div>
-							{selectedLive.length > 0 && (
-								<>
-									<div
-										className="ac-member-charge-actions"
-										role="group"
-										aria-label="선택한 부과 처리"
-									>
-										<button
-											type="button"
-											disabled={disabled}
-											onClick={() =>
-												onDraft({ type: "replace", chargeIds: selectedLive })
-											}
-										>
-											<Pencil size={16} aria-hidden="true" />
-											금액 변경
-										</button>
-										<button
-											type="button"
-											className="is-stop"
-											disabled={disabled}
-											onClick={() =>
-												onDraft({
-													type: "replace",
-													chargeIds: selectedLive,
-													cancelOnly: true,
-												})
-											}
-										>
-											<XCircle size={16} aria-hidden="true" />
-											부과 취소
-										</button>
-										<button
-											type="button"
-											disabled={disabled || selectedOne === null}
-											aria-label="이 회원 미납·입금 이월"
-											onClick={() =>
-												selectedOne !== null &&
-												onDraft({ type: "carry", memberId: selectedOne })
-											}
-										>
-											<ArrowRightLeft size={16} aria-hidden="true" />
-											이월
-										</button>
-									</div>
-									<p className="ac-caption">
-										변경·취소는 원부과를 취소 표시로 남기고, 이미 받은 돈은
-										잔액으로 돌린 뒤 새 부과에 다시 씁니다.
-									</p>
-								</>
-							)}
 						</div>
+					)}
+					{adding && addAmount !== null && (
+						<ChargeAddMember
+							data={data}
+							group={group}
+							amount={addAmount}
+							onClose={() => setAdding(false)}
+							onBeforeAdd={() => onGroupAdd?.before(group.id)}
+							onAdded={() => {
+								onGroupAdd?.after();
+								// 대관 엔빵은 인원이 바뀌면 재분배 확인창이 뜬다 — 모달 위에 겹치지 않게 닫는다.
+								if (group.kind === "court") setAdding(false);
+							}}
+						/>
+					)}
+					{amountEditCharge && (
+						<ChargeAmountEdit
+							data={data}
+							group={group}
+							charge={amountEditCharge}
+							onClose={() => setAmountEdit(null)}
+						/>
 					)}
 					{sessionId !== null &&
 						(log ? (
@@ -662,6 +625,51 @@ function IssuedGroup({
 											]}
 											amount={won(c.amount)}
 											settled={c.state !== "live" || !dues.length}
+											trailing={
+												editing && c.state === "live" ? (
+													<span
+														className="ac-roster-actions-inline"
+														role="group"
+														aria-label={`${memberLabel(data, c.member_id)} 부과 처리`}
+													>
+														<button
+															type="button"
+															disabled={disabled}
+															onClick={() =>
+																// 분납(납기 여러 달) 부과는 납기별 금액을 정해야 해 전체 전표로.
+																simpleAmountEditable(data, c.id)
+																	? setAmountEdit(c.id)
+																	: onDraft({ type: "replace", chargeIds: [c.id] })
+															}
+														>
+															금액 변경
+														</button>
+														<button
+															type="button"
+															className="is-stop"
+															disabled={disabled}
+															onClick={() =>
+																onDraft({
+																	type: "replace",
+																	chargeIds: [c.id],
+																	cancelOnly: true,
+																})
+															}
+														>
+															부과 취소
+														</button>
+														<button
+															type="button"
+															disabled={disabled}
+															onClick={() =>
+																onDraft({ type: "carry", memberId: c.member_id })
+															}
+														>
+															이월
+														</button>
+													</span>
+												) : undefined
+											}
 										/>
 									);
 								})}

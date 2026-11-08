@@ -48,6 +48,12 @@ export function useRespreadPrompt(data: AccountingData | null) {
 				before.current.set(group, liveCount(data, group));
 		}
 	};
+	// 전표 없이 묶음에 사람을 바로 더할 때(부과 변경의 [사람 추가]) — 발행 직전 인원을 찍어 둔다.
+	const watchGroup = (groupId: string) => {
+		before.current.clear();
+		setPending(null);
+		if (data) before.current.set(groupId, liveCount(data, groupId));
+	};
 	const saved = () => {
 		if (before.current.size) setPending([...before.current.keys()]);
 	};
@@ -137,5 +143,5 @@ export function useRespreadPrompt(data: AccountingData | null) {
 			</div>
 		</ConfirmDialog>
 	);
-	return { watch, saved, dialog };
+	return { watch, watchGroup, saved, dialog };
 }

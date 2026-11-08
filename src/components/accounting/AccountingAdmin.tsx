@@ -446,6 +446,10 @@ export default function AccountingAdmin() {
 										setDraft(next);
 									}}
 									onCandidate={candidate}
+									onGroupAdd={{
+										before: respread.watchGroup,
+										after: respread.saved,
+									}}
 									focus={chargeFocus}
 									onFocus={setChargeFocus}
 								/>

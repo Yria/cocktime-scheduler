@@ -984,6 +984,12 @@
 	margin-inline-end: -8px;
 	/* Overlay scrollbars do not reserve a gutter, so keep their 8px lane too. */
 	padding-inline-end: 8px;
+	/* 스크롤 영역은 넘친 걸 잘라 입력칸 포커스 링(바깥 2px+간격)이 왼쪽·위아래에서 잘렸다 —
+	   안쪽 여백을 주고 같은 만큼 바깥으로 당겨 배치는 그대로 둔다. */
+	padding-inline-start: 4px;
+	margin-inline-start: -4px;
+	padding-block: 4px;
+	margin-block: -4px;
 	scrollbar-gutter: stable;
 	border-radius: 4px;
 }
