@@ -106,12 +106,24 @@ export default function Home({ onStart }: Props) {
 	const places = useScheduleStore((s) => s.places);
 	const attendances = useScheduleStore((s) => s.attendances);
 	const scheduleLoading = useScheduleStore((s) => s.loading);
+	const scheduleLoadFailed = useScheduleStore((s) => s.loadFailed);
 	// PWA 설치 유도 토스트 노출 여부(스토어 구독 — dismiss/설치 시 재계산).
 	const installState = useInstallPromptStore();
 
 	const [authBusy, setAuthBusy] = useState(false);
 	const [emailAuthBusy, setEmailAuthBusy] = useState(false);
-	const [busyId, setBusyId] = useState<number | null>(null);
+	// 처리 중인 회차들. 한 칸(busyId)만 두면 A 를 누른 뒤 B 를 누를 때 A 가 끝나면서 B 의 처리 중 표시까지
+	// 풀려, 다시 누른 B 가 아무 반응 없이 무시됐다(같은 회차 요청 중복 방지에 걸림). 회차별로 둔다.
+	const [busyIds, setBusyIds] = useState<ReadonlySet<number>>(() => new Set());
+	const setBusy = useCallback((sessionId: number, on: boolean) => {
+		setBusyIds((prev) => {
+			if (prev.has(sessionId) === on) return prev;
+			const next = new Set(prev);
+			if (on) next.add(sessionId);
+			else next.delete(sessionId);
+			return next;
+		});
+	}, []);
 
 	// 시작 시각 도달을 감지해 '진행 하이라이트'를 켜기 위한 시계(30초 tick)
 	const [now, setNow] = useState(() => Date.now());
@@ -150,35 +162,35 @@ export default function Home({ onStart }: Props) {
 
 	const handleJoin = useCallback(
 		async (sessionId: number, useTicket = false) => {
-			setBusyId(sessionId);
+			setBusy(sessionId, true);
 			const res = await scheduleActions.join(sessionId, useTicket);
-			setBusyId(null);
+			setBusy(sessionId, false);
 			if (!res.ok) alert(joinErrorMsg(res.error));
 		},
-		[],
+		[setBusy],
 	);
 
 	const handleCancel = useCallback(async (sessionId: number) => {
-		setBusyId(sessionId);
+		setBusy(sessionId, true);
 		await scheduleActions.cancel(sessionId);
-		setBusyId(null);
-	}, []);
+		setBusy(sessionId, false);
+	}, [setBusy]);
 
 	const handleStartSession = useCallback(
 		async (sessionId: number) => {
-			setBusyId(sessionId);
+			setBusy(sessionId, true);
 			const res = await startSessionFromSchedule(sessionId);
 			if (!res.ok) {
-				setBusyId(null);
+				setBusy(sessionId, false);
 				alert(startErrorMsg(res.error));
 				return;
 			}
 			// is_active=true → 활성 세션 로드 후 보드로 이동
 			await appActions.checkActiveSession();
-			setBusyId(null);
+			setBusy(sessionId, false);
 			navigate("/session");
 		},
-		[navigate],
+		[navigate, setBusy],
 	);
 
 	const handleSetCarpool = useCallback(
@@ -230,11 +242,11 @@ export default function Home({ onStart }: Props) {
 
 	const handleCancelGuest = useCallback(
 		async (sessionId: number, guestMemberId: string) => {
-			setBusyId(sessionId);
+			setBusy(sessionId, true);
 			await scheduleActions.cancelGuest(sessionId, guestMemberId);
-			setBusyId(null);
+			setBusy(sessionId, false);
 		},
-		[],
+		[setBusy],
 	);
 
 	// ── 초기 로딩 ──
@@ -418,6 +430,10 @@ export default function Home({ onStart }: Props) {
 				{/* 일정 목록 */}
 				{scheduleLoading && schedules.length === 0 ? (
 					<EmptyState loading spinnerSize={16} style={{ padding: "32px 0" }} />
+				) : visibleSchedules.length === 0 && scheduleLoadFailed ? (
+					<EmptyState style={{ fontSize: 14, padding: "32px 0" }}>
+						일정을 불러오지 못했어요. 잠시 뒤 자동으로 다시 시도하고, 당겨서 새로고침해도 됩니다.
+					</EmptyState>
 				) : visibleSchedules.length === 0 ? (
 					<EmptyState style={{ fontSize: 14, padding: "32px 0" }}>
 						{isAdmin
@@ -439,7 +455,7 @@ export default function Home({ onStart }: Props) {
 								canStart={canStartIds.has(s.id)}
 								joinable={joinableIds.has(s.id)}
 								lateJoin={lateJoinIds.has(s.id)}
-								busy={busyId === s.id}
+								busy={busyIds.has(s.id)}
 								myNewbieGrace={inNewbieGrace}
 								onJoin={(useTicket) => handleJoin(s.id, useTicket)}
 								onCancel={() => handleCancel(s.id)}

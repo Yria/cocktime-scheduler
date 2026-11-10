@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { Gender, PlayerSkills } from "../../types";
 import type {
@@ -106,6 +106,16 @@ export default function ScheduleCard({
 	onCancelGuest,
 	onOpenNotice,
 }: Props) {
+	// 처리 중이 길어지면(공개 직후 서버 몰림) 눌렸다는 사실과 기다리는 중임을 문구로 알린다.
+	const [slow, setSlow] = useState(false);
+	useEffect(() => {
+		if (!busy) return;
+		const t = setTimeout(() => setSlow(true), 3000);
+		return () => {
+			clearTimeout(t);
+			setSlow(false);
+		};
+	}, [busy]);
 	const [showParticipants, setShowParticipants] = useState(false);
 	const [showCarpoolBuilder, setShowCarpoolBuilder] = useState(false);
 	const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -366,7 +376,7 @@ export default function ScheduleCard({
 								disabled={busy}
 								style={chipBtn("#ef4444", busy)}
 							>
-								취소
+								{busy ? "처리 중…" : "취소"}
 							</button>
 						</div>
 					) : mine?.status === "waitlisted" ? (
@@ -383,7 +393,7 @@ export default function ScheduleCard({
 								disabled={busy}
 								style={chipBtn("#ef4444", busy)}
 							>
-								취소
+								{busy ? "처리 중…" : "취소"}
 							</button>
 						</div>
 					) : mine?.status === "late_pool" ? (
@@ -398,7 +408,7 @@ export default function ScheduleCard({
 								disabled={busy}
 								style={chipBtn("#ef4444", busy)}
 							>
-								취소
+								{busy ? "처리 중…" : "취소"}
 							</button>
 						</div>
 					) : joinable ? (
@@ -418,7 +428,7 @@ export default function ScheduleCard({
 								cursor: busy || ticketChecking ? "not-allowed" : "pointer",
 							}}
 						>
-							참석하기
+							{busy ? (slow ? "신청 중… 잠시만요" : "신청 중…") : ticketChecking ? "확인 중…" : "참석하기"}
 						</button>
 					) : (
 						<span className="text-faint" style={{ fontSize: 12 }}>

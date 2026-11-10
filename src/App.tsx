@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import SessionBoard from "./components/board/SessionBoard";
 import Toaster from "./components/common/Toaster";
@@ -17,6 +17,7 @@ import { useDarkMode } from "./hooks/useDarkMode";
 import { usePageVisibility } from "./hooks/usePageVisibility";
 import { refreshPlayerPhotoIndex } from "./lib/playerPhoto";
 import { supabase } from "./lib/supabase";
+import { isRevealQuietWindow } from "./lib/supabase/schedule";
 import {
 	notificationContext,
 	notificationMessage,
@@ -113,6 +114,7 @@ export default function App() {
 	const allPlayers = useAppStore((s) => s.allPlayers);
 	const sessionMeta = useAppStore((s) => s.sessionMeta);
 	const sessionChecked = useAppStore((s) => s.sessionChecked);
+	const inRevealRush = useRevealRush();
 
 	// 마운트 시 활성 세션 확인(sessionChecked·sessionMeta 세팅). 자동 이동은 하지 않는다 —
 	// 진행 중 세션 입장은 Home의 '진행 중 세션 입장' 버튼(수동)으로만(자동참여 폐지).
@@ -157,7 +159,14 @@ export default function App() {
 		[],
 	);
 
-	if (!sessionChecked) {
+	// 보드(자석 세션)는 폭 제한 없이 풀폭(초광각 PC만 1280 상한) — .app-board-shell.
+	// 그 외 일반 화면은 md+ 카드 셸(--card-max 폭 + 그림자) — .app-card-shell.
+	const isBoard = location.pathname.startsWith("/session");
+
+	// 활성 세션 확인을 기다려야 하는 건 그 결과로 갈 곳이 갈리는 보드·세팅뿐이다. 예전엔 모든 화면이 이 확인을
+	// 기다렸는데, 일요일 18:00 공개처럼 서버가 몇 초 멈추면 홈(신청 화면)까지 '연결 중...'에 묶였다.
+	// 홈 등은 바로 그리고, '진행 중 세션' 관련 표시는 확인이 끝나면 나타난다.
+	if (!sessionChecked && (isBoard || location.pathname.startsWith("/setup"))) {
 		return (
 			<div className="app-card-shell app-shell-minh flex items-center justify-center">
 				<p className="text-gray-400 dark:text-gray-500 text-sm">연결 중...</p>
@@ -169,10 +178,6 @@ export default function App() {
 	// checked=true && sessionMeta=null은 "세션 없음 확정" 상태.
 	const sessionGuarded = (element: React.ReactNode) =>
 		sessionMeta ? element : <Navigate to="/" replace />;
-
-	// 보드(자석 세션)는 폭 제한 없이 풀폭(초광각 PC만 1280 상한) — .app-board-shell.
-	// 그 외 일반 화면은 md+ 카드 셸(--card-max 폭 + 그림자) — .app-card-shell.
-	const isBoard = location.pathname.startsWith("/session");
 
 	return (
 		<div className={isBoard ? "app-board-shell" : "app-card-shell"}>
@@ -207,7 +212,8 @@ export default function App() {
 			{/* 진입 알림 — 앱을 열 때 알려야 할 것들. 조건이 동시에 참이어도 **한 번에 하나만** 뜨고
 			    닫으면 다음 것이 그 자리에 뜬다(슬롯 = entryAlertStore, 순서는 그 파일 ORDER).
 			    보드(/session)에선 경기 운영 화면을 가리지 않도록 띄우지 않는다. */}
-			{!isBoard && (
+			{/* 일요일 18:00 공개 전후(17:55~18:10)에는 띄우지 않는다 — 신청하려는 순간 탭을 가로챈다. */}
+			{!isBoard && !inRevealRush && (
 				<>
 					{/* 미납(회비·대관비)·환불 — 납부 내역·계좌 안내 */}
 					<UnpaidDuesAlert />
@@ -218,4 +224,14 @@ export default function App() {
 			<Toaster />
 		</div>
 	);
+}
+
+/** 일요일 17:55~18:10 KST 인가. 창 안에서는 30초마다 다시 봐서 창이 끝나면 미뤄 둔 진입 안내창이 뜨게 한다. */
+function useRevealRush(): boolean {
+	const [inRush, setInRush] = useState(() => isRevealQuietWindow(new Date(), 10));
+	useEffect(() => {
+		const id = setInterval(() => setInRush(isRevealQuietWindow(new Date(), 10)), 30_000);
+		return () => clearInterval(id);
+	}, []);
+	return inRush;
 }

@@ -35,7 +35,7 @@ export default function OccurrenceParticipants({ occurrence: s, placeName }: Pro
 	useEffect(() => {
 		let alive = true;
 		void fetchAttendances([s.id]).then((r) => {
-			if (alive) setLoaded({ id: s.id, rows: r });
+			if (alive) setLoaded({ id: s.id, rows: r ?? [] });
 		});
 		return () => {
 			alive = false;

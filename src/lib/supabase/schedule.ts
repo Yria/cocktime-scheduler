@@ -24,22 +24,36 @@ const SYNC_MIN_INTERVAL_MS = 10 * 60_000;
  */
 export async function syncOccurrences(
 	opts: { force?: boolean } = {},
-): Promise<void> {
+): Promise<boolean> {
 	if (!opts.force) {
+		// 일요일 18:00 공개는 pg_cron(reveal-weekly-sessions)이 서버에서 직접 한다. 그 전후에 회원 앱마다
+		// 같은 쓰기 RPC 를 또 부르면 공개 순간 몰림만 키우므로 이 창에서는 건너뛴다. 창이 지나면 평소대로
+		// 돌아 크론이 실패했을 때의 대체 공개와 지난 회차 닫기(A단계)는 그대로 이어진다.
+		if (isRevealQuietWindow(new Date())) return false;
 		const last = Number(localStorage.getItem(SYNC_LS_KEY) ?? 0);
 		if (Number.isFinite(last) && Date.now() - last < SYNC_MIN_INTERVAL_MS)
-			return;
+			return false;
 	}
 	const { error } = await supabase.rpc("sync_schedule_occurrences");
 	if (error) {
 		console.error("syncOccurrences:", error);
-		return; // 실패는 기록하지 않는다 — 다음 로드에서 곧바로 재시도
+		return false; // 실패는 기록하지 않는다 — 다음 로드에서 곧바로 재시도
 	}
 	try {
 		localStorage.setItem(SYNC_LS_KEY, String(Date.now()));
 	} catch {
 		/* 저장 실패(프라이빗 모드)는 무시 — 스로틀만 못 걸릴 뿐 동작은 같다 */
 	}
+	return true;
+}
+
+/** 일요일 17:55 KST 부터 18:00+afterMin 분 전까지인가(공개 크론 전후). 기기 시간대와 무관하게 KST 로 판정한다.
+ *  기본 18:05 = 앱 sync 를 쉬는 창. 진입 안내창은 18:10 까지 미룬다(App.tsx). */
+export function isRevealQuietWindow(now: Date, afterMin = 5): boolean {
+	const kst = new Date(now.getTime() + 9 * 60 * 60_000); // UTC 필드로 KST 를 읽는다
+	if (kst.getUTCDay() !== 0) return false;
+	const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+	return minutes >= 17 * 60 + 55 && minutes < 18 * 60 + afterMin;
 }
 
 /** 회차 단건 조회(정모 안내 페이지 직접 진입/새로고침 대비). 없으면 null. */
@@ -63,8 +77,9 @@ export async function fetchSessionById(
 	return { ...row, place_name: places?.name ?? null };
 }
 
-/** 예정/진행 중 일정 목록 (노출된 open + 진행중 active). 즉석 세션은 scheduled_at이 null이라 뒤로. */
-export async function fetchSchedules(): Promise<SessionRow[]> {
+/** 예정/진행 중 일정 목록 (노출된 open + 진행중 active). 즉석 세션은 scheduled_at이 null이라 뒤로.
+ *  실패하면 null — 빈 목록과 구분해야 호출 쪽이 화면을 '일정 없음'으로 지우지 않는다. */
+export async function fetchSchedules(): Promise<SessionRow[] | null> {
 	const { data, error } = await supabase
 		.from("sessions")
 		.select("*")
@@ -72,7 +87,7 @@ export async function fetchSchedules(): Promise<SessionRow[]> {
 		.order("scheduled_at", { ascending: true, nullsFirst: false });
 	if (error) {
 		console.error("fetchSchedules:", error);
-		return [];
+		return null;
 	}
 	return (data ?? []) as SessionRow[];
 }
@@ -134,10 +149,10 @@ export async function createPlace(
 
 // ── 참석(attendances) ─────────────────────────────────
 
-/** 여러 세션의 참석 현황(취소 제외). 클라에서 세션별 집계. */
+/** 여러 세션의 참석 현황(취소 제외). 클라에서 세션별 집계. 실패하면 null(빈 결과와 구분). */
 export async function fetchAttendances(
 	sessionIds: number[],
-): Promise<AttendanceRow[]> {
+): Promise<AttendanceRow[] | null> {
 	if (sessionIds.length === 0) return [];
 	// member 임베드 — 게스트 이름/게스트여부/성별(아바타 색) 표시용. attendances→members FK가 둘(member_id, invited_by)이라
 	// FK 컬럼(member_id)으로 명시 disambiguate해야 한다(없으면 PGRST201로 전체 조회가 실패).
@@ -154,7 +169,7 @@ export async function fetchAttendances(
 		.order("position", { ascending: true });
 	if (error) {
 		console.error("fetchAttendances:", error);
-		return [];
+		return null;
 	}
 	return (data ?? []) as AttendanceRow[];
 }
@@ -233,8 +248,10 @@ const JOIN_MAX_ATTEMPTS = 4;
 
 /** 55P03 = lock_not_available(lock_timeout), 57014 = statement timeout, 그 외 네트워크·게이트웨이 오류. */
 function isTransientJoinError(error: { code?: string; message?: string }) {
-	if (error.code === "55P03" || error.code === "57014") return true;
-	return /fetch|network|timeout|load failed/i.test(error.message ?? "");
+	// PGRST003 = PostgREST 풀 연결 획득 시간 초과(504). abort/timeout = 클라 요청 상한(client.ts) 초과.
+	if (error.code === "55P03" || error.code === "57014" || error.code === "PGRST003")
+		return true;
+	return /fetch|network|timeout|abort|gateway|load failed/i.test(error.message ?? "");
 }
 
 /** 참석 취소. confirmed였으면 대기 1순위 자동 승급(RPC). */

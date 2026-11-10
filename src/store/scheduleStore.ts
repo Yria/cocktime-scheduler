@@ -32,6 +32,8 @@ interface ScheduleState {
 	attendances: AttendanceRow[];
 	loading: boolean;
 	loaded: boolean;
+	/** 마지막 목록 조회가 실패했다(이전 목록은 그대로 둔다). */
+	loadFailed: boolean;
 }
 
 export const useScheduleStore = create<ScheduleState>(() => ({
@@ -40,6 +42,7 @@ export const useScheduleStore = create<ScheduleState>(() => ({
 	attendances: [],
 	loading: false,
 	loaded: false,
+	loadFailed: false,
 }));
 
 /** active 자동 종료 유예: 예정 종료(ends_at)를 넘겨 진행되는 세션을 조기 종료하지 않도록 1시간 여유. */
@@ -67,10 +70,26 @@ async function closeEndedActiveIfAdmin(
 	return schedules.filter((s) => !staleIds.has(s.id));
 }
 
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryCount = 0;
+const MAX_AUTO_RETRY = 3;
+/** 목록 조회 실패 뒤 자동 재시도 예약(최대 3회, 2~4초 지터 — 회원들이 같은 순간 다시 몰리지 않게).
+ *  그 뒤로는 당겨서 새로고침·포그라운드 복귀가 다시 시도한다. */
+function scheduleRetry() {
+	if (retryTimer || retryCount >= MAX_AUTO_RETRY) return;
+	retryCount += 1;
+	retryTimer = setTimeout(() => {
+		retryTimer = null;
+		void scheduleActions.refreshList();
+	}, 2000 + Math.random() * 2000);
+}
+
 async function reloadAttendances() {
 	const ids = useScheduleStore.getState().schedules.map((s) => s.id);
 	const attendances = await fetchAttendances(ids);
-	useScheduleStore.setState({ attendances });
+	// 실패하면 지금 보이는 참석 현황을 지우지 않는다 — 지우면 확정 배지가 사라지고 '참석하기'가 다시 떠서
+	// 신청이 안 된 줄 알고 또 누르게 된다.
+	if (attendances) useScheduleStore.setState({ attendances });
 }
 
 /** 내 참석 행(취소 제외) — 낙관적 업데이트 기준. */
@@ -160,22 +179,57 @@ async function joinOnce(sessionId: number, useTicket: boolean) {
 export const scheduleActions = {
 	async load() {
 		useScheduleStore.setState({ loading: true });
-		// 규칙→회차 동기화 + 노출(규칙 회차=일요일 18:00 일괄 공개, 일회성=즉시) 선반영 후 목록 조회
-		await syncOccurrences();
+		// 규칙→회차 동기화(sync)는 목록 조회를 기다리게 하지 않는다. 공개는 서버 크론이 맡으므로 목록은 바로
+		// 받고, sync 가 실제로 돌았을 때만(10분 스로틀·공개 창 밖) 끝난 뒤 목록을 한 번 더 받아 지난 회차
+		// 닫기·대체 공개 결과를 반영한다.
+		void syncOccurrences().then((ran) => {
+			if (ran) void scheduleActions.refreshList();
+		});
+		await scheduleActions.refreshList();
+	},
+
+	/** sync 없이 목록·장소·참석을 받아 반영한다(스피너는 켜지 않는다). */
+	async refreshList() {
 		const [fetched, places] = await Promise.all([
 			fetchSchedules(),
 			fetchPlaces(),
 		]);
+		if (!fetched) {
+			// 조회 실패(서버가 잠깐 멈춤 등): 이전 목록을 유지하고 잠시 뒤 한 번 더 시도한다.
+			useScheduleStore.setState((s) => ({
+				loading: false,
+				loadFailed: true,
+				places: places.length ? places : s.places,
+			}));
+			scheduleRetry();
+			return;
+		}
 		// 운영진 진입 시: 종료 시각(ends_at) 지난 진행중(active) 세션을 서버에 종료 요청 후 목록에서 제외
 		const schedules = await closeEndedActiveIfAdmin(fetched);
 		const attendances = await fetchAttendances(schedules.map((s) => s.id));
+		if (!attendances) {
+			// 목록은 새로 받고, 참석 현황은 이전 값을 지우지 않는다(다른 회차 것만 남지 않게 새 목록 기준으로 거른다).
+			const ids = new Set(schedules.map((s) => s.id));
+			useScheduleStore.setState((s) => ({
+				schedules,
+				places: places.length ? places : s.places,
+				attendances: s.attendances.filter((a) => ids.has(a.session_id)),
+				loading: false,
+				loaded: true,
+				loadFailed: true,
+			}));
+			scheduleRetry();
+			return;
+		}
 		useScheduleStore.setState({
 			schedules,
 			places,
 			attendances,
 			loading: false,
 			loaded: true,
+			loadFailed: false,
 		});
+		retryCount = 0;
 	},
 
 	reloadAttendances,
