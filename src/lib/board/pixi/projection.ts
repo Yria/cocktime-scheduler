@@ -39,17 +39,33 @@ function sameAppearance(a: CardAppearance, b: CardAppearance): boolean {
  * 기존 보드의 표시 규칙만 투영한다. store/네트워크를 읽거나 정합 명령을 실행하지 않는다.
  * 캐시는 이 보드 인스턴스에만 속하고, 사라진 엔티티는 다음 snapshot에서 바로 해제된다.
  */
-export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, proposals?: ProposalComposerSnapshot, coverage?: CoverageSnapshot) => BoardSnapshot {
+/** 보드를 보는 사람 — 회원 경기완료 CTA(§3.4) 판정용. memberId = authStore.memberId(members.id). */
+export interface BoardViewer { memberId: string | null }
+
+/**
+ * 보는 사람이 이 경기의 4명 중 하나인지 — session_players.member_id 로 대조한다(서버 member_complete_match 와 같은 기준).
+ * 게스트(memberId null)·비로그인은 항상 false.
+ */
+export function isViewerInMatch(
+	match: { teamA: readonly string[]; teamB: readonly string[] } | null | undefined,
+	sessionPlayers: ReadonlyMap<string, { memberId: string | null }>,
+	memberId: string | null | undefined,
+): boolean {
+	if (!match || !memberId) return false;
+	return matchPlayerIds(match).some((id) => sessionPlayers.get(id)?.memberId === memberId);
+}
+
+export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, proposals?: ProposalComposerSnapshot, coverage?: CoverageSnapshot, viewer?: BoardViewer) => BoardSnapshot {
 	let previous: BoardSnapshot = { entities: [], isEditor: false };
 	let previousInputs: readonly unknown[] = [];
 	let cache = new Map<string, BoardEntity>();
 
-	return (bs, ss, proposals, coverage) => {
+	return (bs, ss, proposals, coverage, viewer) => {
 		const draggedPlayerId = bs.dragInfo?.playerId ?? null;
 		const inputs = [bs.magnets, bs.drafts, bs.reservations, bs.courtAnchors, bs.matchEdits, draggedPlayerId,
 			ss.sessionPlayers, ss.courts, ss.restingIds, ss.cockCheckEnabled, ss.isEditor, bs.assigningTeamIds,
 			proposals?.enabled, proposals?.groups, proposals?.sendingIds, proposals?.proposals,
-			proposals?.anchors, proposals?.resolvingIds, proposals?.viewerId, proposals?.isAdmin, coverage?.memberIds, coverage?.loaded, coverage?.starting];
+			proposals?.anchors, proposals?.resolvingIds, proposals?.viewerId, proposals?.isAdmin, coverage?.memberIds, coverage?.loaded, coverage?.starting, viewer?.memberId];
 		if (sameArray(previousInputs, inputs)) return previous;
 		previousInputs = inputs;
 
@@ -190,13 +206,16 @@ export function createBoardProjection(): (bs: BoardState, ss: SessionSnapshot, p
 				if (view) members.push(busy ? { ...view, draggable: false } : view);
 			});
 			const source: CardView["source"] = { kind: "court", courtId: court.id, matchId: match.id };
+			// 편집자가 아니어도 자기가 뛰는 코트는 직접 끝낼 수 있다(회원 완료, MATCH_RESULT_ELO_SPEC §3.4).
+			// 로스터는 진행 중 매치 기준 — 선수 변경 스테이징(edit)은 편집자 전용이라 회원에겐 없다.
+			const canFinish = ss.isEditor || isViewerInMatch(match, ss.sessionPlayers, viewer?.memberId);
 			card({
 				kind: "card", key: linked ? `team:${linked.id}` : sourceKey(source), source, point, draggable: ss.isEditor && !busy, members, emptySlots: [], confirmed: false,
 				appearance: {
 					fill: TEAM_PLAYING_BG, stroke: TEAM_PLAYING_STROKE,
 					label: `${court.id}번 코트 · ${edit ? "선수 변경 중" : "경기중"}`, labelColor: TEAM_PLAYING_STROKE, labelBold: true, showVs: true,
-					ctaLabel: saving ? "변경 중…" : busy ? "완료 중…" : ss.isEditor ? edit ? "선수변경" : "경기완료" : composing ? "경기 진행 중" : "보기 전용", ctaColor: ss.isEditor && !busy ? CTA_FINISH_COLOR : CTA_DISABLED_COLOR,
-					ctaEnabled: ss.isEditor && !busy, showUnconfirm: !!edit && !busy, blink: false,
+					ctaLabel: saving ? "변경 중…" : busy ? "완료 중…" : ss.isEditor ? edit ? "선수변경" : "경기완료" : canFinish ? "경기완료" : composing ? "경기 진행 중" : "보기 전용", ctaColor: canFinish && !busy ? CTA_FINISH_COLOR : CTA_DISABLED_COLOR,
+					ctaEnabled: canFinish && !busy, showUnconfirm: !!edit && !busy, blink: false,
 				},
 			});
 		}

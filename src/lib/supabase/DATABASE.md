@@ -101,6 +101,7 @@ RLS: select=authenticated 전체, write=`is_admin()`.
 
 RLS: match_avoid_groups select/insert/delete는 `is_match_avoid_owner()`(주인 + 활성)만. 다른 계정은 조회해도 0행, 쓰기는 42501.
 RPC `board_selection_rules(p_session_id)` (security definer): 활성 운영진에게 `{ owner, groups }`를 준다. groups는 그 회차 session_players에 2명 이상 있는 묶음의 회원 id들뿐이다. 그 밖의 계정은 `{ owner: false, groups: [] }`.
+회원 경기완료 뒤 편성(`member_commit_completion_drafts`, `20261109000000`)은 이 묶음을 security definer 안에서 직접 읽어 후보를 거른다 — 회원에게 묶음은 내려가지 않는다.
 클라: `matchAvoid.ts`(fetchBoardSelectionRules/fetchMatchAvoidGroups/createMatchAvoidGroup/deleteMatchAvoidGroup), `matchAvoidStore.ts`.
 
 ### cock_support_grants (2026-06-30, `20260630030000`)
@@ -115,6 +116,45 @@ RPC `board_selection_rules(p_session_id)` (security definer): 활성 운영진�
 
 RLS: select=authenticated 전체, insert=authenticated(보드 편집자가 콕체크로 소진). 클라: `clubSettings.ts`(fetchGroupSettings/updateGroupSettings/fetchCockSupportUsed/grantCockSupport). 콕체크 모달(`CockCheckModal`)이 회원 단건 조회로 "이번 달 지원 미사용 → 남:1개만/여:안 내도 됨" 노출, `confirmCock` 가 소진.
 
+### 경기 결과 · ELO (2026-11-09, `20261109000000`)
+설계/계약: `docs/MATCH_RESULT_ELO_SPEC.md`. ELO 는 v1 에서 **표시용**(등급 테두리)이고 팀 편성은 읽지 않는다.
+네 테이블 모두 RLS on, **직접 쓰기 정책·권한 없음**(RPC 전용, anon/authenticated 의 INSERT/UPDATE/DELETE/TRUNCATE 회수).
+
+**match_results** — 경기 1건당 결과 1행(첫 입력이 확정, 정정은 운영진만)
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| match_id | UUID PK FK | matches (`ON DELETE CASCADE`) |
+| session_id | BIGINT | 참고용 |
+| game_type | TEXT | 기록 시점 matches.game_type |
+| a1, a2, b1, b2 | UUID FK? | **members.id**(영속 신원, session_players 아님). **실제 편**의 `session_players.member_id` 를 박제(2026-11-10부터, 그 전엔 로스터 = 보드 나눔). 게스트·브리지 없음=NULL. members 삭제 시 `SET NULL` |
+| teams | JSONB? | 실제 편 `session_players.id` `[a1,a2,b1,b2]`(2026-11-10, `20261110000000`). 결과 입력 때 고친 편(보드는 4명 그룹만 정한다). NULL = 이 컬럼 이전 행 → 로스터(보드 나눔)로 읽는다 |
+| winner | TEXT | `'A'`/`'B'`(실제 편 기준 — `teams`/a1..b2 의 A편. `teams` NULL 이면 matches team_a/team_b) |
+| rated | BOOLEAN | 점수 반영 여부. false = `혼합` 경기 · member_id NULL 선수 · 4명 미충족 |
+| recorded_by / recorded_at | UUID? / TIMESTAMPTZ | 입력자 members.id(서버 직접 호출은 NULL) |
+| corrected_by / corrected_at | UUID? / TIMESTAMPTZ? | 운영진 정정 |
+
+RLS select: 4명 본인(`current_member_id() in (a1,a2,b1,b2)`) 또는 운영진.
+
+**member_ratings** — 회원별 현재 점수. 첫 반영 때 lazily 생성(행 없음 = seed 로 간주)
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| member_id | UUID PK FK | members (`ON DELETE CASCADE`) |
+| rating | INT | 현재 점수 |
+| games / wins / losses | INT | 반영된 경기 수(K 판정·배치 표시) |
+| updated_at | TIMESTAMPTZ? | |
+
+**rating_events** — 반영 1건 = 경기×회원 1행. `unique(match_id, member_id)`. 컬럼 `before/after/delta`(INT), `expected`(NUMERIC, 소수 4자리), `won`. match `ON DELETE CASCADE`, member `ON DELETE CASCADE`. 재생(`ratings_recompute_all`) 때 통째 다시 만든다.
+member_ratings·rating_events RLS select: 본인 또는 운영진.
+
+**match_completion_grants** — 회원 완료 뒤 그 코트 그룹 보드 편성 **1회 저장 권한**. 편집락(editor_*)을 열지 않고 경기 단위 토큰으로 범위를 좁힌다.
+`match_id`(PK FK matches CASCADE) · `session_id` · `court_id` · `member_id`(완료한 회원) · `created_at` · `used_at`(소모 시각). select 정책 없음(클라 비노출).
+
+ELO 규칙(서버 권위, 클라 미러 `src/lib/rating/elo.ts`):
+- seed `elo_seed(grade)` = 1000 + 100×grade(1~10), 그 외(없음/0/범위 밖/숫자 아님) 1500. grade 는 `members.skills->>'grade'` **현재 값**.
+- 팀 전력 0.6×약한 쪽 + 0.4×강한 쪽, `E_A = 1/(1+10^((R_B−R_A)/400))`, K `elo_k(games)` = games<10 → 40, 아니면 20.
+- `Δ = round(K × (S − E))` — Postgres numeric round(**.5 는 0에서 먼 쪽**). 같은 팀은 같은 E·각자 K.
+- 점수 쓰기는 advisory xact lock(`hashtext('public.member_ratings')`)으로 전부 직렬화, member_ratings 는 member_id 순 `FOR UPDATE`.
+
 ---
 
 ## RPC 함수 (Postgres)
@@ -122,7 +162,7 @@ RLS: select=authenticated 전체, insert=authenticated(보드 편집자가 콕�
 | RPC | 시그니처 | 용도 |
 |---|---|---|
 | `assign_match` | (코트 배정 파라미터) | matches INSERT(**assigned_by=p_name**, 2026-06-30 `20260630020000`: 경기 시작 누른 편집자 실명 기록) + players→playing + match_assign_count++ **+ match_state_version++**(2026-06-22, `20260622130000`: 코트 동기화 신호). 코트 점유 시 `unique_violation`→`RAISE EXCEPTION 'court already assigned'`(dbAssignMatch=false 처리). **서버 가드**(2026-10-12 `20261012000000`): sessions 행 `FOR UPDATE`(진행 세션만, 아니면 `'session closed'`) · 4인 non-null·distinct(`'four distinct players required'`) · 같은 세션 진행 경기 중복 거부(`'players already playing'`) · 선수 UPDATE 를 `session_id` 고정 + `status<>'playing'` 로 4행 아니면 `'players not ready'`(휴식·콕 미확인 시작은 허용 유지). 클라 `matchGuardMessage` 가 토스트로 매핑 |
-| `complete_match` | `(p_match_id UUID, p_session_id BIGINT, p_game_type TEXT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID)` | match→completed + **player_snapshot 기록**(2026-06-18) + players→waiting(game_count++/혼복 남자 mixed_count++) **+ match_state_version++**(`20260622130000`). pair_history UPSERT는 `20260727090000`에서 제거(동반 이력=완료 matches 파생). 시그니처 불변(스냅샷은 RPC 내부에서 session_players로부터 생성). `20261012000000`: sessions `FOR UPDATE` 선행 · `session_id` 고정 · 선수 갱신/스냅샷은 클라 p_team_* 대신 matches 의 **실제 로스터**(RETURNING) 사용 |
+| `complete_match` | `(p_match_id UUID, p_session_id BIGINT, p_game_type TEXT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID)` | match→completed + **player_snapshot 기록**(2026-06-18) + players→waiting(game_count++/혼복 남자 mixed_count++) **+ match_state_version++**(`20260622130000`). pair_history UPSERT는 `20260727090000`에서 제거(동반 이력=완료 matches 파생). 시그니처 불변(스냅샷은 RPC 내부에서 session_players로부터 생성). `20261012000000`: sessions `FOR UPDATE` 선행 · `session_id` 고정 · 선수 갱신/스냅샷은 클라 p_team_* 대신 matches 의 **실제 로스터**(RETURNING) 사용. `20261109000000`: 가드(세션 잠금 → 편집 락) 뒤 갱신을 `_complete_match_apply` 로 위임(회원 완료와 공유, 동작·예외·반환 불변) |
 | `set_match_roster` | `(p_match_id UUID, p_session_id BIGINT, p_team_a_p1/p2 UUID, p_team_b_p1/p2 UUID, p_removed_ids UUID[], p_added_ids UUID[])` | **경기 로스터 수정 원자 RPC**(2026-06-22, `20260622130000`, 기존 직접 UPDATE 대체). playing 매치의 4슬롯 교체 + removed→waiting + added→playing + match_state_version++ 를 단일 트랜잭션. 변경 선수(removed+added) 반환(클라 broadcast 용). game_count 는 완료 시점에만 집계하므로 미변경. `20261012000000`: sessions `FOR UPDATE` · removed/added 를 **서버가 현재 로스터와 비교해 계산**(p_removed_ids/p_added_ids 무시, 시그니처 유지) · added 가 다른 진행 경기에 있으면 `'players already playing'` · 선수 UPDATE `session_id` 고정 |
 | `load_session_state` | `(p_session_id BIGINT)` | **세션 상태 단일 스냅샷**(2026-06-22, `20260622140000`). board_drafts+version+match_state_version+court_count+editor_*+진행중 matches 를 단일 SELECT(같은 MVCC 시점)로 JSONB 반환. 재구독 catch-up·CAS 충돌 복구에서 팀 편성/코트 배정 두 권위를 "같은 시점"으로 수렴. 클라 `dbLoadSessionState`(sessionStore `resyncFromServer`). |
 | `set_player_resting` | `(p_session_player_id UUID, p_session_id BIGINT, p_resting BOOLEAN)` | status 휴식/복귀 전환. 복귀 시 joined_at_match 를 휴식 구간만큼 전진(deficit 보정) + wait_since 리셋. 갱신 선수 반환 (`20260615130000`) |
@@ -132,6 +172,15 @@ RLS: select=authenticated 전체, insert=authenticated(보드 편집자가 콕�
 | `board_release_editor` | `(p_session_id BIGINT, p_client_id TEXT)` | 편집권 해제(정상 이탈: unsubscribe/pagehide). 보유자 본인만. crash 시는 lease 만료가 백업. |
 | `board_save_drafts` | `(p_session_id BIGINT, p_client_id TEXT, p_name TEXT, p_payload JSONB, p_base_version BIGINT, p_lease_seconds INT=20)` | board_drafts 낙관적 버전 CAS 쓰기 **+ self-claim**. `WHERE version=base AND (editor IS NULL OR lease<now() OR editor=client)` 통과 시 board_drafts 교체+version+1+editor_*=호출자(쓰면서 락 획득/연장). 새 version 반환, 0행이면 NULL(충돌/타인 점유) → 통째 last-writer-wins 손실·조용한 실패 차단. self-claim이라 사전 claim 없이 첫 쓰기가 락을 잡음(데드존 없음). 클라 `dbBoardSaveDrafts`(boardStore `pushDraftsToRemote`, 직렬화+충돌 시 resync). |
 | `admin_set_board_multi_editor` | `(p_session_id BIGINT, p_on BOOLEAN)` | **운영진 동시 편집(실험) 토글**(2026-10-12, `20261012010000`). 운영진만. `sessions.board_multi_editor`=p_on 과 `editor_*`=NULL, `board_drafts_version`+1(내용 불변 — 전환 전에 출발한 저장을 CAS 로 실패시킴)을 **한 UPDATE** 로(값이 같으면 no-op) → 같은 행 이벤트로 함께 도착 + sync bump. ON 세션: `board_assert_editor`=운영진만(self-claim 없음) · `board_save_drafts`=버전 CAS 만(editor_* 미갱신) · claim/takeover/handoff=no-op · 회원 파티는 운영진 계정을 편집자로 보고 제외. OFF 세션은 기존 본문 그대로. 클라 `dbAdminSetBoardMultiEditor`(sessionStore `setBoardMultiEditor`, 보드 툴바 '동시 편집'). 플래그는 `load_session_state`·sessions 행 양쪽으로 읽는다(`multiEditor`). |
+| `member_complete_match` | `(p_match_id UUID, p_session_id BIGINT, p_winner TEXT=NULL, p_team_a UUID[]=NULL) → JSONB` | **회원 경기 완료**(2026-11-09, `20261109000000`). sessions `FOR UPDATE` 선행(진행 세션 아니면 `55000 'session not active'`) → 호출자 `current_member_id()` 가 그 경기 로스터 `session_players.member_id` 에 없으면 `42501 'not in match'`(경기 상태와 무관하게 먼저 판정) → `_complete_match_apply`(complete_match 와 같은 갱신, 이미 완료/없음은 `'Match already completed or not found'`) → `match_completion_grants` 생성 → p_winner 가 A/B 면 결과 기록(실제 편 p_team_a, 2026-11-10 `20261110000000`. 편 오류 `22023 'invalid teams'` 면 완료까지 롤백). 편집락 가드 없음. 반환 `{players:[session_players 행…], result: 결과JSON\|null, courtId}` |
+| `match_result_submit` | `(p_match_id UUID, p_winner TEXT, p_team_a UUID[]=NULL) → JSONB` | 결과 입력/보충. `p_team_a` = 실제 A편 session_players.id 2개(NULL=보드 나눔, 2명·서로 다름·로스터 안이 아니면 `22023 'invalid teams'` — exists 판정보다 먼저), winner 는 그 A편 기준. 로스터 4명 또는 운영진(`42501 'not in match'`). 결과가 이미 있으면 변경 없이 `status:'exists'`. 없으면 경기 `completed`(`55000 'match not completed'`) · `ended_at` 7일 이내(`55000 'result window closed'`) 확인 후 기록·증분 반영 `status:'recorded'`. 없는 경기 `P0002 'match not found'`, winner 오류 `22023 'invalid winner'` |
+| `match_result_admin_set` | `(p_match_id UUID, p_winner TEXT, p_team_a UUID[]=NULL) → JSONB` | 운영진 정정(`42501 'admin only'`). 기간 제한 없음. NULL=삭제. 편도 고친다: 결과가 있으면 `p_team_a` NULL=기록된 편 유지, 없으면 보드 나눔. 이긴 둘·진 둘이 같으면(A/B 표기만 다름) `unchanged`. 변경이 있으면 `ratings_recompute_all()`. `status`: `recorded`/`corrected`/`deleted`/`unchanged` |
+| `rating_my_summary` | `() → JSONB` | `{rating, games, wins, losses, seeded}`. 행이 없으면 seed 값·games 0·`seeded:true`(=아직 반영된 경기 없음) |
+| `match_my_history` | `(p_limit INT=30, p_before TIMESTAMPTZ=NULL) → JSONB` | 내가 뛴 완료 경기 최신순 배열(p_limit 1~100 로 자름, `p_before` 는 ended_at 미만 커서). 항목 `{matchId, sessionId, endedAt, gameType, courtId, mySide, teamA/teamB:[{spId,memberId,name,gender}], winner, rated, delta, ratingAfter, canSubmit}`. teamA/teamB/mySide 는 **실제 편**(결과의 `teams`, 없으면 로스터 — 2026-11-10). 이름·성별은 회차 session_players, 없으면 player_snapshot 의 같은 id 원소 폴백 |
+| `member_commit_completion_drafts` | `(p_session_id BIGINT, p_match_id UUID, p_base_version BIGINT, p_payloads JSONB) → JSONB` | 회원 완료 뒤 보드 편성 1회 CAS 저장. `p_payloads` = 후보 배열(1~6, 우선순위 순). sessions `FOR UPDATE` → 본인 grant(미사용·3분 이내) 없으면 `42501 'no completion grant'` → 배열/원소(object, teams/reservations 배열) 아니면 `22023 'invalid payload'` → 버전 불일치 `{status:'stale', version}`(grant 미소모) → 앞에서부터 사람을 내리지 않고(현재 anchor 는 anchor 로, 예약은 그대로이거나 승격) `match_avoid_groups` 한 묶음의 회원 둘을 새로 짝짓지 않은(현재 보드에서 이미 함께였던 짝은 허용) 첫 후보 저장 `{status:'ok', version, chosen}`(board_drafts 교체·version+1·grant 소모) / 전부 걸리면 `{status:'rejected'}`(저장 없음·grant 소모, 사유 비공개). **editor_* 를 건드리지 않음** |
+
+결과JSON(`member_complete_match.result`, `match_result_submit`/`admin_set` 본문): `{matchId, winner, rated, recordedBy, recordedAt, delta, ratingAfter, games}` — delta/ratingAfter/games 는 **호출자 기준**(미반영·로스터 밖이면 null).
+내부 함수(실행권 회수): `elo_seed(int)` · `elo_k(int)` · `_member_seed(uuid)` · `_complete_match_apply(uuid, bigint, text)`(complete_match 1·3·4·5 단계 원문, 이제 `complete_match` 도 가드 뒤 이걸 호출) · `_rating_apply(uuid)` · `_match_result_record(uuid, text, uuid, uuid[])`(2026-11-10: 실제 편 p_team_a) · `_match_result_json(uuid, uuid)` · `_completion_team_sets(jsonb)`(팀별 anchor ∪ 예약 집합) · `_completion_avoid_violation(bigint, jsonb, jsonb)`(회원 편성 후보의 묶음 위반 판정) · `_match_roster(uuid[], jsonb)`(로스터 NULL 칸 = 선수 행 삭제 → player_snapshot 같은 자리 id 로 메움) · `_match_split(uuid, uuid[])`(로스터+p_team_a → 실제 편 sp id 4개, 검증·정규화) · `_match_teams_array(jsonb)` · `_pair_key(uuid[])` · `_match_slot_json(jsonb, uuid)`(기록 한 칸, 스냅샷 폴백) · `ratings_recompute_all()`(member_ratings/rating_events 비우고 rated 결과를 `matches.ended_at` 순으로 재생).
 
 > **제거된 RPC(deprecated)**: ~~`save_team_candidates(BIGINT, JSONB)`~~, ~~`save_match_queue(BIGINT, JSONB)`~~, ~~`activate_pending_player(BIGINT, UUID)`~~.
 > ~~`swap_match_player(UUID, BIGINT, TEXT, UUID, UUID)`~~ — `20260615140000` 에서 추가됐으나 미사용으로 `20260616000000_db_cleanup.sql` 에서 DROP. **경기 수정(로스터 변경)은 `20260622130000` 부터 `set_match_roster` RPC**로 원자 처리(이전엔 클라가 matches/session_players 를 직접 UPDATE, 동기화 없음 — H3).

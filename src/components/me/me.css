@@ -1,0 +1,367 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   내 정보(/me) — 히어로 · 탭 · 승패 기록 카드
+   - 글자색은 전역 톤 토큰(--tone-strong/muted/faint)만 쓴다. 회계 탭 본문은 자기 스코프
+     (.accounting-screen)의 --ac-* 를 쓰므로 이 파일의 변수와 섞이지 않는다.
+   - 카드에 좌측 색 보더를 두지 않는다(승패는 왼쪽 칩 글자로 말한다).
+   - 화면 셸은 AppScreen(body 자연 스크롤). 여기서 높이 고정·내부 스크롤을 만들지 않는다.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.me-page {
+	/* 승·패·점수 변동색. 색 하나로 말하지 않는다 — 칩엔 '승/패' 글자, Δ 엔 +/− 부호가 같이 간다 */
+	--me-win-bg: rgba(245, 176, 0, 0.18);
+	--me-win-ink: #855700;
+	--me-up: #2c7a57;
+	--me-down: #b83a32;
+	/* 등급 진행 막대 — 기본(브론즈), 아래 data-tier 가 바꾼다. TierFrame 금속색의 가운데 톤 */
+	--me-tier: #b5763f;
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	/* 한글은 어절 단위로 줄바꿈 — '미반\n영'처럼 낱글자가 떨어지지 않게 */
+	word-break: keep-all;
+}
+.dark .me-page {
+	--me-win-bg: rgba(255, 200, 60, 0.16);
+	--me-win-ink: #f6c453;
+	--me-up: #58d093;
+	--me-down: #ff8a80;
+}
+.me-page[data-tier="silver"] { --me-tier: #8c96a1; }
+.me-page[data-tier="gold"] { --me-tier: #d29a12; }
+.me-page[data-tier="platinum"] { --me-tier: #5d9fa5; }
+.me-page[data-tier="diamond"] { --me-tier: #4c6ef5; }
+.me-page[data-tier="master"] { --me-tier: #d6336c; }
+.dark .me-page[data-tier="silver"] { --me-tier: #b8c1cb; }
+.dark .me-page[data-tier="platinum"] { --me-tier: #8fd0d4; }
+.dark .me-page[data-tier="diamond"] { --me-tier: #91a7ff; }
+
+/* ── 히어로 ─────────────────────────────────────────────────────────────── */
+.me-hero {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: center;
+	column-gap: 14px;
+	padding-top: 4px;
+}
+/* TierFrame 은 장식 여백(지름의 22%)만큼 바깥으로 크다 — 그 여백만큼 왼쪽 거터에 걸쳐
+   아바타 원이 본문 거터선에 맞도록 당긴다(장식이 살짝 거터로 나가는 건 의도). */
+.me-hero-avatar {
+	margin-left: calc(var(--me-pad, 0px) * -1);
+	line-height: 0;
+}
+.me-hero-name {
+	font-size: 20px;
+	font-weight: 800;
+	letter-spacing: -0.02em;
+	line-height: 1.2;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.me-hero-rank {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	margin-top: 4px;
+	font-size: 14px;
+	font-weight: 700;
+}
+.me-hero-score {
+	font-size: 22px;
+	font-weight: 800;
+	letter-spacing: -0.02em;
+	font-variant-numeric: tabular-nums;
+}
+.me-hero-meter {
+	margin-top: 8px;
+	height: 6px;
+	border-radius: 99px;
+	background: var(--seg-track);
+	overflow: hidden;
+}
+.me-hero-meter > span {
+	display: block;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--me-tier);
+}
+.me-hero-note {
+	margin-top: 5px;
+	font-size: 12px;
+	font-weight: 600;
+}
+/* 배치 중 — 다섯 칸. 실제로 다섯 경기를 차례로 채우는 순서라 칸 표기를 쓴다. */
+.me-pips {
+	display: inline-flex;
+	gap: 4px;
+	align-self: center;
+}
+.me-pips > i {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	border: 1.5px solid var(--tone-faint);
+}
+.me-pips > i[data-on] {
+	background: var(--tone-strong);
+	border-color: var(--tone-strong);
+}
+
+/* 승 · 패 · 승률 — 히어로 아래 한 줄. 숫자가 주인공, 단위는 작게 */
+.me-stats {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	border-top: 1px solid var(--card-lq-border);
+	border-bottom: 1px solid var(--card-lq-border);
+	padding: 10px 0;
+}
+.me-stats > div {
+	text-align: center;
+}
+.me-stats > div + div {
+	border-left: 1px solid var(--card-lq-border);
+}
+.me-stats strong {
+	display: block;
+	font-size: 18px;
+	font-weight: 800;
+	font-variant-numeric: tabular-nums;
+	color: var(--tone-strong);
+}
+.me-stats span {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--tone-muted);
+}
+
+/* ── 탭 — 회계 화면 .ac-layout-v2 .ac-tabs 의 밑줄 탭과 같은 모양 ─────────── */
+.me-tabs {
+	display: flex;
+	border-bottom: 1px solid var(--seg-track-deep);
+	/* 탭 줄은 스크롤해도 따라오지 않는다(헤더 하나만 sticky — 두 겹 sticky 는 360px 에서 본문을 너무 먹는다) */
+}
+.me-tabs button {
+	flex: 1;
+	min-width: 0;
+	min-height: 44px;
+	padding: 0 2px;
+	background: transparent;
+	border: 0;
+	border-bottom: 2px solid transparent;
+	margin-bottom: -1px;
+	color: var(--tone-muted);
+	font-size: 14.5px;
+	font-weight: 550;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.me-tabs button[aria-current="page"] {
+	color: var(--tone-strong);
+	font-weight: 700;
+	border-bottom-color: var(--tone-strong);
+}
+.me-tabs button:focus-visible {
+	outline: 2px solid var(--ios-blue);
+	outline-offset: -2px;
+	border-radius: 6px;
+}
+
+/* ── 승패 기록 ─────────────────────────────────────────────────────────── */
+.me-rec-day {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.me-rec-day + .me-rec-day {
+	margin-top: 8px;
+}
+.me-rec-day > h3 {
+	font-size: 13px;
+	font-weight: 700;
+	color: var(--tone-muted);
+	padding-left: 2px;
+}
+.me-rec {
+	background: var(--card-lq-bg);
+	border: 1px solid var(--card-lq-border);
+	border-radius: 14px;
+	padding: 12px;
+	display: grid;
+	grid-template-columns: 40px minmax(0, 1fr) auto;
+	column-gap: 12px;
+	align-items: center;
+}
+.me-rec-chip {
+	width: 40px;
+	height: 40px;
+	border-radius: 11px;
+	display: grid;
+	place-items: center;
+	font-size: 16px;
+	font-weight: 800;
+	background: var(--seg-track);
+	color: var(--tone-muted);
+}
+.me-rec-chip[data-r="win"] {
+	background: var(--me-win-bg);
+	color: var(--me-win-ink);
+}
+.me-rec-chip[data-r="none"] {
+	background: transparent;
+	border: 1.5px dashed var(--seg-track-deep);
+	color: var(--tone-faint);
+	font-size: 11px;
+	font-weight: 700;
+}
+.me-rec-teams {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	min-width: 0;
+}
+.me-rec-side {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	font-size: 13.5px;
+	line-height: 1.2;
+}
+.me-rec-side > b {
+	flex: none;
+	width: 24px;
+	font-size: 11.5px;
+	font-weight: 700;
+	color: var(--tone-faint);
+}
+.me-rec-side[data-mine] > b {
+	color: var(--tone-muted);
+}
+.me-rec-avs {
+	display: inline-flex;
+	flex: none;
+}
+.me-rec-avs > span + span {
+	margin-left: -6px;
+}
+.me-rec-avs > span {
+	border-radius: 50%;
+	box-shadow: 0 0 0 1.5px var(--card-lq-bg);
+	line-height: 0;
+}
+.me-rec-names {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--tone-muted);
+	font-weight: 600;
+}
+.me-rec-side[data-mine] .me-rec-names {
+	color: var(--tone-strong);
+}
+.me-rec-meta {
+	margin-top: 1px;
+	font-size: 11.5px;
+	font-weight: 600;
+	color: var(--tone-faint);
+}
+.me-rec-delta {
+	text-align: right;
+	min-width: 44px;
+	font-variant-numeric: tabular-nums;
+}
+.me-rec-delta > strong {
+	display: block;
+	font-size: 17px;
+	font-weight: 800;
+	letter-spacing: -0.01em;
+}
+.me-rec-delta > strong[data-sign="up"] { color: var(--me-up); }
+.me-rec-delta > strong[data-sign="down"] { color: var(--me-down); }
+.me-rec-delta > strong[data-sign="zero"] { color: var(--tone-muted); }
+.me-rec-delta > span {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--tone-faint);
+}
+.me-rec-unrated {
+	max-width: 44px;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1.25;
+	color: var(--tone-faint);
+	text-align: right;
+}
+/* [결과 입력] — 카드 폭 전체를 쓰는 아랫단. 7일 창이 닫히기 전에만 뜬다 */
+.me-rec-pending {
+	margin: 0 0 4px;
+	padding: 10px 14px;
+	border-radius: 12px;
+	background: color-mix(in srgb, var(--ios-blue) 10%, transparent);
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	column-gap: 8px;
+	row-gap: 2px;
+	font-size: 12.5px;
+	line-height: 1.4;
+	color: var(--tone-muted);
+}
+.me-rec-pending strong {
+	font-size: 13.5px;
+	color: var(--tone-strong);
+}
+.me-rec-input {
+	flex: none;
+	min-height: 32px;
+	padding: 0 12px;
+	border-radius: 99px;
+	border: 0;
+	background: var(--ios-blue);
+	color: #fff;
+	font-size: 12.5px;
+	font-weight: 700;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.me-rec-input:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+.me-rec-input:focus-visible,
+.me-more:focus-visible {
+	outline: 2px solid var(--ios-blue);
+	outline-offset: 2px;
+}
+.me-more {
+	align-self: center;
+	margin-top: 4px;
+	padding: 10px 20px;
+}
+
+/* ── 회비 꺼짐 · 오류 안내 ───────────────────────────────────────────────── */
+.me-notice {
+	background: var(--card-lq-bg);
+	border: 1px solid var(--card-lq-border);
+	border-radius: 14px;
+	padding: 20px 16px;
+	text-align: center;
+	font-size: 13.5px;
+	line-height: 1.55;
+	color: var(--tone-muted);
+}
+.me-notice strong {
+	display: block;
+	margin-bottom: 4px;
+	font-size: 15px;
+	color: var(--tone-strong);
+}
+
+/* ── 정보 수정 ─────────────────────────────────────────────────────────── */
+.me-profile {
+	background: var(--card-lq-bg);
+	border: 1px solid var(--card-lq-border);
+	border-radius: 14px;
+	padding: 18px 16px;
+}

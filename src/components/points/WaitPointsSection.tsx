@@ -8,8 +8,8 @@ import { useWaitPointStore, waitPointActions } from "../../store/waitPointStore"
 import TicketIcon from "../shared/TicketIcon";
 import Spinner from "../shared/Spinner";
 
-// 대기 포인트 섹션 — '내 정보'(ProfileSetup edit 모달) 안에 들어간다. 별도 라우트를 만들지 않는다.
-// ModalSheet 자체가 overflow-y-auto(maxHeight 90dvh)라 안쪽에 또 스크롤 영역을 두지 않는다
+// 대기 포인트 섹션 — 내 정보(/me) '정보 수정' 탭의 ProfileForm(edit) 안에 들어간다. 자기 라우트는 없다.
+// 그 탭은 body 자연 스크롤 페이지라(예전엔 overflow-y-auto 모달) 안쪽에 또 스크롤 영역을 두지 않는다
 // (iOS 에서 중첩 스크롤은 제스처가 엉킨다). 대신 기본 8줄만 펴고 나머지는 접어 둔다.
 
 const PREVIEW = 8;
@@ -75,7 +75,7 @@ export default function WaitPointsSection() {
 	const loaded = useWaitPointStore((s) => s.ledgerLoaded);
 	const [expanded, setExpanded] = useState(false);
 
-	// 모달을 열 때마다 새로 읽는다(폴링·구독은 없다 — 포인트는 회차가 끝나야 움직인다).
+	// 탭을 열 때마다 새로 읽는다(폴링·구독은 없다 — 포인트는 회차가 끝나야 움직인다).
 	// force 인 이유: 티켓을 쓴 직후 여기를 열면 캐시에 'spend' 행이 없어 방금 한 일이 안 보인다.
 	useEffect(() => {
 		void waitPointActions.loadLedger(true);

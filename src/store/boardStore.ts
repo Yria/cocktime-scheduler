@@ -43,7 +43,7 @@ registerBoardBridge({
 });
 
 useBoardStore.subscribe((state, prev) => {
-	if (syncState.applyingRemoteDrafts || syncState.localRefine) return;
+	if (syncState.applyingRemoteDrafts || syncState.localRefine || syncState.memberPlanning) return;
 	if (state.drafts === prev.drafts && state.reservations === prev.reservations) {
 		// 첫 선수 풀 로딩/자동 배치는 서버 명단을 빈 값으로 덮어쓰면 안 된다.
 		if (!state.manualLayout || (state.magnets === prev.magnets && state.courtAnchors === prev.courtAnchors)) return;

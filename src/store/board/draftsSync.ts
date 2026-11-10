@@ -25,7 +25,24 @@ export const syncState = {
 	exclusiveDraftEdit: false,
 	/** 동시 편집에서 로컬 지식 의존 자동 정제 중 — 화면만 바꾸고 저장하지 않는다(refineLocally). */
 	localRefine: false,
+	/** 회원 완료 편성 후보 계획·되돌리기 중 — 화면만 바꾸고 board_save_drafts 로 저장하지 않는다(withoutDraftSave). */
+	memberPlanning: false,
 };
+
+/**
+ * run 동안의 보드 변화는 저장 구독(boardStore subscribe → pushDraftsToRemote)을 타지 않는다.
+ * 회원 완료 편성(MATCH_RESULT_ELO_SPEC §3.4)의 후보는 서버 규칙 검사(member_commit_completion_drafts) 전이라,
+ * 이 기기가 편집자(isEditor)여도 편집자 저장 경로로 새어 나가면 안 된다.
+ */
+export function withoutDraftSave<T>(run: () => T): T {
+	const prev = syncState.memberPlanning;
+	syncState.memberPlanning = true;
+	try {
+		return run();
+	} finally {
+		syncState.memberPlanning = prev;
+	}
+}
 
 /**
  * 로컬 지식(이 기기의 자석·코트 상태)에 기대는 자동 정제(heal)를 실행한다.
@@ -92,7 +109,37 @@ export function serializeBoardDrafts(s: {
  * 이래야 편집자가 나가 락이 free가 돼도 관전자가 드래그만으로 편집자가 되지 않는다.
  */
 export function claimEdit(): boolean {
+	if (completionGrantDepth > 0) return true;
 	return useSessionStore.getState().isEditor && !syncState.exclusiveDraftEdit;
+}
+
+// ── 회원 경기완료 후 편성 1회 권한(docs/MATCH_RESULT_ELO_SPEC.md §3.4) ─────────
+// 회원은 편집자가 아니라 claimEdit() 가 늘 false 다. 자기 경기를 끝낸 직후 그 코트 그룹을 채우는
+// 계획(resolveFreedReservations·fillWaitingTeams·autoFillEmptyCourts)만은 편집자와 같은 코드로 돌려야
+// 결과가 같다 — 그래서 '전역 편집권'을 주지 않고 동기 실행 한 번 동안만 게이트를 연다.
+// 깊이 카운터 + finally 로 닫으므로 run 이 throw 해도 열린 채 남지 않는다. await 를 넘기면 그 뒤는
+// 이미 닫힌 상태라(동기 구간만 열림) 다른 편집 동작(드래그·버튼)이 비집고 들어올 틈이 없다.
+// 저장은 여기서 하지 않는다 — 회원은 board_save_drafts 를 못 쓰고(pushDraftsToRemote 는 !isEditor no-op),
+// 호출부가 직렬화한 payload 를 member_commit_completion_drafts 로 CAS 저장한다.
+let completionGrantDepth = 0;
+
+export function runWithCompletionGrant<T>(run: () => T): T {
+	completionGrantDepth++;
+	try {
+		const result = run();
+		if (result && typeof (result as { then?: unknown }).then === "function") {
+			// 비동기 콜백이면 await 이후 구간은 권한 밖이다 — 실수로 넘긴 경우를 개발 중에 드러낸다.
+			console.warn("runWithCompletionGrant: async callback — only the synchronous part runs with the grant");
+		}
+		return result;
+	} finally {
+		completionGrantDepth--;
+	}
+}
+
+/** 테스트·진단용 — 지금 편성 1회 권한 구간 안인지. */
+export function completionGrantActive(): boolean {
+	return completionGrantDepth > 0;
 }
 
 // 요청 시점의 세션/편집자를 보관한다. 화면 이탈로 _clientId가 지워져도 마지막 드롭을 저장하며,

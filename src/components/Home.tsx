@@ -11,6 +11,7 @@ import {
 } from "../store/installPromptStore";
 import { scheduleActions, useScheduleStore } from "../store/scheduleStore";
 import { waitPointActions, useWaitPointStore } from "../store/waitPointStore";
+import { ratingActions } from "../store/ratingStore";
 import { latePoolCutoffMs } from "../lib/schedule/latePool";
 import { isNewbieNowKST } from "../lib/schedule/waitStatus";
 import { buildPlaceMapTarget } from "../lib/kakaoMap";
@@ -111,7 +112,6 @@ export default function Home({ onStart }: Props) {
 	const [authBusy, setAuthBusy] = useState(false);
 	const [emailAuthBusy, setEmailAuthBusy] = useState(false);
 	const [busyId, setBusyId] = useState<number | null>(null);
-	const [editingProfile, setEditingProfile] = useState(false);
 
 	// 시작 시각 도달을 감지해 '진행 하이라이트'를 켜기 위한 시계(30초 tick)
 	const [now, setNow] = useState(() => Date.now());
@@ -131,6 +131,13 @@ export default function Home({ onStart }: Props) {
 			waitPointActions.reset();
 		}
 	}, [authUser]);
+
+	// 내 ELO 점수 — 메뉴 헤더의 등급 테두리가 쓴다. 회원 id 가 정해진 뒤 진입 1회만(폴링·구독 없음,
+	// docs/MATCH_RESULT_ELO_SPEC.md §3.2). 회원이 바뀌거나 로그아웃이면 남의 점수가 남지 않게 비운다.
+	useEffect(() => {
+		if (memberId) void ratingActions.loadMy();
+		else ratingActions.reset();
+	}, [memberId]);
 
 	const handleKakaoLogin = useCallback(async () => {
 		setAuthBusy(true);
@@ -304,12 +311,12 @@ export default function Home({ onStart }: Props) {
 	const placeMapTarget = (id: number | null) =>
 		id == null ? null : buildPlaceMapTarget(places.find((p) => p.id === id) ?? null);
 
-	// PWA 설치 유도 토스트 — 프로필 완성 + 편집 중 아님 + 노출 조건 충족일 때만.
+	// PWA 설치 유도 토스트 — 프로필 완성 + 노출 조건 충족일 때만(정보 수정은 /me 화면으로 옮겨 겹칠 모달이 없다).
 	// (하단 고정 토스트가 마지막 버튼을 가리지 않도록 스크롤 콘텐츠 끝에 스페이서도 같은 조건으로 넣는다.)
 	const profileComplete =
 		!!memberId && myGender != null && myBirthYear != null && !!myResidence;
 	const showInstallToast =
-		profileComplete && !editingProfile && shouldShowInstallPrompt(installState);
+		profileComplete && shouldShowInstallPrompt(installState);
 
 	// 내가 신규회원 2주 유예 중인가 — 참석/늦참 재확인 문구에 "만석이어도 접수될 수 있다"를 덧붙인다.
 	// (진입 안내 다이얼로그 자체는 App 의 NewbieFreepassAlert 가 담당한다.)
@@ -375,7 +382,7 @@ export default function Home({ onStart }: Props) {
 				// 음수 마진으로 마지막 아이콘(⋮)의 우측을 본문 우측 거터선에 맞춘다(좌측 로고와 대칭).
 				<div className="flex items-center gap-0.5" style={{ marginRight: -18 }}>
 					<NotificationBell />
-					<HeaderMenu onEditProfile={() => setEditingProfile(true)} />
+					<HeaderMenu />
 				</div>
 			}
 		>
@@ -501,11 +508,8 @@ export default function Home({ onStart }: Props) {
 				(myGender == null || myBirthYear == null || !myResidence) && (
 					<ProfileSetup />
 				)}
-			{editingProfile && (
-				<ProfileSetup mode="edit" onClose={() => setEditingProfile(false)} />
-			)}
 
-			{/* PWA 홈 화면 설치 유도 토스트 — 프로필 완성 + 프로필 편집 중 아님일 때만(모달 위 겹침 방지). */}
+			{/* PWA 홈 화면 설치 유도 토스트 — 프로필 완성일 때만(가입 모달 위 겹침 방지). */}
 			{showInstallToast && <InstallPromptToast />}
 		</>
 	);

@@ -25,7 +25,12 @@ import { pairPlayers } from "../../lib/teamSelection";
 import { acquireAdminCoverage, releaseAdminCoverage } from "../../lib/board/adminCoverageGate";
 import { useSessionStore } from "../sessionStore";
 import { useAppStore } from "../appStore";
+import { useAuthStore } from "../authStore";
+import { applyMemberCompletion } from "../sessionStore";
 import { toast } from "../toastStore";
+import { memberCompleteMatch as rpcMemberCompleteMatch } from "../../lib/supabase/matchResults";
+import { isViewerInMatch } from "../../lib/board/pixi/projection";
+import { commitMemberArrangement } from "./memberCompletion";
 import { rosterSaveKey } from "../../lib/board/matchRosterEdit";
 import type { BoardState } from "./types";
 import { claimEdit, pushDraftsToRemote, refineLocally, serializeBoardDrafts, setDraftsBase, syncState } from "./draftsSync";
@@ -49,8 +54,13 @@ export function projectRemoteDrafts(state: BoardState, payload: BoardDraftsPaylo
 /** 경기 슬라이스 — 원격 멤버십 적용/자가치유·경기 시작/완료/로스터 수정. */
 export type MatchSlice = Pick<
 	BoardState,
-	"applyRemoteDrafts" | "healPlayingAnchors" | "startMatch" | "completeMatch" | "setMatchRoster" | "dismissTeam"
+	| "applyRemoteDrafts" | "healPlayingAnchors" | "startMatch" | "completeMatch" | "setMatchRoster" | "dismissTeam"
+	| "completeRequest" | "requestCompleteMatch" | "closeCompleteRequest" | "completeMatchAsMember"
 >;
+
+// 회원 완료 RPC 왕복 중인 matchId — 창 두 번 열기·연타가 member_complete_match 를 두 번 쏘지 않게(assigningTeamIds 와 별개로
+// 세션 전환·cancelEditActions 로 지워지지 않는 모듈 가드).
+const memberCompleting = new Set<string>();
 
 export const createMatchSlice: StateCreator<
 	BoardState,
@@ -280,6 +290,70 @@ export const createMatchSlice: StateCreator<
 			get().scatterMagnets(endedIds);
 		} finally {
 			if (get().sessionId === sessionId) set(s => { s.assigningTeamIds.delete(groupId); });
+		}
+	},
+
+	completeRequest: null,
+
+	requestCompleteMatch: (courtId) => {
+		if (get().completeRequest) return; // 이미 창이 열려 있다(연타)
+		const ss = useSessionStore.getState();
+		const court = ss.courts.find((c) => c.id === courtId);
+		const match = court?.match;
+		if (!match) return;
+		const groupId = [...get().drafts.values()].find(team => team.courtId === courtId)?.id ?? `complete:${courtId}`;
+		if (get().matchEdits.has(courtId) || get().assigningTeamIds.has(rosterSaveKey(courtId)) || get().assigningTeamIds.has(groupId)
+			|| memberCompleting.has(match.id)) return;
+		// 편집자면 기존 경로. 편집자가 아닌 운영진도 자기 코트면 회원 경로(편집락을 뺏지 않는다).
+		// 편집자인데 지금 막혀 있으면(exclusiveDraftEdit — 제안 적용 대기 등) 회원 경로로 새지 않는다: 그 기기의
+		// 저장 구독이 회원 편성 후보를 board_save_drafts 로 밀어 넣을 수 있다. 막힘이 풀리면 편집자 경로로 누른다.
+		const mode = claimEdit() ? "editor"
+			: !ss.isEditor && isViewerInMatch(match, ss.sessionPlayers, useAuthStore.getState().memberId) ? "member" : null;
+		if (!mode) return;
+		set(s => { s.completeRequest = { courtId, matchId: match.id, mode }; });
+	},
+
+	closeCompleteRequest: () => set(s => { s.completeRequest = null; }),
+
+	completeMatchAsMember: async (courtId, matchId, winner, teamA = null) => {
+		const sessionId = useAppStore.getState().sessionMeta?.sessionId;
+		const boardSessionId = get().sessionId;
+		if (!sessionId) return { status: "error" };
+		if (memberCompleting.has(matchId)) return { status: "busy" };
+		const court = useSessionStore.getState().courts.find((c) => c.id === courtId);
+		const match = court?.match;
+		// 이 기기에서 이미 코트가 비었거나 다른 경기로 바뀌었다 = 누가 먼저 끝냈다.
+		if (!match || match.id !== matchId) return { status: "already_completed" };
+		const endedIds = matchPlayerIdsFromCourt(court);
+		const groupId = [...get().drafts.values()].find(team => team.courtId === courtId)?.id ?? `complete:${courtId}`;
+		memberCompleting.add(matchId);
+		// 코트 카드 '완료 중…'(projection busy) — 편집자 completeMatch 와 같은 키.
+		set(s => { s.assigningTeamIds.add(groupId); });
+		try {
+			const res = await rpcMemberCompleteMatch(matchId, sessionId, winner, teamA);
+			if (!res.ok) {
+				// 이미 완료 — 이 기기 코트가 아직 경기중으로 보이면 서버 상태로 수렴.
+				if (res.reason === "already_completed") void useSessionStore.getState().resyncFromServer();
+				return { status: res.reason, message: res.message };
+			}
+			if (get().sessionId !== boardSessionId || useAppStore.getState().sessionMeta?.sessionId !== sessionId) {
+				return { status: "completed", result: res.result, arrange: "skipped" };
+			}
+			// 운영진 완료와 똑같이 match_completed 로컬 적용 + 브로드캐스트.
+			applyMemberCompletion(match, courtId, res.updatedPlayers);
+			// 편성 계획 전에 busy 키를 푼다 — autoFillEmptyCourts 는 assigningTeamIds 에 든 그룹을 건너뛴다.
+			set(s => { s.assigningTeamIds.delete(groupId); });
+			// 완료·결과는 이미 서버에 확정됐다. 편성 단계가 어떻게 실패해도 '완료됨'으로 돌려준다(편성은 운영진이 이어 한다).
+			const arrange = await commitMemberArrangement(get, (fn) => set(fn), sessionId, matchId, courtId, endedIds)
+				.catch((error: unknown) => {
+					console.error("member arrangement failed:", error);
+					void useSessionStore.getState().resyncFromServer({ force: true });
+					return "error" as const;
+				});
+			return { status: "completed", result: res.result, arrange };
+		} finally {
+			memberCompleting.delete(matchId);
+			if (get().sessionId === boardSessionId) set(s => { s.assigningTeamIds.delete(groupId); });
 		}
 	},
 

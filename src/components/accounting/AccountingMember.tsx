@@ -48,7 +48,18 @@ function itemsNote(items: MyDuesItem[], now: string): string {
 		: `${head.label} 외 ${items.length - 1}건`;
 }
 
-export default function AccountingMember() {
+interface Props {
+	/**
+	 * 내 정보(`/me`) 탭 본문으로 그릴 때. 그 셸이 AppScreen·제목·탭 줄을 이미 갖고 있으므로
+	 * 여기서는 자기 AppScreen 과 '내 회비/클럽 회계' 탭 줄을 그리지 않는다
+	 * (docs/MATCH_RESULT_ELO_SPEC.md §3.5). 파일 경로·default export 는 .design-sync 가 물고 있어 그대로 둔다.
+	 */
+	embedded?: boolean;
+	/** embedded 일 때 어느 탭인지 — 라우트 파라미터 대신 셸이 알려준다. */
+	page?: "mine" | "ledger";
+}
+
+export default function AccountingMember({ embedded = false, page }: Props = {}) {
 	const navigate = useNavigate();
 	const params = useParams<{ page: string }>();
 	const member = useAuthStore((s) => s.memberId)!;
@@ -69,7 +80,7 @@ export default function AccountingMember() {
 		};
 	}, [member]);
 
-	const ledger = params.page === "ledger";
+	const ledger = embedded ? page === "ledger" : params.page === "ledger";
 	const month = data ? myDuesMonth(data, member, mineYm) : null;
 	// '지금 낼 돈'은 달과 무관하다 — 카드가 달 단위여도 이 숫자는 오늘 기준으로 센다.
 	const today = data ? memberSummary(data, member, now) : null;
@@ -94,13 +105,8 @@ export default function AccountingMember() {
 			? unpaid[0].label
 			: `${unpaid[0].label} 외 ${unpaid.length - 1}건`;
 
-	return (
-		<AppScreen
-			contentClassName="accounting-screen ac-layout-v2 ac-mine-page"
-			title="회비"
-			onBack={() => navigate("/")}
-			onRefresh={refresh}
-		>
+	const body = (
+		<>
 			<div className="ac-month">
 				<button
 					type="button"
@@ -120,22 +126,24 @@ export default function AccountingMember() {
 					›
 				</button>
 			</div>
-			<nav className="ac-tabs">
-				<button
-					type="button"
-					aria-current={!ledger ? "page" : undefined}
-					onClick={() => navigate("/my-dues")}
-				>
-					내 회비
-				</button>
-				<button
-					type="button"
-					aria-current={ledger ? "page" : undefined}
-					onClick={() => navigate("/my-dues/ledger")}
-				>
-					클럽 회계
-				</button>
-			</nav>
+			{!embedded && (
+				<nav className="ac-tabs">
+					<button
+						type="button"
+						aria-current={!ledger ? "page" : undefined}
+						onClick={() => navigate("/me/dues")}
+					>
+						내 회비
+					</button>
+					<button
+						type="button"
+						aria-current={ledger ? "page" : undefined}
+						onClick={() => navigate("/me/ledger")}
+					>
+						클럽 회계
+					</button>
+				</nav>
+			)}
 			{error && (
 				<p role="alert" className="ac-notice is-stop">
 					{error}
@@ -322,13 +330,32 @@ export default function AccountingMember() {
 					)}
 				</>
 			)}
+		</>
+	);
+
+	// 같은 토큰·간격 스코프(.accounting-screen …)를 감싸는 요소만 바뀐다 — embedded 면 셸의 본문 안 div.
+	const pageClass = "accounting-screen ac-layout-v2 ac-mine-page";
+	if (embedded) return <div className={pageClass}>{body}</div>;
+	return (
+		<AppScreen
+			contentClassName={pageClass}
+			title="회비"
+			onBack={() => navigate("/")}
+			onRefresh={refresh}
+		>
+			{body}
 		</AppScreen>
 	);
 }
 
 export function AccountingEntryAlert() {
 	const navigate = useNavigate();
-	const onMyDues = useLocation().pathname.startsWith("/my-dues");
+	// 회비 화면은 내 정보(/me)의 '회비'·'클럽 회계' 탭으로 옮겼다. 옛 /my-dues 는 리다이렉트 중에 한 번 지나간다.
+	const path = useLocation().pathname;
+	const onMyDues =
+		path.startsWith("/my-dues") ||
+		path.startsWith("/me/dues") ||
+		path.startsWith("/me/ledger");
 	const member = useAuthStore((s) => s.memberId);
 	const complete = useAuthStore(
 		(s) => s.myGender != null && s.myBirthYear != null && !!s.myResidence,
@@ -359,7 +386,7 @@ export function AccountingEntryAlert() {
 			onDismiss={close}
 			onConfirm={() => {
 				close();
-				navigate("/my-dues");
+				navigate("/me/dues");
 			}}
 		>
 			<p className="ac-caption">

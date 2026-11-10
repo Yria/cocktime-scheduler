@@ -1,20 +1,26 @@
 import { EllipsisVertical } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { ELO } from "../../lib/rating/elo";
+import { isPlacement, tierLabel, tierOf } from "../../lib/rating/tier";
 import { authActions, authDisplayName, useAuthStore } from "../../store/authStore";
+import { useRatingStore } from "../../store/ratingStore";
+import TierFrame from "../rating/TierFrame";
+import PlayerAvatar from "../shared/PlayerAvatar";
 import ModalSheet from "./ModalSheet";
 import PushSettingsSheet from "./PushSettingsSheet";
 
-interface Props {
-	/** "내 정보" 선택 시 프로필 수정 모달 열기 */
-	onEditProfile: () => void;
-}
-
-export default function HeaderMenu({ onEditProfile }: Props) {
+// '내 정보'는 모달이 아니라 /me 화면(승패 기록·회비·클럽 회계·정보 수정 통합,
+// docs/MATCH_RESULT_ELO_SPEC.md §3.5)으로 간다. 회비도 그 화면의 탭이라 메뉴에 따로 두지 않는다.
+export default function HeaderMenu() {
 	const navigate = useNavigate();
 	const authUser = useAuthStore((s) => s.user);
 	const isAdmin = useAuthStore((s) => s.isAdmin);
 	const myName = useAuthStore((s) => s.myName);
+	const memberId = useAuthStore((s) => s.memberId);
+	const myGender = useAuthStore((s) => s.myGender);
+	// 점수는 앱 진입 때 Home 이 한 번 읽어 둔다. 여기서 다시 부르지 않는다(메뉴 열 때마다 RPC 금지).
+	const my = useRatingStore((s) => s.my);
 	const [open, setOpen] = useState(false);
 	const [pushOpen, setPushOpen] = useState(false);
 
@@ -55,27 +61,56 @@ export default function HeaderMenu({ onEditProfile }: Props) {
 
 			{open && (
 				<ModalSheet position="bottom" onClose={close}>
-					{/* 사용자 정보 헤더 */}
-					<div className="px-5 pt-5 pb-3">
-						<p
-							className="text-strong"
-							style={{ fontSize: 16, fontWeight: 800 }}
-						>
-							{myName || authDisplayName(authUser)}
-						</p>
-						{isAdmin && (
-							<span
-								className="text-[#0b84ff]"
-								style={{ fontSize: 12, fontWeight: 700 }}
+					{/* 사용자 정보 헤더 — 등급 테두리 아바타. 점수를 못 읽었으면(my=null) 테두리 없이 아바타만:
+					    틀린 등급을 보여주느니 없는 편이 낫다. */}
+					<div className="px-5 pt-5 pb-3 flex items-center gap-2">
+						{memberId &&
+							(my ? (
+								<TierFrame
+									tier={tierOf(my.rating)}
+									placement={isPlacement(my.games)}
+									size={36}
+									decorative
+								>
+									<PlayerAvatar
+										name={myName || authDisplayName(authUser)}
+										gender={myGender}
+										photoId={memberId}
+										size={36}
+									/>
+								</TierFrame>
+							) : (
+								<PlayerAvatar
+									name={myName || authDisplayName(authUser)}
+									gender={myGender}
+									photoId={memberId}
+									size={36}
+								/>
+							))}
+						<div className="min-w-0">
+							<p
+								className="text-strong truncate"
+								style={{ fontSize: 16, fontWeight: 800 }}
 							>
-								운영진
-							</span>
-						)}
+								{myName || authDisplayName(authUser)}
+							</p>
+							<p style={{ fontSize: 12, fontWeight: 700 }}>
+								{my && (
+									<span className="text-muted">
+										{isPlacement(my.games)
+											? `배치 중 ${my.games}/${ELO.PLACEMENT_SHOW_GAMES}`
+											: tierLabel(tierOf(my.rating))}
+									</span>
+								)}
+								{my && isAdmin && <span className="text-faint"> · </span>}
+								{isAdmin && <span className="text-[#0b84ff]">운영진</span>}
+							</p>
+						</div>
 					</div>
 
 					<button
 						type="button"
-						onClick={run(onEditProfile)}
+						onClick={run(() => navigate("/me"))}
 						className={`${itemClass} text-strong`}
 						style={itemStyle}
 					>
@@ -109,14 +144,6 @@ export default function HeaderMenu({ onEditProfile }: Props) {
 							회비 관리
 						</button>
 					)}
-					<button
-						type="button"
-						onClick={run(() => navigate("/my-dues"))}
-						className={`${itemClass} text-strong`}
-						style={itemStyle}
-					>
-						내 회비
-					</button>
 					<button
 						type="button"
 						onClick={run(() => void authActions.signOut())}

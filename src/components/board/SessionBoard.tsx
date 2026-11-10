@@ -25,6 +25,7 @@ import EditorTakenNotice from "./EditorTakenNotice";
 import DebugMatchModal from "./DebugMatchModal";
 import AdminCoverageNotice from "./AdminCoverageNotice";
 import ProposalCourtDialog from "./ProposalCourtDialog";
+import MatchCompleteFlow from "./MatchCompleteFlow";
 import { ArrangeFab, BoardSyncingBadge, NewGroupFab, SearchFab, ZoomControls } from "./SessionBoardChrome";
 import type { RecommendTarget } from "../../hooks/useTeammateRecommendations";
 
@@ -158,6 +159,8 @@ export default function SessionBoard() {
 			<EditorTakenNotice />
 			<AdminCoverageNotice />
 			<ProposalCourtDialog />
+			{/* 경기완료 → 승패 입력(편집자·자기 코트 회원 공통). 보기 전용이어도 회원 경로가 있어 isEditor 로 감추지 않는다. */}
+			<MatchCompleteFlow />
 			<DebugMatchModal />
 		</div>
 	);

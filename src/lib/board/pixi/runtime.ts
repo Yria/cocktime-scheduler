@@ -18,6 +18,7 @@ import { createFrameScheduler } from "./frameScheduler";
 import { createBoardInteractionController, type BoardInteractionTarget } from "./interactionController";
 import { createBoardProjection } from "./projection";
 import { useAdminCoverageStore } from "../../../store/adminCoverageStore";
+import { useAuthStore } from "../../../store/authStore";
 import { canUseMatchPlayer } from "../matchRosterEdit";
 import type { BoardEntity, BoardSnapshot, BoardSource, CardView, MagnetView } from "./types";
 import { sourceKey } from "./types";
@@ -122,6 +123,8 @@ export class BoardRuntime {
 			onEmptyDoubleTap: () => this.callbacks.onEmptyDoubleTap?.(),
 		});
 		this.cleanups.push(useBoardStore.subscribe(this.refresh), useSessionStore.subscribe(this.refresh), useAdminCoverageStore.subscribe(this.refresh),
+			// 회원 완료 CTA 는 내 memberId 에 기대고, 그 값은 진입 후 비동기로 채워진다(authStore.loadMember).
+			useAuthStore.subscribe(this.refresh),
 			useRemoteDragStore.subscribe(this.onRemoteDrags));
 		this.proposalUnsubscribe = callbacks.proposals?.subscribe(this.refresh);
 		this.cleanups.push(() => this.proposalUnsubscribe?.());
@@ -198,7 +201,10 @@ export class BoardRuntime {
 		this.remoteCache = { drags, scene, dragKey, remote, held: new Set(remote.map((item) => item.key)) };
 		return this.remoteCache;
 	}
-	private readScene() { return this.projection(useBoardStore.getState(), useSessionStore.getState(), this.callbacks.proposals?.getSnapshot(), useAdminCoverageStore.getState()); }
+	private readScene() {
+		return this.projection(useBoardStore.getState(), useSessionStore.getState(), this.callbacks.proposals?.getSnapshot(), useAdminCoverageStore.getState(),
+			{ memberId: useAuthStore.getState().memberId });
+	}
 
 	private refresh = () => {
 		if (this.disposed || this.committing) return;
@@ -424,12 +430,15 @@ export class BoardRuntime {
 				if (view.source.kind === "court") {
 					const id = view.source.courtId;
 					const editing = view.appearance.showUnconfirm;
-					return button(editing ? "apply-roster" : "complete", () => {
-						if (!view.appearance.ctaEnabled) return;
-						const board = useBoardStore.getState();
-						if (editing) void board.applyMatchEdit(id);
-						else void board.completeMatch(id);
+					if (editing) return button("apply-roster", () => {
+						if (view.appearance.ctaEnabled) void useBoardStore.getState().applyMatchEdit(id);
 					});
+					// 경기완료는 편집자 전용 button() 게이트를 타지 않는다 — 자기 코트의 회원도 누른다(§3.4).
+					// 누가 누를 수 있는지는 projection 의 ctaEnabled 가 정하고, 바로 끝내지 않고 승패 입력 창부터 연다
+					// (requestCompleteMatch 가 편집자/회원 경로를 다시 판정한다).
+					return { key: `${view.key}:complete`, point: center, draggable: false, onTap: () => {
+						if (this.isValid(view.source) && view.appearance.ctaEnabled) useBoardStore.getState().requestCompleteMatch(id);
+					} };
 				}
 				const id = view.source.teamId;
 				if (view.appearance.ctaEnabled) return button("cta", () => {

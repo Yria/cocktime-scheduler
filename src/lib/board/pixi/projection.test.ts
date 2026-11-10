@@ -5,8 +5,8 @@ import type { Court, SessionPlayer } from "../../../types";
 import type { DraftTeam } from "../../../types/board";
 import type { ProposalComposerSnapshot } from "../matchProposals";
 import type { MatchProposal } from "../../supabase/matchProposals";
-import { CTA_PLAY_COLOR, CTA_START_COLOR, TEAM_BOX_ABOVE, TEAM_READY_BG, TEAM_RESERVED_BG, TEAM_W } from "../constants";
-import { createBoardProjection } from "./projection";
+import { CTA_DISABLED_COLOR, CTA_FINISH_COLOR, CTA_PLAY_COLOR, CTA_START_COLOR, TEAM_BOX_ABOVE, TEAM_READY_BG, TEAM_RESERVED_BG, TEAM_W } from "../constants";
+import { createBoardProjection, isViewerInMatch } from "./projection";
 import type { BoardSnapshot, CardView, MagnetView } from "./types";
 
 function player(id: string): SessionPlayer {
@@ -290,5 +290,62 @@ describe("Pixi board projection", () => {
 		expect(members.map((member) => member.player.id)).toEqual(["a", "b", "c", "d"]);
 		expect(members[0].point).toEqual({ x: -35, y: -35 });
 		expect(members[1]).toBe(card(before, "court:1:match-1").members[0]);
+	});
+
+	describe("court completion CTA (MATCH_RESULT_ELO_SPEC §3.4)", () => {
+		const setup = () => {
+			const { bs, ss } = fixture();
+			ss.isEditor = false;
+			ss.courts = [court(1, ["a", "b", "c", "d"])];
+			ss.sessionPlayers = new Map(ss.sessionPlayers);
+			ss.sessionPlayers.set("c", { ...player("c"), memberId: "m-c" });
+			ss.sessionPlayers.set("e", { ...player("e"), memberId: "m-e" });
+			return { bs, ss };
+		};
+		const cta = (snapshot: BoardSnapshot) => card(snapshot, "court:1:match-1").appearance;
+
+		it("enables 경기완료 for a non-editor whose memberId is in the match roster", () => {
+			const { bs, ss } = setup();
+			expect(cta(createBoardProjection()(bs, ss, undefined, undefined, { memberId: "m-c" })))
+				.toMatchObject({ ctaLabel: "경기완료", ctaEnabled: true, ctaColor: CTA_FINISH_COLOR });
+		});
+
+		it("keeps the card read-only for a viewer who is not playing, a guest viewer, or no viewer", () => {
+			const { bs, ss } = setup();
+			for (const viewer of [{ memberId: "m-e" }, { memberId: null }, undefined]) {
+				expect(cta(createBoardProjection()(bs, ss, undefined, undefined, viewer)))
+					.toMatchObject({ ctaLabel: "보기 전용", ctaEnabled: false, ctaColor: CTA_DISABLED_COLOR });
+			}
+		});
+
+		it("shows 완료 중… and disables while the completion is in flight", () => {
+			const { bs, ss } = setup();
+			bs.assigningTeamIds = new Set(["complete:1"]);
+			expect(cta(createBoardProjection()(bs, ss, undefined, undefined, { memberId: "m-c" })))
+				.toMatchObject({ ctaLabel: "완료 중…", ctaEnabled: false });
+		});
+
+		it("leaves the editor rule unchanged regardless of the viewer", () => {
+			const { bs, ss } = setup();
+			ss.isEditor = true;
+			expect(cta(createBoardProjection()(bs, ss, undefined, undefined, { memberId: "m-e" })))
+				.toMatchObject({ ctaLabel: "경기완료", ctaEnabled: true });
+		});
+
+		it("recomputes when the viewer's memberId arrives later", () => {
+			const { bs, ss } = setup();
+			const project = createBoardProjection();
+			expect(cta(project(bs, ss, undefined, undefined, { memberId: null })).ctaEnabled).toBe(false);
+			expect(cta(project(bs, ss, undefined, undefined, { memberId: "m-c" })).ctaEnabled).toBe(true);
+		});
+	});
+
+	it("isViewerInMatch matches by session_players.member_id only", () => {
+		const players = new Map([["a", { memberId: "m-a" }], ["b", { memberId: null }]]);
+		const match = { teamA: ["a", "b"], teamB: ["c", "d"] };
+		expect(isViewerInMatch(match, players, "m-a")).toBe(true);
+		expect(isViewerInMatch(match, players, "a")).toBe(false); // session_players.id 가 아니라 members.id 로 대조
+		expect(isViewerInMatch(match, players, null)).toBe(false);
+		expect(isViewerInMatch(null, players, "m-a")).toBe(false);
 	});
 });

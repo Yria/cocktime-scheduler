@@ -1,33 +1,11 @@
-import { Navigate } from "react-router-dom";
-import { useAuthStore } from "../../store/authStore";
-import { duesActions, useDuesMode } from "../../store/duesStore";
-import AccountingMember from "../accounting/AccountingMember";
-import AppScreen from "../common/AppScreen";
+import { Navigate, useParams } from "react-router-dom";
 
+/**
+ * 옛 회원 회비 주소(/my-dues, /my-dues/ledger) → 내 정보(/me)의 회비·클럽 회계 탭.
+ * 푸시 알림·홈 화면 북마크·카톡에 붙여 둔 옛 링크가 살아 있어야 해서 라우트를 지우지 않고 넘겨준다
+ * (docs/MATCH_RESULT_ELO_SPEC.md §3.5). 회계 모드 확인·로그인 가드는 /me 쪽이 한다.
+ */
 export default function MyDuesPage() {
-	const { mode, error } = useDuesMode();
-	const ready = useAuthStore((s) => s.ready && s.memberLoaded);
-	const member = useAuthStore((s) => s.memberId);
-	if (!ready) return null;
-	if (!member) return <Navigate to="/" replace />;
-	if (error)
-		return (
-			<AppScreen title="회비" onRefresh={duesActions.mode}>
-				<p role="alert">{error}</p>
-				<button
-					type="button"
-					className="btn-lq-secondary"
-					onClick={() => void duesActions.mode()}
-				>
-					다시 확인
-				</button>
-			</AppScreen>
-		);
-	if (!mode?.enabled)
-		return (
-			<AppScreen title="회비">
-				<p className="text-muted">회계 상태를 확인하는 중…</p>
-			</AppScreen>
-		);
-	return <AccountingMember key={member} />;
+	const { page } = useParams<{ page: string }>();
+	return <Navigate to={page === "ledger" ? "/me/ledger" : "/me/dues"} replace />;
 }

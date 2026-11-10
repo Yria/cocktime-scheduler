@@ -81,8 +81,9 @@ export const createMembershipSlice: StateCreator<
 	},
 	// 합류 대기팀은 여기서 채우지 않는다(경기 완료 때만, completeMatch). 코트 버튼에서 먼저 채우면
 	// 빈 코트가 쓸 자유 대기자를 대기팀이 가져가고, 방금 만든 대기팀이 곧바로 같은 사람들로 완성된다.
-	autoFillEmptyCourts: (courtId) => {
+	autoFillEmptyCourts: (courtId, opts) => {
 		if (!claimEdit()) return;
+		const excluded = new Set(opts?.excludeIds ?? []);
 		for (const team of get().drafts.values()) {
 			const ss = useSessionStore.getState();
 			if (team.courtId == null || (courtId != null && courtId !== team.courtId)
@@ -110,16 +111,17 @@ export const createMembershipSlice: StateCreator<
 					continue;
 				}
 			}
+			if (opts?.queuedOnly) continue;
 			const data = buildRecommendData({ teamId: team.id }, [], { ...get(), ...ss, avoidGroups: matchAvoidGroups() }, { excludePlaying: true, excludeReserved: true });
 			const editing = editingRosterIds(get().matchEdits);
 			if (!data || data.confirmed.some(player => data.playingIds.has(player.id) || player.status === "resting"
 				|| editing.has(player.id) || (ss.cockCheckEnabled && !player.cockChecked))) continue;
-			let picks = autoFillTeammates(data.confirmed, data.pool.filter(p => !editing.has(p.id)), data.ctx, 4 - data.confirmed.length);
+			let picks = autoFillTeammates(data.confirmed, data.pool.filter(p => !editing.has(p.id) && !excluded.has(p.id)), data.ctx, 4 - data.confirmed.length);
 			if (picks.length + data.confirmed.length < 4) {
 				const flexible = buildRecommendData({ teamId: team.id }, [], { ...get(), ...ss, avoidGroups: matchAvoidGroups() },
 					{ excludePlaying: true, excludeReserved: true, includeWaitingDrafts: true });
 				if (flexible) {
-					const pool = flexible.pool.filter(p => !editing.has(p.id) && !get().assigningTeamIds.has(get().magnets.get(p.id)?.teamId ?? ""));
+					const pool = flexible.pool.filter(p => !editing.has(p.id) && !excluded.has(p.id) && !get().assigningTeamIds.has(get().magnets.get(p.id)?.teamId ?? ""));
 					picks = autoFillTeammates(flexible.confirmed, pool, flexible.ctx, 4 - flexible.confirmed.length);
 				}
 			}
@@ -128,8 +130,9 @@ export const createMembershipSlice: StateCreator<
 	},
 
 	// 경기 완료 직후에만 부른다 — 끝난 선수가 여러 대기팀으로 흩어지는 것이 이 모드의 목적이다.
-	fillWaitingTeams: () => {
+	fillWaitingTeams: (opts) => {
 		if (!claimEdit()) return;
+		const excluded = new Set(opts?.excludeIds ?? []);
 		const state = get(), ss = useSessionStore.getState();
 		const editing = editingRosterIds(state.matchEdits);
 		const teams = [...state.drafts.values()]
@@ -142,7 +145,7 @@ export const createMembershipSlice: StateCreator<
 		if (!teams.length) return;
 		const data = buildRecommendData({ newTeam: true }, [], { ...state, ...ss, avoidGroups: matchAvoidGroups() }, { excludePlaying: true, excludeReserved: true });
 		if (!data) return;
-		const pool = data.pool.filter(p => !editing.has(p.id));
+		const pool = data.pool.filter(p => !editing.has(p.id) && !excluded.has(p.id));
 		// 빈 코트에 1~3명만 올라간 그룹이 완성할 사람을 먼저 남긴다. 그 그룹은 코트 버튼으로 채운다.
 		const partialCourts = [...state.drafts.values()]
 			.filter(team => team.courtId != null && !state.assigningTeamIds.has(team.id) && ss.courts.some(court => court.id === team.courtId && !court.match))

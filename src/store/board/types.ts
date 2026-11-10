@@ -1,6 +1,24 @@
 import type { SessionPlayer } from "../../types";
 import type { MatchRosterEdit } from "../../lib/board/matchRosterEdit";
 import type { BoardDraftsPayload, DraftTeam, MagnetPosition, Reservation, StagePoint } from "../../types/board";
+import type { MatchResult, MatchTeamA, MatchWinner } from "../../lib/supabase/matchResults";
+
+/** 열려 있는 경기완료 요청 — 창을 연 순간의 경기(matchId)에 묶는다. 그 사이 코트가 바뀌어도 다른 경기를 끝내지 않게. */
+export interface CompleteRequest {
+	courtId: number;
+	matchId: string;
+	mode: "editor" | "member";
+}
+
+/**
+ * 회원 경기완료 결과.
+ *  · completed: 완료됨. arrange = 코트 그룹 편성 커밋 결과(ok / stale = 재시도 소진 / rejected = 모든 후보가 서버 편성 규칙에 걸림(사유 비공개) / error = 권한 만료·네트워크 / skipped = 화면 이탈)
+ *  · already_completed: 동시 탭 등으로 이미 완료 — 결과만 제출할 수 있다
+ *  · not_in_match / error / busy: 완료 안 됨
+ */
+export type MemberCompletionOutcome =
+	| { status: "completed"; result: MatchResult | null; arrange: "ok" | "stale" | "rejected" | "error" | "skipped" }
+	| { status: "already_completed" | "not_in_match" | "error" | "busy"; message?: string };
 
 /** 드래그-엔드 소스: 무엇을 놓았는지(자석/팀/코트). 흩어짐의 시작점이 된다. */
 export type DragSource = { magnetId: string } | { teamId: string } | { courtId: number };
@@ -54,9 +72,14 @@ export interface BoardState {
 
 	initializeFromPool: (players: SessionPlayer[]) => void;
 	ensureCourtGroups: () => void;
-	autoFillEmptyCourts: (courtId?: number) => void;
-	/** 합류 대기팀의 빈자리를 채운다. 경기 완료 성공 직후(completeMatch)에만 호출한다. */
-	fillWaitingTeams: () => void;
+	/**
+	 * 빈 코트 그룹을 채운다 — 준비된 예비팀을 옮기고, 없으면 새로 자동 편성한다.
+	 * queuedOnly: 예비팀 옮기기만(자동 편성 생략) — 회원 완료 경로의 안전 후보(MATCH_RESULT_ELO_SPEC §3.4).
+	 * excludeIds: 자동 편성 후보 풀에서 뺄 선수 — 회원 완료 경로의 대안 후보(사람을 바꾼 편성)용.
+	 */
+	autoFillEmptyCourts: (courtId?: number, opts?: { queuedOnly?: boolean; excludeIds?: readonly string[] }) => void;
+	/** 합류 대기팀의 빈자리를 채운다. 경기 완료 성공 직후(completeMatch·회원 완료)에만 호출한다. excludeIds 는 풀에서 뺄 선수. */
+	fillWaitingTeams: (opts?: { excludeIds?: readonly string[] }) => void;
 	handleDrop: (playerId: string, drop: StagePoint) => void;
 	handleGhostDrop: (resId: string, drop: StagePoint) => void;
 	handlePlayingMagnetDrop: (playerId: string, drop: StagePoint) => void;
@@ -148,6 +171,19 @@ export interface BoardState {
 	startMatch: (teamId: string, approvedAdminRoster?: readonly string[]) => Promise<void>;
 	dismissTeam: (teamId: string) => void;
 	completeMatch: (courtId: number) => Promise<void>;
+	/**
+	 * 경기완료 탭 → 승패 입력 창(MatchCompleteFlow)을 연다. 바로 끝내지 않는다(§3.4: 창이 먼저).
+	 * mode: editor = 기존 completeMatch 경로 / member = 자기 코트의 회원(편집자 아님) 경로.
+	 */
+	completeRequest: CompleteRequest | null;
+	requestCompleteMatch: (courtId: number) => void;
+	closeCompleteRequest: () => void;
+	/**
+	 * 회원 경기완료(member_complete_match) → 로컬 반영·브로드캐스트 → 그 코트 그룹 편성 1회 커밋.
+	 * 편집자 경로가 아니다 — claimEdit() 은 편성 계획의 동기 구간에서만 열린다(runWithCompletionGrant).
+	 * teamA = 실제 A편 session_players.id 두 개(결과 입력 화면에서 고친 편, null = 보드 나눔). winner 는 그 A편 기준.
+	 */
+	completeMatchAsMember: (courtId: number, matchId: string, winner: MatchWinner | null, teamA?: MatchTeamA) => Promise<MemberCompletionOutcome>;
 	/** 경기 수정: 진행중 매치의 최종 로스터 설정(빠진 선수는 자유 자석으로 흩어짐). */
 	setMatchRoster: (
 		courtId: number,

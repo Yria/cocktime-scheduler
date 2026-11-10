@@ -1254,3 +1254,626 @@ h4,
 		opacity: 0.55;
 	}
 }
+
+/* ── 등급 테두리 / 승패 입력 ── */
+/* TierFrame(src/components/rating/TierFrame.tsx) — 등급을 색이 아니라 **실루엣**으로 구분한다.
+   ★ .tierf-avatar 와 그 안에는 animation/transform 금지(티켓 정적 불변식과 같은 원칙).
+     움직이는 건 .tierf-fx(고리 위 광택) · .tierf-aura(마스터 오라) 뿐이다.
+   크기 변수: --tf-s = 아바타 지름, --tf-pad = 장식 여백(지름의 22%, TierFrame 이 계산), --tf-w = 고리 두께. */
+.tierf {
+	--tf-w: max(2px, calc(var(--tf-s) * 0.06));
+	--tf-metal: conic-gradient(from 200deg, #8a4b22, #d99a62, #7a3f1a, #c98250, #8a4b22);
+	position: relative;
+	display: inline-block;
+	flex-shrink: 0;
+	width: calc(var(--tf-s) + var(--tf-pad) * 2);
+	height: calc(var(--tf-s) + var(--tf-pad) * 2);
+	isolation: isolate;
+	vertical-align: middle;
+}
+.tierf-avatar {
+	position: absolute;
+	inset: var(--tf-pad);
+	z-index: 2;
+	display: flex;
+	border-radius: 50%;
+}
+.tierf-back,
+.tierf-aura,
+.tierf-ring,
+.tierf-fx,
+.tierf-crown {
+	position: absolute;
+	pointer-events: none;
+}
+.tierf-back {
+	inset: 0;
+	z-index: 0;
+}
+/* 고리 — 아바타 바깥 가장자리부터 --tf-w 두께의 금속띠. mask 로 가운데를 비운다. */
+.tierf-ring,
+.tierf-fx {
+	inset: calc(var(--tf-pad) - var(--tf-w));
+	border-radius: 50%;
+	z-index: 3;
+	-webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--tf-w)), #000 calc(100% - var(--tf-w) + 0.5px));
+	mask: radial-gradient(farthest-side, transparent calc(100% - var(--tf-w)), #000 calc(100% - var(--tf-w) + 0.5px));
+}
+.tierf-ring {
+	background: var(--tf-metal);
+}
+
+/* bronze — 민무늬 고리 */
+
+/* silver — 이중 고리(안쪽 굵게 · 바깥 가늘게, 사이 틈) */
+.tierf--silver {
+	--tf-metal: conic-gradient(from 210deg, #8c96a1, #f4f6f9, #9aa3ad, #e3e8ee, #8c96a1);
+	--tf-w: max(4px, calc(var(--tf-s) * 0.12));
+}
+.tierf--silver .tierf-ring {
+	-webkit-mask: radial-gradient(
+		farthest-side,
+		transparent calc(100% - var(--tf-w)),
+		#000 calc(100% - var(--tf-w) + 0.5px) calc(100% - var(--tf-w) * 0.5),
+		transparent calc(100% - var(--tf-w) * 0.5 + 0.5px) calc(100% - var(--tf-w) * 0.28),
+		#000 calc(100% - var(--tf-w) * 0.28 + 0.5px)
+	);
+	mask: radial-gradient(
+		farthest-side,
+		transparent calc(100% - var(--tf-w)),
+		#000 calc(100% - var(--tf-w) + 0.5px) calc(100% - var(--tf-w) * 0.5),
+		transparent calc(100% - var(--tf-w) * 0.5 + 0.5px) calc(100% - var(--tf-w) * 0.28),
+		#000 calc(100% - var(--tf-w) * 0.28 + 0.5px)
+	);
+}
+
+/* gold — 굵은 고리 + 바깥 톱니(햇살 24개). 쐐기라 바깥으로 갈수록 넓어져 메달처럼 읽힌다. */
+.tierf--gold {
+	--tf-metal: conic-gradient(from 200deg, #b07a0a, #ffe08a, #c08a12, #ffd45a, #b07a0a);
+	--tf-w: max(2.5px, calc(var(--tf-s) * 0.075));
+}
+.tierf--gold .tierf-back {
+	inset: calc(var(--tf-pad) * 0.12);
+	border-radius: 50%;
+	background: repeating-conic-gradient(from 0deg, #e0a915 0 6deg, transparent 6deg 15deg);
+	-webkit-mask: radial-gradient(closest-side, transparent calc(var(--tf-s) / 2), #000 calc(var(--tf-s) / 2 + 1px));
+	mask: radial-gradient(closest-side, transparent calc(var(--tf-s) / 2), #000 calc(var(--tf-s) / 2 + 1px));
+	opacity: 0.85;
+}
+
+/* platinum — 깎은 팔각 판(면마다 명암이 다른 하드스톱 conic = 각진 면) */
+.tierf--platinum {
+	--tf-metal: conic-gradient(from 200deg, #5d8f95, #e4f7f6, #6fa3a8, #c4ecea, #5d8f95);
+	--tf-w: max(1.5px, calc(var(--tf-s) * 0.04));
+}
+.tierf--platinum .tierf-back {
+	inset: calc(var(--tf-pad) * 0.28);
+	clip-path: polygon(29% 0, 71% 0, 100% 29%, 100% 71%, 71% 100%, 29% 100%, 0 71%, 0 29%);
+	background: conic-gradient(
+		from 22.5deg,
+		#d7f1f0 0 45deg,
+		#8fc1c4 45deg 90deg,
+		#c3e6e5 90deg 135deg,
+		#6f9fa4 135deg 180deg,
+		#b5dcdc 180deg 225deg,
+		#5f8f94 225deg 270deg,
+		#a8d5d6 270deg 315deg,
+		#7eb1b5 315deg 360deg
+	);
+}
+
+/* diamond — 보석 컷 꼭짓점: 큰 4각 별 + 45° 돌린 작은 별(8개 꼭짓점) */
+.tierf--diamond {
+	--tf-metal: conic-gradient(from 200deg, #3b5bdb, #d0ebff, #4c6ef5, #a5d8ff, #3b5bdb);
+	--tf-w: max(2px, calc(var(--tf-s) * 0.055));
+}
+.tierf--diamond .tierf-back {
+	clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+	background: conic-gradient(
+		from 0deg,
+		#e7f5ff 0 45deg,
+		#5c7cfa 45deg 90deg,
+		#a5d8ff 90deg 135deg,
+		#3b5bdb 135deg 180deg,
+		#d0ebff 180deg 225deg,
+		#4263eb 225deg 270deg,
+		#bac8ff 270deg 315deg,
+		#364fc7 315deg 360deg
+	);
+}
+.tierf--diamond .tierf-back2 {
+	inset: calc(var(--tf-pad) * 0.42);
+	transform: rotate(45deg);
+	clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+	background: linear-gradient(135deg, #e7f5ff, #748ffc);
+}
+
+/* master — 왕관 + 오라 */
+.tierf--master {
+	--tf-metal: conic-gradient(from 200deg, #b0164e, #ffd43b, #d6336c, #ffb347, #b0164e);
+	--tf-w: max(2.5px, calc(var(--tf-s) * 0.075));
+}
+.tierf-aura {
+	inset: calc(var(--tf-pad) * 0.1);
+	z-index: 0;
+	border-radius: 50%;
+	background: conic-gradient(#ff6b6b, #ffd43b, #ff922b, #f06595, #ff6b6b);
+	filter: blur(calc(var(--tf-pad) * 0.3));
+	opacity: 0.9;
+	animation: tierf-spin 6s linear infinite;
+}
+.tierf-crown {
+	z-index: 4;
+	left: 50%;
+	top: calc(var(--tf-pad) * 0.02);
+	width: calc(var(--tf-s) * 0.5);
+	height: calc(var(--tf-pad) * 1.15);
+	margin-left: calc(var(--tf-s) * -0.25);
+	clip-path: polygon(0 100%, 4% 22%, 27% 58%, 50% 0, 73% 58%, 96% 22%, 100% 100%);
+	background: linear-gradient(180deg, #ffe066 0%, #f59f00 70%, #c77700 100%);
+}
+
+/* 광택 — 고리 위를 도는 하이라이트(gold 느리게, diamond 빠르고 밝게) */
+.tierf-fx {
+	z-index: 3;
+	background: conic-gradient(from 0deg, transparent 0 290deg, rgba(255, 255, 255, 0.95) 330deg, transparent 360deg);
+	animation: tierf-spin 4.5s linear infinite;
+}
+.tierf--diamond .tierf-fx {
+	animation-duration: 2.8s;
+}
+
+/* placement(배치 중) — 흐린 점선 고리만. 아직 등급이 없다는 뜻이라 금속색을 쓰지 않는다. */
+.tierf--placement .tierf-ring {
+	inset: calc(var(--tf-pad) - max(3px, calc(var(--tf-s) * 0.06)));
+	background: none;
+	border: max(1.5px, calc(var(--tf-s) * 0.035)) dashed var(--tone-faint);
+	-webkit-mask: none;
+	mask: none;
+}
+
+@keyframes tierf-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* MatchResultDialog(src/components/match/MatchResultDialog.tsx) — 청/홍 두 진영 + VS. 승리색은 금 하나. */
+.mrd-arena {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 30px minmax(0, 1fr);
+	align-items: stretch;
+}
+.mrd-team {
+	--mrd-c: #2f6bff;
+	--mrd-tint: rgba(47, 107, 255, 0.08);
+	--mrd-edge: rgba(47, 107, 255, 0.28);
+	position: relative;
+	overflow: hidden;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+	padding: 12px 6px 30px;
+	border: none;
+	border-radius: 22px;
+	background: var(--mrd-tint);
+	box-shadow: inset 0 0 0 1.5px var(--mrd-edge);
+	cursor: pointer;
+	transition:
+		transform 0.28s cubic-bezier(0.3, 1.4, 0.5, 1),
+		filter 0.3s,
+		opacity 0.3s,
+		box-shadow 0.25s,
+		background 0.25s;
+}
+.mrd-team--b {
+	--mrd-c: #e8364f;
+	--mrd-tint: rgba(232, 54, 79, 0.08);
+	--mrd-edge: rgba(232, 54, 79, 0.28);
+}
+.dark .mrd-team {
+	--mrd-c: #6b9bff;
+	--mrd-tint: rgba(80, 130, 255, 0.14);
+	--mrd-edge: rgba(107, 155, 255, 0.35);
+}
+.dark .mrd-team--b {
+	--mrd-c: #ff6b81;
+	--mrd-tint: rgba(255, 90, 115, 0.13);
+	--mrd-edge: rgba(255, 107, 129, 0.35);
+}
+.mrd-team:active:not(:disabled) {
+	transform: scale(0.97);
+}
+.mrd-team:focus-visible {
+	outline: 2px solid var(--ios-blue);
+	outline-offset: 2px;
+}
+.mrd-team:disabled {
+	cursor: default;
+}
+.mrd-team[data-state="win"] {
+	transform: translateY(-4px);
+	background: linear-gradient(180deg, rgba(255, 210, 80, 0.32), var(--mrd-tint) 70%);
+	box-shadow:
+		inset 0 0 0 2.5px #f5b301,
+		0 12px 28px rgba(245, 179, 1, 0.32);
+}
+.mrd-team[data-state="lose"] {
+	filter: grayscale(0.9);
+	opacity: 0.5;
+	transform: scale(0.96);
+}
+.mrd-team-label,
+.mrd-roster,
+.mrd-odds {
+	position: relative;
+	z-index: 1;
+}
+.mrd-team-label {
+	font-size: 13px;
+	font-weight: 800;
+	color: var(--mrd-c);
+	padding: 2px 9px;
+	border-radius: 99px;
+}
+.mrd-team-label.is-mine {
+	background: var(--mrd-c);
+	color: #fff;
+}
+.mrd-roster {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+}
+.mrd-player {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 3px;
+	max-width: 100%;
+}
+.mrd-name {
+	max-width: 100%;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--tone-strong);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.mrd-odds {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 9px;
+	font-size: 11.5px;
+	font-variant-numeric: tabular-nums;
+	text-align: center;
+}
+.mrd-team[data-state="win"] .mrd-odds {
+	visibility: hidden;
+}
+.mrd-vs {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: opacity 0.25s;
+}
+.mrd-vs > span {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 34px;
+	height: 34px;
+	margin-inline: -4px;
+	position: relative;
+	z-index: 2;
+	border-radius: 50%;
+	font-size: 13px;
+	font-weight: 900;
+	font-style: italic;
+	letter-spacing: -0.04em;
+	background: var(--tone-strong);
+	color: #fff;
+	box-shadow: 0 4px 12px rgba(15, 23, 36, 0.25);
+	transform: rotate(-10deg);
+}
+.dark .mrd-vs > span {
+	color: #0f172a;
+}
+.mrd-arena[data-picked] .mrd-vs {
+	opacity: 0.35;
+}
+/* 승리 연출 — 햇살(패널 뒤)과 도장. 둘 다 장식 레이어라 움직여도 된다(아바타는 정적). */
+.mrd-rays {
+	position: absolute;
+	inset: -45%;
+	z-index: 0;
+	background: repeating-conic-gradient(from 0deg, rgba(255, 196, 30, 0.3) 0 8deg, transparent 8deg 20deg);
+	-webkit-mask: radial-gradient(circle, #000 0, transparent 62%);
+	mask: radial-gradient(circle, #000 0, transparent 62%);
+	opacity: 0;
+	pointer-events: none;
+}
+.mrd-team[data-state="win"] .mrd-rays {
+	animation:
+		mrd-rays-in 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.15) both,
+		mrd-rays-spin 16s linear 0.6s infinite;
+}
+.mrd-stamp {
+	position: absolute;
+	left: 50%;
+	bottom: 6px;
+	z-index: 2;
+	margin-left: -24px;
+	width: 48px;
+	padding: 1px 0;
+	text-align: center;
+	font-size: 13px;
+	font-weight: 900;
+	letter-spacing: 0.08em;
+	color: #b45309;
+	background: #fff7d6;
+	border: 2px solid #e8a400;
+	border-radius: 8px;
+	opacity: 0;
+	pointer-events: none;
+}
+.dark .mrd-stamp {
+	color: #ffd45a;
+	background: #3a2a05;
+	border-color: #f5b301;
+}
+.mrd-team[data-state="win"] .mrd-stamp {
+	animation: mrd-stamp 0.42s cubic-bezier(0.3, 1.6, 0.5, 1) 0.06s both;
+}
+/* '같은 편' 단계 — 기준 선수 + 나머지 셋 칩(라디오). 고른 칩은 둘레 링으로만 표시(좌측 색 보더 금지). 아바타 정적. */
+.mrd-pair {
+	margin: -4px 0 14px;
+	text-align: center;
+}
+.mrd-pair-q {
+	font-size: 14px;
+	font-weight: 700;
+}
+.mrd-pair-hint {
+	margin-top: 6px;
+	font-size: 11.5px;
+}
+.mrd-pair-row {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	margin-top: 8px;
+}
+.mrd-pair-anchor {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: none;
+}
+.mrd-pair-plus {
+	font-size: 15px;
+	font-weight: 800;
+	color: var(--tone-faint);
+}
+.mrd-pair-chips {
+	display: flex;
+	gap: 6px;
+	min-width: 0;
+}
+.mrd-chip {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 3px;
+	min-width: 0;
+	width: 64px;
+	padding: 6px 4px 5px;
+	border: none;
+	border-radius: 14px;
+	background: rgba(15, 23, 36, 0.04);
+	box-shadow: inset 0 0 0 1.5px transparent;
+	cursor: pointer;
+	transition:
+		background 0.2s,
+		box-shadow 0.2s;
+}
+.dark .mrd-chip {
+	background: rgba(255, 255, 255, 0.06);
+}
+.mrd-chip[aria-checked="true"] {
+	background: rgba(15, 23, 36, 0.09);
+	box-shadow: inset 0 0 0 2px var(--tone-strong);
+}
+.dark .mrd-chip[aria-checked="true"] {
+	background: rgba(255, 255, 255, 0.14);
+}
+.mrd-chip:focus-visible {
+	outline: 2px solid var(--tone-strong);
+	outline-offset: 2px;
+}
+.mrd-chip:disabled {
+	cursor: default;
+	opacity: 0.6;
+}
+.mrd-chip-name {
+	max-width: 100%;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--tone-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.mrd-chip[aria-checked="true"] .mrd-chip-name {
+	color: var(--tone-strong);
+}
+/* 편이 바뀐 순간 패널을 한 번 훑는 빛 — 장식 레이어(아바타 위가 아니라 뒤, z-index 0). */
+.mrd-swap {
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	pointer-events: none;
+	background: linear-gradient(100deg, transparent 20%, var(--mrd-edge) 50%, transparent 80%);
+	transform: translateX(-110%);
+	animation: mrd-swap 0.45s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+@keyframes mrd-swap {
+	to {
+		transform: translateX(110%);
+	}
+}
+.mrd-skip {
+	padding: 10px;
+	font-weight: 600;
+	background: none;
+	border: none;
+}
+.mrd-skip:disabled {
+	opacity: 0.5;
+}
+.mrd-out-head {
+	font-size: 20px;
+	font-weight: 800;
+	color: var(--tone-strong);
+}
+.mrd-out-head.is-win {
+	color: #c98a00;
+}
+.dark .mrd-out-head.is-win {
+	color: #ffd45a;
+}
+.mrd-delta {
+	margin-top: 6px;
+	font-size: 56px;
+	line-height: 1;
+	font-weight: 900;
+	letter-spacing: -0.03em;
+	font-variant-numeric: tabular-nums;
+	color: var(--tone-muted);
+	animation: mrd-delta-in 0.5s cubic-bezier(0.3, 1.5, 0.5, 1) both;
+}
+.mrd-delta.is-up {
+	color: #16a34a;
+}
+.mrd-delta.is-down {
+	color: #e5484d;
+}
+.dark .mrd-delta.is-up {
+	color: #4ade80;
+}
+.dark .mrd-delta.is-down {
+	color: #ff6b6b;
+}
+.mrd-out-tier {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	margin-top: 16px;
+	padding: 10px 14px;
+	border-radius: 18px;
+	background: rgba(120, 120, 128, 0.08);
+}
+.dark .mrd-out-tier {
+	background: rgba(120, 120, 128, 0.18);
+}
+.mrd-progress {
+	width: 140px;
+	max-width: 100%;
+	height: 6px;
+	margin-top: 5px;
+	border-radius: 3px;
+	overflow: hidden;
+	background: rgba(120, 120, 128, 0.2);
+}
+.mrd-progress > span {
+	display: block;
+	height: 100%;
+	border-radius: 3px;
+	background: linear-gradient(90deg, #f59f00, #ffd43b);
+}
+.mrd-tier-dot {
+	display: block;
+	width: 100%;
+	height: 100%;
+	border-radius: 50%;
+	background: rgba(120, 120, 128, 0.22);
+}
+
+@keyframes mrd-rays-in {
+	from {
+		opacity: 0;
+		transform: scale(0.4) rotate(-40deg);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1) rotate(0deg);
+	}
+}
+@keyframes mrd-rays-spin {
+	from {
+		opacity: 1;
+		transform: rotate(0deg);
+	}
+	to {
+		opacity: 1;
+		transform: rotate(360deg);
+	}
+}
+@keyframes mrd-stamp {
+	from {
+		opacity: 0;
+		transform: scale(2.4) rotate(-22deg);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1) rotate(-8deg);
+	}
+}
+@keyframes mrd-delta-in {
+	from {
+		opacity: 0;
+		transform: scale(0.6);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+/* 움직임 최소화 — 장식 정지, 승리 상태는 최종 모습 그대로 보여준다. 아바타는 원래 정적이라 영향 없다. */
+@media (prefers-reduced-motion: reduce) {
+	.tierf-aura,
+	.tierf-fx {
+		animation: none !important;
+	}
+	.mrd-team,
+	.mrd-vs {
+		transition: none;
+	}
+	.mrd-team[data-state="win"] .mrd-rays {
+		animation: none;
+		opacity: 1;
+	}
+	.mrd-team[data-state="win"] .mrd-stamp {
+		animation: none;
+		opacity: 1;
+		transform: rotate(-8deg);
+	}
+	.mrd-delta {
+		animation: none;
+	}
+	.mrd-swap {
+		display: none;
+	}
+	.mrd-chip {
+		transition: none;
+	}
+}

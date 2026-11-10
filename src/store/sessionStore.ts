@@ -27,7 +27,7 @@ import {
 import type { SessionPlayerRow } from "../lib/supabase/types";
 import { matchPlayerIds } from "../lib/board/membership";
 import { computeLockFromRow, computePresenceList } from "../lib/editLock";
-import type { GeneratedTeam, SessionPlayer } from "../types";
+import type { Court, GeneratedTeam, SessionPlayer } from "../types";
 import { fetchGroupSettings, grantCockSupport } from "../lib/supabase/clubSettings";
 import { monthKST } from "../lib/schedule/calendar";
 import { getClientId, getDeviceName } from "../lib/deviceName";
@@ -192,6 +192,54 @@ function clearSyncPull() {
 	lastSeenSyncVersion = 0;
 }
 
+type CourtMatch = NonNullable<Court["match"]>;
+
+/**
+ * match_completed 브로드캐스트 페이로드 — 운영진 완료(handleComplete)와 회원 완료(applyMemberCompletion)가 공유.
+ * 기존 형식(teamA/B 에 SessionPlayer 객체)을 유지해야 구버전 클라도 같은 핸들러로 받는다.
+ */
+function matchCompletedPayload(
+	sessionPlayers: Map<string, SessionPlayer>,
+	match: CourtMatch,
+	courtId: number,
+	updatedPlayers: SessionPlayer[],
+): BroadcastPayload {
+	const teamAPlayers = [
+		sessionPlayers.get(match.teamA[0]),
+		sessionPlayers.get(match.teamA[1]),
+	].filter(Boolean) as [SessionPlayer, SessionPlayer];
+	const teamBPlayers = [
+		sessionPlayers.get(match.teamB[0]),
+		sessionPlayers.get(match.teamB[1]),
+	].filter(Boolean) as [SessionPlayer, SessionPlayer];
+	return {
+		event: "match_completed",
+		payload: {
+			matchId: match.id,
+			courtId,
+			gameType: match.gameType,
+			teamA: teamAPlayers,
+			teamB: teamBPlayers,
+			updatedPlayers,
+			// complete_match sets ended_at and all four wait_since values to the same server time.
+			completedAt: updatedPlayers.find(p => [...match.teamA, ...match.teamB].includes(p.id))?.waitSince ?? undefined,
+		},
+	};
+}
+
+/**
+ * 회원 경기완료(member_complete_match) 성공을 이 기기에 반영한다 — 운영진 완료와 **똑같이** match_completed 를
+ * 로컬 적용하고, 채널이 있으면 다른 기기에도 쏜다. 회원도 같은 세션 채널을 구독하므로 대개 있다.
+ * 브로드캐스트를 놓친 기기는 sessions 행 이벤트(match_state_version++)로 refetchMatches 가 수렴시킨다.
+ * SessionState 에 액션으로 넣지 않은 이유: 편집 락과 무관한 회원 경로라 isEditor 가드가 붙은 DB 액션 묶음과 섞지 않는다.
+ */
+export function applyMemberCompletion(match: CourtMatch, courtId: number, updatedPlayers: SessionPlayer[]) {
+	const s = useSessionStore.getState();
+	const payload = matchCompletedPayload(s.sessionPlayers, match, courtId, updatedPlayers);
+	s.applyBroadcast(payload);
+	if (s._channel) sendBroadcast(s._channel, payload);
+}
+
 export const useSessionStore = create<SessionState>((set, get) => ({
 	...initialState,
 
@@ -287,30 +335,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			return;
 		}
 
-		// 브로드캐스트 페이로드에는 기존 형식(SessionPlayer 객체) 유지
-		const { sessionPlayers } = get();
-		const teamAPlayers = [
-			sessionPlayers.get(match.teamA[0]),
-			sessionPlayers.get(match.teamA[1]),
-		].filter(Boolean) as [SessionPlayer, SessionPlayer];
-		const teamBPlayers = [
-			sessionPlayers.get(match.teamB[0]),
-			sessionPlayers.get(match.teamB[1]),
-		].filter(Boolean) as [SessionPlayer, SessionPlayer];
-
-		const payload: BroadcastPayload = {
-			event: "match_completed",
-			payload: {
-				matchId: match.id,
-				courtId,
-				gameType: match.gameType,
-				teamA: teamAPlayers,
-				teamB: teamBPlayers,
-				updatedPlayers: result.updatedPlayers,
-				// complete_match sets ended_at and all four wait_since values to the same server time.
-				completedAt: result.updatedPlayers.find(p => [...match.teamA, ...match.teamB].includes(p.id))?.waitSince ?? undefined,
-			},
-		};
+		const payload = matchCompletedPayload(get().sessionPlayers, match, courtId, result.updatedPlayers);
 		get().applyBroadcast(payload);
 		sendBroadcast(_channel, payload);
 	},
@@ -499,7 +524,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	applyDraftsIfNewer: (drafts, version) => applyDraftsIfNewerImpl(get, set, drafts, version),
 	resyncFromServer: async (opts) => {
 		const sid = getSessionId();
-		if (!sid) return;
+		if (!sid) return false;
 		// load_session_state: board_drafts + matches + session_players + 버전 + 편집 락을 단일 트랜잭션
 		// 스냅샷으로 — 모든 공유상태가 항상 같은 MVCC 시점으로 수렴. 재구독 catch-up · 충돌 복구 · 포어그라운드
 		// 복귀 · 주기 워치독 공용 경로. indicate=true(포어그라운드 복귀·재연결)일 때만 "동기화 중" pill 노출.
@@ -518,12 +543,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		} finally {
 			if (indicate) set({ boardSyncing: false });
 		}
-		if (!snap) return;
+		if (!snap) return false;
 		// stale 스냅샷 거부(force 제외): pull 비행 중 더 새로운 변경을 realtime 으로 관측했다면(lastSeen>snap)
 		// 이 스냅샷은 그 변경 이전 시점이라, full-replace 되는 선수 등이 이미 갱신된 로컬을 되돌릴 수 있다.
 		// 적용을 건너뛰면 그 새 변경의 힌트가 유발한 다음 pull(더 신선한 스냅샷)이 수렴시킨다. force(CAS 롤백)는
 		// 서버 권위로 강제 원복이므로 우회한다.
-		if (!force && snap.syncVersion < lastSeenSyncVersion) return;
+		if (!force && snap.syncVersion < lastSeenSyncVersion) return false;
 		// 스냅샷을 권위로 수렴하되 조각별 규율이 다르다:
 		//  · board_drafts/matches: 단조 게이팅 — 로컬이 이미 최신(>=)이면 덮지 않는다. 늦게 도착한 stale
 		//    resync가 편집자의 방금 저장/낙관 편집을 되돌리는 레이스를 막는다. force(CAS 충돌 롤백)만 우회해
@@ -576,7 +601,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		const flagChanged = applyMultiEditorFlag(get, set, snap.multiEditor === true);
 		// 워치독(skipLock)은 편집 락을 건드리지 않는다 — 편집자의 in-flight 낙관 claim이 주기 pull에
 		// 되돌려지는 것을 막는다. 락 수렴은 라이브 postgres_changes + visibilitychange/재구독 resync가 담당.
-		if (opts?.skipLock && !flagChanged) return;
+		if (opts?.skipLock && !flagChanged) return true;
 		// 서버 스냅샷이 권위 — in-flight heartbeat .then 무효화(setEditorCache가 lockEpoch 증가)
 		setEditorCache({
 			clientId: snap.editorClientId,
@@ -586,6 +611,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		recomputeLock(get, set, { suppressLossNotice: opts?.suppressLossNotice, transition: flagChanged });
 		// 첫 권위 락 동기 완료 — 진입 auto-claim 게이트 해제(이제 lockFree 가 서버 진실을 반영).
 		if (!get().lockSynced) set({ lockSynced: true });
+		return true;
 	},
 	refetchMatches: async (targetVersion, force = false) => {
 		// 멱등 단조 가드 — 이미 최신이면 중복 SELECT 회피(broadcast 정상 구간). force=true 면 우회(재연결).

@@ -14262,7 +14262,56 @@ Sources:
 
 **Prompt**: 3차에서 송수민, 재원, 민서, 양회가 술을 안먹었었대 다시 계산해줘
 
-**Answer**: _(응답 대기 중…)_
+**Answer**: 확정 한도를 빼고 데이터를 더 파 봤습니다. 결론부터 말하면 문제를 조금 다르게 봐야 할 것 같습니다. 선착순을 유지하는 한 18:00에 몰리는 것 자체는 못 없앱니다. 그런데 자리는 결국 대부분 생깁니다. 진짜 문제는 **그 자리가 너무 늦게, 주로 경기 당일에 풀린다**는 점입니다.
+
+## 데이터에서 보이는 것
+
+조회 범위는 10/6~11/7에 종료된 회차와 11/8 18:00 공개분입니다.
+
+1. **오픈 경쟁은 약 10초 만에 끝납니다.** 11/8 첫 신청은 18:00:02~07에 들어왔고, 평일 회차(정원 16~24)는 18:00:09~12에 다 찼습니다. 사실상 새로고침 타이밍과 네트워크 속도로 갈립니다.
+2. **처음에 잡힌 자리의 45%는 나중에 풀립니다.** 바로 확정된 680건 중 308건이 취소됐습니다. 그중 164건은 시작 24시간 안에 취소한 것입니다.
+3. **그래서 대기자 상당수가 결국 올라가는데, 그게 당일입니다.** 최종 참석자의 36%는 대기에서 승격된 사람입니다. 승격 328건 중 46%가 시작 6시간 전 이후에 일어났고, 하루 넘게 남기고 올라간 건 23%뿐입니다.
+4. **늦게 올라가면 또 취소가 이어집니다.** 승격 뒤 취소한 121건 중 36건은 승격 1시간 안에 취소했습니다. 이미 다른 약속을 잡은 사람에게 자리가 가고, 그 사람이 취소하면 다음 사람에게 넘어가는 일이 당일에 반복됩니다.
+
+대기 순번별로 자리가 난 비율은 이렇습니다.
+
+| 대기 순번 | 1~3 | 4~6 | 7~10 | 11~15 | 16+ |
+|---|---|---|---|---|---|
+| 승격률 | 86% | 77% | 64% | 50% | 32% |
+
+그래서 18:00 순간을 고치기보다 **공개 후 일주일 동안 대기가 빨리 풀리게** 하는 쪽이 현실적인 보완이라고 봅니다.
+
+## 보완책
+
+**① 대기 카드에 실제 승격률 보여주기** (가장 싸고 바로 할 수 있음)
+- "대기 5번 · 지난 5주 이 순번은 77%가 자리가 났어요"처럼 보여줍니다.
+- 18:00을 놓친 사람이 미리 포기하는 일이 줄고, 10초 경쟁에 매달릴 이유도 줄어듭니다.
+- 서버 규칙은 그대로 두고 화면과 통계 조회만 추가하면 됩니다.
+
+**② 대기가 있는 회차만 전날 '참석 확인' 푸시 보내기**
+- 확정자에게 D-1 낮쯤 "내일 참석 맞나요? 대기 12명이 기다리고 있어요 [갈게요] [못 가요]"를 보냅니다.
+- 시작 24시간 안에 몰리던 취소 164건이 앞당겨지면, 대기자가 전날에 결과를 알 수 있습니다.
+- 처음에는 답이 없어도 자리를 그대로 유지하는 방식으로 시작하고, 효과를 본 뒤 "답이 없으면 자리 해제"까지 갈지 정하면 됩니다.
+- 알림 타입이 하나 늘어나므로 `notifications.ts`와 `send-push`를 함께 고치고 따로 배포해야 합니다.
+
+**③ 대기자가 '승격 마감 시각' 고르기**
+- 대기할 때 "○시까지 자리가 안 나면 빼주세요"를 고르게 합니다. 선택지는 전날 밤, 당일 낮, 끝까지 정도입니다.
+- 마감 시각에 빠져도 **대기 포인트는 끝까지 기다린 것과 똑같이 줍니다.** 지금은 대기인 채로 회차가 끝나야 포인트가 쌓입니다. 그래서 못 갈 사람도 대기에 남아 있다가 당일에 승격되고 바로 취소하게 되는 구조일 가능성이 큽니다.
+- 이렇게 하면 당일 승격이 실제로 올 수 있는 사람에게 갑니다.
+- 대기 포인트 규칙을 건드리므로, 프로젝트 규칙대로 `waitStatus.ts`와 관련 스펙 문서를 같은 커밋에서 함께 고쳐야 합니다.
+
+**④ (선택) 출발선 맞추기**
+- 다음 주 회차를 미리 "18:00 오픈"으로 보여주고, 서버 시각 카운트다운이 끝나면 새로고침 없이 버튼이 켜지게 합니다.
+- 대기 줄이 줄지는 않지만, 새로고침을 연타하는 경쟁과 정각에 몰리는 서버 부하는 줄어듭니다.
+- 공개 방식과 조회 권한까지 손대야 해서 넷 중 작업량이 가장 큽니다.
+
+## 추천
+
+순서는 **① → ② → ③**입니다. ①과 ②는 지금 규칙을 하나도 바꾸지 않고 정보와 알림만 더하는 것이라, 회원 반발 없이 다음 주 데이터로 효과를 바로 확인할 수 있습니다. ③은 포인트 규칙을 바꾸는 것이니 ②의 효과를 본 뒤에 해도 됩니다.
+
+한계도 있습니다. 18:00에 바빠서 늦게 대기에 들어간 사람은 순번이 16번 이후라 지금 승격률이 32% 정도입니다. 위 방법들로 오르긴 해도, 마감 때까지 대기가 10명 넘게 남는 평일 정원 16명 회차(10/28, 11/4 등)는 코트를 늘리는 것 말고는 근본 해결이 없습니다.
+
+어떤 것부터 진행할지 정해주시면 설계안을 정리하겠습니다.
 
 ---
 
@@ -14601,6 +14650,614 @@ Sources:
 
 **Prompt**: 커밋하고 푸쉬
 
+**Answer**: 커밋하고 `main`에 푸시했습니다. 커밋은 `12388e6`이고, 메시지는 "부과 변경: 사람별 금액변경·취소·이월 버튼, 사람 추가(금액 수정·취소자 재부과), 금액 전용 변경 창"입니다.
+
+GitHub Pages 배포가 끝나면 앱에서 새 화면을 쓸 수 있습니다. DB 변경은 이미 운영에 반영돼 있어서 따로 할 일은 없습니다.
+
+히스토리 파일(`.agent-history/main.md`)은 훅이 관리하는 Prompt/Answer 형식이라 스킬의 Action 항목은 추가하지 않았고, 이 파일도 같은 커밋에 들어갔습니다.
+
+---
+
+## #497
+
+**Prompt**: 아니 난 기획을 하는거니까 데이터를 볼 이유가 전혀없어.
+
 **Answer**: _(응답 대기 중…)_
+
+---
+
+## #498
+
+**Prompt**: 아니 난 기획을 하는거니까 데이터를 볼 이유가 전혀없어. 좀 깊게 기획해봐
+
+**Answer**: 데이터 없이 기획으로만 다시 정리했습니다.
+
+## 방향
+
+선착순을 유지하는 한 18:00에 몰리는 것 자체는 없앨 수 없습니다. 그래서 목표를 바꿨습니다. **"18:00을 놓치면 그 주는 끝"이 아니게 만드는 것**입니다.
+
+지금 대기줄이 길고 답답한 이유는 두 가지로 봅니다.
+- 자리를 잡는 데 비용이 없으니 "일단 잡아두자"는 신청이 섞입니다.
+- 그렇게 잡힌 자리는 늦게, 대개 당일에 풀립니다. 대기자는 끝까지 결과를 모르니 18:00에 못 잡으면 탈락처럼 느끼고, 그래서 다들 18:00에 더 매달립니다.
+
+그래서 세 방향으로 설계했습니다.
+1. 잡아둔 자리를 일찍 정리한다.
+2. 18:00을 놓친 사람에게 실제로 쓸 수 있는 길을 만든다.
+3. 18:00 순간 자체를 덜 힘들게 한다.
+
+## ① 참석 재확인: 잡아둔 자리를 일찍 정리 (핵심)
+
+- **대상과 시점**: 대기자가 있는 회차에서만, 정원 안 확정자에게 **경기 이틀 전 정오**에 "참석 맞나요?"를 묻고 **전날 정오**까지 답을 받습니다. 게스트 자리는 데려온 회원이 답합니다.
+- **[못 가요]**: 일반 취소로 처리합니다. 전날까지라 감점이 없고, 자리는 바로 대기 1번에게 갑니다.
+- **제외 대상**
+  - 월·화 회차: 요청 시각이 오픈 전이라 재확인하지 않습니다.
+  - 정원 외로 얹힌 운영진·신규·우선참여 자리: 빠져도 대기자가 올라가지 않으니 묻지 않습니다.
+- **알림 묶기**: 같은 날 여러 회차가 걸린 사람에게는 알림 하나로 묶어 보냅니다.
+- **답이 없을 때**: 처음에는 답이 없어도 자리를 유지합니다. 필요해지면 "전날 정오까지 답이 없으면 대기자에게 넘김"으로 올립니다. 넘길 때는 본인에게 알리고 감점은 없습니다.
+
+이렇게 하면 횟수를 제한하지 않고도, 잡아만 둔 자리에는 "한 번 더 눌러야 유지된다"는 작은 비용이 생깁니다. 실제로 가는 사람은 한 번 누르면 끝입니다. 당일에 풀리던 자리가 전날 정오에 풀리니, 승격된 사람도 하루 전에 압니다.
+
+다만 [갈게요]를 누르는 데 아무 부담이 없으면, 일부러 잡아두는 사람은 그냥 누르고 나중에 취소합니다. 그래서 **재확인 뒤에 취소하면 당일 취소처럼 본다**는 규칙이 같이 있어야 재확인이 약속으로 의미가 생깁니다.
+
+## ② 18:00을 놓친 사람을 위한 길
+
+**대기: 승격 마감 시각**
+- 대기할 때 언제까지 올라오면 갈 수 있는지 고릅니다. 선택지는 전날 밤까지 / 당일 정오까지 / 시작 전까지(기본값, 지금과 같음)입니다.
+- 마감이 지나면 대기 명단에는 남고 승격만 건너뜁니다. 그래서 대기 포인트도 그대로 쌓입니다.
+- 지금은 포인트를 받으려면 끝까지 대기에 남아야 합니다. 그래서 못 갈 사람도 남아 있다가, 당일에 올라가면 다시 취소하는 일이 생깁니다. 이 규칙이 그걸 막습니다.
+- 대기 카드에 "대기 3번 · 확정 16명 중 12명 참석 확인"처럼 현재 상황을 보여줍니다. 재확인이 진행되면 대기자가 직접 가능성을 가늠할 수 있습니다.
+
+**우선참여권: 오픈 전에 미리 걸기**
+- 지금은 만석일 때 직접 눌러야 쓸 수 있습니다. 이걸 오픈 전에 회차를 골라 걸어두면 18:00에 자동 확정되게 바꿉니다. 그 시간에 폰을 볼 필요가 없어집니다.
+- 회차당 2자리 한도는 그대로 둡니다. 이미 두 명이 걸어뒀으면 거는 순간 "자리가 찼어요"로 알려서, 오픈 전에 결과를 알 수 있게 합니다.
+- 18:00 직후에는 정원이 비어 있습니다. 미리 건 사람이 포인트를 안 쓰고 일반 자리에 들어가면 안 되니, 처음부터 정원 외로 확정합니다. 만석이 안 된 회차면 포인트를 돌려줍니다.
+- 7점 기준은 건드리지 않습니다. "못 나온 사람에게 주는 보상"이라는 원래 취지를 "18:00에 없어도 되는 길"로 완성하는 것입니다.
+
+## ③ 18:00 순간을 덜 힘들게
+
+- **미리보기**: 다음 주 회차를 일요일 낮(예: 12시)부터 "18:00 오픈" 상태로 보여줍니다. 보기만 되고 신청은 안 됩니다. 우선참여권 미리 걸기도 이게 있어야 가능합니다. 대신 운영진이 그 전에 회차를 확정해 둬야 합니다.
+- **카운트다운 버튼**: 18:00이 되면 새로고침 없이 [참석하기]가 켜집니다. 정각에 새로고침을 연타하는 경쟁이 사라집니다.
+- **5분 전 알림**: 17:55에 "곧 열려요"를 보냅니다.
+- **(선택) 찜해두고 한 번에 신청**: 미리보기에서 찜한 회차를 18:00에 버튼 하나로 신청합니다.
+  - 누르는 부담은 크게 줄지만, 여러 회차를 노리는 사람이 유리해집니다.
+  - 찜이 자리를 잡아주지 않는다는 건 분명히 알려야 합니다.
+  - 운영진에게는 수요가 몰리는 회차를 미리 보여주는 신호가 됩니다(코트 추가 판단용).
+
+## 일주일 흐름 (수요일 19시 경기 기준)
+
+| 시점 | 일어나는 일 |
+|---|---|
+| 일 12:00 | 미리보기 공개, 우선참여권 미리 걸기 가능 |
+| 일 17:55 | 5분 전 알림 |
+| 일 18:00 | 오픈. 우선참여권은 정원 외로 자동 확정, 나머지는 선착순으로 확정 또는 대기 |
+| 월 12:00 | 대기자가 있으면 참석 확인 요청. [못 가요]를 누르면 바로 대기 1번 승격 |
+| 화 12:00 | 확인 마감. 3단계부터는 답 없는 자리도 대기자에게 |
+| 화 밤~수 | 승격 마감이 지난 대기자는 승격에서 건너뜀 |
+| 경기 종료 | 대기 포인트 정산 |
+
+## 도입 순서
+
+1. **규칙을 바꾸지 않는 것부터**: 미리보기, 카운트다운, 5분 전 알림, 참석 재확인(답이 없어도 유지), 대기 카드의 확인 현황. 회원 입장에서 잃는 게 없습니다.
+2. **규칙 추가**: 승격 마감 시각, 우선참여권 미리 걸기, 재확인 뒤 취소 처리.
+3. **규칙 강화(선택)**: 답 없는 자리를 대기자에게 넘기기. 알림을 못 받는 회원이 억울하게 자리를 잃을 수 있으니, 앱 안 안내가 충분히 자리 잡은 뒤에 판단합니다.
+
+## 정하실 것
+
+1. 재확인 시각: 이틀 전 정오에 요청하고 전날 정오에 마감하는 게 맞는지
+2. 재확인 뒤 취소를 당일 취소와 같게 볼지
+3. 승격 마감으로 빠진 대기자에게도 포인트를 줄지: 주면 마감 시각을 부담 없이 고를 수 있지만, 포인트만 노리고 대기를 거는 행동도 조금 쉬워집니다.
+4. 답 없는 자리 넘기기(3단계)를 할지
+5. 오픈 시각: 일요일은 그대로 두더라도 18시는 저녁 식사나 이동과 겹칩니다. 21시 같은 대안을 회원들에게 물어볼 만합니다.
+
+같은 일요일에 정원 일부를 한 번 더 여는 2차 오픈과, 다른 회원이 대신 신청해 주는 대리 신청도 검토했지만 뺐습니다. 2차 오픈은 경쟁하는 순간이 두 번이 되고, 대리 신청은 친한 무리끼리 자리를 몰아 잡게 됩니다.
+
+---
+
+## #499
+
+**Prompt**: 참석대기하면 포인트주는거땜에 사람들이 자꾸 취소를 눌러. 해당 기획을 없애고, 경기 끝났을때 플레이어들이 직접 자기 경기를 경기완료를 누르고 승패를 기록하게 하는 기능을 넣고 이걸 수행하면 포인트를 4명다 주게 하려고 해. 승패기록은 내 정보페이지를 손봐서 거기서 볼 수 있게 하고 내정보+내회비 화면을 하나로 합쳐 디자인을 다듬고 싶어.
+총 몇 포인트를 모아야 티켓을 줄 지는 고민중인데 괜찮은 값 있으면 알려줘
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #500
+
+**Prompt**: <task-notification>
+<task-id>w8y4wh2r9</task-id>
+<tool-use-id>toolu_017JQAG122UQtyRYNpCTUFC5</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/4a75fb9c-70bb-4c45-ae76-5625d7d211ee/tasks/w8y4wh2r9.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Map wait-points earn rules, match lifecycle, and My Info/My Dues pages before redesign" completed</summary>
+<result>{"points-server":"## Server map: wait points and tickets\n\n### 1. Which migration holds the current version of each piece\n\n| Object | Current definition |\n|---|---|\n| Constants `wait_point_max()=7`, `wait_ticket_cost()=7`, `wait_ticket_session_cap()=2` | `20260904000000_wait_points_ticket.sql:84-89` |\n| `wait_points_recount(uuid)`: locks the member's row, recomputes the balance from the ledger and repairs the cache | `20260904…:182-206` |\n| `wait_points_write(member, session, kind, delta, detail, actor)`: the only function that writes a ledger row. It clamps to [0,7], uses `on conflict do nothing`, and returns the old balance unchanged on a duplicate | `20260904…:211-254` |\n| `wait_points_credit(member, session, kind, delta, detail, notify_session)`: for kinds `earn`/`reversal` only. It sends `wait_ticket_ready` only when the balance goes from below 7 to 7 | `20260928000000_wait_points_not_held.sql:92-124` |\n| `wait_ticket_spent` (count of spend &gt; count of refund), `wait_ticket_session_used` (live ticket seats in this session, counted from the ledger) | `20260904…:261-293` |\n| `wait_points_joined(session, member)`: true if the member is on the board AND (cock check is off OR their cock is checked) | `20260929010000_wait_points_cock_check_participation.sql:31-46` |\n| **`wait_points_settle_session`** (earn and no-show) | **`20260929010000…:48-112`** |\n| `wait_points_settle_not_held` (session never started) | `20260928…:165-224` |\n| `wait_points_refund_session_tickets` | `20260928…:131-158` |\n| `trg_session_wait_points_on_close` and its trigger: `after update of status`, `when new.status='closed' and old.status is distinct from 'closed'`. The whole body is wrapped in an exception handler | `20260904…:979-999` |\n| `trg_session_wait_points_on_cancel` (function body) | `20260928…:307-326` (the trigger itself stays at `20260904…:1035-1040`) |\n| `trg_session_wait_points_on_delete` (BEFORE DELETE) | `20260928…:333-352` |\n| `wait_ticket_on_cancel(session, member, by_admin)` (day-cancel penalty and ticket refund/forfeit) | `20261020000000_wait_ticket_keep_until_start.sql:40-94` |\n| `join_session(p_session_id, p_use_ticket)` ticket branch, `SET lock_timeout '2s'` | `20261012020000_join_session_lock_timeout.sql:14-20`, ticket branch `~:94-112` |\n| `set_late_minutes`: returning from the late pool to on-time with a ticket already paid restores the seat without charging again | `20261002000000_newbie_freepass_cap.sql:167+`, `:265-271` |\n| `wait_ticket_options` (returns reason: ok/already_spent/not_open/not_full/free_pass/insufficient/session_cap) | `20261002000000…:296-349` |\n| `cancel_attendance` / `admin_cancel_attendance`: call `wait_ticket_on_cancel(...,false/true)` | `20260930000000_promote_waitlist_in_active.sql:57-86`, `:98-131` |\n| `wait_points_my_status()` (returns balance/max/cost/session_cap/has_ticket) | `20260904…:1046-1066` |\n| `wait_points_my_ledger(p_limit)` | `20260928…:361-396` |\n| `wait_points_admin_adjust(member, delta, note)`: admin only, kind `adjust`, `session_id` null | `20260904…:1156-1173` |\n| Guest merge: blocks folding a guest row that has a ledger or balance row | `20261021000000_guest_rows_merge_and_fold.sql:112-113` |\n\n### 2. Table schemas\n\n**`wait_point_ledger`** (`20260904…:102-112`). It is append-only, and corrections are made with a row of opposite sign.\n- `id bigserial pk`\n- `member_id uuid not null → members on delete cascade`\n- `session_id bigint` with **no FK** on purpose (sessions can be hard-deleted)\n- `kind text not null`. The current CHECK is `wait_point_ledger_kind_check`: `kind in ('earn','spend','refund','penalty','adjust','reversal')` (`20260928…:76-77`)\n- `delta int not null` stores the change actually applied after clamping\n- `balance_after int not null check (balance_after between 0 and 7)`. **The literal 7 is hardcoded here.**\n- `detail jsonb`, `actor uuid → members on delete set null`, `created_at timestamptz`\n- Unique index `wait_point_ledger_once_per_session (member_id, session_id, kind) where session_id is not null and kind in ('earn','penalty','reversal')` (`20260928…:81-84`). This means **one `earn` per member per session.**\n- RLS allows SELECT for self or admin only. There is no INSERT/UPDATE/DELETE policy, so every write goes through a definer function. The table is removed from the Realtime publication.\n\n**`wait_point_balances`** (`20260904…:144-148`)\n- `member_id uuid pk`, `balance int not null default 0 check (balance between 0 and 7)` (also a hardcoded 7), `updated_at`\n- It is a derived cache plus the per-member lock row.\n\n**`attendances.exempt_reason`**: `check (exempt_reason is null or exempt_reason in ('newbie','ticket'))` (`20260904…:64-69`).\n\n**`detail.reason` values written today:**\n- `earn`: `waitlisted_at_close`, `backfill`, `session_not_held`\n- `spend`: `join`\n- `refund`: `early_cancel`, `admin_cancel`, `session_cancelled`, `session_not_held`, plus a `compensation` tag\n- `penalty`: `noshow`, `day_cancel`\n- `reversal`: `session_not_held` + `penalty_id`\n- `adjust`: `{note}`\n\n### 3. Where \"+1 for waiting\" is granted\n\n**`wait_points_settle_session` (a), at `20260929010000…:72-91`.** The chain is: session goes to `closed` → trigger `trg_session_wait_points_on_close` → settle_session. If the session has a board, then for each attendance with `status='waitlisted'`, `invited_by is null`, a non-guest member, `is_active`, and `not wait_points_joined(...)`, it calls `wait_points_credit(member, session, 'earn', 1, {reason:'waitlisted_at_close', session_at}, session)`.\n\nThere are two other earn sources:\n- **Session never held.** In `wait_points_settle_not_held` (c) (`20260928…:205-218`), if no board exists, every member with `confirmed`/`late_pool`/`waitlisted` gets +1 (`reason session_not_held`). It runs from close (no-board branch), from cancel (no board) and from hard delete. This is not the waiting rule, but it is also a \"+1 for not playing\" source, so you need to decide whether to keep it.\n- **Backfill.** A one-off `do` block at `20260904…:1182-1211`. It has already run.\n\n### 4. Every deduction rule\n\n1. **Ticket spend −7.** In `join_session`, when the session is full, any operator or newbie free pass has already been ruled out, and `p_use_ticket=true`, it checks `wait_ticket_session_used &lt; 2` and balance ≥ 7. It raises `ticket_session_cap` or `ticket_insufficient` as exceptions.\n2. **No-show −1.** In `settle_session` (b) (`20260929010000…:93-109`): `status='confirmed'`, a member who is not a guest and is active, and `not wait_points_joined`. That covers both \"never on the board\" and \"cock never checked in a cock-check session\". It writes `penalty` with `reason 'noshow'`.\n3. **Day-cancel −1.** In `wait_ticket_on_cancel` (`20261020…:79-83`): requires `dues_is_day_cancel_chargeable(...)`, the place has `charges_court_fee=true`, and the cancel was done by the member themselves (not an admin). It is written **before** any refund. If the session is later settled as never held, this is reversed with `reversal`.\n4. **Ticket forfeit (no refund).** In `wait_ticket_on_cancel` (`:86-90`), the refund is skipped when the board already exists and the cancel came more than 1 hour after confirmation. A no-show with a ticket also keeps the spend. Refunds happen on a cancel before the session starts, an admin cancel before the start, a session cancel (`refund_session_tickets`) and settle_not_held.\n5. **Admin adjust ±N** through `wait_points_admin_adjust`.\n\n### 5. Notifications\n\n- **`wait_ticket_ready`** is inserted only in `wait_points_credit` (`20260928…:115-119`), and only on a credit that takes the balance from below max to max. Refunds never notify. `p_notify_session` is null on the never-held path.\n- The notifications table has no type CHECK. The type appears on the client at `src/lib/supabase/notifications.ts:100`. Push code is at `supabase/functions/send-push/index.ts:104-107`: the message text hardcodes \"대기 포인트가 다 모였어요!\" and
+... (truncated 32080 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/4a75fb9c-70bb-4c45-ae76-5625d7d211ee/tasks/w8y4wh2r9.output)</result>
+<diagnostics>Per-agent results: /Users/sam/Library/Application Support/orca/claude-profiles/31e4dff7-fce7-4966-8239-1d85b0994089/home/projects/-Users-sam-Projects-cocktime-scheduler/8920addb-13c1-49d6-adc5-2bbf54bbc8bb/subagents/workflows/wf_99f2eeef-a03/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/Library/Application Support/orca/claude-profiles/31e4dff7-fce7-4966-8239-1d85b0994089/home/projects/-Users-sam-Projects-cocktime-scheduler/8920addb-13c1-49d6-adc5-2bbf54bbc8bb/workflows/scripts/understand-points-matches-profile-wf_99f2eeef-a03.js', resumeFromRunId: 'wf_99f2eeef-a03'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>4</agent_count><agents_done>4</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>360040</subagent_tokens><tool_uses>97</tool_uses><duration_ms>182204</duration_ms></usage>
+</task-notification>
+
+**Answer**: 네, 어떤 부분을 먼저 짚고 싶으세요? 답을 들은 뒤 질문을 다시 정리할게요.
+
+참고로 처음에 물어보신 **티켓 문턱 추천값**은 이렇습니다.
+- **경기 1판 기록당 1점, 회차당 최대 3점, 티켓 20점.**
+- 근거: 최근 8주 실측으로 한 번 나오면 약 7판을 치고, 회원 1명의 8주 방문은 중앙값 5회예요.
+- 이 값이면 첫 티켓까지 보통 회원은 약 11주, 자주 오는 상위 25%는 약 4.5주, 최상위 10%는 약 2.5주 걸려요.
+- 회차당 상한이 없으면 한 번만 나와도 7점이 차요. 그러면 자주 오는 사람이 티켓을 독점하게 돼요.
+
+지금 상태에서 같이 정해야 할 것은 네 가지예요.
+1. 포인트 체계(점수·상한·문턱)
+2. 대기로 모은 기존 잔액 처리: 지금 66명이 잔액을 갖고 있고, 그중 5명은 7점을 채워 티켓을 갖고 있어요.
+3. 노쇼·당일취소 감점을 유지할지
+4. 빌드 진행 방식: 계획을 먼저 승인받고 진행할지, 알아서 끝까지 진행할지
+
+궁금하거나 다르게 생각하시는 부분을 말씀해 주세요. 예를 들어 "운영진이 보드에서 완료한 경기도 점수를 줘야 하나", "승패를 잘못 눌렀을 때는 어떻게 하나" 같은 것도 괜찮아요.
+
+---
+
+## #501
+
+**Prompt**: 아 그러네. 이건 자주오는 사람들한테 좋은거지 못오는 사람들을 위한 대안이 아니네.
+그럼 최초로 돌아가서 티켓을 노리고 참석눌러놓고 자신이 참여할 상황이 되니까 취소눌러서 대기줄이 죽죽 밀리는걸 해결할 좋은방법이 있을까
+
+**Answer**: 맞아요. 경기 기록 보상으로 바꾸면 자주 오는 사람에게 상을 주는 구조가 돼서, 원래 목적(못 나온 사람 구제)과 반대가 돼요. 그래서 처음 문제로 돌아가 프로덕션 데이터부터 확인했어요.
+
+## 실측: 정말 이런 일이 벌어지고 있나 (포인트 제도 시행 9/5 이후)
+
+- 대기에서 확정으로 승격된 177건 중 **64건(36%)이 승격된 뒤 취소**했어요.
+- 이 취소는 **회차 시작 약 1.4시간 전(중앙값)에 몰려 있어요.** 64건 중 61건이 시작 24시간 안에 나왔어요.
+- 연쇄 취소도 있어요. 승격→취소가 회차당 5번 이상 일어난 회차가 5개이고, 그중 2개는 **9번 연속**이었어요. 대기줄이 계속 밀린다는 체감이 숫자로도 나와요.
+- 상습성도 보여요. 이렇게 취소한 40명 중 **18명이 2번 이상 했고, 이 18명이 전체 64건 중 42건**을 차지해요.
+- 다만 시행 전에도 승격 후 취소 비율이 28%였어요(시행 후 35%). 제도가 원인의 전부는 아니고, **원래 있던 막판 취소를 키운 쪽**이에요.
+- 티켓은 지금까지 3번 쓰였는데 3번 모두 환불됐어요. **실제로 티켓으로 들어온 사람은 0명**이에요.
+
+## 근본 원인
+
+대기를 걸어 두는 데 비용이 없어요. 계속 대기면 +1점이고, 승격되면 그냥 취소하면 돼요. 감점은 대관 장소 당일취소에만 있어요. 그래서 대기줄이 **올 생각 없는 사람으로 채워지고**, 막판 빈자리가 이런 사람에게 차례로 넘어가며 연쇄로 밀려요.
+
+## 해결 방법 3가지 (추천순)
+
+**1안: 승격 후 취소를 비싸게 하고, 적립은 앞번호 대기자만 받기** ← 추천
+- 승격된 뒤 당일 취소하면 **장소와 관계없이 −1점**이에요. 승격되지 않은 사람의 당일취소 규칙은 지금처럼 대관 장소에만 적용해요.
+- 마감 때 **대기 1~3순위만 +1점**을 받아요. 포인트를 노리고 뒷번호에 걸어 두는 사람은 받을 게 없어요. 앞번호에 서면 승격될 확률이 높으니, 실제로 올 생각이 없으면 손해예요.
+- "올 생각은 있었는데 아깝게 못 들어간 사람"을 구제한다는 원래 목적은 그대로 남아요.
+- 서버 함수 2개(`wait_points_settle_session`, `wait_ticket_on_cancel`)와 문서만 고치면 돼요. 마이그레이션 1개 분량이에요.
+- 한계: 대기 4번 이하로 밀린 진짜 아쉬운 사람은 받지 못해요. 순위 기준 N은 조정할 수 있어요.
+
+**2안: 승격 수락제 (제도와 상관없이 막판 연쇄를 막는 방법)**
+- 시작 몇 시간 전부터는 승격을 바로 확정하지 않고 "자리 났어요, 15분 안에 수락"으로 제안해요. 응답이 없으면 다음 사람에게 넘기고, 수락하지 않은 사람은 그 회차 포인트를 받지 못해요.
+- 막판 연쇄 승격 자체를 없애는 가장 확실한 방법이에요. 시행 전부터 있던 28%도 같이 줄어요.
+- 대신 무거워요. 승격 상태와 만료 타이머(cron), 수락 UI, 알림을 새로 만들어야 하고, 승격 로직(`promote_waitlist_fill`)도 손대야 해요.
+
+**3안: 대기 포인트와 티켓 제도 폐지**
+- 가장 단순해요. 실사용 효과가 0건이라는 근거도 있어요.
+- 다만 못 오는 사람을 위한 대안도 같이 사라져요.
+
+제 추천은 **1안을 먼저 넣고 2~3주 데이터를 보는 것**이에요. 승격 후 취소 비율이 시행 전 수준(28%) 밑으로 내려가지 않으면 2안으로 넘어가면 돼요. 1안으로 갈지, 대기 순위 기준을 몇 명으로 할지(3명 추천)만 정해 주시면 바로 설계해 볼게요.
+
+---
+
+## #502
+
+**Prompt**: 결국 마감대기를 위해 참여를 눌렀다가 내가 실제 참여로 바뀔때 호다닥 바꾸는게 문제인데 이 근본적인 문제의 해결책은 아닌거같음.
+
+**Answer**: 맞아요. 앞에서 낸 방법들은 증상을 누르는 처방이었어요. 근본 원인은 이거예요.
+
+**"대기로 끝나면 보상"이라는 조건으로는 진짜 오고 싶던 사람과 보상만 노리는 사람을 서버가 구별할 수 없어요.** 둘 다 참석을 눌렀고 둘 다 대기예요. 차이는 자리가 났을 때 오느냐 하나뿐인데, 보상만 노리는 사람은 자리가 나기 직전에 빠지면 돼요. 그래서 "참석 눌러 놓고 승격 직전에 호다닥 취소"는 일부의 악용이 아니라 **이 보상 조건이 만드는 당연한 행동**이에요. 감점이나 순위 제한은 그 행동의 손익만 조금 바꿀 뿐 동기를 없애지 못해요.
+
+그래서 근본 해결은 **대기 상태에 대한 보상을 없애는 것**밖에 없어요. 보상이 없으면 대기를 걸어 둘 이유도, 승격 직전에 도망칠 이유도 사라져요. 티켓이 실제로 쓰인 적이 0건이라 없애도 잃는 것이 거의 없어요.
+
+남는 질문은 "못 오는 사람 구제가 여전히 필요한가"예요. 필요하다면 **회원이 만들어 낼 수 없는 신호**로 해야 해요. 그런 신호는 실제 참석 기록 하나예요.
+
+- **A. 대기 포인트·티켓 폐지만 하기**: 가장 단순해요. 대기줄은 다시 선착순으로만 움직여요.
+- **B. 폐지하고, 승격 순서에 "최근 참석이 적은 사람 우선"을 넣기**: 예를 들어 최근 4주 참석 횟수가 적은 대기자부터 승격해요. 이 우선순위를 얻으려면 실제로 덜 나오는 방법밖에 없어서 악용할 여지가 없어요. 참석을 눌렀다 취소하는 행동으로 얻는 것도 없어요. 대신 "먼저 누른 사람이 먼저"라는 선착순 원칙이 일부 깨져요. 그래서 회원들에게 규칙 공지가 필요해요.
+
+제 추천은 **A를 먼저 하는 것**이에요. 승격 후 취소 비율이 시행 전 수준(28%)으로 돌아오는지 2~3주 보고, 그래도 덜 나오는 사람 구제가 아쉬우면 그때 B를 얹으면 돼요. 이 경우 처음에 말씀하신 승패 기록과 내 정보·내 회비 통합 화면은 포인트와 상관없는 별도 기능으로 따로 진행하면 돼요.
+
+어느 쪽으로 갈까요?
+
+---
+
+## #503
+
+**Prompt**: orca 에 git tree 가 있다는데 어디있을까
+
+**Answer**: Orca가 새로 만드는 워크트리는 **`~/orca/workspaces/<레포명>/<워크트리명>/`** 아래에 생깁니다.
+
+지금 있는 Orca 워크트리는 두 개입니다.
+- `/Users/sam/orca/workspaces/select-web/dev-2` (브랜치 `dev-2`)
+- `/Users/sam/orca/workspaces/subsy-client-v2/main` (브랜치 `sam/dev`)
+
+`anilife-tv`, `escape-from-home` 폴더도 있지만 안이 비어 있습니다. 예전 워크트리를 지우고 남은 폴더로 보입니다.
+
+**cocktime-scheduler에는 따로 만든 워크트리가 없습니다.** 원래 저장소 `/Users/sam/Projects/cocktime-scheduler`(main)만 Orca에 등록돼 있습니다. `git worktree list`로 봐도 이 저장소 하나만 나옵니다.
+
+---
+
+## #504
+
+**Prompt**: 아니 그거말고 orca 의 기능이야. git graph 가 잇대
+
+**Answer**: Orca 1.4.254에 **Git 그래프** 기능이 들어 있는 걸 확인했습니다. 사이드바에는 버튼이 없고 팔레트에서 엽니다.
+
+**여는 방법**
+1. 그래프를 보고 싶은 워크트리를 선택합니다. 예를 들면 cocktime-scheduler의 `main`입니다.
+2. **`⌘J`**를 눌러 "Switch worktree" 팔레트를 엽니다.
+3. `git graph`를 입력합니다. `commit history`나 `branches`로 검색해도 나옵니다.
+4. **Git Graph** 액션을 실행하면 지금 워크트리의 에디터 영역에 "Git 그래프" 탭이 열립니다.
+
+`⌘J`가 아무 반응이 없다면 단축키를 다른 키로 바꿔 둔 것일 수 있습니다. Settings → Keybindings에서 "Switch worktree" 항목을 확인해 보세요.
+
+---
+
+## #505
+
+**Prompt**: 팔레트말고 다른 방법으로 열 방법은 없어?
+
+**Answer**: 네, 팔레트 말고 버튼으로도 열 수 있습니다. 앱 코드에서 버튼 위치를 확인했습니다.
+
+**우측 사이드바 → Source Control 패널 → "Commits" 섹션 헤더의 작은 그래프 아이콘**
+
+1. 우측 사이드바를 열고 Source Control 패널로 갑니다.
+2. 아래쪽 **Commits** 섹션을 찾습니다. 커밋 개수가 함께 표시되는 섹션입니다.
+3. 섹션 제목 오른쪽 끝의 아이콘 버튼을 누르면 Git 그래프 탭이 열립니다. 마우스를 올리면 "Git Graph" 툴팁이 뜹니다.
+
+버튼이 회색으로 비활성화돼 있다면 아직 이 워크트리에서 Git 그래프를 쓸 수 있는지 확인하는 중이거나, 쓸 수 없는 상태입니다. 원격 호스트에 연결된 워크트리라면 그쪽 Orca를 업데이트해야 열립니다.
+
+진입점은 이 버튼과 `⌘J` 팔레트, 두 가지뿐입니다. 상단 메뉴 바에는 Git 그래프 항목이 없습니다.
+
+---
+
+## #506
+
+**Prompt**: 내 정보 페이지와 내 회계페이지를 합쳐달라고 예전에 말하지 않았나?
+
+**Answer**: 네, 말씀하셨어요. 아직 반영은 안 됐어요.
+
+**언제 말씀하셨나:** 브랜치 기록 #499에서 대기 포인트 개편 요청과 같이 말씀하셨어요.
+> "…승패기록은 내 정보페이지를 손봐서 거기서 볼 수 있게 하고 내정보+내회비 화면을 하나로 합쳐 디자인을 다듬고 싶어."
+
+**왜 진행이 안 됐나:** 그 뒤로는 대기 포인트 문제만 이야기했어요. #502에서 "대기 포인트·티켓을 없앨지(A), 없애면서 최근 참석이 적은 사람부터 승격할지(B)"를 여쭤봤는데, 답을 받기 전에 Orca Git 그래프 이야기로 넘어갔어요. 그때 저는 화면 통합을 "포인트와 상관없는 별도 기능으로 따로 진행"하자고 했고, 그 뒤로 이어서 하지 않았어요.
+
+**지금 상태 (코드에서 확인):**
+- **내 정보**: 헤더 메뉴(`src/components/common/HeaderMenu.tsx:82`)에서 여는 프로필 수정 모달이에요. 대기 포인트 섹션(`WaitPointsSection`)도 여기에 붙어 있어요.
+- **내 회비**: 별도 페이지인 `/my-dues`(`MyDuesPage`, `src/App.tsx:197`)예요.
+- **승패 기록**: 아직 없어요.
+
+진행하려면 아래 두 가지를 정해 주세요.
+1. **범위**: 화면 통합만 할지, 승패 기록(선수가 직접 경기 완료와 승패를 입력하는 기능)까지 같이 넣을지요.
+2. **대기 포인트**: #502의 A(폐지)나 B(폐지 + 참석이 적은 사람 우선 승격) 중 무엇으로 갈지요. 통합 화면에 포인트 섹션을 남길지가 이걸로 정해져요.
+
+---
+
+## #507
+
+**Prompt**: 이 기획 다듬으려면 승패입력에 관한 내용을 정리해야겠어. 기존 티켓이런거 없이, 사용자가 경기완료를 누르면서 승패를 입력하면 이를 누적해서 사용자에게 뭔가 보여지는 무언가를 주고싶은데 개인적으론 lol 처럼 등급제를 적용하고 싶어. 다만 이렇게 하면 내가 못하는 사람과 게임할때 답답해할거같아서 같은편을 누굴 만나든 점수를 잘 계산해서 승강하게 구조를 짜고싶은데 가능할까
+
+**Answer**: 네, 가능해요. 우리 모임은 이 방식이 잘 맞는 조건도 갖추고 있어요. 어떻게 계산하는지, 그리고 정해야 할 것들을 정리했어요.
+
+## 핵심 원리: "이길 확률 대비 결과"로 점수를 매겨요
+
+LoL 랭크도 쓰는 Elo 방식을 2:2로 넓히면 돼요. 경기 전에 네 사람의 점수로 **우리 팀이 이길 확률**을 먼저 계산하고, 결과가 그 예상과 얼마나 달랐는지만큼 점수가 움직여요.
+
+- 약한 파트너와 한 팀이면 이길 확률이 낮게 잡혀요. 그래서 **이기면 많이 오르고, 져도 조금만 내려가요.**
+- 강한 파트너와 이기면 예상대로 이긴 것이라 조금만 올라요.
+
+예를 들어 K=32이고, 나 1600점, 상대 두 명이 각각 1450점이라고 해볼게요.
+
+| 내 파트너 | 우리 팀 승리 확률 | 이기면 | 지면 |
+|---|---|---|---|
+| 1200점 (약함) | 43% | **+18** | **−14** |
+| 1600점 (비슷) | 70% | +10 | −22 |
+
+그래서 약한 파트너와 졌다고 크게 손해 보지 않아요. 결과 화면에 "승리 확률 43% → 승리! +18"처럼 보여 주면, 말씀하신 답답함이 화면에서도 바로 풀려요.
+
+## 우리 모임에 잘 맞는 이유 (실데이터)
+
+프로덕션에서 최근 28일을 조회해 봤어요.
+- 경기에 나온 회원은 105명이에요. 1인당 경기 수 중앙값은 **24판**이고, 상위 10%는 93판이에요.
+- 자동편성이 매번 파트너를 바꿔 줘요(그룹 재결성 회피 규칙).
+
+승패만으로는 한 경기에서 누가 팀을 끌고 갔는지 알 수 없어요. 하지만 **여러 파트너와 섞여서 많이 치면** 결과가 쌓이면서 개인 실력이 자연스럽게 갈라져요. 파트너가 늘 같은 팀이면 이게 안 되는데, 우리는 자동편성 덕분에 이 조건을 갖췄어요. 한 달 정도 치면 등급이 자리를 잡을 거예요.
+
+## 다듬어야 할 부분
+
+1. **팀 점수를 단순 평균으로 하면 안 돼요.** 배드민턴 복식에서는 상대가 약한 쪽만 노려요. 그래서 "강+약" 팀은 실제로 평균보다 약해요. 약한 쪽에 가중치를 더 줘야 해요(예: 약한 쪽 0.6, 강한 쪽 0.4). 비율은 데이터가 쌓이면 맞춰요.
+2. **시작 점수는 운영진이 매긴 기존 급수(`grade`)로 정해요.** 모두 같은 점수에서 시작하면 초반 몇 주 동안 등급이 엉망이에요. 처음 10판 정도는 "배치고사"로 점수를 크게 움직여 빨리 제자리를 찾게 해요.
+3. **입력을 믿을 수 있어야 해요.** 경기 완료와 승패를 누가 누르는지 정해야 해요. 한쪽이 입력하고 상대가 확인하는 방식이 무난해요. 엇갈리거나 미입력이면 점수에 반영하지 않아요. 편성은 자동이라 짜고 치는 조작은 원래 어려워요.
+4. **경기 종류**: 남복·여복·혼복을 점수 하나로 볼지 따로 볼지 정해야 해요. 혼복은 양 팀 모두 남녀 한 명씩이라 공정해요. 그런데 데이터에 `혼합` 타입이 따로 있어요(성비가 안 맞는 경기로 보여요). 이 경기는 반영에서 빼거나 성별 보정이 필요해요.
+5. **누구에게 보일지**: 등급을 모두에게 공개하면 하위 등급 회원이 위축될 수 있어요. 처음에는 **본인에게만** 보이고, 공개는 나중에 선택하게 하는 걸 추천해요.
+6. **나중에 할 수 있는 것**: 쌓인 점수가 운영진 급수보다 정확해지면 자동편성의 실력 기준으로 쓸 수 있어요. 다만 이건 2단계로 미뤄요. 그때는 `docs/TEAM_GENERATION_RULES.md`도 함께 고쳐야 해요.
+
+## 다음 단계 제안
+
+지금은 경기 승패 데이터가 없어요. 경기는 4,942건 쌓여 있지만 결과 컬럼이 없어요. 그래서 기존 시뮬레이터(`tools/team-simulator`)로 먼저 확인해 보면 좋아요. 가상 실력을 넣고 실제 편성 기록으로 경기를 돌려서 아래를 미리 볼 수 있어요.
+- 몇 판 만에 등급이 제자리를 찾는지
+- K값과 약한 쪽 가중치를 얼마로 할지
+- 약한 파트너를 자주 만난 사람이 억울하게 떨어지지 않는지
+
+아래 중에 정해 주시면 기획 문서로 정리할게요.
+- 입력 방식: 한쪽 입력 + 상대 확인 / 아무나 한 명 입력
+- 점수: 점수 하나 / 경기 종류별로 따로
+- 공개 범위: 본인만 / 전체
+- 시뮬레이션을 먼저 돌릴지
+
+---
+
+## #508
+
+**Prompt**: 일단 기능 도입하고 시뮬은 라이브로 해보자. 지금은 디스플레이용, ELO 의 단계에 따라 본인의 뱃지주변의 모양이 달라지게 하는것 외엔 아무기능없지만 추후에 승패데이터를 토대로 1~10단계로 나눈 실력데이터에 반영해서 팀밸런싱에 포함되게 할거야.
+필요한건 일반 사용자, 운영자는 경기 끝나고 경기완료버튼을 누르면 승패를 누를 수 있는 화면이 뜨고 승패를 모를수도 잇으니 (건너뛰기) 버튼도 같이 있어야 해. 일반 사용자가 누르면 이미 그룹이 만들어진 팀이 있으면 매칭되고, 없으면 그룹이 생성되게 해줘. 운영자는 기존과 같이 경기완료를 눌러도 아무 동작 안하게 하고. 승패 입력디자인은 게임스럽게 했으면 좋겠고.
+그리고 위에서 말한 내정보/내회계화면합치고 나의 승패기록을 볼수있는 새로운 화면도 같이 넣어줘.
+
+**Answer**: 지금 코드 구조를 파악하는 조사를 5갈래로 나눠 돌리고 있어요.
+- 경기 완료 흐름과 권한
+- 예비팀(그룹) 편성 구조
+- 내 정보·내 회비 화면
+- 뱃지 이펙트와 회원 식별 방식
+- 대기 포인트 현황과 프로젝트 규칙
+
+결과가 나오면 설계안과 확인할 질문을 정리해서 드릴게요.
+
+---
+
+## #509
+
+**Prompt**: <task-notification>
+<task-id>w5geig7gh</task-id>
+<tool-use-id>toolu_01HXmFJUSAxiskfvvmPoHbDo</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/7a6f4be3-36bd-4eaf-a52f-c42c19e43f7a/tasks/w5geig7gh.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Map board match-complete flow, waiting groups, member permissions, My Info/My Dues UI and badge VFX before adding win/loss + ELO" completed</summary>
+<result>{"complete-flow":"# Current match-completion flow (\"경기완료\"), end to end\n\n## 1. Entry points (UI → store → RPC)\n\n| Layer | Location | What it does |\n|---|---|---|\n| CTA label/enable | `src/lib/board/pixi/projection.ts:198-199` | On a playing court card: `ctaLabel` = `\"경기완료\"` only if `ss.isEditor`. Otherwise it shows `\"경기 진행 중\"` (while composing) or `\"보기 전용\"`. `ctaEnabled: ss.isEditor &amp;&amp; !busy`. |\n| Click handler | `src/lib/board/pixi/runtime.ts:425-432` | `button(\"complete\", …)` returns early if `!view.appearance.ctaEnabled`, then calls `useBoardStore.getState().completeMatch(courtId)`. The same button calls `applyMatchEdit` while a roster edit is open. |\n| Board store | `src/store/board/matchSlice.ts:261-283` `completeMatch` | Calls `claimEdit()`, which is `isEditor &amp;&amp; !syncState.exclusiveDraftEdit` (`src/store/board/draftsSync.ts:94`). It skips if `matchEdits`/`assigningTeamIds` are busy and adds a busy key. Then it calls `useSessionStore.handleComplete(courtId)`. If the court is now empty, it runs `resolveFreedReservations(s, endedIds)`, then `fillWaitingTeams()`, then `scatterMagnets(endedIds)`. |\n| Session store | `src/store/sessionStore.ts:275-315` `handleComplete` | Guard: `!court?.match \\|\\| !_channel \\|\\| !isEditor` → return. Calls `dbCompleteMatch(...)`. On failure it calls `resyncFromServer()`. On success it builds a `match_completed` payload, applies it locally (`applyBroadcast`) and sends it with `sendBroadcast(_channel, …)`. |\n| Supabase action | `src/lib/supabase/actions.ts:81-121` `dbCompleteMatch` | `supabase.rpc(\"complete_match\", {p_match_id, p_session_id, p_game_type, p_team_a_p1/p2, p_team_b_p1/p2, p_client_id, p_name})`. It turns `already completed` and `not editor` errors into `null`. |\n| Other caller | `sessionStore.ts:383-393` `handleEndSession` | Loops `handleComplete` over every active court before `dbEndSession`. Editor only. |\n| Server-side close path | `20260726090000_fix_complete_matches_search_path.sql:25` `complete_session_playing_matches(p_session_id)`, `:91` trigger `trg_complete_playing_on_close` | Completes playing matches when a session closes. |\n\n## 2. Server RPC (current definition)\n\nThe current definition is in `supabase/migrations/20261012000000_board_match_guards.sql:213-269`: `complete_match(uuid,bigint,text,uuid,uuid,uuid,uuid,text,text,integer)`, `SECURITY DEFINER`, `search_path=''`.\n\n1. `PERFORM 1 FROM sessions WHERE id=p_session_id FOR UPDATE`\n2. `PERFORM public.board_assert_editor(...)`\n3. `UPDATE matches SET status='completed', ended_at=now, player_snapshot=jsonb[...]`. Condition: `WHERE id=p_match_id AND session_id=p_session_id AND status='playing'`, with `RETURNING` the real roster. If nothing matches it raises `'Match already completed or not found'`.\n4. `UPDATE session_players SET status='waiting', wait_since=v_now, game_count=game_count+1, mixed_count=+1` (the last only for 혼복 and gender M). This uses the server roster, not the client's `p_team_*` values.\n5. `UPDATE sessions SET match_state_version = match_state_version + 1`\n6. `RETURN QUERY` the 4 updated `session_players` rows.\n\nGrants (`:293-296`): `revoke … from public, anon`; `grant execute … to authenticated`. Any logged-in user can call it, so the real gate is `board_assert_editor`.\n\n**There are no result columns.** `matches` has `id, session_id, court_id, game_type, team_a_p1/p2, team_b_p1/p2, status(playing/completed), started_at, ended_at, player_snapshot, assigned_by` (`src/lib/supabase/DATABASE.md:60-73`). It has no winner or score column, and I found no ELO or rating column anywhere.\n\n## 3. Who can complete a match today\n\nThe latest `board_assert_editor` is in `supabase/migrations/20261012010000_board_multi_editor_flag.sql:38-85`. It is built on the guard version in `20261012000000:17-58`.\n\n- If `board_multi_editor_enabled(p_session_id)` is true, it requires `auth.uid()` and `is_admin()`. Any admin can complete.\n- If `p_client_id IS NULL` (old client), it requires `is_admin()`.\n- If the caller already holds the lock (`editor_client_id = p_client_id`), it still requires `is_admin()`.\n- If the lock is free, it self-claims only `WHERE is_admin() AND editor_client_id IS NULL`. Otherwise it raises `'not editor'`.\n\n**Result:** only an admin can complete. In the default mode it must also be the admin who holds the editor lock. The client mirrors this through `isEditor` in the CTA, `claimEdit()` and the `handleComplete` guard. `board_save_drafts` (`20261012010000:92-133`) is also admin and editor only, so regular members cannot write `sessions.board_drafts`. That column holds the reserve teams (예비팀), the join-waiting teams (합류 대기) and the court groups.\n\n## 4. What happens to the 4 players\n\n- **Server:** they go to `status='waiting'`, `wait_since=now`, `game_count+1` and `mixed_count+1` (혼복 men only). The match becomes `completed` and gets a `player_snapshot`.\n- **Client broadcast handler:** `handleMatchCompleted` (`src/store/sessionBroadcastHandlers.ts:80+`) adds the 4 players to `groupHistory`, deduplicated by `matchId`. This history drives the penalty for re-forming the same group. The handler then upserts `updatedPlayers` and rebuilds `waitingIds`/`restingIds`.\n- **Board (editor device only), in `matchSlice.completeMatch`:**\n  - `resolveFreedReservations` (`src/lib/board/draftMutations.ts:182`) promotes ghost reservations of the freed players into real team members.\n  - `scatterMagnets(endedIds)` spreads the remaining magnets out.\n\n## 5. Automatic assignment after completion\n\n**No match is started automatically on the freed court.**\n\nThe only automatic step is `fillWaitingTeams()` (`src/store/board/membershipSlice.ts:131-163`). It gates on `claimEdit()` and runs on the editor's device only, after a successful completion. It finds drafts with `waitForCompletion &amp;&amp; courtId == null` (합류 대기팀, the \"경기 완료 후 빈자리 채우기\" toggle in `RecommendTeammateDialog.tsx:212`). It then fills their empty slots from the pool (`buildRecommendData` and `planWaitingTeamFills`), and partial court groups get priority. The changes go only to `board_drafts`, through the editor's draft save.\n\nStarting a match still needs an admin to press the team CTA. The handler is `startMatch` (`runtime.ts:434-437`), and the comment at `projection.ts:131` says waiting teams fill only on completion. Because all of this logic is client-side in the admin's board store, a non-admin completion would not trigger any of it. Neither the matching onto a reserve team nor the new-group step has a server-side equivalent today.\n\n## 6. How other clients find out\n\n1. **Fast path:** the sender's `sendBroadcast` sends a `match_completed` event on the `session-bc:&lt;id&gt;` channel (`src/lib/supabase/broadcast.ts:17`, `sessionChannels.ts:21`).\n2. **Authoritative catch-up:** `sessions.match_state_version++` is picked up by `postgres_changes`, which triggers `refetchMatches` (`DATABASE.md:17,250`).\n3. **Sync clock:** `20260722010000_sync_version_broadcast.sql` adds `sessions.sync_version`. Child-table triggers on `session_players`/`matches` bump it, and an AFTER trigger sends a `{v:N}` hint by `realtime.send`. Clients compare it and pull `load_session_state`.\n4. **Draft changes** from `fillWaitingTeams` spread through `board_drafts_version` and `board_save_drafts`.\n\n## 7. Member-facing live views today\n\n- **Can a regular member open the live board?** Yes. `/session` is guarded only by `sessionMeta` (`src/App.tsx:169-190`). Home shows a \"진행 중 세션 입장\" button to anyone when `sessionMeta` exists (`src/components/Home.tsx:385-391`), with no admin check. Non-editors see the board read-only: court CTAs show \"보기 전용\" or \"경기 진행 중\" and are disabled, and `ViewerLockOverlay` is shown.\n- **Can a member act on the board?** Only through private match proposals, which are member-writable:\n  - `create_match_proposal` (`20260918010000_private_match_proposals.sql:24+`). It requires an active session and that the
+... (truncated 41100 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/7a6f4be3-36bd-4eaf-a52f-c42c19e43f7a/tasks/w5geig7gh.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/b5894d29/projects/-Users-sam-Projects-cocktime-scheduler/138de9ea-c09e-41b1-bafd-1a2241bd5f91/subagents/workflows/wf_f059c15c-664/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/b5894d29/projects/-Users-sam-Projects-cocktime-scheduler/138de9ea-c09e-41b1-bafd-1a2241bd5f91/workflows/scripts/map-match-result-feature-wf_f059c15c-664.js', resumeFromRunId: 'wf_f059c15c-664'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>5</agent_count><agents_done>5</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>381789</subagent_tokens><tool_uses>112</tool_uses><duration_ms>122878</duration_ms></usage>
+</task-notification>
+
+**Answer**: 설계 문서 `docs/MATCH_RESULT_ELO_SPEC.md`를 쓰고 구현 워크플로를 시작했어요.
+
+**설계 요약**
+- **ELO 규칙**
+  - 시작 점수는 운영진 급수로 정해요(`1000 + 100×급수`, 급수가 없으면 1500).
+  - 팀 전력은 약한 사람 쪽에 가중치를 더 줘요(약한 쪽 0.6, 강한 쪽 0.4).
+  - 반영 경기 10판 전까지는 배치 기간이라 K=40, 그 뒤로는 K=20이에요.
+  - 성비가 맞지 않는 `혼합` 경기와 멤버 정보가 없는 선수가 낀 경기는 점수에 반영하지 않아요.
+- **등급**: 브론즈 → 실버 → 골드 → 플래티넘 → 다이아 → 마스터 6단계예요. 반영 경기가 5판 미만이면 "배치 중"으로 표시해요. 등급마다 아바타 테두리 모양이 달라져요.
+- **회원 경기완료**
+  - 새 서버 함수가 "이 경기를 뛴 사람인지"를 확인하고 경기를 완료 처리해요.
+  - 완료한 회원에게는 3분 동안 한 번만 쓸 수 있는 편성 권한을 줘요. 이 권한으로 예비팀을 코트에 올리거나, 예비팀이 없으면 새 그룹을 편성해 올려요. 경기 시작은 운영진이 해요.
+- **운영진 경기완료**: 기존 동작에 승패 입력 화면만 앞에 추가돼요.
+- **`/me` 통합 화면**: 상단에 등급 아바타와 전적을 보여 주고, 아래는 기록·회비·클럽 회계·정보 수정 4개 탭이에요. 기존 `/my-dues` 링크는 새 화면으로 연결돼요.
+
+**진행 순서**
+1. DB와 클라이언트 코어를 동시에 만들어요.
+2. 보드와 `/me` 화면을 동시에 만들어요.
+3. 타입 검사, 테스트, 빌드를 통과시켜요.
+4. 리뷰어 3명이 결과를 따로 검토하고, 지적이 실제로 맞는지 다시 검증한 뒤 고쳐요.
+
+**DB 리허설**: 프로덕션에서 `begin … rollback`으로 마이그레이션을 미리 실행해 보기만 하고, 반영은 하지 않아요. 실제 DB 배포와 커밋은 끝난 뒤 확인을 받고 진행할게요.
+
+---
+
+## #510
+
+**Prompt**: <task-notification>
+<task-id>wmf3kfke1</task-id>
+<tool-use-id>toolu_0177faCV1nf37SaN7sf7eeaw</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/7a6f4be3-36bd-4eaf-a52f-c42c19e43f7a/tasks/wmf3kfke1.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Implement match result input, ELO tiers, member board completion and merged /me page per docs/MATCH_RESULT_ELO_SPEC.md" completed</summary>
+<result>{"dbRep":"The database side is finished and works in a rehearsal against production. The migration ran there inside a transaction that was always rolled back, and production is unchanged. Nothing was committed, pushed or deployed, and I didn't touch `.agent-history/`. The new test file passes 20/20, and the full `src/lib/supabase/` suite passes 179/179, including the existing `boardMatchGuards` tests.\n\n**Files changed**\n- `/Users/sam/Projects/cocktime-scheduler/supabase/migrations/20261109000000_match_results_elo.sql` (new): the 4 tables with RLS, the 15 functions, and grants/revokes.\n- `/Users/sam/Projects/cocktime-scheduler/src/lib/supabase/DATABASE.md`: new section for the tables and ELO rules, the new RPC rows, and a note on the `complete_match` row.\n- `/Users/sam/Projects/cocktime-scheduler/src/lib/supabase/matchResultsElo.test.ts` (new). It checks the migration text and also runs the migration in PGlite (the in-memory Postgres the other DB tests use).\n  - **Text checks:** every function has `security definer` and `set search_path = ''`, and no table is referenced without `public.`. `member_complete_match` locks sessions before matches, and the `complete_match` guard order is unchanged. The new shared update step matches the old `complete_match` steps 1, 3, 4 and 5 character for character. Revokes/grants and RLS are present, there is no write policy, and the ELO constants are there.\n  - **PGlite runs** cover member complete, rated/unrated results, first-input-wins, admin correction and full replay, the summary/history functions, and the drafts commit check (stale, used once, editor lock untouched).\n\n**Decisions where the spec was silent**\n- **`complete_match` refactor:** I moved its update steps into `_complete_match_apply`. `complete_match` keeps its guards (session lock, then editor lock) and then calls the shared function, so exceptions and return rows are unchanged. Its revoke/grant is re-stated.\n- **Order of checks in `member_complete_match`:** the \"is the caller one of the 4 players\" check runs before the match-status check. A roster member who taps an already-completed match gets `'Match already completed or not found'`; anyone else gets `42501 'not in match'`. The game type for `mixed_count` comes from `matches.game_type`.\n- **Error codes:**\n  - `55000 'session not active'`, `'match not completed'`, `'result window closed'`\n  - `P0002 'match not found'`\n  - `22023 'invalid winner'`, `'invalid payload'`\n  - `42501 'no completion grant'`, `'admin only'`, `'member required'`\n- **Result JSON shape** (used in `member_complete_match.result` and the submit/admin_set responses): `{matchId, winner, rated, recordedBy, recordedAt, delta, ratingAfter, games}`. The last three are from the caller's point of view and are null if the match wasn't rated. Submit adds `status: recorded|exists`; admin_set adds `status: recorded|corrected|deleted|unchanged`. `match_result_submit` returns an existing result even after the 7-day window.\n- **`seeded`** is true when the member has no rating row yet, meaning the number shown is just the starting score.\n- **Grade handling:** a grade outside 1–10 or not a number gets 1500. A full replay re-seeds from each member's current grade.\n- **Concurrency:** all rating writes go through one transaction-level advisory lock, and `member_ratings` rows are then locked in `member_id` order.\n- **Extra safety beyond the spec:**\n  - The four member columns in `match_results` reference `members` with `on delete set null`, and scoring skips any row with a null player.\n  - Default table privileges are revoked (including TRUNCATE, which RLS doesn't cover), leaving only `select` for authenticated users.\n  - `match_my_history` caps `p_limit` at 1–100, and falls back to the match-time player snapshot for names if the session player row is gone.\n\n**Rehearsal output** (`begin; &lt;migration&gt;; &lt;smoke&gt;; rollback;`)\n- `elo_seed(7)` = 1700, `elo_seed(null)` = 1500, `elo_k(9)` = 40, `elo_k(10)` = 20.\n- `ratings_recompute_all()` ran without error. `match_results` and `member_ratings` both count 0.\n- Dry runs:\n  - `member_complete_match`: `55000 session not active`\n  - `member_commit_completion_drafts`: `55000 session not active`\n  - `match_result_submit`: `P0002 match not found`\n- All 15 functions exist, and none is missing `search_path=\"\"`. RLS is on for all 4 tables.\n- `anon` cannot execute `member_complete_match` or `complete_match`; `authenticated` can. `authenticated` cannot execute `ratings_recompute_all` or `_match_result_record`. `authenticated` cannot insert into `match_results` but can select from it. `anon` cannot select `member_ratings`.\n- A read-only check afterwards found 0 of the new tables or functions in production.\n\n**For the client side** (not my files, nothing changed there)\n- `src/lib/supabase/matchResults.ts` matches the \"already completed\" error by the text `\"already completed\"`, which works with the server message. It treats `55000 session not active` as a generic error.\n- `src/lib/rating/elo.ts` must round the way Postgres does, with .5 going away from zero: `Math.sign(x)*Math.round(Math.abs(x))`. Plain `Math.round` gives a different answer on negative halves.\n\n**Left undone:** deploying (`supabase db push --remote`) is up to you.","coreRep":"The rating core, data layer, store, `MatchResultDialog` and `TierFrame` are built to the spec. The migration landed while I worked, so the SQL constants test ran against it at the end: rating tests plus `matchResultsElo.test.ts` give 57/57 passing. `tsc` and `eslint` are clean on my files. Nothing was committed, pushed or deployed.\n\n**Files (all new except `src/index.css`)**\n- `src/lib/rating/elo.ts`: the `ELO` constants and `seedRating`, `teamStrength`, `expectedWin`, `kFactor`, `ratingDelta`, plus a small extra helper `matchExpectedA(teamA, teamB)`.\n- `src/lib/rating/tier.ts`: `TierKey`, `TIERS`, `tierOf`, `isPlacement`, `tierProgress`, plus extras `tierLabel` and `nextTier`.\n- `src/lib/rating/elo.test.ts` and `tier.test.ts`: formula values and tier boundaries.\n- `src/lib/rating/eloSqlMirror.test.ts`: pulls `elo_seed` and `elo_k` out of the migration, runs them in PGlite and compares the results with the TS mirror. It also checks that 0.6, 0.4 and 400 appear in the SQL, ignoring comments.\n- `src/lib/supabase/matchResults.ts`: the six RPC wrappers, `MatchWinner`, `MyRating`, `MyMatchRecord`, `MatchResult`.\n- `src/store/ratingStore.ts`: `useRatingStore` with `my`, `history`, `loadMy()`, `loadHistory(more?)`, `submit()`, `reset()`, plus a `ratingActions` alias. No polling or subscriptions.\n- `src/components/match/MatchResultDialog.tsx` and `src/components/rating/TierFrame.tsx`.\n- `src/index.css`: CSS added only at the end, under `/* ── 등급 테두리 / 승패 입력 ── */`.\n\nI checked the dialog and tier frames in screenshots at 360px, light and dark, from a throwaway preview in the scratchpad. The preview server is stopped.\n\n**Decisions where the spec was silent**\n- **Starting score:** I changed `seedRating` to match the real SQL `elo_seed`. A grade outside 1–10 starts at 1500, where my first version gave 1000 + 100 × grade. Fractional grades are rounded.\n- **Rounding Δ:** goes away from zero, like SQL numeric `round` (the migration comment says so). Plain JS rounding would give −2 instead of −3 on a −2.5 change.\n- **`memberCompleteMatch`** returns `{ok:true, updatedPlayers, result, courtId}` or `{ok:false, reason:'already_completed'|'not_in_match'|'error', message}`. This lets the board show \"이미 완료된 경기예요\" separately from other failures. `updatedPlayers` are converted with `rowToSessionPlayer`, the same as `dbCompleteMatch`.\n- **Error handling:**\n  - `submitMatchResult`, `adminSetMatchResult` and `fetchMyMatchHistory` throw on error.\n  - `fetchMyRating` returns null on error.\n  - `commitCompletionDrafts` returns `{status:'ok'|'stale'|'error', …}`.\n- **`MatchResult` carries `delta`, `ratingAfter` and `games`,** because 
+... (truncated 40512 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/7a6f4be3-36bd-4eaf-a52f-c42c19e43f7a/tasks/wmf3kfke1.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/b5894d29/projects/-Users-sam-Projects-cocktime-scheduler/138de9ea-c09e-41b1-bafd-1a2241bd5f91/subagents/workflows/wf_522e30ef-8f6/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/b5894d29/projects/-Users-sam-Projects-cocktime-scheduler/138de9ea-c09e-41b1-bafd-1a2241bd5f91/workflows/scripts/build-match-result-elo-wf_522e30ef-8f6.js', resumeFromRunId: 'wf_522e30ef-8f6'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>15</agent_count><agents_done>15</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>1553671</subagent_tokens><tool_uses>483</tool_uses><duration_ms>2541423</duration_ms></usage>
+</task-notification>
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #511
+
+**Prompt**: go on
+
+**Answer**: 첫 구현은 끝났어요. 타입 검사, 단위 테스트 1,202개, 빌드가 모두 통과했어요. 리뷰어가 찾은 결함 6개도 고쳤고요. 그중 하나가 회원 기기가 보드를 통째로 지울 수 있던 문제였는데, 지금은 막혔어요.
+
+그런데 리뷰 수정 하나가 요구사항과 어긋나서 지금 그 부분을 되돌리고 있어요.
+- **무엇이 어긋났나**: 회원이 경기완료를 누르면 예비팀만 코트에 올리고, 예비팀이 없을 때 새 그룹을 만들지 않게 바뀌었어요. 회원 기기가 숨은 "같이 매칭하지 않기" 목록을 받지 못해서 그 규칙을 지킬 수 없다는 이유였어요.
+- **어떻게 고치나**
+  - 회원 기기는 원래대로 편성안을 만들고, 대안도 최대 5개까지 함께 보내요.
+  - 서버가 숨은 목록으로 대안을 차례로 검사해서 규칙에 걸리지 않는 첫 안을 저장해요.
+  - 목록은 회원에게 절대 내려보내지 않아요.
+
+이 수정이 끝나면 리뷰어 2명이 다시 검토하고 결과를 정리해 드릴게요.
+
+---
+
+## #512
+
+**Prompt**: <task-notification>
+<task-id>w2ujqy0s1</task-id>
+<tool-use-id>toolu_01WGrgUEbSmT7JJ4njMEN5BC</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/917a8b94-d5d6-43ae-af87-a96246d067ec/tasks/w2ujqy0s1.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Restore member-path new-group formation while enforcing hidden avoid-groups server-side" completed</summary>
+<result>{"fix":"The member completion path forms a new group again when no reserve team is ready, and the server now drops any candidate that breaks a \"같이 매칭하지 않기\" group. `pnpm exec tsc -b` is clean, `pnpm test` passes (85 files, 1214 tests) and `pnpm build` succeeds. Nothing was committed, pushed or deployed, and `.agent-history/` was not touched.\n\n**Server** (`supabase/migrations/20261109000000_match_results_elo.sql`, edited in place)\n- `member_commit_completion_drafts(p_session_id bigint, p_match_id uuid, p_base_version bigint, p_payloads jsonb)` takes an array of 1–6 candidates. A bad array or any malformed candidate gives `22023 invalid payload`.\n- Checks run in this order:\n  1. session lock, then grant check;\n  2. stale check;\n  3. the \"may not remove board members\" check on every candidate. If any one candidate removes someone, the whole call fails with `42501`.\n  4. the avoid check, front to back. The first candidate that passes is saved and the call returns `{status:'ok', version, chosen}`.\n- If every candidate fails the avoid check, the function returns `{status:'rejected'}`, saves nothing and leaves the grant unused. No response or error says which rule or person caused it.\n- Two new internal helpers do the avoid check: `_completion_team_sets(jsonb)` and `_completion_avoid_violation(bigint, jsonb, jsonb)`. Execute is revoked from public, anon and authenticated. The avoid groups are read only inside the security definer function and are never sent to the client.\n- I went slightly beyond \"anchor set differs\" in two ways:\n  - **Reservations count:** a team's members are its anchors plus any ghost reservations pointing at it, because a ghost can also bring two group members together.\n  - **Existing combinations pass:** a team is only checked if its member set is not contained in some team already on the board. So moving a ready reserve team, promoting a reservation or shrinking a team never fails the check.\n- There is a `drop function if exists` for the old single-payload signature. On production it does nothing because the function doesn't exist there yet.\n\n**Client**\n- `src/store/board/memberCompletion.ts` runs the same order as the editor: `resolveFreedReservations` → `fillWaitingTeams` → `autoFillEmptyCourts(courtId)` → scatter. A member has no avoid rules on the device, so this plan uses none.\n- `planMemberCandidates` builds up to 5 candidates:\n  - candidate 0 is that full plan;\n  - each next one re-runs it with one newly added player left out of the pool (through a new `excludeIds` option on `autoFillEmptyCourts` and `fillWaitingTeams` in `membershipSlice.ts`);\n  - the last one is always the safe plan, which only moves a ready reserve team.\n  - Identical payloads are removed, and each one goes through `mergeDrafts`.\n- After the server answers, the local board switches to the candidate it chose. If the board changed while waiting, the client draws the saved payload with `applyRemoteDrafts` instead.\n- `commitCompletionDrafts` in `src/lib/supabase/matchResults.ts` now sends the candidate array, and the result type includes `chosen` and `rejected`. A rejected result syncs the board back from the server and shows the normal \"경기를 완료했어요\" message, so the hidden rule is never hinted at.\n\n**Tests**\n- PGlite (`src/lib/supabase/matchResultsElo.test.ts`), all as you specified: a failing candidate 0 falls through to candidate 1; all failing gives `rejected` with the grant unused; the removal check still applies; stale is returned before anything else. I added one more for a ghost reservation creating a violation.\n- Client (`src/store/board/memberCompletion.test.ts`): a new group forms when no reserve team exists; alternatives each leave out one added player; the safe plan comes last; duplicates are removed; at most 5; a ready reserve team gives a single candidate; the client adopts the server's chosen index; `rejected` is handled.\n- `src/store/board/memberCompleteMatch.test.ts`: its old \"does not compose a fresh group\" test was changed to expect the new group to be formed.\n\n**Production rehearsal** (Management API, migration plus smoke checks in one `begin; …; rollback;`)\n- The migration applied cleanly and the changed function shows the new `p_payloads` signature.\n- Calling the changed function on a non-existent session gave a clean `55000 session not active`.\n- On a real avoid group from production data: a new group containing two members of it is caught; the same people already on the board are ignored; an empty payload passes. Only true/false values were printed, no member names or ids.\n- Permissions are as intended: authenticated can call the commit function, anon cannot, and neither can call the helpers.\n- A follow-up query confirmed nothing was left behind (`match_results` table and the new functions don't exist).\n\n**Docs**\n- `docs/MATCH_RESULT_ELO_SPEC.md` §2-7 and §3.4 are rewritten for the candidate list.\n- `src/lib/supabase/DATABASE.md` has the updated function row, the new internal helpers, and a note in the match_avoid_groups section that the server now reads the groups for member completion.\n\nOne thing I left alone: ESLint flags an unused `_opts` at line 10 of `src/store/board/memberCompletion.test.ts`. That line was already in the file before this change.","findings":[{"file":"supabase/migrations/20261109000000_match_results_elo.sql","summary":"The 'chosen' index in the response, together with a 'rejected' result that leaves the grant unused, lets a non-admin member probe the hidden '같이 매칭하지 않기' groups. This breaks the spec promise (§2-7) that no response reveals which rule or person was hit.","scenario":"Any member who completes their own match gets a grant that lasts 3 minutes. Within that window they call member_commit_completion_drafts from devtools with up to 6 made-up candidates. Each candidate is the current board_drafts plus one extra courtless team, e.g. {memberIds:[A,B]} or a 4-person set {A,B,C,D}. Nothing is removed, so the 42501 removal guard passes. Nothing checks that the extra team is a real plan: no pool, resting, playing or session-membership check. An answer of {status:'rejected'} means every probe set contains an avoid pair. It costs nothing because the grant stays unused, so the member can repeat it with new sets as often as they like. An answer of chosen=k means sets 0..k-1 contain an avoid pair and set k does not. Making the last candidate a no-op (the current board unchanged) hides the board side effect. Group testing over 4-person sets recovers the owner-only groups in a few grants. The honest client also leaks: candidate i&gt;0 is 'candidate 0 with added[i-1] left out', so chosen=i tells the member's device that added[i-1] is avoid-grouped with someone in that new group. Fix direction: consume the grant on 'rejected' as well (or allow one call per grant), and stop returning an index the client can map back to people. For example, return the saved payload without the index, or accept only plans the server can re-derive."},{"file":"supabase/migrations/20261109000000_match_results_elo.sql","summary":"_completion_avoid_violation rejects any new team set that contains an avoid pair anywhere inside it, including a pair an admin had already put together. The editor rule (recommendTeammates.ts:79, which only checks each candidate against the confirmed members) allows adding to such a group, so the server is stricter than the 'same meaning as avoidGroups.ts' the spec claims.","scenario":"An admin overrides the rule and puts A and B (one avoid group) together on an empty court group as a 2-person partial, or in a waitForCompletion waiting team. A member then completes a match. The client's fillWaitingTeams or autoFillEmptyCourts(courtId) adds an innocent X, giving the set {A,B,X,...}. That set is not a subset of any current team set, so it is checked, and the existing A-B pair counts as a violation. Every alternative candidate (each leaves out only one added player) still con
+... (truncated 10895 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/917a8b94-d5d6-43ae-af87-a96246d067ec/tasks/w2ujqy0s1.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/b5894d29/projects/-Users-sam-Projects-cocktime-scheduler/138de9ea-c09e-41b1-bafd-1a2241bd5f91/subagents/workflows/wf_1da1fffa-47e/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/b5894d29/projects/-Users-sam-Projects-cocktime-scheduler/138de9ea-c09e-41b1-bafd-1a2241bd5f91/workflows/scripts/restore-member-new-group-wf_1da1fffa-47e.js', resumeFromRunId: 'wf_1da1fffa-47e'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>4</agent_count><agents_done>4</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>510047</subagent_tokens><tool_uses>155</tool_uses><duration_ms>1288168</duration_ms></usage>
+</task-notification>
+
+**Answer**: 구현을 마쳤어요. 마지막으로 직접 돌려 본 결과는 타입 검사 통과, 테스트 1,222개 전부 통과, 빌드 성공이고, 바뀐 파일에서는 lint 오류도 없어요. 아직 커밋은 안 했고 DB에도 배포하지 않았어요. 변경 파일은 스테이징만 해 뒀어요.
+
+## 만든 것
+
+**1. 승패 입력 (게임풍 화면)**
+- 경기완료를 누르면 두 팀 아바타가 VS로 마주 보는 화면이 떠요. 이긴 팀을 탭하면 승리 연출이 나오고, [결과 기록]이나 [모르겠어요 · 건너뛰기]를 고르면 돼요.
+- 기록하면 내 점수가 얼마나 바뀌었는지와 등급이 잠깐 보여요.
+
+**2. 회원 경기완료 (보드 코트 카드)**
+- 보드를 보는 회원은 자기가 뛰는 코트에서만 [경기완료]가 켜져요.
+- 완료하면 준비된 예비팀을 그 코트에 올리고, 예비팀이 없으면 새 그룹을 만들어 올려요. 경기 시작은 운영진이 해요.
+- 운영진이 완료하면 승패 화면만 하나 추가되고 나머지는 기존 동작 그대로예요.
+
+**3. ELO와 등급**
+- 시작 점수는 운영진이 매긴 급수로 정해요. 같은 편 실력은 약한 사람 쪽에 가중치를 더 둬서 계산해요.
+- 등급은 브론즈부터 실버, 골드, 플래티넘, 다이아, 마스터까지 6단계예요. 등급마다 아바타 테두리 모양이 달라요.
+- 반영된 경기가 5판이 안 되면 "배치 중"으로 보여요.
+- 성비가 맞지 않는 `혼합` 경기는 점수에 반영하지 않아요.
+
+**4. `/me` 통합 화면**
+- 위쪽에 등급 테두리를 두른 아바타, 점수, 전적이 보여요.
+- 아래 탭은 기록 · 회비 · 클럽 회계 · 정보 수정 4개예요.
+- 기록 탭에서 건너뛴 경기의 결과를 7일 안에 나중에 입력할 수 있어요.
+- 예전 `/my-dues` 링크로 들어와도 새 화면으로 연결돼요.
+
+## 중간에 바로잡은 것
+리뷰 수정 하나가 "예비팀이 없으면 새 그룹 생성" 요구를 빼 버려서 되돌렸어요. 숨은 "같이 매칭하지 않기" 목록은 회원 기기로 보낼 수 없어요. 그래서 회원 기기가 편성안을 여러 개 보내면, 서버가 그 목록으로 하나씩 검사해서 처음 통과한 안을 저장하게 했어요.
+
+이 방식을 검토하다가 회원이 이 목록을 떠볼 수 있는 구멍을 찾아서 막았어요. 이제 경기완료 한 번에 검사는 한 번만 할 수 있어요. 다만 "보낸 안 중 몇 번째가 통과했는지"는 응답으로 알 수 있어서, 완료할 때마다 아주 적은 정보는 드러나요.
+
+## 남은 일
+1. **DB 배포**: 프로덕션에서는 `begin … rollback`으로 리허설만 해서 깨끗하게 적용되는 것까지 확인했어요. 프론트엔드보다 DB를 먼저 올려야 해요.
+[코드 블록 생략]
+2. **실기기 확인**: 새 서버 함수가 아직 프로덕션에 없어서 로그인한 실제 앱에서는 흐름을 아직 못 돌려 봤어요. 승패 화면과 등급 테두리만 따로 미리보기로 띄워서 360px 화면에서 라이트·다크 모드 스크린샷으로 확인했어요. DB를 배포한 뒤 아래 세 가지를 직접 눌러 봐 주세요.
+   - 운영진 완료
+   - 회원 완료 (예비팀이 있을 때와 없을 때)
+   - `/me` 화면
+3. **알려진 한계**
+   - 회원이 완료한 순간에 운영진이 보드를 저장하고 있으면, 운영진 쪽에 기존 "보드 변경을 저장하지 못해…" 안내가 뜨고 보드를 다시 불러와요.
+   - 회계 e2e 테스트 50개 중 영수증 카드 높이를 보는 1개가 실패해요. 이번 변경과 관련 없어 보이는 테스트지만, 원래 코드에서도 실패하는지는 비교하지 못했어요.
+
+준비되면 `/commit`으로 커밋하시면 돼요. 설계 문서는 `docs/MATCH_RESULT_ELO_SPEC.md`에 있어요.
+
+---
+
+## #513
+
+**Prompt**: 메뉴에서 내 정보/내 회비 로 경로가 갈릴 필요는 없을거같은데
+
+**Answer**: 메뉴의 "내 회비" 항목을 없앴어요. 이제 메뉴에는 **내 정보** 하나만 남았고, 누르면 `/me`로 가요. 회비는 그 화면 안의 탭으로 보면 돼요.
+
+미납 알림의 "내 회비 보기" 버튼은 그대로 회비 탭(`/me/dues`)으로 바로 열려요. 예전 `/my-dues` 링크도 같은 곳으로 넘어가요.
+
+`HeaderMenu.tsx`와 설계 문서를 같이 고쳤어요. 타입 검사와 lint는 통과했고, 두 파일 모두 스테이징했어요.
+
+---
+
+## #514
+
+**Prompt**: [Image #1] 7일동안 승패입력하라는 문구가 반복되는데 디자인 정리해줘
+
+**Answer**: 카드마다 반복되던 기한 문구를 목록 맨 위 한 줄로 모았어요.
+
+- **목록 맨 위**: 아직 입력하지 않은 경기가 있을 때만 파란 안내 한 줄이 떠요. 내용은 "**결과를 입력하지 않은 경기 3개** · 경기 후 7일까지 입력할 수 있어요"예요.
+- **각 카드**: 아래쪽 구분선과 안내 문구를 없앴어요. [결과 입력] 버튼은 작게 줄여서, 승패를 기록한 카드에서 점수 변동(+18 / −12)이 있는 오른쪽 자리에 넣었어요. 카드 높이가 3줄로 줄어 기록된 카드와 같아졌어요.
+- 7일이 지나 입력할 수 없는 경기는 버튼 없이 "미기록" 표시만 남아요.
+
+고친 파일은 `MatchRecordCard.tsx`, `RecordTab.tsx`, `me.css`이고, 쓰이지 않게 된 `.me-rec-cta` 스타일은 지웠어요. 타입 검사, lint, 관련 테스트는 통과했고 스테이징까지 해 뒀어요. 실제 화면은 아직 못 봤으니 새로고침해서 확인해 주세요.
+
+---
+
+## #515
+
+**Prompt**: 우리는 그룹을 뽑지, 팀을 뽑는게 아니라서 결과입력할때 팀도 변경할 수 있게 해줘.
+
+**Answer**: 작업을 시작했어요. 진행 방식은 이래요.
+
+**확인한 것:** 승패 기록용 서버 함수와 테이블(`20261109000000`)은 이미 프로덕션에 배포돼 있어요. 아직 기록된 결과는 0건이에요. 그래서 기존 마이그레이션은 건드리지 않고 새 마이그레이션 `20261110000000`에 변경을 넣어요. 프론트엔드는 아직 배포 전이라 함수 시그니처는 자유롭게 바꿀 수 있어요.
+
+**바꾸는 내용**
+- **입력 화면:** "누구와 같은 편이었나요?" 줄을 넣어요. 나를 뺀 3명이 아바타 칩으로 나오고, 보드에서 짜인 파트너가 미리 선택돼 있어요. 다른 사람을 고르면 두 팀이 다시 나뉘고, 그다음 이긴 팀을 고르면 돼요. 내가 뛰지 않은 경기를 운영진이 입력할 때는 A팀 첫 번째 선수를 기준으로 파트너를 골라요.
+- **서버:** 결과에 실제 팀 구성을 저장하고, ELO 계산도 그 실제 팀 구성으로 해요. 경기 4명 밖의 사람이 섞이거나 같은 사람이 두 번 들어간 구성은 막아요.
+- **적용되는 곳:** 보드에서 완료할 때(운영진·회원), `/me` 기록 탭에서 나중에 입력할 때, 운영진이 결과를 정정할 때 모두 같은 화면을 써요. 기록 카드에도 실제로 뛴 팀이 보여요.
+
+구현이 끝나면 리뷰어 2명이 SQL과 클라이언트 코드를 따로 검토해요. 새 마이그레이션은 프로덕션에서 `begin … rollback`으로 미리 돌려 보기만 하고, 실제 반영은 하지 않아요. 결과가 나오면 정리해서 알려 드릴게요.
+
+---
+
+## #516
+
+**Prompt**: <task-notification>
+<task-id>w0u7heaul</task-id>
+<tool-use-id>toolu_01PqUbxuANULht8xZye199B7</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/917a8b94-d5d6-43ae-af87-a96246d067ec/tasks/w0u7heaul.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Let the actual team split be changed when entering a match result (group of 4 is drawn, not teams)" completed</summary>
+<result>{"build":"결과를 넣을 때 실제 편을 고를 수 있게 했습니다. ELO와 내 기록은 이제 보드의 A/B가 아니라 실제 편을 기준으로 계산합니다. `tsc -b`, 전체 테스트(1246개), `pnpm build`가 통과했고, 바꾼 파일은 eslint도 깨끗합니다. 커밋·푸시·배포는 하지 않았습니다. 이미 배포된 `20261109000000` 마이그레이션과 `.agent-history/`는 건드리지 않았습니다.\n\n**서버 (새 마이그레이션 `supabase/migrations/20261110000000_match_result_team_override.sql`)**\n- `match_results`에 `teams jsonb` 컬럼을 추가했습니다. 실제 편 4명의 선수 id를 `[a1,a2,b1,b2]` 순서로 담고, 이전에 기록된 행은 NULL이며 보드 편으로 읽습니다.\n- `a1..b2` 컬럼도 실제 편을 뜻합니다. 점수 반영, 전체 재계산(`ratings_recompute_all`), 조회 권한은 원래 이 컬럼만 읽기 때문에 따로 고칠 필요가 없었습니다.\n- 결과를 기록하는 네 함수(`_match_result_record`, `member_complete_match`, `match_result_submit`, `match_result_admin_set`)가 `p_team_a uuid[]`를 받습니다.\n  - 두 명이 아니거나, 같은 사람이 겹치거나, 그 경기 4명이 아니면 `22023 'invalid teams'`로 거부합니다.\n  - 승자 A/B는 이 실제 A편 기준입니다.\n  - 기존 시그니처는 지웠고, 새 시그니처마다 실행 권한을 다시 지정했습니다. 함수는 모두 security definer, `search_path = ''`, `public.` 한정입니다.\n- 회원 완료 중에 편이 잘못되면 경기 완료까지 함께 되돌립니다.\n- 운영진 정정에서 편을 안 보내면 이미 기록된 편을 그대로 둡니다. 승자만 고치다가 편이 보드 편으로 돌아가는 일을 막으려는 것입니다. 이긴 두 사람과 진 두 사람이 같으면 A/B 표기만 달라도 `unchanged`로 처리하고, 실제로 바뀌면 전체 재계산합니다.\n- `match_my_history`의 `teamA/teamB/mySide`가 실제 편을 따릅니다. 응답 모양은 같고, 선수마다 `spId`만 추가했습니다.\n- 내부 보조 함수 4개를 새로 만들었고, 실행 권한은 전부 회수했습니다.\n\n**운영 DB 리허설 (begin…rollback)**\n- 결과가 없던 11/9 여복 경기에 보드 편과 다른 편으로 결과를 넣었습니다(로스터 회원 권한).\n  - `recorded`, Δ +27로 기록됐고, 보드에서 B편이던 사람이 실제 A편으로 올라가 함께 +27을 받았습니다.\n  - `teams`와 `a1..b2`가 실제 편으로 저장됐고, 내 기록의 `mySide`·`teamA`도 실제 편으로 나왔습니다.\n- 경기 4명이 아닌 사람을 넣자 `22023 invalid teams`로 거부됐습니다.\n- 운영진이 승자만 B로 고치자 `corrected`가 됐고, 편은 그대로 유지된 채 ±13으로 재계산됐습니다.\n- 기존 시그니처는 사라졌고, 실행 권한(일반 회원 가능, 비로그인 불가, 내부 함수 불가)과 `search_path` 설정도 맞았습니다.\n- rollback 뒤 다시 조회하니 운영 DB는 그대로였습니다(결과 0건, 새 함수·컬럼 없음).\n- 리허설 스크립트: `/private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/138de9ea-c09e-41b1-bafd-1a2241bd5f91/scratchpad/rehearse-team-override.sh`\n\n**클라이언트**\n- **API 래퍼 (`src/lib/supabase/matchResults.ts`)**: `MatchTeamA`(선수 id 두 개, 또는 보드 편이면 null) 타입을 추가했습니다. 회원 완료·결과 제출·운영진 정정 래퍼가 `teamA`를 받고, 기록의 선수 정보에 `spId`를 추가했습니다.\n- **결과 입력 창 (`MatchResultDialog.tsx`)**: 패널 위에 \"누구와 같은 편이었나요?\" 줄을 넣었습니다.\n  - 기준 선수는 내가 뛰었으면 나, 아니면 보드 A편 첫 사람입니다. 기준 선수가 내가 아니면 문구가 \"OO 님과 같은 편은?\"으로 바뀝니다.\n  - 기준 선수 아바타 옆에 나머지 셋을 칩으로 보여주고, 보드 짝이 미리 골라져 있습니다.\n  - 다른 칩을 고르면 두 패널이 다시 나뉘고 패널을 한 번 훑는 빛 효과가 지나갑니다. 아바타는 움직이지 않고, 움직임 줄이기 설정이면 효과를 끕니다.\n  - 기준 선수는 보드에서 있던 쪽 패널에 남기 때문에 '우리 팀' 표기가 바뀌지 않습니다.\n  - 편을 바꾸면 이미 고른 승자는 지웁니다. 같은 'A'라도 가리키는 두 사람이 달라지기 때문입니다.\n  - 제출 값은 `{ winner, teamA }`이고, 예상 승률은 보이는 편으로 다시 계산합니다.\n  - 360px 폭에 맞고, 라이트/다크 토큰을 쓰며, 왼쪽 색 테두리는 없습니다.\n- 편을 나누는 순수 로직은 `src/components/match/teamSplit.ts`로 분리했습니다.\n- `teamA`를 전달하는 곳은 세 군데입니다.\n  - `MatchCompleteFlow.tsx`: 편집자, 회원, 이미 완료된 경우 세 경로 모두\n  - `RecordTab.tsx`: 기록 탭의 결과 보충\n  - `ratingStore`, `matchSlice.completeMatchAsMember`\n- 운영진 정정 화면은 아직 없어서 래퍼만 준비해 뒀습니다.\n- `MatchRecordCard`는 서버가 고쳐준 데이터를 그대로 그리므로 주석만 수정했습니다.\n\n**테스트**\n- `src/lib/supabase/matchResultTeams.test.ts`: 두 마이그레이션을 순서대로 적용한 PGlite 테스트입니다.\n  - 편을 바꾸면 점수 +/−를 받는 사람이 달라지는지\n  - 잘못된 편 거부와 완료 되돌리기\n  - 보충, 내 기록의 `mySide`, 선수가 지워졌을 때 이름 표시\n  - 운영진 정정과 `unchanged` 판정\n  - 전체 재계산 결과가 하나씩 반영한 결과와 같은지\n  - 이전 행(`teams` NULL) 처리, 정적 규칙 검사\n- `src/components/match/teamSplit.test.ts`: 기준 선수와 짝의 모든 조합\n- `src/components/board/MatchCompleteFlow.test.tsx`: 세 경로가 `teamA`를 넘기는지\n- `src/store/board/memberCompleteMatch.test.ts`: `teamA`가 RPC까지 전달되는지 확인하도록 고쳤습니다.\n\n**문서**: `docs/MATCH_RESULT_ELO_SPEC.md`(§0 결정 행, §2 함수, §3.2–3.4)와 `src/lib/supabase/DATABASE.md`를 업데이트했습니다.\n\n**배포 순서**: 프론트엔드보다 DB 마이그레이션이 먼저 반영돼야 합니다. 새 클라이언트는 `p_team_a` 인자를 보내는데, 운영 DB에는 아직 옛 시그니처만 있기 때문입니다.\n\n새로 만든 파일은 `git add` 하지 않은 상태입니다.","findings":[{"file":"supabase/migrations/20261110000000_match_result_team_override.sql","summary":"In production, deleting a session player sets that slot in matches to NULL (matches_team_*_fkey ON DELETE SET NULL, from 20260616000000). The new match_my_history then calls _match_slot_json with a NULL id, which looks up player_snapshot by id. It never matches, so the deleted player's name and gender come back NULL. The deployed version looked up the snapshot by position (player_snapshot-&gt;0..3) and kept the name. The PGlite test misses this because its matches table has no FK.","scenario":"A completed match with no result row: every match finished before this feature, plus any match still open for a result (canSubmit). A legacy row with teams NULL behaves the same. Player 9 leaves and is removed through session.ts (session_players.delete), so matches.team_b_p2 becomes NULL. match_my_history line 379 falls back to ARRAY[m.team_a_p1..] and gets NULL for that slot. _match_slot_json(snapshot, NULL) returns {spId:null, memberId:null, name:null, gender:null}, so the history card shows a blank player where the deployed 20261109 showed the snapshot name. The same thing happens when an admin corrects a match whose roster already has a NULL slot: _match_split puts NULL into teams for that player, and the snapshot link is lost for good."},{"file":"supabase/migrations/20261110000000_match_result_team_override.sql","summary":"Every 'corrected' update in match_result_admin_set, including a correction that changes only the winner (p_team_a NULL, so the recorded teams are kept), rebuilds a1..b2 from the current session_players.member_id (lines 318-321) and leaves rated unchanged. If any of the four session_players rows has been deleted since the result was recorded, that slot becomes NULL. On the next replay, ratings_recompute_all skips the match inside _rating_apply (array_position(v_ids, NULL)), and all four players lose the ELO points for that game. The deployed version touched only winner on a correction and kept the members recorded at the time.","scenario":"Members 1, 2, 3 and 4 play, and the result is recorded as A=1·2 winning (rated=true, a1..b2 all set). Later the admin removes player 4 from the session, which deletes the session_players row. The admin then calls match_result_admin_set(match, 'B') to fix only the winner. v_new_split = v_old_split = teams [sp1,sp2,sp3,sp4], so the UPDATE sets b2 = (SELECT member_id FROM session_players WHERE id = sp4), which is NULL. rated stays true. ratings_recompute_all → _rating_apply returns early, so no events are written for the match. All four players' games, wins and losses drop this match, and member 4 also loses RLS visibility of the row. Fix: on a correction, keep the stored member id for any slot whose sp id has not changed, for example by mapping old teams[i] to old a1..b2 and resolving only the sp ids that moved."},{"file":"src/components/match/MatchResultDialog.tsx","summary":"submit() always sends explicit teamA spIds whenever the pairing step is editable (teamAIds(players, split) at line 175), even when the user left the board pairing untouched. In MatchCompleteFlow those spIds come from a snapshot taken once when the dialog opens (readSnapshot, useState initializer). The board can change a playing match's roster under the same match id (setMatchRoster / set_match_roster RPC updates team_*_p* WHERE id = p_match_id AND status='playing'). After such a change, the snapshot spIds are no longer in the roster, so the new _match_split raises 22023 'invalid teams'. Before this change the same submission went through with the board split.","scenario":"Court 3 is playing A1,A2 vs B1,B2. B1 opens [경기완료] (member path) and the dialog snapshots the four spIds. Meanwhile the editor swaps A2 for C on another device with setMatchRoster, and the match id stays the same. B1 picks a winner without touching the partner chips. The client sends p_team_a=[A1.sp, A2.sp]. member_complete_match fails _match_split with 22023 and the whole completion rolls back. memberCompleteMatch maps this to reason 'error', so finishAsMember shows '경기를 완료하지 못했어요. 다시 시도해 주세요' and leaves the dialog open. Every retry resends the same stale snapshot, so the match can't be completed with a result until the user skips. On the editor path, completeMatch succeeds and submit
+... (truncated 5094 chars, full result in /private/tmp/claude-501/-Users-sam-Projects-cocktime-scheduler/917a8b94-d5d6-43ae-af87-a96246d067ec/tasks/w0u7heaul.output)</result>
+<diagnostics>Per-agent results: /Users/sam/.claude-instances/b5894d29/projects/-Users-sam-Projects-cocktime-scheduler/138de9ea-c09e-41b1-bafd-1a2241bd5f91/subagents/workflows/wf_b4c9b882-a69/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/sam/.claude-instances/b5894d29/projects/-Users-sam-Projects-cocktime-scheduler/138de9ea-c09e-41b1-bafd-1a2241bd5f91/workflows/scripts/result-team-override-wf_b4c9b882-a69.js', resumeFromRunId: 'wf_b4c9b882-a69'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>4</agent_count><agents_done>4</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>487645</subagent_tokens><tool_uses>129</tool_uses><duration_ms>1207367</duration_ms></usage>
+</task-notification>
+
+**Answer**: 이제 결과를 입력할 때 실제로 같은 편이었던 사람을 고를 수 있어요. ELO도 그렇게 고른 실제 편으로 계산해요. 직접 다시 돌려 보니 타입 검사, 테스트 1,250개, 빌드, lint 모두 통과했어요. 변경 파일은 스테이징까지 해 뒀어요.
+
+## 바뀐 화면
+- 승패 입력 창 맨 위에 **"누구와 같은 편이었나요?"** 줄이 생겼어요.
+  - 나를 기준으로 나머지 3명이 아바타 칩으로 나오고, 보드에서 짠 파트너가 미리 선택돼 있어요.
+  - 다른 사람을 고르면 두 팀 패널이 다시 나뉘고, 그다음 이긴 팀을 고르면 돼요.
+  - 편을 바꾸면 미리 골라 둔 승자는 지워져요. 같은 쪽 패널이어도 그 안의 두 사람이 달라졌기 때문이에요.
+  - 경기를 뛰지 않은 운영진이 입력할 때는 보드 A팀 첫 선수를 기준으로 "OO 님과 같은 편은?"이라고 물어요.
+- 보드에서 완료할 때(운영진·회원 모두), 기록 탭에서 나중에 입력할 때 모두 같은 창이 떠요. 기록 카드에도 실제로 뛴 편이 나와요.
+
+## 리뷰에서 잡아서 고친 것
+1. **경기 중 명단이 바뀐 경우**: 경기 중에 운영진이 명단을 바꾸면 처음 창을 열 때 기억한 명단과 어긋나서 완료 자체가 실패했어요. 이제 편을 바꾸지 않았으면 서버가 그 순간의 보드 명단으로 편을 나눠요.
+2. **나중에 빠진 선수의 이름**: 명단에서 빠진 선수가 기록 카드에 빈칸으로 나왔어요. 이제 경기 당시 저장해 둔 명단에서 이름을 찾아 보여 줘요.
+3. **운영진 정정 때 점수 누락**: 선수가 빠진 경기를 운영진이 정정하면 그 경기 점수가 4명 모두에게서 빠졌어요. 이제 처음 기록할 때의 선수를 그대로 써서 점수가 유지돼요.
+
+## 배포 순서 (중요)
+`20261109` 마이그레이션은 이미 프로덕션에 올라가 있어요. 그래서 이번 변경은 새 마이그레이션 `20261110000000_match_result_team_override.sql`에 따로 넣었어요. 프로덕션에서 `begin … rollback`으로 미리 돌려 봤고 깨끗하게 적용됐어요.
+
+새 프론트엔드는 바뀐 서버 함수를 부르기 때문에 **DB를 먼저 올려야 해요.**
+[코드 블록 생략]
+DB를 올린 다음 `/commit`으로 커밋하고 push하면 돼요.
+
+운영진 정정 화면은 아직 없어요. 서버 함수와 클라이언트 연결만 준비해 뒀어요. 필요하면 다음에 만들게요.
+
+---
+
+## #517
+
+**Prompt**: 이거 세션화면 안에서도 똑같이 선택하는 화면인거지?
+
+**Answer**: 네, 같은 화면이에요. 보드(세션 화면)에서 [경기완료]를 누르면 `/me` 기록 탭에서 결과를 입력할 때와 똑같은 창(`MatchResultDialog`)이 떠요. 운영진이든 회원이든 마찬가지예요.
+
+- 창에 "누구와 같은 편이었나요?" 줄이 나오고, 보드에서 짠 파트너가 미리 선택돼 있어요.
+- 다른 사람을 고르면 편이 다시 나뉘고, 그다음 이긴 팀을 고르면 돼요. [건너뛰기]도 있어요.
+- 고른 편은 결과와 함께 서버로 가요. 운영진 완료, 회원 완료, 이미 완료된 경기에 결과만 넣는 경우 모두 그래요.
+
+코드에서 확인해 보니 보드는 선수 4명의 id를 항상 넘겨서 편을 바꾸는 줄이 늘 보여요. 다만 실제 세션에서 눌러 본 적은 아직 없어요. `20261110` 마이그레이션을 배포한 뒤에 한 번 확인해 주세요.
+
+---
+
+## #518
+
+**Prompt**: 커밋후 배포
+
+**Answer**: _(응답 대기 중…)_
+
+---
+
+## #519
+
+**Action**: 승패 입력·ELO 등급·회원 경기완료·내 정보 통합 화면(/me)
+
+**Answer**: 경기완료 때 게임풍 승패 입력 창(실제 같은 편 선택·건너뛰기)을 띄우고 결과를 ELO로 누적해 등급별 아바타 테두리로 표시한다(지금은 표시용, 추후 실력 등급·팀 밸런싱 반영 예정).
+- DB: match_results·member_ratings·rating_events·match_completion_grants, member_complete_match·match_result_submit·match_result_admin_set·match_my_history 등(20261109), 결과 입력 시 실제 편 지정 p_team_a(20261110)
+- ELO: 시작=1000+100×급수, 팀 전력=약0.6·강0.4, K 배치40/일반20, '혼합'·미등록 선수 경기는 미반영. 등급 브론즈~마스터 6단계, 5판 미만 배치 중
+- 보드: 자기 경기를 뛰는 회원도 [경기완료] 가능. 완료 후 준비된 예비팀을 코트에 올리고 없으면 새 그룹 편성(시작은 운영진). 회원 기기는 숨은 매칭 제외 규칙을 받지 않고, 후보안을 서버가 검사해 첫 통과안을 저장(경기당 1회 권한)
+- 운영진 완료는 기존 동작 그대로 + 승패 창
+- /me: 등급 아바타·전적 히어로 + 기록·회비·클럽 회계·정보 수정 탭. 기록 탭에서 건너뛴 경기 7일 내 보충. /my-dues는 /me로 리다이렉트, 메뉴는 '내 정보' 하나로 통합
+- 문서: docs/MATCH_RESULT_ELO_SPEC.md, DATABASE.md
 
 ---

@@ -25,6 +25,7 @@ vi.mock("../../../store/debugStore", () => ({ useDebugStore: { getState: () => (
 import { BoardRuntime, type BoardCallbacks } from "./runtime";
 import { useRemoteDragStore } from "../../../store/remoteDragStore";
 import { useToastStore } from "../../../store/toastStore";
+import { useAuthStore } from "../../../store/authStore";
 import type { ProposalComposer, ProposalComposerSnapshot } from "../matchProposals";
 
 class TestCanvas extends EventTarget {
@@ -101,7 +102,7 @@ function setup({ editor = true, scale = 1 } = {}) {
 		}),
 		settleBoard: vi.fn(), handleGhostDrop: vi.fn(), handlePlayingMagnetDrop: vi.fn(),
 		cancelReservation: vi.fn(), detachMember: vi.fn(), restPlayer: vi.fn(), unrestPlayer: vi.fn(),
-		confirmTeam: vi.fn(), unconfirmTeam: vi.fn(), dismissTeam: vi.fn(), autoFillTeam: vi.fn(), startMatch: vi.fn(), completeMatch: vi.fn(),
+		confirmTeam: vi.fn(), unconfirmTeam: vi.fn(), dismissTeam: vi.fn(), autoFillTeam: vi.fn(), startMatch: vi.fn(), completeMatch: vi.fn(), requestCompleteMatch: vi.fn(),
 	} as unknown as BoardState));
 	const canvas = new TestCanvas();
 	const renderer = { screen: { width: 390, height: 600 }, resize: vi.fn((width: number, height: number) => { renderer.screen = { width, height }; }) };
@@ -191,18 +192,37 @@ describe("BoardRuntime input and scene integration", () => {
 			runtime.controller.pointerDown({ id: 1, x, y: 269 }); runtime.controller.pointerUp({ id: 1, x, y: 269 });
 		};
 		tap(200);
-		expect(board.getState().completeMatch).toHaveBeenCalledExactlyOnceWith(1);
+		// 경기완료는 바로 끝내지 않고 승패 입력 창부터 연다(MATCH_RESULT_ELO_SPEC §3.4).
+		expect(board.getState().requestCompleteMatch).toHaveBeenCalledExactlyOnceWith(1);
+		expect(board.getState().completeMatch).not.toHaveBeenCalled();
 		board.setState({ matchEdits: new Map([[1, { matchId: "M", original: ["a", "b", "c", "d"], roster: ["e", "b", "c", "d"] }]]) });
 		tap(147);
 		expect(board.getState().cancelMatchEdit).toHaveBeenCalledExactlyOnceWith(1);
 		tap(200);
 		expect(board.getState().applyMatchEdit).toHaveBeenCalledExactlyOnceWith(1);
-		expect(board.getState().completeMatch).toHaveBeenCalledTimes(1);
+		expect(board.getState().requestCompleteMatch).toHaveBeenCalledTimes(1);
 		// A remote cancellation between down/up must never turn a Save tap into Complete.
 		runtime.controller.pointerDown({ id: 1, x: 200, y: 269 });
 		board.setState({ matchEdits: new Map() });
 		runtime.controller.pointerUp({ id: 1, x: 200, y: 269 });
-		expect(board.getState().completeMatch).toHaveBeenCalledTimes(1);
+		expect(board.getState().requestCompleteMatch).toHaveBeenCalledTimes(1);
+	});
+
+	it("lets a non-editor open completion only on the court they play", () => {
+		const { runtime, board } = setup({ editor: false });
+		board.setState({ courtAnchors: new Map([[1, { x: 200, y: 180 }]]) });
+		const players = new Map(stores.session.getState().sessionPlayers);
+		players.set("a", { ...players.get("a")!, memberId: "member-a" });
+		stores.session.setState({ sessionPlayers: players,
+			courts: [{ id: 1, match: { id: "M", courtId: 1, gameType: "남복", teamA: ["a", "b"], teamB: ["c", "d"], startedAt: "2026-09-18" } }] });
+		const tap = () => { runtime.controller.pointerDown({ id: 1, x: 200, y: 269 }); runtime.controller.pointerUp({ id: 1, x: 200, y: 269 }); };
+		useAuthStore.setState({ memberId: "someone-else" });
+		tap();
+		expect(board.getState().requestCompleteMatch).not.toHaveBeenCalled();
+		useAuthStore.setState({ memberId: "member-a" });
+		tap();
+		expect(board.getState().requestCompleteMatch).toHaveBeenCalledExactlyOnceWith(1);
+		useAuthStore.setState({ memberId: null });
 	});
 
 	it("draws on invalidation and leaves no continuous idle frame loop", () => {

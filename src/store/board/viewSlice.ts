@@ -324,6 +324,7 @@ export const createViewSlice: StateCreator<
 				s.dragInfo = null;
 				s.hoverTarget = null;
 				s.detachHot = false;
+				s.completeRequest = null; // 다른 세션의 경기완료 창이 남지 않게
 			});
 			syncState.lastSyncedDraftsJson = "";
 		} finally {

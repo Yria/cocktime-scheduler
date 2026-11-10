@@ -8,6 +8,7 @@ import SessionSetup from "./components/SessionSetup";
 import MemberAdminPage from "./components/admin/MemberAdminPage";
 import DuesAdminPage from "./components/admin/dues/DuesAdminPage";
 import MyDuesPage from "./components/dues/MyDuesPage";
+import MyPage from "./components/me/MyPage";
 import UnpaidDuesAlert from "./components/dues/UnpaidDuesAlert";
 import NewbieFreepassAlert from "./components/schedule/NewbieFreepassAlert";
 import RegularNoticePage from "./components/schedule/RegularNoticePage";
@@ -194,6 +195,10 @@ export default function App() {
 				<Route path="/dues" element={<DuesAdminPage />} />
 				<Route path="/dues/:ym" element={<DuesAdminPage />} />
 				<Route path="/dues/:ym/:page" element={<DuesAdminPage />} />
+				{/* 내 정보 — 승패 기록·회비·클럽 회계·정보 수정 통합(MATCH_RESULT_ELO_SPEC §3.5).
+				    옛 /my-dues 계열은 MyDuesPage 가 해당 탭으로 리다이렉트한다. */}
+				<Route path="/me" element={<MyPage />} />
+				<Route path="/me/:tab" element={<MyPage />} />
 				<Route path="/my-dues" element={<MyDuesPage />} />
 				<Route path="/my-dues/:page" element={<MyDuesPage />} />
 				<Route path="/logs" element={<LogPage />} />

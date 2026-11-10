@@ -15,10 +15,13 @@ import {
 import PlayerAvatar from "./shared/PlayerAvatar";
 import WaitPointsSection from "./points/WaitPointsSection";
 import { dongFromAddress } from "../lib/carpool/dong";
+import { toast } from "../store/toastStore";
 
-// 프로필 입력 모달. 두 모드:
-//   - "signup"(기본): 가입 후 미완 프로필 입력. 닫기 없음(필수). 저장 성공 시 store 갱신으로 Home 이 언마운트.
-//   - "edit": 회원정보 수정. 닫기/취소 가능 + 회원 탈퇴 버튼. 저장 성공 시 onClose 로 닫음.
+// 프로필 입력. 두 모드:
+//   - "signup"(기본): 가입 후 미완 프로필 입력 모달. 닫기 없음(필수). 저장 성공 시 store 갱신으로 Home 이 언마운트.
+//   - "edit": 회원정보 수정 + 대기 포인트 + 회원 탈퇴. 내 정보(/me) '정보 수정' 탭이 모달 없이
+//     ProfileForm 을 바로 그린다(docs/MATCH_RESULT_ELO_SPEC.md §3.5). 모달 래퍼(default export)의
+//     edit 모드는 호환용으로 남겨 둔다 — 저장 성공 시 onClose 로 닫음.
 // 이름(카카오 prefill, 성/이름 분리 입력 — 성 누락 방지, 저장은 합쳐서 members.name 한 컬럼)·
 // 성별·출생년도·거주지(동) 입력.
 
@@ -30,6 +33,33 @@ interface Props {
 }
 
 export default function ProfileSetup({ mode = "signup", onClose }: Props) {
+	return (
+		// signup 모드는 onClose 미전달 → 배경 클릭/Escape 로 닫히지 않음(필수 입력 유지).
+		<ModalSheet
+			position="center"
+			zIndex={70}
+			closeOnEscape={mode === "edit"}
+			onClose={mode === "edit" ? onClose : undefined}
+			title={mode === "edit" ? "회원정보 수정" : "가입 정보 입력"}
+		>
+			<div className="px-5 pb-5">
+				<ProfileForm mode={mode} onSaved={mode === "edit" ? onClose : undefined} />
+			</div>
+		</ModalSheet>
+	);
+}
+
+interface FormProps {
+	mode: "signup" | "edit";
+	/**
+	 * edit 저장 성공 후 호출. 없으면(내 정보 탭처럼 페이지에 박혀 있을 때) 닫을 곳이 없으므로
+	 * 폼을 그대로 두고 '저장했어요' 토스트만 띄운다.
+	 */
+	onSaved?: () => void;
+}
+
+/** 모달 없이 그리는 프로필 본문(폼·대기 포인트·탈퇴). 래퍼(패딩·스크롤)는 호출부가 준다. */
+export function ProfileForm({ mode, onSaved }: FormProps) {
 	const user = useAuthStore((s) => s.user);
 	const myMemberId = useAuthStore((s) => s.memberId);
 	const myName = useAuthStore((s) => s.myName);
@@ -149,8 +179,16 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 			residence: finalResidence,
 		});
 		if (ok) {
-			// signup: store 갱신 → Home 이 언마운트. edit: 명시적으로 닫기.
-			if (mode === "edit") onClose?.();
+			// signup: store 갱신 → Home 이 언마운트. edit: 모달이면 닫고, 페이지에 박혀 있으면 그 자리에 남는다.
+			if (mode === "edit") {
+				if (onSaved) onSaved();
+				else {
+					// 같은 사진을 다시 올리지 않도록 비운다(프리뷰는 남겨 방금 고른 사진이 계속 보이게).
+					setPhotoBlob(null);
+					setBusy(false);
+					toast("저장했어요", { variant: "success" });
+				}
+			}
 		} else {
 			setError("저장에 실패했어요. 다시 시도해 주세요.");
 			setBusy(false);
@@ -189,217 +227,208 @@ export default function ProfileSetup({ mode = "signup", onClose }: Props) {
 	});
 
 	return (
-		// signup 모드는 onClose 미전달 → 배경 클릭/Escape 로 닫히지 않음(필수 입력 유지).
-		<ModalSheet
-			position="center"
-			zIndex={70}
-			closeOnEscape={mode === "edit"}
-			onClose={mode === "edit" ? onClose : undefined}
-			title={mode === "edit" ? "회원정보 수정" : "가입 정보 입력"}
-		>
-			<div className="px-5 pb-5">
-				<p
-					className="text-muted"
-					style={{ fontSize: 13.5, marginBottom: 18, lineHeight: 1.5 }}
-				>
-					{mode === "edit"
-						? "정보를 수정한 뒤 저장하세요."
-						: "원활한 모임 운영을 위해 아래 정보를 입력해 주세요."}
-				</p>
+		<>
+			<p
+				className="text-muted"
+				style={{ fontSize: 13.5, marginBottom: 18, lineHeight: 1.5 }}
+			>
+				{mode === "edit"
+					? "정보를 수정한 뒤 저장하세요."
+					: "원활한 모임 운영을 위해 아래 정보를 입력해 주세요."}
+			</p>
 
-				<div className="flex flex-col gap-4">
-					{/* 프로필 사진 */}
-					<div className="flex flex-col items-center" style={{ gap: 8 }}>
-						<button
-							type="button"
-							onClick={() => fileInputRef.current?.click()}
-							style={{
-								padding: 0,
-								border: "none",
-								background: "none",
-								borderRadius: "50%",
-								cursor: "pointer",
-								flexShrink: 0,
-							}}
-							aria-label="프로필 사진 변경"
-						>
-							{/* 로컬 프리뷰(방금 고른 사진)는 항상 표시. 없으면 내 회원 id 기반 원격 사진, 실패하면 이니셜.
-							    성별 미선택(null) 시엔 성별색 대신 중립 회색(성별 추정 강요 방지). */}
-							<PlayerAvatar
-								name={fullName}
-								gender={gender}
-								photoId={myMemberId ?? undefined}
-								size={96}
-								ringWidth={3}
-								previewSrc={photoPreview ?? undefined}
-								fallbackChar="+"
-								ringColor={gender ? undefined : "#cbd5e1"}
-								bgColor={gender ? undefined : "#e2e8f0"}
-								inkColor={gender ? undefined : "#64748b"}
-							/>
-						</button>
-						<button
-							type="button"
-							onClick={() => fileInputRef.current?.click()}
-							className="text-[#0b84ff]"
-							style={{
-								background: "none",
-								border: "none",
-								fontSize: 13,
-								fontWeight: 600,
-								cursor: "pointer",
-								padding: 0,
-							}}
-						>
-							{photoPreview ? "다른 사진 선택" : "사진 변경"}
-						</button>
-						<input
-							ref={fileInputRef}
-							type="file"
-							accept="image/*"
-							onChange={handlePickPhoto}
-							style={{ display: "none" }}
-						/>
-					</div>
-
-					{/* 이름 — 성/이름 분리 입력(성 누락 방지). 카카오 값을 첫 글자/나머지로 쪼개 prefill. */}
-					<div>
-						<label className={labelCls} style={labelStyle} htmlFor="ps-last-name">
-							이름{requiredMark}
-						</label>
-						<div className="flex gap-2">
-							<input
-								id="ps-last-name"
-								type="text"
-								value={lastName}
-								onChange={(e) => setLastName(e.target.value)}
-								placeholder="성"
-								aria-label="성"
-								className={inputCls}
-								style={{ ...inputStyle, flex: "1 1 0" }}
-							/>
-							<input
-								id="ps-first-name"
-								type="text"
-								value={firstName}
-								onChange={(e) => setFirstName(e.target.value)}
-								placeholder="이름"
-								aria-label="이름"
-								className={inputCls}
-								style={{ ...inputStyle, flex: "2.6 1 0" }}
-							/>
-						</div>
-					</div>
-
-					{/* 성별 */}
-					<div>
-						<span className={labelCls} style={labelStyle}>
-							성별{requiredMark}
-						</span>
-						<div className="flex gap-2">
-							<button
-								type="button"
-								onClick={() => setGender("M")}
-								style={genderBtn(gender === "M", "#1366a6")}
-							>
-								남
-							</button>
-							<button
-								type="button"
-								onClick={() => setGender("F")}
-								style={genderBtn(gender === "F", "#b4762b")}
-							>
-								여
-							</button>
-						</div>
-					</div>
-
-					{/* 출생년도 */}
-					<div>
-						<label className={labelCls} style={labelStyle} htmlFor="ps-year">
-							출생년도{requiredMark}
-						</label>
-						<input
-							id="ps-year"
-							type="number"
-							inputMode="numeric"
-							min={1900}
-							max={CURRENT_YEAR}
-							value={birthYear}
-							onChange={(e) => setBirthYear(e.target.value)}
-							placeholder="예: 1990"
-							className={inputCls}
-							style={inputStyle}
-						/>
-					</div>
-
-					{/* 사는 곳(동) — 자동완성 검색 + 직접입력 겸용 단일 필드(동 자동 추출). 저장 시 동 단위로 정규화. */}
-					<div>
-						<span className={labelCls} style={labelStyle}>
-							사는 곳 (동){requiredMark}
-						</span>
-						<p
-							className="text-muted"
-							style={{ fontSize: 12, lineHeight: 1.5, marginTop: 2, marginBottom: 8 }}
-						>
-							카풀 매칭에만 쓰이는 정보예요. 동 단위로만 저장됩니다.
-						</p>
-						<KakaoLocationSearch
-							placeholder="동/장소 이름 입력 (예: 역삼동) → 목록에서 선택"
-							heightPx={170}
-							value={residence}
-							onChangeText={setResidence}
-							onPick={(r) => setResidence(r.region)}
-						/>
-					</div>
-
-					{error && (
-						<p style={{ fontSize: 13, fontWeight: 600, color: "#ef4444" }}>
-							{error}
-						</p>
-					)}
-
+			<div className="flex flex-col gap-4">
+				{/* 프로필 사진 */}
+				<div className="flex flex-col items-center" style={{ gap: 8 }}>
 					<button
 						type="button"
-						onClick={handleSave}
-						disabled={busy}
-						className="btn-solid-blue"
-						style={{ marginTop: 2 }}
+						onClick={() => fileInputRef.current?.click()}
+						style={{
+							padding: 0,
+							border: "none",
+							background: "none",
+							borderRadius: "50%",
+							cursor: "pointer",
+							flexShrink: 0,
+						}}
+						aria-label="프로필 사진 변경"
 					>
-						{busy
-							? "저장 중…"
-							: mode === "edit"
-								? "저장"
-								: "저장하고 시작하기"}
+						{/* 로컬 프리뷰(방금 고른 사진)는 항상 표시. 없으면 내 회원 id 기반 원격 사진, 실패하면 이니셜.
+						    성별 미선택(null) 시엔 성별색 대신 중립 회색(성별 추정 강요 방지). */}
+						<PlayerAvatar
+							name={fullName}
+							gender={gender}
+							photoId={myMemberId ?? undefined}
+							size={96}
+							ringWidth={3}
+							previewSrc={photoPreview ?? undefined}
+							fallbackChar="+"
+							ringColor={gender ? undefined : "#cbd5e1"}
+							bgColor={gender ? undefined : "#e2e8f0"}
+							inkColor={gender ? undefined : "#64748b"}
+						/>
 					</button>
+					<button
+						type="button"
+						onClick={() => fileInputRef.current?.click()}
+						className="text-[#0b84ff]"
+						style={{
+							background: "none",
+							border: "none",
+							fontSize: 13,
+							fontWeight: 600,
+							cursor: "pointer",
+							padding: 0,
+						}}
+					>
+						{photoPreview ? "다른 사진 선택" : "사진 변경"}
+					</button>
+					<input
+						ref={fileInputRef}
+						type="file"
+						accept="image/*"
+						onChange={handlePickPhoto}
+						style={{ display: "none" }}
+					/>
+				</div>
 
-					{/* 대기 포인트 — 수정 모드에서만. signup 은 닫히지 않는 필수 관문이라
-					    가입 정보와 무관한 내역을 섞지 않는다. */}
-					{mode === "edit" && <WaitPointsSection />}
+				{/* 이름 — 성/이름 분리 입력(성 누락 방지). 카카오 값을 첫 글자/나머지로 쪼개 prefill. */}
+				<div>
+					<label className={labelCls} style={labelStyle} htmlFor="ps-last-name">
+						이름{requiredMark}
+					</label>
+					<div className="flex gap-2">
+						<input
+							id="ps-last-name"
+							type="text"
+							value={lastName}
+							onChange={(e) => setLastName(e.target.value)}
+							placeholder="성"
+							aria-label="성"
+							className={inputCls}
+							style={{ ...inputStyle, flex: "1 1 0" }}
+						/>
+						<input
+							id="ps-first-name"
+							type="text"
+							value={firstName}
+							onChange={(e) => setFirstName(e.target.value)}
+							placeholder="이름"
+							aria-label="이름"
+							className={inputCls}
+							style={{ ...inputStyle, flex: "2.6 1 0" }}
+						/>
+					</div>
+				</div>
 
-					{mode === "edit" && (
+				{/* 성별 */}
+				<div>
+					<span className={labelCls} style={labelStyle}>
+						성별{requiredMark}
+					</span>
+					<div className="flex gap-2">
 						<button
 							type="button"
-							onClick={handleDeactivate}
-							disabled={busy}
-							style={{
-								width: "100%",
-								padding: "12px",
-								borderRadius: 12,
-								fontSize: 14,
-								fontWeight: 700,
-								color: "#ef4444",
-								background: "none",
-								border: "none",
-								cursor: busy ? "not-allowed" : "pointer",
-								opacity: busy ? 0.5 : 1,
-							}}
+							onClick={() => setGender("M")}
+							style={genderBtn(gender === "M", "#1366a6")}
 						>
-							회원 탈퇴
+							남
 						</button>
-					)}
+						<button
+							type="button"
+							onClick={() => setGender("F")}
+							style={genderBtn(gender === "F", "#b4762b")}
+						>
+							여
+						</button>
+					</div>
 				</div>
+
+				{/* 출생년도 */}
+				<div>
+					<label className={labelCls} style={labelStyle} htmlFor="ps-year">
+						출생년도{requiredMark}
+					</label>
+					<input
+						id="ps-year"
+						type="number"
+						inputMode="numeric"
+						min={1900}
+						max={CURRENT_YEAR}
+						value={birthYear}
+						onChange={(e) => setBirthYear(e.target.value)}
+						placeholder="예: 1990"
+						className={inputCls}
+						style={inputStyle}
+					/>
+				</div>
+
+				{/* 사는 곳(동) — 자동완성 검색 + 직접입력 겸용 단일 필드(동 자동 추출). 저장 시 동 단위로 정규화. */}
+				<div>
+					<span className={labelCls} style={labelStyle}>
+						사는 곳 (동){requiredMark}
+					</span>
+					<p
+						className="text-muted"
+						style={{ fontSize: 12, lineHeight: 1.5, marginTop: 2, marginBottom: 8 }}
+					>
+						카풀 매칭에만 쓰이는 정보예요. 동 단위로만 저장됩니다.
+					</p>
+					<KakaoLocationSearch
+						placeholder="동/장소 이름 입력 (예: 역삼동) → 목록에서 선택"
+						heightPx={170}
+						value={residence}
+						onChangeText={setResidence}
+						onPick={(r) => setResidence(r.region)}
+					/>
+				</div>
+
+				{error && (
+					<p style={{ fontSize: 13, fontWeight: 600, color: "#ef4444" }}>
+						{error}
+					</p>
+				)}
+
+				<button
+					type="button"
+					onClick={handleSave}
+					disabled={busy}
+					className="btn-solid-blue"
+					style={{ marginTop: 2 }}
+				>
+					{busy
+						? "저장 중…"
+						: mode === "edit"
+							? "저장"
+							: "저장하고 시작하기"}
+				</button>
+
+				{/* 대기 포인트 — 수정 모드에서만. signup 은 닫히지 않는 필수 관문이라
+				    가입 정보와 무관한 내역을 섞지 않는다. */}
+				{mode === "edit" && <WaitPointsSection />}
+
+				{mode === "edit" && (
+					<button
+						type="button"
+						onClick={handleDeactivate}
+						disabled={busy}
+						style={{
+							width: "100%",
+							padding: "12px",
+							borderRadius: 12,
+							fontSize: 14,
+							fontWeight: 700,
+							color: "#ef4444",
+							background: "none",
+							border: "none",
+							cursor: busy ? "not-allowed" : "pointer",
+							opacity: busy ? 0.5 : 1,
+						}}
+					>
+						회원 탈퇴
+					</button>
+				)}
 			</div>
-		</ModalSheet>
+		</>
 	);
 }

@@ -114,8 +114,9 @@ export interface SessionState {
 	 * - skipLock: 편집 락은 갱신하지 않음(주기 워치독 전용 — 편집자 in-flight claim 방해 방지).
 	 * - suppressLossNotice: 이 resync 로 편집권을 잃어도 '뺏김' 다이얼로그를 띄우지 않음(낙관 claim 거부 복구용 —
 	 *   확정된 적 없는 편집권은 잃어도 알림 대상 아님).
+	 * 반환: 스냅샷을 받아 적용했으면 true(조회 실패·stale 스냅샷 거부면 false) — 그 위에서 이어 계산할 호출자용.
 	 */
-	resyncFromServer: (opts?: { indicate?: boolean; force?: boolean; skipLock?: boolean; suppressLossNotice?: boolean }) => Promise<void>;
+	resyncFromServer: (opts?: { indicate?: boolean; force?: boolean; skipLock?: boolean; suppressLossNotice?: boolean }) => Promise<boolean>;
 	/**
 	 * 진행중 matches 를 권위 재조회해 courts 를 수렴시킨다(코트 배정 catch-up).
 	 * targetVersion 이 현재 matchStateVersion 이하면 멱등 skip(force=true 면 강제 — 재연결 복구용).
