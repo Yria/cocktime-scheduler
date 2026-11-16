@@ -28,7 +28,7 @@ export interface MyDuesLine {
 	paid: number;
 	charged: number;
 	remaining: number;
-	/** '9/3 (목) 납부' · '4회차 중 3회차 납부' · '미납' 같은 상태 한 줄. */
+	/** '9/3 (목) 납부' · '4회차 중 3회차 납부' · '10,000원 냄' · '미납' 같은 상태 한 줄. */
 	note: string;
 }
 
@@ -249,13 +249,16 @@ export function myDuesMonth(
 				).length;
 				note =
 					done === cs.length
-						? `${cs.length}회차 납부`
-						: `${cs.length}회차 중 ${done}회차 납부`;
+						? `${cs.length}회차 모두 납부`
+						: done === 0
+							? `${cs.length}회차 · 미납`
+							: `${cs.length}회차 중 ${done}회차 납부`;
 			} else if (lineRemaining === 0 && dates.length === 1)
 				note = `${fmtMDDow(dates[0])} 납부`;
 			else if (lineRemaining === 0 && dates.length > 1)
 				note = `${dates.length}건 납부`;
-			else if (linePaid > 0) note = `부분 납부 · 남은 ${won(lineRemaining)}`;
+			// 남은 돈은 줄 오른쪽에 따로 적는다 — 여기서는 낸 만큼만 말한다.
+			else if (linePaid > 0) note = `${won(linePaid)} 냄`;
 			else note = "미납";
 			return {
 				key,

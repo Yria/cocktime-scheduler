@@ -1899,19 +1899,33 @@
 .ac-mine-list .ac-row {
 	padding-block: 10px;
 }
-/* 첫 화면의 주인공은 '그 달에 낸 돈'이다. 부과 총액은 그 옆의 기준값. */
+/* 첫 화면의 주인공은 '그 달에 남은 돈'이다(다 냈으면 낸 돈). 부과·낸 돈은 그 아래 기준값.
+   2026-11-10: '낸 돈 / 부과' 히어로 + 줄마다 낸 돈을 적던 구성은, 줄 합(낸 돈)과 옆의 부과가
+   서로 안 맞아 보여 '부과랑 낸 회비가 안 맞는다'는 오해를 낳았다. 이제 줄은 부과액을 적고
+   남은 돈은 줄 아래 주황으로 — 줄 합 = 합계(부과), 주황의 합 = 히어로. */
 .ac-mine-hero {
-	display: flex;
+	display: grid;
+	grid-template-columns: auto 1fr;
 	align-items: baseline;
-	gap: var(--ac-s-2);
+	column-gap: var(--ac-s-2);
+	row-gap: 2px;
 	padding: 2px 0 10px;
+}
+.ac-mine-hero-label {
+	grid-column: 1 / -1;
+	font-size: 13px;
+	font-weight: 700;
+	color: var(--ac-ink-3);
 }
 .ac-mine-hero > .ac-number {
 	font-size: 34px;
 	font-weight: 800;
 	color: var(--ac-ink);
 }
-.ac-mine-hero > span:last-child {
+.ac-mine-hero > .ac-number.ac-mine-due {
+	color: var(--ac-ask);
+}
+.ac-mine-hero-sub {
 	font-size: 14px;
 	font-weight: 600;
 	color: var(--ac-ink-3);
@@ -1919,10 +1933,22 @@
 .ac-mine-card > .ac-meter {
 	margin-bottom: 10px;
 }
-/* 카드의 마지막 줄('남은 금액')은 **합계가 아니다** — 위 줄들의 합은 히어로의 낸 돈이고
-   이 줄은 아직 남은 돈이다. 그래서 합계 기호를 쓰지 않는다: 이중선도, 20px 도 없다
-   (위 `.ac-total` 주석의 "크기와 이중선은 한 세트" 규율을 지키는 쪽은 쓰지 않는 것이다).
-   대신 조금 굵은 1px 로 끊고, 아직 낼 돈이 있을 때만 확인 색으로 말한다. */
+.ac-mine-line-amount {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 2px;
+	flex: none;
+}
+.ac-mine-line-amount > span {
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
+}
+.ac-mine-paid {
+	color: var(--ac-ink-3);
+	font-weight: 600;
+}
+/* 마지막 줄은 위 줄들(부과액)의 합이다. 회계 화면의 `.ac-total` 이중선 대신 조금 굵은 1px 로 끊는다. */
 .ac-mine-rest {
 	border-top: 1px solid var(--ac-rule-strong);
 	margin-top: var(--ac-s-1);

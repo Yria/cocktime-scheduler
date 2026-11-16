@@ -17,7 +17,6 @@ import {
 	ymLabel,
 } from "../../lib/dues/duesText";
 import {
-	type MyDuesItem,
 	myDuesMonth,
 	myDuesMonths,
 	myDuesUnpaid,
@@ -37,16 +36,6 @@ import CashLedgerView from "./CashLedgerView";
 
 /** 레일 금액은 '단위: 원' 머리글과 함께 숫자만 쓴다(운영진 회계 시트와 같은 규약). */
 const num = (n: number) => n.toLocaleString("ko-KR");
-
-/** 미납 목록을 한 줄 보조 문구로 — 한 건이면 이름, 여러 건이면 '외 N건'. */
-function itemsNote(items: MyDuesItem[], now: string): string {
-	if (!items.length) return "";
-	const head = items[0];
-	const deferred = head.dueYm > now ? " · 납기 이월" : "";
-	return items.length === 1
-		? `${head.label}${deferred}`
-		: `${head.label} 외 ${items.length - 1}건`;
-}
 
 interface Props {
 	/**
@@ -163,17 +152,32 @@ export default function AccountingMember({ embedded = false, page }: Props = {})
 				<>
 					<section className="ac-card ac-mine-card" aria-label="회비 납부 현황">
 						<div className="ac-sheet-head">
-							<h2>{label}월에 낸 회비</h2>
+							<h2>{label}월 내역</h2>
 							<span>단위: 원</span>
 						</div>
 						{month.empty ? (
 							<p className="ac-empty">이 달에는 부과도 납부도 없습니다.</p>
 						) : (
 							<>
-								<p className="ac-mine-hero">
-									<span className="ac-number">{num(month.paid)}</span>
-									<span>/ 부과 {num(month.charged)}</span>
-								</p>
+								{/* 히어로는 회원이 제일 궁금한 '남은 돈'을 말한다. 아래 줄들은 부과액이라
+								    줄의 합 = 부과, 줄 아래 주황 '남은'의 합 = 히어로 숫자로 서로 맞는다. */}
+								{month.remaining > 0 ? (
+									<p className="ac-mine-hero">
+										<span className="ac-mine-hero-label">남은 금액</span>
+										<span className="ac-number ac-mine-due">{num(month.remaining)}</span>
+										<span className="ac-mine-hero-sub">
+											{month.paid > 0
+												? `부과 ${num(month.charged)} 중 ${num(month.paid)} 냄`
+												: `부과 ${num(month.charged)} · 아직 안 냄`}
+										</span>
+									</p>
+								) : (
+									<p className="ac-mine-hero">
+										<span className="ac-mine-hero-label">모두 냈어요</span>
+										<span className="ac-number">{num(month.paid)}</span>
+										<span className="ac-mine-hero-sub">부과 {num(month.charged)} 완납</span>
+									</p>
+								)}
 								<div
 									className="ac-meter"
 									role="progressbar"
@@ -190,26 +194,30 @@ export default function AccountingMember({ embedded = false, page }: Props = {})
 											<strong>{line.label}</strong>
 											<span className="ac-row-note">{line.note}</span>
 										</span>
-										<strong className="ac-amount">{num(line.paid)}</strong>
+										<span className="ac-mine-line-amount">
+											<strong className="ac-amount">{num(line.charged)}</strong>
+											{line.remaining > 0 ? (
+												<span className="ac-mine-due">남은 {num(line.remaining)}</span>
+											) : (
+												<span className="ac-mine-paid">완납</span>
+											)}
+										</span>
 									</div>
 								))}
-								{/* 이중선(`.ac-total`)을 쓰지 않는다 — 이 줄은 위 줄들의 합이
-								    아니라 남은 돈이다. 위 줄들의 합은 히어로의 '낸 돈'이다. */}
-								<div className="ac-row ac-mine-rest">
-									<span className="ac-row-body">
-										<strong>남은 금액</strong>
-										{month.unpaid.length > 0 && (
-											<span className="ac-row-note">
-												{itemsNote(month.unpaid, now)}
-											</span>
-										)}
-									</span>
-									<strong
-										className={`ac-amount${month.remaining > 0 ? " ac-mine-due" : ""}`}
-									>
-										{num(month.remaining)}
-									</strong>
-								</div>
+								{/* 줄이 하나면 합계는 그 줄과 같아 군더더기다. */}
+								{month.lines.length > 1 && (
+									<div className="ac-row ac-mine-rest">
+										<span className="ac-row-body">
+											<strong>합계</strong>
+										</span>
+										<span className="ac-mine-line-amount">
+											<strong className="ac-amount">{num(month.charged)}</strong>
+											{month.remaining > 0 && (
+												<span className="ac-mine-due">남은 {num(month.remaining)}</span>
+											)}
+										</span>
+									</div>
+								)}
 							</>
 						)}
 					</section>
