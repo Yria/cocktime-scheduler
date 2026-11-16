@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	invitedGuestDues,
 	payableTargets,
 	previouslyPaidReceiptTargets,
 	suggestedReceiptDue,
@@ -190,5 +191,58 @@ describe("already paid dated receipts", () => {
 		expect(previouslyPaidReceiptTargets(data, 1, "a")).toEqual([]);
 		data.bank[0].name = "박민준";
 		expect(previouslyPaidReceiptTargets(data, 1, "a")).toEqual([]);
+	});
+});
+
+describe("invited guest dues", () => {
+	it("lists only live, unpaid charges whose payer_hint is the host", () => {
+		const data = fixture();
+		data.members.push({
+			id: "g1",
+			name: "게스트",
+		} as AccountingData["members"][number]);
+		data.charges.push(
+			...([
+				{
+					id: "gc",
+					group_id: "g",
+					member_id: "g1",
+					state: "live",
+					payer_hint: "a",
+				},
+				{
+					id: "gx",
+					group_id: "g",
+					member_id: "g1",
+					state: "cancelled",
+					payer_hint: "a",
+				},
+				{
+					id: "gp",
+					group_id: "g",
+					member_id: "g1",
+					state: "live",
+					payer_hint: "a",
+				},
+				{
+					id: "self",
+					group_id: "g",
+					member_id: "a",
+					state: "live",
+					payer_hint: "a",
+				},
+			] as AccountingData["charges"]),
+		);
+		data.due.push(
+			{ id: "gd", charge_id: "gc", due_ym: "2026-09", remaining: 6000 },
+			{ id: "gxd", charge_id: "gx", due_ym: "2026-09", remaining: 6000 },
+			{ id: "gpd", charge_id: "gp", due_ym: "2026-09", remaining: 0 },
+			{ id: "sd", charge_id: "self", due_ym: "2026-09", remaining: 6000 },
+		);
+		expect(invitedGuestDues(data, "a", "2026-09").map((d) => d.id)).toEqual([
+			"gd",
+		]);
+		expect(invitedGuestDues(data, "g1", "2026-09")).toEqual([]);
+		expect(invitedGuestDues(data, "", "2026-09")).toEqual([]);
 	});
 });

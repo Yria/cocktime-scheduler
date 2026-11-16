@@ -130,6 +130,37 @@ export function payableDues(
 		);
 }
 
+/**
+ * Unpaid charges of guests this member brought (charge.payer_hint = inviter).
+ * The host usually pays for their guest from the same deposit, so these are
+ * offered next to the host's own dues and saved through the proxy path.
+ */
+export function invitedGuestDues(
+	data: AccountingData,
+	hostId: string,
+	ym: string,
+) {
+	if (!hostId) return [];
+	const charges = new Set(
+		data.charges
+			.filter(
+				(c) =>
+					c.state === "live" &&
+					c.payer_hint === hostId &&
+					c.member_id !== hostId,
+			)
+			.map((c) => c.id),
+	);
+	return data.due
+		.filter((d) => d.remaining > 0 && charges.has(d.charge_id))
+		.sort(
+			(a, b) =>
+				Number(b.due_ym === ym) - Number(a.due_ym === ym) ||
+				a.due_ym.localeCompare(b.due_ym) ||
+				a.id.localeCompare(b.id),
+		);
+}
+
 export type PaymentTarget = DueSlice & {
 	prepayment?: NonNullable<AccountingData["prepayments"]>[number];
 };

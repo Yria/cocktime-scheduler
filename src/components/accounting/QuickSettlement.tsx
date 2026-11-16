@@ -4,6 +4,7 @@ import {
 	canChooseReceiptPayer,
 	suggestedReceiptPayer,
 	suggestedReceiptDue,
+	invitedGuestDues,
 	payableDues,
 	payableTargets,
 	previouslyPaidReceiptTargets,
@@ -141,13 +142,20 @@ export default function QuickSettlement({
 	const payerChanged =
 		!!source?.owner_id && !!owner && owner !== source.owner_id;
 	const payer = data.members.find((m) => m.id === owner);
+	// 납부자가 데려온 게스트의 미납(payer_hint)은 대납을 따로 고르지 않아도 함께 보인다.
+	const guestDues =
+		draft.type === "pay"
+			? invitedGuestDues(data, owner, kstMonth(tx.occurred_at))
+			: [];
 	const dues: PaymentTarget[] =
 		draft.type === "pay"
 			? [
 					...payableTargets(data, owner, kstMonth(tx.occurred_at)),
+					...guestDues,
 					...proxyMembers
 						.filter((id) => id !== owner)
-						.flatMap((id) => payableDues(data, id, kstMonth(tx.occurred_at))),
+						.flatMap((id) => payableDues(data, id, kstMonth(tx.occurred_at)))
+						.filter((d) => !guestDues.some((g) => g.id === d.id)),
 				]
 			: payableDues(data, owner, kstMonth(tx.occurred_at));
 	const alreadyPaid =
@@ -160,6 +168,8 @@ export default function QuickSettlement({
 			dues.some((d) => d.id === id),
 		),
 	);
+	// 다른 사람 몫이 목록에 섞이면 항목마다 누구 몫인지 이름을 붙인다.
+	const othersIncluded = proxyMembers.length > 0 || guestDues.length > 0;
 	const needsMonthChange = dues.some(
 		(d) => Number(debts[d.id]) > 0 && ym <= d.due_ym,
 	);
@@ -169,7 +179,7 @@ export default function QuickSettlement({
 	const targetName = (d: PaymentTarget) => {
 		const id = targetMember(d);
 		const label = d.prepayment?.label ?? groupName(d.charge_id);
-		return draft.type === "pay" && proxyMembers.length && id
+		return draft.type === "pay" && othersIncluded && id
 			? `${memberLabel(data, id)}${id !== owner ? " 대납" : ""} · ${label}`
 			: label;
 	};
@@ -429,10 +439,14 @@ export default function QuickSettlement({
 			const prepayments = (data.prepayments ?? []).filter(
 				(p) => p.member_id === id,
 			);
+			const guests = invitedGuestDues(data, id, receiptMonth);
 			return [
 				unpaid.length
 					? `미납 ${unpaid.length}건 · ${won(unpaid.reduce((sum, d) => sum + d.remaining, 0))}`
 					: "남은 미납 없음",
+				guests.length
+					? `게스트 미납 ${guests.length}건 · ${won(guests.reduce((sum, d) => sum + d.remaining, 0))}`
+					: "",
 				prepayments.length ? `대관 선납 ${prepayments.length}건` : "",
 			]
 				.filter(Boolean)
@@ -611,8 +625,11 @@ export default function QuickSettlement({
 											setProxyMembers((before) =>
 												before.filter((m) => m !== id),
 											);
+											// 초대 게스트 미납은 대납 칩과 무관하게 계속 보이므로 선택을 남긴다.
 											const ids = new Set(
-												payableDues(data, id, receiptMonth).map((d) => d.id),
+												payableDues(data, id, receiptMonth)
+													.filter((d) => !guestDues.some((g) => g.id === d.id))
+													.map((d) => d.id),
 											);
 											setPayments((before) =>
 												Object.fromEntries(
@@ -747,7 +764,7 @@ export default function QuickSettlement({
 					title={title}
 					operation={draft.type}
 					showSummary={
-						receiptEditor || (draft.type === "pay" && proxyMembers.length > 0)
+						receiptEditor || (draft.type === "pay" && othersIncluded)
 					}
 					unchangedExpense={unchangedExpense}
 					savedExpense={!!savedGroup}
