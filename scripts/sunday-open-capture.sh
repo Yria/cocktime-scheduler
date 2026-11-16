@@ -8,7 +8,7 @@
 #     (로그 API 는 문서상 보존 1일이지만 실제로는 며칠 전 것도 조회됐다. 그래도 그날 받아 두는 편이 안전하다.)
 #
 # 사용: caffeinate -i scripts/sunday-open-capture.sh [YYYY-MM-DD]   # KST 일요일. 생략하면 다음 공개일
-#       17:54 KST 전에 띄워 두면 시각에 맞춰 돈다(그 전까지는 잠만 잔다). 18:08 KST 쯤 끝난다.
+#       17:54 KST 전에 띄워 두면 시각에 맞춰 돈다(그 전까지는 잠만 잔다). 18:10 KST 쯤 끝난다.
 #       TEST=1 이면 지금 시각 기준으로 각 수집기를 한 번씩만 돌려 형식을 확인한다.
 # 결과: reports/sunday-open/<날짜>/ (gitignored — 회원 식별자가 들어 있다)
 #
@@ -148,13 +148,23 @@ pull_logs() {
 	# 로그는 수집 지연이 있어 18:05 에 받는다(창 끝에서 1분 이상 지난 뒤).
 	local s=$(( T0 - 60 )) e=$(( T0 + 240 )) w
 	(( TEST )) && { s=$(( EPOCHSECONDS - 120 )); e=$(( EPOCHSECONDS - 90 )); } || sleep_until $(( T0 + 300 ))
-	# edge_logs 는 15초 창으로 잘라 1000행 한도를 피한다. origin_time=엣지에서 본 처리 시간, up=PostgREST 처리 시간(ms).
-	for (( w = s; w < e; w += 15 )); do
-		logs "select timestamp, log_attributes['request.method'] m, log_attributes['request.path'] p,
-			log_attributes['response.status_code'] st, log_attributes['response.origin_time'] ot,
-			log_attributes['response.headers.x_envoy_upstream_service_time'] up, log_attributes['request.sb.auth_user'] u
-			from logs where source='edge_logs' order by timestamp limit 1000" $w $(( w + 15 )) > $OUT/edge_$w.json
-		sleep 4
+	# edge_logs 는 창으로 잘라 1000행 한도를 피한다. origin_time=엣지에서 본 처리 시간, up=PostgREST 처리 시간(ms).
+	# 2026-11-15: 15초 창은 T0-45~+15 에서 1000행에 걸려 뒤쪽이 잘렸다(초당 150~250행) → 그 구간은 3초 창.
+	# 로그 API 는 연달아 부르면 ThrottlerException 을 준다 → 간격을 두고, 걸리면 기다렸다 다시 받는다.
+	local step n try
+	for (( w = s; w < e; w += step )); do
+		(( w >= T0 - 45 && w < T0 + 15 )) && step=3 || step=15
+		for (( try = 0; try < 4; try++ )); do
+			logs "select timestamp, log_attributes['request.method'] m, log_attributes['request.path'] p,
+				log_attributes['response.status_code'] st, log_attributes['response.origin_time'] ot,
+				log_attributes['response.headers.x_envoy_upstream_service_time'] up, log_attributes['request.sb.auth_user'] u
+				from logs where source='edge_logs' order by timestamp limit 1000" $w $(( w + step )) > $OUT/edge_$w.json
+			sleep 6
+			grep -q Throttler $OUT/edge_$w.json || break
+			sleep 20
+		done
+		n=$(jq '.result|length' $OUT/edge_$w.json 2>/dev/null)
+		[[ $n == 1000 ]] && print -u2 "경고: edge_$w 가 1000행 한도에 걸려 잘렸다"
 	done
 	for src in postgrest_logs postgres_logs realtime_logs function_edge_logs function_logs auth_logs; do
 		logs "select timestamp, event_message from logs where source='$src' order by timestamp limit 1000" \
